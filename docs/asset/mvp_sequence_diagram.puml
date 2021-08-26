@@ -1,0 +1,43 @@
+@startuml
+
+actor "Buyer (UI)" as User
+participant "Buyer App" as UserApp
+participant "Seller App" as SellerApp
+actor Seller as Seller
+participant Oracle as Oracle
+participant Bitcoin as Bitcoin
+
+Seller -> SellerApp: publish sell order
+SellerApp -> Oracle: Attestation for sell order
+Oracle --> SellerApp: Attestation pubkey
+User -> UserApp: Start daemon & UI
+UserApp -> SellerApp: fetch current sell order
+SellerApp -->UserApp: current sell order
+UserApp -> User: Show sell order (1)
+User -> UserApp: Take order
+UserApp -> SellerApp: Take request (incl. protocol params?)
+SellerApp -> Seller: Notfiy seller about take request
+Seller -> SellerApp: Accept
+SellerApp --> UserApp: Take response (incl. protocol params?)
+group DLC setup
+UserApp -> SellerApp: protocol setup step 1..n
+SellerApp --> UserApp: protocol setup step 1..n
+note over UserApp : CETs generated
+note over SellerApp : CETs generated
+SellerApp -> Bitcoin: Publish DLC
+UserApp -> Bitcoin: Witness DLC
+end group
+Seller -> SellerApp: Republish new sell-order
+group DLC settlement
+User -> UserApp: Close buy position
+UserApp -> Oracle: request attestation
+Oracle --> UserApp: attested price
+UserApp -> Bitcoin: CET according to price
+SellerApp -> Seller: Position was closed
+Seller -> SellerApp: Settle
+SellerApp -> Oracle: request attestation
+Oracle --> SellerApp: attested price
+SellerApp -> Bitcoin: CET according to price
+end group
+
+@enduml
