@@ -26,7 +26,17 @@ jobs:
       - name: Run clippy with default features
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  test_worspace:
+      - name: print hello world
+        uses: actions/setup-node@v2
+        with:
+          cache: 'yarn'
+
+        run: yarn install
+
+        run: cd frontend && yarn run eslint
+
+          cd frontend && yarn build
+
     strategy:
       matrix:
         target: [ x86_64-unknown-linux-gnu, x86_64-apple-darwin ]
@@ -49,5 +59,40 @@ jobs:
 
       - uses: Swatinem/rust-cache@v1.3.0
 
-      - name: Cargo test workspace
+      - name: Cargo test
         run: cargo test --workspace --all-features
+
+  smoke_test_daemons:
+    strategy:
+      matrix:
+        target: [ x86_64-unknown-linux-gnu, x86_64-apple-darwin ]
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          override: true
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v1.3.0
+
+      - name: Build ${{ matrix.target }} release binary
+        run: |
+          cargo build --target=${{ matrix.target }} --release --bin maker
+          cargo build --target=${{ matrix.target }} --release --bin taker
+
+      - name: Smoke test ${{ matrix.target }} release binary
+        run: |
+          target/${{ matrix.target }}/release/maker &
+          target/${{ matrix.target }}/release/taker &
+          sleep 5s
+          curl --fail http://localhost:8000/alive

@@ -1,0 +1,67 @@
+{
+  "name": "frontend",
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "serve": "vite preview",
+    "test": "vite-jest"
+  },
+  "dependencies": {
+    "@chakra-ui/icons": "^1.0.15",
+    "@chakra-ui/react": "^1.6.7",
+    "@chakra-ui/system": "^1.7.3",
+    "@emotion/react": "^11.4.1",
+    "@emotion/styled": "^11.3.0",
+    "@testing-library/dom": "^8.2.0",
+    "@testing-library/jest-dom": "^5.11.4",
+    "@testing-library/react": "^11.1.0",
+    "@testing-library/user-event": "^12.1.10",
+    "@types/jest": "^26.0.15",
+    "@types/node": "^12.0.0",
+    "@types/react": "^17.0.0",
+    "@types/react-dom": "^17.0.0",
+    "@types/react-table": "^7.7.2",
+    "@typescript-eslint/eslint-plugin": "^4.30.0",
+    "@typescript-eslint/parser": "^4.30.0",
+    "axios": "^0.21.1",
+    "babel-eslint": "^10.1.0",
+    "eslint": "^7.32.0",
+    "eslint-config-react-app": "^6.0.0",
+    "eslint-plugin-flowtype": "^5.9.2",
+    "eslint-plugin-import": "^2.24.2",
+    "eslint-plugin-jest": "^24.4.0",
+    "eslint-plugin-jsx-a11y": "^6.4.1",
+    "eslint-plugin-react": "^7.25.1",
+    "eslint-plugin-react-hooks": "^4.2.0",
+    "framer-motion": "^4",
+    "history": ">=5",
+    "jest": "^27",
+    "prettier": "^2.3.2",
+    "react": "^17.0.2",
+    "react-async": "^10.0.1",
+    "react-dom": "^17.0.2",
+    "react-refresh": "^0.10.0",
+    "react-router-dom": "=6.0.0-beta.2",
+    "react-scripts": "^4.0.3",
+    "react-sse-hooks": "^1.0.5",
+    "react-table": "^7.7.0",
+    "typescript": "^4.4.2",
+    "vite-jest": "^0.0.3",
+    "web-vitals": "^1.0.1"
+  },
+  "devDependencies": {
+    "@types/eslint": "^7",
+    "@types/react": "^17.0.0",
+    "@types/react-dom": "^17.0.0",
+    "@vitejs/plugin-react-refresh": "^1.3.1",
+    "typescript": "^4.4.2",
+    "vite": "^2.5.2"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  }
+}

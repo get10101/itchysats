@@ -1,0 +1,67 @@
+@startuml
+
+actor "Buyer=Taker \n[frontend]" as Buyer
+participant "Buyer \n[daemon]" as BuyerApp
+participant "Buyer Offer Feed \n[in daemon]" as BuyerOfferFeed
+participant "Buyer CFD Feed \n[in daemon]" as BuyerCfdFeed
+participant "Seller CFD Feed \n[in daemon]" as SellerCfdFeed
+participant "Seller Offer Feed \n[in daemon]" as SellerOfferFeed
+participant "Seller \n[daemon]" as SellerApp
+actor "Seller=Maker \n[frontend]" as Seller
+participant Oracle as Oracle
+
+note over Seller : currently static offer in the frontend
+Seller -> SellerOfferFeed: Subscribe
+note over Seller: The seller should see the current active offer \nInitially there is none (until one POSTed)
+Seller -> SellerApp: POST sell offer
+
+group Oracle stuff?
+SellerApp -> Oracle: Attestation for sell offer
+Oracle --> SellerApp: Attestation pubkey
+end group
+
+SellerApp -> SellerApp: Store current offer
+SellerApp -> SellerOfferFeed: Push offer
+SellerOfferFeed --> Seller: offer [Untaken]
+
+Buyer -> BuyerApp: Start daemon & UI
+BuyerApp -> BuyerOfferFeed: Subscribe
+BuyerApp -> BuyerCfdFeed: Subscribe
+BuyerApp -> SellerApp: Open TCP (socket) connection
+SellerApp -> SellerApp: New connection
+SellerApp -> BuyerApp: {TCP} Current offer
+
+note over SellerOfferFeed : Assumption: Current offer \nalways available for new subscriptions
+BuyerApp -> BuyerOfferFeed: push offer
+BuyerOfferFeed --> Buyer: offer
+
+Buyer -> Buyer: Click BUY
+Buyer -> BuyerApp: POST cfd_take_request
+BuyerApp -> BuyerApp: Create cfd [TakeRequested]
+note over BuyerApp: Must include offer_id
+
+BuyerApp -> BuyerCfdFeed: Push cfd
+BuyerCfdFeed --> Buyer: cfd [TakeRequested]
+
+BuyerApp -> SellerApp: {TCP} cfd_take_request (offer_id, quantity)
+SellerApp -> SellerApp: Create cfd [TakeRequested]
+SellerApp -> SellerCfdFeed: cfd [TakeRequested]
+SellerCfdFeed --> Seller: cfd [TakeRequested]
+Seller -> Seller: Accept cfd
+Seller -> SellerApp: POST cfd [Accepted]
+SellerApp -> BuyerApp: {TCP} cfd [Accepted]
+SellerApp -> SellerCfdFeed: cfd [Accepted]
+SellerCfdFeed --> Seller: cfd [Accepted]
+BuyerApp -> BuyerCfdFeed: cfd [Accepted]
+BuyerCfdFeed --> Buyer: cfd [Accepted]
+
+ref over BuyerApp, SellerApp: {TCP} protocol setup messaging & contract publication on Bitcoin\n-> cfd in state [ContractSetup]
+
+SellerApp -> SellerCfdFeed: cfd [Open]
+SellerCfdFeed --> Seller: cfd [Open]
+BuyerApp -> BuyerCfdFeed: cfd [Open]
+BuyerCfdFeed --> Buyer: cfd [Open]
+
+
+
+@enduml
