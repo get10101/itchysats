@@ -1,7 +1,20 @@
-import { Box, Button, Center, Flex, HStack, Input, StackDivider, Text, VStack } from "@chakra-ui/react";
+import {
+    Box,
+    Button,
+    Center,
+    Flex,
+    Grid,
+    HStack,
+    Input,
+    SimpleGrid,
+    StackDivider,
+    Text,
+    VStack,
+} from "@chakra-ui/react";
 import React from "react";
 import { Link as RouteLink, Route, Switch } from "react-router-dom";
 import "./App.css";
+import CFD from "./components/CFD";
 
 function App() {
     return (
@@ -14,7 +27,7 @@ function App() {
                         <NavLink text={"settings"} path={"/settings"} />
                     </VStack>
                 </Box>
-                <Box width={1000} height={600}>
+                <Box width={1200} height={600}>
                     <Switch>
                         <Route path="/trade">
                             <Flex direction={"row"} height={"100%"}>
@@ -26,34 +39,51 @@ function App() {
                                         width={"100%"}
                                         divider={<StackDivider borderColor="gray.200" />}
                                     >
-                                        <Box height={"70%"} width={"100%"} bg={"gray.100"} textAlign={"center"}>
-                                            <Center>
-                                                <Text>Graph</Text>
-                                            </Center>
-                                        </Box>
                                         <Box width={"100%"} overflow={"scroll"}>
-                                            <Box>Make some data table happen here...</Box>
-                                            <Box>Entry</Box>
-                                            <Box>Entry</Box>
-                                            <Box>Entry</Box>
-                                            <Box>Entry</Box>
-                                            <Box>Entry</Box>
-                                            <Box>Entry</Box>
+                                            <SimpleGrid columns={2} spacing={10}>
+                                                <CFD
+                                                    number={1}
+                                                    liquidation_price={42000}
+                                                    amount={10000}
+                                                    profit={200}
+                                                    creation_date={new Date(Date.now(
+                                                    ))}
+                                                    status="ongoing"
+                                                />
+                                                <CFD
+                                                    number={2}
+                                                    liquidation_price={42000}
+                                                    amount={12000}
+                                                    profit={500}
+                                                    creation_date={new Date(Date.now(
+                                                    ))}
+                                                    status="requested"
+                                                />
+                                            </SimpleGrid>
                                         </Box>
                                     </VStack>
                                 </Flex>
                                 <Flex width={"50%"} marginLeft={5}>
                                     <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"}>
                                         <HStack>
+                                            <Text align={"left"}>Your balance:</Text>
+                                            <Text>10323</Text>
+                                        </HStack>
+                                        <HStack>
                                             <Text align={"left"}>Current Price:</Text>
-                                            <Text>490000</Text>
+                                            <Text>49000</Text>
                                         </HStack>
                                         <HStack>
                                             <Text>Quantity:</Text>
                                             <Input></Input>
                                         </HStack>
                                         <Text>Leverage:</Text>
-                                        <Button disabled={true}>x5</Button>
+                                        {/* TODO: consider button group */}
+                                        <Flex justifyContent={"space-between"}>
+                                            <Button disabled={true}>x1</Button>
+                                            <Button disabled={true}>x2</Button>
+                                            <Button colorScheme="blue" variant="solid">x5</Button>
+                                        </Flex>
                                         <Button variant={"solid"} colorScheme={"blue"}>BUY</Button>
                                     </VStack>
                                 </Flex>
