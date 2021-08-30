@@ -3,8 +3,15 @@ name = "cfd_protocol"
 version = "0.1.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+anyhow = "1"
+# bdk = { version = "0.10" }
+bdk = { git = "https://github.com/coblox/bdk", rev = "acf157a99a305226203d2b55a567291a93c64720" }
+rand = "0.6"
+rand_chacha = "0.1"
 
-dlc = { git = "https://github.com/p2pderivatives/rust-dlc" }
+[dev-dependencies]
+
+# bdk = { version = "0.10", features = ["verify"] }
+bdk = { git = "https://github.com/coblox/bdk", rev = "acf157a99a305226203d2b55a567291a93c64720", features = ["verify"] }
+bitcoin = { version = "0.27", features = ["rand"] }

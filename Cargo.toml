@@ -1,2 +1,3 @@
 [workspace]
 members = [ "cfd_protocol" ]
+resolver = "2"
