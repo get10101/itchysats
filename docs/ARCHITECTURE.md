@@ -17,6 +17,8 @@ The application is split into several components:
 - A web frontend for the maker
 - A maker daemon
 
+At runtime, both daemons embed their frontend and serve it via HTTP.
+
 On a source-code level, we split into:
 
 - A library defining the core, cryptographic protocol
