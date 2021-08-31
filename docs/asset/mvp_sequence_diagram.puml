@@ -1,9 +1,9 @@
 @startuml
 
-actor "Buyer (UI)" as User
-participant "Buyer App" as UserApp
-participant "Seller App" as SellerApp
-actor Seller as Seller
+actor "Buyer \n[frontend]" as User
+participant "Buyer \n[daemon]" as UserApp
+participant "Seller \n[daemon]" as SellerApp
+actor "Seller \n[frontend]" as Seller
 participant Oracle as Oracle
 participant Bitcoin as Bitcoin
 
@@ -25,7 +25,12 @@ SellerApp --> UserApp: protocol setup step 1..n
 note over UserApp : CETs generated
 note over SellerApp : CETs generated
 SellerApp -> Bitcoin: Publish DLC
+SellerApp -> SellerApp: Update CFD state: open
+SellerApp -> Seller: Sell position open
+note over SellerApp : Assumption: \nSeller publishes DLC \nBuyer CET upon closing position
 UserApp -> Bitcoin: Witness DLC
+UserApp -> UserApp: Update CFD state: open
+UserApp -> User: Buy position open
 end group
 Seller -> SellerApp: Republish new sell-order
 group DLC settlement
@@ -33,11 +38,8 @@ User -> UserApp: Close buy position
 UserApp -> Oracle: request attestation
 Oracle --> UserApp: attested price
 UserApp -> Bitcoin: CET according to price
+SellerApp -> SellerApp: Update position state to closed
 SellerApp -> Seller: Position was closed
-Seller -> SellerApp: Settle
-SellerApp -> Oracle: request attestation
-Oracle --> SellerApp: attested price
-SellerApp -> Bitcoin: CET according to price
 end group
 
 @enduml
