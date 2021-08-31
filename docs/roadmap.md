@@ -47,11 +47,6 @@ Constraints:
     - Take requests are accepted manually
   - ♻️ Oracle
 
-Architecture recommendations
-
-- Maker and taker have different purpose / scope and hence should be separate binaries. 
-  - Code can be shared in e.g. UI components and rust libs
-
 ### Out of scope
 
 - Anonymity
