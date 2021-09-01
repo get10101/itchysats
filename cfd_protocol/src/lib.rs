@@ -5,8 +5,10 @@ mod tests {
     use bdk::SignOptions;
     use bdk::{
         bitcoin::{
+            self,
             hashes::hex::ToHex,
             util::bip143::SigHashCache,
+            util::psbt::Global,
             util::{bip32::ExtendedPrivKey, psbt::PartiallySignedTransaction},
             Address, Amount, Network, OutPoint, PrivateKey, PublicKey, Script, SigHash,
             SigHashType, Transaction, TxIn, TxOut,
@@ -15,14 +17,15 @@ mod tests {
         miniscript::{descriptor::Wsh, DescriptorTrait},
         wallet::AddressIndex,
     };
-    use bitcoin::util::psbt::Global;
+
     use rand::RngCore;
     use rand::{CryptoRng, SeedableRng};
     use rand_chacha::ChaChaRng;
-    use secp256k1_zkp::{self, schnorrsig};
+    use secp256k1_zkp::{self, schnorrsig, Signature};
     use secp256k1_zkp::{bitcoin_hashes::sha256t_hash_newtype, SECP256K1};
     use secp256k1_zkp::{bitcoin_hashes::*, EcdsaAdaptorSignature};
     use secp256k1_zkp::{Secp256k1, SecretKey};
+    use std::collections::HashMap;
 
     /// Refund transaction fee. It is paid evenly by the maker and the
     /// taker.
@@ -92,14 +95,9 @@ mod tests {
             builder.finish().unwrap()
         };
 
-        let lock_tx = LockTransaction::new(
-            maker_psbt,
-            taker_psbt,
-            maker_pk,
-            taker_pk,
-            maker_dlc_amount + taker_dlc_amount,
-        )
-        .unwrap();
+        let dlc_amount = maker_dlc_amount + taker_dlc_amount;
+        let lock_tx =
+            LockTransaction::new(maker_psbt, taker_psbt, maker_pk, taker_pk, dlc_amount).unwrap();
 
         let refund_tx = RefundTransaction::new(
             &lock_tx,
@@ -123,6 +121,7 @@ mod tests {
 
             secp.verify(&sighash, &sig, &maker_pk.key)
                 .expect("valid maker refund sig");
+            sig
         };
 
         let taker_refund_sig = {
@@ -131,6 +130,7 @@ mod tests {
 
             secp.verify(&sighash, &sig, &taker_pk.key)
                 .expect("valid taker refund sig");
+            sig
         };
 
         let maker_cet_encsigs = cets
@@ -208,8 +208,20 @@ mod tests {
             )
             .unwrap();
 
-        // TODO: Verify validity of all transactions using bitcoinconsensus via bdk
-        // TODO: Upstream -> Activate rust-bitcoin/bitcoinconsensus feature on bdk
+        let signed_refund_tx = refund_tx
+            .add_signatures((maker_pk, maker_refund_sig), (taker_pk, taker_refund_sig))
+            .unwrap();
+        let _ = lock_tx
+            .descriptor()
+            .address(Network::Regtest)
+            .expect("can derive address from descriptor")
+            .script_pubkey()
+            .verify(
+                0,
+                dlc_amount.as_sat(),
+                bitcoin::consensus::serialize(&signed_refund_tx).as_slice(),
+            )
+            .unwrap();
     }
 
     const BIP340_MIDSTATE: [u8; 32] = [
@@ -348,6 +360,7 @@ mod tests {
     struct RefundTransaction {
         inner: Transaction,
         sighash: SigHash,
+        lock_output_descriptor: Descriptor<PublicKey>,
     }
 
     impl RefundTransaction {
@@ -383,6 +396,8 @@ mod tests {
                 output: vec![maker_output, taker_output],
             };
 
+            let lock_output_descriptor = lock_tx.dlc_descriptor.clone();
+
             let sighash = SigHashCache::new(&tx).signature_hash(
                 0,
                 &lock_tx.dlc_descriptor.script_code(),
@@ -390,11 +405,37 @@ mod tests {
                 SigHashType::All,
             );
 
-            Self { inner: tx, sighash }
+            Self {
+                inner: tx,
+                sighash,
+                lock_output_descriptor,
+            }
         }
 
         fn sighash(&self) -> SigHash {
             self.sighash
+        }
+
+        pub fn add_signatures(
+            self,
+            (maker_pk, maker_sig): (PublicKey, Signature),
+            (taker_pk, taker_sig): (PublicKey, Signature),
+        ) -> Result<Transaction> {
+            let satisfier = {
+                let mut satisfier = HashMap::with_capacity(2);
+
+                // The order in which these are inserted doesn't matter
+                satisfier.insert(maker_pk, (maker_sig, SigHashType::All));
+                satisfier.insert(taker_pk, (taker_sig, SigHashType::All));
+
+                satisfier
+            };
+
+            let mut tx_refund = self.inner;
+            self.lock_output_descriptor
+                .satisfy(&mut tx_refund.input[0], satisfier)?;
+
+            Ok(tx_refund)
         }
     }
 
@@ -482,6 +523,10 @@ mod tests {
 
         fn to_psbt(&self) -> PartiallySignedTransaction {
             self.inner.clone()
+        }
+
+        fn descriptor(&self) -> Descriptor<PublicKey> {
+            self.dlc_descriptor.clone()
         }
     }
 
