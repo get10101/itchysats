@@ -56,10 +56,10 @@ Even if the user restarts the entire application, we can pick up where we left o
 ### Append only database
 
 The database structure is append only.
-We never update / overwrite existing state to make sure we don't ever loose data due to bugs in state transitions.
+We never update / overwrite existing state to make sure we don't ever lose data due to bugs in state transitions.
 
 ### Library only exposes pure transition functions rather than a state machine
 
 The protocol implemented in the library can be thought of as a state machine that is pushed forward by each party.
 To remain flexible in how the protocol is used, the library MUST only expose pure functions to go from one state to the other rather than representing the actual states itself.
-This allows applications on top of shape their states and messages as they wish, only reaching into the library for doing the heavy lifting of cryptography and other protocol-specific functionality.
+This allows applications on top to shape their states and messages as they wish, only reaching into the library for doing the heavy lifting of cryptography and other protocol-specific functionality.
