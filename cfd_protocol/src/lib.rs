@@ -117,33 +117,75 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let maker_refund_sig = secp.sign(
-            &secp256k1_zkp::Message::from_slice(&refund_tx.sighash()).unwrap(),
-            &maker_sk,
-        );
-        let taker_refund_sig = secp.sign(
-            &secp256k1_zkp::Message::from_slice(&refund_tx.sighash()).unwrap(),
-            &taker_sk,
-        );
+        let maker_refund_sig = {
+            let sighash = secp256k1_zkp::Message::from_slice(&refund_tx.sighash()).unwrap();
+            let sig = secp.sign(&sighash, &maker_sk);
+
+            secp.verify(&sighash, &sig, &maker_pk.key)
+                .expect("valid maker refund sig");
+        };
+
+        let taker_refund_sig = {
+            let sighash = secp256k1_zkp::Message::from_slice(&refund_tx.sighash()).unwrap();
+            let sig = secp.sign(&sighash, &taker_sk);
+
+            secp.verify(&sighash, &sig, &taker_pk.key)
+                .expect("valid taker refund sig");
+        };
 
         let maker_cet_encsigs = cets
             .iter()
             .map(|cet| {
                 (
                     cet.txid(),
-                    cet.encsign(maker_sk, &oracle.public_key(), &announcement.nonce_pk()),
+                    cet.encsign(maker_sk, &oracle.public_key(), &announcement.nonce_pk())
+                        .unwrap(),
                 )
             })
             .collect::<Vec<_>>();
+
+        cets.iter()
+            .try_for_each(|cet| {
+                let encsig = maker_cet_encsigs
+                    .iter()
+                    .find_map(|(txid, encsig)| (txid == &cet.txid()).then(|| encsig))
+                    .expect("one maker encsig per cet");
+
+                cet.encverify(
+                    encsig,
+                    &maker_pk,
+                    &oracle.public_key(),
+                    &announcement.nonce_pk(),
+                )
+            })
+            .expect("valid maker cet encsigs");
+
         let taker_cet_encsigs = cets
             .iter()
             .map(|cet| {
                 (
                     cet.txid(),
-                    cet.encsign(taker_sk, &oracle.public_key(), &announcement.nonce_pk()),
+                    cet.encsign(taker_sk, &oracle.public_key(), &announcement.nonce_pk())
+                        .unwrap(),
                 )
             })
             .collect::<Vec<_>>();
+
+        cets.iter()
+            .try_for_each(|cet| {
+                let encsig = taker_cet_encsigs
+                    .iter()
+                    .find_map(|(txid, encsig)| (txid == &cet.txid()).then(|| encsig))
+                    .expect("one taker encsig per cet");
+
+                cet.encverify(
+                    encsig,
+                    &taker_pk,
+                    &oracle.public_key(),
+                    &announcement.nonce_pk(),
+                )
+            })
+            .expect("valid taker cet encsigs");
 
         let mut signed_lock_tx = lock_tx.to_psbt();
         maker_wallet
@@ -166,7 +208,6 @@ mod tests {
             )
             .unwrap();
 
-        // TODO: Verify signatures as we go
         // TODO: Verify validity of all transactions using bitcoinconsensus via bdk
         // TODO: Upstream -> Activate rust-bitcoin/bitcoinconsensus feature on bdk
     }
@@ -205,13 +246,7 @@ mod tests {
             let mut buf = Vec::<u8>::new();
             buf.extend(&nonce_pk.serialize());
             buf.extend(&oracle_pk.serialize());
-            buf.extend(
-                secp256k1_zkp::Message::from(message)
-                    .as_ref()
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<u8>>(),
-            );
+            buf.extend(secp256k1_zkp::Message::from(message).as_ref().to_vec());
             BIP340Hash::hash(&buf).into_inner().to_vec()
         };
         let mut oracle_pk = schnorr_pubkey_to_pubkey(oracle_pk)?;
@@ -272,10 +307,31 @@ mod tests {
 
             Ok(EcdsaAdaptorSignature::encrypt(
                 SECP256K1,
-                &secp256k1_zkp::Message::from_slice(&self.sighash)?,
+                &secp256k1_zkp::Message::from_slice(&self.sighash)
+                    .expect("sighash is valid message"),
                 &sk,
                 &signature_point,
             ))
+        }
+
+        fn encverify(
+            &self,
+            encsig: &EcdsaAdaptorSignature,
+            signing_pk: &PublicKey,
+            oracle_pk: &schnorrsig::PublicKey,
+            nonce_pk: &schnorrsig::PublicKey,
+        ) -> Result<()> {
+            let signature_point = compute_signature_point(oracle_pk, nonce_pk, self.message)?;
+
+            encsig.verify(
+                SECP256K1,
+                &secp256k1_zkp::Message::from_slice(&self.sighash)
+                    .expect("sighash is valid message"),
+                &signing_pk.key,
+                &signature_point,
+            )?;
+
+            Ok(())
         }
 
         fn txid(&self) -> Txid {
