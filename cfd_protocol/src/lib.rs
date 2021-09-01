@@ -1,31 +1,154 @@
+use anyhow::Result;
+use bdk::bitcoin::Txid;
+use bdk::SignOptions;
+use bdk::{
+    bitcoin::{
+        self,
+        hashes::hex::ToHex,
+        util::bip143::SigHashCache,
+        util::psbt::Global,
+        util::{bip32::ExtendedPrivKey, psbt::PartiallySignedTransaction},
+        Address, Amount, Network, OutPoint, PrivateKey, PublicKey, Script, SigHash, SigHashType,
+        Transaction, TxIn, TxOut,
+    },
+    descriptor::Descriptor,
+    miniscript::{descriptor::Wsh, DescriptorTrait},
+    wallet::AddressIndex,
+};
+
+use rand::RngCore;
+use rand::{CryptoRng, SeedableRng};
+use rand_chacha::ChaChaRng;
+use secp256k1_zkp::{self, schnorrsig, Signature};
+use secp256k1_zkp::{bitcoin_hashes::sha256t_hash_newtype, SECP256K1};
+use secp256k1_zkp::{bitcoin_hashes::*, EcdsaAdaptorSignature};
+use secp256k1_zkp::{Secp256k1, SecretKey};
+use std::collections::HashMap;
+
+// TODO: Consider extension trait
+pub fn build_lock_psbt<B, D>(
+    wallet: &bdk::Wallet<B, D>,
+    caller_dlc_amount: Amount,
+) -> Result<PartiallySignedTransaction> {
+    todo!()
+}
+
+// TODO: Consider how this might change with off-chain protocol
+pub fn build_dlc_transactions(
+    maker: Party,
+    taker: Party,
+    refund_timelock: u32,
+    payouts: Vec<Payout>,
+    signing_sk: SecretKey,
+) -> Result<DlcTransactions> {
+    todo!()
+}
+
+fn dlc_descriptor(maker_pk: PublicKey, taker_pk: PublicKey) -> Descriptor<PublicKey> {
+    todo!()
+}
+
+fn spend_tx_sighash(
+    tx: &Transaction,
+    dlc_descriptor: &Descriptor<PublicKey>,
+    dlc_amount: Amount,
+) -> SigHash {
+    todo!()
+}
+
+pub fn finalize_spend_transaction(
+    tx: Transaction,
+    dlc_descriptor: Descriptor<PublicKey>,
+    (maker_pk, maker_sig): (PublicKey, Signature),
+    (taker_pk, taker_sig): (PublicKey, Signature),
+) -> Transaction {
+    todo!()
+}
+
+// NOTE: We have decided to not offer any verification utility because
+// the APIs would be incredibly thin
+
+pub struct Party {
+    pub lock_psbt: PartiallySignedTransaction,
+    pub dlc_pk: PublicKey,
+    pub dlc_amount: Amount,
+    pub address: Address,
+}
+
+pub struct OracleParams {
+    pub pk: schnorrsig::PublicKey,
+    pub nonce_pk: schnorrsig::PublicKey,
+}
+
+pub struct DlcTransactions {
+    pub lock_psbt: PartiallySignedTransaction,
+    pub cets: Vec<(Transaction, EcdsaAdaptorSignature)>,
+    pub refund: (Transaction, Signature),
+}
+
+// NOTE: This is a simplification. Our use-case will not work with
+// a simple enumeration of possible messages
+#[derive(Debug, Clone, Copy)]
+pub struct Payout {
+    message: Message,
+    maker_amount: Amount,
+    taker_amount: Amount,
+}
+
+impl Payout {
+    fn to_txouts(self, maker_address: &Address, taker_address: &Address, fee: u64) -> Vec<TxOut> {
+        let mut txouts = [
+            (self.maker_amount, maker_address),
+            (self.taker_amount, taker_address),
+        ]
+        .iter()
+        .filter_map(|(amount, address)| {
+            (amount != &Amount::ZERO).then(|| TxOut {
+                value: amount.as_sat(),
+                script_pubkey: address.script_pubkey(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+        // TODO: Rewrite this
+        if txouts.len() == 1 {
+            txouts[0].value -= fee;
+        } else if txouts.len() == 2 {
+            txouts[0].value -= fee / 2;
+            txouts[1].value -= fee / 2;
+        }
+
+        txouts
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Message {
+    Win,
+    Lose,
+}
+
+impl From<Message> for secp256k1_zkp::Message {
+    fn from(msg: Message) -> Self {
+        // TODO: Tag hash with prefix and other public data
+        secp256k1_zkp::Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(
+            msg.to_string().as_bytes(),
+        )
+    }
+}
+
+impl ToString for Message {
+    fn to_string(&self) -> String {
+        match self {
+            Message::Win => "win".to_string(),
+            Message::Lose => "lose".to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-    use bdk::bitcoin::Txid;
-    use bdk::SignOptions;
-    use bdk::{
-        bitcoin::{
-            self,
-            hashes::hex::ToHex,
-            util::bip143::SigHashCache,
-            util::psbt::Global,
-            util::{bip32::ExtendedPrivKey, psbt::PartiallySignedTransaction},
-            Address, Amount, Network, OutPoint, PrivateKey, PublicKey, Script, SigHash,
-            SigHashType, Transaction, TxIn, TxOut,
-        },
-        descriptor::Descriptor,
-        miniscript::{descriptor::Wsh, DescriptorTrait},
-        wallet::AddressIndex,
-    };
-
-    use rand::RngCore;
-    use rand::{CryptoRng, SeedableRng};
-    use rand_chacha::ChaChaRng;
-    use secp256k1_zkp::{self, schnorrsig, Signature};
-    use secp256k1_zkp::{bitcoin_hashes::sha256t_hash_newtype, SECP256K1};
-    use secp256k1_zkp::{bitcoin_hashes::*, EcdsaAdaptorSignature};
-    use secp256k1_zkp::{Secp256k1, SecretKey};
-    use std::collections::HashMap;
+    use super::*;
 
     /// Refund transaction fee. It is paid evenly by the maker and the
     /// taker.
@@ -450,7 +573,7 @@ mod tests {
     impl RefundTransaction {
         fn new(
             lock_tx: &LockTransaction,
-            lock_time: u32,
+            lock_time: u32, // FIXME: Must be relative once we go off-chain (goes on the input)
             maker_address: &Address,
             taker_address: &Address,
             maker_amount: Amount,
@@ -647,71 +770,6 @@ mod tests {
         let wallet = bdk::Wallet::new_offline(&descriptors.0, None, Network::Regtest, database)?;
 
         Ok(wallet)
-    }
-
-    // NOTE: This is a simplification. Our use-case will not work with
-    // a simple enumeration of possible messages
-    #[derive(Debug, Clone, Copy)]
-    struct Payout {
-        message: Message,
-        maker_amount: Amount,
-        taker_amount: Amount,
-    }
-
-    impl Payout {
-        fn to_txouts(
-            self,
-            maker_address: &Address,
-            taker_address: &Address,
-            fee: u64,
-        ) -> Vec<TxOut> {
-            let mut txouts = [
-                (self.maker_amount, maker_address),
-                (self.taker_amount, taker_address),
-            ]
-            .iter()
-            .filter_map(|(amount, address)| {
-                (amount != &Amount::ZERO).then(|| TxOut {
-                    value: amount.as_sat(),
-                    script_pubkey: address.script_pubkey(),
-                })
-            })
-            .collect::<Vec<_>>();
-
-            // TODO: Rewrite this
-            if txouts.len() == 1 {
-                txouts[0].value -= fee;
-            } else if txouts.len() == 2 {
-                txouts[0].value -= fee / 2;
-                txouts[1].value -= fee / 2;
-            }
-
-            txouts
-        }
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    enum Message {
-        Win,
-        Lose,
-    }
-
-    impl From<Message> for secp256k1_zkp::Message {
-        fn from(msg: Message) -> Self {
-            // TODO: Tag hash with prefix and other public data
-            secp256k1_zkp::Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(
-                msg.to_string().as_bytes(),
-            )
-        }
-    }
-
-    impl ToString for Message {
-        fn to_string(&self) -> String {
-            match self {
-                Message::Win => "win".to_string(),
-                Message::Lose => "lose".to_string(),
-            }
-        }
     }
 
     struct Oracle {
