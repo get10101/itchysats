@@ -612,7 +612,6 @@ mod tests {
     fn build_dlc_descriptor(maker_pk: PublicKey, taker_pk: PublicKey) -> Descriptor<PublicKey> {
         const MINISCRIPT_TEMPLATE: &str = "c:and_v(v:pk(A),pk_k(B))";
 
-        // NOTE: This shouldn't be a source of error, but maybe it is
         let maker_pk = ToHex::to_hex(&maker_pk.key);
         let taker_pk = ToHex::to_hex(&taker_pk.key);
 
