@@ -50,7 +50,7 @@ mod tests {
         let taker_dlc_amount = Amount::ONE_BTC;
 
         let oracle = Oracle::new(&mut rng);
-        let (_event, announcement) = announce(&mut rng);
+        let (event, announcement) = announce(&mut rng);
 
         let (maker_sk, maker_pk) = make_keypair(&mut rng);
         let (taker_sk, taker_pk) = make_keypair(&mut rng);
@@ -144,8 +144,10 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        cets.iter()
-            .try_for_each(|cet| {
+        let cets_with_maker_encsig = cets
+            .clone()
+            .into_iter()
+            .map(|cet| {
                 let encsig = maker_cet_encsigs
                     .iter()
                     .find_map(|(txid, encsig)| (txid == &cet.txid()).then(|| encsig))
@@ -156,8 +158,11 @@ mod tests {
                     &maker_pk,
                     &oracle.public_key(),
                     &announcement.nonce_pk(),
-                )
+                )?;
+
+                Ok((cet, *encsig))
             })
+            .collect::<Result<Vec<_>>>()
             .expect("valid maker cet encsigs");
 
         let taker_cet_encsigs = cets
@@ -171,8 +176,9 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        cets.iter()
-            .try_for_each(|cet| {
+        let cets_with_taker_encsig = cets
+            .iter()
+            .map(|cet| {
                 let encsig = taker_cet_encsigs
                     .iter()
                     .find_map(|(txid, encsig)| (txid == &cet.txid()).then(|| encsig))
@@ -183,8 +189,11 @@ mod tests {
                     &taker_pk,
                     &oracle.public_key(),
                     &announcement.nonce_pk(),
-                )
+                )?;
+
+                Ok((cet, *encsig))
             })
+            .collect::<Result<Vec<_>>>()
             .expect("valid taker cet encsigs");
 
         let mut signed_lock_tx = lock_tx.to_psbt();
@@ -221,7 +230,58 @@ mod tests {
                 dlc_amount.as_sat(),
                 bitcoin::consensus::serialize(&signed_refund_tx).as_slice(),
             )
+            .expect("valid signed refund transaction");
+
+        let attestations = [Message::Win, Message::Lose]
+            .iter()
+            .map(|msg| (*msg, oracle.attest(&event, *msg)))
+            .collect::<Vec<_>>();
+
+        // TODO: Rewrite this so that it doesn't rely on the order of
+        // the two zipped iterators
+        let cets_with_sigs: Vec<(
+            ContractExecutionTransaction,
+            EcdsaAdaptorSignature,
+            EcdsaAdaptorSignature,
+        )> = cets_with_maker_encsig
+            .into_iter()
+            .zip(cets_with_taker_encsig)
+            .map(|((cet, maker_encsig), (_, taker_encsig))| (cet, maker_encsig, taker_encsig))
+            .collect::<Vec<_>>();
+
+        let signed_cets = attestations
+            .iter()
+            .map(|(oracle_msg, oracle_sig)| {
+                let (cet, maker_encsig, taker_encsig) = cets_with_sigs
+                    .iter()
+                    .find(|(cet, _, _)| &cet.message == oracle_msg)
+                    .expect("one cet per message");
+                let (_nonce_pk, signature_scalar) = schnorrsig_decompose(oracle_sig).unwrap();
+
+                let maker_sig = maker_encsig.decrypt(&signature_scalar)?;
+                let taker_sig = taker_encsig.decrypt(&signature_scalar)?;
+
+                cet.clone()
+                    .add_signatures((maker_pk, maker_sig), (taker_pk, taker_sig))
+            })
+            .collect::<Result<Vec<_>>>()
             .unwrap();
+
+        signed_cets
+            .iter()
+            .try_for_each(|cet| {
+                lock_tx
+                    .descriptor()
+                    .address(Network::Regtest)
+                    .expect("can derive address from descriptor")
+                    .script_pubkey()
+                    .verify(
+                        0,
+                        dlc_amount.as_sat(),
+                        bitcoin::consensus::serialize(&cet).as_slice(),
+                    )
+            })
+            .expect("valid signed CETs");
     }
 
     const BIP340_MIDSTATE: [u8; 32] = [
@@ -272,6 +332,7 @@ mod tests {
         inner: Transaction,
         message: Message,
         sighash: SigHash,
+        lock_output_descriptor: Descriptor<PublicKey>,
     }
 
     impl ContractExecutionTransaction {
@@ -306,6 +367,7 @@ mod tests {
                 inner: tx,
                 message: payout.message,
                 sighash,
+                lock_output_descriptor: lock_tx.descriptor(),
             }
         }
 
@@ -353,6 +415,28 @@ mod tests {
         fn calculate_vbytes() -> u64 {
             // TODO: Do it properly
             100
+        }
+
+        pub fn add_signatures(
+            self,
+            (maker_pk, maker_sig): (PublicKey, Signature),
+            (taker_pk, taker_sig): (PublicKey, Signature),
+        ) -> Result<Transaction> {
+            let satisfier = {
+                let mut satisfier = HashMap::with_capacity(2);
+
+                // The order in which these are inserted doesn't matter
+                satisfier.insert(maker_pk, (maker_sig, SigHashType::All));
+                satisfier.insert(taker_pk, (taker_sig, SigHashType::All));
+
+                satisfier
+            };
+
+            let mut tx_refund = self.inner;
+            self.lock_output_descriptor
+                .satisfy(&mut tx_refund.input[0], satisfier)?;
+
+            Ok(tx_refund)
         }
     }
 
@@ -606,7 +690,7 @@ mod tests {
         }
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq)]
     enum Message {
         Win,
         Lose,
@@ -648,7 +732,7 @@ mod tests {
             schnorrsig::PublicKey::from_keypair(SECP256K1, &self.key_pair)
         }
 
-        fn attest(&self, event: Event, msg: Message) -> schnorrsig::Signature {
+        fn attest(&self, event: &Event, msg: Message) -> schnorrsig::Signature {
             secp_utils::schnorr_sign_with_nonce(&msg.into(), &self.key_pair, &event.nonce)
         }
     }
@@ -740,6 +824,18 @@ mod tests {
         );
 
         (sk, pk)
+    }
+
+    /// Decompose a BIP340 signature into R and s.
+    pub fn schnorrsig_decompose(
+        signature: &schnorrsig::Signature,
+    ) -> Result<(schnorrsig::PublicKey, SecretKey)> {
+        let bytes = signature.as_ref();
+
+        let nonce_pk = schnorrsig::PublicKey::from_slice(&bytes[0..32])?;
+        let s = SecretKey::from_slice(&bytes[32..64])?;
+
+        Ok((nonce_pk, s))
     }
 
     mod secp_utils {
