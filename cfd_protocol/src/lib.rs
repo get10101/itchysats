@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bdk::bitcoin::hashes::*;
 use bdk::bitcoin::Txid;
 use bdk::SignOptions;
 use bdk::{
@@ -15,13 +16,12 @@ use bdk::{
     miniscript::{descriptor::Wsh, DescriptorTrait},
     wallet::AddressIndex,
 };
-
 use rand::RngCore;
 use rand::{CryptoRng, SeedableRng};
 use rand_chacha::ChaChaRng;
+use secp256k1_zkp::EcdsaAdaptorSignature;
+use secp256k1_zkp::SECP256K1;
 use secp256k1_zkp::{self, schnorrsig, Signature};
-use secp256k1_zkp::{bitcoin_hashes::sha256t_hash_newtype, SECP256K1};
-use secp256k1_zkp::{bitcoin_hashes::*, EcdsaAdaptorSignature};
 use secp256k1_zkp::{Secp256k1, SecretKey};
 use std::collections::HashMap;
 
@@ -149,6 +149,7 @@ impl ToString for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Context;
 
     /// Refund transaction fee. It is paid evenly by the maker and the
     /// taker.
@@ -222,8 +223,22 @@ mod tests {
         let lock_tx =
             LockTransaction::new(maker_psbt, taker_psbt, maker_pk, taker_pk, dlc_amount).unwrap();
 
-        let refund_tx = RefundTransaction::new(
+        let (maker_revocation_sk, maker_revocation_pk) = make_keypair(&mut rng);
+        let (maker_publish_sk, maker_publish_pk) = make_keypair(&mut rng);
+
+        let (taker_revocation_sk, taker_revocation_pk) = make_keypair(&mut rng);
+        let (taker_publish_sk, taker_publish_pk) = make_keypair(&mut rng);
+
+        let commit_tx = CommitTransaction::new(
             &lock_tx,
+            (maker_pk, maker_revocation_pk, maker_publish_pk),
+            (taker_pk, taker_revocation_pk, taker_publish_pk),
+        )
+        .unwrap();
+
+        // Construct refund TX
+        let refund_tx = RefundTransaction::new(
+            &commit_tx,
             refund_timelock,
             &maker_address,
             &taker_address,
@@ -231,10 +246,17 @@ mod tests {
             taker_dlc_amount,
         );
 
+        // Construct CET TXs
         let cets = payouts
             .iter()
             .map(|payout| {
-                ContractExecutionTransaction::new(&lock_tx, payout, &maker_address, &taker_address)
+                ContractExecutionTransaction::new(
+                    &commit_tx,
+                    payout,
+                    &maker_address,
+                    &taker_address,
+                    12,
+                )
             })
             .collect::<Vec<_>>();
 
@@ -319,6 +341,28 @@ mod tests {
             .collect::<Result<Vec<_>>>()
             .expect("valid taker cet encsigs");
 
+        // sign commit transaction
+
+        let maker_commit_sig = {
+            let sighash = secp256k1_zkp::Message::from_slice(&commit_tx.sighash()).unwrap();
+            let sig = secp.sign(&sighash, &maker_sk);
+
+            secp.verify(&sighash, &sig, &maker_pk.key)
+                .expect("valid maker commit sig");
+            sig
+        };
+
+        let taker_commit_sig = {
+            let sighash = secp256k1_zkp::Message::from_slice(&commit_tx.sighash()).unwrap();
+            let sig = secp.sign(&sighash, &taker_sk);
+
+            secp.verify(&sighash, &sig, &taker_pk.key)
+                .expect("valid taker commit sig");
+            sig
+        };
+
+        // sign lock transaction
+
         let mut signed_lock_tx = lock_tx.to_psbt();
         maker_wallet
             .sign(
@@ -340,9 +384,11 @@ mod tests {
             )
             .unwrap();
 
-        let signed_refund_tx = refund_tx
-            .add_signatures((maker_pk, maker_refund_sig), (taker_pk, taker_refund_sig))
-            .unwrap();
+        let signed_commit_tx = commit_tx
+            .clone()
+            .add_signatures((maker_pk, maker_commit_sig), (taker_pk, taker_commit_sig))
+            .expect("To be signed");
+
         let _ = lock_tx
             .descriptor()
             .address(Network::Regtest)
@@ -350,7 +396,24 @@ mod tests {
             .script_pubkey()
             .verify(
                 0,
-                dlc_amount.as_sat(),
+                lock_tx.amount().as_sat(),
+                bitcoin::consensus::serialize(&signed_commit_tx).as_slice(),
+            )
+            .expect("valid signed commit transaction");
+
+        let signed_refund_tx = refund_tx
+            .add_signatures((maker_pk, maker_refund_sig), (taker_pk, taker_refund_sig))
+            .unwrap();
+
+        let commit_tx_amount = commit_tx.amount().as_sat();
+        let _ = commit_tx
+            .descriptor()
+            .address(Network::Regtest)
+            .expect("can derive address from descriptor")
+            .script_pubkey()
+            .verify(
+                0,
+                commit_tx_amount,
                 bitcoin::consensus::serialize(&signed_refund_tx).as_slice(),
             )
             .expect("valid signed refund transaction");
@@ -393,14 +456,14 @@ mod tests {
         signed_cets
             .iter()
             .try_for_each(|cet| {
-                lock_tx
+                commit_tx
                     .descriptor()
                     .address(Network::Regtest)
                     .expect("can derive address from descriptor")
                     .script_pubkey()
                     .verify(
                         0,
-                        dlc_amount.as_sat(),
+                        commit_tx_amount,
                         bitcoin::consensus::serialize(&cet).as_slice(),
                     )
             })
@@ -455,18 +518,20 @@ mod tests {
         inner: Transaction,
         message: Message,
         sighash: SigHash,
-        lock_output_descriptor: Descriptor<PublicKey>,
+        commit_descriptor: Descriptor<PublicKey>,
     }
 
     impl ContractExecutionTransaction {
         fn new(
-            lock_tx: &LockTransaction,
+            commit_tx: &CommitTransaction,
             payout: &Payout,
             maker_address: &Address,
             taker_address: &Address,
+            relative_timelock_in_blocks: u32,
         ) -> Self {
-            let dlc_input = TxIn {
-                previous_output: lock_tx.dlc_outpoint(),
+            let commit_input = TxIn {
+                previous_output: commit_tx.outpoint(),
+                sequence: relative_timelock_in_blocks,
                 ..Default::default()
             };
 
@@ -475,14 +540,14 @@ mod tests {
             let tx = Transaction {
                 version: 2,
                 lock_time: 0,
-                input: vec![dlc_input],
+                input: vec![commit_input],
                 output: payout.to_txouts(maker_address, taker_address, fee),
             };
 
             let sighash = SigHashCache::new(&tx).signature_hash(
                 0,
-                &lock_tx.dlc_descriptor.script_code(),
-                lock_tx.dlc_amount.as_sat(),
+                &commit_tx.descriptor.script_code(),
+                commit_tx.amount.as_sat(),
                 SigHashType::All,
             );
 
@@ -490,7 +555,7 @@ mod tests {
                 inner: tx,
                 message: payout.message,
                 sighash,
-                lock_output_descriptor: lock_tx.descriptor(),
+                commit_descriptor: commit_tx.descriptor(),
             }
         }
 
@@ -556,7 +621,7 @@ mod tests {
             };
 
             let mut tx_refund = self.inner;
-            self.lock_output_descriptor
+            self.commit_descriptor
                 .satisfy(&mut tx_refund.input[0], satisfier)?;
 
             Ok(tx_refund)
@@ -564,23 +629,153 @@ mod tests {
     }
 
     #[derive(Debug, Clone)]
+    struct PunishTransaction {
+        inner: Transaction,
+    }
+
+    impl PunishTransaction {
+        fn new(
+            commit_tx: &CommitTransaction,
+            address: &Address,
+            amount: Amount,
+            encisg: EcdsaAdaptorSignature,
+            sk: SecretKey,
+            (revocation_them_sk, revocation_them_pk): (SecretKey, PublicKey),
+            publishing_them_pk: PublicKey,
+            revoked_commit_tx: Transaction,
+        ) -> Result<Self> {
+            // CommitTransaction has only one input
+            let input = revoked_commit_tx.input[0].clone();
+
+            // Extract all signatures from witness stack
+            let mut sigs = Vec::new();
+            for witness in input.witness.iter() {
+                let witness = witness.as_slice();
+
+                let res = bitcoin::secp256k1::Signature::from_der(&witness[..witness.len() - 1]);
+                match res {
+                    Ok(sig) => sigs.push(sig),
+                    Err(_) => {
+                        continue;
+                    }
+                }
+            }
+
+            if sigs.is_empty() {
+                // No signature found, this should fail
+                unimplemented!()
+            }
+
+            // Attempt to extract y_other from every signature
+            let publishing_them_sk = sigs
+                .into_iter()
+                .find_map(|sig| {
+                    encisg
+                        .recover(&SECP256K1, &sig, &publishing_them_pk.key)
+                        .ok()
+                })
+                .context("Could not recover secret key from revoked transaction")?;
+
+            // Fixme: need to subtract tx fee otherwise we won't be able to publish this transaction.
+            let mut punish_tx = {
+                let output = TxOut {
+                    value: commit_tx.amount().as_sat(),
+                    script_pubkey: address.script_pubkey(),
+                };
+                Transaction {
+                    version: 2,
+                    lock_time: 0,
+                    input: vec![TxIn {
+                        previous_output: commit_tx.outpoint(),
+                        ..Default::default()
+                    }],
+                    output: vec![output],
+                }
+            };
+
+            let digest = Self::compute_digest(&punish_tx, &commit_tx);
+
+            let satisfier = {
+                let mut satisfier = HashMap::with_capacity(3);
+
+                let pk = bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &sk);
+                let pk_hash = hash160::Hash::hash(&pk.serialize()[..]);
+                let pk = bitcoin::PublicKey {
+                    compressed: true,
+                    key: pk,
+                };
+                let sig_sk = SECP256K1.sign(&secp256k1_zkp::Message::from_slice(&digest)?, &sk);
+
+                let publishing_them_pk_hash =
+                    hash160::Hash::hash(&publishing_them_pk.key.serialize()[..]);
+                let sig_publishing_other = SECP256K1.sign(
+                    &secp256k1_zkp::Message::from_slice(&digest)?,
+                    &publishing_them_sk,
+                );
+
+                let revocation_them_pk_hash =
+                    hash160::Hash::hash(&revocation_them_pk.key.serialize()[..]);
+                let sig_revocation_other = SECP256K1.sign(
+                    &secp256k1_zkp::Message::from_slice(&digest)?,
+                    &revocation_them_sk,
+                );
+
+                satisfier.insert(pk_hash, (pk, (sig_sk.into(), SigHashType::All)));
+
+                satisfier.insert(
+                    publishing_them_pk_hash,
+                    (
+                        publishing_them_pk,
+                        (sig_publishing_other.into(), SigHashType::All),
+                    ),
+                );
+                satisfier.insert(
+                    revocation_them_pk_hash,
+                    (
+                        revocation_them_pk,
+                        (sig_revocation_other.into(), SigHashType::All),
+                    ),
+                );
+
+                satisfier
+            };
+
+            commit_tx
+                .descriptor()
+                .satisfy(&mut punish_tx.input[0], satisfier)?;
+
+            Ok(Self { inner: punish_tx })
+        }
+
+        fn compute_digest(punish_tx: &Transaction, commit_tx: &CommitTransaction) -> SigHash {
+            SigHashCache::new(punish_tx).signature_hash(
+                0,
+                &commit_tx.descriptor().script_code(),
+                commit_tx.amount().as_sat(),
+                SigHashType::All,
+            )
+        }
+    }
+
+    #[derive(Debug, Clone)]
     struct RefundTransaction {
         inner: Transaction,
         sighash: SigHash,
-        lock_output_descriptor: Descriptor<PublicKey>,
+        commit_output_descriptor: Descriptor<PublicKey>,
     }
 
     impl RefundTransaction {
         fn new(
-            lock_tx: &LockTransaction,
-            lock_time: u32, // FIXME: Must be relative once we go off-chain (goes on the input)
+            commit_tx: &CommitTransaction,
+            relative_locktime_in_blocks: u32,
             maker_address: &Address,
             taker_address: &Address,
             maker_amount: Amount,
             taker_amount: Amount,
         ) -> Self {
             let dlc_input = TxIn {
-                previous_output: lock_tx.dlc_outpoint(),
+                previous_output: commit_tx.outpoint(),
+                sequence: relative_locktime_in_blocks,
                 ..Default::default()
             };
 
@@ -598,24 +793,24 @@ mod tests {
 
             let tx = Transaction {
                 version: 2,
-                lock_time,
+                lock_time: 0,
                 input: vec![dlc_input],
                 output: vec![maker_output, taker_output],
             };
 
-            let lock_output_descriptor = lock_tx.dlc_descriptor.clone();
+            let commit_output_descriptor = commit_tx.descriptor().clone();
 
             let sighash = SigHashCache::new(&tx).signature_hash(
                 0,
-                &lock_tx.dlc_descriptor.script_code(),
-                lock_tx.dlc_amount.as_sat(),
+                &commit_tx.descriptor().script_code(),
+                commit_tx.amount().as_sat(),
                 SigHashType::All,
             );
 
             Self {
                 inner: tx,
                 sighash,
-                lock_output_descriptor,
+                commit_output_descriptor,
             }
         }
 
@@ -639,7 +834,7 @@ mod tests {
             };
 
             let mut tx_refund = self.inner;
-            self.lock_output_descriptor
+            self.commit_output_descriptor
                 .satisfy(&mut tx_refund.input[0], satisfier)?;
 
             Ok(tx_refund)
@@ -647,10 +842,154 @@ mod tests {
     }
 
     #[derive(Debug, Clone)]
+    struct CommitTransaction {
+        inner: Transaction,
+        descriptor: Descriptor<PublicKey>,
+        amount: Amount,
+        sighash: SigHash,
+        lock_descriptor: Descriptor<PublicKey>,
+    }
+
+    impl CommitTransaction {
+        fn new(
+            lock_tx: &LockTransaction,
+            (maker_own_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
+            (taker_own_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
+        ) -> Result<Self> {
+            // FIXME: Fee to be paid by leftover lock output
+            let amount = lock_tx.amount();
+
+            let lock_input = TxIn {
+                previous_output: lock_tx.lock_outpoint(),
+                ..Default::default()
+            };
+
+            let descriptor = Self::build_descriptor(
+                (maker_own_pk, maker_rev_pk, maker_publish_pk),
+                (taker_own_pk, taker_rev_pk, taker_publish_pk),
+            );
+
+            let output = TxOut {
+                value: lock_tx.amount().as_sat(),
+                script_pubkey: descriptor
+                    .address(Network::Regtest)
+                    .expect("can derive address from descriptor")
+                    .script_pubkey(),
+            };
+
+            let inner = Transaction {
+                version: 2,
+                lock_time: 0,
+                input: vec![lock_input],
+                output: vec![output],
+            };
+
+            let sighash = SigHashCache::new(&inner).signature_hash(
+                0,
+                &lock_tx.descriptor().script_code(),
+                lock_tx.amount().as_sat(),
+                SigHashType::All,
+            );
+
+            Ok(Self {
+                inner,
+                descriptor,
+                lock_descriptor: lock_tx.descriptor(),
+                amount,
+                sighash,
+            })
+        }
+
+        fn outpoint(&self) -> OutPoint {
+            let txid = self.inner.txid();
+            let vout = self
+                .inner
+                .output
+                .iter()
+                .position(|out| out.script_pubkey == self.descriptor.script_pubkey())
+                .expect("to find dlc output in lock tx");
+
+            OutPoint {
+                txid,
+                vout: vout as u32,
+            }
+        }
+
+        fn build_descriptor(
+            (maker_own_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
+            (taker_own_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
+        ) -> Descriptor<PublicKey> {
+            // TODO: Optimize miniscript
+
+            let maker_own_pk_hash = hash160::Hash::hash(&maker_own_pk.key.serialize()[..]);
+            let maker_own_pk = (&maker_own_pk.key.serialize().to_vec()).to_hex();
+            let taker_own_pk_hash = hash160::Hash::hash(&taker_own_pk.key.serialize()[..]);
+            let taker_own_pk = (&taker_own_pk.key.serialize().to_vec()).to_hex();
+
+            let maker_rev_pk_hash = hash160::Hash::hash(&maker_rev_pk.key.serialize()[..]);
+            let taker_rev_pk_hash = hash160::Hash::hash(&taker_rev_pk.key.serialize()[..]);
+
+            let maker_publish_pk_hash = hash160::Hash::hash(&maker_publish_pk.key.serialize()[..]);
+            let taker_publish_pk_hash = hash160::Hash::hash(&taker_publish_pk.key.serialize()[..]);
+
+            let cet_or_refund_condition =
+                format!("and_v(v:pk({}),pk_k({}))", maker_own_pk, taker_own_pk);
+            let maker_punish_condition = format!(
+                "and_v(v:pkh({}),and_v(v:pkh({}),pk_h({})))",
+                maker_own_pk_hash, taker_publish_pk_hash, taker_rev_pk_hash
+            );
+            let taker_punish_condition = format!(
+                "and_v(v:pkh({}),and_v(v:pkh({}),pk_h({})))",
+                taker_own_pk_hash, maker_publish_pk_hash, maker_rev_pk_hash
+            );
+            let descriptor_str = format!(
+                "wsh(c:or_i(or_i({},{}),{}))",
+                maker_punish_condition, taker_punish_condition, cet_or_refund_condition
+            );
+
+            descriptor_str.parse().expect("a valid miniscript")
+        }
+
+        fn amount(&self) -> Amount {
+            self.amount
+        }
+
+        fn descriptor(&self) -> Descriptor<PublicKey> {
+            self.descriptor.clone()
+        }
+
+        fn sighash(&self) -> SigHash {
+            self.sighash
+        }
+
+        pub fn add_signatures(
+            self,
+            (maker_pk, maker_sig): (PublicKey, Signature),
+            (taker_pk, taker_sig): (PublicKey, Signature),
+        ) -> Result<Transaction> {
+            let satisfier = {
+                let mut satisfier = HashMap::with_capacity(2);
+
+                // The order in which these are inserted doesn't matter
+                satisfier.insert(maker_pk, (maker_sig, SigHashType::All));
+                satisfier.insert(taker_pk, (taker_sig, SigHashType::All));
+
+                satisfier
+            };
+
+            let mut tx_commit = self.inner;
+            self.lock_descriptor
+                .satisfy(&mut tx_commit.input[0], satisfier)?;
+
+            Ok(tx_commit)
+        }
+    }
+
+    #[derive(Debug, Clone)]
     struct LockTransaction {
         inner: PartiallySignedTransaction,
-        dlc_descriptor: Descriptor<PublicKey>,
-        dlc_amount: Amount,
+        lock_descriptor: Descriptor<PublicKey>,
+        amount: Amount,
     }
 
     impl LockTransaction {
@@ -659,9 +998,9 @@ mod tests {
             taker_psbt: PartiallySignedTransaction,
             maker_pk: PublicKey,
             taker_pk: PublicKey,
-            dlc_amount: Amount,
+            amount: Amount,
         ) -> Result<Self> {
-            let dlc_descriptor = build_dlc_descriptor(maker_pk, taker_pk);
+            let lock_descriptor = Self::build_descriptor(maker_pk, taker_pk);
 
             let maker_change = maker_psbt
                 .global
@@ -679,9 +1018,9 @@ mod tests {
                 .filter(|out| !out.script_pubkey.is_empty())
                 .collect();
 
-            let dlc_output = TxOut {
-                value: dlc_amount.as_sat(),
-                script_pubkey: dlc_descriptor
+            let lock_output = TxOut {
+                value: amount.as_sat(),
+                script_pubkey: lock_descriptor
                     .address(Network::Regtest)
                     .expect("can derive address from descriptor")
                     .script_pubkey(),
@@ -695,7 +1034,7 @@ mod tests {
                     taker_psbt.global.unsigned_tx.input,
                 ]
                 .concat(),
-                output: vec![vec![dlc_output], maker_change, taker_change].concat(),
+                output: vec![vec![lock_output], maker_change, taker_change].concat(),
             };
 
             let inner = PartiallySignedTransaction {
@@ -706,12 +1045,12 @@ mod tests {
 
             Ok(Self {
                 inner,
-                dlc_descriptor,
-                dlc_amount,
+                lock_descriptor,
+                amount,
             })
         }
 
-        fn dlc_outpoint(&self) -> OutPoint {
+        fn lock_outpoint(&self) -> OutPoint {
             let txid = self.inner.global.unsigned_tx.txid();
             let vout = self
                 .inner
@@ -719,7 +1058,7 @@ mod tests {
                 .unsigned_tx
                 .output
                 .iter()
-                .position(|out| out.script_pubkey == self.dlc_descriptor.script_pubkey())
+                .position(|out| out.script_pubkey == self.lock_descriptor.script_pubkey())
                 .expect("to find dlc output in lock tx");
 
             OutPoint {
@@ -733,7 +1072,26 @@ mod tests {
         }
 
         fn descriptor(&self) -> Descriptor<PublicKey> {
-            self.dlc_descriptor.clone()
+            self.lock_descriptor.clone()
+        }
+
+        fn build_descriptor(maker_pk: PublicKey, taker_pk: PublicKey) -> Descriptor<PublicKey> {
+            const MINISCRIPT_TEMPLATE: &str = "c:and_v(v:pk(A),pk_k(B))";
+
+            let maker_pk = ToHex::to_hex(&maker_pk.key);
+            let taker_pk = ToHex::to_hex(&taker_pk.key);
+
+            let miniscript = MINISCRIPT_TEMPLATE
+                .replace("A", &maker_pk)
+                .replace("B", &taker_pk);
+
+            let miniscript = miniscript.parse().expect("a valid miniscript");
+
+            Descriptor::Wsh(Wsh::new(miniscript).expect("a valid descriptor"))
+        }
+
+        fn amount(&self) -> Amount {
+            self.amount
         }
     }
 
@@ -850,21 +1208,6 @@ mod tests {
         fn nonce_pk(&self) -> schnorrsig::PublicKey {
             self.nonce_pk
         }
-    }
-
-    fn build_dlc_descriptor(maker_pk: PublicKey, taker_pk: PublicKey) -> Descriptor<PublicKey> {
-        const MINISCRIPT_TEMPLATE: &str = "c:and_v(v:pk(A),pk_k(B))";
-
-        let maker_pk = ToHex::to_hex(&maker_pk.key);
-        let taker_pk = ToHex::to_hex(&taker_pk.key);
-
-        let miniscript = MINISCRIPT_TEMPLATE
-            .replace("A", &maker_pk)
-            .replace("B", &taker_pk);
-
-        let miniscript = miniscript.parse().expect("a valid miniscript");
-
-        Descriptor::Wsh(Wsh::new(miniscript).expect("a valid descriptor"))
     }
 
     fn make_keypair<R>(rng: &mut R) -> (SecretKey, PublicKey)
