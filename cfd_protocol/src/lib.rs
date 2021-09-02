@@ -22,6 +22,9 @@ use std::collections::HashMap;
 /// In satoshi per vbyte.
 const MIN_RELAY_FEE: u64 = 1;
 
+// TODO use Amount type
+const P2PKH_DUST_LIMIT: u64 = 546;
+
 pub trait WalletExt {
     fn build_lock_psbt(&self, amount: Amount, identity_pk: PublicKey) -> PartyParams;
 }
@@ -106,7 +109,7 @@ pub fn build_cfd_transactions(
                 &maker.address,
                 &taker.address,
                 CET_TIMELOCK,
-            );
+            )?;
 
             let encsig = cet.encsign(identity_sk, &oracle_params.pk, &oracle_params.nonce_pk)?;
 
@@ -181,29 +184,57 @@ pub struct Payout {
 }
 
 impl Payout {
-    fn to_txouts(self, maker_address: &Address, taker_address: &Address, fee: u64) -> Vec<TxOut> {
-        let mut txouts = [
+    fn to_txouts(&self, maker_address: &Address, taker_address: &Address) -> Vec<TxOut> {
+        let txouts = [
             (self.maker_amount, maker_address),
             (self.taker_amount, taker_address),
         ]
         .iter()
         .filter_map(|(amount, address)| {
-            (amount != &Amount::ZERO).then(|| TxOut {
+            (amount >= &Amount::from_sat(P2PKH_DUST_LIMIT)).then(|| TxOut {
                 value: amount.as_sat(),
                 script_pubkey: address.script_pubkey(),
             })
         })
         .collect::<Vec<_>>();
 
-        // TODO: Rewrite this
-        if txouts.len() == 1 {
-            txouts[0].value -= fee;
-        } else if txouts.len() == 2 {
-            txouts[0].value -= fee / 2;
-            txouts[1].value -= fee / 2;
-        }
-
         txouts
+    }
+
+    /// Subtracts fee fairly from both outputs
+    ///
+    /// We need to consider a few cases:
+    /// - If both amounts are >= DUST, they share the fee equally
+    /// - If one amount is < DUST, it set to 0 and the other output needs to cover for the fee.
+    fn with_updated_fee(self, fee: Amount) -> Result<Self> {
+        let mut updated = self;
+        let dust_limit = Amount::from_sat(P2PKH_DUST_LIMIT);
+
+        match (
+            self.maker_amount
+                .checked_sub(fee / 2)
+                .map(|a| a > dust_limit)
+                .unwrap_or(false),
+            self.taker_amount
+                .checked_sub(fee / 2)
+                .map(|a| a > dust_limit)
+                .unwrap_or(false),
+        ) {
+            (true, true) => {
+                updated.maker_amount -= fee / 2;
+                updated.taker_amount -= fee / 2;
+            }
+            (false, true) => {
+                updated.maker_amount = Amount::ZERO;
+                updated.taker_amount = self.taker_amount - (fee + self.maker_amount);
+            }
+            (true, false) => {
+                updated.maker_amount = self.maker_amount - (fee + self.taker_amount);
+                updated.taker_amount = Amount::ZERO;
+            }
+            (false, false) => bail!("Amounts are too small, could not subtract fee."),
+        }
+        Ok(updated)
     }
 }
 
@@ -286,21 +317,23 @@ impl ContractExecutionTransaction {
         maker_address: &Address,
         taker_address: &Address,
         relative_timelock_in_blocks: u32,
-    ) -> Self {
+    ) -> Result<Self> {
         let commit_input = TxIn {
             previous_output: commit_tx.outpoint(),
             sequence: relative_timelock_in_blocks,
             ..Default::default()
         };
 
-        let fee = Self::calculate_vbytes() * MIN_RELAY_FEE;
-
-        let tx = Transaction {
+        let mut tx = Transaction {
             version: 2,
             lock_time: 0,
             input: vec![commit_input],
-            output: payout.to_txouts(maker_address, taker_address, fee),
+            output: payout.to_txouts(maker_address, taker_address),
         };
+
+        let fee = tx.get_size() * MIN_RELAY_FEE as usize;
+        let payout = payout.with_updated_fee(Amount::from_sat(fee as u64))?;
+        tx.output = payout.to_txouts(maker_address, taker_address);
 
         let sighash = SigHashCache::new(&tx).signature_hash(
             0,
@@ -309,12 +342,12 @@ impl ContractExecutionTransaction {
             SigHashType::All,
         );
 
-        Self {
+        Ok(Self {
             inner: tx,
             message: payout.message,
             sighash,
             commit_descriptor: commit_tx.descriptor(),
-        }
+        })
     }
 
     fn encsign(
@@ -354,11 +387,6 @@ impl ContractExecutionTransaction {
 
     fn txid(&self) -> Txid {
         self.inner.txid()
-    }
-
-    fn calculate_vbytes() -> u64 {
-        // TODO: Do it properly
-        100
     }
 
     pub fn add_signatures(
@@ -970,15 +998,18 @@ mod tests {
         let cets = payouts
             .iter()
             .map(|payout| {
-                ContractExecutionTransaction::new(
+                let cet = ContractExecutionTransaction::new(
                     &commit_tx,
                     payout,
                     &maker_address,
                     &taker_address,
                     12,
-                )
+                )?;
+                Ok(cet)
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()
+            .context("cannot build cets")
+            .unwrap();
 
         let maker_refund_sig = {
             let sighash = secp256k1_zkp::Message::from_slice(&refund_tx.sighash()).unwrap();
@@ -1248,6 +1279,48 @@ mod tests {
                 bitcoin::consensus::serialize(&punish_tx.inner).as_slice(),
             )
             .expect("valid signed punish transaction");
+    }
+
+    #[test]
+    fn test_fee_subtraction_bigger_than_dust() {
+        let orig_maker_amount = 1000;
+        let orig_taker_amount = 1000;
+        let payout = Payout {
+            message: Message::Win,
+            maker_amount: Amount::from_sat(orig_maker_amount),
+            taker_amount: Amount::from_sat(orig_taker_amount),
+        };
+        let fee = 100;
+        let updated_payout = payout.with_updated_fee(Amount::from_sat(fee)).unwrap();
+
+        assert_eq!(
+            updated_payout.maker_amount,
+            Amount::from_sat(orig_maker_amount - fee / 2)
+        );
+        assert_eq!(
+            updated_payout.taker_amount,
+            Amount::from_sat(orig_taker_amount - fee / 2)
+        );
+    }
+
+    // TODO add proptest for this
+    #[test]
+    fn test_fee_subtraction_smaller_than_dust() {
+        let orig_maker_amount = P2PKH_DUST_LIMIT - 1;
+        let orig_taker_amount = 1000;
+        let payout = Payout {
+            message: Message::Win,
+            maker_amount: Amount::from_sat(orig_maker_amount),
+            taker_amount: Amount::from_sat(orig_taker_amount),
+        };
+        let fee = 100;
+        let updated_payout = payout.with_updated_fee(Amount::from_sat(fee)).unwrap();
+
+        assert_eq!(updated_payout.maker_amount, Amount::from_sat(0));
+        assert_eq!(
+            updated_payout.taker_amount,
+            Amount::from_sat(orig_taker_amount - (fee + orig_maker_amount))
+        );
     }
 
     fn build_wallet<R>(
