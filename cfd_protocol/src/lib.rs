@@ -1106,7 +1106,6 @@ mod tests {
         use bdk::populate_test_db;
         use bdk::testutils;
 
-        // FIXME: Using the same key for every instance of the wallet will lead to bugs in the tests
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
 
