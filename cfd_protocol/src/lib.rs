@@ -341,24 +341,30 @@ mod tests {
             .collect::<Result<Vec<_>>>()
             .expect("valid taker cet encsigs");
 
-        // sign commit transaction
+        // encsign commit transaction
 
-        let maker_commit_sig = {
-            let sighash = secp256k1_zkp::Message::from_slice(&commit_tx.sighash()).unwrap();
-            let sig = secp.sign(&sighash, &maker_sk);
+        let (maker_commit_encsig, maker_commit_sig) = {
+            let encsig = commit_tx.encsign(maker_sk, &taker_publish_pk).unwrap();
 
-            secp.verify(&sighash, &sig, &maker_pk.key)
-                .expect("valid maker commit sig");
-            sig
+            commit_tx
+                .encverify(&encsig, &maker_pk, &taker_publish_pk)
+                .expect("valid maker commit encsig");
+
+            let sig = encsig.decrypt(&taker_publish_sk).unwrap();
+
+            (encsig, sig)
         };
 
-        let taker_commit_sig = {
-            let sighash = secp256k1_zkp::Message::from_slice(&commit_tx.sighash()).unwrap();
-            let sig = secp.sign(&sighash, &taker_sk);
+        let (taker_commit_encsig, taker_commit_sig) = {
+            let encsig = commit_tx.encsign(taker_sk, &maker_publish_pk).unwrap();
 
-            secp.verify(&sighash, &sig, &taker_pk.key)
-                .expect("valid taker commit sig");
-            sig
+            commit_tx
+                .encverify(&encsig, &taker_pk, &maker_publish_pk)
+                .expect("valid taker commit encsig");
+
+            let sig = encsig.decrypt(&maker_publish_sk).unwrap();
+
+            (encsig, sig)
         };
 
         // sign lock transaction
@@ -389,7 +395,9 @@ mod tests {
             .add_signatures((maker_pk, maker_commit_sig), (taker_pk, taker_commit_sig))
             .expect("To be signed");
 
-        let _ = lock_tx
+        // verify refund transaction
+
+        lock_tx
             .descriptor()
             .address(Network::Regtest)
             .expect("can derive address from descriptor")
@@ -406,7 +414,7 @@ mod tests {
             .unwrap();
 
         let commit_tx_amount = commit_tx.amount().as_sat();
-        let _ = commit_tx
+        commit_tx
             .descriptor()
             .address(Network::Regtest)
             .expect("can derive address from descriptor")
@@ -417,6 +425,8 @@ mod tests {
                 bitcoin::consensus::serialize(&signed_refund_tx).as_slice(),
             )
             .expect("valid signed refund transaction");
+
+        // verify cets
 
         let attestations = [Message::Win, Message::Lose]
             .iter()
@@ -468,6 +478,54 @@ mod tests {
                     )
             })
             .expect("valid signed CETs");
+
+        // verify punishment transactions
+
+        let punish_tx = PunishTransaction::new(
+            &commit_tx,
+            &maker_address,
+            maker_commit_encsig,
+            maker_sk,
+            (taker_revocation_sk, taker_revocation_pk),
+            taker_publish_pk,
+            &signed_commit_tx,
+        )
+        .unwrap();
+
+        commit_tx
+            .descriptor()
+            .address(Network::Regtest)
+            .expect("can derive address from descriptor")
+            .script_pubkey()
+            .verify(
+                0,
+                commit_tx_amount,
+                bitcoin::consensus::serialize(&punish_tx.inner).as_slice(),
+            )
+            .expect("valid signed punish transaction");
+
+        let punish_tx = PunishTransaction::new(
+            &commit_tx,
+            &taker_address,
+            taker_commit_encsig,
+            taker_sk,
+            (maker_revocation_sk, maker_revocation_pk),
+            maker_publish_pk,
+            &signed_commit_tx,
+        )
+        .unwrap();
+
+        commit_tx
+            .descriptor()
+            .address(Network::Regtest)
+            .expect("can derive address from descriptor")
+            .script_pubkey()
+            .verify(
+                0,
+                commit_tx_amount,
+                bitcoin::consensus::serialize(&punish_tx.inner).as_slice(),
+            )
+            .expect("valid signed punish transaction");
     }
 
     const BIP340_MIDSTATE: [u8; 32] = [
@@ -637,12 +695,11 @@ mod tests {
         fn new(
             commit_tx: &CommitTransaction,
             address: &Address,
-            amount: Amount,
-            encisg: EcdsaAdaptorSignature,
+            encsig: EcdsaAdaptorSignature,
             sk: SecretKey,
-            (revocation_them_sk, revocation_them_pk): (SecretKey, PublicKey),
-            publishing_them_pk: PublicKey,
-            revoked_commit_tx: Transaction,
+            (revocation_them_sk, revocation_them_pk): (SecretKey, PublicKey), // FIXME: Only need sk
+            publish_them_pk: PublicKey,
+            revoked_commit_tx: &Transaction,
         ) -> Result<Self> {
             // CommitTransaction has only one input
             let input = revoked_commit_tx.input[0].clone();
@@ -667,13 +724,9 @@ mod tests {
             }
 
             // Attempt to extract y_other from every signature
-            let publishing_them_sk = sigs
+            let publish_them_sk = sigs
                 .into_iter()
-                .find_map(|sig| {
-                    encisg
-                        .recover(&SECP256K1, &sig, &publishing_them_pk.key)
-                        .ok()
-                })
+                .find_map(|sig| encsig.recover(&SECP256K1, &sig, &publish_them_pk.key).ok())
                 .context("Could not recover secret key from revoked transaction")?;
 
             // Fixme: need to subtract tx fee otherwise we won't be able to publish this transaction.
@@ -706,11 +759,11 @@ mod tests {
                 };
                 let sig_sk = SECP256K1.sign(&secp256k1_zkp::Message::from_slice(&digest)?, &sk);
 
-                let publishing_them_pk_hash =
-                    hash160::Hash::hash(&publishing_them_pk.key.serialize()[..]);
-                let sig_publishing_other = SECP256K1.sign(
+                let publish_them_pk_hash =
+                    hash160::Hash::hash(&publish_them_pk.key.serialize()[..]);
+                let sig_publish_other = SECP256K1.sign(
                     &secp256k1_zkp::Message::from_slice(&digest)?,
-                    &publishing_them_sk,
+                    &publish_them_sk,
                 );
 
                 let revocation_them_pk_hash =
@@ -723,10 +776,10 @@ mod tests {
                 satisfier.insert(pk_hash, (pk, (sig_sk.into(), SigHashType::All)));
 
                 satisfier.insert(
-                    publishing_them_pk_hash,
+                    publish_them_pk_hash,
                     (
-                        publishing_them_pk,
-                        (sig_publishing_other.into(), SigHashType::All),
+                        publish_them_pk,
+                        (sig_publish_other.into(), SigHashType::All),
                     ),
                 );
                 satisfier.insert(
@@ -898,6 +951,37 @@ mod tests {
                 amount,
                 sighash,
             })
+        }
+
+        fn encsign(
+            &self,
+            sk: SecretKey,
+            publish_them_pk: &PublicKey,
+        ) -> Result<EcdsaAdaptorSignature> {
+            Ok(EcdsaAdaptorSignature::encrypt(
+                SECP256K1,
+                &secp256k1_zkp::Message::from_slice(&self.sighash)
+                    .expect("sighash is valid message"),
+                &sk,
+                &publish_them_pk.key,
+            ))
+        }
+
+        fn encverify(
+            &self,
+            encsig: &EcdsaAdaptorSignature,
+            signing_pk: &PublicKey,
+            encryption_pk: &PublicKey,
+        ) -> Result<()> {
+            encsig.verify(
+                SECP256K1,
+                &secp256k1_zkp::Message::from_slice(&self.sighash)
+                    .expect("sighash is valid message"),
+                &signing_pk.key,
+                &encryption_pk.key,
+            )?;
+
+            Ok(())
         }
 
         fn outpoint(&self) -> OutPoint {
