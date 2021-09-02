@@ -478,34 +478,33 @@ impl PunishTransaction {
             let mut satisfier = HashMap::with_capacity(3);
 
             let pk = bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &sk);
-            let pk_hash = hash160::Hash::hash(&pk.serialize()[..]);
             let pk = bitcoin::PublicKey {
                 compressed: true,
                 key: pk,
             };
+            let pk_hash = pk.pubkey_hash();
             let sig_sk = SECP256K1.sign(&secp256k1_zkp::Message::from_slice(&digest)?, &sk);
 
-            let publish_them_pk_hash = hash160::Hash::hash(&publish_them_pk.key.serialize()[..]);
+            let publish_them_pk_hash = publish_them_pk.pubkey_hash();
             let sig_publish_other = SECP256K1.sign(
                 &secp256k1_zkp::Message::from_slice(&digest)?,
                 &publish_them_sk,
             );
 
-            let revocation_them_pk_hash =
-                hash160::Hash::hash(&revocation_them_pk.key.serialize()[..]);
+            let revocation_them_pk_hash = revocation_them_pk.pubkey_hash();
             let sig_revocation_other = SECP256K1.sign(
                 &secp256k1_zkp::Message::from_slice(&digest)?,
                 &revocation_them_sk,
             );
 
-            satisfier.insert(pk_hash, (pk, (sig_sk, SigHashType::All)));
+            satisfier.insert(pk_hash.as_hash(), (pk, (sig_sk, SigHashType::All)));
 
             satisfier.insert(
-                publish_them_pk_hash,
+                publish_them_pk_hash.as_hash(),
                 (publish_them_pk, (sig_publish_other, SigHashType::All)),
             );
             satisfier.insert(
-                revocation_them_pk_hash,
+                revocation_them_pk_hash.as_hash(),
                 (revocation_them_pk, (sig_revocation_other, SigHashType::All)),
             );
 
@@ -729,16 +728,16 @@ impl CommitTransaction {
     ) -> Descriptor<PublicKey> {
         // TODO: Optimize miniscript
 
-        let maker_own_pk_hash = hash160::Hash::hash(&maker_own_pk.key.serialize()[..]);
+        let maker_own_pk_hash = maker_own_pk.pubkey_hash().as_hash();
         let maker_own_pk = (&maker_own_pk.key.serialize().to_vec()).to_hex();
-        let taker_own_pk_hash = hash160::Hash::hash(&taker_own_pk.key.serialize()[..]);
+        let taker_own_pk_hash = taker_own_pk.pubkey_hash().as_hash();
         let taker_own_pk = (&taker_own_pk.key.serialize().to_vec()).to_hex();
 
-        let maker_rev_pk_hash = hash160::Hash::hash(&maker_rev_pk.key.serialize()[..]);
-        let taker_rev_pk_hash = hash160::Hash::hash(&taker_rev_pk.key.serialize()[..]);
+        let maker_rev_pk_hash = maker_rev_pk.pubkey_hash().as_hash();
+        let taker_rev_pk_hash = taker_rev_pk.pubkey_hash().as_hash();
 
-        let maker_publish_pk_hash = hash160::Hash::hash(&maker_publish_pk.key.serialize()[..]);
-        let taker_publish_pk_hash = hash160::Hash::hash(&taker_publish_pk.key.serialize()[..]);
+        let maker_publish_pk_hash = maker_publish_pk.pubkey_hash().as_hash();
+        let taker_publish_pk_hash = taker_publish_pk.pubkey_hash().as_hash();
 
         let cet_or_refund_condition =
             format!("and_v(v:pk({}),pk_k({}))", maker_own_pk, taker_own_pk);
