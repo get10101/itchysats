@@ -13,6 +13,7 @@ use bdk::{
     descriptor::Descriptor,
     miniscript::{descriptor::Wsh, DescriptorTrait},
 };
+use itertools::Itertools;
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::SecretKey;
 use secp256k1_zkp::SECP256K1;
@@ -428,7 +429,7 @@ impl PunishTransaction {
         revoked_commit_tx: &Transaction,
     ) -> Result<Self> {
         // CommitTransaction has only one input
-        let input = revoked_commit_tx.input[0].clone();
+        let input = revoked_commit_tx.input.clone().into_iter().exactly_one()?;
 
         // Extract all signatures from witness stack
         let mut sigs = Vec::new();
