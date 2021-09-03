@@ -208,7 +208,7 @@ pub fn spending_tx_sighash(
 }
 
 pub fn finalize_spend_transaction(
-    tx: Transaction,
+    mut tx: Transaction,
     spent_descriptor: &Descriptor<PublicKey>,
     (maker_pk, maker_sig): (PublicKey, Signature),
     (taker_pk, taker_sig): (PublicKey, Signature),
@@ -222,16 +222,12 @@ pub fn finalize_spend_transaction(
         satisfier
     };
 
-    let mut input = tx
+    let input = tx
         .input
-        .clone()
-        .into_iter()
+        .iter_mut()
         .exactly_one()
         .expect("all spend transactions to have one input");
-    spent_descriptor.satisfy(&mut input, satisfier)?;
-
-    let mut tx = tx;
-    tx.input = vec![input];
+    spent_descriptor.satisfy(input, satisfier)?;
 
     Ok(tx)
 }
