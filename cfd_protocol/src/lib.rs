@@ -2,8 +2,10 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::hashes::*;
-use bdk::bitcoin::Txid;
+use bdk::bitcoin::{Script, Txid};
 
+use bdk::database::BatchDatabase;
+use bdk::wallet::AddressIndex;
 use bdk::{
     bitcoin::{
         self, hashes::hex::ToHex, util::bip143::SigHashCache, util::psbt::Global,
@@ -28,12 +30,27 @@ const MIN_RELAY_FEE: u64 = 1;
 const P2PKH_DUST_LIMIT: u64 = 546;
 
 pub trait WalletExt {
-    fn build_lock_psbt(&self, amount: Amount, identity_pk: PublicKey) -> PartyParams;
+    // TODO: the naming of this fn feels a bid odd
+    fn build_party_params(&self, amount: Amount, identity_pk: PublicKey) -> Result<PartyParams>;
 }
 
-impl<B, D> WalletExt for bdk::Wallet<B, D> {
-    fn build_lock_psbt(&self, amount: Amount, identity_pk: PublicKey) -> PartyParams {
-        todo!()
+impl<B, D> WalletExt for bdk::Wallet<B, D>
+where
+    D: BatchDatabase,
+{
+    fn build_party_params(&self, amount: Amount, identity_pk: PublicKey) -> Result<PartyParams> {
+        let mut builder = self.build_tx();
+        builder
+            .ordering(bdk::wallet::tx_builder::TxOrdering::Bip69Lexicographic)
+            .add_recipient(Script::new(), amount.as_sat());
+        let (lock_psbt, _) = builder.finish().unwrap();
+        let address = self.get_address(AddressIndex::New)?.address;
+        Ok(PartyParams {
+            lock_psbt,
+            identity_pk,
+            lock_amount: amount,
+            address,
+        })
     }
 }
 
@@ -203,6 +220,7 @@ pub fn finalize_spend_transaction(
 // NOTE: We have decided to not offer any verification utility because
 // the APIs would be incredibly thin
 
+#[derive(Clone)]
 pub struct PartyParams {
     pub lock_psbt: PartiallySignedTransaction,
     pub identity_pk: PublicKey,
@@ -960,23 +978,6 @@ mod tests {
         let maker_address = maker_wallet.get_address(AddressIndex::New).unwrap();
         let taker_address = taker_wallet.get_address(AddressIndex::New).unwrap();
 
-        // NOTE: We are probably paying too many transaction fees
-        let (maker_psbt, _) = {
-            let mut builder = maker_wallet.build_tx();
-            builder
-                .ordering(bdk::wallet::tx_builder::TxOrdering::Bip69Lexicographic)
-                .add_recipient(Script::new(), maker_lock_amount.as_sat());
-            builder.finish().unwrap()
-        };
-
-        let (taker_psbt, _) = {
-            let mut builder = taker_wallet.build_tx();
-            builder
-                .ordering(bdk::wallet::tx_builder::TxOrdering::Bip69Lexicographic)
-                .add_recipient(Script::new(), taker_lock_amount.as_sat());
-            builder.finish().unwrap()
-        };
-
         let lock_amount = maker_lock_amount + taker_lock_amount;
         let (maker_revocation_sk, maker_revocation_pk) = make_keypair(&mut rng);
         let (maker_publish_sk, maker_publish_pk) = make_keypair(&mut rng);
@@ -984,26 +985,23 @@ mod tests {
         let (taker_revocation_sk, taker_revocation_pk) = make_keypair(&mut rng);
         let (taker_publish_sk, taker_publish_pk) = make_keypair(&mut rng);
 
+        let maker_params = maker_wallet
+            .build_party_params(maker_lock_amount, maker_pk)
+            .unwrap();
+        let taker_params = taker_wallet
+            .build_party_params(taker_lock_amount, taker_pk)
+            .unwrap();
+
         let maker_cfd_txs = build_cfd_transactions(
             (
-                PartyParams {
-                    lock_psbt: maker_psbt.clone(),
-                    identity_pk: maker_pk,
-                    lock_amount: maker_lock_amount,
-                    address: maker_address.address.clone(),
-                },
+                maker_params.clone(),
                 PunishParams {
                     revocation_pk: maker_revocation_pk,
                     publish_pk: maker_publish_pk,
                 },
             ),
             (
-                PartyParams {
-                    lock_psbt: taker_psbt.clone(),
-                    identity_pk: taker_pk,
-                    lock_amount: taker_lock_amount,
-                    address: taker_address.address.clone(),
-                },
+                taker_params.clone(),
                 PunishParams {
                     revocation_pk: taker_revocation_pk,
                     publish_pk: taker_publish_pk,
@@ -1021,24 +1019,14 @@ mod tests {
 
         let taker_cfd_txs = build_cfd_transactions(
             (
-                PartyParams {
-                    lock_psbt: maker_psbt,
-                    identity_pk: maker_pk,
-                    lock_amount: maker_lock_amount,
-                    address: maker_address.address,
-                },
+                maker_params,
                 PunishParams {
                     revocation_pk: maker_revocation_pk,
                     publish_pk: maker_publish_pk,
                 },
             ),
             (
-                PartyParams {
-                    lock_psbt: taker_psbt,
-                    identity_pk: taker_pk,
-                    lock_amount: taker_lock_amount,
-                    address: taker_address.address,
-                },
+                taker_params,
                 PunishParams {
                     revocation_pk: taker_revocation_pk,
                     publish_pk: taker_publish_pk,
