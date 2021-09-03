@@ -43,7 +43,7 @@ pub fn build_cfd_transactions(
     refund_timelock: u32,
     payouts: Vec<Payout>,
     identity_sk: SecretKey,
-) -> Result<DlcTransactions> {
+) -> Result<CfdTransactions> {
     /// Relative timelock used for every CET.
     ///
     /// This is used to allow parties to punish the publication of revoked commitment transactions.
@@ -114,12 +114,12 @@ pub fn build_cfd_transactions(
 
             let encsig = cet.encsign(identity_sk, &oracle_params.pk, &oracle_params.nonce_pk)?;
 
-            Ok((cet.inner, encsig))
+            Ok((cet.inner, encsig, payout.message))
         })
         .collect::<Result<Vec<_>>>()
         .context("cannot build and sign all cets")?;
 
-    Ok(DlcTransactions {
+    Ok(CfdTransactions {
         lock: lock_tx.inner,
         commit: (commit_tx.inner, commit_encsig),
         cets,
@@ -127,16 +127,67 @@ pub fn build_cfd_transactions(
     })
 }
 
-pub fn dlc_descriptor(_maker_pk: PublicKey, _taker_pk: PublicKey) -> Descriptor<PublicKey> {
-    todo!()
+fn lock_descriptor(maker_pk: PublicKey, taker_pk: PublicKey) -> Descriptor<PublicKey> {
+    const MINISCRIPT_TEMPLATE: &str = "c:and_v(v:pk(A),pk_k(B))";
+
+    let maker_pk = ToHex::to_hex(&maker_pk.key);
+    let taker_pk = ToHex::to_hex(&taker_pk.key);
+
+    let miniscript = MINISCRIPT_TEMPLATE
+        .replace("A", &maker_pk)
+        .replace("B", &taker_pk);
+
+    let miniscript = miniscript.parse().expect("a valid miniscript");
+
+    Descriptor::Wsh(Wsh::new(miniscript).expect("a valid descriptor"))
 }
 
-pub fn spend_tx_sighash(
-    _tx: &Transaction,
-    _commit_descriptor: &Descriptor<PublicKey>,
-    _commit_amount: Amount,
-) -> SigHash {
-    todo!()
+pub fn commit_descriptor(
+    (maker_own_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
+    (taker_own_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
+) -> Descriptor<PublicKey> {
+    // TODO: Optimize miniscript
+
+    let maker_own_pk_hash = maker_own_pk.pubkey_hash().as_hash();
+    let maker_own_pk = (&maker_own_pk.key.serialize().to_vec()).to_hex();
+    let taker_own_pk_hash = taker_own_pk.pubkey_hash().as_hash();
+    let taker_own_pk = (&taker_own_pk.key.serialize().to_vec()).to_hex();
+
+    let maker_rev_pk_hash = maker_rev_pk.pubkey_hash().as_hash();
+    let taker_rev_pk_hash = taker_rev_pk.pubkey_hash().as_hash();
+
+    let maker_publish_pk_hash = maker_publish_pk.pubkey_hash().as_hash();
+    let taker_publish_pk_hash = taker_publish_pk.pubkey_hash().as_hash();
+
+    let cet_or_refund_condition = format!("and_v(v:pk({}),pk_k({}))", maker_own_pk, taker_own_pk);
+    let maker_punish_condition = format!(
+        "and_v(v:pkh({}),and_v(v:pkh({}),pk_h({})))",
+        maker_own_pk_hash, taker_publish_pk_hash, taker_rev_pk_hash
+    );
+    let taker_punish_condition = format!(
+        "and_v(v:pkh({}),and_v(v:pkh({}),pk_h({})))",
+        taker_own_pk_hash, maker_publish_pk_hash, maker_rev_pk_hash
+    );
+    let descriptor_str = format!(
+        "wsh(c:or_i(or_i({},{}),{}))",
+        maker_punish_condition, taker_punish_condition, cet_or_refund_condition
+    );
+
+    descriptor_str.parse().expect("a valid miniscript")
+}
+
+pub fn spending_tx_sighash(
+    spending_tx: &Transaction,
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+) -> secp256k1_zkp::Message {
+    let sighash = SigHashCache::new(spending_tx).signature_hash(
+        0,
+        &spent_descriptor.script_code(),
+        spent_amount.as_sat(),
+        SigHashType::All,
+    );
+    secp256k1_zkp::Message::from_slice(&sighash).expect("sighash is valid message")
 }
 
 pub fn finalize_spend_transaction(
@@ -168,10 +219,10 @@ pub struct OracleParams {
     pub nonce_pk: schnorrsig::PublicKey,
 }
 
-pub struct DlcTransactions {
+pub struct CfdTransactions {
     pub lock: PartiallySignedTransaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
-    pub cets: Vec<(Transaction, EcdsaAdaptorSignature)>,
+    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, Message)>,
     pub refund: (Transaction, Signature),
 }
 
@@ -556,7 +607,7 @@ impl RefundTransaction {
         maker_amount: Amount,
         taker_amount: Amount,
     ) -> Self {
-        let dlc_input = TxIn {
+        let commit_input = TxIn {
             previous_output: commit_tx.outpoint(),
             sequence: relative_locktime_in_blocks,
             ..Default::default()
@@ -577,7 +628,7 @@ impl RefundTransaction {
         let tx = Transaction {
             version: 2,
             lock_time: 0,
-            input: vec![dlc_input],
+            input: vec![commit_input],
             output: vec![maker_output, taker_output],
         };
 
@@ -647,7 +698,7 @@ impl CommitTransaction {
             ..Default::default()
         };
 
-        let descriptor = Self::build_descriptor(
+        let descriptor = commit_descriptor(
             (maker_own_pk, maker_rev_pk, maker_publish_pk),
             (taker_own_pk, taker_rev_pk, taker_publish_pk),
         );
@@ -715,47 +766,12 @@ impl CommitTransaction {
             .output
             .iter()
             .position(|out| out.script_pubkey == self.descriptor.script_pubkey())
-            .expect("to find dlc output in lock tx");
+            .expect("to find commit output in commit tx");
 
         OutPoint {
             txid,
             vout: vout as u32,
         }
-    }
-
-    fn build_descriptor(
-        (maker_own_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
-        (taker_own_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
-    ) -> Descriptor<PublicKey> {
-        // TODO: Optimize miniscript
-
-        let maker_own_pk_hash = maker_own_pk.pubkey_hash().as_hash();
-        let maker_own_pk = (&maker_own_pk.key.serialize().to_vec()).to_hex();
-        let taker_own_pk_hash = taker_own_pk.pubkey_hash().as_hash();
-        let taker_own_pk = (&taker_own_pk.key.serialize().to_vec()).to_hex();
-
-        let maker_rev_pk_hash = maker_rev_pk.pubkey_hash().as_hash();
-        let taker_rev_pk_hash = taker_rev_pk.pubkey_hash().as_hash();
-
-        let maker_publish_pk_hash = maker_publish_pk.pubkey_hash().as_hash();
-        let taker_publish_pk_hash = taker_publish_pk.pubkey_hash().as_hash();
-
-        let cet_or_refund_condition =
-            format!("and_v(v:pk({}),pk_k({}))", maker_own_pk, taker_own_pk);
-        let maker_punish_condition = format!(
-            "and_v(v:pkh({}),and_v(v:pkh({}),pk_h({})))",
-            maker_own_pk_hash, taker_publish_pk_hash, taker_rev_pk_hash
-        );
-        let taker_punish_condition = format!(
-            "and_v(v:pkh({}),and_v(v:pkh({}),pk_h({})))",
-            taker_own_pk_hash, maker_publish_pk_hash, maker_rev_pk_hash
-        );
-        let descriptor_str = format!(
-            "wsh(c:or_i(or_i({},{}),{}))",
-            maker_punish_condition, taker_punish_condition, cet_or_refund_condition
-        );
-
-        descriptor_str.parse().expect("a valid miniscript")
     }
 
     fn amount(&self) -> Amount {
@@ -808,7 +824,7 @@ impl LockTransaction {
         taker_pk: PublicKey,
         amount: Amount,
     ) -> Result<Self> {
-        let lock_descriptor = Self::build_descriptor(maker_pk, taker_pk);
+        let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
 
         let maker_change = maker_psbt
             .global
@@ -867,7 +883,7 @@ impl LockTransaction {
             .output
             .iter()
             .position(|out| out.script_pubkey == self.lock_descriptor.script_pubkey())
-            .expect("to find dlc output in lock tx");
+            .expect("to find lock output in lock tx");
 
         OutPoint {
             txid,
@@ -881,21 +897,6 @@ impl LockTransaction {
 
     fn descriptor(&self) -> Descriptor<PublicKey> {
         self.lock_descriptor.clone()
-    }
-
-    fn build_descriptor(maker_pk: PublicKey, taker_pk: PublicKey) -> Descriptor<PublicKey> {
-        const MINISCRIPT_TEMPLATE: &str = "c:and_v(v:pk(A),pk_k(B))";
-
-        let maker_pk = ToHex::to_hex(&maker_pk.key);
-        let taker_pk = ToHex::to_hex(&taker_pk.key);
-
-        let miniscript = MINISCRIPT_TEMPLATE
-            .replace("A", &maker_pk)
-            .replace("B", &taker_pk);
-
-        let miniscript = miniscript.parse().expect("a valid miniscript");
-
-        Descriptor::Wsh(Wsh::new(miniscript).expect("a valid descriptor"))
     }
 
     fn amount(&self) -> Amount {
@@ -918,8 +919,8 @@ mod tests {
     fn run_cfd_protocol() {
         let mut rng = ChaChaRng::seed_from_u64(0);
 
-        let maker_dlc_amount = Amount::ONE_BTC;
-        let taker_dlc_amount = Amount::ONE_BTC;
+        let maker_lock_amount = Amount::ONE_BTC;
+        let taker_lock_amount = Amount::ONE_BTC;
 
         let oracle = Oracle::new(&mut rng);
         let (event, announcement) = announce(&mut rng);
@@ -955,7 +956,7 @@ mod tests {
             let mut builder = maker_wallet.build_tx();
             builder
                 .ordering(bdk::wallet::tx_builder::TxOrdering::Bip69Lexicographic)
-                .add_recipient(Script::new(), maker_dlc_amount.as_sat());
+                .add_recipient(Script::new(), maker_lock_amount.as_sat());
             builder.finish().unwrap()
         };
 
@@ -963,166 +964,188 @@ mod tests {
             let mut builder = taker_wallet.build_tx();
             builder
                 .ordering(bdk::wallet::tx_builder::TxOrdering::Bip69Lexicographic)
-                .add_recipient(Script::new(), taker_dlc_amount.as_sat());
+                .add_recipient(Script::new(), taker_lock_amount.as_sat());
             builder.finish().unwrap()
         };
 
-        let dlc_amount = maker_dlc_amount + taker_dlc_amount;
-        let lock_tx =
-            LockTransaction::new(maker_psbt, taker_psbt, maker_pk, taker_pk, dlc_amount).unwrap();
-
+        let lock_amount = maker_lock_amount + taker_lock_amount;
         let (maker_revocation_sk, maker_revocation_pk) = make_keypair(&mut rng);
         let (maker_publish_sk, maker_publish_pk) = make_keypair(&mut rng);
 
         let (taker_revocation_sk, taker_revocation_pk) = make_keypair(&mut rng);
         let (taker_publish_sk, taker_publish_pk) = make_keypair(&mut rng);
 
-        let commit_tx = CommitTransaction::new(
-            &lock_tx,
-            (maker_pk, maker_revocation_pk, maker_publish_pk),
-            (taker_pk, taker_revocation_pk, taker_publish_pk),
+        let maker_cfd_txs = build_cfd_transactions(
+            (
+                PartyParams {
+                    lock_psbt: maker_psbt.clone(),
+                    identity_pk: maker_pk,
+                    lock_amount: maker_lock_amount,
+                    address: maker_address.address.clone(),
+                },
+                PunishParams {
+                    revocation_pk: maker_revocation_pk,
+                    publish_pk: maker_publish_pk,
+                },
+            ),
+            (
+                PartyParams {
+                    lock_psbt: taker_psbt.clone(),
+                    identity_pk: taker_pk,
+                    lock_amount: taker_lock_amount,
+                    address: taker_address.address.clone(),
+                },
+                PunishParams {
+                    revocation_pk: taker_revocation_pk,
+                    publish_pk: taker_publish_pk,
+                },
+            ),
+            OracleParams {
+                pk: oracle.public_key(),
+                nonce_pk: event.nonce_pk,
+            },
+            refund_timelock,
+            payouts.clone(),
+            maker_sk,
         )
         .unwrap();
 
-        // Construct refund TX
-        let refund_tx = RefundTransaction::new(
-            &commit_tx,
+        let taker_cfd_txs = build_cfd_transactions(
+            (
+                PartyParams {
+                    lock_psbt: maker_psbt,
+                    identity_pk: maker_pk,
+                    lock_amount: maker_lock_amount,
+                    address: maker_address.address,
+                },
+                PunishParams {
+                    revocation_pk: maker_revocation_pk,
+                    publish_pk: maker_publish_pk,
+                },
+            ),
+            (
+                PartyParams {
+                    lock_psbt: taker_psbt,
+                    identity_pk: taker_pk,
+                    lock_amount: taker_lock_amount,
+                    address: taker_address.address,
+                },
+                PunishParams {
+                    revocation_pk: taker_revocation_pk,
+                    publish_pk: taker_publish_pk,
+                },
+            ),
+            OracleParams {
+                pk: oracle.public_key(),
+                nonce_pk: event.nonce_pk,
+            },
             refund_timelock,
-            &maker_address,
-            &taker_address,
-            maker_dlc_amount,
-            taker_dlc_amount,
+            payouts,
+            taker_sk,
+        )
+        .unwrap();
+
+        let commit_descriptor = commit_descriptor(
+            (maker_pk, maker_revocation_pk, maker_publish_pk),
+            (taker_pk, taker_revocation_pk, taker_publish_pk),
         );
 
-        // Construct CET TXs
-        let cets = payouts
-            .iter()
-            .map(|payout| {
-                let cet = ContractExecutionTransaction::new(
-                    &commit_tx,
-                    payout,
-                    &maker_address,
-                    &taker_address,
-                    12,
-                )?;
-                Ok(cet)
-            })
-            .collect::<Result<Vec<_>>>()
-            .context("cannot build cets")
-            .unwrap();
+        let commit_amount = Amount::from_sat(maker_cfd_txs.commit.0.output[0].value);
+        assert_eq!(
+            commit_amount.as_sat(),
+            taker_cfd_txs.commit.0.output[0].value
+        );
 
-        let maker_refund_sig = {
-            let sighash = secp256k1_zkp::Message::from_slice(&refund_tx.sighash()).unwrap();
-            let sig = SECP256K1.sign(&sighash, &maker_sk);
-
+        {
+            let refund_sighash =
+                spending_tx_sighash(&taker_cfd_txs.refund.0, &commit_descriptor, commit_amount);
             SECP256K1
-                .verify(&sighash, &sig, &maker_pk.key)
-                .expect("valid maker refund sig");
-            sig
+                .verify(&refund_sighash, &maker_cfd_txs.refund.1, &maker_pk.key)
+                .expect("valid maker refund sig")
         };
 
-        let taker_refund_sig = {
-            let sighash = secp256k1_zkp::Message::from_slice(&refund_tx.sighash()).unwrap();
-            let sig = SECP256K1.sign(&sighash, &taker_sk);
-
+        {
+            let refund_sighash =
+                spending_tx_sighash(&maker_cfd_txs.refund.0, &commit_descriptor, commit_amount);
             SECP256K1
-                .verify(&sighash, &sig, &taker_pk.key)
-                .expect("valid taker refund sig");
-            sig
+                .verify(&refund_sighash, &taker_cfd_txs.refund.1, &taker_pk.key)
+                .expect("valid taker refund sig")
         };
 
-        let maker_cet_encsigs = cets
-            .iter()
-            .map(|cet| {
-                (
-                    cet.txid(),
-                    cet.encsign(maker_sk, &oracle.public_key(), &announcement.nonce_pk())
-                        .unwrap(),
-                )
-            })
-            .collect::<Vec<_>>();
+        // TODO: We should not rely on order
+        for (maker_cet, taker_cet) in maker_cfd_txs.cets.iter().zip(taker_cfd_txs.cets.iter()) {
+            let cet_sighash = {
+                let maker_sighash =
+                    spending_tx_sighash(&maker_cet.0, &commit_descriptor, commit_amount);
+                let taker_sighash =
+                    spending_tx_sighash(&taker_cet.0, &commit_descriptor, commit_amount);
 
-        let cets_with_maker_encsig = cets
-            .clone()
-            .into_iter()
-            .map(|cet| {
-                let encsig = maker_cet_encsigs
-                    .iter()
-                    .find_map(|(txid, encsig)| (txid == &cet.txid()).then(|| encsig))
-                    .expect("one maker encsig per cet");
+                assert_eq!(maker_sighash, taker_sighash);
+                maker_sighash
+            };
 
-                cet.encverify(
-                    encsig,
-                    &maker_pk,
+            let encryption_point = {
+                let maker_encryption_point = compute_signature_point(
                     &oracle.public_key(),
-                    &announcement.nonce_pk(),
-                )?;
-
-                Ok((cet, *encsig))
-            })
-            .collect::<Result<Vec<_>>>()
-            .expect("valid maker cet encsigs");
-
-        let taker_cet_encsigs = cets
-            .iter()
-            .map(|cet| {
-                (
-                    cet.txid(),
-                    cet.encsign(taker_sk, &oracle.public_key(), &announcement.nonce_pk())
-                        .unwrap(),
+                    &event.announcement().nonce_pk(),
+                    maker_cet.2,
                 )
-            })
-            .collect::<Vec<_>>();
-
-        let cets_with_taker_encsig = cets
-            .iter()
-            .map(|cet| {
-                let encsig = taker_cet_encsigs
-                    .iter()
-                    .find_map(|(txid, encsig)| (txid == &cet.txid()).then(|| encsig))
-                    .expect("one taker encsig per cet");
-
-                cet.encverify(
-                    encsig,
-                    &taker_pk,
+                .unwrap();
+                let taker_encryption_point = compute_signature_point(
                     &oracle.public_key(),
-                    &announcement.nonce_pk(),
-                )?;
+                    &event.announcement().nonce_pk(),
+                    taker_cet.2,
+                )
+                .unwrap();
 
-                Ok((cet, *encsig))
-            })
-            .collect::<Result<Vec<_>>>()
-            .expect("valid taker cet encsigs");
+                assert_eq!(maker_encryption_point, taker_encryption_point);
+                maker_encryption_point
+            };
 
-        // encsign commit transaction
+            let maker_encsig = maker_cet.1;
+            maker_encsig
+                .verify(SECP256K1, &cet_sighash, &maker_pk.key, &encryption_point)
+                .expect("valid maker cet encsig");
 
-        let (maker_commit_encsig, maker_commit_sig) = {
-            let encsig = commit_tx.encsign(maker_sk, &taker_publish_pk).unwrap();
+            let taker_encsig = taker_cet.1;
+            taker_encsig
+                .verify(SECP256K1, &cet_sighash, &taker_pk.key, &encryption_point)
+                .expect("valid taker cet encsig");
+        }
 
-            commit_tx
-                .encverify(&encsig, &maker_pk, &taker_publish_pk)
+        let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
+
+        {
+            let commit_sighash =
+                spending_tx_sighash(&maker_cfd_txs.commit.0, &lock_descriptor, lock_amount);
+            let commit_encsig = maker_cfd_txs.commit.1;
+            commit_encsig
+                .verify(
+                    SECP256K1,
+                    &commit_sighash,
+                    &maker_pk.key,
+                    &taker_publish_pk.key,
+                )
                 .expect("valid maker commit encsig");
-
-            let sig = encsig.decrypt(&taker_publish_sk).unwrap();
-
-            (encsig, sig)
         };
 
-        let (taker_commit_encsig, taker_commit_sig) = {
-            let encsig = commit_tx.encsign(taker_sk, &maker_publish_pk).unwrap();
-
-            commit_tx
-                .encverify(&encsig, &taker_pk, &maker_publish_pk)
+        {
+            let commit_sighash =
+                spending_tx_sighash(&taker_cfd_txs.commit.0, &lock_descriptor, lock_amount);
+            let commit_encsig = taker_cfd_txs.commit.1;
+            commit_encsig
+                .verify(
+                    SECP256K1,
+                    &commit_sighash,
+                    &taker_pk.key,
+                    &maker_publish_pk.key,
+                )
                 .expect("valid taker commit encsig");
-
-            let sig = encsig.decrypt(&maker_publish_sk).unwrap();
-
-            (encsig, sig)
         };
 
         // sign lock transaction
 
-        let mut signed_lock_tx = lock_tx.to_psbt();
+        let mut signed_lock_tx = maker_cfd_txs.lock;
         maker_wallet
             .sign(
                 &mut signed_lock_tx,
@@ -1133,7 +1156,7 @@ mod tests {
             )
             .unwrap();
 
-        maker_wallet
+        taker_wallet
             .sign(
                 &mut signed_lock_tx,
                 SignOptions {
@@ -1143,142 +1166,142 @@ mod tests {
             )
             .unwrap();
 
-        let signed_commit_tx = commit_tx
-            .clone()
-            .add_signatures((maker_pk, maker_commit_sig), (taker_pk, taker_commit_sig))
-            .expect("To be signed");
+        // let signed_commit_tx = commit_tx
+        //     .clone()
+        //     .add_signatures((maker_pk, maker_commit_sig), (taker_pk, taker_commit_sig))
+        //     .expect("To be signed");
 
-        // verify refund transaction
+        // // verify refund transaction
 
-        lock_tx
-            .descriptor()
-            .address(Network::Regtest)
-            .expect("can derive address from descriptor")
-            .script_pubkey()
-            .verify(
-                0,
-                lock_tx.amount().as_sat(),
-                bitcoin::consensus::serialize(&signed_commit_tx).as_slice(),
-            )
-            .expect("valid signed commit transaction");
+        // lock_tx
+        //     .descriptor()
+        //     .address(Network::Regtest)
+        //     .expect("can derive address from descriptor")
+        //     .script_pubkey()
+        //     .verify(
+        //         0,
+        //         lock_tx.amount().as_sat(),
+        //         bitcoin::consensus::serialize(&signed_commit_tx).as_slice(),
+        //     )
+        //     .expect("valid signed commit transaction");
 
-        let signed_refund_tx = refund_tx
-            .add_signatures((maker_pk, maker_refund_sig), (taker_pk, taker_refund_sig))
-            .unwrap();
+        // let signed_refund_tx = refund_tx
+        //     .add_signatures((maker_pk, maker_refund_sig), (taker_pk, taker_refund_sig))
+        //     .unwrap();
 
-        let commit_tx_amount = commit_tx.amount().as_sat();
-        commit_tx
-            .descriptor()
-            .address(Network::Regtest)
-            .expect("can derive address from descriptor")
-            .script_pubkey()
-            .verify(
-                0,
-                commit_tx_amount,
-                bitcoin::consensus::serialize(&signed_refund_tx).as_slice(),
-            )
-            .expect("valid signed refund transaction");
+        // let commit_tx_amount = commit_tx.amount().as_sat();
+        // commit_tx
+        //     .descriptor()
+        //     .address(Network::Regtest)
+        //     .expect("can derive address from descriptor")
+        //     .script_pubkey()
+        //     .verify(
+        //         0,
+        //         commit_tx_amount,
+        //         bitcoin::consensus::serialize(&signed_refund_tx).as_slice(),
+        //     )
+        //     .expect("valid signed refund transaction");
 
-        // verify cets
+        // // verify cets
 
-        let attestations = [Message::Win, Message::Lose]
-            .iter()
-            .map(|msg| (*msg, oracle.attest(&event, *msg)))
-            .collect::<Vec<_>>();
+        // let attestations = [Message::Win, Message::Lose]
+        //     .iter()
+        //     .map(|msg| (*msg, oracle.attest(&event, *msg)))
+        //     .collect::<Vec<_>>();
 
-        // TODO: Rewrite this so that it doesn't rely on the order of
-        // the two zipped iterators
-        let cets_with_sigs: Vec<(
-            ContractExecutionTransaction,
-            EcdsaAdaptorSignature,
-            EcdsaAdaptorSignature,
-        )> = cets_with_maker_encsig
-            .into_iter()
-            .zip(cets_with_taker_encsig)
-            .map(|((cet, maker_encsig), (_, taker_encsig))| (cet, maker_encsig, taker_encsig))
-            .collect::<Vec<_>>();
+        // // TODO: Rewrite this so that it doesn't rely on the order of
+        // // the two zipped iterators
+        // let cets_with_sigs: Vec<(
+        //     ContractExecutionTransaction,
+        //     EcdsaAdaptorSignature,
+        //     EcdsaAdaptorSignature,
+        // )> = cets_with_maker_encsig
+        //     .into_iter()
+        //     .zip(cets_with_taker_encsig)
+        //     .map(|((cet, maker_encsig), (_, taker_encsig))| (cet, maker_encsig, taker_encsig))
+        //     .collect::<Vec<_>>();
 
-        let signed_cets = attestations
-            .iter()
-            .map(|(oracle_msg, oracle_sig)| {
-                let (cet, maker_encsig, taker_encsig) = cets_with_sigs
-                    .iter()
-                    .find(|(cet, _, _)| &cet.message == oracle_msg)
-                    .expect("one cet per message");
-                let (_nonce_pk, signature_scalar) = schnorrsig_decompose(oracle_sig).unwrap();
+        // let signed_cets = attestations
+        //     .iter()
+        //     .map(|(oracle_msg, oracle_sig)| {
+        //         let (cet, maker_encsig, taker_encsig) = cets_with_sigs
+        //             .iter()
+        //             .find(|(cet, _, _)| &cet.message == oracle_msg)
+        //             .expect("one cet per message");
+        //         let (_nonce_pk, signature_scalar) = schnorrsig_decompose(oracle_sig).unwrap();
 
-                let maker_sig = maker_encsig.decrypt(&signature_scalar)?;
-                let taker_sig = taker_encsig.decrypt(&signature_scalar)?;
+        //         let maker_sig = maker_encsig.decrypt(&signature_scalar)?;
+        //         let taker_sig = taker_encsig.decrypt(&signature_scalar)?;
 
-                cet.clone()
-                    .add_signatures((maker_pk, maker_sig), (taker_pk, taker_sig))
-            })
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
+        //         cet.clone()
+        //             .add_signatures((maker_pk, maker_sig), (taker_pk, taker_sig))
+        //     })
+        //     .collect::<Result<Vec<_>>>()
+        //     .unwrap();
 
-        signed_cets
-            .iter()
-            .try_for_each(|cet| {
-                commit_tx
-                    .descriptor()
-                    .address(Network::Regtest)
-                    .expect("can derive address from descriptor")
-                    .script_pubkey()
-                    .verify(
-                        0,
-                        commit_tx_amount,
-                        bitcoin::consensus::serialize(&cet).as_slice(),
-                    )
-            })
-            .expect("valid signed CETs");
+        // signed_cets
+        //     .iter()
+        //     .try_for_each(|cet| {
+        //         commit_tx
+        //             .descriptor()
+        //             .address(Network::Regtest)
+        //             .expect("can derive address from descriptor")
+        //             .script_pubkey()
+        //             .verify(
+        //                 0,
+        //                 commit_tx_amount,
+        //                 bitcoin::consensus::serialize(&cet).as_slice(),
+        //             )
+        //     })
+        //     .expect("valid signed CETs");
 
-        // verify punishment transactions
+        // // verify punishment transactions
 
-        let punish_tx = PunishTransaction::new(
-            &commit_tx,
-            &maker_address,
-            maker_commit_encsig,
-            maker_sk,
-            (taker_revocation_sk, taker_revocation_pk),
-            taker_publish_pk,
-            &signed_commit_tx,
-        )
-        .unwrap();
+        // let punish_tx = PunishTransaction::new(
+        //     &commit_tx,
+        //     &maker_address,
+        //     maker_commit_encsig,
+        //     maker_sk,
+        //     (taker_revocation_sk, taker_revocation_pk),
+        //     taker_publish_pk,
+        //     &signed_commit_tx,
+        // )
+        // .unwrap();
 
-        commit_tx
-            .descriptor()
-            .address(Network::Regtest)
-            .expect("can derive address from descriptor")
-            .script_pubkey()
-            .verify(
-                0,
-                commit_tx_amount,
-                bitcoin::consensus::serialize(&punish_tx.inner).as_slice(),
-            )
-            .expect("valid signed punish transaction");
+        // commit_tx
+        //     .descriptor()
+        //     .address(Network::Regtest)
+        //     .expect("can derive address from descriptor")
+        //     .script_pubkey()
+        //     .verify(
+        //         0,
+        //         commit_tx_amount,
+        //         bitcoin::consensus::serialize(&punish_tx.inner).as_slice(),
+        //     )
+        //     .expect("valid signed punish transaction");
 
-        let punish_tx = PunishTransaction::new(
-            &commit_tx,
-            &taker_address,
-            taker_commit_encsig,
-            taker_sk,
-            (maker_revocation_sk, maker_revocation_pk),
-            maker_publish_pk,
-            &signed_commit_tx,
-        )
-        .unwrap();
+        // let punish_tx = PunishTransaction::new(
+        //     &commit_tx,
+        //     &taker_address,
+        //     taker_commit_encsig,
+        //     taker_sk,
+        //     (maker_revocation_sk, maker_revocation_pk),
+        //     maker_publish_pk,
+        //     &signed_commit_tx,
+        // )
+        // .unwrap();
 
-        commit_tx
-            .descriptor()
-            .address(Network::Regtest)
-            .expect("can derive address from descriptor")
-            .script_pubkey()
-            .verify(
-                0,
-                commit_tx_amount,
-                bitcoin::consensus::serialize(&punish_tx.inner).as_slice(),
-            )
-            .expect("valid signed punish transaction");
+        // commit_tx
+        //     .descriptor()
+        //     .address(Network::Regtest)
+        //     .expect("can derive address from descriptor")
+        //     .script_pubkey()
+        //     .verify(
+        //         0,
+        //         commit_tx_amount,
+        //         bitcoin::consensus::serialize(&punish_tx.inner).as_slice(),
+        //     )
+        //     .expect("valid signed punish transaction");
     }
 
     #[test]
