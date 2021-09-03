@@ -13,6 +13,7 @@ use bdk::{
     descriptor::Descriptor,
     miniscript::{descriptor::Wsh, DescriptorTrait},
 };
+use bitcoin::PrivateKey;
 use itertools::Itertools;
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::SecretKey;
@@ -475,7 +476,7 @@ impl PunishTransaction {
         address: &Address,
         encsig: EcdsaAdaptorSignature,
         sk: SecretKey,
-        (revocation_them_sk, revocation_them_pk): (SecretKey, PublicKey), // FIXME: Only need sk
+        revocation_them_sk: SecretKey,
         publish_them_pk: PublicKey,
         revoked_commit_tx: &Transaction,
     ) -> Result<Self> {
@@ -543,6 +544,14 @@ impl PunishTransaction {
                 &publish_them_sk,
             );
 
+            let revocation_them_pk = PublicKey::from_private_key(
+                SECP256K1,
+                &PrivateKey {
+                    compressed: true,
+                    network: Network::Regtest,
+                    key: revocation_them_sk,
+                },
+            );
             let revocation_them_pk_hash = revocation_them_pk.pubkey_hash();
             let sig_revocation_other = SECP256K1.sign(
                 &secp256k1_zkp::Message::from_slice(&digest)?,
