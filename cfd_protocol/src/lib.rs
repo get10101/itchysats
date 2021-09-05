@@ -585,17 +585,6 @@ struct RefundTransaction {
 }
 
 impl RefundTransaction {
-    /// Refund transaction fee. It is paid evenly by the maker and the
-    /// taker.
-    ///
-    /// Ideally we don't commit to a transaction fee ahead of time and
-    /// instead resort to fee-bumping. But that would be unfair for the
-    /// party that executes the fee-bumping.
-    ///
-    /// TODO: Calculate reasonable fee given the fact that the
-    /// transaction consists of 1 input and 2 outputs.
-    const REFUND_TX_FEE: u64 = 10_000;
-
     fn new(
         commit_tx: &CommitTransaction,
         relative_locktime_in_blocks: u32,
@@ -610,24 +599,26 @@ impl RefundTransaction {
             ..Default::default()
         };
 
-        let per_party_fee = Self::REFUND_TX_FEE / 2;
-
         let maker_output = TxOut {
-            value: maker_amount.as_sat() - per_party_fee,
+            value: maker_amount.as_sat(),
             script_pubkey: maker_address.script_pubkey(),
         };
 
         let taker_output = TxOut {
-            value: taker_amount.as_sat() - per_party_fee,
+            value: taker_amount.as_sat(),
             script_pubkey: taker_address.script_pubkey(),
         };
 
-        let tx = Transaction {
+        let mut tx = Transaction {
             version: 2,
             lock_time: 0,
             input: vec![commit_input],
             output: vec![maker_output, taker_output],
         };
+
+        let fee = tx.get_size() as u64 * MIN_RELAY_FEE;
+        tx.output[0].value -= fee;
+        tx.output[1].value -= fee;
 
         let commit_output_descriptor = commit_tx.descriptor();
 
