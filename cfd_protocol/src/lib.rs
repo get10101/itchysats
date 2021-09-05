@@ -665,8 +665,7 @@ impl CommitTransaction {
         (maker_own_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
         (taker_own_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
     ) -> Result<Self> {
-        // FIXME: Fee to be paid by leftover lock output
-        let amount = lock_tx.amount();
+        let lock_tx_amount = lock_tx.amount().as_sat();
 
         let lock_input = TxIn {
             previous_output: lock_tx.lock_outpoint(),
@@ -679,19 +678,22 @@ impl CommitTransaction {
         );
 
         let output = TxOut {
-            value: lock_tx.amount().as_sat(),
+            value: lock_tx_amount,
             script_pubkey: descriptor
                 .address(Network::Regtest)
                 .expect("can derive address from descriptor")
                 .script_pubkey(),
         };
 
-        let inner = Transaction {
+        let mut inner = Transaction {
             version: 2,
             lock_time: 0,
             input: vec![lock_input],
             output: vec![output],
         };
+        let fee = inner.get_size() * MIN_RELAY_FEE as usize;
+        let commit_tx_amount = lock_tx_amount - fee as u64;
+        inner.output[0].value = commit_tx_amount;
 
         let sighash = SigHashCache::new(&inner).signature_hash(
             0,
@@ -704,7 +706,7 @@ impl CommitTransaction {
             inner,
             descriptor,
             lock_descriptor: lock_tx.descriptor(),
-            amount,
+            amount: Amount::from_sat(commit_tx_amount),
             sighash,
         })
     }
