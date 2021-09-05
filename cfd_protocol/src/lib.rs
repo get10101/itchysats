@@ -271,7 +271,6 @@ pub fn punish_transaction(
         .expect("to find commit output in commit tx");
     let commit_amount = revoked_commit_tx.output[commit_vout].value;
 
-    // Fixme: need to subtract tx fee otherwise we won't be able to publish this transaction.
     let mut punish_tx = {
         let txid = revoked_commit_tx.txid();
 
@@ -284,7 +283,7 @@ pub fn punish_transaction(
             value: commit_amount,
             script_pubkey: address.script_pubkey(),
         };
-        Transaction {
+        let mut tx = Transaction {
             version: 2,
             lock_time: 0,
             input: vec![TxIn {
@@ -292,7 +291,12 @@ pub fn punish_transaction(
                 ..Default::default()
             }],
             output: vec![output],
-        }
+        };
+
+        let fee = tx.get_size() * MIN_RELAY_FEE as usize;
+        tx.output[0].value = commit_amount - fee as u64;
+
+        tx
     };
 
     let digest = SigHashCache::new(&punish_tx).signature_hash(
