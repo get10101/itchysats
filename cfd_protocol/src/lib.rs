@@ -163,34 +163,29 @@ pub fn commit_descriptor(
     (maker_own_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
     (taker_own_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
 ) -> Descriptor<PublicKey> {
-    // TODO: Optimize miniscript
-
     let maker_own_pk_hash = maker_own_pk.pubkey_hash().as_hash();
     let maker_own_pk = (&maker_own_pk.key.serialize().to_vec()).to_hex();
+    let maker_publish_pk_hash = maker_publish_pk.pubkey_hash().as_hash();
+    let maker_rev_pk_hash = maker_rev_pk.pubkey_hash().as_hash();
+
     let taker_own_pk_hash = taker_own_pk.pubkey_hash().as_hash();
     let taker_own_pk = (&taker_own_pk.key.serialize().to_vec()).to_hex();
-
-    let maker_rev_pk_hash = maker_rev_pk.pubkey_hash().as_hash();
+    let taker_publish_pk_hash = taker_publish_pk.pubkey_hash().as_hash();
     let taker_rev_pk_hash = taker_rev_pk.pubkey_hash().as_hash();
 
-    let maker_publish_pk_hash = maker_publish_pk.pubkey_hash().as_hash();
-    let taker_publish_pk_hash = taker_publish_pk.pubkey_hash().as_hash();
-
-    let cet_or_refund_condition = format!("and_v(v:pk({}),pk_k({}))", maker_own_pk, taker_own_pk);
-    let maker_punish_condition = format!(
-        "and_v(v:pkh({}),and_v(v:pkh({}),pk_h({})))",
-        maker_own_pk_hash, taker_publish_pk_hash, taker_rev_pk_hash
-    );
-    let taker_punish_condition = format!(
-        "and_v(v:pkh({}),and_v(v:pkh({}),pk_h({})))",
-        taker_own_pk_hash, maker_publish_pk_hash, maker_rev_pk_hash
-    );
-    let descriptor_str = format!(
-        "wsh(c:or_i(or_i({},{}),{}))",
-        maker_punish_condition, taker_punish_condition, cet_or_refund_condition
+    // raw script: or(and(pk(maker_own_pk),pk(taker_own_pk)),or(and(pk(maker_own_pk),and(pk(taker_publish_pk),pk(taker_rev_pk))),and(pk(taker_own_pk),and(pk(maker_publish_pk),pk(maker_rev_pk)))))
+    let full_script = format!("wsh(c:andor(pk({maker_own_pk}),pk_k({taker_own_pk}),or_i(and_v(v:pkh({maker_own_pk_hash}),and_v(v:pkh({taker_publish_pk_hash}),pk_h({taker_rev_pk_hash}))),and_v(v:pkh({taker_own_pk_hash}),and_v(v:pkh({maker_publish_pk_hash}),pk_h({maker_rev_pk_hash}))))))",
+        maker_own_pk = maker_own_pk,
+        taker_own_pk = taker_own_pk,
+        maker_own_pk_hash = maker_own_pk_hash,
+        taker_own_pk_hash = taker_own_pk_hash,
+        taker_publish_pk_hash = taker_publish_pk_hash,
+        taker_rev_pk_hash = taker_rev_pk_hash,
+        maker_publish_pk_hash = maker_publish_pk_hash,
+        maker_rev_pk_hash = maker_rev_pk_hash
     );
 
-    descriptor_str.parse().expect("a valid miniscript")
+    full_script.parse().expect("a valid miniscript")
 }
 
 pub fn spending_tx_sighash(
@@ -259,7 +254,7 @@ pub fn punish_transaction(
     }
 
     if sigs.is_empty() {
-        // No signature found, this should fail
+        // TODO: No signature found, this should fail
         unimplemented!()
     }
 
