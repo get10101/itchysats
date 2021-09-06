@@ -383,6 +383,14 @@ pub struct Payout {
 }
 
 impl Payout {
+    pub fn new(message: Message, maker_amount: Amount, taker_amount: Amount) -> Self {
+        Self {
+            message,
+            maker_amount,
+            taker_amount,
+        }
+    }
+
     fn as_txouts(&self, maker_address: &Address, taker_address: &Address) -> Vec<TxOut> {
         let txouts = [
             (self.maker_amount, maker_address),
@@ -839,16 +847,8 @@ mod tests {
         let (taker_sk, taker_pk) = make_keypair(&mut rng);
 
         let payouts = vec![
-            Payout {
-                message: Message::Win,
-                maker_amount: Amount::from_btc(2.0).unwrap(),
-                taker_amount: Amount::ZERO,
-            },
-            Payout {
-                message: Message::Lose,
-                maker_amount: Amount::ZERO,
-                taker_amount: Amount::from_btc(2.0).unwrap(),
-            },
+            Payout::new(Message::Win, Amount::from_btc(2.0).unwrap(), Amount::ZERO),
+            Payout::new(Message::Lose, Amount::ZERO, Amount::from_btc(2.0).unwrap()),
         ];
 
         let refund_timelock = 0;
@@ -1185,11 +1185,11 @@ mod tests {
     fn test_fee_subtraction_bigger_than_dust() {
         let orig_maker_amount = 1000;
         let orig_taker_amount = 1000;
-        let payout = Payout {
-            message: Message::Win,
-            maker_amount: Amount::from_sat(orig_maker_amount),
-            taker_amount: Amount::from_sat(orig_taker_amount),
-        };
+        let payout = Payout::new(
+            Message::Win,
+            Amount::from_sat(orig_maker_amount),
+            Amount::from_sat(orig_taker_amount),
+        );
         let fee = 100;
         let updated_payout = payout.with_updated_fee(Amount::from_sat(fee)).unwrap();
 
@@ -1208,11 +1208,11 @@ mod tests {
     fn test_fee_subtraction_smaller_than_dust() {
         let orig_maker_amount = P2PKH_DUST_LIMIT - 1;
         let orig_taker_amount = 1000;
-        let payout = Payout {
-            message: Message::Win,
-            maker_amount: Amount::from_sat(orig_maker_amount),
-            taker_amount: Amount::from_sat(orig_taker_amount),
-        };
+        let payout = Payout::new(
+            Message::Win,
+            Amount::from_sat(orig_maker_amount),
+            Amount::from_sat(orig_taker_amount),
+        );
         let fee = 100;
         let updated_payout = payout.with_updated_fee(Amount::from_sat(fee)).unwrap();
 
