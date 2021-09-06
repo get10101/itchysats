@@ -236,8 +236,12 @@ pub fn punish_transaction(
     publish_them_pk: PublicKey,
     revoked_commit_tx: &Transaction,
 ) -> Result<Transaction> {
-    // CommitTransaction has only one input
-    let input = revoked_commit_tx.input.clone().into_iter().exactly_one()?;
+    let input = revoked_commit_tx
+        .input
+        .clone()
+        .into_iter()
+        .exactly_one()
+        .context("commit transaction inputs != 1")?;
 
     let publish_them_sk = input
         .witness
