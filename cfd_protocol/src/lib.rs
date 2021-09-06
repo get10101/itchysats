@@ -239,30 +239,15 @@ pub fn punish_transaction(
     // CommitTransaction has only one input
     let input = revoked_commit_tx.input.clone().into_iter().exactly_one()?;
 
-    // Extract all signatures from witness stack
-    let mut sigs = Vec::new();
-    for witness in input.witness.iter() {
-        let witness = witness.as_slice();
-
-        let res = bitcoin::secp256k1::Signature::from_der(&witness[..witness.len() - 1]);
-        match res {
-            Ok(sig) => sigs.push(sig),
-            Err(_) => {
-                continue;
-            }
-        }
-    }
-
-    if sigs.is_empty() {
-        // TODO: No signature found, this should fail
-        unimplemented!()
-    }
-
-    // Attempt to extract y_other from every signature
-    let publish_them_sk = sigs
-        .into_iter()
+    let publish_them_sk = input
+        .witness
+        .iter()
+        .filter_map(|elem| {
+            let elem = elem.as_slice();
+            bitcoin::secp256k1::Signature::from_der(&elem[..elem.len() - 1]).ok()
+        })
         .find_map(|sig| encsig.recover(SECP256K1, &sig, &publish_them_pk.key).ok())
-        .context("Could not recover secret key from revoked transaction")?;
+        .context("could not recover publish sk from commit tx")?;
 
     let commit_vout = revoked_commit_tx
         .output
