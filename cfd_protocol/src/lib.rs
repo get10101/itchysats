@@ -1,26 +1,22 @@
-use anyhow::bail;
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use bdk::bitcoin::hashes::*;
 use bdk::bitcoin::Script;
 
-use bdk::database::BatchDatabase;
-use bdk::wallet::AddressIndex;
-use bdk::{
-    bitcoin::{
-        self, hashes::hex::ToHex, util::bip143::SigHashCache, util::psbt::Global,
-        util::psbt::PartiallySignedTransaction, Address, Amount, Network, OutPoint, PublicKey,
-        SigHash, SigHashType, Transaction, TxIn, TxOut,
-    },
-    descriptor::Descriptor,
-    miniscript::{descriptor::Wsh, DescriptorTrait},
+use bdk::bitcoin::hashes::hex::ToHex;
+use bdk::bitcoin::util::bip143::SigHashCache;
+use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
+use bdk::bitcoin::{
+    self, Address, Amount, Network, OutPoint, PublicKey, SigHash, SigHashType, Transaction, TxIn,
+    TxOut,
 };
+use bdk::database::BatchDatabase;
+use bdk::descriptor::Descriptor;
+use bdk::miniscript::descriptor::Wsh;
+use bdk::miniscript::DescriptorTrait;
+use bdk::wallet::AddressIndex;
 use bitcoin::PrivateKey;
 use itertools::Itertools;
-use secp256k1_zkp::EcdsaAdaptorSignature;
-use secp256k1_zkp::SecretKey;
-use secp256k1_zkp::SECP256K1;
-use secp256k1_zkp::{self, schnorrsig, Signature};
+use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
 
 /// In satoshi per vbyte.
@@ -826,11 +822,11 @@ impl LockTransaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bdk::bitcoin::{util::bip32::ExtendedPrivKey, PrivateKey};
+    use bdk::bitcoin::util::bip32::ExtendedPrivKey;
+    use bdk::bitcoin::PrivateKey;
     use bdk::wallet::AddressIndex;
     use bdk::SignOptions;
-    use rand::SeedableRng;
-    use rand::{CryptoRng, RngCore};
+    use rand::{CryptoRng, RngCore, SeedableRng};
     use rand_chacha::ChaChaRng;
 
     #[test]
@@ -1231,8 +1227,7 @@ mod tests {
     where
         R: RngCore + CryptoRng,
     {
-        use bdk::populate_test_db;
-        use bdk::testutils;
+        use bdk::{populate_test_db, testutils};
 
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
@@ -1371,8 +1366,7 @@ mod tests {
 
         use secp256k1_zkp::secp256k1_zkp_sys::types::c_void;
         use secp256k1_zkp::secp256k1_zkp_sys::CPtr;
-        use std::os::raw::c_int;
-        use std::os::raw::c_uchar;
+        use std::os::raw::{c_int, c_uchar};
         use std::ptr;
 
         /// Create a Schnorr signature using the provided nonce instead of generating one.
