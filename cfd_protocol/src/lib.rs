@@ -42,7 +42,7 @@ where
         builder
             .ordering(bdk::wallet::tx_builder::TxOrdering::Bip69Lexicographic)
             .add_recipient(Script::new(), amount.as_sat());
-        let (lock_psbt, _) = builder.finish().unwrap();
+        let (lock_psbt, _) = builder.finish()?;
         let address = self.get_address(AddressIndex::New)?.address;
         Ok(PartyParams {
             lock_psbt,
