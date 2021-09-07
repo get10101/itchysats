@@ -1,8 +1,6 @@
 use anyhow::{bail, Context, Result};
-use bdk::bitcoin::hashes::*;
-use bdk::bitcoin::Script;
-
 use bdk::bitcoin::hashes::hex::ToHex;
+use bdk::bitcoin::hashes::*;
 use bdk::bitcoin::util::bip143::SigHashCache;
 use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
 use bdk::bitcoin::{
@@ -23,6 +21,10 @@ use std::collections::HashMap;
 /// In satoshi per vbyte.
 const SATS_PER_VBYTE: f64 = 1.0;
 
+/// Static script to be used to create lock tx
+const DUMMY_2OF2_MULITISIG: &str =
+    "0020b5aa99ed7e0fa92483eb045ab8b7a59146d4d9f6653f21ba729b4331895a5b46";
+
 pub trait WalletExt {
     fn build_party_params(&self, amount: Amount, identity_pk: PublicKey) -> Result<PartyParams>;
 }
@@ -36,7 +38,12 @@ where
         builder
             .ordering(bdk::wallet::tx_builder::TxOrdering::Bip69Lexicographic)
             .fee_rate(FeeRate::from_sat_per_vb(1.0))
-            .add_recipient(Script::new(), amount.as_sat());
+            .add_recipient(
+                DUMMY_2OF2_MULITISIG
+                    .parse()
+                    .expect("Should be valid script"),
+                amount.as_sat(),
+            );
         let (lock_psbt, _) = builder.finish()?;
         let address = self.get_address(AddressIndex::New)?.address;
         Ok(PartyParams {
@@ -786,7 +793,9 @@ impl LockTransaction {
             .unsigned_tx
             .output
             .into_iter()
-            .filter(|out| !out.script_pubkey.is_empty())
+            .filter(|out| {
+                out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
+            })
             .collect::<Vec<_>>();
 
         let taker_change = taker_psbt
@@ -794,7 +803,9 @@ impl LockTransaction {
             .unsigned_tx
             .output
             .into_iter()
-            .filter(|out| !out.script_pubkey.is_empty())
+            .filter(|out| {
+                out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
+            })
             .collect();
 
         let lock_output = TxOut {
@@ -1323,7 +1334,7 @@ mod tests {
         let fee = input_amount - output_amount;
 
         let min_relay_fee = spend_tx.get_virtual_size();
-        if (dbg!(fee) as f64) < dbg!(min_relay_fee) {
+        if (fee as f64) < min_relay_fee {
             bail!("min relay fee not met, {} < {}", fee, min_relay_fee)
         }
 
