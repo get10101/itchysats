@@ -14,15 +14,18 @@ use bdk::descriptor::Descriptor;
 use bdk::miniscript::descriptor::Wsh;
 use bdk::miniscript::DescriptorTrait;
 use bdk::wallet::AddressIndex;
+use bdk::FeeRate;
 use bitcoin::PrivateKey;
 use itertools::Itertools;
 use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
 
 /// In satoshi per vbyte.
-const MIN_RELAY_FEE: u64 = 1;
+const SATS_PER_VBYTE: f64 = 1.0;
 
 /// In satoshi.
+///
+/// FIXME: Use Script::dust_value instead.
 const P2PKH_DUST_LIMIT: u64 = 546;
 
 pub trait WalletExt {
@@ -37,6 +40,7 @@ where
         let mut builder = self.build_tx();
         builder
             .ordering(bdk::wallet::tx_builder::TxOrdering::Bip69Lexicographic)
+            .fee_rate(FeeRate::from_sat_per_vb(1.0))
             .add_recipient(Script::new(), amount.as_sat());
         let (lock_psbt, _) = builder.finish()?;
         let address = self.get_address(AddressIndex::New)?.address;
@@ -140,7 +144,7 @@ pub fn build_cfd_transactions(
     })
 }
 
-fn lock_descriptor(maker_pk: PublicKey, taker_pk: PublicKey) -> Descriptor<PublicKey> {
+pub fn lock_descriptor(maker_pk: PublicKey, taker_pk: PublicKey) -> Descriptor<PublicKey> {
     const MINISCRIPT_TEMPLATE: &str = "c:and_v(v:pk(A),pk_k(B))";
 
     let maker_pk = ToHex::to_hex(&maker_pk.key);
@@ -232,6 +236,10 @@ pub fn punish_transaction(
     publish_them_pk: PublicKey,
     revoked_commit_tx: &Transaction,
 ) -> Result<Transaction> {
+    /// Expected size of signed transaction in virtual bytes, plus a
+    /// buffer to account for different signature lengths.
+    const SIGNED_VBYTES: f64 = 219.5 + (3.0 * 3.0) / 4.0;
+
     let input = revoked_commit_tx
         .input
         .clone()
@@ -278,7 +286,7 @@ pub fn punish_transaction(
             output: vec![output],
         };
 
-        let fee = tx.get_size() * MIN_RELAY_FEE as usize;
+        let fee = SIGNED_VBYTES * SATS_PER_VBYTE;
         tx.output[0].value = commit_amount - fee as u64;
 
         tx
@@ -514,6 +522,10 @@ struct ContractExecutionTransaction {
 }
 
 impl ContractExecutionTransaction {
+    /// Expected size of signed transaction in virtual bytes, plus a
+    /// buffer to account for different signature lengths.
+    const SIGNED_VBYTES: f64 = 175.25 + (3.0 * 2.0) / 4.0;
+
     fn new(
         commit_tx: &CommitTransaction,
         payout: &Payout,
@@ -534,7 +546,9 @@ impl ContractExecutionTransaction {
             output: payout.as_txouts(maker_address, taker_address),
         };
 
-        let fee = tx.get_size() * MIN_RELAY_FEE as usize;
+        let mut fee = Self::SIGNED_VBYTES * SATS_PER_VBYTE;
+        fee += commit_tx.fee() as f64;
+
         let payout = payout.with_updated_fee(Amount::from_sat(fee as u64))?;
         tx.output = payout.as_txouts(maker_address, taker_address);
 
@@ -578,6 +592,10 @@ struct RefundTransaction {
 }
 
 impl RefundTransaction {
+    /// Expected size of signed transaction in virtual bytes, plus a
+    /// buffer to account for different signature lengths.
+    const SIGNED_VBYTES: f64 = 206.5 + (3.0 * 2.0) / 4.0;
+
     fn new(
         commit_tx: &CommitTransaction,
         relative_locktime_in_blocks: u32,
@@ -609,9 +627,10 @@ impl RefundTransaction {
             output: vec![maker_output, taker_output],
         };
 
-        let fee = tx.get_size() as u64 * MIN_RELAY_FEE;
-        tx.output[0].value -= fee;
-        tx.output[1].value -= fee;
+        let mut fee = Self::SIGNED_VBYTES * SATS_PER_VBYTE;
+        fee += commit_tx.fee() as f64;
+        tx.output[0].value -= (fee / 2.0) as u64;
+        tx.output[1].value -= (fee / 2.0) as u64;
 
         let commit_output_descriptor = commit_tx.descriptor();
 
@@ -641,9 +660,14 @@ struct CommitTransaction {
     amount: Amount,
     sighash: SigHash,
     lock_descriptor: Descriptor<PublicKey>,
+    fee: u64,
 }
 
 impl CommitTransaction {
+    /// Expected size of signed transaction in virtual bytes, plus a
+    /// buffer to account for different signature lengths.
+    const SIGNED_VBYTES: f64 = 148.5 + (3.0 * 2.0) / 4.0;
+
     fn new(
         lock_tx: &LockTransaction,
         (maker_own_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
@@ -675,7 +699,8 @@ impl CommitTransaction {
             input: vec![lock_input],
             output: vec![output],
         };
-        let fee = inner.get_size() * MIN_RELAY_FEE as usize;
+        let fee = (Self::SIGNED_VBYTES * SATS_PER_VBYTE as f64) as u64;
+
         let commit_tx_amount = lock_tx_amount - fee as u64;
         inner.output[0].value = commit_tx_amount;
 
@@ -692,6 +717,7 @@ impl CommitTransaction {
             lock_descriptor: lock_tx.descriptor(),
             amount: Amount::from_sat(commit_tx_amount),
             sighash,
+            fee,
         })
     }
 
@@ -725,6 +751,10 @@ impl CommitTransaction {
 
     fn descriptor(&self) -> Descriptor<PublicKey> {
         self.descriptor.clone()
+    }
+
+    fn fee(&self) -> u64 {
+        self.fee
     }
 }
 
@@ -816,6 +846,16 @@ impl LockTransaction {
 
     fn amount(&self) -> Amount {
         self.amount
+    }
+}
+
+trait TransactionExt {
+    fn get_virtual_size(&self) -> f64;
+}
+
+impl TransactionExt for bitcoin::Transaction {
+    fn get_virtual_size(&self) -> f64 {
+        self.get_weight() as f64 / 4.0
     }
 }
 
@@ -1040,7 +1080,10 @@ mod tests {
             )
             .unwrap();
 
+        let signed_lock_tx = signed_lock_tx.extract_tx();
+
         // verify commit transaction
+
         let commit_tx = maker_cfd_txs.commit.0;
         let maker_sig = maker_cfd_txs.commit.1.decrypt(&taker_publish_sk).unwrap();
         let taker_sig = taker_cfd_txs.commit.1.decrypt(&maker_publish_sk).unwrap();
@@ -1050,7 +1093,9 @@ mod tests {
             (maker_pk, maker_sig),
             (taker_pk, taker_sig),
         )
-        .expect("To be signed");
+        .unwrap();
+
+        check_tx_fee(&[&signed_lock_tx], &signed_commit_tx).expect("correct fees for commit tx");
 
         lock_descriptor
             .address(Network::Regtest)
@@ -1063,7 +1108,7 @@ mod tests {
             )
             .expect("valid signed commit transaction");
 
-        // verify commit transaction
+        // verify refund transaction
 
         let maker_sig = maker_cfd_txs.refund.1;
         let taker_sig = taker_cfd_txs.refund.1;
@@ -1073,7 +1118,9 @@ mod tests {
             (maker_pk, maker_sig),
             (taker_pk, taker_sig),
         )
-        .expect("To be signed");
+        .unwrap();
+
+        check_tx_fee(&[&signed_commit_tx], &signed_refund_tx).expect("correct fees for refund tx");
 
         commit_descriptor
             .address(Network::Regtest)
@@ -1117,6 +1164,8 @@ mod tests {
                     (taker_pk, taker_sig),
                 )?;
 
+                check_tx_fee(&[&signed_commit_tx], &signed_cet).expect("correct fees for cet");
+
                 commit_descriptor
                     .address(Network::Regtest)
                     .expect("can derive address from descriptor")
@@ -1142,6 +1191,8 @@ mod tests {
             &signed_commit_tx,
         )
         .unwrap();
+
+        check_tx_fee(&[&signed_commit_tx], &punish_tx).expect("correct fees for punish tx");
 
         commit_descriptor
             .address(Network::Regtest)
@@ -1217,6 +1268,42 @@ mod tests {
             updated_payout.taker_amount,
             Amount::from_sat(orig_taker_amount - (fee + orig_maker_amount))
         );
+    }
+
+    fn check_tx_fee(input_txs: &[&Transaction], spend_tx: &Transaction) -> Result<()> {
+        let input_amount = spend_tx
+            .input
+            .iter()
+            .try_fold::<_, _, Result<_>>(0, |acc, input| {
+                let value = input_txs
+                    .iter()
+                    .find_map(|tx| {
+                        (tx.txid() == input.previous_output.txid)
+                            .then(|| tx.output[input.previous_output.vout as usize].value)
+                    })
+                    .with_context(|| {
+                        format!(
+                            "spend tx input {} not found in input_txs",
+                            input.previous_output
+                        )
+                    })
+                    .context("foo")?;
+
+                Ok(acc + value)
+            })?;
+
+        let output_amount = spend_tx
+            .output
+            .iter()
+            .fold(0, |acc, output| acc + output.value);
+        let fee = input_amount - output_amount;
+
+        let min_relay_fee = spend_tx.get_virtual_size();
+        if (dbg!(fee) as f64) < dbg!(min_relay_fee) {
+            bail!("min relay fee not met, {} < {}", fee, min_relay_fee)
+        }
+
+        Ok(())
     }
 
     fn build_wallet<R>(
