@@ -23,11 +23,6 @@ use std::collections::HashMap;
 /// In satoshi per vbyte.
 const SATS_PER_VBYTE: f64 = 1.0;
 
-/// In satoshi.
-///
-/// FIXME: Use Script::dust_value instead.
-const P2PKH_DUST_LIMIT: u64 = 546;
-
 pub trait WalletExt {
     fn build_party_params(&self, amount: Amount, identity_pk: PublicKey) -> Result<PartyParams>;
 }
@@ -402,9 +397,11 @@ impl Payout {
         ]
         .iter()
         .filter_map(|(amount, address)| {
-            (amount >= &Amount::from_sat(P2PKH_DUST_LIMIT)).then(|| TxOut {
+            let script_pubkey = address.script_pubkey();
+            let dust_limit = script_pubkey.dust_value();
+            (amount >= &dust_limit).then(|| TxOut {
                 value: amount.as_sat(),
-                script_pubkey: address.script_pubkey(),
+                script_pubkey,
             })
         })
         .collect::<Vec<_>>();
@@ -417,18 +414,22 @@ impl Payout {
     /// We need to consider a few cases:
     /// - If both amounts are >= DUST, they share the fee equally
     /// - If one amount is < DUST, it set to 0 and the other output needs to cover for the fee.
-    fn with_updated_fee(self, fee: Amount) -> Result<Self> {
+    fn with_updated_fee(
+        self,
+        fee: Amount,
+        dust_limit_maker: Amount,
+        dust_limit_taker: Amount,
+    ) -> Result<Self> {
         let mut updated = self;
-        let dust_limit = Amount::from_sat(P2PKH_DUST_LIMIT);
 
         match (
             self.maker_amount
                 .checked_sub(fee / 2)
-                .map(|a| a > dust_limit)
+                .map(|a| a > dust_limit_maker)
                 .unwrap_or(false),
             self.taker_amount
                 .checked_sub(fee / 2)
-                .map(|a| a > dust_limit)
+                .map(|a| a > dust_limit_taker)
                 .unwrap_or(false),
         ) {
             (true, true) => {
@@ -549,8 +550,13 @@ impl ContractExecutionTransaction {
         let mut fee = Self::SIGNED_VBYTES * SATS_PER_VBYTE;
         fee += commit_tx.fee() as f64;
 
-        let payout = payout.with_updated_fee(Amount::from_sat(fee as u64))?;
-        tx.output = payout.as_txouts(maker_address, taker_address);
+        tx.output = payout
+            .with_updated_fee(
+                Amount::from_sat(fee as u64),
+                maker_address.script_pubkey().dust_value(),
+                taker_address.script_pubkey().dust_value(),
+            )?
+            .as_txouts(maker_address, taker_address);
 
         let sighash = SigHashCache::new(&tx).signature_hash(
             0,
@@ -868,6 +874,7 @@ mod tests {
     use bdk::SignOptions;
     use rand::{CryptoRng, RngCore, SeedableRng};
     use rand_chacha::ChaChaRng;
+    use std::str::FromStr;
 
     #[test]
     fn run_cfd_protocol() {
@@ -1230,6 +1237,13 @@ mod tests {
 
     #[test]
     fn test_fee_subtraction_bigger_than_dust() {
+        let key = PublicKey::from_str(
+            "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af",
+        )
+        .unwrap();
+        let dummy_address = Address::p2wpkh(&key, Network::Regtest).unwrap();
+        let dummy_dust_limit = dummy_address.script_pubkey().dust_value();
+
         let orig_maker_amount = 1000;
         let orig_taker_amount = 1000;
         let payout = Payout::new(
@@ -1238,7 +1252,9 @@ mod tests {
             Amount::from_sat(orig_taker_amount),
         );
         let fee = 100;
-        let updated_payout = payout.with_updated_fee(Amount::from_sat(fee)).unwrap();
+        let updated_payout = payout
+            .with_updated_fee(Amount::from_sat(fee), dummy_dust_limit, dummy_dust_limit)
+            .unwrap();
 
         assert_eq!(
             updated_payout.maker_amount,
@@ -1253,7 +1269,13 @@ mod tests {
     // TODO add proptest for this
     #[test]
     fn test_fee_subtraction_smaller_than_dust() {
-        let orig_maker_amount = P2PKH_DUST_LIMIT - 1;
+        let key = PublicKey::from_str(
+            "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af",
+        )
+        .unwrap();
+        let dummy_address = Address::p2wpkh(&key, Network::Regtest).unwrap();
+        let dummy_dust_limit = dummy_address.script_pubkey().dust_value();
+        let orig_maker_amount = dummy_dust_limit.as_sat() - 1;
         let orig_taker_amount = 1000;
         let payout = Payout::new(
             Message::Win,
@@ -1261,7 +1283,9 @@ mod tests {
             Amount::from_sat(orig_taker_amount),
         );
         let fee = 100;
-        let updated_payout = payout.with_updated_fee(Amount::from_sat(fee)).unwrap();
+        let updated_payout = payout
+            .with_updated_fee(Amount::from_sat(fee), dummy_dust_limit, dummy_dust_limit)
+            .unwrap();
 
         assert_eq!(updated_payout.maker_amount, Amount::from_sat(0));
         assert_eq!(
