@@ -91,14 +91,13 @@ pub fn build_cfd_transactions(
             taker_punish_params.revocation_pk,
             taker_punish_params.publish_pk,
         ),
-    )
-    .context("cannot build commit tx")?;
+    );
 
     let identity_pk = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &identity_sk);
     let commit_encsig = if identity_pk == maker.identity_pk.key {
-        commit_tx.encsign(identity_sk, &taker_punish_params.publish_pk)?
+        commit_tx.encsign(identity_sk, &taker_punish_params.publish_pk)
     } else if identity_pk == taker.identity_pk.key {
-        commit_tx.encsign(identity_sk, &maker_punish_params.publish_pk)?
+        commit_tx.encsign(identity_sk, &maker_punish_params.publish_pk)
     } else {
         bail!("identity sk does not belong to taker or maker")
     };
@@ -685,7 +684,7 @@ impl CommitTransaction {
         lock_tx: &LockTransaction,
         (maker_own_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
         (taker_own_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
-    ) -> Result<Self> {
+    ) -> Self {
         let lock_tx_amount = lock_tx.amount().as_sat();
 
         let lock_input = TxIn {
@@ -724,23 +723,23 @@ impl CommitTransaction {
             SigHashType::All,
         );
 
-        Ok(Self {
+        Self {
             inner,
             descriptor,
             lock_descriptor: lock_tx.descriptor(),
             amount: Amount::from_sat(commit_tx_amount),
             sighash,
             fee,
-        })
+        }
     }
 
-    fn encsign(&self, sk: SecretKey, publish_them_pk: &PublicKey) -> Result<EcdsaAdaptorSignature> {
-        Ok(EcdsaAdaptorSignature::encrypt(
+    fn encsign(&self, sk: SecretKey, publish_them_pk: &PublicKey) -> EcdsaAdaptorSignature {
+        EcdsaAdaptorSignature::encrypt(
             SECP256K1,
             &secp256k1_zkp::Message::from_slice(&self.sighash).expect("sighash is valid message"),
             &sk,
             &publish_them_pk.key,
-        ))
+        )
     }
 
     fn outpoint(&self) -> OutPoint {
