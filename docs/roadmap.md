@@ -52,4 +52,3 @@ Constraints:
 - Anonymity
 - Orderbook
 - Multiple makers
-

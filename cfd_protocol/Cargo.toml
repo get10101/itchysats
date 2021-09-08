@@ -1,0 +1,15 @@
+[package]
+name = "cfd_protocol"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+anyhow = "1"
+bdk = { git = "https://github.com/bitcoindevkit/bdk/", rev = "acf157a99a305226203d2b55a567291a93c64720" }
+itertools = "0.10"
+rand = "0.6"
+rand_chacha = "0.1"
+secp256k1-zkp = { version = "0.4", features = ["hashes", "global-context"] }
+
+[dev-dependencies]
+bitcoin = { version = "0.27", features = ["rand", "bitcoinconsensus"] }
