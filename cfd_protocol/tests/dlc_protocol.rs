@@ -6,11 +6,12 @@ use bdk::wallet::AddressIndex;
 use bdk::SignOptions;
 use cfd_protocol::{
     build_cfd_transactions, commit_descriptor, compute_signature_point, finalize_spend_transaction,
-    lock_descriptor, punish_transaction, spending_tx_sighash, Message, OracleParams, Payout,
-    PunishParams, TransactionExt, WalletExt,
+    lock_descriptor, punish_transaction, spending_tx_sighash, OracleParams, Payout, PunishParams,
+    TransactionExt, WalletExt,
 };
 use rand::{CryptoRng, RngCore, SeedableRng};
 use rand_chacha::ChaChaRng;
+use secp256k1_zkp::bitcoin_hashes::sha256;
 use secp256k1_zkp::{schnorrsig, SecretKey, SECP256K1};
 use std::collections::HashMap;
 
@@ -28,8 +29,16 @@ fn run_cfd_protocol() {
     let (taker_sk, taker_pk) = make_keypair(&mut rng);
 
     let payouts = vec![
-        Payout::new(Message::Win, Amount::from_btc(2.0).unwrap(), Amount::ZERO),
-        Payout::new(Message::Lose, Amount::ZERO, Amount::from_btc(2.0).unwrap()),
+        Payout::new(
+            "win".to_string().into_bytes(),
+            Amount::from_btc(2.0).unwrap(),
+            Amount::ZERO,
+        ),
+        Payout::new(
+            "lose".to_string().into_bytes(),
+            Amount::ZERO,
+            Amount::from_btc(2.0).unwrap(),
+        ),
     ];
 
     let refund_timelock = 0;
@@ -147,13 +156,13 @@ fn run_cfd_protocol() {
             let maker_encryption_point = compute_signature_point(
                 &oracle.public_key(),
                 &announcement.nonce_pk(),
-                maker_cet.2,
+                &maker_cet.2,
             )
             .unwrap();
             let taker_encryption_point = compute_signature_point(
                 &oracle.public_key(),
                 &announcement.nonce_pk(),
-                taker_cet.2,
+                &taker_cet.2,
             )
             .unwrap();
 
@@ -280,10 +289,10 @@ fn run_cfd_protocol() {
 
     // verify cets
 
-    let attestations = [Message::Win, Message::Lose]
+    let attestations = ["win".as_bytes(), "lose".as_bytes()]
         .iter()
-        .map(|msg| (*msg, oracle.attest(&event, *msg)))
-        .collect::<HashMap<_, _>>();
+        .map(|msg| (*msg, oracle.attest(&event, msg)))
+        .collect::<HashMap<&[u8], _>>();
 
     maker_cfd_txs
         .cets
@@ -291,7 +300,7 @@ fn run_cfd_protocol() {
         .zip(taker_cfd_txs.cets)
         .try_for_each(|((cet, maker_encsig, msg), (_, taker_encsig, _))| {
             let oracle_sig = attestations
-                .get(&msg)
+                .get(msg.as_slice())
                 .expect("oracle to sign all messages in test");
             let (_nonce_pk, signature_scalar) = schnorrsig_decompose(oracle_sig);
 
@@ -460,8 +469,10 @@ impl Oracle {
         schnorrsig::PublicKey::from_keypair(SECP256K1, &self.key_pair)
     }
 
-    fn attest(&self, event: &Event, msg: Message) -> schnorrsig::Signature {
-        secp_utils::schnorr_sign_with_nonce(&msg.into(), &self.key_pair, &event.nonce)
+    fn attest(&self, event: &Event, msg: &[u8]) -> schnorrsig::Signature {
+        let msg = secp256k1_zkp::Message::from_hashed_data::<sha256::Hash>(msg);
+
+        secp_utils::schnorr_sign_with_nonce(&msg, &self.key_pair, &event.nonce)
     }
 }
 
@@ -540,9 +551,7 @@ where
 }
 
 /// Decompose a BIP340 signature into R and s.
-pub fn schnorrsig_decompose(
-    signature: &schnorrsig::Signature,
-) -> (schnorrsig::PublicKey, SecretKey) {
+fn schnorrsig_decompose(signature: &schnorrsig::Signature) -> (schnorrsig::PublicKey, SecretKey) {
     let bytes = signature.as_ref();
 
     let nonce_pk = schnorrsig::PublicKey::from_slice(&bytes[0..32]).expect("R value in sig");

@@ -13,6 +13,7 @@ use bdk::miniscript::DescriptorTrait;
 use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
 use itertools::Itertools;
+use secp256k1_zkp::bitcoin_hashes::sha256;
 use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
 use std::iter::FromIterator;
@@ -118,8 +119,9 @@ pub fn build_cfd_transactions(
     };
 
     let cets = payouts
-        .iter()
+        .into_iter()
         .map(|payout| {
+            let message = payout.message.clone();
             let cet = ContractExecutionTransaction::new(
                 &commit_tx,
                 payout,
@@ -130,7 +132,7 @@ pub fn build_cfd_transactions(
 
             let encsig = cet.encsign(identity_sk, &oracle_params.pk, &oracle_params.nonce_pk)?;
 
-            Ok((cet.inner, encsig, payout.message))
+            Ok((cet.inner, encsig, message))
         })
         .collect::<Result<Vec<_>>>()
         .context("cannot build and sign all cets")?;
@@ -355,21 +357,19 @@ pub struct OracleParams {
 pub struct CfdTransactions {
     pub lock: PartiallySignedTransaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
-    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, Message)>,
+    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, Vec<u8>)>,
     pub refund: (Transaction, Signature),
 }
 
-// NOTE: This is a simplification. Our use-case will not work with
-// a simple enumeration of possible messages
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Payout {
-    message: Message,
+    message: Vec<u8>,
     maker_amount: Amount,
     taker_amount: Amount,
 }
 
 impl Payout {
-    pub fn new(message: Message, maker_amount: Amount, taker_amount: Amount) -> Self {
+    pub fn new(message: Vec<u8>, maker_amount: Amount, taker_amount: Amount) -> Self {
         Self {
             message,
             maker_amount,
@@ -377,7 +377,7 @@ impl Payout {
         }
     }
 
-    fn to_txouts(self, maker_address: &Address, taker_address: &Address) -> Vec<TxOut> {
+    fn into_txouts(self, maker_address: &Address, taker_address: &Address) -> Vec<TxOut> {
         let txouts = [
             (self.maker_amount, maker_address),
             (self.taker_amount, taker_address),
@@ -407,14 +407,16 @@ impl Payout {
         dust_limit_maker: Amount,
         dust_limit_taker: Amount,
     ) -> Result<Self> {
-        let mut updated = self;
+        let maker_amount = self.maker_amount;
+        let taker_amount = self.taker_amount;
 
+        let mut updated = self;
         match (
-            self.maker_amount
+            maker_amount
                 .checked_sub(fee / 2)
                 .map(|a| a > dust_limit_maker)
                 .unwrap_or(false),
-            self.taker_amount
+            taker_amount
                 .checked_sub(fee / 2)
                 .map(|a| a > dust_limit_taker)
                 .unwrap_or(false),
@@ -425,39 +427,15 @@ impl Payout {
             }
             (false, true) => {
                 updated.maker_amount = Amount::ZERO;
-                updated.taker_amount = self.taker_amount - (fee + self.maker_amount);
+                updated.taker_amount = taker_amount - (fee + maker_amount);
             }
             (true, false) => {
-                updated.maker_amount = self.maker_amount - (fee + self.taker_amount);
+                updated.maker_amount = maker_amount - (fee + taker_amount);
                 updated.taker_amount = Amount::ZERO;
             }
             (false, false) => bail!("Amounts are too small, could not subtract fee."),
         }
         Ok(updated)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Message {
-    Win,
-    Lose,
-}
-
-impl From<Message> for secp256k1_zkp::Message {
-    fn from(msg: Message) -> Self {
-        // TODO: Tag hash with prefix and other public data
-        secp256k1_zkp::Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(
-            msg.to_string().as_bytes(),
-        )
-    }
-}
-
-impl ToString for Message {
-    fn to_string(&self) -> String {
-        match self {
-            Message::Win => "win".to_string(),
-            Message::Lose => "lose".to_string(),
-        }
     }
 }
 
@@ -479,7 +457,7 @@ sha256t_hash_newtype!(
 pub fn compute_signature_point(
     oracle_pk: &schnorrsig::PublicKey,
     nonce_pk: &schnorrsig::PublicKey,
-    message: Message,
+    msg: &[u8],
 ) -> Result<secp256k1_zkp::PublicKey> {
     fn schnorr_pubkey_to_pubkey(pk: &schnorrsig::PublicKey) -> Result<secp256k1_zkp::PublicKey> {
         let mut buf = Vec::<u8>::with_capacity(33);
@@ -492,7 +470,11 @@ pub fn compute_signature_point(
         let mut buf = Vec::<u8>::new();
         buf.extend(&nonce_pk.serialize());
         buf.extend(&oracle_pk.serialize());
-        buf.extend(secp256k1_zkp::Message::from(message).as_ref().to_vec());
+        buf.extend(
+            secp256k1_zkp::Message::from_hashed_data::<sha256::Hash>(msg)
+                .as_ref()
+                .to_vec(),
+        );
         BIP340Hash::hash(&buf).into_inner().to_vec()
     };
     let mut oracle_pk = schnorr_pubkey_to_pubkey(oracle_pk)?;
@@ -504,7 +486,7 @@ pub fn compute_signature_point(
 #[derive(Debug, Clone)]
 struct ContractExecutionTransaction {
     inner: Transaction,
-    message: Message,
+    message: Vec<u8>,
     sighash: SigHash,
     commit_descriptor: Descriptor<PublicKey>,
 }
@@ -516,34 +498,35 @@ impl ContractExecutionTransaction {
 
     fn new(
         commit_tx: &CommitTransaction,
-        payout: &Payout,
+        payout: Payout,
         maker_address: &Address,
         taker_address: &Address,
         relative_timelock_in_blocks: u32,
     ) -> Result<Self> {
+        let message = payout.message.clone();
+
         let commit_input = TxIn {
             previous_output: commit_tx.outpoint(),
             sequence: relative_timelock_in_blocks,
             ..Default::default()
         };
 
-        let mut tx = Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![commit_input],
-            output: payout.to_txouts(maker_address, taker_address),
-        };
-
         let mut fee = Self::SIGNED_VBYTES * SATS_PER_VBYTE;
         fee += commit_tx.fee() as f64;
-
-        tx.output = payout
+        let output = payout
             .with_updated_fee(
                 Amount::from_sat(fee as u64),
                 maker_address.script_pubkey().dust_value(),
                 taker_address.script_pubkey().dust_value(),
             )?
-            .to_txouts(maker_address, taker_address);
+            .into_txouts(maker_address, taker_address);
+
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![commit_input],
+            output,
+        };
 
         let sighash = SigHashCache::new(&tx).signature_hash(
             0,
@@ -554,7 +537,7 @@ impl ContractExecutionTransaction {
 
         Ok(Self {
             inner: tx,
-            message: payout.message,
+            message,
             sighash,
             commit_descriptor: commit_tx.descriptor(),
         })
@@ -566,7 +549,7 @@ impl ContractExecutionTransaction {
         oracle_pk: &schnorrsig::PublicKey,
         nonce_pk: &schnorrsig::PublicKey,
     ) -> Result<EcdsaAdaptorSignature> {
-        let signature_point = compute_signature_point(oracle_pk, nonce_pk, self.message)?;
+        let signature_point = compute_signature_point(oracle_pk, nonce_pk, &self.message)?;
 
         Ok(EcdsaAdaptorSignature::encrypt(
             SECP256K1,
@@ -882,7 +865,7 @@ mod tests {
         let orig_maker_amount = 1000;
         let orig_taker_amount = 1000;
         let payout = Payout::new(
-            Message::Win,
+            "win".to_string().into_bytes(),
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         );
@@ -912,7 +895,7 @@ mod tests {
         let orig_maker_amount = dummy_dust_limit.as_sat() - 1;
         let orig_taker_amount = 1000;
         let payout = Payout::new(
-            Message::Win,
+            "win".to_string().into_bytes(),
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         );
