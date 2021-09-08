@@ -4,8 +4,7 @@ use bdk::bitcoin::hashes::*;
 use bdk::bitcoin::util::bip143::SigHashCache;
 use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
 use bdk::bitcoin::{
-    Address, Amount, Network, OutPoint, PrivateKey, PublicKey, SigHash, SigHashType, Transaction,
-    TxIn, TxOut,
+    Address, Amount, OutPoint, PublicKey, SigHash, SigHashType, Transaction, TxIn, TxOut,
 };
 use bdk::database::BatchDatabase;
 use bdk::descriptor::Descriptor;
@@ -301,38 +300,40 @@ pub fn punish_transaction(
     let satisfier = {
         let mut satisfier = HashMap::with_capacity(3);
 
-        let pk = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk);
-        let pk = PublicKey {
-            compressed: true,
-            key: pk,
-        };
-        let pk_hash = pk.pubkey_hash();
-        let sig_sk = SECP256K1.sign(&sighash.to_message(), &sk);
+        {
+            let pk = {
+                let key = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk);
+                PublicKey {
+                    compressed: true,
+                    key,
+                }
+            };
+            let sig_sk = SECP256K1.sign(&sighash.to_message(), &sk);
+            satisfier.insert(pk.pubkey_hash().as_hash(), (pk, (sig_sk, SigHashType::All)));
+        }
 
-        let publish_them_pk_hash = publish_them_pk.pubkey_hash();
-        let sig_publish_other = SECP256K1.sign(&sighash.to_message(), &publish_them_sk);
+        {
+            let sig_publish_them = SECP256K1.sign(&sighash.to_message(), &publish_them_sk);
+            satisfier.insert(
+                publish_them_pk.pubkey_hash().as_hash(),
+                (publish_them_pk, (sig_publish_them, SigHashType::All)),
+            );
+        }
 
-        let revocation_them_pk = PublicKey::from_private_key(
-            SECP256K1,
-            &PrivateKey {
-                compressed: true,
-                network: Network::Regtest,
-                key: revocation_them_sk,
-            },
-        );
-        let revocation_them_pk_hash = revocation_them_pk.pubkey_hash();
-        let sig_revocation_other = SECP256K1.sign(&sighash.to_message(), &revocation_them_sk);
-
-        satisfier.insert(pk_hash.as_hash(), (pk, (sig_sk, SigHashType::All)));
-
-        satisfier.insert(
-            publish_them_pk_hash.as_hash(),
-            (publish_them_pk, (sig_publish_other, SigHashType::All)),
-        );
-        satisfier.insert(
-            revocation_them_pk_hash.as_hash(),
-            (revocation_them_pk, (sig_revocation_other, SigHashType::All)),
-        );
+        {
+            let revocation_them_pk = {
+                let key = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &revocation_them_sk);
+                PublicKey {
+                    compressed: true,
+                    key,
+                }
+            };
+            let sig_revocation_them = SECP256K1.sign(&sighash.to_message(), &revocation_them_sk);
+            satisfier.insert(
+                revocation_them_pk.pubkey_hash().as_hash(),
+                (revocation_them_pk, (sig_revocation_them, SigHashType::All)),
+            );
+        }
 
         satisfier
     };
@@ -691,10 +692,7 @@ impl CommitTransaction {
 
         let output = TxOut {
             value: lock_tx_amount,
-            script_pubkey: descriptor
-                .address(Network::Regtest)
-                .expect("can derive address from descriptor")
-                .script_pubkey(),
+            script_pubkey: descriptor.script_pubkey(),
         };
 
         let mut inner = Transaction {
@@ -801,10 +799,7 @@ impl LockTransaction {
 
         let lock_output = TxOut {
             value: amount.as_sat(),
-            script_pubkey: lock_descriptor
-                .address(Network::Regtest)
-                .expect("can derive address from descriptor")
-                .script_pubkey(),
+            script_pubkey: lock_descriptor.script_pubkey(),
         };
 
         let lock_tx = Transaction {
@@ -883,16 +878,16 @@ impl SigHashExt for SigHash {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
+
+    use bdk::bitcoin::Network;
 
     // TODO add proptest for this
 
     #[test]
     fn test_fee_subtraction_bigger_than_dust() {
-        let key = PublicKey::from_str(
-            "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af",
-        )
-        .unwrap();
+        let key = "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af"
+            .parse()
+            .unwrap();
         let dummy_address = Address::p2wpkh(&key, Network::Regtest).unwrap();
         let dummy_dust_limit = dummy_address.script_pubkey().dust_value();
 
@@ -920,12 +915,12 @@ mod tests {
 
     #[test]
     fn test_fee_subtraction_smaller_than_dust() {
-        let key = PublicKey::from_str(
-            "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af",
-        )
-        .unwrap();
+        let key = "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af"
+            .parse()
+            .unwrap();
         let dummy_address = Address::p2wpkh(&key, Network::Regtest).unwrap();
         let dummy_dust_limit = dummy_address.script_pubkey().dust_value();
+
         let orig_maker_amount = dummy_dust_limit.as_sat() - 1;
         let orig_taker_amount = 1000;
         let payout = Payout::new(
