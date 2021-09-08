@@ -4,8 +4,7 @@ use bdk::bitcoin::hashes::*;
 use bdk::bitcoin::util::bip143::SigHashCache;
 use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
 use bdk::bitcoin::{
-    Address, Amount, Network, OutPoint, PrivateKey, PublicKey, SigHash, SigHashType, Transaction,
-    TxIn, TxOut,
+    Address, Amount, Network, OutPoint, PublicKey, SigHash, SigHashType, Transaction, TxIn, TxOut,
 };
 use bdk::database::BatchDatabase;
 use bdk::descriptor::Descriptor;
@@ -301,38 +300,40 @@ pub fn punish_transaction(
     let satisfier = {
         let mut satisfier = HashMap::with_capacity(3);
 
-        let pk = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk);
-        let pk = PublicKey {
-            compressed: true,
-            key: pk,
-        };
-        let pk_hash = pk.pubkey_hash();
-        let sig_sk = SECP256K1.sign(&sighash.to_message(), &sk);
+        {
+            let pk = {
+                let key = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk);
+                PublicKey {
+                    compressed: true,
+                    key,
+                }
+            };
+            let sig_sk = SECP256K1.sign(&sighash.to_message(), &sk);
+            satisfier.insert(pk.pubkey_hash().as_hash(), (pk, (sig_sk, SigHashType::All)));
+        }
 
-        let publish_them_pk_hash = publish_them_pk.pubkey_hash();
-        let sig_publish_other = SECP256K1.sign(&sighash.to_message(), &publish_them_sk);
+        {
+            let sig_publish_them = SECP256K1.sign(&sighash.to_message(), &publish_them_sk);
+            satisfier.insert(
+                publish_them_pk.pubkey_hash().as_hash(),
+                (publish_them_pk, (sig_publish_them, SigHashType::All)),
+            );
+        }
 
-        let revocation_them_pk = PublicKey::from_private_key(
-            SECP256K1,
-            &PrivateKey {
-                compressed: true,
-                network: Network::Regtest,
-                key: revocation_them_sk,
-            },
-        );
-        let revocation_them_pk_hash = revocation_them_pk.pubkey_hash();
-        let sig_revocation_other = SECP256K1.sign(&sighash.to_message(), &revocation_them_sk);
-
-        satisfier.insert(pk_hash.as_hash(), (pk, (sig_sk, SigHashType::All)));
-
-        satisfier.insert(
-            publish_them_pk_hash.as_hash(),
-            (publish_them_pk, (sig_publish_other, SigHashType::All)),
-        );
-        satisfier.insert(
-            revocation_them_pk_hash.as_hash(),
-            (revocation_them_pk, (sig_revocation_other, SigHashType::All)),
-        );
+        {
+            let revocation_them_pk = {
+                let key = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &revocation_them_sk);
+                PublicKey {
+                    compressed: true,
+                    key,
+                }
+            };
+            let sig_revocation_them = SECP256K1.sign(&sighash.to_message(), &revocation_them_sk);
+            satisfier.insert(
+                revocation_them_pk.pubkey_hash().as_hash(),
+                (revocation_them_pk, (sig_revocation_them, SigHashType::All)),
+            );
+        }
 
         satisfier
     };
