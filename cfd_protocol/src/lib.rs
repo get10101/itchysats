@@ -4,7 +4,7 @@ use bdk::bitcoin::hashes::*;
 use bdk::bitcoin::util::bip143::SigHashCache;
 use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
 use bdk::bitcoin::{
-    Address, Amount, Network, OutPoint, PublicKey, SigHash, SigHashType, Transaction, TxIn, TxOut,
+    Address, Amount, OutPoint, PublicKey, SigHash, SigHashType, Transaction, TxIn, TxOut,
 };
 use bdk::database::BatchDatabase;
 use bdk::descriptor::Descriptor;
@@ -692,10 +692,7 @@ impl CommitTransaction {
 
         let output = TxOut {
             value: lock_tx_amount,
-            script_pubkey: descriptor
-                .address(Network::Regtest)
-                .expect("can derive address from descriptor")
-                .script_pubkey(),
+            script_pubkey: descriptor.script_pubkey(),
         };
 
         let mut inner = Transaction {
@@ -802,10 +799,7 @@ impl LockTransaction {
 
         let lock_output = TxOut {
             value: amount.as_sat(),
-            script_pubkey: lock_descriptor
-                .address(Network::Regtest)
-                .expect("can derive address from descriptor")
-                .script_pubkey(),
+            script_pubkey: lock_descriptor.script_pubkey(),
         };
 
         let lock_tx = Transaction {
@@ -884,6 +878,8 @@ impl SigHashExt for SigHash {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use bdk::bitcoin::Network;
     use std::str::FromStr;
 
     // TODO add proptest for this
