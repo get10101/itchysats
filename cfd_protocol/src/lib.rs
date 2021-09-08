@@ -880,16 +880,14 @@ mod tests {
     use super::*;
 
     use bdk::bitcoin::Network;
-    use std::str::FromStr;
 
     // TODO add proptest for this
 
     #[test]
     fn test_fee_subtraction_bigger_than_dust() {
-        let key = PublicKey::from_str(
-            "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af",
-        )
-        .unwrap();
+        let key = "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af"
+            .parse()
+            .unwrap();
         let dummy_address = Address::p2wpkh(&key, Network::Regtest).unwrap();
         let dummy_dust_limit = dummy_address.script_pubkey().dust_value();
 
@@ -917,12 +915,12 @@ mod tests {
 
     #[test]
     fn test_fee_subtraction_smaller_than_dust() {
-        let key = PublicKey::from_str(
-            "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af",
-        )
-        .unwrap();
+        let key = "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af"
+            .parse()
+            .unwrap();
         let dummy_address = Address::p2wpkh(&key, Network::Regtest).unwrap();
         let dummy_dust_limit = dummy_address.script_pubkey().dust_value();
+
         let orig_maker_amount = dummy_dust_limit.as_sat() - 1;
         let orig_taker_amount = 1000;
         let payout = Payout::new(
