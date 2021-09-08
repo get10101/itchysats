@@ -417,7 +417,13 @@ fn build_wallet<R>(
 where
     R: RngCore + CryptoRng,
 {
-    use bdk::{populate_test_db, testutils};
+    // TODO: Consider upstreaming these imports to be included in the macro.
+    use bdk::bitcoin::OutPoint;
+    use bdk::{
+        miniscript, populate_test_db, testutils, ConfirmationTime, KeychainKind, LocalUtxo,
+        TransactionDetails,
+    };
+    use std::str::FromStr;
 
     let mut seed = [0u8; 32];
     rng.fill_bytes(&mut seed);

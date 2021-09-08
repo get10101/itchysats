@@ -5,7 +5,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
-bdk = { git = "https://github.com/bitcoindevkit/bdk/", rev = "acf157a99a305226203d2b55a567291a93c64720" }
+bdk = "0.11"
 itertools = "0.10"
 rand = "0.6"
 rand_chacha = "0.1"
