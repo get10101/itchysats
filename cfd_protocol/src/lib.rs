@@ -377,7 +377,7 @@ impl Payout {
         }
     }
 
-    fn as_txouts(&self, maker_address: &Address, taker_address: &Address) -> Vec<TxOut> {
+    fn to_txouts(self, maker_address: &Address, taker_address: &Address) -> Vec<TxOut> {
         let txouts = [
             (self.maker_amount, maker_address),
             (self.taker_amount, taker_address),
@@ -531,7 +531,7 @@ impl ContractExecutionTransaction {
             version: 2,
             lock_time: 0,
             input: vec![commit_input],
-            output: payout.as_txouts(maker_address, taker_address),
+            output: payout.to_txouts(maker_address, taker_address),
         };
 
         let mut fee = Self::SIGNED_VBYTES * SATS_PER_VBYTE;
@@ -543,7 +543,7 @@ impl ContractExecutionTransaction {
                 maker_address.script_pubkey().dust_value(),
                 taker_address.script_pubkey().dust_value(),
             )?
-            .as_txouts(maker_address, taker_address);
+            .to_txouts(maker_address, taker_address);
 
         let sighash = SigHashCache::new(&tx).signature_hash(
             0,
