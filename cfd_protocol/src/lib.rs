@@ -4,8 +4,8 @@ use bdk::bitcoin::hashes::*;
 use bdk::bitcoin::util::bip143::SigHashCache;
 use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
 use bdk::bitcoin::{
-    self, Address, Amount, Network, OutPoint, PublicKey, SigHash, SigHashType, Transaction, TxIn,
-    TxOut,
+    Address, Amount, Network, OutPoint, PrivateKey, PublicKey, SigHash, SigHashType, Transaction,
+    TxIn, TxOut,
 };
 use bdk::database::BatchDatabase;
 use bdk::descriptor::Descriptor;
@@ -13,7 +13,6 @@ use bdk::miniscript::descriptor::Wsh;
 use bdk::miniscript::DescriptorTrait;
 use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
-use bitcoin::PrivateKey;
 use itertools::Itertools;
 use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
@@ -112,8 +111,7 @@ pub fn build_cfd_transactions(
             taker.lock_amount,
         );
 
-        let sighash =
-            secp256k1_zkp::Message::from_slice(&tx.sighash()).expect("sighash is valid message");
+        let sighash = tx.sighash().to_message();
         let sig = SECP256K1.sign(&sighash, &identity_sk);
 
         (tx.inner, sig)
@@ -200,7 +198,7 @@ pub fn spending_tx_sighash(
         spent_amount.as_sat(),
         SigHashType::All,
     );
-    secp256k1_zkp::Message::from_slice(&sighash).expect("sighash is valid message")
+    sighash.to_message()
 }
 
 pub fn finalize_spend_transaction(
@@ -253,7 +251,7 @@ pub fn punish_transaction(
         .iter()
         .filter_map(|elem| {
             let elem = elem.as_slice();
-            bitcoin::secp256k1::Signature::from_der(&elem[..elem.len() - 1]).ok()
+            Signature::from_der(&elem[..elem.len() - 1]).ok()
         })
         .find_map(|sig| encsig.recover(SECP256K1, &sig, &publish_them_pk.key).ok())
         .context("could not recover publish sk from commit tx")?;
@@ -293,7 +291,7 @@ pub fn punish_transaction(
         tx
     };
 
-    let digest = SigHashCache::new(&punish_tx).signature_hash(
+    let sighash = SigHashCache::new(&punish_tx).signature_hash(
         0,
         &commit_descriptor.script_code(),
         commit_amount,
@@ -303,19 +301,16 @@ pub fn punish_transaction(
     let satisfier = {
         let mut satisfier = HashMap::with_capacity(3);
 
-        let pk = bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &sk);
-        let pk = bitcoin::PublicKey {
+        let pk = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk);
+        let pk = PublicKey {
             compressed: true,
             key: pk,
         };
         let pk_hash = pk.pubkey_hash();
-        let sig_sk = SECP256K1.sign(&secp256k1_zkp::Message::from_slice(&digest)?, &sk);
+        let sig_sk = SECP256K1.sign(&sighash.to_message(), &sk);
 
         let publish_them_pk_hash = publish_them_pk.pubkey_hash();
-        let sig_publish_other = SECP256K1.sign(
-            &secp256k1_zkp::Message::from_slice(&digest)?,
-            &publish_them_sk,
-        );
+        let sig_publish_other = SECP256K1.sign(&sighash.to_message(), &publish_them_sk);
 
         let revocation_them_pk = PublicKey::from_private_key(
             SECP256K1,
@@ -326,10 +321,7 @@ pub fn punish_transaction(
             },
         );
         let revocation_them_pk_hash = revocation_them_pk.pubkey_hash();
-        let sig_revocation_other = SECP256K1.sign(
-            &secp256k1_zkp::Message::from_slice(&digest)?,
-            &revocation_them_sk,
-        );
+        let sig_revocation_other = SECP256K1.sign(&sighash.to_message(), &revocation_them_sk);
 
         satisfier.insert(pk_hash.as_hash(), (pk, (sig_sk, SigHashType::All)));
 
@@ -589,7 +581,7 @@ impl ContractExecutionTransaction {
 
         Ok(EcdsaAdaptorSignature::encrypt(
             SECP256K1,
-            &secp256k1_zkp::Message::from_slice(&self.sighash).expect("sighash is valid message"),
+            &self.sighash.to_message(),
             &sk,
             &signature_point,
         ))
@@ -736,7 +728,7 @@ impl CommitTransaction {
     fn encsign(&self, sk: SecretKey, publish_them_pk: &PublicKey) -> EcdsaAdaptorSignature {
         EcdsaAdaptorSignature::encrypt(
             SECP256K1,
-            &secp256k1_zkp::Message::from_slice(&self.sighash).expect("sighash is valid message"),
+            &self.sighash.to_message(),
             &sk,
             &publish_them_pk.key,
         )
@@ -869,9 +861,22 @@ pub trait TransactionExt {
     fn get_virtual_size(&self) -> f64;
 }
 
-impl TransactionExt for bitcoin::Transaction {
+impl TransactionExt for Transaction {
     fn get_virtual_size(&self) -> f64 {
         self.get_weight() as f64 / 4.0
+    }
+}
+
+trait SigHashExt {
+    fn to_message(self) -> secp256k1_zkp::Message;
+}
+
+impl SigHashExt for SigHash {
+    fn to_message(self) -> secp256k1_zkp::Message {
+        use secp256k1_zkp::bitcoin_hashes::Hash;
+        let hash = secp256k1_zkp::bitcoin_hashes::sha256d::Hash::from_inner(*self.as_inner());
+
+        hash.into()
     }
 }
 
