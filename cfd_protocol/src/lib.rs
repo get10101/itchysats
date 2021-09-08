@@ -15,6 +15,7 @@ use bdk::FeeRate;
 use itertools::Itertools;
 use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
+use std::iter::FromIterator;
 
 /// In satoshi per vbyte.
 const SATS_PER_VBYTE: f64 = 1.0;
@@ -206,14 +207,10 @@ pub fn finalize_spend_transaction(
     (maker_pk, maker_sig): (PublicKey, Signature),
     (taker_pk, taker_sig): (PublicKey, Signature),
 ) -> Result<Transaction> {
-    let satisfier = {
-        let mut satisfier = HashMap::with_capacity(2);
-
-        satisfier.insert(maker_pk, (maker_sig, SigHashType::All));
-        satisfier.insert(taker_pk, (taker_sig, SigHashType::All));
-
-        satisfier
-    };
+    let satisfier = HashMap::from_iter(vec![
+        (maker_pk, (maker_sig, SigHashType::All)),
+        (taker_pk, (taker_sig, SigHashType::All)),
+    ]);
 
     let input = tx
         .input
@@ -231,7 +228,7 @@ pub fn punish_transaction(
     encsig: EcdsaAdaptorSignature,
     sk: SecretKey,
     revocation_them_sk: SecretKey,
-    publish_them_pk: PublicKey,
+    pub_them_pk: PublicKey,
     revoked_commit_tx: &Transaction,
 ) -> Result<Transaction> {
     /// Expected size of signed transaction in virtual bytes, plus a
@@ -252,7 +249,7 @@ pub fn punish_transaction(
             let elem = elem.as_slice();
             Signature::from_der(&elem[..elem.len() - 1]).ok()
         })
-        .find_map(|sig| encsig.recover(SECP256K1, &sig, &publish_them_pk.key).ok())
+        .find_map(|sig| encsig.recover(SECP256K1, &sig, &pub_them_pk.key).ok())
         .context("could not recover publish sk from commit tx")?;
 
     let commit_vout = revoked_commit_tx
@@ -298,44 +295,35 @@ pub fn punish_transaction(
     );
 
     let satisfier = {
-        let mut satisfier = HashMap::with_capacity(3);
+        let pk = {
+            let key = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk);
+            PublicKey {
+                compressed: true,
+                key,
+            }
+        };
+        let pk_hash = pk.pubkey_hash().as_hash();
+        let sig_sk = SECP256K1.sign(&sighash.as_message(), &sk);
 
-        {
-            let pk = {
-                let key = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk);
-                PublicKey {
-                    compressed: true,
-                    key,
-                }
-            };
-            let sig_sk = SECP256K1.sign(&sighash.as_message(), &sk);
-            satisfier.insert(pk.pubkey_hash().as_hash(), (pk, (sig_sk, SigHashType::All)));
-        }
+        let pub_them_pk_hash = pub_them_pk.pubkey_hash().as_hash();
+        let sig_pub_them = SECP256K1.sign(&sighash.as_message(), &publish_them_sk);
 
-        {
-            let sig_publish_them = SECP256K1.sign(&sighash.as_message(), &publish_them_sk);
-            satisfier.insert(
-                publish_them_pk.pubkey_hash().as_hash(),
-                (publish_them_pk, (sig_publish_them, SigHashType::All)),
-            );
-        }
+        let rev_them_pk = {
+            let key = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &revocation_them_sk);
+            PublicKey {
+                compressed: true,
+                key,
+            }
+        };
+        let rev_them_pk_hash = rev_them_pk.pubkey_hash().as_hash();
+        let sig_rev_them = SECP256K1.sign(&sighash.as_message(), &revocation_them_sk);
 
-        {
-            let revocation_them_pk = {
-                let key = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &revocation_them_sk);
-                PublicKey {
-                    compressed: true,
-                    key,
-                }
-            };
-            let sig_revocation_them = SECP256K1.sign(&sighash.as_message(), &revocation_them_sk);
-            satisfier.insert(
-                revocation_them_pk.pubkey_hash().as_hash(),
-                (revocation_them_pk, (sig_revocation_them, SigHashType::All)),
-            );
-        }
-
-        satisfier
+        let sighash_all = SigHashType::All;
+        HashMap::from_iter(vec![
+            (pk_hash, (pk, (sig_sk, sighash_all))),
+            (pub_them_pk_hash, (pub_them_pk, (sig_pub_them, sighash_all))),
+            (rev_them_pk_hash, (rev_them_pk, (sig_rev_them, sighash_all))),
+        ])
     };
 
     commit_descriptor.satisfy(&mut punish_tx.input[0], satisfier)?;
