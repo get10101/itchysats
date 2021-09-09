@@ -865,7 +865,7 @@ mod tests {
         let orig_maker_amount = 1000;
         let orig_taker_amount = 1000;
         let payout = Payout::new(
-            "win".to_string().into_bytes(),
+            b"win".to_vec(),
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         );
@@ -895,7 +895,7 @@ mod tests {
         let orig_maker_amount = dummy_dust_limit.as_sat() - 1;
         let orig_taker_amount = 1000;
         let payout = Payout::new(
-            "win".to_string().into_bytes(),
+            b"win".to_vec(),
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         );
