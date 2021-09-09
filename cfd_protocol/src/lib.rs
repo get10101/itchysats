@@ -70,17 +70,16 @@ pub fn build_cfd_transactions(
     /// TODO: Should this be an argument to this function?
     const CET_TIMELOCK: u32 = 12;
 
-    let lock_tx = LockTransaction::new(
+    let lock_tx = lock_transaction(
         maker.lock_psbt.clone(),
         taker.lock_psbt.clone(),
         maker.identity_pk,
         taker.identity_pk,
         maker.lock_amount + taker.lock_amount,
-    )
-    .context("cannot build lock tx")?;
+    );
 
     let commit_tx = CommitTransaction::new(
-        &lock_tx,
+        &lock_tx.global.unsigned_tx,
         (
             maker.identity_pk,
             maker_punish_params.revocation_pk,
@@ -91,7 +90,8 @@ pub fn build_cfd_transactions(
             taker_punish_params.revocation_pk,
             taker_punish_params.publish_pk,
         ),
-    );
+    )
+    .context("cannot build commit tx")?;
 
     let identity_pk = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &identity_sk);
     let commit_encsig = if identity_pk == maker.identity_pk.key {
@@ -138,7 +138,7 @@ pub fn build_cfd_transactions(
         .context("cannot build and sign all cets")?;
 
     Ok(CfdTransactions {
-        lock: lock_tx.inner,
+        lock: lock_tx,
         commit: (commit_tx.inner, commit_encsig),
         cets,
         refund,
@@ -645,24 +645,38 @@ impl CommitTransaction {
     const SIGNED_VBYTES: f64 = 148.5 + (3.0 * 2.0) / 4.0;
 
     fn new(
-        lock_tx: &LockTransaction,
-        (maker_own_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
-        (taker_own_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
-    ) -> Self {
-        let lock_tx_amount = lock_tx.amount().as_sat();
+        lock_tx: &Transaction,
+        (maker_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
+        (taker_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
+    ) -> Result<Self> {
+        let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
+        let (lock_outpoint, lock_amount) = {
+            let vout = lock_tx
+                .output
+                .iter()
+                .position(|out| out.script_pubkey == lock_descriptor.script_pubkey())
+                .context("lock script not found in lock tx")?;
+            let outpoint = OutPoint {
+                txid: lock_tx.txid(),
+                vout: vout as u32,
+            };
+            let amount = lock_tx.output[vout].value;
+
+            (outpoint, amount)
+        };
 
         let lock_input = TxIn {
-            previous_output: lock_tx.lock_outpoint(),
+            previous_output: lock_outpoint,
             ..Default::default()
         };
 
         let descriptor = commit_descriptor(
-            (maker_own_pk, maker_rev_pk, maker_publish_pk),
-            (taker_own_pk, taker_rev_pk, taker_publish_pk),
+            (maker_pk, maker_rev_pk, maker_publish_pk),
+            (taker_pk, taker_rev_pk, taker_publish_pk),
         );
 
         let output = TxOut {
-            value: lock_tx_amount,
+            value: lock_amount,
             script_pubkey: descriptor.script_pubkey(),
         };
 
@@ -674,24 +688,24 @@ impl CommitTransaction {
         };
         let fee = (Self::SIGNED_VBYTES * SATS_PER_VBYTE as f64) as u64;
 
-        let commit_tx_amount = lock_tx_amount - fee as u64;
+        let commit_tx_amount = lock_amount - fee as u64;
         inner.output[0].value = commit_tx_amount;
 
         let sighash = SigHashCache::new(&inner).signature_hash(
             0,
-            &lock_tx.descriptor().script_code(),
-            lock_tx.amount().as_sat(),
+            &lock_descriptor.script_code(),
+            lock_amount,
             SigHashType::All,
         );
 
-        Self {
+        Ok(Self {
             inner,
             descriptor,
-            lock_descriptor: lock_tx.descriptor(),
+            lock_descriptor,
             amount: Amount::from_sat(commit_tx_amount),
             sighash,
             fee,
-        }
+        })
     }
 
     fn encsign(&self, sk: SecretKey, publish_them_pk: &PublicKey) -> EcdsaAdaptorSignature {
@@ -731,95 +745,55 @@ impl CommitTransaction {
     }
 }
 
-#[derive(Debug, Clone)]
-struct LockTransaction {
-    inner: PartiallySignedTransaction,
-    lock_descriptor: Descriptor<PublicKey>,
+fn lock_transaction(
+    maker_psbt: PartiallySignedTransaction,
+    taker_psbt: PartiallySignedTransaction,
+    maker_pk: PublicKey,
+    taker_pk: PublicKey,
     amount: Amount,
-}
+) -> PartiallySignedTransaction {
+    let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
 
-impl LockTransaction {
-    fn new(
-        maker_psbt: PartiallySignedTransaction,
-        taker_psbt: PartiallySignedTransaction,
-        maker_pk: PublicKey,
-        taker_pk: PublicKey,
-        amount: Amount,
-    ) -> Result<Self> {
-        let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
-
-        let maker_change = maker_psbt
-            .global
-            .unsigned_tx
-            .output
-            .into_iter()
-            .filter(|out| {
-                out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
-            })
-            .collect::<Vec<_>>();
-
-        let taker_change = taker_psbt
-            .global
-            .unsigned_tx
-            .output
-            .into_iter()
-            .filter(|out| {
-                out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
-            })
-            .collect();
-
-        let lock_output = TxOut {
-            value: amount.as_sat(),
-            script_pubkey: lock_descriptor.script_pubkey(),
-        };
-
-        let lock_tx = Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![
-                maker_psbt.global.unsigned_tx.input,
-                taker_psbt.global.unsigned_tx.input,
-            ]
-            .concat(),
-            output: vec![vec![lock_output], maker_change, taker_change].concat(),
-        };
-
-        let inner = PartiallySignedTransaction {
-            global: Global::from_unsigned_tx(lock_tx)?,
-            inputs: vec![maker_psbt.inputs, taker_psbt.inputs].concat(),
-            outputs: vec![maker_psbt.outputs, taker_psbt.outputs].concat(),
-        };
-
-        Ok(Self {
-            inner,
-            lock_descriptor,
-            amount,
+    let maker_change = maker_psbt
+        .global
+        .unsigned_tx
+        .output
+        .into_iter()
+        .filter(|out| {
+            out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
         })
-    }
+        .collect::<Vec<_>>();
 
-    fn lock_outpoint(&self) -> OutPoint {
-        let txid = self.inner.global.unsigned_tx.txid();
-        let vout = self
-            .inner
-            .global
-            .unsigned_tx
-            .output
-            .iter()
-            .position(|out| out.script_pubkey == self.lock_descriptor.script_pubkey())
-            .expect("to find lock output in lock tx");
+    let taker_change = taker_psbt
+        .global
+        .unsigned_tx
+        .output
+        .into_iter()
+        .filter(|out| {
+            out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
+        })
+        .collect();
 
-        OutPoint {
-            txid,
-            vout: vout as u32,
-        }
-    }
+    let lock_output = TxOut {
+        value: amount.as_sat(),
+        script_pubkey: lock_descriptor.script_pubkey(),
+    };
 
-    fn descriptor(&self) -> Descriptor<PublicKey> {
-        self.lock_descriptor.clone()
-    }
+    let lock_tx = Transaction {
+        version: 2,
+        lock_time: 0,
+        input: vec![
+            maker_psbt.global.unsigned_tx.input,
+            taker_psbt.global.unsigned_tx.input,
+        ]
+        .concat(),
+        output: vec![vec![lock_output], maker_change, taker_change].concat(),
+    };
 
-    fn amount(&self) -> Amount {
-        self.amount
+    PartiallySignedTransaction {
+        global: Global::from_unsigned_tx(lock_tx).expect("to be unsigned"),
+        inputs: vec![maker_psbt.inputs, taker_psbt.inputs].concat(),
+        outputs: vec![maker_psbt.outputs, taker_psbt.outputs].concat(),
     }
 }
 
