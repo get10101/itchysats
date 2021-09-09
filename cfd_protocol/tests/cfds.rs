@@ -31,8 +31,8 @@ fn create_cfd() {
     let payouts = vec![
         Payout::new(
             b"win".to_vec(),
-            Amount::from_btc(2.0).unwrap(),
-            Amount::ZERO,
+            Amount::from_btc(1.5).unwrap(),
+            Amount::from_btc(0.5).unwrap(),
         ),
         Payout::new(
             b"lose".to_vec(),

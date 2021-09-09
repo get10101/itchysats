@@ -494,7 +494,7 @@ struct ContractExecutionTransaction {
 impl ContractExecutionTransaction {
     /// Expected size of signed transaction in virtual bytes, plus a
     /// buffer to account for different signature lengths.
-    const SIGNED_VBYTES: f64 = 175.25 + (3.0 * 2.0) / 4.0;
+    const SIGNED_VBYTES: f64 = 206.5 + (3.0 * 2.0) / 4.0;
 
     fn new(
         commit_tx: &CommitTransaction,
