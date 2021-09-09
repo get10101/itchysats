@@ -398,8 +398,7 @@ fn check_tx_fee(input_txs: &[&Transaction], spend_tx: &Transaction) -> Result<()
                         "spend tx input {} not found in input_txs",
                         input.previous_output
                     )
-                })
-                .context("foo")?;
+                })?;
 
             Ok(acc + value)
         })?;
