@@ -252,8 +252,6 @@ fn run_cfd_protocol() {
     check_tx_fee(&[&signed_lock_tx], &signed_commit_tx).expect("correct fees for commit tx");
 
     lock_descriptor
-        .address(Network::Regtest)
-        .expect("can derive address from descriptor")
         .script_pubkey()
         .verify(
             0,
@@ -277,8 +275,6 @@ fn run_cfd_protocol() {
     check_tx_fee(&[&signed_commit_tx], &signed_refund_tx).expect("correct fees for refund tx");
 
     commit_descriptor
-        .address(Network::Regtest)
-        .expect("can derive address from descriptor")
         .script_pubkey()
         .verify(
             0,
@@ -321,8 +317,6 @@ fn run_cfd_protocol() {
             check_tx_fee(&[&signed_commit_tx], &signed_cet).expect("correct fees for cet");
 
             commit_descriptor
-                .address(Network::Regtest)
-                .expect("can derive address from descriptor")
                 .script_pubkey()
                 .verify(
                     0,
@@ -349,8 +343,6 @@ fn run_cfd_protocol() {
     check_tx_fee(&[&signed_commit_tx], &punish_tx).expect("correct fees for punish tx");
 
     commit_descriptor
-        .address(Network::Regtest)
-        .expect("can derive address from descriptor")
         .script_pubkey()
         .verify(
             0,
@@ -371,8 +363,6 @@ fn run_cfd_protocol() {
     .unwrap();
 
     commit_descriptor
-        .address(Network::Regtest)
-        .expect("can derive address from descriptor")
         .script_pubkey()
         .verify(
             0,
