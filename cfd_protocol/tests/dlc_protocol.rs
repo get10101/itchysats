@@ -30,12 +30,12 @@ fn run_cfd_protocol() {
 
     let payouts = vec![
         Payout::new(
-            "win".to_string().into_bytes(),
+            b"win".to_vec(),
             Amount::from_btc(2.0).unwrap(),
             Amount::ZERO,
         ),
         Payout::new(
-            "lose".to_string().into_bytes(),
+            b"lose".to_vec(),
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
         ),
