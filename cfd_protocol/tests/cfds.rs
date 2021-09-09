@@ -16,7 +16,7 @@ use secp256k1_zkp::{schnorrsig, SecretKey, SECP256K1};
 use std::collections::HashMap;
 
 #[test]
-fn run_cfd_protocol() {
+fn create_cfd() {
     let mut rng = ChaChaRng::seed_from_u64(0);
 
     let maker_lock_amount = Amount::ONE_BTC;
