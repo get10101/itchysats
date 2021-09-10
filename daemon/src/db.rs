@@ -1,24 +1,22 @@
-use std::convert::TryInto;
-use std::mem;
-
+use crate::model::cfd::{Cfd, CfdOffer, CfdOfferId, CfdState};
+use crate::model::{Leverage, Usd};
 use anyhow::Context;
 use bdk::bitcoin::Amount;
 use rocket_db_pools::sqlx;
 use sqlx::pool::PoolConnection;
-use sqlx::{Sqlite, SqlitePool};
+use sqlx::{Acquire, Sqlite, SqlitePool};
+use std::convert::TryInto;
+use std::mem;
 
-use crate::model::cfd::{Cfd, CfdOffer, CfdOfferId, CfdState};
-use crate::model::{Leverage, Usd};
-
-pub mod maker;
-pub mod taker;
-
-pub async fn do_run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
+pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(pool).await?;
     Ok(())
 }
 
-pub async fn insert_cfd_offer(cfd_offer: CfdOffer, pool: &SqlitePool) -> anyhow::Result<()> {
+pub async fn insert_cfd_offer(
+    cfd_offer: &CfdOffer,
+    conn: &mut PoolConnection<Sqlite>,
+) -> anyhow::Result<()> {
     let uuid = serde_json::to_string(&cfd_offer.id).unwrap();
     let trading_pair = serde_json::to_string(&cfd_offer.trading_pair).unwrap();
     let position = serde_json::to_string(&cfd_offer.position).unwrap();
@@ -56,15 +54,13 @@ pub async fn insert_cfd_offer(cfd_offer: CfdOffer, pool: &SqlitePool) -> anyhow:
         creation_timestamp,
         term
     )
-    .execute(pool)
+    .execute(conn)
     .await?;
 
     Ok(())
 }
 
-// TODO: Consider refactor the API to consistently present PoolConnections
-
-pub async fn load_offer_by_id_from_conn(
+pub async fn load_offer_by_id(
     id: CfdOfferId,
     conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<CfdOffer> {
@@ -104,12 +100,9 @@ pub async fn load_offer_by_id_from_conn(
     })
 }
 
-pub async fn load_offer_by_id(id: CfdOfferId, pool: &SqlitePool) -> anyhow::Result<CfdOffer> {
-    let mut connection = pool.acquire().await?;
-    load_offer_by_id_from_conn(id, &mut connection).await
-}
+pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
+    let mut tx = conn.begin().await?;
 
-pub async fn insert_cfd(cfd: Cfd, pool: &SqlitePool) -> anyhow::Result<()> {
     let offer_uuid = serde_json::to_string(&cfd.offer_id)?;
     let offer_row = sqlx::query!(
         r#"
@@ -117,7 +110,7 @@ pub async fn insert_cfd(cfd: Cfd, pool: &SqlitePool) -> anyhow::Result<()> {
         "#,
         offer_uuid
     )
-    .fetch_one(pool)
+    .fetch_one(&mut tx)
     .await?;
 
     let offer_id = offer_row.id;
@@ -126,7 +119,6 @@ pub async fn insert_cfd(cfd: Cfd, pool: &SqlitePool) -> anyhow::Result<()> {
     let cfd_state = serde_json::to_string(&cfd.state)?;
 
     // save cfd + state in a transaction to make sure the state is only inserted if the cfd was inserted
-    let mut tx = pool.begin().await?;
 
     let cfd_id = sqlx::query!(
         r#"
@@ -162,13 +154,14 @@ pub async fn insert_cfd(cfd: Cfd, pool: &SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)] // This is only used by one binary.
 pub async fn insert_new_cfd_state_by_offer_id(
     offer_id: CfdOfferId,
     new_state: CfdState,
-    pool: &SqlitePool,
+    conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<()> {
-    let cfd_id = load_cfd_id_by_offer_uuid(offer_id, pool).await?;
-    let latest_cfd_state_in_db = load_latest_cfd_state(cfd_id, pool)
+    let cfd_id = load_cfd_id_by_offer_uuid(offer_id, conn).await?;
+    let latest_cfd_state_in_db = load_latest_cfd_state(cfd_id, conn)
         .await
         .context("loading latest state failed")?;
 
@@ -189,21 +182,15 @@ pub async fn insert_new_cfd_state_by_offer_id(
         cfd_id,
         cfd_state,
     )
-    .execute(pool)
+    .execute(conn)
     .await?;
-
-    Ok(())
-}
-
-pub async fn insert_new_cfd_state(cfd: Cfd, pool: &SqlitePool) -> anyhow::Result<()> {
-    insert_new_cfd_state_by_offer_id(cfd.offer_id, cfd.state, pool).await?;
 
     Ok(())
 }
 
 async fn load_cfd_id_by_offer_uuid(
     offer_uuid: CfdOfferId,
-    pool: &SqlitePool,
+    conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<i64> {
     let offer_uuid = serde_json::to_string(&offer_uuid)?;
 
@@ -216,7 +203,7 @@ async fn load_cfd_id_by_offer_uuid(
         "#,
         offer_uuid
     )
-    .fetch_one(pool)
+    .fetch_one(conn)
     .await?;
 
     let cfd_id = cfd_id.id.context("No cfd found")?;
@@ -224,7 +211,10 @@ async fn load_cfd_id_by_offer_uuid(
     Ok(cfd_id)
 }
 
-async fn load_latest_cfd_state(cfd_id: i64, pool: &SqlitePool) -> anyhow::Result<CfdState> {
+async fn load_latest_cfd_state(
+    cfd_id: i64,
+    conn: &mut PoolConnection<Sqlite>,
+) -> anyhow::Result<CfdState> {
     let latest_cfd_state = sqlx::query!(
         r#"
         select
@@ -236,7 +226,7 @@ async fn load_latest_cfd_state(cfd_id: i64, pool: &SqlitePool) -> anyhow::Result
         "#,
         cfd_id
     )
-    .fetch_one(pool)
+    .fetch_one(conn)
     .await?;
 
     let latest_cfd_state_in_db: CfdState =
@@ -246,7 +236,7 @@ async fn load_latest_cfd_state(cfd_id: i64, pool: &SqlitePool) -> anyhow::Result
 }
 
 /// Loads all CFDs with the latest state as the CFD state
-pub async fn load_all_cfds(pool: &SqlitePool) -> anyhow::Result<Vec<Cfd>> {
+pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<Vec<Cfd>> {
     // TODO: Could be optimized with something like but not sure it's worth the complexity:
 
     let rows = sqlx::query!(
@@ -274,7 +264,7 @@ pub async fn load_all_cfds(pool: &SqlitePool) -> anyhow::Result<Vec<Cfd>> {
         )
         "#
     )
-    .fetch_all(pool)
+    .fetch_all(conn)
     .await?;
 
     // TODO: We might want to separate the database model from the http model and properly map between them
@@ -327,11 +317,12 @@ mod tests {
     #[tokio::test]
     async fn test_insert_and_load_offer() {
         let pool = setup_test_db().await;
+        let mut conn = pool.acquire().await.unwrap();
 
         let cfd_offer = CfdOffer::from_default_with_price(Usd(dec!(10000))).unwrap();
-        insert_cfd_offer(cfd_offer.clone(), &pool).await.unwrap();
+        insert_cfd_offer(&cfd_offer, &mut conn).await.unwrap();
 
-        let cfd_offer_loaded = load_offer_by_id(cfd_offer.id, &pool).await.unwrap();
+        let cfd_offer_loaded = load_offer_by_id(cfd_offer.id, &mut conn).await.unwrap();
 
         assert_eq!(cfd_offer, cfd_offer_loaded);
     }
@@ -339,6 +330,7 @@ mod tests {
     #[tokio::test]
     async fn test_insert_and_load_cfd() {
         let pool = setup_test_db().await;
+        let mut conn = pool.acquire().await.unwrap();
 
         let cfd_offer = CfdOffer::from_default_with_price(Usd(dec!(10000))).unwrap();
         let cfd = Cfd::new(
@@ -354,10 +346,10 @@ mod tests {
         .unwrap();
 
         // the order ahs to exist in the db in order to be able to insert the cfd
-        insert_cfd_offer(cfd_offer, &pool).await.unwrap();
-        insert_cfd(cfd.clone(), &pool).await.unwrap();
+        insert_cfd_offer(&cfd_offer, &mut conn).await.unwrap();
+        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
-        let cfds_from_db = load_all_cfds(&pool).await.unwrap();
+        let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         let cfd_from_db = cfds_from_db.first().unwrap().clone();
         assert_eq!(cfd, cfd_from_db)
     }
@@ -365,6 +357,7 @@ mod tests {
     #[tokio::test]
     async fn test_insert_new_cfd_state() {
         let pool = setup_test_db().await;
+        let mut conn = pool.acquire().await.unwrap();
 
         let cfd_offer = CfdOffer::from_default_with_price(Usd(dec!(10000))).unwrap();
         let mut cfd = Cfd::new(
@@ -380,17 +373,19 @@ mod tests {
         .unwrap();
 
         // the order ahs to exist in the db in order to be able to insert the cfd
-        insert_cfd_offer(cfd_offer, &pool).await.unwrap();
-        insert_cfd(cfd.clone(), &pool).await.unwrap();
+        insert_cfd_offer(&cfd_offer, &mut conn).await.unwrap();
+        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
         cfd.state = CfdState::Accepted {
             common: CfdStateCommon {
                 transition_timestamp: SystemTime::now(),
             },
         };
-        insert_new_cfd_state(cfd.clone(), &pool).await.unwrap();
+        insert_new_cfd_state_by_offer_id(cfd.offer_id, cfd.state, &mut conn)
+            .await
+            .unwrap();
 
-        let cfds_from_db = load_all_cfds(&pool).await.unwrap();
+        let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         let cfd_from_db = cfds_from_db.first().unwrap().clone();
         assert_eq!(cfd, cfd_from_db)
     }
@@ -407,7 +402,7 @@ mod tests {
             .await
             .unwrap();
 
-        do_run_migrations(&pool).await.unwrap();
+        run_migrations(&pool).await.unwrap();
 
         pool
     }

@@ -67,6 +67,7 @@ jobs:
       - name: Smoke test ${{ matrix.target }} release binary
         run: |
           target/${{ matrix.target }}/release/maker &
+          sleep 5s # Wait for maker to start
           target/${{ matrix.target }}/release/taker &
-          sleep 5s
+          sleep 5s # Wait for taker to start
           curl --fail http://localhost:8000/alive

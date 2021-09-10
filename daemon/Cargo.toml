@@ -20,5 +20,13 @@ tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"
 tokio-util = { version = "0.6", features = ["codec"] }
 uuid = { version = "0.8", features = ["serde", "v4"] }
 
+[[bin]]
+name = "taker"
+path = "src/taker.rs"
+
+[[bin]]
+name = "maker"
+path = "src/maker.rs"
+
 [dev-dependencies]
 tempfile = "3"
