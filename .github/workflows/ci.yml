@@ -25,6 +25,7 @@ jobs:
           override: true
           toolchain: stable
           components: clippy
+      - uses: Swatinem/rust-cache@v1.3.0
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   yarn:
