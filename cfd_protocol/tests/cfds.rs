@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
+use bdk::bitcoin::Address;
 use bdk::bitcoin::{Amount, Network, PrivateKey, PublicKey, Transaction};
 use bdk::miniscript::DescriptorTrait;
 use bdk::wallet::AddressIndex;
@@ -7,7 +8,8 @@ use bdk::SignOptions;
 use cfd_protocol::{
     commit_descriptor, compute_signature_point, create_cfd_transactions,
     finalize_spend_transaction, lock_descriptor, punish_transaction, renew_cfd_transactions,
-    spending_tx_sighash, OracleParams, Payout, PunishParams, TransactionExt, WalletExt,
+    spending_tx_sighash, CfdTransactions, OracleParams, Payout, PunishParams, TransactionExt,
+    WalletExt,
 };
 use rand::{CryptoRng, RngCore, SeedableRng};
 use rand_chacha::ChaChaRng;
@@ -22,11 +24,11 @@ fn create_cfd() {
     let maker_lock_amount = Amount::ONE_BTC;
     let taker_lock_amount = Amount::ONE_BTC;
 
+    let maker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+    let taker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+
     let oracle = Oracle::new(&mut rng);
     let (event, announcement) = announce(&mut rng);
-
-    let (maker_sk, maker_pk) = make_keypair(&mut rng);
-    let (taker_sk, taker_pk) = make_keypair(&mut rng);
 
     let payouts = vec![
         Payout::new(
@@ -43,75 +45,32 @@ fn create_cfd() {
 
     let refund_timelock = 0;
 
-    let maker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
-    let taker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
-
-    let maker_address = maker_wallet.get_address(AddressIndex::New).unwrap();
-    let taker_address = taker_wallet.get_address(AddressIndex::New).unwrap();
-
-    let lock_amount = maker_lock_amount + taker_lock_amount;
-    let (maker_revocation_sk, maker_revocation_pk) = make_keypair(&mut rng);
-    let (maker_publish_sk, maker_publish_pk) = make_keypair(&mut rng);
-
-    let (taker_revocation_sk, taker_revocation_pk) = make_keypair(&mut rng);
-    let (taker_publish_sk, taker_publish_pk) = make_keypair(&mut rng);
-
-    let maker_params = maker_wallet
-        .build_party_params(maker_lock_amount, maker_pk)
-        .unwrap();
-    let taker_params = taker_wallet
-        .build_party_params(taker_lock_amount, taker_pk)
-        .unwrap();
-
-    let maker_cfd_txs = create_cfd_transactions(
-        (
-            maker_params.clone(),
-            PunishParams {
-                revocation_pk: maker_revocation_pk,
-                publish_pk: maker_publish_pk,
-            },
-        ),
-        (
-            taker_params.clone(),
-            PunishParams {
-                revocation_pk: taker_revocation_pk,
-                publish_pk: taker_publish_pk,
-            },
-        ),
-        OracleParams {
-            pk: oracle.public_key(),
-            nonce_pk: event.nonce_pk,
-        },
-        refund_timelock,
-        payouts.clone(),
-        maker_sk,
-    )
-    .unwrap();
-
-    let taker_cfd_txs = create_cfd_transactions(
-        (
-            maker_params,
-            PunishParams {
-                revocation_pk: maker_revocation_pk,
-                publish_pk: maker_publish_pk,
-            },
-        ),
-        (
-            taker_params,
-            PunishParams {
-                revocation_pk: taker_revocation_pk,
-                publish_pk: taker_publish_pk,
-            },
-        ),
-        OracleParams {
-            pk: oracle.public_key(),
-            nonce_pk: event.nonce_pk,
-        },
+    let (
+        (maker_sk, maker_pk),
+        (taker_sk, taker_pk),
+        maker_address,
+        taker_address,
+        maker_revocation_sk,
+        maker_revocation_pk,
+        maker_publish_sk,
+        maker_publish_pk,
+        taker_revocation_sk,
+        taker_revocation_pk,
+        taker_publish_sk,
+        taker_publish_pk,
+        maker_cfd_txs,
+        taker_cfd_txs,
+    ) = create(
+        &mut rng,
+        &maker_wallet,
+        &taker_wallet,
+        maker_lock_amount,
+        taker_lock_amount,
+        &oracle,
+        announcement,
         refund_timelock,
         payouts,
-        taker_sk,
-    )
-    .unwrap();
+    );
 
     let commit_descriptor = commit_descriptor(
         (maker_pk, maker_revocation_pk, maker_publish_pk),
@@ -182,6 +141,7 @@ fn create_cfd() {
     }
 
     let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
+    let lock_amount = maker_lock_amount + taker_lock_amount;
 
     {
         let commit_sighash =
@@ -379,11 +339,11 @@ fn renew_cfd() {
     let maker_lock_amount = Amount::ONE_BTC;
     let taker_lock_amount = Amount::ONE_BTC;
 
-    let oracle = Oracle::new(&mut rng);
-    let (event, _announcement) = announce(&mut rng);
+    let maker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+    let taker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
 
-    let (maker_sk, maker_pk) = make_keypair(&mut rng);
-    let (taker_sk, taker_pk) = make_keypair(&mut rng);
+    let oracle = Oracle::new(&mut rng);
+    let (_event, announcement) = announce(&mut rng);
 
     let payouts = vec![
         Payout::new(
@@ -400,75 +360,32 @@ fn renew_cfd() {
 
     let refund_timelock = 0;
 
-    let maker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
-    let taker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
-
-    let maker_address = maker_wallet.get_address(AddressIndex::New).unwrap();
-    let taker_address = taker_wallet.get_address(AddressIndex::New).unwrap();
-
-    let lock_amount = maker_lock_amount + taker_lock_amount;
-    let (_maker_revocation_sk, maker_revocation_pk) = make_keypair(&mut rng);
-    let (_maker_publish_sk, maker_publish_pk) = make_keypair(&mut rng);
-
-    let (_taker_revocation_sk, taker_revocation_pk) = make_keypair(&mut rng);
-    let (_taker_publish_sk, taker_publish_pk) = make_keypair(&mut rng);
-
-    let maker_params = maker_wallet
-        .build_party_params(maker_lock_amount, maker_pk)
-        .unwrap();
-    let taker_params = taker_wallet
-        .build_party_params(taker_lock_amount, taker_pk)
-        .unwrap();
-
-    let maker_cfd_txs = create_cfd_transactions(
-        (
-            maker_params.clone(),
-            PunishParams {
-                revocation_pk: maker_revocation_pk,
-                publish_pk: maker_publish_pk,
-            },
-        ),
-        (
-            taker_params.clone(),
-            PunishParams {
-                revocation_pk: taker_revocation_pk,
-                publish_pk: taker_publish_pk,
-            },
-        ),
-        OracleParams {
-            pk: oracle.public_key(),
-            nonce_pk: event.nonce_pk,
-        },
-        refund_timelock,
-        payouts.clone(),
-        maker_sk,
-    )
-    .unwrap();
-
-    let taker_cfd_txs = create_cfd_transactions(
-        (
-            maker_params,
-            PunishParams {
-                revocation_pk: maker_revocation_pk,
-                publish_pk: maker_publish_pk,
-            },
-        ),
-        (
-            taker_params,
-            PunishParams {
-                revocation_pk: taker_revocation_pk,
-                publish_pk: taker_publish_pk,
-            },
-        ),
-        OracleParams {
-            pk: oracle.public_key(),
-            nonce_pk: event.nonce_pk,
-        },
+    let (
+        (maker_sk, maker_pk),
+        (taker_sk, taker_pk),
+        maker_address,
+        taker_address,
+        _maker_revocation_sk,
+        _maker_revocation_pk,
+        _maker_publish_sk,
+        _maker_publish_pk,
+        _taker_revocation_sk,
+        _taker_revocation_pk,
+        _taker_publish_sk,
+        _taker_publish_pk,
+        maker_cfd_txs,
+        taker_cfd_txs,
+    ) = create(
+        &mut rng,
+        &maker_wallet,
+        &taker_wallet,
+        maker_lock_amount,
+        taker_lock_amount,
+        &oracle,
+        announcement,
         refund_timelock,
         payouts,
-        taker_sk,
-    )
-    .unwrap();
+    );
 
     // renew cfd transactions
 
@@ -498,7 +415,7 @@ fn renew_cfd() {
         (
             maker_pk,
             maker_lock_amount,
-            maker_address.address.clone(),
+            maker_address.clone(),
             PunishParams {
                 revocation_pk: maker_revocation_pk,
                 publish_pk: maker_publish_pk,
@@ -507,7 +424,7 @@ fn renew_cfd() {
         (
             taker_pk,
             taker_lock_amount,
-            taker_address.address.clone(),
+            taker_address.clone(),
             PunishParams {
                 revocation_pk: taker_revocation_pk,
                 publish_pk: taker_publish_pk,
@@ -528,7 +445,7 @@ fn renew_cfd() {
         (
             maker_pk,
             maker_lock_amount,
-            maker_address.address.clone(),
+            maker_address.clone(),
             PunishParams {
                 revocation_pk: maker_revocation_pk,
                 publish_pk: maker_publish_pk,
@@ -537,7 +454,7 @@ fn renew_cfd() {
         (
             taker_pk,
             taker_lock_amount,
-            taker_address.address.clone(),
+            taker_address.clone(),
             PunishParams {
                 revocation_pk: taker_revocation_pk,
                 publish_pk: taker_publish_pk,
@@ -622,6 +539,7 @@ fn renew_cfd() {
     }
 
     let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
+    let lock_amount = maker_lock_amount + taker_lock_amount;
 
     {
         let commit_sighash =
@@ -810,6 +728,116 @@ fn renew_cfd() {
             bitcoin::consensus::serialize(&punish_tx).as_slice(),
         )
         .expect("valid punish transaction signed by taker");
+}
+
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
+fn create(
+    rng: &mut ChaChaRng,
+    maker_wallet: &bdk::Wallet<(), bdk::database::MemoryDatabase>,
+    taker_wallet: &bdk::Wallet<(), bdk::database::MemoryDatabase>,
+    maker_lock_amount: Amount,
+    taker_lock_amount: Amount,
+    oracle: &Oracle,
+    announcement: Announcement,
+    refund_timelock: u32,
+    payouts: Vec<Payout>,
+) -> (
+    (SecretKey, PublicKey),
+    (SecretKey, PublicKey),
+    Address,
+    Address,
+    SecretKey,
+    PublicKey,
+    SecretKey,
+    PublicKey,
+    SecretKey,
+    PublicKey,
+    SecretKey,
+    PublicKey,
+    CfdTransactions,
+    CfdTransactions,
+) {
+    let (maker_sk, maker_pk) = make_keypair(rng);
+    let (taker_sk, taker_pk) = make_keypair(rng);
+
+    let maker_address = maker_wallet.get_address(AddressIndex::New).unwrap();
+    let taker_address = taker_wallet.get_address(AddressIndex::New).unwrap();
+
+    let (maker_revocation_sk, maker_revocation_pk) = make_keypair(rng);
+    let (maker_publish_sk, maker_publish_pk) = make_keypair(rng);
+    let (taker_revocation_sk, taker_revocation_pk) = make_keypair(rng);
+    let (taker_publish_sk, taker_publish_pk) = make_keypair(rng);
+    let maker_params = maker_wallet
+        .build_party_params(maker_lock_amount, maker_pk)
+        .unwrap();
+    let taker_params = taker_wallet
+        .build_party_params(taker_lock_amount, taker_pk)
+        .unwrap();
+    let maker_cfd_txs = create_cfd_transactions(
+        (
+            maker_params.clone(),
+            PunishParams {
+                revocation_pk: maker_revocation_pk,
+                publish_pk: maker_publish_pk,
+            },
+        ),
+        (
+            taker_params.clone(),
+            PunishParams {
+                revocation_pk: taker_revocation_pk,
+                publish_pk: taker_publish_pk,
+            },
+        ),
+        OracleParams {
+            pk: oracle.public_key(),
+            nonce_pk: announcement.nonce_pk(),
+        },
+        refund_timelock,
+        payouts.clone(),
+        maker_sk,
+    )
+    .unwrap();
+    let taker_cfd_txs = create_cfd_transactions(
+        (
+            maker_params,
+            PunishParams {
+                revocation_pk: maker_revocation_pk,
+                publish_pk: maker_publish_pk,
+            },
+        ),
+        (
+            taker_params,
+            PunishParams {
+                revocation_pk: taker_revocation_pk,
+                publish_pk: taker_publish_pk,
+            },
+        ),
+        OracleParams {
+            pk: oracle.public_key(),
+            nonce_pk: announcement.nonce_pk(),
+        },
+        refund_timelock,
+        payouts,
+        taker_sk,
+    )
+    .unwrap();
+    (
+        (maker_sk, maker_pk),
+        (taker_sk, taker_pk),
+        maker_address.address,
+        taker_address.address,
+        maker_revocation_sk,
+        maker_revocation_pk,
+        maker_publish_sk,
+        maker_publish_pk,
+        taker_revocation_sk,
+        taker_revocation_pk,
+        taker_publish_sk,
+        taker_publish_pk,
+        maker_cfd_txs,
+        taker_cfd_txs,
+    )
 }
 
 fn check_tx_fee(input_txs: &[&Transaction], spend_tx: &Transaction) -> Result<()> {
