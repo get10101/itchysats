@@ -3,6 +3,7 @@ use bdk::bitcoin::hashes::hex::ToHex;
 use bdk::bitcoin::hashes::*;
 use bdk::bitcoin::util::bip143::SigHashCache;
 use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
+use bdk::bitcoin::Script;
 use bdk::bitcoin::{
     Address, Amount, OutPoint, PublicKey, SigHash, SigHashType, Transaction, TxIn, TxOut,
 };
@@ -334,21 +335,12 @@ pub fn punish_transaction(
         .find_map(|sig| encsig.recover(SECP256K1, &sig, &pub_them_pk.key).ok())
         .context("could not recover publish sk from commit tx")?;
 
-    let commit_vout = revoked_commit_tx
-        .output
-        .iter()
-        .position(|out| out.script_pubkey == commit_descriptor.script_pubkey())
+    let commit_outpoint = revoked_commit_tx
+        .outpoint(&commit_descriptor.script_pubkey())
         .expect("to find commit output in commit tx");
-    let commit_amount = revoked_commit_tx.output[commit_vout].value;
+    let commit_amount = revoked_commit_tx.output[commit_outpoint.vout as usize].value;
 
     let mut punish_tx = {
-        let txid = revoked_commit_tx.txid();
-
-        let previous_output = OutPoint {
-            txid,
-            vout: commit_vout as u32,
-        };
-
         let output = TxOut {
             value: commit_amount,
             script_pubkey: address.script_pubkey(),
@@ -357,7 +349,7 @@ pub fn punish_transaction(
             version: 2,
             lock_time: 0,
             input: vec![TxIn {
-                previous_output,
+                previous_output: commit_outpoint,
                 ..Default::default()
             }],
             output: vec![output],
@@ -731,16 +723,10 @@ impl CommitTransaction {
     ) -> Result<Self> {
         let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
         let (lock_outpoint, lock_amount) = {
-            let vout = lock_tx
-                .output
-                .iter()
-                .position(|out| out.script_pubkey == lock_descriptor.script_pubkey())
+            let outpoint = lock_tx
+                .outpoint(&lock_descriptor.script_pubkey())
                 .context("lock script not found in lock tx")?;
-            let outpoint = OutPoint {
-                txid: lock_tx.txid(),
-                vout: vout as u32,
-            };
-            let amount = lock_tx.output[vout].value;
+            let amount = lock_tx.output[outpoint.vout as usize].value;
 
             (outpoint, amount)
         };
@@ -798,18 +784,9 @@ impl CommitTransaction {
     }
 
     fn outpoint(&self) -> OutPoint {
-        let txid = self.inner.txid();
-        let vout = self
-            .inner
-            .output
-            .iter()
-            .position(|out| out.script_pubkey == self.descriptor.script_pubkey())
-            .expect("to find commit output in commit tx");
-
-        OutPoint {
-            txid,
-            vout: vout as u32,
-        }
+        self.inner
+            .outpoint(&self.descriptor.script_pubkey())
+            .expect("to find commit output in commit tx")
     }
 
     fn amount(&self) -> Amount {
@@ -886,11 +863,25 @@ fn lock_transaction(
 
 pub trait TransactionExt {
     fn get_virtual_size(&self) -> f64;
+    fn outpoint(&self, script_pubkey: &Script) -> Result<OutPoint>;
 }
 
 impl TransactionExt for Transaction {
     fn get_virtual_size(&self) -> f64 {
         self.get_weight() as f64 / 4.0
+    }
+
+    fn outpoint(&self, script_pubkey: &Script) -> Result<OutPoint> {
+        let vout = self
+            .output
+            .iter()
+            .position(|out| &out.script_pubkey == script_pubkey)
+            .context("script pubkey not found in tx")?;
+
+        Ok(OutPoint {
+            txid: self.txid(),
+            vout: vout as u32,
+        })
     }
 }
 
