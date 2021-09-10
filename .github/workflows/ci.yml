@@ -23,20 +23,34 @@ jobs:
           toolchain: stable
           components: clippy
 
+      - uses: actions/setup-node@v2
+        with:
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
       - name: Run clippy with default features
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: print hello world
-        uses: actions/setup-node@v2
+      - name: Run eslint
+        working-directory: frontend
+        run: |
+          yarn install
+          yarn run eslint
+
+  build_frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v2
         with:
           cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
 
-        run: yarn install
+      - run: |
+          yarn install
+          yarn build
+        working-directory: frontend
 
-        run: cd frontend && yarn run eslint
-
-          cd frontend && yarn build
-
+  cargo_test:
     strategy:
       matrix:
         target: [ x86_64-unknown-linux-gnu, x86_64-apple-darwin ]
