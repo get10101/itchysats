@@ -852,22 +852,29 @@ fn lock_transaction(
         .filter(|out| {
             out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     let lock_output = TxOut {
         value: amount.as_sat(),
         script_pubkey: lock_descriptor.script_pubkey(),
     };
 
+    let input = vec![
+        maker_psbt.global.unsigned_tx.input,
+        taker_psbt.global.unsigned_tx.input,
+    ]
+    .concat();
+
+    let output = std::iter::once(lock_output)
+        .chain(maker_change)
+        .chain(taker_change)
+        .collect();
+
     let lock_tx = Transaction {
         version: 2,
         lock_time: 0,
-        input: vec![
-            maker_psbt.global.unsigned_tx.input,
-            taker_psbt.global.unsigned_tx.input,
-        ]
-        .concat(),
-        output: vec![vec![lock_output], maker_change, taker_change].concat(),
+        input,
+        output,
     };
 
     PartiallySignedTransaction {
