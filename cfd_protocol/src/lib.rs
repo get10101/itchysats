@@ -3,9 +3,8 @@ use bdk::bitcoin::hashes::hex::ToHex;
 use bdk::bitcoin::hashes::*;
 use bdk::bitcoin::util::bip143::SigHashCache;
 use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
-use bdk::bitcoin::Script;
 use bdk::bitcoin::{
-    Address, Amount, OutPoint, PublicKey, SigHash, SigHashType, Transaction, TxIn, TxOut,
+    Address, Amount, OutPoint, PublicKey, Script, SigHash, SigHashType, Transaction, TxIn, TxOut,
 };
 use bdk::database::BatchDatabase;
 use bdk::descriptor::Descriptor;

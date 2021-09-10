@@ -1,10 +1,12 @@
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
-use bdk::bitcoin::Address;
-use bdk::bitcoin::{Amount, Network, PrivateKey, PublicKey, Transaction};
+use bdk::bitcoin::{Address, Amount, Network, PrivateKey, PublicKey, Transaction};
+use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use bdk::wallet::AddressIndex;
 use bdk::SignOptions;
+use bitcoin::util::psbt::PartiallySignedTransaction;
+use bitcoin::Txid;
 use cfd_protocol::{
     commit_descriptor, compute_signature_point, create_cfd_transactions,
     finalize_spend_transaction, lock_descriptor, punish_transaction, renew_cfd_transactions,
@@ -14,8 +16,7 @@ use cfd_protocol::{
 use rand::{CryptoRng, RngCore, SeedableRng};
 use rand_chacha::ChaChaRng;
 use secp256k1_zkp::bitcoin_hashes::sha256;
-use secp256k1_zkp::{schnorrsig, SecretKey, SECP256K1};
-use std::collections::HashMap;
+use secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 
 #[test]
 fn create_cfd() {
@@ -46,290 +47,77 @@ fn create_cfd() {
     let refund_timelock = 0;
 
     let (
-        (maker_sk, maker_pk),
-        (taker_sk, taker_pk),
-        maker_address,
-        taker_address,
-        maker_revocation_sk,
-        maker_revocation_pk,
-        maker_publish_sk,
-        maker_publish_pk,
-        taker_revocation_sk,
-        taker_revocation_pk,
-        taker_publish_sk,
-        taker_publish_pk,
         maker_cfd_txs,
         taker_cfd_txs,
-    ) = create(
+        CfdKeys {
+            sk: maker_sk,
+            pk: maker_pk,
+            rev_sk: maker_rev_sk,
+            rev_pk: maker_rev_pk,
+            pub_sk: maker_pub_sk,
+            pub_pk: maker_pub_pk,
+        },
+        CfdKeys {
+            sk: taker_sk,
+            pk: taker_pk,
+            rev_sk: taker_rev_sk,
+            rev_pk: taker_rev_pk,
+            pub_sk: taker_pub_sk,
+            pub_pk: taker_pub_pk,
+        },
+        maker_addr,
+        taker_addr,
+    ) = create_cfd_txs(
         &mut rng,
-        &maker_wallet,
-        &taker_wallet,
-        maker_lock_amount,
-        taker_lock_amount,
-        &oracle,
-        announcement,
-        refund_timelock,
+        (&maker_wallet, maker_lock_amount),
+        (&taker_wallet, taker_lock_amount),
+        (&oracle, announcement),
         payouts,
+        refund_timelock,
     );
 
-    let commit_descriptor = commit_descriptor(
-        (maker_pk, maker_revocation_pk, maker_publish_pk),
-        (taker_pk, taker_revocation_pk, taker_publish_pk),
-    );
-
-    let commit_amount = Amount::from_sat(maker_cfd_txs.commit.0.output[0].value);
-    assert_eq!(
-        commit_amount.as_sat(),
-        taker_cfd_txs.commit.0.output[0].value
-    );
-
-    {
-        let refund_sighash =
-            spending_tx_sighash(&taker_cfd_txs.refund.0, &commit_descriptor, commit_amount);
-        SECP256K1
-            .verify(&refund_sighash, &maker_cfd_txs.refund.1, &maker_pk.key)
-            .expect("valid maker refund sig")
-    };
-
-    {
-        let refund_sighash =
-            spending_tx_sighash(&maker_cfd_txs.refund.0, &commit_descriptor, commit_amount);
-        SECP256K1
-            .verify(&refund_sighash, &taker_cfd_txs.refund.1, &taker_pk.key)
-            .expect("valid taker refund sig")
-    };
-
-    // TODO: We should not rely on order
-    for (maker_cet, taker_cet) in maker_cfd_txs.cets.iter().zip(taker_cfd_txs.cets.iter()) {
-        let cet_sighash = {
-            let maker_sighash =
-                spending_tx_sighash(&maker_cet.0, &commit_descriptor, commit_amount);
-            let taker_sighash =
-                spending_tx_sighash(&taker_cet.0, &commit_descriptor, commit_amount);
-
-            assert_eq!(maker_sighash, taker_sighash);
-            maker_sighash
-        };
-
-        let encryption_point = {
-            let maker_encryption_point = compute_signature_point(
-                &oracle.public_key(),
-                &announcement.nonce_pk(),
-                &maker_cet.2,
-            )
-            .unwrap();
-            let taker_encryption_point = compute_signature_point(
-                &oracle.public_key(),
-                &announcement.nonce_pk(),
-                &taker_cet.2,
-            )
-            .unwrap();
-
-            assert_eq!(maker_encryption_point, taker_encryption_point);
-            maker_encryption_point
-        };
-
-        let maker_encsig = maker_cet.1;
-        maker_encsig
-            .verify(SECP256K1, &cet_sighash, &maker_pk.key, &encryption_point)
-            .expect("valid maker cet encsig");
-
-        let taker_encsig = taker_cet.1;
-        taker_encsig
-            .verify(SECP256K1, &cet_sighash, &taker_pk.key, &encryption_point)
-            .expect("valid taker cet encsig");
-    }
-
-    let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
+    let lock_desc = lock_descriptor(maker_pk, taker_pk);
     let lock_amount = maker_lock_amount + taker_lock_amount;
 
-    {
-        let commit_sighash =
-            spending_tx_sighash(&maker_cfd_txs.commit.0, &lock_descriptor, lock_amount);
-        let commit_encsig = maker_cfd_txs.commit.1;
-        commit_encsig
-            .verify(
-                SECP256K1,
-                &commit_sighash,
-                &maker_pk.key,
-                &taker_publish_pk.key,
-            )
-            .expect("valid maker commit encsig");
-    };
+    let commit_desc = commit_descriptor(
+        (maker_pk, maker_rev_pk, maker_pub_pk),
+        (taker_pk, taker_rev_pk, taker_pub_pk),
+    );
+    let commit_amount = Amount::from_sat(maker_cfd_txs.commit.0.output[0].value);
 
-    {
-        let commit_sighash =
-            spending_tx_sighash(&taker_cfd_txs.commit.0, &lock_descriptor, lock_amount);
-        let commit_encsig = taker_cfd_txs.commit.1;
-        commit_encsig
-            .verify(
-                SECP256K1,
-                &commit_sighash,
-                &taker_pk.key,
-                &maker_publish_pk.key,
-            )
-            .expect("valid taker commit encsig");
-    };
+    verify_cfd_sigs(
+        (&maker_cfd_txs, maker_pk, maker_pub_pk),
+        (&taker_cfd_txs, taker_pk, taker_pub_pk),
+        (oracle.public_key(), announcement.nonce_pk()),
+        (&lock_desc, lock_amount),
+        (&commit_desc, commit_amount),
+    );
 
-    // sign lock transaction
-
-    let mut signed_lock_tx = maker_cfd_txs.lock;
-    maker_wallet
-        .sign(
-            &mut signed_lock_tx,
-            SignOptions {
-                trust_witness_utxo: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-    taker_wallet
-        .sign(
-            &mut signed_lock_tx,
-            SignOptions {
-                trust_witness_utxo: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-    let signed_lock_tx = signed_lock_tx.extract_tx();
-
-    // verify commit transaction
-
-    let commit_tx = maker_cfd_txs.commit.0;
-    let maker_sig = maker_cfd_txs.commit.1.decrypt(&taker_publish_sk).unwrap();
-    let taker_sig = taker_cfd_txs.commit.1.decrypt(&maker_publish_sk).unwrap();
-    let signed_commit_tx = finalize_spend_transaction(
-        commit_tx,
-        &lock_descriptor,
-        (maker_pk, maker_sig),
-        (taker_pk, taker_sig),
-    )
-    .unwrap();
-
-    check_tx_fee(&[&signed_lock_tx], &signed_commit_tx).expect("correct fees for commit tx");
-
-    lock_descriptor
-        .script_pubkey()
-        .verify(
-            0,
-            lock_amount.as_sat(),
-            bitcoin::consensus::serialize(&signed_commit_tx).as_slice(),
-        )
-        .expect("valid signed commit transaction");
-
-    // verify refund transaction
-
-    let maker_sig = maker_cfd_txs.refund.1;
-    let taker_sig = taker_cfd_txs.refund.1;
-    let signed_refund_tx = finalize_spend_transaction(
-        maker_cfd_txs.refund.0,
-        &commit_descriptor,
-        (maker_pk, maker_sig),
-        (taker_pk, taker_sig),
-    )
-    .unwrap();
-
-    check_tx_fee(&[&signed_commit_tx], &signed_refund_tx).expect("correct fees for refund tx");
-
-    commit_descriptor
-        .script_pubkey()
-        .verify(
-            0,
-            commit_amount.as_sat(),
-            bitcoin::consensus::serialize(&signed_refund_tx).as_slice(),
-        )
-        .expect("valid signed refund transaction");
-
-    // verify cets
-
-    let attestations = ["win".as_bytes(), "lose".as_bytes()]
-        .iter()
-        .map(|msg| (*msg, oracle.attest(&event, msg)))
-        .collect::<HashMap<&[u8], _>>();
-
-    maker_cfd_txs
-        .cets
-        .into_iter()
-        .zip(taker_cfd_txs.cets)
-        .try_for_each(|((cet, maker_encsig, msg), (_, taker_encsig, _))| {
-            let oracle_sig = attestations
-                .get(msg.as_slice())
-                .expect("oracle to sign all messages in test");
-            let (_nonce_pk, signature_scalar) = schnorrsig_decompose(oracle_sig);
-
-            let maker_sig = maker_encsig
-                .decrypt(&signature_scalar)
-                .context("could not decrypt maker encsig on cet")?;
-            let taker_sig = taker_encsig
-                .decrypt(&signature_scalar)
-                .context("could not decrypt taker encsig on cet")?;
-
-            let signed_cet = finalize_spend_transaction(
-                cet,
-                &commit_descriptor,
-                (maker_pk, maker_sig),
-                (taker_pk, taker_sig),
-            )?;
-
-            check_tx_fee(&[&signed_commit_tx], &signed_cet).expect("correct fees for cet");
-
-            commit_descriptor
-                .script_pubkey()
-                .verify(
-                    0,
-                    commit_amount.as_sat(),
-                    bitcoin::consensus::serialize(&signed_cet).as_slice(),
-                )
-                .context("failed to verify cet")
-        })
-        .expect("all cets to be properly signed");
-
-    // verify punishment transactions
-
-    let punish_tx = punish_transaction(
-        &commit_descriptor,
-        &maker_address,
-        maker_cfd_txs.commit.1,
-        maker_sk,
-        taker_revocation_sk,
-        taker_publish_pk,
-        &signed_commit_tx,
-    )
-    .unwrap();
-
-    check_tx_fee(&[&signed_commit_tx], &punish_tx).expect("correct fees for punish tx");
-
-    commit_descriptor
-        .script_pubkey()
-        .verify(
-            0,
-            commit_amount.as_sat(),
-            bitcoin::consensus::serialize(&punish_tx).as_slice(),
-        )
-        .expect("valid punish transaction signed by maker");
-
-    let punish_tx = punish_transaction(
-        &commit_descriptor,
-        &taker_address,
-        taker_cfd_txs.commit.1,
-        taker_sk,
-        maker_revocation_sk,
-        maker_publish_pk,
-        &signed_commit_tx,
-    )
-    .unwrap();
-
-    commit_descriptor
-        .script_pubkey()
-        .verify(
-            0,
-            commit_amount.as_sat(),
-            bitcoin::consensus::serialize(&punish_tx).as_slice(),
-        )
-        .expect("valid punish transaction signed by taker");
+    check_cfd_txs(
+        (
+            maker_wallet,
+            maker_cfd_txs,
+            maker_sk,
+            maker_pk,
+            maker_pub_sk,
+            maker_pub_pk,
+            maker_rev_sk,
+            maker_addr,
+        ),
+        (
+            taker_wallet,
+            taker_cfd_txs,
+            taker_sk,
+            taker_pk,
+            taker_pub_sk,
+            taker_pub_pk,
+            taker_rev_sk,
+            taker_addr,
+        ),
+        (oracle, event),
+        (lock_desc, lock_amount),
+        (commit_desc, commit_amount),
+    );
 }
 
 #[test]
@@ -361,39 +149,36 @@ fn renew_cfd() {
     let refund_timelock = 0;
 
     let (
-        (maker_sk, maker_pk),
-        (taker_sk, taker_pk),
-        maker_address,
-        taker_address,
-        _maker_revocation_sk,
-        _maker_revocation_pk,
-        _maker_publish_sk,
-        _maker_publish_pk,
-        _taker_revocation_sk,
-        _taker_revocation_pk,
-        _taker_publish_sk,
-        _taker_publish_pk,
         maker_cfd_txs,
         taker_cfd_txs,
-    ) = create(
+        CfdKeys {
+            sk: maker_sk,
+            pk: maker_pk,
+            ..
+        },
+        CfdKeys {
+            sk: taker_sk,
+            pk: taker_pk,
+            ..
+        },
+        maker_addr,
+        taker_addr,
+    ) = create_cfd_txs(
         &mut rng,
-        &maker_wallet,
-        &taker_wallet,
-        maker_lock_amount,
-        taker_lock_amount,
-        &oracle,
-        announcement,
-        refund_timelock,
+        (&maker_wallet, maker_lock_amount),
+        (&taker_wallet, taker_lock_amount),
+        (&oracle, announcement),
         payouts,
+        refund_timelock,
     );
 
     // renew cfd transactions
 
-    let (maker_revocation_sk, maker_revocation_pk) = make_keypair(&mut rng);
-    let (maker_publish_sk, maker_publish_pk) = make_keypair(&mut rng);
+    let (maker_rev_sk, maker_rev_pk) = make_keypair(&mut rng);
+    let (maker_pub_sk, maker_pub_pk) = make_keypair(&mut rng);
 
-    let (taker_revocation_sk, taker_revocation_pk) = make_keypair(&mut rng);
-    let (taker_publish_sk, taker_publish_pk) = make_keypair(&mut rng);
+    let (taker_rev_sk, taker_rev_pk) = make_keypair(&mut rng);
+    let (taker_pub_sk, taker_pub_pk) = make_keypair(&mut rng);
 
     let (event, announcement) = announce(&mut rng);
 
@@ -415,19 +200,19 @@ fn renew_cfd() {
         (
             maker_pk,
             maker_lock_amount,
-            maker_address.clone(),
+            maker_addr.clone(),
             PunishParams {
-                revocation_pk: maker_revocation_pk,
-                publish_pk: maker_publish_pk,
+                revocation_pk: maker_rev_pk,
+                publish_pk: maker_pub_pk,
             },
         ),
         (
             taker_pk,
             taker_lock_amount,
-            taker_address.clone(),
+            taker_addr.clone(),
             PunishParams {
-                revocation_pk: taker_revocation_pk,
-                publish_pk: taker_publish_pk,
+                revocation_pk: taker_rev_pk,
+                publish_pk: taker_pub_pk,
             },
         ),
         OracleParams {
@@ -445,19 +230,19 @@ fn renew_cfd() {
         (
             maker_pk,
             maker_lock_amount,
-            maker_address.clone(),
+            maker_addr.clone(),
             PunishParams {
-                revocation_pk: maker_revocation_pk,
-                publish_pk: maker_publish_pk,
+                revocation_pk: maker_rev_pk,
+                publish_pk: maker_pub_pk,
             },
         ),
         (
             taker_pk,
             taker_lock_amount,
-            taker_address.clone(),
+            taker_addr.clone(),
             PunishParams {
-                revocation_pk: taker_revocation_pk,
-                publish_pk: taker_publish_pk,
+                revocation_pk: taker_rev_pk,
+                publish_pk: taker_pub_pk,
             },
         ),
         OracleParams {
@@ -470,304 +255,75 @@ fn renew_cfd() {
     )
     .unwrap();
 
-    let commit_descriptor = commit_descriptor(
-        (maker_pk, maker_revocation_pk, maker_publish_pk),
-        (taker_pk, taker_revocation_pk, taker_publish_pk),
-    );
-
-    let commit_amount = Amount::from_sat(maker_cfd_txs.commit.0.output[0].value);
-    assert_eq!(
-        commit_amount.as_sat(),
-        taker_cfd_txs.commit.0.output[0].value
-    );
-
-    {
-        let refund_sighash =
-            spending_tx_sighash(&taker_cfd_txs.refund.0, &commit_descriptor, commit_amount);
-        SECP256K1
-            .verify(&refund_sighash, &maker_cfd_txs.refund.1, &maker_pk.key)
-            .expect("valid maker refund sig")
-    };
-
-    {
-        let refund_sighash =
-            spending_tx_sighash(&maker_cfd_txs.refund.0, &commit_descriptor, commit_amount);
-        SECP256K1
-            .verify(&refund_sighash, &taker_cfd_txs.refund.1, &taker_pk.key)
-            .expect("valid taker refund sig")
-    };
-
-    // TODO: We should not rely on order
-    for (maker_cet, taker_cet) in maker_cfd_txs.cets.iter().zip(taker_cfd_txs.cets.iter()) {
-        let cet_sighash = {
-            let maker_sighash =
-                spending_tx_sighash(&maker_cet.0, &commit_descriptor, commit_amount);
-            let taker_sighash =
-                spending_tx_sighash(&taker_cet.0, &commit_descriptor, commit_amount);
-
-            assert_eq!(maker_sighash, taker_sighash);
-            maker_sighash
-        };
-
-        let encryption_point = {
-            let maker_encryption_point = compute_signature_point(
-                &oracle.public_key(),
-                &announcement.nonce_pk(),
-                &maker_cet.2,
-            )
-            .unwrap();
-            let taker_encryption_point = compute_signature_point(
-                &oracle.public_key(),
-                &announcement.nonce_pk(),
-                &taker_cet.2,
-            )
-            .unwrap();
-
-            assert_eq!(maker_encryption_point, taker_encryption_point);
-            maker_encryption_point
-        };
-
-        let maker_encsig = maker_cet.1;
-        maker_encsig
-            .verify(SECP256K1, &cet_sighash, &maker_pk.key, &encryption_point)
-            .expect("valid maker cet encsig");
-
-        let taker_encsig = taker_cet.1;
-        taker_encsig
-            .verify(SECP256K1, &cet_sighash, &taker_pk.key, &encryption_point)
-            .expect("valid taker cet encsig");
-    }
-
-    let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
+    let lock_desc = lock_descriptor(maker_pk, taker_pk);
     let lock_amount = maker_lock_amount + taker_lock_amount;
 
-    {
-        let commit_sighash =
-            spending_tx_sighash(&maker_cfd_txs.commit.0, &lock_descriptor, lock_amount);
-        let commit_encsig = maker_cfd_txs.commit.1;
-        commit_encsig
-            .verify(
-                SECP256K1,
-                &commit_sighash,
-                &maker_pk.key,
-                &taker_publish_pk.key,
-            )
-            .expect("valid maker commit encsig");
-    };
+    let commit_desc = commit_descriptor(
+        (maker_pk, maker_rev_pk, maker_pub_pk),
+        (taker_pk, taker_rev_pk, taker_pub_pk),
+    );
+    let commit_amount = Amount::from_sat(maker_cfd_txs.commit.0.output[0].value);
 
-    {
-        let commit_sighash =
-            spending_tx_sighash(&taker_cfd_txs.commit.0, &lock_descriptor, lock_amount);
-        let commit_encsig = taker_cfd_txs.commit.1;
-        commit_encsig
-            .verify(
-                SECP256K1,
-                &commit_sighash,
-                &taker_pk.key,
-                &maker_publish_pk.key,
-            )
-            .expect("valid taker commit encsig");
-    };
+    verify_cfd_sigs(
+        (&maker_cfd_txs, maker_pk, maker_pub_pk),
+        (&taker_cfd_txs, taker_pk, taker_pub_pk),
+        (oracle.public_key(), announcement.nonce_pk()),
+        (&lock_desc, lock_amount),
+        (&commit_desc, commit_amount),
+    );
 
-    // sign lock transaction
-
-    let mut signed_lock_tx = maker_cfd_txs.lock;
-    maker_wallet
-        .sign(
-            &mut signed_lock_tx,
-            SignOptions {
-                trust_witness_utxo: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-    taker_wallet
-        .sign(
-            &mut signed_lock_tx,
-            SignOptions {
-                trust_witness_utxo: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-    let signed_lock_tx = signed_lock_tx.extract_tx();
-
-    // verify commit transaction
-
-    let commit_tx = maker_cfd_txs.commit.0;
-    let maker_sig = maker_cfd_txs.commit.1.decrypt(&taker_publish_sk).unwrap();
-    let taker_sig = taker_cfd_txs.commit.1.decrypt(&maker_publish_sk).unwrap();
-    let signed_commit_tx = finalize_spend_transaction(
-        commit_tx,
-        &lock_descriptor,
-        (maker_pk, maker_sig),
-        (taker_pk, taker_sig),
+    check_cfd_txs(
+        (
+            maker_wallet,
+            maker_cfd_txs,
+            maker_sk,
+            maker_pk,
+            maker_pub_sk,
+            maker_pub_pk,
+            maker_rev_sk,
+            maker_addr,
+        ),
+        (
+            taker_wallet,
+            taker_cfd_txs,
+            taker_sk,
+            taker_pk,
+            taker_pub_sk,
+            taker_pub_pk,
+            taker_rev_sk,
+            taker_addr,
+        ),
+        (oracle, event),
+        (lock_desc, lock_amount),
+        (commit_desc, commit_amount),
     )
-    .unwrap();
-
-    check_tx_fee(&[&signed_lock_tx], &signed_commit_tx).expect("correct fees for commit tx");
-
-    lock_descriptor
-        .script_pubkey()
-        .verify(
-            0,
-            lock_amount.as_sat(),
-            bitcoin::consensus::serialize(&signed_commit_tx).as_slice(),
-        )
-        .expect("valid signed commit transaction");
-
-    // verify refund transaction
-
-    let maker_sig = maker_cfd_txs.refund.1;
-    let taker_sig = taker_cfd_txs.refund.1;
-    let signed_refund_tx = finalize_spend_transaction(
-        maker_cfd_txs.refund.0,
-        &commit_descriptor,
-        (maker_pk, maker_sig),
-        (taker_pk, taker_sig),
-    )
-    .unwrap();
-
-    check_tx_fee(&[&signed_commit_tx], &signed_refund_tx).expect("correct fees for refund tx");
-
-    commit_descriptor
-        .script_pubkey()
-        .verify(
-            0,
-            commit_amount.as_sat(),
-            bitcoin::consensus::serialize(&signed_refund_tx).as_slice(),
-        )
-        .expect("valid signed refund transaction");
-
-    // verify cets
-
-    let attestations = ["win".as_bytes(), "lose".as_bytes()]
-        .iter()
-        .map(|msg| (*msg, oracle.attest(&event, msg)))
-        .collect::<HashMap<&[u8], _>>();
-
-    maker_cfd_txs
-        .cets
-        .into_iter()
-        .zip(taker_cfd_txs.cets)
-        .try_for_each(|((cet, maker_encsig, msg), (_, taker_encsig, _))| {
-            let oracle_sig = attestations
-                .get(msg.as_slice())
-                .expect("oracle to sign all messages in test");
-            let (_nonce_pk, signature_scalar) = schnorrsig_decompose(oracle_sig);
-
-            let maker_sig = maker_encsig
-                .decrypt(&signature_scalar)
-                .context("could not decrypt maker encsig on cet")?;
-            let taker_sig = taker_encsig
-                .decrypt(&signature_scalar)
-                .context("could not decrypt taker encsig on cet")?;
-
-            let signed_cet = finalize_spend_transaction(
-                cet,
-                &commit_descriptor,
-                (maker_pk, maker_sig),
-                (taker_pk, taker_sig),
-            )?;
-
-            check_tx_fee(&[&signed_commit_tx], &signed_cet).expect("correct fees for cet");
-
-            commit_descriptor
-                .script_pubkey()
-                .verify(
-                    0,
-                    commit_amount.as_sat(),
-                    bitcoin::consensus::serialize(&signed_cet).as_slice(),
-                )
-                .context("failed to verify cet")
-        })
-        .expect("all cets to be properly signed");
-
-    // verify punishment transactions
-
-    let punish_tx = punish_transaction(
-        &commit_descriptor,
-        &maker_address,
-        maker_cfd_txs.commit.1,
-        maker_sk,
-        taker_revocation_sk,
-        taker_publish_pk,
-        &signed_commit_tx,
-    )
-    .unwrap();
-
-    check_tx_fee(&[&signed_commit_tx], &punish_tx).expect("correct fees for punish tx");
-
-    commit_descriptor
-        .script_pubkey()
-        .verify(
-            0,
-            commit_amount.as_sat(),
-            bitcoin::consensus::serialize(&punish_tx).as_slice(),
-        )
-        .expect("valid punish transaction signed by maker");
-
-    let punish_tx = punish_transaction(
-        &commit_descriptor,
-        &taker_address,
-        taker_cfd_txs.commit.1,
-        taker_sk,
-        maker_revocation_sk,
-        maker_publish_pk,
-        &signed_commit_tx,
-    )
-    .unwrap();
-
-    commit_descriptor
-        .script_pubkey()
-        .verify(
-            0,
-            commit_amount.as_sat(),
-            bitcoin::consensus::serialize(&punish_tx).as_slice(),
-        )
-        .expect("valid punish transaction signed by taker");
 }
 
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::type_complexity)]
-fn create(
+fn create_cfd_txs(
     rng: &mut ChaChaRng,
-    maker_wallet: &bdk::Wallet<(), bdk::database::MemoryDatabase>,
-    taker_wallet: &bdk::Wallet<(), bdk::database::MemoryDatabase>,
-    maker_lock_amount: Amount,
-    taker_lock_amount: Amount,
-    oracle: &Oracle,
-    announcement: Announcement,
-    refund_timelock: u32,
+    (maker_wallet, maker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
+    (taker_wallet, taker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
+    (oracle, announcement): (&Oracle, Announcement),
     payouts: Vec<Payout>,
+    refund_timelock: u32,
 ) -> (
-    (SecretKey, PublicKey),
-    (SecretKey, PublicKey),
-    Address,
-    Address,
-    SecretKey,
-    PublicKey,
-    SecretKey,
-    PublicKey,
-    SecretKey,
-    PublicKey,
-    SecretKey,
-    PublicKey,
     CfdTransactions,
     CfdTransactions,
+    CfdKeys,
+    CfdKeys,
+    Address,
+    Address,
 ) {
     let (maker_sk, maker_pk) = make_keypair(rng);
     let (taker_sk, taker_pk) = make_keypair(rng);
 
-    let maker_address = maker_wallet.get_address(AddressIndex::New).unwrap();
-    let taker_address = taker_wallet.get_address(AddressIndex::New).unwrap();
+    let maker_addr = maker_wallet.get_address(AddressIndex::New).unwrap();
+    let taker_addr = taker_wallet.get_address(AddressIndex::New).unwrap();
 
-    let (maker_revocation_sk, maker_revocation_pk) = make_keypair(rng);
-    let (maker_publish_sk, maker_publish_pk) = make_keypair(rng);
-    let (taker_revocation_sk, taker_revocation_pk) = make_keypair(rng);
-    let (taker_publish_sk, taker_publish_pk) = make_keypair(rng);
+    let (maker_rev_sk, maker_rev_pk) = make_keypair(rng);
+    let (maker_pub_sk, maker_pub_pk) = make_keypair(rng);
+    let (taker_rev_sk, taker_rev_pk) = make_keypair(rng);
+    let (taker_pub_sk, taker_pub_pk) = make_keypair(rng);
     let maker_params = maker_wallet
         .build_party_params(maker_lock_amount, maker_pk)
         .unwrap();
@@ -778,15 +334,15 @@ fn create(
         (
             maker_params.clone(),
             PunishParams {
-                revocation_pk: maker_revocation_pk,
-                publish_pk: maker_publish_pk,
+                revocation_pk: maker_rev_pk,
+                publish_pk: maker_pub_pk,
             },
         ),
         (
             taker_params.clone(),
             PunishParams {
-                revocation_pk: taker_revocation_pk,
-                publish_pk: taker_publish_pk,
+                revocation_pk: taker_rev_pk,
+                publish_pk: taker_pub_pk,
             },
         ),
         OracleParams {
@@ -802,15 +358,15 @@ fn create(
         (
             maker_params,
             PunishParams {
-                revocation_pk: maker_revocation_pk,
-                publish_pk: maker_publish_pk,
+                revocation_pk: maker_rev_pk,
+                publish_pk: maker_pub_pk,
             },
         ),
         (
             taker_params,
             PunishParams {
-                revocation_pk: taker_revocation_pk,
-                publish_pk: taker_publish_pk,
+                revocation_pk: taker_rev_pk,
+                publish_pk: taker_pub_pk,
             },
         ),
         OracleParams {
@@ -823,21 +379,398 @@ fn create(
     )
     .unwrap();
     (
-        (maker_sk, maker_pk),
-        (taker_sk, taker_pk),
-        maker_address.address,
-        taker_address.address,
-        maker_revocation_sk,
-        maker_revocation_pk,
-        maker_publish_sk,
-        maker_publish_pk,
-        taker_revocation_sk,
-        taker_revocation_pk,
-        taker_publish_sk,
-        taker_publish_pk,
         maker_cfd_txs,
         taker_cfd_txs,
+        CfdKeys {
+            sk: maker_sk,
+            pk: maker_pk,
+            rev_sk: maker_rev_sk,
+            rev_pk: maker_rev_pk,
+            pub_sk: maker_pub_sk,
+            pub_pk: maker_pub_pk,
+        },
+        CfdKeys {
+            sk: taker_sk,
+            pk: taker_pk,
+            rev_sk: taker_rev_sk,
+            rev_pk: taker_rev_pk,
+            pub_sk: taker_pub_sk,
+            pub_pk: taker_pub_pk,
+        },
+        maker_addr.address,
+        taker_addr.address,
     )
+}
+
+struct CfdKeys {
+    sk: SecretKey,
+    pk: PublicKey,
+    rev_sk: SecretKey,
+    rev_pk: PublicKey,
+    pub_sk: SecretKey,
+    pub_pk: PublicKey,
+}
+
+fn verify_cfd_sigs(
+    (maker_cfd_txs, maker_pk, maker_publish_pk): (&CfdTransactions, PublicKey, PublicKey),
+    (taker_cfd_txs, taker_pk, taker_publish_pk): (&CfdTransactions, PublicKey, PublicKey),
+    (oracle_pk, nonce_pk): (schnorrsig::PublicKey, schnorrsig::PublicKey),
+    (lock_desc, lock_amount): (&Descriptor<PublicKey>, Amount),
+    (commit_desc, commit_amount): (&Descriptor<PublicKey>, Amount),
+) {
+    verify_spend(
+        &taker_cfd_txs.refund.0,
+        &maker_cfd_txs.refund.1,
+        commit_desc,
+        commit_amount,
+        &maker_pk.key,
+    )
+    .expect("valid maker refund sig");
+    verify_spend(
+        &maker_cfd_txs.refund.0,
+        &taker_cfd_txs.refund.1,
+        commit_desc,
+        commit_amount,
+        &taker_pk.key,
+    )
+    .expect("valid taker refund sig");
+    for (tx, _, msg) in taker_cfd_txs.cets.iter() {
+        let maker_encsig = maker_cfd_txs
+            .cets
+            .iter()
+            .find_map(|(maker_tx, encsig, _)| (maker_tx.txid() == tx.txid()).then(|| encsig))
+            .expect("one encsig per cet, per party");
+
+        verify_cet_encsig(
+            tx,
+            maker_encsig,
+            msg,
+            &maker_pk.key,
+            (&oracle_pk, &nonce_pk),
+            commit_desc,
+            commit_amount,
+        )
+        .expect("valid maker cet encsig")
+    }
+    for (tx, _, msg) in maker_cfd_txs.cets.iter() {
+        let taker_encsig = taker_cfd_txs
+            .cets
+            .iter()
+            .find_map(|(taker_tx, encsig, _)| (taker_tx.txid() == tx.txid()).then(|| encsig))
+            .expect("one encsig per cet, per party");
+
+        verify_cet_encsig(
+            tx,
+            taker_encsig,
+            msg,
+            &taker_pk.key,
+            (&oracle_pk, &nonce_pk),
+            commit_desc,
+            commit_amount,
+        )
+        .expect("valid taker cet encsig")
+    }
+    encverify_spend(
+        &taker_cfd_txs.commit.0,
+        &maker_cfd_txs.commit.1,
+        lock_desc,
+        lock_amount,
+        &taker_publish_pk.key,
+        &maker_pk.key,
+    )
+    .expect("valid maker commit encsig");
+    encverify_spend(
+        &maker_cfd_txs.commit.0,
+        &taker_cfd_txs.commit.1,
+        lock_desc,
+        lock_amount,
+        &maker_publish_pk.key,
+        &taker_pk.key,
+    )
+    .expect("valid taker commit encsig");
+}
+
+fn check_cfd_txs(
+    (
+        maker_wallet,
+        maker_cfd_txs,
+        maker_sk,
+        maker_pk,
+        maker_pub_sk,
+        maker_pub_pk,
+        maker_rev_sk,
+        maker_addr,
+    ): (
+        bdk::Wallet<(), bdk::database::MemoryDatabase>,
+        CfdTransactions,
+        SecretKey,
+        PublicKey,
+        SecretKey,
+        PublicKey,
+        SecretKey,
+        Address,
+    ),
+    (
+        taker_wallet,
+        taker_cfd_txs,
+        taker_sk,
+        taker_pk,
+        taker_pub_sk,
+        taker_pub_pk,
+        taker_rev_sk,
+        taker_addr,
+    ): (
+        bdk::Wallet<(), bdk::database::MemoryDatabase>,
+        CfdTransactions,
+        SecretKey,
+        PublicKey,
+        SecretKey,
+        PublicKey,
+        SecretKey,
+        Address,
+    ),
+    (oracle, event): (Oracle, Event),
+    (lock_desc, lock_amount): (Descriptor<PublicKey>, Amount),
+    (commit_desc, commit_amount): (Descriptor<PublicKey>, Amount),
+) {
+    // Lock transaction (either party can do this):
+
+    let signed_lock_tx = sign_lock_tx(maker_cfd_txs.lock, maker_wallet, taker_wallet)
+        .expect("to build signed lock tx");
+
+    // Commit transactions:
+
+    let signed_commit_tx_maker = decrypt_and_sign(
+        maker_cfd_txs.commit.0,
+        (&maker_sk, &maker_pk),
+        &maker_pub_sk,
+        &taker_pk,
+        &taker_cfd_txs.commit.1,
+        &lock_desc,
+        lock_amount,
+    )
+    .expect("maker to build signed commit tx");
+    check_tx(&signed_lock_tx, &signed_commit_tx_maker, &lock_desc).expect("valid maker commit tx");
+    let signed_commit_tx_taker = decrypt_and_sign(
+        taker_cfd_txs.commit.0,
+        (&taker_sk, &taker_pk),
+        &taker_pub_sk,
+        &maker_pk,
+        &maker_cfd_txs.commit.1,
+        &lock_desc,
+        lock_amount,
+    )
+    .expect("taker to build signed commit tx");
+    check_tx(&signed_lock_tx, &signed_commit_tx_taker, &lock_desc).expect("valid taker commit tx");
+
+    // Refund transaction (both parties would produce the same one):
+
+    let signed_refund_tx = finalize_spend_transaction(
+        maker_cfd_txs.refund.0,
+        &commit_desc,
+        (maker_pk, maker_cfd_txs.refund.1),
+        (taker_pk, taker_cfd_txs.refund.1),
+    )
+    .expect("to build signed refund tx");
+    check_tx(&signed_commit_tx_maker, &signed_refund_tx, &commit_desc).expect("valid refund tx");
+
+    // CETs:
+
+    for (tx, _, msg) in maker_cfd_txs.cets.clone().into_iter() {
+        build_and_check_cet(
+            tx,
+            &oracle.attest(&event, &msg),
+            taker_cfd_txs
+                .cets
+                .iter()
+                .map(|(tx, encsig, _)| (tx.txid(), *encsig)),
+            (&maker_sk, &maker_pk),
+            &taker_pk,
+            (&signed_commit_tx_maker, &commit_desc, commit_amount),
+        )
+        .expect("valid maker cet");
+    }
+    for (tx, _, msg) in taker_cfd_txs.cets.into_iter() {
+        build_and_check_cet(
+            tx,
+            &oracle.attest(&event, &msg),
+            maker_cfd_txs
+                .cets
+                .iter()
+                .map(|(tx, encsig, _)| (tx.txid(), *encsig)),
+            (&taker_sk, &taker_pk),
+            &maker_pk,
+            (&signed_commit_tx_maker, &commit_desc, commit_amount),
+        )
+        .expect("valid taker cet");
+    }
+
+    // Punish transactions:
+
+    let punish_tx_maker = punish_transaction(
+        &commit_desc,
+        &maker_addr,
+        maker_cfd_txs.commit.1,
+        maker_sk,
+        taker_rev_sk,
+        taker_pub_pk,
+        &signed_commit_tx_taker,
+    )
+    .expect("maker to build punish tx");
+    check_tx(&signed_commit_tx_taker, &punish_tx_maker, &commit_desc)
+        .expect("valid maker punish tx");
+    let punish_tx_taker = punish_transaction(
+        &commit_desc,
+        &taker_addr,
+        taker_cfd_txs.commit.1,
+        taker_sk,
+        maker_rev_sk,
+        maker_pub_pk,
+        &signed_commit_tx_maker,
+    )
+    .expect("taker to build punish tx");
+    check_tx(&signed_commit_tx_maker, &punish_tx_taker, &commit_desc)
+        .expect("valid taker punish tx");
+}
+
+fn build_and_check_cet(
+    cet: Transaction,
+    oracle_sig: &schnorrsig::Signature,
+    mut cets_other: impl Iterator<Item = (Txid, EcdsaAdaptorSignature)>,
+    (maker_sk, maker_pk): (&SecretKey, &PublicKey),
+    taker_pk: &PublicKey,
+    (commit_tx, commit_desc, commit_amount): (&Transaction, &Descriptor<PublicKey>, Amount),
+) -> Result<()> {
+    let (_nonce_pk, signature_scalar) = schnorrsig_decompose(oracle_sig);
+    let taker_encsig = cets_other
+        .find_map(|(txid, encsig)| (txid == cet.txid()).then(|| encsig))
+        .expect("one encsig per cet, per party");
+    let signed_cet = decrypt_and_sign(
+        cet,
+        (maker_sk, maker_pk),
+        &signature_scalar,
+        taker_pk,
+        &taker_encsig,
+        commit_desc,
+        commit_amount,
+    )
+    .context("failed to build signed cet")?;
+    check_tx(commit_tx, &signed_cet, commit_desc).context("invalid cet")?;
+
+    Ok(())
+}
+
+fn check_tx(
+    spent_tx: &Transaction,
+    spend_tx: &Transaction,
+    spent_descriptor: &Descriptor<PublicKey>,
+) -> Result<()> {
+    let spent_script_pubkey = spent_descriptor.script_pubkey();
+    let spent_outpoint = spent_tx
+        .outpoint(&spent_script_pubkey)
+        .context("spend tx doesn't spend from spent tx")?;
+    let spent_amount = spent_tx.output[spent_outpoint.vout as usize].value;
+
+    check_tx_fee(&[spent_tx], spend_tx)?;
+    spent_descriptor.script_pubkey().verify(
+        0,
+        spent_amount,
+        bitcoin::consensus::serialize(spend_tx).as_slice(),
+    )?;
+
+    Ok(())
+}
+
+fn decrypt_and_sign(
+    spend_tx: Transaction,
+    (sk, pk): (&SecretKey, &PublicKey),
+    decryption_sk: &SecretKey,
+    pk_other: &PublicKey,
+    encsig_other: &EcdsaAdaptorSignature,
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+) -> Result<Transaction> {
+    let sighash = spending_tx_sighash(&spend_tx, spent_descriptor, spent_amount);
+
+    let sig_self = SECP256K1.sign(&sighash, sk);
+    let sig_other = encsig_other.decrypt(decryption_sk)?;
+
+    let signed_commit_tx = finalize_spend_transaction(
+        spend_tx,
+        spent_descriptor,
+        (*pk, sig_self),
+        (*pk_other, sig_other),
+    )?;
+
+    Ok(signed_commit_tx)
+}
+
+fn sign_lock_tx(
+    mut lock_tx: PartiallySignedTransaction,
+    maker_wallet: bdk::Wallet<(), bdk::database::MemoryDatabase>,
+    taker_wallet: bdk::Wallet<(), bdk::database::MemoryDatabase>,
+) -> Result<Transaction> {
+    maker_wallet
+        .sign(
+            &mut lock_tx,
+            SignOptions {
+                trust_witness_utxo: true,
+                ..Default::default()
+            },
+        )
+        .context("maker could not sign lock tx")?;
+    taker_wallet
+        .sign(
+            &mut lock_tx,
+            SignOptions {
+                trust_witness_utxo: true,
+                ..Default::default()
+            },
+        )
+        .context("taker could not sign lock tx")?;
+
+    Ok(lock_tx.extract_tx())
+}
+
+fn verify_spend(
+    tx: &Transaction,
+    sig: &Signature,
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+    pk: &secp256k1_zkp::PublicKey,
+) -> Result<()> {
+    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
+    SECP256K1
+        .verify(&sighash, sig, pk)
+        .context("failed to verify sig on spend tx")
+}
+
+fn verify_cet_encsig(
+    tx: &Transaction,
+    encsig: &EcdsaAdaptorSignature,
+    msg: &[u8],
+    pk: &secp256k1_zkp::PublicKey,
+    (oracle_pk, nonce_pk): (&schnorrsig::PublicKey, &schnorrsig::PublicKey),
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+) -> Result<()> {
+    let sig_point = compute_signature_point(oracle_pk, nonce_pk, msg)
+        .context("could not calculate signature point")?;
+    encverify_spend(tx, encsig, spent_descriptor, spent_amount, &sig_point, pk)
+}
+
+fn encverify_spend(
+    tx: &Transaction,
+    encsig: &EcdsaAdaptorSignature,
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+    encryption_point: &secp256k1_zkp::PublicKey,
+    pk: &secp256k1_zkp::PublicKey,
+) -> Result<()> {
+    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
+    encsig
+        .verify(SECP256K1, &sighash, pk, encryption_point)
+        .context("failed to verify encsig spend tx")
 }
 
 fn check_tx_fee(input_txs: &[&Transaction], spend_tx: &Transaction) -> Result<()> {
