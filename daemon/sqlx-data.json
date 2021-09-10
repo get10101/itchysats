@@ -1,0 +1,223 @@
+{
+  "db": "SQLite",
+  "1bd5f2355d2e9351a443ec10b2533ca9326bb2a27b9f049d60759ac5a9eba758": {
+    "query": "\n        select\n            id\n        from cfds\n        where offer_uuid = ?;\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        true
+      ]
+    }
+  },
+  "29bc1b2bd17146eb36e2c61acc1bed3c9b5b3014e35874c752cbd50016e99b74": {
+    "query": "\n            insert into offers (\n                uuid,\n                trading_pair,\n                position,\n                initial_price,\n                min_quantity,\n                max_quantity,\n                leverage,\n                liquidation_price,\n                creation_timestamp,\n                term\n            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 10
+      },
+      "nullable": []
+    }
+  },
+  "4896e2d2e2c6cc03f9ae2b7de85279f295fb7e70e083e0a1a3faf3e7551650f3": {
+    "query": "\n        select\n            cfds.id as cfd_id,\n            offers.uuid as offer_id,\n            offers.initial_price as initial_price,\n            offers.leverage as leverage,\n            offers.trading_pair as trading_pair,\n            offers.position as position,\n            offers.liquidation_price as liquidation_price,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join offers as offers on cfds.offer_id = offers.id\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "offer_id",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "initial_price",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "leverage",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "trading_pair",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "position",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "liquidation_price",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "quantity_usd",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "state",
+          "ordinal": 8,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 0
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "50abbb297394739ec9d85917f8c32aa8bcfa0bfe140b24e9eeda4ce8d30d4f8d": {
+    "query": "\n        select\n            state\n        from cfd_states\n        where cfd_id = ?\n        order by id desc\n        limit 1;\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "state",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false
+      ]
+    }
+  },
+  "79162c94809f9fac4850236d06a76206d0914285d462c04e30ad7af222092675": {
+    "query": "\n            insert into cfds (\n                offer_id,\n                offer_uuid,\n                quantity_usd\n            ) values (?, ?, ?);\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 3
+      },
+      "nullable": []
+    }
+  },
+  "a464a1feb12abadff8bfd5b2b3b7362f3846869c0702944b21737eff8f420be5": {
+    "query": "\n        insert into cfd_states (\n            cfd_id,\n            state\n        ) values (?, ?);\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": []
+    }
+  },
+  "d380cac37744c2169d4e0a8f13d223cbd37ca5034e461a583b18cf7566a9c5c6": {
+    "query": "\n        select * from offers where uuid = ?;\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "uuid",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "trading_pair",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "position",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "initial_price",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "min_quantity",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "max_quantity",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "leverage",
+          "ordinal": 7,
+          "type_info": "Int64"
+        },
+        {
+          "name": "liquidation_price",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "creation_timestamp",
+          "ordinal": 9,
+          "type_info": "Text"
+        },
+        {
+          "name": "term",
+          "ordinal": 10,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "fac3d990211ef9e5fa8bcd6e1d6e0c8a81652b98fb11f2686affd1593fba75fd": {
+    "query": "\n            insert into cfd_states (\n                cfd_id,\n                state\n            ) values (?, ?);\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": []
+    }
+  }
+}

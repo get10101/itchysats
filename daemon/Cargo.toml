@@ -1,0 +1,24 @@
+[package]
+name = "daemon"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+anyhow = "1"
+bdk = { version = "0.10", default-features = false }
+futures = "0.3"
+proptest = "1"
+rocket = { git = "https://github.com/SergioBenitez/Rocket", features = ["json"] }
+rocket_db_pools = { git = "https://github.com/SergioBenitez/Rocket", features = ["sqlx_sqlite"] }
+rust_decimal = { version = "1.15", features = ["serde-float", "serde-arbitrary-precision"] }
+rust_decimal_macros = "1.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_with = { version = "1", features = ["macros"] }
+sqlx = { version = "0.5", features = ["macros", "offline"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync", "process", "fs", "net"] }
+tokio-util = { version = "0.6", features = ["codec"] }
+uuid = { version = "0.8", features = ["serde", "v4"] }
+
+[dev-dependencies]
+tempfile = "3"

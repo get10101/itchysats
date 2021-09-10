@@ -38,9 +38,9 @@ User interaction MUST NOT directly change the state displayed to the user.
 Instead, we maintain a cycle of:
 
 1. User interaction triggers POST request to backend
-1. Backend state changes
-1. State change emits update on SSE feed
-1. Event on SSE triggers re-render in application
+2. Backend state changes
+3. State change emits update on SSE feed
+4. Event on SSE triggers re-render in application
 
 As a result of this invariant, we can be sure that any state change is accurately reflected in the frontend, regardless of how it was triggered.
 It also makes the frontend very thin and therefore more predictable.
