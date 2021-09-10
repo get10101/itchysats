@@ -287,12 +287,12 @@ pub fn spending_tx_sighash(
 pub fn finalize_spend_transaction(
     mut tx: Transaction,
     spent_descriptor: &Descriptor<PublicKey>,
-    (maker_pk, maker_sig): (PublicKey, Signature),
-    (taker_pk, taker_sig): (PublicKey, Signature),
+    (pk_0, sig_0): (PublicKey, Signature),
+    (pk_1, sig_1): (PublicKey, Signature),
 ) -> Result<Transaction> {
     let satisfier = HashMap::from_iter(vec![
-        (maker_pk, (maker_sig, SigHashType::All)),
-        (taker_pk, (taker_sig, SigHashType::All)),
+        (pk_0, (sig_0, SigHashType::All)),
+        (pk_1, (sig_1, SigHashType::All)),
     ]);
 
     let input = tx
