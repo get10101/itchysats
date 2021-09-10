@@ -1,14 +1,12 @@
-use std::fmt::{Display, Formatter};
-use std::time::{Duration, SystemTime};
-
+use crate::model::{Leverage, Position, TradingPair, Usd};
 use anyhow::{Context, Result};
 use bdk::bitcoin::Amount;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
+use std::time::{Duration, SystemTime};
 use uuid::Uuid;
-
-use crate::model::{Leverage, Position, TradingPair, Usd};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CfdOfferId(Uuid);
