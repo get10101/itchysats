@@ -8,13 +8,16 @@ on:
       - 'master'
 
 jobs:
-  static_analysis:
+  formatting:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v2
       - uses: dprint/check@v1.5
 
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -22,21 +25,25 @@ jobs:
           override: true
           toolchain: stable
           components: clippy
+      - uses: Swatinem/rust-cache@v1.3.0
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Run clippy with default features
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: print hello world
-        uses: actions/setup-node@v2
+  yarn:
+    defaults:
+      run:
+        working-directory: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
         with:
           cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+      - run: yarn install
+      - run: yarn run eslint
+      - run: yarn build
 
-        run: yarn install
-
-        run: cd frontend && yarn run eslint
-
-          cd frontend && yarn build
-
+  cargo:
     strategy:
       matrix:
         target: [ x86_64-unknown-linux-gnu, x86_64-apple-darwin ]
@@ -47,49 +54,16 @@ jobs:
             os: macos-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-
+      - uses: actions/checkout@v2
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           override: true
           toolchain: stable
-
       - uses: Swatinem/rust-cache@v1.3.0
-
-      - name: Cargo test
-        run: cargo test --workspace --all-features
-
-  smoke_test_daemons:
-    strategy:
-      matrix:
-        target: [ x86_64-unknown-linux-gnu, x86_64-apple-darwin ]
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: x86_64-apple-darwin
-            os: macos-latest
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          override: true
-          toolchain: stable
-
-      - uses: Swatinem/rust-cache@v1.3.0
-
-      - name: Build ${{ matrix.target }} release binary
-        run: |
-          cargo build --target=${{ matrix.target }} --release --bin maker
-          cargo build --target=${{ matrix.target }} --release --bin taker
-
+      - run: cargo test --workspace --all-features
+      - run: cargo build --target=${{ matrix.target }} --release --bin maker --bin taker
       - name: Smoke test ${{ matrix.target }} release binary
         run: |
           target/${{ matrix.target }}/release/maker &
