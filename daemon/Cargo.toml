@@ -7,7 +7,6 @@ edition = "2018"
 anyhow = "1"
 bdk = { version = "0.10", default-features = false }
 futures = "0.3"
-proptest = "1"
 rocket = { git = "https://github.com/SergioBenitez/Rocket", features = ["json"] }
 rocket_db_pools = { git = "https://github.com/SergioBenitez/Rocket", features = ["sqlx_sqlite"] }
 rust_decimal = { version = "1.15", features = ["serde-float", "serde-arbitrary-precision"] }
@@ -22,3 +21,4 @@ uuid = { version = "0.8", features = ["serde", "v4"] }
 
 [dev-dependencies]
 tempfile = "3"
+proptest = "1"
