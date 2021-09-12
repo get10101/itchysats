@@ -13,7 +13,6 @@ rust_decimal = { version = "1.15", features = ["serde-float", "serde-arbitrary-p
 rust_decimal_macros = "1.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_with = { version = "1", features = ["macros"] }
 sqlx = { version = "0.5", features = ["macros", "offline"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync", "process", "fs", "net"] }
 tokio-util = { version = "0.6", features = ["codec"] }
