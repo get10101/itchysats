@@ -133,33 +133,16 @@ dependencies = [
 
 [[package]]
 name = "bdk"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f4da304c23a06c21807598a7fe3223566e84c76c6bba2cab2504370dd6f4938"
-dependencies = [
- "async-trait",
- "bdk-macros",
- "bitcoin 0.26.2",
- "js-sys",
- "log",
- "miniscript 5.1.0",
- "rand 0.7.3",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bdk"
 version = "0.10.1-dev"
 source = "git+https://github.com/bitcoindevkit/bdk/?rev=acf157a99a305226203d2b55a567291a93c64720#acf157a99a305226203d2b55a567291a93c64720"
 dependencies = [
  "async-trait",
  "bdk-macros",
- "bitcoin 0.27.0",
+ "bitcoin",
  "electrum-client",
  "js-sys",
  "log",
- "miniscript 6.0.1",
+ "miniscript",
  "rand 0.7.3",
  "serde",
  "serde_json",
@@ -176,12 +159,6 @@ dependencies = [
  "quote",
  "syn",
 ]
-
-[[package]]
-name = "bech32"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2dabbe35f96fb9507f7330793dc490461b2962659ac5d427181e451a623751d1"
 
 [[package]]
 name = "bech32"
@@ -212,25 +189,12 @@ checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
 
 [[package]]
 name = "bitcoin"
-version = "0.26.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6742ec672d3f12506f4ac5c0d853926ff1f94e675f60ffd3224039972bf663f1"
-dependencies = [
- "base64-compat",
- "bech32 0.7.3",
- "bitcoin_hashes 0.9.7",
- "secp256k1",
- "serde",
-]
-
-[[package]]
-name = "bitcoin"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a427b27dae305157520d86673f2393b3eb08d880609abfcffc6e3c3c820e764"
 dependencies = [
  "base64-compat",
- "bech32 0.8.1",
+ "bech32",
  "bitcoin_hashes 0.10.0",
  "bitcoinconsensus",
  "secp256k1",
@@ -242,9 +206,6 @@ name = "bitcoin_hashes"
 version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ce18265ec2324ad075345d5814fbeed4f41f0a660055dc78840b74d19b874b1"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "bitcoin_hashes"
@@ -309,8 +270,8 @@ name = "cfd_protocol"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bdk 0.10.1-dev",
- "bitcoin 0.27.0",
+ "bdk",
+ "bitcoin",
  "itertools",
  "rand 0.6.5",
  "rand_chacha 0.1.1",
@@ -424,7 +385,7 @@ name = "daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bdk 0.10.0",
+ "bdk",
  "futures",
  "proptest",
  "rocket",
@@ -539,7 +500,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edd12f125852d77980725243b2a8b3bea73cd4c7a22c33bc52b08b664c561dc7"
 dependencies = [
- "bitcoin 0.27.0",
+ "bitcoin",
  "log",
  "rustls 0.16.0",
  "serde",
@@ -1052,20 +1013,11 @@ checksum = "0c835948974f68e0bd58636fc6c5b1fbff7b297e3046f11b3b3c18bbac012c6d"
 
 [[package]]
 name = "miniscript"
-version = "5.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71f455be59a359d50370c4f587afbc5739c862e684c5afecae80ab93e7474b4e"
-dependencies = [
- "bitcoin 0.26.2",
-]
-
-[[package]]
-name = "miniscript"
 version = "6.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d69450033bf162edf854d4aacaff82ca5ef34fa81f6cf69e1c81a103f0834997"
 dependencies = [
- "bitcoin 0.27.0",
+ "bitcoin",
 ]
 
 [[package]]

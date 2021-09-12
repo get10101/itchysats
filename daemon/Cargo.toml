@@ -5,7 +5,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
-bdk = { version = "0.10", default-features = false }
+bdk = { git = "https://github.com/bitcoindevkit/bdk/", rev = "acf157a99a305226203d2b55a567291a93c64720" }
 futures = "0.3"
 rocket = { git = "https://github.com/SergioBenitez/Rocket", features = ["json"] }
 rocket_db_pools = { git = "https://github.com/SergioBenitez/Rocket", features = ["sqlx_sqlite"] }
