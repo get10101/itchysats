@@ -4,7 +4,7 @@ use bdk::bitcoin::hashes::*;
 use bdk::bitcoin::util::bip143::SigHashCache;
 use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
 use bdk::bitcoin::{
-    Address, Amount, OutPoint, PublicKey, SigHash, SigHashType, Transaction, TxIn, TxOut,
+    Address, Amount, OutPoint, PublicKey, Script, SigHash, SigHashType, Transaction, TxIn, TxOut,
 };
 use bdk::database::BatchDatabase;
 use bdk::descriptor::Descriptor;
@@ -55,9 +55,97 @@ where
     }
 }
 
-pub fn build_cfd_transactions(
+pub fn create_cfd_transactions(
     (maker, maker_punish_params): (PartyParams, PunishParams),
     (taker, taker_punish_params): (PartyParams, PunishParams),
+    oracle_params: OracleParams,
+    refund_timelock: u32,
+    payouts: Vec<Payout>,
+    identity_sk: SecretKey,
+) -> Result<CfdTransactions> {
+    let lock_tx = lock_transaction(
+        maker.lock_psbt.clone(),
+        taker.lock_psbt.clone(),
+        maker.identity_pk,
+        taker.identity_pk,
+        maker.lock_amount + taker.lock_amount,
+    );
+
+    build_cfds(
+        lock_tx,
+        (
+            maker.identity_pk,
+            maker.lock_amount,
+            maker.address,
+            maker_punish_params,
+        ),
+        (
+            taker.identity_pk,
+            taker.lock_amount,
+            taker.address,
+            taker_punish_params,
+        ),
+        oracle_params,
+        refund_timelock,
+        payouts,
+        identity_sk,
+    )
+}
+
+pub fn renew_cfd_transactions(
+    lock_tx: PartiallySignedTransaction,
+    (maker_pk, maker_lock_amount, maker_address, maker_punish_params): (
+        PublicKey,
+        Amount,
+        Address,
+        PunishParams,
+    ),
+    (taker_pk, taker_lock_amount, taker_address, taker_punish_params): (
+        PublicKey,
+        Amount,
+        Address,
+        PunishParams,
+    ),
+    oracle_params: OracleParams,
+    refund_timelock: u32,
+    payouts: Vec<Payout>,
+    identity_sk: SecretKey,
+) -> Result<CfdTransactions> {
+    build_cfds(
+        lock_tx,
+        (
+            maker_pk,
+            maker_lock_amount,
+            maker_address,
+            maker_punish_params,
+        ),
+        (
+            taker_pk,
+            taker_lock_amount,
+            taker_address,
+            taker_punish_params,
+        ),
+        oracle_params,
+        refund_timelock,
+        payouts,
+        identity_sk,
+    )
+}
+
+fn build_cfds(
+    lock_tx: PartiallySignedTransaction,
+    (maker_pk, maker_lock_amount, maker_address, maker_punish_params): (
+        PublicKey,
+        Amount,
+        Address,
+        PunishParams,
+    ),
+    (taker_pk, taker_lock_amount, taker_address, taker_punish_params): (
+        PublicKey,
+        Amount,
+        Address,
+        PunishParams,
+    ),
     oracle_params: OracleParams,
     refund_timelock: u32,
     payouts: Vec<Payout>,
@@ -70,33 +158,25 @@ pub fn build_cfd_transactions(
     /// TODO: Should this be an argument to this function?
     const CET_TIMELOCK: u32 = 12;
 
-    let lock_tx = LockTransaction::new(
-        maker.lock_psbt.clone(),
-        taker.lock_psbt.clone(),
-        maker.identity_pk,
-        taker.identity_pk,
-        maker.lock_amount + taker.lock_amount,
-    )
-    .context("cannot build lock tx")?;
-
     let commit_tx = CommitTransaction::new(
-        &lock_tx,
+        &lock_tx.global.unsigned_tx,
         (
-            maker.identity_pk,
+            maker_pk,
             maker_punish_params.revocation_pk,
             maker_punish_params.publish_pk,
         ),
         (
-            taker.identity_pk,
+            taker_pk,
             taker_punish_params.revocation_pk,
             taker_punish_params.publish_pk,
         ),
-    );
+    )
+    .context("cannot build commit tx")?;
 
     let identity_pk = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &identity_sk);
-    let commit_encsig = if identity_pk == maker.identity_pk.key {
+    let commit_encsig = if identity_pk == maker_pk.key {
         commit_tx.encsign(identity_sk, &taker_punish_params.publish_pk)
-    } else if identity_pk == taker.identity_pk.key {
+    } else if identity_pk == taker_pk.key {
         commit_tx.encsign(identity_sk, &maker_punish_params.publish_pk)
     } else {
         bail!("identity sk does not belong to taker or maker")
@@ -106,10 +186,10 @@ pub fn build_cfd_transactions(
         let tx = RefundTransaction::new(
             &commit_tx,
             refund_timelock,
-            &maker.address,
-            &taker.address,
-            maker.lock_amount,
-            taker.lock_amount,
+            &maker_address,
+            &taker_address,
+            maker_lock_amount,
+            taker_lock_amount,
         );
 
         let sighash = tx.sighash().to_message();
@@ -125,8 +205,8 @@ pub fn build_cfd_transactions(
             let cet = ContractExecutionTransaction::new(
                 &commit_tx,
                 payout,
-                &maker.address,
-                &taker.address,
+                &maker_address,
+                &taker_address,
                 CET_TIMELOCK,
             )?;
 
@@ -138,7 +218,7 @@ pub fn build_cfd_transactions(
         .context("cannot build and sign all cets")?;
 
     Ok(CfdTransactions {
-        lock: lock_tx.inner,
+        lock: lock_tx,
         commit: (commit_tx.inner, commit_encsig),
         cets,
         refund,
@@ -206,12 +286,12 @@ pub fn spending_tx_sighash(
 pub fn finalize_spend_transaction(
     mut tx: Transaction,
     spent_descriptor: &Descriptor<PublicKey>,
-    (maker_pk, maker_sig): (PublicKey, Signature),
-    (taker_pk, taker_sig): (PublicKey, Signature),
+    (pk_0, sig_0): (PublicKey, Signature),
+    (pk_1, sig_1): (PublicKey, Signature),
 ) -> Result<Transaction> {
     let satisfier = HashMap::from_iter(vec![
-        (maker_pk, (maker_sig, SigHashType::All)),
-        (taker_pk, (taker_sig, SigHashType::All)),
+        (pk_0, (sig_0, SigHashType::All)),
+        (pk_1, (sig_1, SigHashType::All)),
     ]);
 
     let input = tx
@@ -254,21 +334,12 @@ pub fn punish_transaction(
         .find_map(|sig| encsig.recover(SECP256K1, &sig, &pub_them_pk.key).ok())
         .context("could not recover publish sk from commit tx")?;
 
-    let commit_vout = revoked_commit_tx
-        .output
-        .iter()
-        .position(|out| out.script_pubkey == commit_descriptor.script_pubkey())
+    let commit_outpoint = revoked_commit_tx
+        .outpoint(&commit_descriptor.script_pubkey())
         .expect("to find commit output in commit tx");
-    let commit_amount = revoked_commit_tx.output[commit_vout].value;
+    let commit_amount = revoked_commit_tx.output[commit_outpoint.vout as usize].value;
 
     let mut punish_tx = {
-        let txid = revoked_commit_tx.txid();
-
-        let previous_output = OutPoint {
-            txid,
-            vout: commit_vout as u32,
-        };
-
         let output = TxOut {
             value: commit_amount,
             script_pubkey: address.script_pubkey(),
@@ -277,7 +348,7 @@ pub fn punish_transaction(
             version: 2,
             lock_time: 0,
             input: vec![TxIn {
-                previous_output,
+                previous_output: commit_outpoint,
                 ..Default::default()
             }],
             output: vec![output],
@@ -494,7 +565,7 @@ struct ContractExecutionTransaction {
 impl ContractExecutionTransaction {
     /// Expected size of signed transaction in virtual bytes, plus a
     /// buffer to account for different signature lengths.
-    const SIGNED_VBYTES: f64 = 175.25 + (3.0 * 2.0) / 4.0;
+    const SIGNED_VBYTES: f64 = 206.5 + (3.0 * 2.0) / 4.0;
 
     fn new(
         commit_tx: &CommitTransaction,
@@ -645,24 +716,32 @@ impl CommitTransaction {
     const SIGNED_VBYTES: f64 = 148.5 + (3.0 * 2.0) / 4.0;
 
     fn new(
-        lock_tx: &LockTransaction,
-        (maker_own_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
-        (taker_own_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
-    ) -> Self {
-        let lock_tx_amount = lock_tx.amount().as_sat();
+        lock_tx: &Transaction,
+        (maker_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
+        (taker_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
+    ) -> Result<Self> {
+        let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
+        let (lock_outpoint, lock_amount) = {
+            let outpoint = lock_tx
+                .outpoint(&lock_descriptor.script_pubkey())
+                .context("lock script not found in lock tx")?;
+            let amount = lock_tx.output[outpoint.vout as usize].value;
+
+            (outpoint, amount)
+        };
 
         let lock_input = TxIn {
-            previous_output: lock_tx.lock_outpoint(),
+            previous_output: lock_outpoint,
             ..Default::default()
         };
 
         let descriptor = commit_descriptor(
-            (maker_own_pk, maker_rev_pk, maker_publish_pk),
-            (taker_own_pk, taker_rev_pk, taker_publish_pk),
+            (maker_pk, maker_rev_pk, maker_publish_pk),
+            (taker_pk, taker_rev_pk, taker_publish_pk),
         );
 
         let output = TxOut {
-            value: lock_tx_amount,
+            value: lock_amount,
             script_pubkey: descriptor.script_pubkey(),
         };
 
@@ -674,24 +753,24 @@ impl CommitTransaction {
         };
         let fee = (Self::SIGNED_VBYTES * SATS_PER_VBYTE as f64) as u64;
 
-        let commit_tx_amount = lock_tx_amount - fee as u64;
+        let commit_tx_amount = lock_amount - fee as u64;
         inner.output[0].value = commit_tx_amount;
 
         let sighash = SigHashCache::new(&inner).signature_hash(
             0,
-            &lock_tx.descriptor().script_code(),
-            lock_tx.amount().as_sat(),
+            &lock_descriptor.script_code(),
+            lock_amount,
             SigHashType::All,
         );
 
-        Self {
+        Ok(Self {
             inner,
             descriptor,
-            lock_descriptor: lock_tx.descriptor(),
+            lock_descriptor,
             amount: Amount::from_sat(commit_tx_amount),
             sighash,
             fee,
-        }
+        })
     }
 
     fn encsign(&self, sk: SecretKey, publish_them_pk: &PublicKey) -> EcdsaAdaptorSignature {
@@ -704,18 +783,9 @@ impl CommitTransaction {
     }
 
     fn outpoint(&self) -> OutPoint {
-        let txid = self.inner.txid();
-        let vout = self
-            .inner
-            .output
-            .iter()
-            .position(|out| out.script_pubkey == self.descriptor.script_pubkey())
-            .expect("to find commit output in commit tx");
-
-        OutPoint {
-            txid,
-            vout: vout as u32,
-        }
+        self.inner
+            .outpoint(&self.descriptor.script_pubkey())
+            .expect("to find commit output in commit tx")
     }
 
     fn amount(&self) -> Amount {
@@ -731,105 +801,86 @@ impl CommitTransaction {
     }
 }
 
-#[derive(Debug, Clone)]
-struct LockTransaction {
-    inner: PartiallySignedTransaction,
-    lock_descriptor: Descriptor<PublicKey>,
+fn lock_transaction(
+    maker_psbt: PartiallySignedTransaction,
+    taker_psbt: PartiallySignedTransaction,
+    maker_pk: PublicKey,
+    taker_pk: PublicKey,
     amount: Amount,
-}
+) -> PartiallySignedTransaction {
+    let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
 
-impl LockTransaction {
-    fn new(
-        maker_psbt: PartiallySignedTransaction,
-        taker_psbt: PartiallySignedTransaction,
-        maker_pk: PublicKey,
-        taker_pk: PublicKey,
-        amount: Amount,
-    ) -> Result<Self> {
-        let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
-
-        let maker_change = maker_psbt
-            .global
-            .unsigned_tx
-            .output
-            .into_iter()
-            .filter(|out| {
-                out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
-            })
-            .collect::<Vec<_>>();
-
-        let taker_change = taker_psbt
-            .global
-            .unsigned_tx
-            .output
-            .into_iter()
-            .filter(|out| {
-                out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
-            })
-            .collect();
-
-        let lock_output = TxOut {
-            value: amount.as_sat(),
-            script_pubkey: lock_descriptor.script_pubkey(),
-        };
-
-        let lock_tx = Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![
-                maker_psbt.global.unsigned_tx.input,
-                taker_psbt.global.unsigned_tx.input,
-            ]
-            .concat(),
-            output: vec![vec![lock_output], maker_change, taker_change].concat(),
-        };
-
-        let inner = PartiallySignedTransaction {
-            global: Global::from_unsigned_tx(lock_tx)?,
-            inputs: vec![maker_psbt.inputs, taker_psbt.inputs].concat(),
-            outputs: vec![maker_psbt.outputs, taker_psbt.outputs].concat(),
-        };
-
-        Ok(Self {
-            inner,
-            lock_descriptor,
-            amount,
+    let maker_change = maker_psbt
+        .global
+        .unsigned_tx
+        .output
+        .into_iter()
+        .filter(|out| {
+            out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
         })
-    }
+        .collect::<Vec<_>>();
 
-    fn lock_outpoint(&self) -> OutPoint {
-        let txid = self.inner.global.unsigned_tx.txid();
-        let vout = self
-            .inner
-            .global
-            .unsigned_tx
-            .output
-            .iter()
-            .position(|out| out.script_pubkey == self.lock_descriptor.script_pubkey())
-            .expect("to find lock output in lock tx");
+    let taker_change = taker_psbt
+        .global
+        .unsigned_tx
+        .output
+        .into_iter()
+        .filter(|out| {
+            out.script_pubkey != DUMMY_2OF2_MULITISIG.parse().expect("To be a valid script")
+        })
+        .collect::<Vec<_>>();
 
-        OutPoint {
-            txid,
-            vout: vout as u32,
-        }
-    }
+    let lock_output = TxOut {
+        value: amount.as_sat(),
+        script_pubkey: lock_descriptor.script_pubkey(),
+    };
 
-    fn descriptor(&self) -> Descriptor<PublicKey> {
-        self.lock_descriptor.clone()
-    }
+    let input = vec![
+        maker_psbt.global.unsigned_tx.input,
+        taker_psbt.global.unsigned_tx.input,
+    ]
+    .concat();
 
-    fn amount(&self) -> Amount {
-        self.amount
+    let output = std::iter::once(lock_output)
+        .chain(maker_change)
+        .chain(taker_change)
+        .collect();
+
+    let lock_tx = Transaction {
+        version: 2,
+        lock_time: 0,
+        input,
+        output,
+    };
+
+    PartiallySignedTransaction {
+        global: Global::from_unsigned_tx(lock_tx).expect("to be unsigned"),
+        inputs: vec![maker_psbt.inputs, taker_psbt.inputs].concat(),
+        outputs: vec![maker_psbt.outputs, taker_psbt.outputs].concat(),
     }
 }
 
 pub trait TransactionExt {
     fn get_virtual_size(&self) -> f64;
+    fn outpoint(&self, script_pubkey: &Script) -> Result<OutPoint>;
 }
 
 impl TransactionExt for Transaction {
     fn get_virtual_size(&self) -> f64 {
         self.get_weight() as f64 / 4.0
+    }
+
+    fn outpoint(&self, script_pubkey: &Script) -> Result<OutPoint> {
+        let vout = self
+            .output
+            .iter()
+            .position(|out| &out.script_pubkey == script_pubkey)
+            .context("script pubkey not found in tx")?;
+
+        Ok(OutPoint {
+            txid: self.txid(),
+            vout: vout as u32,
+        })
     }
 }
 
