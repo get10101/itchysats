@@ -1,5 +1,6 @@
 use crate::model::cfd::{CfdOffer, CfdOfferId};
 use crate::model::TakerId;
+use crate::wire::SetupMsg;
 use crate::{maker_cfd_actor, maker_inc_connections_actor, send_wire_message_actor, wire};
 use futures::{Future, StreamExt};
 use std::collections::HashMap;
@@ -8,6 +9,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Command {
     BroadcastCurrentOffer(Option<CfdOffer>),
@@ -22,6 +24,10 @@ pub enum Command {
     NotifyOfferAccepted {
         id: CfdOfferId,
         taker_id: TakerId,
+    },
+    OutProtocolMsg {
+        taker_id: TakerId,
+        msg: SetupMsg,
     },
 }
 
@@ -70,6 +76,10 @@ pub fn new(
                             let conn = write_connections.get(&taker_id).expect("no connection to taker_id");
                             conn.send(wire::MakerToTaker::ConfirmTakeOffer(id)).unwrap();
                         },
+                        maker_inc_connections_actor::Command::OutProtocolMsg { taker_id, msg } => {
+                            let conn = write_connections.get(&taker_id).expect("no connection to taker_id");
+                            conn.send(wire::MakerToTaker::Protocol(msg)).unwrap();
+                        }
                     }
                 }
             }
@@ -97,7 +107,12 @@ fn in_taker_messages(
                         quantity,
                     })
                     .unwrap(),
-                Ok(wire::TakerToMaker::StartContractSetup(_offer_id)) => {}
+                Ok(wire::TakerToMaker::StartContractSetup(offer_id)) => cfd_actor_inbox
+                    .send(maker_cfd_actor::Command::StartContractSetup { taker_id, offer_id })
+                    .unwrap(),
+                Ok(wire::TakerToMaker::Protocol(msg)) => cfd_actor_inbox
+                    .send(maker_cfd_actor::Command::IncProtocolMsg(msg))
+                    .unwrap(),
                 Err(error) => {
                     eprintln!("Error in reading message: {}", error);
                 }

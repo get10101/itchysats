@@ -67,8 +67,8 @@ pub async fn post_sell_offer(
 }
 
 // // TODO: Shall we use a simpler struct for verification? AFAICT quantity is not
-// // needed, no need to send the whole CFD either as the other fields can be generated from the offer
-// #[rocket::post("/offer/confirm", data = "<cfd_confirm_offer_request>")]
+// // needed, no need to send the whole CFD either as the other fields can be generated from the
+// offer #[rocket::post("/offer/confirm", data = "<cfd_confirm_offer_request>")]
 // pub async fn post_confirm_offer(
 //     cfd_confirm_offer_request: Json<CfdTakeRequest>,
 //     queue: &State<mpsc::Sender<CfdOffer>>,
