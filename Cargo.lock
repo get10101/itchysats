@@ -134,7 +134,7 @@ dependencies = [
 [[package]]
 name = "bdk"
 version = "0.10.1-dev"
-source = "git+https://github.com/bitcoindevkit/bdk/#acf157a99a305226203d2b55a567291a93c64720"
+source = "git+https://github.com/bitcoindevkit/bdk/#dd4bd96f7903e47bf821b18c86df64b000039379"
 dependencies = [
  "async-trait",
  "bdk-macros",
