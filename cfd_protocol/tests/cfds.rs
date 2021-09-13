@@ -46,28 +46,7 @@ fn create_cfd() {
 
     let refund_timelock = 0;
 
-    let (
-        maker_cfd_txs,
-        taker_cfd_txs,
-        CfdKeys {
-            sk: maker_sk,
-            pk: maker_pk,
-            rev_sk: maker_rev_sk,
-            rev_pk: maker_rev_pk,
-            pub_sk: maker_pub_sk,
-            pub_pk: maker_pub_pk,
-        },
-        CfdKeys {
-            sk: taker_sk,
-            pk: taker_pk,
-            rev_sk: taker_rev_sk,
-            rev_pk: taker_rev_pk,
-            pub_sk: taker_pub_sk,
-            pub_pk: taker_pub_pk,
-        },
-        maker_addr,
-        taker_addr,
-    ) = create_cfd_txs(
+    let (maker_cfd_txs, taker_cfd_txs, maker, taker, maker_addr, taker_addr) = create_cfd_txs(
         &mut rng,
         (&maker_wallet, maker_lock_amount),
         (&taker_wallet, taker_lock_amount),
@@ -76,18 +55,18 @@ fn create_cfd() {
         refund_timelock,
     );
 
-    let lock_desc = lock_descriptor(maker_pk, taker_pk);
+    let lock_desc = lock_descriptor(maker.pk, taker.pk);
     let lock_amount = maker_lock_amount + taker_lock_amount;
 
     let commit_desc = commit_descriptor(
-        (maker_pk, maker_rev_pk, maker_pub_pk),
-        (taker_pk, taker_rev_pk, taker_pub_pk),
+        (maker.pk, maker.rev_pk, maker.pub_pk),
+        (taker.pk, taker.rev_pk, taker.pub_pk),
     );
     let commit_amount = Amount::from_sat(maker_cfd_txs.commit.0.output[0].value);
 
     verify_cfd_sigs(
-        (&maker_cfd_txs, maker_pk, maker_pub_pk),
-        (&taker_cfd_txs, taker_pk, taker_pub_pk),
+        (&maker_cfd_txs, maker.pk, maker.pub_pk),
+        (&taker_cfd_txs, taker.pk, taker.pub_pk),
         (oracle.public_key(), announcement.nonce_pk()),
         (&lock_desc, lock_amount),
         (&commit_desc, commit_amount),
@@ -97,21 +76,21 @@ fn create_cfd() {
         (
             maker_wallet,
             maker_cfd_txs,
-            maker_sk,
-            maker_pk,
-            maker_pub_sk,
-            maker_pub_pk,
-            maker_rev_sk,
+            maker.sk,
+            maker.pk,
+            maker.pub_sk,
+            maker.pub_pk,
+            maker.rev_sk,
             maker_addr,
         ),
         (
             taker_wallet,
             taker_cfd_txs,
-            taker_sk,
-            taker_pk,
-            taker_pub_sk,
-            taker_pub_pk,
-            taker_rev_sk,
+            taker.sk,
+            taker.pk,
+            taker.pub_sk,
+            taker.pub_pk,
+            taker.rev_sk,
             taker_addr,
         ),
         (oracle, event),
@@ -148,22 +127,7 @@ fn renew_cfd() {
 
     let refund_timelock = 0;
 
-    let (
-        maker_cfd_txs,
-        taker_cfd_txs,
-        CfdKeys {
-            sk: maker_sk,
-            pk: maker_pk,
-            ..
-        },
-        CfdKeys {
-            sk: taker_sk,
-            pk: taker_pk,
-            ..
-        },
-        maker_addr,
-        taker_addr,
-    ) = create_cfd_txs(
+    let (maker_cfd_txs, taker_cfd_txs, maker, taker, maker_addr, taker_addr) = create_cfd_txs(
         &mut rng,
         (&maker_wallet, maker_lock_amount),
         (&taker_wallet, taker_lock_amount),
@@ -198,7 +162,7 @@ fn renew_cfd() {
     let maker_cfd_txs = renew_cfd_transactions(
         maker_cfd_txs.lock,
         (
-            maker_pk,
+            maker.pk,
             maker_lock_amount,
             maker_addr.clone(),
             PunishParams {
@@ -207,7 +171,7 @@ fn renew_cfd() {
             },
         ),
         (
-            taker_pk,
+            taker.pk,
             taker_lock_amount,
             taker_addr.clone(),
             PunishParams {
@@ -221,14 +185,14 @@ fn renew_cfd() {
         },
         refund_timelock,
         payouts.clone(),
-        maker_sk,
+        maker.sk,
     )
     .unwrap();
 
     let taker_cfd_txs = renew_cfd_transactions(
         taker_cfd_txs.lock,
         (
-            maker_pk,
+            maker.pk,
             maker_lock_amount,
             maker_addr.clone(),
             PunishParams {
@@ -237,7 +201,7 @@ fn renew_cfd() {
             },
         ),
         (
-            taker_pk,
+            taker.pk,
             taker_lock_amount,
             taker_addr.clone(),
             PunishParams {
@@ -251,22 +215,22 @@ fn renew_cfd() {
         },
         refund_timelock,
         payouts,
-        taker_sk,
+        taker.sk,
     )
     .unwrap();
 
-    let lock_desc = lock_descriptor(maker_pk, taker_pk);
+    let lock_desc = lock_descriptor(maker.pk, taker.pk);
     let lock_amount = maker_lock_amount + taker_lock_amount;
 
     let commit_desc = commit_descriptor(
-        (maker_pk, maker_rev_pk, maker_pub_pk),
-        (taker_pk, taker_rev_pk, taker_pub_pk),
+        (maker.pk, maker_rev_pk, maker_pub_pk),
+        (taker.pk, taker_rev_pk, taker_pub_pk),
     );
     let commit_amount = Amount::from_sat(maker_cfd_txs.commit.0.output[0].value);
 
     verify_cfd_sigs(
-        (&maker_cfd_txs, maker_pk, maker_pub_pk),
-        (&taker_cfd_txs, taker_pk, taker_pub_pk),
+        (&maker_cfd_txs, maker.pk, maker_pub_pk),
+        (&taker_cfd_txs, taker.pk, taker_pub_pk),
         (oracle.public_key(), announcement.nonce_pk()),
         (&lock_desc, lock_amount),
         (&commit_desc, commit_amount),
@@ -276,8 +240,8 @@ fn renew_cfd() {
         (
             maker_wallet,
             maker_cfd_txs,
-            maker_sk,
-            maker_pk,
+            maker.sk,
+            maker.pk,
             maker_pub_sk,
             maker_pub_pk,
             maker_rev_sk,
@@ -286,8 +250,8 @@ fn renew_cfd() {
         (
             taker_wallet,
             taker_cfd_txs,
-            taker_sk,
-            taker_pk,
+            taker.sk,
+            taker.pk,
             taker_pub_sk,
             taker_pub_pk,
             taker_rev_sk,
