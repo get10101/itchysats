@@ -10,8 +10,7 @@ use bitcoin::Txid;
 use cfd_protocol::{
     commit_descriptor, compute_signature_point, create_cfd_transactions,
     finalize_spend_transaction, lock_descriptor, punish_transaction, renew_cfd_transactions,
-    spending_tx_sighash, CfdTransactions, OracleParams, Payout, PunishParams, TransactionExt,
-    WalletExt,
+    spending_tx_sighash, CfdTransactions, Payout, PunishParams, TransactionExt, WalletExt,
 };
 use rand::{CryptoRng, RngCore, SeedableRng};
 use rand_chacha::ChaChaRng;
@@ -34,11 +33,13 @@ fn create_cfd() {
     let payouts = vec![
         Payout::new(
             b"win".to_vec(),
+            announcement.nonce_pk(),
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
         ),
         Payout::new(
             b"lose".to_vec(),
+            announcement.nonce_pk(),
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
         ),
@@ -50,7 +51,7 @@ fn create_cfd() {
         &mut rng,
         (&maker_wallet, maker_lock_amount),
         (&taker_wallet, taker_lock_amount),
-        (&oracle, announcement),
+        oracle.public_key(),
         payouts,
         refund_timelock,
     );
@@ -115,11 +116,13 @@ fn renew_cfd() {
     let payouts = vec![
         Payout::new(
             b"win".to_vec(),
+            announcement.nonce_pk(),
             Amount::from_btc(2.0).unwrap(),
             Amount::ZERO,
         ),
         Payout::new(
             b"lose".to_vec(),
+            announcement.nonce_pk(),
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
         ),
@@ -131,7 +134,7 @@ fn renew_cfd() {
         &mut rng,
         (&maker_wallet, maker_lock_amount),
         (&taker_wallet, taker_lock_amount),
-        (&oracle, announcement),
+        oracle.public_key(),
         payouts,
         refund_timelock,
     );
@@ -149,11 +152,13 @@ fn renew_cfd() {
     let payouts = vec![
         Payout::new(
             b"win".to_vec(),
+            announcement.nonce_pk(),
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
         ),
         Payout::new(
             b"lose".to_vec(),
+            announcement.nonce_pk(),
             Amount::from_btc(0.5).unwrap(),
             Amount::from_btc(1.5).unwrap(),
         ),
@@ -179,10 +184,7 @@ fn renew_cfd() {
                 publish_pk: taker_pub_pk,
             },
         ),
-        OracleParams {
-            pk: oracle.public_key(),
-            nonce_pk: announcement.nonce_pk(),
-        },
+        oracle.public_key(),
         refund_timelock,
         payouts.clone(),
         maker.sk,
@@ -209,10 +211,7 @@ fn renew_cfd() {
                 publish_pk: taker_pub_pk,
             },
         ),
-        OracleParams {
-            pk: oracle.public_key(),
-            nonce_pk: announcement.nonce_pk(),
-        },
+        oracle.public_key(),
         refund_timelock,
         payouts,
         taker.sk,
@@ -267,7 +266,7 @@ fn create_cfd_txs(
     rng: &mut ChaChaRng,
     (maker_wallet, maker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
     (taker_wallet, taker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
-    (oracle, announcement): (&Oracle, Announcement),
+    oracle_pk: schnorrsig::PublicKey,
     payouts: Vec<Payout>,
     refund_timelock: u32,
 ) -> (
@@ -309,10 +308,7 @@ fn create_cfd_txs(
                 publish_pk: taker_pub_pk,
             },
         ),
-        OracleParams {
-            pk: oracle.public_key(),
-            nonce_pk: announcement.nonce_pk(),
-        },
+        oracle_pk,
         refund_timelock,
         payouts.clone(),
         maker_sk,
@@ -333,10 +329,7 @@ fn create_cfd_txs(
                 publish_pk: taker_pub_pk,
             },
         ),
-        OracleParams {
-            pk: oracle.public_key(),
-            nonce_pk: announcement.nonce_pk(),
-        },
+        oracle_pk,
         refund_timelock,
         payouts,
         taker_sk,
