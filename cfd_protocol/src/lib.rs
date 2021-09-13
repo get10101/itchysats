@@ -55,9 +55,97 @@ where
     }
 }
 
-pub fn build_cfd_transactions(
+pub fn create_cfd_transactions(
     (maker, maker_punish_params): (PartyParams, PunishParams),
     (taker, taker_punish_params): (PartyParams, PunishParams),
+    oracle_params: OracleParams,
+    refund_timelock: u32,
+    payouts: Vec<Payout>,
+    identity_sk: SecretKey,
+) -> Result<CfdTransactions> {
+    let lock_tx = lock_transaction(
+        maker.lock_psbt.clone(),
+        taker.lock_psbt.clone(),
+        maker.identity_pk,
+        taker.identity_pk,
+        maker.lock_amount + taker.lock_amount,
+    );
+
+    build_cfds(
+        lock_tx,
+        (
+            maker.identity_pk,
+            maker.lock_amount,
+            maker.address,
+            maker_punish_params,
+        ),
+        (
+            taker.identity_pk,
+            taker.lock_amount,
+            taker.address,
+            taker_punish_params,
+        ),
+        oracle_params,
+        refund_timelock,
+        payouts,
+        identity_sk,
+    )
+}
+
+pub fn renew_cfd_transactions(
+    lock_tx: PartiallySignedTransaction,
+    (maker_pk, maker_lock_amount, maker_address, maker_punish_params): (
+        PublicKey,
+        Amount,
+        Address,
+        PunishParams,
+    ),
+    (taker_pk, taker_lock_amount, taker_address, taker_punish_params): (
+        PublicKey,
+        Amount,
+        Address,
+        PunishParams,
+    ),
+    oracle_params: OracleParams,
+    refund_timelock: u32,
+    payouts: Vec<Payout>,
+    identity_sk: SecretKey,
+) -> Result<CfdTransactions> {
+    build_cfds(
+        lock_tx,
+        (
+            maker_pk,
+            maker_lock_amount,
+            maker_address,
+            maker_punish_params,
+        ),
+        (
+            taker_pk,
+            taker_lock_amount,
+            taker_address,
+            taker_punish_params,
+        ),
+        oracle_params,
+        refund_timelock,
+        payouts,
+        identity_sk,
+    )
+}
+
+fn build_cfds(
+    lock_tx: PartiallySignedTransaction,
+    (maker_pk, maker_lock_amount, maker_address, maker_punish_params): (
+        PublicKey,
+        Amount,
+        Address,
+        PunishParams,
+    ),
+    (taker_pk, taker_lock_amount, taker_address, taker_punish_params): (
+        PublicKey,
+        Amount,
+        Address,
+        PunishParams,
+    ),
     oracle_params: OracleParams,
     refund_timelock: u32,
     payouts: Vec<Payout>,
@@ -70,23 +158,15 @@ pub fn build_cfd_transactions(
     /// TODO: Should this be an argument to this function?
     const CET_TIMELOCK: u32 = 12;
 
-    let lock_tx = lock_transaction(
-        maker.lock_psbt.clone(),
-        taker.lock_psbt.clone(),
-        maker.identity_pk,
-        taker.identity_pk,
-        maker.lock_amount + taker.lock_amount,
-    );
-
     let commit_tx = CommitTransaction::new(
         &lock_tx.global.unsigned_tx,
         (
-            maker.identity_pk,
+            maker_pk,
             maker_punish_params.revocation_pk,
             maker_punish_params.publish_pk,
         ),
         (
-            taker.identity_pk,
+            taker_pk,
             taker_punish_params.revocation_pk,
             taker_punish_params.publish_pk,
         ),
@@ -94,9 +174,9 @@ pub fn build_cfd_transactions(
     .context("cannot build commit tx")?;
 
     let identity_pk = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &identity_sk);
-    let commit_encsig = if identity_pk == maker.identity_pk.key {
+    let commit_encsig = if identity_pk == maker_pk.key {
         commit_tx.encsign(identity_sk, &taker_punish_params.publish_pk)
-    } else if identity_pk == taker.identity_pk.key {
+    } else if identity_pk == taker_pk.key {
         commit_tx.encsign(identity_sk, &maker_punish_params.publish_pk)
     } else {
         bail!("identity sk does not belong to taker or maker")
@@ -106,10 +186,10 @@ pub fn build_cfd_transactions(
         let tx = RefundTransaction::new(
             &commit_tx,
             refund_timelock,
-            &maker.address,
-            &taker.address,
-            maker.lock_amount,
-            taker.lock_amount,
+            &maker_address,
+            &taker_address,
+            maker_lock_amount,
+            taker_lock_amount,
         );
 
         let sighash = tx.sighash().to_message();
@@ -125,8 +205,8 @@ pub fn build_cfd_transactions(
             let cet = ContractExecutionTransaction::new(
                 &commit_tx,
                 payout,
-                &maker.address,
-                &taker.address,
+                &maker_address,
+                &taker_address,
                 CET_TIMELOCK,
             )?;
 
