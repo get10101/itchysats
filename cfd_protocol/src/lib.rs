@@ -58,7 +58,7 @@ where
 pub fn create_cfd_transactions(
     (maker, maker_punish_params): (PartyParams, PunishParams),
     (taker, taker_punish_params): (PartyParams, PunishParams),
-    oracle_params: OracleParams,
+    oracle_pk: schnorrsig::PublicKey,
     refund_timelock: u32,
     payouts: Vec<Payout>,
     identity_sk: SecretKey,
@@ -85,7 +85,7 @@ pub fn create_cfd_transactions(
             taker.address,
             taker_punish_params,
         ),
-        oracle_params,
+        oracle_pk,
         refund_timelock,
         payouts,
         identity_sk,
@@ -106,7 +106,7 @@ pub fn renew_cfd_transactions(
         Address,
         PunishParams,
     ),
-    oracle_params: OracleParams,
+    oracle_pk: schnorrsig::PublicKey,
     refund_timelock: u32,
     payouts: Vec<Payout>,
     identity_sk: SecretKey,
@@ -125,7 +125,7 @@ pub fn renew_cfd_transactions(
             taker_address,
             taker_punish_params,
         ),
-        oracle_params,
+        oracle_pk,
         refund_timelock,
         payouts,
         identity_sk,
@@ -146,7 +146,7 @@ fn build_cfds(
         Address,
         PunishParams,
     ),
-    oracle_params: OracleParams,
+    oracle_pk: schnorrsig::PublicKey,
     refund_timelock: u32,
     payouts: Vec<Payout>,
     identity_sk: SecretKey,
@@ -201,6 +201,7 @@ fn build_cfds(
     let cets = payouts
         .into_iter()
         .map(|payout| {
+            let nonce_pk = payout.nonce_pk;
             let message = payout.message.clone();
             let cet = ContractExecutionTransaction::new(
                 &commit_tx,
@@ -210,7 +211,7 @@ fn build_cfds(
                 CET_TIMELOCK,
             )?;
 
-            let encsig = cet.encsign(identity_sk, &oracle_params.pk, &oracle_params.nonce_pk)?;
+            let encsig = cet.encsign(identity_sk, &oracle_pk, &nonce_pk)?;
 
             Ok((cet.inner, encsig, message))
         })
@@ -420,11 +421,6 @@ pub struct PunishParams {
     pub publish_pk: PublicKey,
 }
 
-pub struct OracleParams {
-    pub pk: schnorrsig::PublicKey,
-    pub nonce_pk: schnorrsig::PublicKey,
-}
-
 pub struct CfdTransactions {
     pub lock: PartiallySignedTransaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
@@ -432,17 +428,26 @@ pub struct CfdTransactions {
     pub refund: (Transaction, Signature),
 }
 
+// TODO: We will very likely have multiple `(message, nonce_pk)` pairs
+// per payout in the future
 #[derive(Debug, Clone)]
 pub struct Payout {
     message: Vec<u8>,
+    nonce_pk: schnorrsig::PublicKey,
     maker_amount: Amount,
     taker_amount: Amount,
 }
 
 impl Payout {
-    pub fn new(message: Vec<u8>, maker_amount: Amount, taker_amount: Amount) -> Self {
+    pub fn new(
+        message: Vec<u8>,
+        nonce_pk: schnorrsig::PublicKey,
+        maker_amount: Amount,
+        taker_amount: Amount,
+    ) -> Self {
         Self {
             message,
+            nonce_pk,
             maker_amount,
             taker_amount,
         }
@@ -907,6 +912,9 @@ mod tests {
 
     #[test]
     fn test_fee_subtraction_bigger_than_dust() {
+        let nonce_pk = "18845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
+            .parse()
+            .unwrap();
         let key = "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af"
             .parse()
             .unwrap();
@@ -917,6 +925,7 @@ mod tests {
         let orig_taker_amount = 1000;
         let payout = Payout::new(
             b"win".to_vec(),
+            nonce_pk,
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         );
@@ -937,6 +946,9 @@ mod tests {
 
     #[test]
     fn test_fee_subtraction_smaller_than_dust() {
+        let nonce_pk = "18845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
+            .parse()
+            .unwrap();
         let key = "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af"
             .parse()
             .unwrap();
@@ -947,6 +959,7 @@ mod tests {
         let orig_taker_amount = 1000;
         let payout = Payout::new(
             b"win".to_vec(),
+            nonce_pk,
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         );
