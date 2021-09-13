@@ -1,14 +1,12 @@
-use std::fmt::{Display, Formatter};
-use std::time::{Duration, SystemTime};
-
+use crate::model::{Leverage, Position, TradingPair, Usd};
 use anyhow::{Context, Result};
 use bdk::bitcoin::Amount;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
+use std::time::{Duration, SystemTime};
 use uuid::Uuid;
-
-use crate::model::{Leverage, Position, TradingPair, Usd};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CfdOfferId(Uuid);
@@ -49,6 +47,7 @@ pub struct CfdOffer {
     pub term: Duration,
 }
 
+#[allow(dead_code)] // Only one binary and the tests use this.
 impl CfdOffer {
     pub fn from_default_with_price(price: Usd) -> Result<Self> {
         let leverage = Leverage(5);
@@ -69,13 +68,6 @@ impl CfdOffer {
             term: Duration::from_secs(60 * 60 * 8), // 8 hours
         })
     }
-
-    /// FIXME: For quick prototyping, remove when price is known
-    pub fn from_default_with_dummy_price() -> Result<Self> {
-        let price = Usd(dec!(49_000));
-        Self::from_default_with_price(price)
-    }
-
     pub fn with_min_quantity(mut self, min_quantity: Usd) -> CfdOffer {
         self.min_quantity = min_quantity;
         self
@@ -206,26 +198,26 @@ pub enum CfdState {
 }
 
 impl CfdState {
-    fn get_common(&self) -> CfdStateCommon {
-        let common = match self {
-            CfdState::TakeRequested { common } => common,
-            CfdState::PendingTakeRequest { common } => common,
-            CfdState::Accepted { common } => common,
-            CfdState::Rejected { common } => common,
-            CfdState::ContractSetup { common } => common,
-            CfdState::Open { common, .. } => common,
-            CfdState::CloseRequested { common } => common,
-            CfdState::PendingClose { common } => common,
-            CfdState::Closed { common } => common,
-            CfdState::Error { common } => common,
-        };
+    // fn get_common(&self) -> CfdStateCommon {
+    //     let common = match self {
+    //         CfdState::TakeRequested { common } => common,
+    //         CfdState::PendingTakeRequest { common } => common,
+    //         CfdState::Accepted { common } => common,
+    //         CfdState::Rejected { common } => common,
+    //         CfdState::ContractSetup { common } => common,
+    //         CfdState::Open { common, .. } => common,
+    //         CfdState::CloseRequested { common } => common,
+    //         CfdState::PendingClose { common } => common,
+    //         CfdState::Closed { common } => common,
+    //         CfdState::Error { common } => common,
+    //     };
 
-        *common
-    }
+    //     *common
+    // }
 
-    pub fn get_transition_timestamp(&self) -> SystemTime {
-        self.get_common().transition_timestamp
-    }
+    // pub fn get_transition_timestamp(&self) -> SystemTime {
+    //     self.get_common().transition_timestamp
+    // }
 }
 
 impl Display for CfdState {
@@ -323,11 +315,9 @@ fn calculate_profit(
 
 #[cfg(test)]
 mod tests {
-    use std::time::UNIX_EPOCH;
-
-    use rust_decimal_macros::dec;
-
     use super::*;
+    use rust_decimal_macros::dec;
+    use std::time::UNIX_EPOCH;
 
     #[test]
     fn given_default_values_then_expected_liquidation_price() {

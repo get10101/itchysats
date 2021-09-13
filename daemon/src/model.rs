@@ -1,5 +1,9 @@
+use std::fmt::{Display, Formatter};
+
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+
+use uuid::Uuid;
 
 pub mod cfd;
 
@@ -10,9 +14,9 @@ impl Usd {
     pub const ZERO: Self = Self(Decimal::ZERO);
 }
 
-impl Usd {
-    pub fn to_sat_precision(&self) -> Self {
-        Self(self.0.round_dp(8))
+impl Display for Usd {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -28,4 +32,19 @@ pub enum TradingPair {
 pub enum Position {
     Buy,
     Sell,
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct TakerId(Uuid);
+
+impl Default for TakerId {
+    fn default() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+impl Display for TakerId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
 }
