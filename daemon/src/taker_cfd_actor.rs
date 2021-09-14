@@ -21,6 +21,12 @@ pub fn new(
     let (sender, mut receiver) = mpsc::unbounded_channel();
 
     let actor = async move {
+        // populate the CFD feed with existing CFDs
+        let mut conn = db.acquire().await.unwrap();
+        cfd_feed_actor_inbox
+            .send(db::load_all_cfds(&mut conn).await.unwrap())
+            .unwrap();
+
         while let Some(message) = receiver.recv().await {
             match message {
                 Command::TakeOffer { offer_id, quantity } => {
