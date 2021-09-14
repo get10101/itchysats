@@ -62,12 +62,12 @@ jobs:
           override: true
           toolchain: stable
       - uses: Swatinem/rust-cache@v1.3.0
-      - run: cargo test --workspace --all-features
-      - run: cargo build --target=${{ matrix.target }} --release --bin maker --bin taker
-      - name: Smoke test ${{ matrix.target }} release binary
+      - run: cargo build --all-targets --all-features
+      - run: cargo test --workspace
+      - name: Smoke test ${{ matrix.target }} binary
         run: |
-          target/${{ matrix.target }}/release/maker &
+          target/debug/maker &
           sleep 5s # Wait for maker to start
-          target/${{ matrix.target }}/release/taker &
+          target/debug/taker &
           sleep 5s # Wait for taker to start
           curl --fail http://localhost:8000/alive
