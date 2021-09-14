@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
 
     let socket = tokio::net::TcpSocket::new_v4().unwrap();
     let connection = socket
-        .connect("0.0.0.0:9999".parse().unwrap())
+        .connect("127.0.0.1:9999".parse().unwrap())
         .await
         .expect("Maker should be online first");
 
