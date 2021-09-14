@@ -23,7 +23,7 @@ pub enum Command {
 pub fn new(
     db: sqlx::SqlitePool,
     takers: mpsc::UnboundedSender<maker_inc_connections_actor::Command>,
-    cfd_feed_sender: watch::Sender<Vec<Cfd>>,
+    cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     offer_feed_sender: watch::Sender<Option<CfdOffer>>,
 ) -> (
     impl Future<Output = ()>,
@@ -34,6 +34,12 @@ pub fn new(
     let mut current_offer_id = None;
 
     let actor = async move {
+        // populate the CFD feed with existing CFDs
+        let mut conn = db.acquire().await.unwrap();
+        cfd_feed_actor_inbox
+            .send(db::load_all_cfds(&mut conn).await.unwrap())
+            .unwrap();
+
         while let Some(message) = receiver.recv().await {
             match message {
                 maker_cfd_actor::Command::TakeOffer {
@@ -87,7 +93,7 @@ pub fn new(
                             taker_id,
                         })
                         .unwrap();
-                    cfd_feed_sender
+                    cfd_feed_actor_inbox
                         .send(db::load_all_cfds(&mut conn).await.unwrap())
                         .unwrap();
 
