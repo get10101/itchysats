@@ -68,7 +68,7 @@ fn create_cfd() {
     verify_cfd_sigs(
         (&maker_cfd_txs, maker.pk, maker.pub_pk),
         (&taker_cfd_txs, taker.pk, taker.pub_pk),
-        (oracle.public_key(), announcement.nonce_pk()),
+        oracle.public_key(),
         (&lock_desc, lock_amount),
         (&commit_desc, commit_amount),
     );
@@ -230,7 +230,7 @@ fn renew_cfd() {
     verify_cfd_sigs(
         (&maker_cfd_txs, maker.pk, maker_pub_pk),
         (&taker_cfd_txs, taker.pk, taker_pub_pk),
-        (oracle.public_key(), announcement.nonce_pk()),
+        oracle.public_key(),
         (&lock_desc, lock_amount),
         (&commit_desc, commit_amount),
     );
@@ -371,7 +371,7 @@ struct CfdKeys {
 fn verify_cfd_sigs(
     (maker_cfd_txs, maker_pk, maker_publish_pk): (&CfdTransactions, PublicKey, PublicKey),
     (taker_cfd_txs, taker_pk, taker_publish_pk): (&CfdTransactions, PublicKey, PublicKey),
-    (oracle_pk, nonce_pk): (schnorrsig::PublicKey, schnorrsig::PublicKey),
+    oracle_pk: schnorrsig::PublicKey,
     (lock_desc, lock_amount): (&Descriptor<PublicKey>, Amount),
     (commit_desc, commit_amount): (&Descriptor<PublicKey>, Amount),
 ) {
@@ -391,11 +391,11 @@ fn verify_cfd_sigs(
         &taker_pk.key,
     )
     .expect("valid taker refund sig");
-    for (tx, _, msg) in taker_cfd_txs.cets.iter() {
+    for (tx, _, msg, nonce_pk) in taker_cfd_txs.cets.iter() {
         let maker_encsig = maker_cfd_txs
             .cets
             .iter()
-            .find_map(|(maker_tx, encsig, _)| (maker_tx.txid() == tx.txid()).then(|| encsig))
+            .find_map(|(maker_tx, encsig, _, _)| (maker_tx.txid() == tx.txid()).then(|| encsig))
             .expect("one encsig per cet, per party");
 
         verify_cet_encsig(
@@ -403,17 +403,17 @@ fn verify_cfd_sigs(
             maker_encsig,
             msg,
             &maker_pk.key,
-            (&oracle_pk, &nonce_pk),
+            (&oracle_pk, nonce_pk),
             commit_desc,
             commit_amount,
         )
         .expect("valid maker cet encsig")
     }
-    for (tx, _, msg) in maker_cfd_txs.cets.iter() {
+    for (tx, _, msg, nonce_pk) in maker_cfd_txs.cets.iter() {
         let taker_encsig = taker_cfd_txs
             .cets
             .iter()
-            .find_map(|(taker_tx, encsig, _)| (taker_tx.txid() == tx.txid()).then(|| encsig))
+            .find_map(|(taker_tx, encsig, _, _)| (taker_tx.txid() == tx.txid()).then(|| encsig))
             .expect("one encsig per cet, per party");
 
         verify_cet_encsig(
@@ -421,7 +421,7 @@ fn verify_cfd_sigs(
             taker_encsig,
             msg,
             &taker_pk.key,
-            (&oracle_pk, &nonce_pk),
+            (&oracle_pk, nonce_pk),
             commit_desc,
             commit_amount,
         )
@@ -533,28 +533,28 @@ fn check_cfd_txs(
 
     // CETs:
 
-    for (tx, _, msg) in maker_cfd_txs.cets.clone().into_iter() {
+    for (tx, _, msg, _) in maker_cfd_txs.cets.clone().into_iter() {
         build_and_check_cet(
             tx,
             &oracle.attest(&event, &msg),
             taker_cfd_txs
                 .cets
                 .iter()
-                .map(|(tx, encsig, _)| (tx.txid(), *encsig)),
+                .map(|(tx, encsig, _, _)| (tx.txid(), *encsig)),
             (&maker_sk, &maker_pk),
             &taker_pk,
             (&signed_commit_tx_maker, &commit_desc, commit_amount),
         )
         .expect("valid maker cet");
     }
-    for (tx, _, msg) in taker_cfd_txs.cets.into_iter() {
+    for (tx, _, msg, _) in taker_cfd_txs.cets.into_iter() {
         build_and_check_cet(
             tx,
             &oracle.attest(&event, &msg),
             maker_cfd_txs
                 .cets
                 .iter()
-                .map(|(tx, encsig, _)| (tx.txid(), *encsig)),
+                .map(|(tx, encsig, _, _)| (tx.txid(), *encsig)),
             (&taker_sk, &taker_pk),
             &maker_pk,
             (&signed_commit_tx_maker, &commit_desc, commit_amount),

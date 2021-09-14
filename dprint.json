@@ -3,7 +3,9 @@
   "projectType": "openSource",
   "incremental": true,
   "rustfmt": {
-    "imports_granularity": "module"
+    "imports_granularity": "module",
+    "wrap_comments": true,
+    "comment_width": 120
   },
   "includes": ["**/*.{md,rs,toml}"],
   "excludes": ["**/target",

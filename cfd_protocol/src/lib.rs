@@ -1,3 +1,5 @@
+pub use secp256k1_zkp::EcdsaAdaptorSignature;
+
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::hashes::hex::ToHex;
 use bdk::bitcoin::hashes::*;
@@ -14,7 +16,7 @@ use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
 use itertools::Itertools;
 use secp256k1_zkp::bitcoin_hashes::sha256;
-use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
+use secp256k1_zkp::{self, schnorrsig, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
@@ -213,7 +215,7 @@ fn build_cfds(
 
             let encsig = cet.encsign(identity_sk, &oracle_pk, &nonce_pk)?;
 
-            Ok((cet.inner, encsig, message))
+            Ok((cet.inner, encsig, message, nonce_pk))
         })
         .collect::<Result<Vec<_>>>()
         .context("cannot build and sign all cets")?;
@@ -255,7 +257,9 @@ pub fn commit_descriptor(
     let taker_publish_pk_hash = taker_publish_pk.pubkey_hash().as_hash();
     let taker_rev_pk_hash = taker_rev_pk.pubkey_hash().as_hash();
 
-    // raw script: or(and(pk(maker_own_pk),pk(taker_own_pk)),or(and(pk(maker_own_pk),and(pk(taker_publish_pk),pk(taker_rev_pk))),and(pk(taker_own_pk),and(pk(maker_publish_pk),pk(maker_rev_pk)))))
+    // raw script:
+    // or(and(pk(maker_own_pk),pk(taker_own_pk)),or(and(pk(maker_own_pk),and(pk(taker_publish_pk),
+    // pk(taker_rev_pk))),and(pk(taker_own_pk),and(pk(maker_publish_pk),pk(maker_rev_pk)))))
     let full_script = format!("wsh(c:andor(pk({maker_own_pk}),pk_k({taker_own_pk}),or_i(and_v(v:pkh({maker_own_pk_hash}),and_v(v:pkh({taker_publish_pk_hash}),pk_h({taker_rev_pk_hash}))),and_v(v:pkh({taker_own_pk_hash}),and_v(v:pkh({maker_publish_pk_hash}),pk_h({maker_rev_pk_hash}))))))",
         maker_own_pk = maker_own_pk,
         taker_own_pk = taker_own_pk,
@@ -416,15 +420,22 @@ pub struct PartyParams {
     pub address: Address,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct PunishParams {
     pub revocation_pk: PublicKey,
     pub publish_pk: PublicKey,
 }
 
+#[derive(Debug, Clone)]
 pub struct CfdTransactions {
     pub lock: PartiallySignedTransaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
-    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, Vec<u8>)>,
+    pub cets: Vec<(
+        Transaction,
+        EcdsaAdaptorSignature,
+        Vec<u8>,
+        schnorrsig::PublicKey,
+    )>,
     pub refund: (Transaction, Signature),
 }
 
@@ -529,7 +540,8 @@ sha256t_hash_newtype!(
     true
 );
 
-/// Compute a signature point for the given oracle public key, announcement nonce public key and message.
+/// Compute a signature point for the given oracle public key, announcement nonce public key and
+/// message.
 pub fn compute_signature_point(
     oracle_pk: &schnorrsig::PublicKey,
     nonce_pk: &schnorrsig::PublicKey,

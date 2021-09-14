@@ -118,7 +118,8 @@ pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::
 
     let cfd_state = serde_json::to_string(&cfd.state)?;
 
-    // save cfd + state in a transaction to make sure the state is only inserted if the cfd was inserted
+    // save cfd + state in a transaction to make sure the state is only inserted if the cfd was
+    // inserted
 
     let cfd_id = sqlx::query!(
         r#"
@@ -165,7 +166,8 @@ pub async fn insert_new_cfd_state_by_offer_id(
         .await
         .context("loading latest state failed")?;
 
-    // make sure that the new state is different than the current one to avoid that we save the same state twice
+    // make sure that the new state is different than the current one to avoid that we save the same
+    // state twice
     if mem::discriminant(&latest_cfd_state_in_db) == mem::discriminant(&new_state) {
         anyhow::bail!("Cannot insert new state {} for cfd with order_id {} because it currently already is in state {}", new_state, offer_id, latest_cfd_state_in_db);
     }
@@ -267,7 +269,8 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
     .fetch_all(conn)
     .await?;
 
-    // TODO: We might want to separate the database model from the http model and properly map between them
+    // TODO: We might want to separate the database model from the http model and properly map
+    // between them
 
     let cfds = rows
         .iter()
