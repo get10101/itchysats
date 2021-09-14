@@ -1,12 +1,18 @@
 use crate::model::cfd::{Cfd, CfdOffer, CfdOfferId, CfdState};
-use crate::model::{Leverage, Usd};
+use crate::model::{Leverage, Position};
 use anyhow::Context;
-use bdk::bitcoin::Amount;
 use rocket_db_pools::sqlx;
+use serde::{Deserialize, Serialize};
 use sqlx::pool::PoolConnection;
 use sqlx::{Acquire, Sqlite, SqlitePool};
 use std::convert::TryInto;
 use std::mem;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum OfferOrigin {
+    Mine,
+    Others,
+}
 
 pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(pool).await?;
@@ -16,6 +22,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
 pub async fn insert_cfd_offer(
     cfd_offer: &CfdOffer,
     conn: &mut PoolConnection<Sqlite>,
+    origin: OfferOrigin,
 ) -> anyhow::Result<()> {
     let uuid = serde_json::to_string(&cfd_offer.id).unwrap();
     let trading_pair = serde_json::to_string(&cfd_offer.trading_pair).unwrap();
@@ -27,6 +34,7 @@ pub async fn insert_cfd_offer(
     let liquidation_price = serde_json::to_string(&cfd_offer.liquidation_price).unwrap();
     let creation_timestamp = serde_json::to_string(&cfd_offer.creation_timestamp).unwrap();
     let term = serde_json::to_string(&cfd_offer.term).unwrap();
+    let origin = serde_json::to_string(&origin).unwrap();
 
     sqlx::query!(
         r#"
@@ -40,8 +48,9 @@ pub async fn insert_cfd_offer(
                 leverage,
                 liquidation_price,
                 creation_timestamp,
-                term
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                term,
+                origin
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#,
         uuid,
         trading_pair,
@@ -52,7 +61,8 @@ pub async fn insert_cfd_offer(
         leverage,
         liquidation_price,
         creation_timestamp,
-        term
+        term,
+        origin
     )
     .execute(conn)
     .await?;
@@ -155,7 +165,7 @@ pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::
     Ok(())
 }
 
-#[allow(dead_code)] // This is only used by one binary.
+#[allow(dead_code)]
 pub async fn insert_new_cfd_state_by_offer_id(
     offer_id: CfdOfferId,
     new_state: CfdState,
@@ -190,6 +200,7 @@ pub async fn insert_new_cfd_state_by_offer_id(
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn load_cfd_id_by_offer_uuid(
     offer_uuid: CfdOfferId,
     conn: &mut PoolConnection<Sqlite>,
@@ -213,6 +224,7 @@ async fn load_cfd_id_by_offer_uuid(
     Ok(cfd_id)
 }
 
+#[allow(dead_code)]
 async fn load_latest_cfd_state(
     cfd_id: i64,
     conn: &mut PoolConnection<Sqlite>,
@@ -250,6 +262,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             offers.leverage as leverage,
             offers.trading_pair as trading_pair,
             offers.position as position,
+            offers.origin as origin,
             offers.liquidation_price as liquidation_price,
             cfds.quantity_usd as quantity_usd,
             cfd_states.state as state
@@ -269,9 +282,6 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
     .fetch_all(conn)
     .await?;
 
-    // TODO: We might want to separate the database model from the http model and properly map
-    // between them
-
     let cfds = rows
         .iter()
         .map(|row| {
@@ -279,10 +289,17 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             let initial_price = serde_json::from_str(row.initial_price.as_str()).unwrap();
             let leverage = Leverage(row.leverage.try_into().unwrap());
             let trading_pair = serde_json::from_str(row.trading_pair.as_str()).unwrap();
-            let position = serde_json::from_str(row.position.as_str()).unwrap();
             let liquidation_price = serde_json::from_str(row.liquidation_price.as_str()).unwrap();
             let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
             let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
+
+            let origin: OfferOrigin = serde_json::from_str(row.origin.as_str()).unwrap();
+            let position: Position = serde_json::from_str(row.position.as_str()).unwrap();
+
+            let position = match origin {
+                OfferOrigin::Mine => position,
+                OfferOrigin::Others => position.counter_position(),
+            };
 
             Cfd {
                 offer_id,
@@ -292,8 +309,6 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 position,
                 liquidation_price,
                 quantity_usd: quantity,
-                profit_btc: Amount::ZERO,
-                profit_usd: Usd::ZERO,
                 state: latest_state,
             }
         })
@@ -323,7 +338,9 @@ mod tests {
         let mut conn = pool.acquire().await.unwrap();
 
         let cfd_offer = CfdOffer::from_default_with_price(Usd(dec!(10000))).unwrap();
-        insert_cfd_offer(&cfd_offer, &mut conn).await.unwrap();
+        insert_cfd_offer(&cfd_offer, &mut conn, OfferOrigin::Others)
+            .await
+            .unwrap();
 
         let cfd_offer_loaded = load_offer_by_id(cfd_offer.id, &mut conn).await.unwrap();
 
@@ -344,12 +361,13 @@ mod tests {
                     transition_timestamp: SystemTime::now(),
                 },
             },
-            Usd(dec!(10001)),
-        )
-        .unwrap();
+            Position::Buy,
+        );
 
         // the order ahs to exist in the db in order to be able to insert the cfd
-        insert_cfd_offer(&cfd_offer, &mut conn).await.unwrap();
+        insert_cfd_offer(&cfd_offer, &mut conn, OfferOrigin::Others)
+            .await
+            .unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
@@ -371,12 +389,13 @@ mod tests {
                     transition_timestamp: SystemTime::now(),
                 },
             },
-            Usd(dec!(10001)),
-        )
-        .unwrap();
+            Position::Buy,
+        );
 
         // the order ahs to exist in the db in order to be able to insert the cfd
-        insert_cfd_offer(&cfd_offer, &mut conn).await.unwrap();
+        insert_cfd_offer(&cfd_offer, &mut conn, OfferOrigin::Others)
+            .await
+            .unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
         cfd.state = CfdState::Accepted {

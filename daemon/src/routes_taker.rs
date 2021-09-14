@@ -1,10 +1,13 @@
-use crate::model::cfd::{Cfd, CfdOffer, CfdTakeRequest};
+use crate::model::cfd::{calculate_buy_margin, Cfd, CfdOffer, CfdOfferId};
+use crate::model::{Leverage, Usd};
 use crate::taker_cfd_actor;
 use crate::to_sse_event::ToSseEvent;
 use bdk::bitcoin::Amount;
+use rocket::response::status;
 use rocket::response::stream::EventStream;
 use rocket::serde::json::Json;
 use rocket::State;
+use serde::{Deserialize, Serialize};
 use tokio::select;
 use tokio::sync::{mpsc, watch};
 
@@ -47,6 +50,12 @@ pub async fn feed(
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CfdTakeRequest {
+    pub offer_id: CfdOfferId,
+    pub quantity: Usd,
+}
+
 #[rocket::post("/cfd", data = "<cfd_take_request>")]
 pub async fn post_cfd(
     cfd_take_request: Json<CfdTakeRequest>,
@@ -62,3 +71,33 @@ pub async fn post_cfd(
 
 #[rocket::get("/alive")]
 pub fn get_health_check() {}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct MarginRequest {
+    pub price: Usd,
+    pub quantity: Usd,
+    pub leverage: Leverage,
+}
+
+/// Represents the collateral that has to be put up
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct MarginResponse {
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub margin: Amount,
+}
+
+// TODO: Consider moving this into wasm and load it into the UI instead of triggering this endpoint
+// upon every quantity keystroke
+#[rocket::post("/calculate/margin", data = "<margin_request>")]
+pub fn margin_calc(
+    margin_request: Json<MarginRequest>,
+) -> Result<status::Accepted<Json<MarginResponse>>, status::BadRequest<String>> {
+    let margin = calculate_buy_margin(
+        margin_request.price,
+        margin_request.quantity,
+        margin_request.leverage,
+    )
+    .map_err(|e| status::BadRequest(Some(e.to_string())))?;
+
+    Ok(status::Accepted(Some(Json(MarginResponse { margin }))))
+}

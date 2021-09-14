@@ -24,8 +24,14 @@ export default function CfdTile(
                     <Text>{cfd.trading_pair}</Text>
                     <Text>Position</Text>
                     <Text>{cfd.position}</Text>
-                    <Text>Amount</Text>
+                    <Text>CFD Price</Text>
+                    <Text>{cfd.initial_price}</Text>
+                    <Text>Leverage</Text>
+                    <Text>{cfd.leverage}</Text>
+                    <Text>Quantity</Text>
                     <Text>{cfd.quantity_usd}</Text>
+                    <Text>Margin</Text>
+                    <Text>{cfd.margin}</Text>
                     <Text>Liquidation Price</Text>
                     <Text
                         overflow="hidden"
@@ -40,12 +46,12 @@ export default function CfdTile(
                     <Text>Open since</Text>
                     {/* TODO: Format date in a more compact way */}
                     <Text>
-                        {(new Date(cfd.state.payload.common.transition_timestamp.secs_since_epoch * 1000).toString())}
+                        {(new Date(cfd.state_transition_unix_timestamp * 1000).toString())}
                     </Text>
                     <Text>Status</Text>
-                    <Text>{cfd.state.type}</Text>
+                    <Text>{cfd.state}</Text>
                 </SimpleGrid>
-                {cfd.state.type === "Open"
+                {cfd.state === "Open"
                     && <Box paddingBottom={5}><Button colorScheme="blue" variant="solid">Close</Button></Box>}
             </VStack>
         </Box>

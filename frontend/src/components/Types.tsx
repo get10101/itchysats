@@ -1,13 +1,3 @@
-export interface RustDuration {
-    secs: number;
-    nanos: number;
-}
-
-export interface RustTimestamp {
-    secs_since_epoch: number;
-    nanos_since_epoch: number;
-}
-
 export interface Offer {
     id: string;
     trading_pair: string;
@@ -17,22 +7,8 @@ export interface Offer {
     max_quantity: number;
     leverage: number;
     liquidation_price: number;
-    creation_timestamp: RustTimestamp;
-    term: RustDuration;
-}
-
-export interface CfdStateCommon {
-    transition_timestamp: RustTimestamp;
-}
-
-export interface CfdStatePayload {
-    common: CfdStateCommon;
-    settlement_timestamp?: RustTimestamp; // only in state Open
-}
-
-export interface CfdState {
-    type: string;
-    payload: CfdStatePayload;
+    creation_unix_timestamp: number;
+    term_in_secs: number;
 }
 
 export interface Cfd {
@@ -45,8 +21,12 @@ export interface Cfd {
     liquidation_price: number;
 
     quantity_usd: number;
+
+    margin: number;
+
     profit_btc: number;
     profit_usd: number;
 
-    state: CfdState;
+    state: string;
+    state_transition_unix_timestamp: number;
 }

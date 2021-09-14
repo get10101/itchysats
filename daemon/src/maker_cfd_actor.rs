@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
+use crate::db::{insert_cfd, insert_cfd_offer, load_all_cfds, load_offer_by_id, OfferOrigin};
 use crate::model::cfd::{Cfd, CfdOffer, CfdOfferId, CfdState, CfdStateCommon, FinalizedCfd};
 use crate::model::{TakerId, Usd};
 use crate::wire::{Msg0, Msg1, SetupMsg};
-use crate::{db, maker_cfd_actor, maker_inc_connections_actor};
+use crate::{maker_cfd_actor, maker_inc_connections_actor};
 use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey};
 use bdk::bitcoin::{self, Amount};
 use bdk::database::BatchDatabase;
@@ -13,7 +14,6 @@ use cfd_protocol::{
     WalletExt,
 };
 use futures::Future;
-use rust_decimal_macros::dec;
 use tokio::sync::{mpsc, watch};
 
 #[allow(clippy::large_enum_variant)]
@@ -62,7 +62,7 @@ where
             // populate the CFD feed with existing CFDs
             let mut conn = db.acquire().await.unwrap();
             cfd_feed_actor_inbox
-                .send(db::load_all_cfds(&mut conn).await.unwrap())
+                .send(load_all_cfds(&mut conn).await.unwrap())
                 .unwrap();
 
             while let Some(message) = receiver.recv().await {
@@ -82,9 +82,7 @@ where
                         // 1. Validate if offer is still valid
                         let current_offer = match current_offer_id {
                             Some(current_offer_id) if current_offer_id == offer_id => {
-                                db::load_offer_by_id(current_offer_id, &mut conn)
-                                    .await
-                                    .unwrap()
+                                load_offer_by_id(current_offer_id, &mut conn).await.unwrap()
                             }
                             _ => {
                                 takers
@@ -100,17 +98,16 @@ where
                         // 2. Insert CFD in DB
                         // TODO: Don't auto-accept, present to user in UI instead
                         let cfd = Cfd::new(
-                            current_offer,
+                            current_offer.clone(),
                             quantity,
                             CfdState::Accepted {
                                 common: CfdStateCommon {
                                     transition_timestamp: SystemTime::now(),
                                 },
                             },
-                            Usd(dec!(10001)),
-                        )
-                        .unwrap();
-                        db::insert_cfd(cfd, &mut conn).await.unwrap();
+                            current_offer.position,
+                        );
+                        insert_cfd(cfd, &mut conn).await.unwrap();
 
                         takers
                             .send(maker_inc_connections_actor::Command::NotifyOfferAccepted {
@@ -119,7 +116,7 @@ where
                             })
                             .unwrap();
                         cfd_feed_actor_inbox
-                            .send(db::load_all_cfds(&mut conn).await.unwrap())
+                            .send(load_all_cfds(&mut conn).await.unwrap())
                             .unwrap();
 
                         // 3. Remove current offer
@@ -134,7 +131,9 @@ where
                     maker_cfd_actor::Command::NewOffer(offer) => {
                         // 1. Save to DB
                         let mut conn = db.acquire().await.unwrap();
-                        db::insert_cfd_offer(&offer, &mut conn).await.unwrap();
+                        insert_cfd_offer(&offer, &mut conn, OfferOrigin::Mine)
+                            .await
+                            .unwrap();
 
                         // 2. Update actor state to current offer
                         current_offer_id.replace(offer.id);
@@ -153,11 +152,9 @@ where
                         let mut conn = db.acquire().await.unwrap();
 
                         let current_offer = match current_offer_id {
-                            Some(current_offer_id) => Some(
-                                db::load_offer_by_id(current_offer_id, &mut conn)
-                                    .await
-                                    .unwrap(),
-                            ),
+                            Some(current_offer_id) => {
+                                Some(load_offer_by_id(current_offer_id, &mut conn).await.unwrap())
+                            }
                             None => None,
                         };
 

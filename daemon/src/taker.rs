@@ -112,7 +112,8 @@ async fn main() -> Result<()> {
             rocket::routes![
                 routes_taker::feed,
                 routes_taker::post_cfd,
-                routes_taker::get_health_check
+                routes_taker::get_health_check,
+                routes_taker::margin_calc,
             ],
         )
         .launch()
