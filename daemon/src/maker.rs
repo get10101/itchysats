@@ -1,12 +1,14 @@
+use crate::seed::Seed;
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
-use bdk::bitcoin::{self, Amount};
+use bdk::bitcoin::{Amount, Network};
 use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
+use bdk::KeychainKind;
+use clap::Clap;
 use model::cfd::{Cfd, Order};
 use rocket::fairing::AdHoc;
-use rocket::figment::util::map;
-use rocket::figment::value::{Map, Value};
 use rocket_db_pools::Database;
+use std::path::PathBuf;
 use tokio::sync::{mpsc, watch};
 
 mod db;
@@ -15,6 +17,7 @@ mod maker_cfd_actor;
 mod maker_inc_connections_actor;
 mod model;
 mod routes_maker;
+mod seed;
 mod send_wire_message_actor;
 mod to_sse_event;
 mod wire;
@@ -23,19 +26,55 @@ mod wire;
 #[database("maker")]
 pub struct Db(sqlx::SqlitePool);
 
+#[derive(Clap)]
+struct Opts {
+    /// The port to listen on for p2p connections.
+    #[clap(long, default_value = "9999")]
+    p2p_port: u16,
+
+    /// The port to listen on for the HTTP API.
+    #[clap(long, default_value = "8001")]
+    http_port: u16,
+
+    /// URL to the electrum backend to use for the wallet.
+    #[clap(long, default_value = "ssl://electrum.blockstream.info:60002")]
+    electrum: String,
+
+    /// Where to permanently store data, defaults to the current working directory.
+    #[clap(long)]
+    data_dir: Option<PathBuf>,
+
+    /// Generate a seed file within the data directory.
+    #[clap(long)]
+    generate_seed: bool,
+}
+
 #[rocket::main]
 async fn main() -> Result<()> {
-    let client =
-        bdk::electrum_client::Client::new("ssl://electrum.blockstream.info:60002").unwrap();
+    let opts = Opts::parse();
+
+    let data_dir = opts
+        .data_dir
+        .unwrap_or_else(|| std::env::current_dir().expect("unable to get cwd"));
+
+    if !data_dir.exists() {
+        tokio::fs::create_dir_all(&data_dir).await?;
+    }
+
+    let seed = Seed::initialize(&data_dir.join("maker_seed"), opts.generate_seed).await?;
+
+    let client = bdk::electrum_client::Client::new(&opts.electrum).unwrap();
 
     // TODO: Replace with sqlite once https://github.com/bitcoindevkit/bdk/pull/376 is merged.
-    let db = bdk::sled::open("/tmp/maker.db")?;
+    let db = bdk::sled::open(data_dir.join("maker_wallet_db"))?;
     let wallet_db = db.open_tree("wallet")?;
 
+    let ext_priv_key = seed.derive_extended_priv_key(Network::Testnet)?;
+
     let wallet = bdk::Wallet::new(
-        "wpkh(tprv8ZgxMBicQKsPd95j7aKDzWZw9Z2SiLxpz5J5iFUdqFf1unqtoonSTteF1ZSrrB831BY1eufyHehediNH76DvcDSS2JDDyDXCQKJbyd7ozVf/*)#3vkm30lf",
-        None,
-        bitcoin::Network::Testnet,
+        bdk::template::Bip84(ext_priv_key, KeychainKind::External),
+        Some(bdk::template::Bip84(ext_priv_key, KeychainKind::Internal)),
+        ext_priv_key.network,
         wallet_db,
         ElectrumBlockchain::from(client),
     )
@@ -48,15 +87,11 @@ async fn main() -> Result<()> {
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (_balance_feed_sender, balance_feed_receiver) = watch::channel::<Amount>(Amount::ZERO);
 
-    let db: Map<_, Value> = map! {
-        "url" => "./maker.sqlite".into(),
-    };
-
     let figment = rocket::Config::figment()
-        .merge(("databases", map!["maker" => db]))
-        .merge(("port", 8001));
+        .merge(("databases.maker.url", data_dir.join("maker.sqlite")))
+        .merge(("port", opts.http_port));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:9999").await?;
+    let listener = tokio::net::TcpListener::bind(&format!("0.0.0.0:{}", opts.p2p_port)).await?;
     let local_addr = listener.local_addr().unwrap();
 
     println!("Listening on {}", local_addr);
