@@ -105,7 +105,7 @@ impl ToSseEvent for Option<model::cfd::CfdOffer> {
             creation_unix_timestamp: offer
                 .creation_timestamp
                 .duration_since(UNIX_EPOCH)
-                .expect("timestamp to be convertiblae to dureation since epoch")
+                .expect("timestamp to be convertible to duration since epoch")
                 .as_secs(),
             term_in_secs: offer.term.as_secs(),
         });
