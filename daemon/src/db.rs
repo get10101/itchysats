@@ -1,4 +1,4 @@
-use crate::model::cfd::{Cfd, CfdOffer, CfdOfferId, CfdState};
+use crate::model::cfd::{Cfd, CfdState, Order, OrderId};
 use crate::model::{Leverage, Position};
 use anyhow::Context;
 use rocket_db_pools::sqlx;
@@ -9,9 +9,9 @@ use std::convert::TryInto;
 use std::mem;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum OfferOrigin {
-    Mine,
-    Others,
+pub enum Origin {
+    Ours,
+    Theirs,
 }
 
 pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
@@ -19,26 +19,26 @@ pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn insert_cfd_offer(
-    cfd_offer: &CfdOffer,
+pub async fn insert_order(
+    order: &Order,
     conn: &mut PoolConnection<Sqlite>,
-    origin: OfferOrigin,
+    origin: Origin,
 ) -> anyhow::Result<()> {
-    let uuid = serde_json::to_string(&cfd_offer.id).unwrap();
-    let trading_pair = serde_json::to_string(&cfd_offer.trading_pair).unwrap();
-    let position = serde_json::to_string(&cfd_offer.position).unwrap();
-    let initial_price = serde_json::to_string(&cfd_offer.price).unwrap();
-    let min_quantity = serde_json::to_string(&cfd_offer.min_quantity).unwrap();
-    let max_quantity = serde_json::to_string(&cfd_offer.max_quantity).unwrap();
-    let leverage = cfd_offer.leverage.0;
-    let liquidation_price = serde_json::to_string(&cfd_offer.liquidation_price).unwrap();
-    let creation_timestamp = serde_json::to_string(&cfd_offer.creation_timestamp).unwrap();
-    let term = serde_json::to_string(&cfd_offer.term).unwrap();
+    let uuid = serde_json::to_string(&order.id).unwrap();
+    let trading_pair = serde_json::to_string(&order.trading_pair).unwrap();
+    let position = serde_json::to_string(&order.position).unwrap();
+    let initial_price = serde_json::to_string(&order.price).unwrap();
+    let min_quantity = serde_json::to_string(&order.min_quantity).unwrap();
+    let max_quantity = serde_json::to_string(&order.max_quantity).unwrap();
+    let leverage = order.leverage.0;
+    let liquidation_price = serde_json::to_string(&order.liquidation_price).unwrap();
+    let creation_timestamp = serde_json::to_string(&order.creation_timestamp).unwrap();
+    let term = serde_json::to_string(&order.term).unwrap();
     let origin = serde_json::to_string(&origin).unwrap();
 
     sqlx::query!(
         r#"
-            insert into offers (
+            insert into orders (
                 uuid,
                 trading_pair,
                 position,
@@ -70,15 +70,15 @@ pub async fn insert_cfd_offer(
     Ok(())
 }
 
-pub async fn load_offer_by_id(
-    id: CfdOfferId,
+pub async fn load_order_by_id(
+    id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
-) -> anyhow::Result<CfdOffer> {
+) -> anyhow::Result<Order> {
     let uuid = serde_json::to_string(&id).unwrap();
 
     let row = sqlx::query!(
         r#"
-        select * from offers where uuid = ?;
+        select * from orders where uuid = ?;
         "#,
         uuid
     )
@@ -96,7 +96,7 @@ pub async fn load_offer_by_id(
     let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
     let term = serde_json::from_str(row.term.as_str()).unwrap();
 
-    Ok(CfdOffer {
+    Ok(Order {
         id: uuid,
         trading_pair,
         position,
@@ -113,17 +113,17 @@ pub async fn load_offer_by_id(
 pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
     let mut tx = conn.begin().await?;
 
-    let offer_uuid = serde_json::to_string(&cfd.offer_id)?;
-    let offer_row = sqlx::query!(
+    let order_uuid = serde_json::to_string(&cfd.order_id)?;
+    let order_row = sqlx::query!(
         r#"
-        select * from offers where uuid = ?;
+        select * from orders where uuid = ?;
         "#,
-        offer_uuid
+        order_uuid
     )
     .fetch_one(&mut tx)
     .await?;
 
-    let offer_id = offer_row.id;
+    let order_id = order_row.id;
     let quantity_usd = serde_json::to_string(&cfd.quantity_usd)?;
 
     let cfd_state = serde_json::to_string(&cfd.state)?;
@@ -134,13 +134,13 @@ pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::
     let cfd_id = sqlx::query!(
         r#"
             insert into cfds (
-                offer_id,
-                offer_uuid,
+                order_id,
+                order_uuid,
                 quantity_usd
             ) values (?, ?, ?);
             "#,
-        offer_id,
-        offer_uuid,
+        order_id,
+        order_uuid,
         quantity_usd,
     )
     .execute(&mut tx)
@@ -166,12 +166,12 @@ pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::
 }
 
 #[allow(dead_code)]
-pub async fn insert_new_cfd_state_by_offer_id(
-    offer_id: CfdOfferId,
+pub async fn insert_new_cfd_state_by_order_id(
+    order_id: OrderId,
     new_state: CfdState,
     conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<()> {
-    let cfd_id = load_cfd_id_by_offer_uuid(offer_id, conn).await?;
+    let cfd_id = load_cfd_id_by_order_uuid(order_id, conn).await?;
     let latest_cfd_state_in_db = load_latest_cfd_state(cfd_id, conn)
         .await
         .context("loading latest state failed")?;
@@ -179,7 +179,7 @@ pub async fn insert_new_cfd_state_by_offer_id(
     // make sure that the new state is different than the current one to avoid that we save the same
     // state twice
     if mem::discriminant(&latest_cfd_state_in_db) == mem::discriminant(&new_state) {
-        anyhow::bail!("Cannot insert new state {} for cfd with order_id {} because it currently already is in state {}", new_state, offer_id, latest_cfd_state_in_db);
+        anyhow::bail!("Cannot insert new state {} for cfd with order_id {} because it currently already is in state {}", new_state, order_id, latest_cfd_state_in_db);
     }
 
     let cfd_state = serde_json::to_string(&new_state)?;
@@ -201,20 +201,20 @@ pub async fn insert_new_cfd_state_by_offer_id(
 }
 
 #[allow(dead_code)]
-async fn load_cfd_id_by_offer_uuid(
-    offer_uuid: CfdOfferId,
+async fn load_cfd_id_by_order_uuid(
+    order_uuid: OrderId,
     conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<i64> {
-    let offer_uuid = serde_json::to_string(&offer_uuid)?;
+    let order_uuid = serde_json::to_string(&order_uuid)?;
 
     let cfd_id = sqlx::query!(
         r#"
         select
             id
         from cfds
-        where offer_uuid = ?;
+        where order_uuid = ?;
         "#,
-        offer_uuid
+        order_uuid
     )
     .fetch_one(conn)
     .await?;
@@ -257,17 +257,17 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
         r#"
         select
             cfds.id as cfd_id,
-            offers.uuid as offer_id,
-            offers.initial_price as initial_price,
-            offers.leverage as leverage,
-            offers.trading_pair as trading_pair,
-            offers.position as position,
-            offers.origin as origin,
-            offers.liquidation_price as liquidation_price,
+            orders.uuid as order_id,
+            orders.initial_price as initial_price,
+            orders.leverage as leverage,
+            orders.trading_pair as trading_pair,
+            orders.position as position,
+            orders.origin as origin,
+            orders.liquidation_price as liquidation_price,
             cfds.quantity_usd as quantity_usd,
             cfd_states.state as state
         from cfds as cfds
-        inner join offers as offers on cfds.offer_id = offers.id
+        inner join orders as orders on cfds.order_id = orders.id
         inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id
         where cfd_states.state in (
             select
@@ -285,7 +285,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
     let cfds = rows
         .iter()
         .map(|row| {
-            let offer_id = serde_json::from_str(row.offer_id.as_str()).unwrap();
+            let order_id = serde_json::from_str(row.order_id.as_str()).unwrap();
             let initial_price = serde_json::from_str(row.initial_price.as_str()).unwrap();
             let leverage = Leverage(row.leverage.try_into().unwrap());
             let trading_pair = serde_json::from_str(row.trading_pair.as_str()).unwrap();
@@ -293,16 +293,16 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
             let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
 
-            let origin: OfferOrigin = serde_json::from_str(row.origin.as_str()).unwrap();
+            let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
             let position: Position = serde_json::from_str(row.position.as_str()).unwrap();
 
             let position = match origin {
-                OfferOrigin::Mine => position,
-                OfferOrigin::Others => position.counter_position(),
+                Origin::Ours => position,
+                Origin::Theirs => position.counter_position(),
             };
 
             Cfd {
-                offer_id,
+                order_id,
                 initial_price,
                 leverage,
                 trading_pair,
@@ -326,25 +326,25 @@ mod tests {
     use sqlx::SqlitePool;
     use tempfile::tempdir;
 
-    use crate::db::insert_cfd_offer;
-    use crate::model::cfd::{Cfd, CfdOffer, CfdState, CfdStateCommon};
+    use crate::db::insert_order;
+    use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Order};
     use crate::model::Usd;
 
     use super::*;
 
     #[tokio::test]
-    async fn test_insert_and_load_offer() {
+    async fn test_insert_and_load_order() {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let cfd_offer = CfdOffer::from_default_with_price(Usd(dec!(10000))).unwrap();
-        insert_cfd_offer(&cfd_offer, &mut conn, OfferOrigin::Others)
+        let order = Order::from_default_with_price(Usd(dec!(10000))).unwrap();
+        insert_order(&order, &mut conn, Origin::Theirs)
             .await
             .unwrap();
 
-        let cfd_offer_loaded = load_offer_by_id(cfd_offer.id, &mut conn).await.unwrap();
+        let order_loaded = load_order_by_id(order.id, &mut conn).await.unwrap();
 
-        assert_eq!(cfd_offer, cfd_offer_loaded);
+        assert_eq!(order, order_loaded);
     }
 
     #[tokio::test]
@@ -352,9 +352,9 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let cfd_offer = CfdOffer::from_default_with_price(Usd(dec!(10000))).unwrap();
+        let order = Order::from_default_with_price(Usd(dec!(10000))).unwrap();
         let cfd = Cfd::new(
-            cfd_offer.clone(),
+            order.clone(),
             Usd(dec!(1000)),
             CfdState::PendingTakeRequest {
                 common: CfdStateCommon {
@@ -365,7 +365,7 @@ mod tests {
         );
 
         // the order ahs to exist in the db in order to be able to insert the cfd
-        insert_cfd_offer(&cfd_offer, &mut conn, OfferOrigin::Others)
+        insert_order(&order, &mut conn, Origin::Theirs)
             .await
             .unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
@@ -380,9 +380,9 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let cfd_offer = CfdOffer::from_default_with_price(Usd(dec!(10000))).unwrap();
+        let order = Order::from_default_with_price(Usd(dec!(10000))).unwrap();
         let mut cfd = Cfd::new(
-            cfd_offer.clone(),
+            order.clone(),
             Usd(dec!(1000)),
             CfdState::PendingTakeRequest {
                 common: CfdStateCommon {
@@ -393,7 +393,7 @@ mod tests {
         );
 
         // the order ahs to exist in the db in order to be able to insert the cfd
-        insert_cfd_offer(&cfd_offer, &mut conn, OfferOrigin::Others)
+        insert_order(&order, &mut conn, Origin::Theirs)
             .await
             .unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
@@ -403,7 +403,7 @@ mod tests {
                 transition_timestamp: SystemTime::now(),
             },
         };
-        insert_new_cfd_state_by_offer_id(cfd.offer_id, cfd.state, &mut conn)
+        insert_new_cfd_state_by_order_id(cfd.order_id, cfd.state, &mut conn)
             .await
             .unwrap();
 

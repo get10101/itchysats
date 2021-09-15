@@ -1,4 +1,4 @@
-use crate::model::cfd::{calculate_buy_margin, Cfd, CfdOffer, CfdOfferId};
+use crate::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId};
 use crate::model::{Leverage, Usd};
 use crate::taker_cfd_actor;
 use crate::to_sse_event::ToSseEvent;
@@ -14,19 +14,19 @@ use tokio::sync::{mpsc, watch};
 #[rocket::get("/feed")]
 pub async fn feed(
     rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
-    rx_offer: &State<watch::Receiver<Option<CfdOffer>>>,
+    rx_order: &State<watch::Receiver<Option<Order>>>,
     rx_balance: &State<watch::Receiver<Amount>>,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
-    let mut rx_offer = rx_offer.inner().clone();
+    let mut rx_order = rx_order.inner().clone();
     let mut rx_balance = rx_balance.inner().clone();
 
     EventStream! {
         let balance = rx_balance.borrow().clone();
         yield balance.to_sse_event();
 
-        let offer = rx_offer.borrow().clone();
-        yield offer.to_sse_event();
+        let order = rx_order.borrow().clone();
+        yield order.to_sse_event();
 
         let cfds = rx_cfds.borrow().clone();
         yield cfds.to_sse_event();
@@ -37,9 +37,9 @@ pub async fn feed(
                     let balance = rx_balance.borrow().clone();
                     yield balance.to_sse_event();
                 },
-                Ok(()) = rx_offer.changed() => {
-                    let offer = rx_offer.borrow().clone();
-                    yield offer.to_sse_event();
+                Ok(()) = rx_order.changed() => {
+                    let order = rx_order.borrow().clone();
+                    yield order.to_sse_event();
                 }
                 Ok(()) = rx_cfds.changed() => {
                     let cfds = rx_cfds.borrow().clone();
@@ -52,7 +52,7 @@ pub async fn feed(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CfdTakeRequest {
-    pub offer_id: CfdOfferId,
+    pub order_id: OrderId,
     pub quantity: Usd,
 }
 
@@ -62,8 +62,8 @@ pub async fn post_cfd(
     cfd_actor_inbox: &State<mpsc::UnboundedSender<taker_cfd_actor::Command>>,
 ) {
     cfd_actor_inbox
-        .send(taker_cfd_actor::Command::TakeOffer {
-            offer_id: cfd_take_request.offer_id,
+        .send(taker_cfd_actor::Command::TakeOrder {
+            order_id: cfd_take_request.order_id,
             quantity: cfd_take_request.quantity,
         })
         .expect("actor to never disappear");

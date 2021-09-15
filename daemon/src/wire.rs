@@ -1,6 +1,6 @@
-use crate::model::cfd::CfdOfferId;
+use crate::model::cfd::OrderId;
 use crate::model::Usd;
-use crate::CfdOffer;
+use crate::Order;
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Amount, PublicKey, Txid};
@@ -24,10 +24,10 @@ impl std::ops::Deref for AdaptorSignature {
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum TakerToMaker {
-    TakeOffer { offer_id: CfdOfferId, quantity: Usd },
+    TakeOrder { order_id: OrderId, quantity: Usd },
     // TODO: Currently the taker starts, can already send some stuff for signing over in the first
     // message.
-    StartContractSetup(CfdOfferId),
+    StartContractSetup(OrderId),
     Protocol(SetupMsg),
 }
 
@@ -35,10 +35,10 @@ pub enum TakerToMaker {
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum MakerToTaker {
-    CurrentOffer(Option<CfdOffer>),
-    // TODO: Needs RejectOffer as well
-    ConfirmTakeOffer(CfdOfferId), // TODO: Include payout curve in "accept" message from maker
-    InvalidOfferId(CfdOfferId),
+    CurrentOrder(Option<Order>),
+    // TODO: Needs RejectOrder as well
+    ConfirmTakeOrder(OrderId), // TODO: Include payout curve in "accept" message from maker
+    InvalidOrderId(OrderId),
     Protocol(SetupMsg),
 }
 

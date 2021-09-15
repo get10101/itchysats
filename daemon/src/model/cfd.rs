@@ -12,24 +12,24 @@ use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CfdOfferId(Uuid);
+pub struct OrderId(Uuid);
 
-impl Default for CfdOfferId {
+impl Default for OrderId {
     fn default() -> Self {
         Self(Uuid::new_v4())
     }
 }
 
-impl Display for CfdOfferId {
+impl Display for OrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-/// A concrete offer created by a maker for a taker
+/// A concrete order created by a maker for a taker
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CfdOffer {
-    pub id: CfdOfferId,
+pub struct Order {
+    pub id: OrderId,
 
     pub trading_pair: TradingPair,
     pub position: Position,
@@ -52,15 +52,15 @@ pub struct CfdOffer {
 }
 
 #[allow(dead_code)] // Only one binary and the tests use this.
-impl CfdOffer {
+impl Order {
     pub fn from_default_with_price(price: Usd) -> Result<Self> {
         let leverage = Leverage(5);
         let maintenance_margin_rate = dec!(0.005);
         let liquidation_price =
             calculate_liquidation_price(&leverage, &price, &maintenance_margin_rate)?;
 
-        Ok(CfdOffer {
-            id: CfdOfferId::default(),
+        Ok(Order {
+            id: OrderId::default(),
             price,
             min_quantity: Usd(dec!(1000)),
             max_quantity: Usd(dec!(10000)),
@@ -72,12 +72,12 @@ impl CfdOffer {
             term: Duration::from_secs(60 * 60 * 8), // 8 hours
         })
     }
-    pub fn with_min_quantity(mut self, min_quantity: Usd) -> CfdOffer {
+    pub fn with_min_quantity(mut self, min_quantity: Usd) -> Order {
         self.min_quantity = min_quantity;
         self
     }
 
-    pub fn with_max_quantity(mut self, max_quantity: Usd) -> CfdOffer {
+    pub fn with_max_quantity(mut self, max_quantity: Usd) -> Order {
         self.max_quantity = max_quantity;
         self
     }
@@ -240,7 +240,7 @@ impl Display for CfdState {
 /// Represents a cfd (including state)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Cfd {
-    pub offer_id: CfdOfferId,
+    pub order_id: OrderId,
     pub initial_price: Usd,
 
     pub leverage: Leverage,
@@ -254,14 +254,14 @@ pub struct Cfd {
 }
 
 impl Cfd {
-    pub fn new(cfd_offer: CfdOffer, quantity: Usd, state: CfdState, position: Position) -> Self {
+    pub fn new(cfd_order: Order, quantity: Usd, state: CfdState, position: Position) -> Self {
         Cfd {
-            offer_id: cfd_offer.id,
-            initial_price: cfd_offer.price,
-            leverage: cfd_offer.leverage,
-            trading_pair: cfd_offer.trading_pair,
+            order_id: cfd_order.id,
+            initial_price: cfd_order.price,
+            leverage: cfd_order.leverage,
+            trading_pair: cfd_order.trading_pair,
             position,
-            liquidation_price: cfd_offer.liquidation_price,
+            liquidation_price: cfd_order.liquidation_price,
             quantity_usd: quantity,
             state,
         }

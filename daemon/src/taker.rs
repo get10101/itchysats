@@ -2,7 +2,7 @@ use anyhow::Result;
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::{self, Amount};
 use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
-use model::cfd::{Cfd, CfdOffer};
+use model::cfd::{Cfd, Order};
 use rocket::fairing::AdHoc;
 use rocket::figment::util::map;
 use rocket::figment::value::{Map, Value};
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
 
     let (cfd_feed_sender, cfd_feed_receiver) = watch::channel::<Vec<Cfd>>(vec![]);
-    let (offer_feed_sender, offer_feed_receiver) = watch::channel::<Option<CfdOffer>>(None);
+    let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (_balance_feed_sender, balance_feed_receiver) = watch::channel::<Amount>(Amount::ZERO);
 
     let socket = tokio::net::TcpSocket::new_v4().unwrap();
@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
 
     rocket::custom(figment)
         .manage(cfd_feed_receiver)
-        .manage(offer_feed_receiver)
+        .manage(order_feed_receiver)
         .manage(balance_feed_receiver)
         .attach(Db::init())
         .attach(AdHoc::try_on_ignite(
@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
                     wallet,
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     cfd_feed_sender,
-                    offer_feed_sender,
+                    order_feed_sender,
                     out_maker_actor_inbox,
                 );
                 let inc_maker_messages_actor =

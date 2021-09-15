@@ -1,5 +1,5 @@
 use crate::model;
-use crate::model::cfd::CfdOfferId;
+use crate::model::cfd::OrderId;
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use bdk::bitcoin::Amount;
 use rocket::response::stream::Event;
@@ -8,7 +8,7 @@ use std::time::UNIX_EPOCH;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Cfd {
-    pub offer_id: CfdOfferId,
+    pub order_id: OrderId,
     pub initial_price: Usd,
 
     pub leverage: Leverage,
@@ -30,8 +30,8 @@ pub struct Cfd {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct CfdOffer {
-    pub id: CfdOfferId,
+pub struct CfdOrder {
+    pub id: OrderId,
 
     pub trading_pair: TradingPair,
     pub position: Position,
@@ -63,7 +63,7 @@ impl ToSseEvent for Vec<model::cfd::Cfd> {
                 let (profit_btc, profit_usd) = cfd.calc_profit(current_price).unwrap();
 
                 Cfd {
-                    offer_id: cfd.offer_id,
+                    order_id: cfd.order_id,
                     initial_price: cfd.initial_price,
                     leverage: cfd.leverage,
                     trading_pair: cfd.trading_pair.clone(),
@@ -91,26 +91,26 @@ impl ToSseEvent for Vec<model::cfd::Cfd> {
     }
 }
 
-impl ToSseEvent for Option<model::cfd::CfdOffer> {
+impl ToSseEvent for Option<model::cfd::Order> {
     fn to_sse_event(&self) -> Event {
-        let offer = self.clone().map(|offer| CfdOffer {
-            id: offer.id,
-            trading_pair: offer.trading_pair,
-            position: offer.position,
-            price: offer.price,
-            min_quantity: offer.min_quantity,
-            max_quantity: offer.max_quantity,
-            leverage: offer.leverage,
-            liquidation_price: offer.liquidation_price,
-            creation_unix_timestamp: offer
+        let order = self.clone().map(|order| CfdOrder {
+            id: order.id,
+            trading_pair: order.trading_pair,
+            position: order.position,
+            price: order.price,
+            min_quantity: order.min_quantity,
+            max_quantity: order.max_quantity,
+            leverage: order.leverage,
+            liquidation_price: order.liquidation_price,
+            creation_unix_timestamp: order
                 .creation_timestamp
                 .duration_since(UNIX_EPOCH)
-                .expect("timestamp to be convertiblae to dureation since epoch")
+                .expect("timestamp to be convertible to duration since epoch")
                 .as_secs(),
-            term_in_secs: offer.term.as_secs(),
+            term_in_secs: order.term.as_secs(),
         });
 
-        Event::json(&offer).event("offer")
+        Event::json(&order).event("order")
     }
 }
 

@@ -17,28 +17,28 @@ import { useAsync } from "react-async";
 import { Route, Routes } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import "./App.css";
-import CfdOffer from "./components/CfdOffer";
+import OrderTile from "./components/OrderTile";
 import CfdTile from "./components/CfdTile";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
 import NavLink from "./components/NavLink";
-import { Cfd, Offer } from "./components/Types";
+import { Cfd, Order } from "./components/Types";
 
 /* TODO: Change from localhost:8001 */
 const BASE_URL = "http://localhost:8001";
 
-interface CfdSellOfferPayload {
+interface CfdSellOrderPayload {
     price: number;
     min_quantity: number;
     max_quantity: number;
 }
 
-async function postCfdSellOfferRequest(payload: CfdSellOfferPayload) {
-    let res = await axios.post(BASE_URL + `/offer/sell`, JSON.stringify(payload));
+async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
+    let res = await axios.post(BASE_URL + `/order/sell`, JSON.stringify(payload));
 
     if (!res.status.toString().startsWith("2")) {
         console.log("Status: " + res.status + ", " + res.statusText);
-        throw new Error("failed to publish new offer");
+        throw new Error("failed to publish new order");
     }
 }
 
@@ -46,7 +46,7 @@ export default function App() {
     let source = useEventSource({ source: BASE_URL + "/maker-feed" });
 
     const cfds = useLatestEvent<Cfd[]>(source, "cfds");
-    const offer = useLatestEvent<Offer>(source, "offer");
+    const order = useLatestEvent<Order>(source, "order");
 
     console.log(cfds);
 
@@ -55,15 +55,15 @@ export default function App() {
     const toast = useToast();
     let [minQuantity, setMinQuantity] = useState<string>("100");
     let [maxQuantity, setMaxQuantity] = useState<string>("1000");
-    let [offerPrice, setOfferPrice] = useState<string>("10000");
+    let [orderPrice, setOrderPrice] = useState<string>("10000");
 
     const format = (val: any) => `$` + val;
     const parse = (val: any) => val.replace(/^\$/, "");
 
-    let { run: makeNewCfdSellOffer, isLoading: isCreatingNewCfdOffer } = useAsync({
+    let { run: makeNewCfdSellOrder, isLoading: isCreatingNewCfdOrder } = useAsync({
         deferFn: async ([payload]: any[]) => {
             try {
-                await postCfdSellOfferRequest(payload as CfdSellOfferPayload);
+                await postCfdSellOrderRequest(payload as CfdSellOrderPayload);
             } catch (e) {
                 const description = typeof e === "string" ? e : JSON.stringify(e);
 
@@ -139,11 +139,11 @@ export default function App() {
                                             />
                                         </HStack>
                                         <HStack>
-                                            <Text>Offer Price:</Text>
+                                            <Text>Order Price:</Text>
                                         </HStack>
                                         <CurrencyInputField
-                                            onChange={(valueString: string) => setOfferPrice(parse(valueString))}
-                                            value={format(offerPrice)}
+                                            onChange={(valueString: string) => setOrderPrice(parse(valueString))}
+                                            value={format(orderPrice)}
                                         />
                                         <Text>Leverage:</Text>
                                         <Flex justifyContent={"space-between"}>
@@ -154,26 +154,26 @@ export default function App() {
                                         <VStack>
                                             <Center><Text>Maker UI</Text></Center>
                                             <Button
-                                                disabled={isCreatingNewCfdOffer}
+                                                disabled={isCreatingNewCfdOrder}
                                                 variant={"solid"}
                                                 colorScheme={"blue"}
                                                 onClick={() => {
-                                                    let payload: CfdSellOfferPayload = {
-                                                        price: Number.parseFloat(offerPrice),
+                                                    let payload: CfdSellOrderPayload = {
+                                                        price: Number.parseFloat(orderPrice),
                                                         min_quantity: Number.parseFloat(minQuantity),
                                                         max_quantity: Number.parseFloat(maxQuantity),
                                                     };
-                                                    makeNewCfdSellOffer(payload);
+                                                    makeNewCfdSellOrder(payload);
                                                 }}
                                             >
-                                                {offer ? "Update Sell Offer" : "Create Sell Offer"}
+                                                {order ? "Update Sell Order" : "Create Sell Order"}
                                             </Button>
                                             <Divider />
                                             <Box width={"100%"} overflow={"scroll"}>
                                                 <Box>
-                                                    {offer
-                                                        && <CfdOffer
-                                                            offer={offer}
+                                                    {order
+                                                        && <OrderTile
+                                                            order={order}
                                                         />}
                                                 </Box>
                                             </Box>

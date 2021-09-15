@@ -18,18 +18,18 @@ pub fn new(
     async move {
         while let Some(message) = messages.next().await {
             match message {
-                Ok(wire::MakerToTaker::CurrentOffer(offer)) => {
+                Ok(wire::MakerToTaker::CurrentOrder(order)) => {
                     cfd_actor
-                        .send(taker_cfd_actor::Command::NewOffer(offer))
+                        .send(taker_cfd_actor::Command::NewOrder(order))
                         .unwrap();
                 }
-                Ok(wire::MakerToTaker::ConfirmTakeOffer(offer_id)) => {
+                Ok(wire::MakerToTaker::ConfirmTakeOrder(order_id)) => {
                     // TODO: This naming is not well aligned.
                     cfd_actor
-                        .send(taker_cfd_actor::Command::OfferAccepted(offer_id))
+                        .send(taker_cfd_actor::Command::OrderAccepted(order_id))
                         .unwrap();
                 }
-                Ok(wire::MakerToTaker::InvalidOfferId(_)) => {
+                Ok(wire::MakerToTaker::InvalidOrderId(_)) => {
                     todo!()
                 }
                 Ok(wire::MakerToTaker::Protocol(msg)) => {

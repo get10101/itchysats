@@ -9,13 +9,13 @@ import CfdTile from "./components/CfdTile";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
 import NavLink from "./components/NavLink";
-import { Cfd, Offer } from "./components/Types";
+import { Cfd, Order } from "./components/Types";
 
 /* TODO: Change from localhost:8000 */
 const BASE_URL = "http://localhost:8000";
 
 interface CfdTakeRequestPayload {
-    offer_id: string;
+    order_id: string;
     quantity: number;
 }
 
@@ -51,7 +51,7 @@ export default function App() {
     let source = useEventSource({ source: BASE_URL + "/feed" });
 
     const cfds = useLatestEvent<Cfd[]>(source, "cfds");
-    const offer = useLatestEvent<Offer>(source, "offer");
+    const order = useLatestEvent<Order>(source, "order");
     const balance = useLatestEvent<number>(source, "balance");
 
     const toast = useToast();
@@ -140,13 +140,13 @@ export default function App() {
                                             <Text>{balance}</Text>
                                         </HStack>
                                         <HStack>
-                                            {/*TODO: Do we need this? does it make sense to only display the price from the offer?*/}
+                                            {/*TODO: Do we need this? does it make sense to only display the price from the order?*/}
                                             <Text align={"left"}>Current Price (Kraken):</Text>
                                             <Text>tbd</Text>
                                         </HStack>
                                         <HStack>
-                                            <Text align={"left"}>Offer Price:</Text>
-                                            <Text>{offer?.price}</Text>
+                                            <Text align={"left"}>Order Price:</Text>
+                                            <Text>{order?.price}</Text>
                                         </HStack>
                                         <HStack>
                                             <Text>Quantity:</Text>
@@ -154,14 +154,14 @@ export default function App() {
                                                 onChange={(valueString: string) => {
                                                     setQuantity(parse(valueString))
 
-                                                    if (!offer) {
+                                                    if (!order) {
                                                         return;
                                                     }
 
                                                     let quantity = valueString ? Number.parseFloat(valueString) : 0;
                                                     let payload: MarginRequestPayload = {
-                                                        leverage: offer.leverage,
-                                                        price: offer.price,
+                                                        leverage: order.leverage,
+                                                        price: order.price,
                                                         quantity
                                                     }
                                                     calculateMargin(payload);
@@ -178,15 +178,15 @@ export default function App() {
                                         <Flex justifyContent={"space-between"}>
                                             <Button disabled={true}>x1</Button>
                                             <Button disabled={true}>x2</Button>
-                                            <Button colorScheme="blue" variant="solid">x{offer?.leverage}</Button>
+                                            <Button colorScheme="blue" variant="solid">x{order?.leverage}</Button>
                                         </Flex>
                                         {<Button
-                                            disabled={isCreatingNewTakeRequest || !offer}
+                                            disabled={isCreatingNewTakeRequest || !order}
                                             variant={"solid"}
                                             colorScheme={"blue"}
                                             onClick={() => {
                                                 let payload: CfdTakeRequestPayload = {
-                                                    offer_id: offer!.id,
+                                                    order_id: order!.id,
                                                     quantity: Number.parseFloat(quantity),
                                                 };
                                                 makeNewTakeRequest(payload);

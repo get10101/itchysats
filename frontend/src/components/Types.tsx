@@ -1,4 +1,4 @@
-export interface Offer {
+export interface Order {
     id: string;
     trading_pair: string;
     position: string;
@@ -12,7 +12,7 @@ export interface Offer {
 }
 
 export interface Cfd {
-    offer_id: string;
+    order_id: string;
     initial_price: number;
 
     leverage: number;

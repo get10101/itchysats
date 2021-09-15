@@ -2,7 +2,7 @@ use anyhow::Result;
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::{self, Amount};
 use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
-use model::cfd::{Cfd, CfdOffer};
+use model::cfd::{Cfd, Order};
 use rocket::fairing::AdHoc;
 use rocket::figment::util::map;
 use rocket::figment::value::{Map, Value};
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
 
     let (cfd_feed_sender, cfd_feed_receiver) = watch::channel::<Vec<Cfd>>(vec![]);
-    let (offer_feed_sender, offer_feed_receiver) = watch::channel::<Option<CfdOffer>>(None);
+    let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (_balance_feed_sender, balance_feed_receiver) = watch::channel::<Amount>(Amount::ZERO);
 
     let db: Map<_, Value> = map! {
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
 
     rocket::custom(figment)
         .manage(cfd_feed_receiver)
-        .manage(offer_feed_receiver)
+        .manage(order_feed_receiver)
         .manage(balance_feed_receiver)
         .attach(Db::init())
         .attach(AdHoc::try_on_ignite(
@@ -95,7 +95,7 @@ async fn main() -> Result<()> {
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     connections_actor_inbox_sender,
                     cfd_feed_sender,
-                    offer_feed_sender,
+                    order_feed_sender,
                 );
                 let connections_actor = maker_inc_connections_actor::new(
                     listener,
@@ -113,8 +113,8 @@ async fn main() -> Result<()> {
             "/",
             rocket::routes![
                 routes_maker::maker_feed,
-                routes_maker::post_sell_offer,
-                // routes_maker::post_confirm_offer,
+                routes_maker::post_sell_order,
+                // routes_maker::post_confirm_order,
                 routes_maker::get_health_check
             ],
         )

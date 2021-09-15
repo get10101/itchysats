@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use crate::db::{insert_cfd, insert_cfd_offer, load_all_cfds, load_offer_by_id, OfferOrigin};
-use crate::model::cfd::{Cfd, CfdOffer, CfdOfferId, CfdState, CfdStateCommon, FinalizedCfd};
+use crate::db::{insert_cfd, insert_order, load_all_cfds, load_order_by_id, Origin};
+use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
 use crate::model::{TakerId, Usd};
 use crate::wire::{Msg0, Msg1, SetupMsg};
 use crate::{maker_cfd_actor, maker_inc_connections_actor};
@@ -19,15 +19,15 @@ use tokio::sync::{mpsc, watch};
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Command {
-    TakeOffer {
+    TakeOrder {
         taker_id: TakerId,
-        offer_id: CfdOfferId,
+        order_id: OrderId,
         quantity: Usd,
     },
-    NewOffer(CfdOffer),
+    NewOrder(Order),
     StartContractSetup {
         taker_id: TakerId,
-        offer_id: CfdOfferId,
+        order_id: OrderId,
     },
     NewTakerOnline {
         id: TakerId,
@@ -42,7 +42,7 @@ pub fn new<B, D>(
     oracle_pk: schnorrsig::PublicKey,
     takers: mpsc::UnboundedSender<maker_inc_connections_actor::Command>,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
-    offer_feed_sender: watch::Sender<Option<CfdOffer>>,
+    order_feed_sender: watch::Sender<Option<Order>>,
 ) -> (
     impl Future<Output = ()>,
     mpsc::UnboundedSender<maker_cfd_actor::Command>,
@@ -53,7 +53,7 @@ where
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let mut current_contract_setup = None;
 
-    let mut current_offer_id = None;
+    let mut current_order_id = None;
 
     let actor = {
         let sender = sender.clone();
@@ -67,27 +67,27 @@ where
 
             while let Some(message) = receiver.recv().await {
                 match message {
-                    maker_cfd_actor::Command::TakeOffer {
+                    maker_cfd_actor::Command::TakeOrder {
                         taker_id,
-                        offer_id,
+                        order_id,
                         quantity,
                     } => {
                         println!(
-                            "Taker {} wants to take {} of offer {}",
-                            taker_id, quantity, offer_id
+                            "Taker {} wants to take {} of order {}",
+                            taker_id, quantity, order_id
                         );
 
                         let mut conn = db.acquire().await.unwrap();
 
-                        // 1. Validate if offer is still valid
-                        let current_offer = match current_offer_id {
-                            Some(current_offer_id) if current_offer_id == offer_id => {
-                                load_offer_by_id(current_offer_id, &mut conn).await.unwrap()
+                        // 1. Validate if order is still valid
+                        let current_order = match current_order_id {
+                            Some(current_order_id) if current_order_id == order_id => {
+                                load_order_by_id(current_order_id, &mut conn).await.unwrap()
                             }
                             _ => {
                                 takers
-                                .send(maker_inc_connections_actor::Command::NotifyInvalidOfferId {
-                                    id: offer_id,
+                                .send(maker_inc_connections_actor::Command::NotifyInvalidOrderId {
+                                    id: order_id,
                                     taker_id,
                                 })
                                 .unwrap();
@@ -98,20 +98,20 @@ where
                         // 2. Insert CFD in DB
                         // TODO: Don't auto-accept, present to user in UI instead
                         let cfd = Cfd::new(
-                            current_offer.clone(),
+                            current_order.clone(),
                             quantity,
                             CfdState::Accepted {
                                 common: CfdStateCommon {
                                     transition_timestamp: SystemTime::now(),
                                 },
                             },
-                            current_offer.position,
+                            current_order.position,
                         );
                         insert_cfd(cfd, &mut conn).await.unwrap();
 
                         takers
-                            .send(maker_inc_connections_actor::Command::NotifyOfferAccepted {
-                                id: offer_id,
+                            .send(maker_inc_connections_actor::Command::NotifyOrderAccepted {
+                                id: order_id,
                                 taker_id,
                             })
                             .unwrap();
@@ -119,60 +119,56 @@ where
                             .send(load_all_cfds(&mut conn).await.unwrap())
                             .unwrap();
 
-                        // 3. Remove current offer
-                        current_offer_id = None;
+                        // 3. Remove current order
+                        current_order_id = None;
                         takers
-                            .send(maker_inc_connections_actor::Command::BroadcastCurrentOffer(
-                                None,
-                            ))
+                            .send(maker_inc_connections_actor::Command::BroadcastOrder(None))
                             .unwrap();
-                        offer_feed_sender.send(None).unwrap();
+                        order_feed_sender.send(None).unwrap();
                     }
-                    maker_cfd_actor::Command::NewOffer(offer) => {
+                    maker_cfd_actor::Command::NewOrder(order) => {
                         // 1. Save to DB
                         let mut conn = db.acquire().await.unwrap();
-                        insert_cfd_offer(&offer, &mut conn, OfferOrigin::Mine)
-                            .await
-                            .unwrap();
+                        insert_order(&order, &mut conn, Origin::Ours).await.unwrap();
 
-                        // 2. Update actor state to current offer
-                        current_offer_id.replace(offer.id);
+                        // 2. Update actor state to current order
+                        current_order_id.replace(order.id);
 
                         // 3. Notify UI via feed
-                        offer_feed_sender.send(Some(offer.clone())).unwrap();
+                        order_feed_sender.send(Some(order.clone())).unwrap();
 
                         // 4. Inform connected takers
                         takers
-                            .send(maker_inc_connections_actor::Command::BroadcastCurrentOffer(
-                                Some(offer),
-                            ))
+                            .send(maker_inc_connections_actor::Command::BroadcastOrder(Some(
+                                order,
+                            )))
                             .unwrap();
                     }
                     maker_cfd_actor::Command::NewTakerOnline { id: taker_id } => {
                         let mut conn = db.acquire().await.unwrap();
 
-                        let current_offer = match current_offer_id {
-                            Some(current_offer_id) => {
-                                Some(load_offer_by_id(current_offer_id, &mut conn).await.unwrap())
+                        let current_order = match current_order_id {
+                            Some(current_order_id) => {
+                                Some(load_order_by_id(current_order_id, &mut conn).await.unwrap())
                             }
                             None => None,
                         };
 
                         takers
-                            .send(maker_inc_connections_actor::Command::SendCurrentOffer {
-                                offer: current_offer,
+                            .send(maker_inc_connections_actor::Command::SendOrder {
+                                order: current_order,
                                 taker_id,
                             })
                             .unwrap();
                     }
                     maker_cfd_actor::Command::StartContractSetup {
                         taker_id,
-                        offer_id: _offer_id,
+                        order_id: _order_id,
                     } => {
                         // Kick-off the CFD protocol
                         let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
 
-                        // TODO: Load correct quantity from DB with offer_id
+                        // TODO: Load correct quantity from DB with order_id
                         let maker_params = wallet
                             .build_party_params(bitcoin::Amount::ZERO, pk)
                             .unwrap();

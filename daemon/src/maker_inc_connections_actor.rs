@@ -1,4 +1,4 @@
-use crate::model::cfd::{CfdOffer, CfdOfferId};
+use crate::model::cfd::{Order, OrderId};
 use crate::model::TakerId;
 use crate::wire::SetupMsg;
 use crate::{maker_cfd_actor, maker_inc_connections_actor, send_wire_message_actor, wire};
@@ -12,17 +12,17 @@ use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Command {
-    BroadcastCurrentOffer(Option<CfdOffer>),
-    SendCurrentOffer {
-        offer: Option<CfdOffer>,
+    BroadcastOrder(Option<Order>),
+    SendOrder {
+        order: Option<Order>,
         taker_id: TakerId,
     },
-    NotifyInvalidOfferId {
-        id: CfdOfferId,
+    NotifyInvalidOrderId {
+        id: OrderId,
         taker_id: TakerId,
     },
-    NotifyOfferAccepted {
-        id: CfdOfferId,
+    NotifyOrderAccepted {
+        id: OrderId,
         taker_id: TakerId,
     },
     OutProtocolMsg {
@@ -59,22 +59,22 @@ pub fn new(
                 },
                 Some(message) = our_inbox.recv() => {
                     match message {
-                        maker_inc_connections_actor::Command::NotifyInvalidOfferId { id, taker_id } => {
+                        maker_inc_connections_actor::Command::NotifyInvalidOrderId { id, taker_id } => {
                             let conn = write_connections.get(&taker_id).expect("no connection to taker_id");
-                            conn.send(wire::MakerToTaker::InvalidOfferId(id)).unwrap();
+                            conn.send(wire::MakerToTaker::InvalidOrderId(id)).unwrap();
                         },
-                        maker_inc_connections_actor::Command::BroadcastCurrentOffer(offer) => {
+                        maker_inc_connections_actor::Command::BroadcastOrder(order) => {
                             for conn in write_connections.values() {
-                                conn.send(wire::MakerToTaker::CurrentOffer(offer.clone())).unwrap();
+                                conn.send(wire::MakerToTaker::CurrentOrder(order.clone())).unwrap();
                             }
                         },
-                        maker_inc_connections_actor::Command::SendCurrentOffer {offer, taker_id} => {
+                        maker_inc_connections_actor::Command::SendOrder {order, taker_id} => {
                             let conn = write_connections.get(&taker_id).expect("no connection to taker_id");
-                            conn.send(wire::MakerToTaker::CurrentOffer(offer)).unwrap();
+                            conn.send(wire::MakerToTaker::CurrentOrder(order)).unwrap();
                         },
-                        maker_inc_connections_actor::Command::NotifyOfferAccepted { id, taker_id } => {
+                        maker_inc_connections_actor::Command::NotifyOrderAccepted { id, taker_id } => {
                             let conn = write_connections.get(&taker_id).expect("no connection to taker_id");
-                            conn.send(wire::MakerToTaker::ConfirmTakeOffer(id)).unwrap();
+                            conn.send(wire::MakerToTaker::ConfirmTakeOrder(id)).unwrap();
                         },
                         maker_inc_connections_actor::Command::OutProtocolMsg { taker_id, msg } => {
                             let conn = write_connections.get(&taker_id).expect("no connection to taker_id");
@@ -100,15 +100,15 @@ fn in_taker_messages(
     async move {
         while let Some(message) = messages.next().await {
             match message {
-                Ok(wire::TakerToMaker::TakeOffer { offer_id, quantity }) => cfd_actor_inbox
-                    .send(maker_cfd_actor::Command::TakeOffer {
+                Ok(wire::TakerToMaker::TakeOrder { order_id, quantity }) => cfd_actor_inbox
+                    .send(maker_cfd_actor::Command::TakeOrder {
                         taker_id,
-                        offer_id,
+                        order_id,
                         quantity,
                     })
                     .unwrap(),
-                Ok(wire::TakerToMaker::StartContractSetup(offer_id)) => cfd_actor_inbox
-                    .send(maker_cfd_actor::Command::StartContractSetup { taker_id, offer_id })
+                Ok(wire::TakerToMaker::StartContractSetup(order_id)) => cfd_actor_inbox
+                    .send(maker_cfd_actor::Command::StartContractSetup { taker_id, order_id })
                     .unwrap(),
                 Ok(wire::TakerToMaker::Protocol(msg)) => cfd_actor_inbox
                     .send(maker_cfd_actor::Command::IncProtocolMsg(msg))

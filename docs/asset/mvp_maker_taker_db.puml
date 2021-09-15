@@ -6,7 +6,7 @@ hide circle
 ' avoid problems with angled crows feet
 skinparam linetype ortho
 
-entity "offers" as offer {
+entity "orders" as order {
     *id : number <<PK>> <<generated>>
     --
     ...
@@ -15,7 +15,7 @@ entity "offers" as offer {
 entity "cfds" as cfd {
   *id : number <<PK>> <<generated>>
   --
-  *offer_id : text <<FK>>
+  *order_id : text <<FK>>
   --
   quantity_usd: long
   creation_timestamp: Date
@@ -29,7 +29,7 @@ entity "cfd_states" as cfd_states {
 note left: state de-/serialized \nfrom rust state enum \nthis is not backwards\ncompatible, but that's \nOK for the MVP
 
 
-offer ||--|| cfd
+order ||--|| cfd
 
 cfd ||--|{ cfd_states
 
