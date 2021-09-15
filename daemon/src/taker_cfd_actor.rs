@@ -5,14 +5,15 @@ use crate::db::{
 use crate::model::cfd::{Cfd, CfdOffer, CfdOfferId, CfdState, CfdStateCommon, FinalizedCfd};
 use crate::model::Usd;
 use crate::wire;
-use crate::wire::{Msg0, Msg1, SetupMsg};
-use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey};
-
-use bdk::bitcoin::{self, Amount};
+use crate::wire::{AdaptorSignature, Msg0, Msg1, SetupMsg};
+use anyhow::{Context, Result};
+use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey, Signature, SECP256K1};
+use bdk::bitcoin::{self, Amount, PublicKey, Transaction, Txid};
 use bdk::database::BatchDatabase;
+use bdk::descriptor::Descriptor;
 use cfd_protocol::{
-    commit_descriptor, create_cfd_transactions, lock_descriptor, PartyParams, PunishParams,
-    WalletExt,
+    commit_descriptor, compute_signature_point, create_cfd_transactions, lock_descriptor,
+    spending_tx_sighash, EcdsaAdaptorSignature, PartyParams, PunishParams, WalletExt,
 };
 use core::panic;
 use futures::Future;
@@ -201,10 +202,11 @@ fn setup_contract(
         send_to_maker(SetupMsg::Msg1(Msg1::from(taker_cfd_txs.clone())));
         let msg1 = receiver.recv().await.unwrap().try_into_msg1().unwrap();
 
-        let _lock_desc = lock_descriptor(maker.identity_pk, taker.identity_pk);
-        // let lock_amount = maker_lock_amount + taker_lock_amount;
+        let lock_desc = lock_descriptor(maker.identity_pk, taker.identity_pk);
 
-        let _commit_desc = commit_descriptor(
+        let lock_amount = maker.lock_amount + taker.lock_amount;
+
+        let commit_desc = commit_descriptor(
             (
                 maker.identity_pk,
                 maker_punish.revocation_pk,
@@ -212,17 +214,45 @@ fn setup_contract(
             ),
             (taker.identity_pk, rev_pk, publish_pk),
         );
-        let commit_tx = taker_cfd_txs.commit.0;
 
-        let _commit_amount = Amount::from_sat(commit_tx.output[0].value);
+        let taker_cets = taker_cfd_txs.cets;
+        let commit_tx = taker_cfd_txs.commit.0.clone();
 
-        // TODO: Verify all signatures from the maker here
+        let commit_amount = Amount::from_sat(commit_tx.output[0].value);
+
+        verify_adaptor_signature(
+            &commit_tx,
+            &lock_desc,
+            lock_amount,
+            &msg1.commit,
+            &taker_punish.publish_pk,
+            &maker.identity_pk,
+        )
+        .unwrap();
+
+        verify_cets(
+            &oracle_pk,
+            &maker,
+            &taker_cets,
+            &msg1.cets,
+            &commit_desc,
+            commit_amount,
+        )
+        .unwrap();
 
         let lock_tx = taker_cfd_txs.lock;
         let refund_tx = taker_cfd_txs.refund.0;
 
-        let mut cet_by_id = taker_cfd_txs
-            .cets
+        verify_signature(
+            &refund_tx,
+            &commit_desc,
+            commit_amount,
+            &msg1.refund,
+            &maker.identity_pk,
+        )
+        .unwrap();
+
+        let mut cet_by_id = taker_cets
             .into_iter()
             .map(|(tx, _, msg, _)| (tx.txid(), (tx, msg)))
             .collect::<HashMap<_, _>>();
@@ -247,4 +277,85 @@ fn setup_contract(
     };
 
     (actor, sender)
+}
+
+fn verify_cets(
+    oracle_pk: &schnorrsig::PublicKey,
+    maker: &PartyParams,
+    taker_cets: &[(
+        Transaction,
+        EcdsaAdaptorSignature,
+        Vec<u8>,
+        schnorrsig::PublicKey,
+    )],
+    cets: &[(Txid, AdaptorSignature)],
+    commit_desc: &Descriptor<PublicKey>,
+    commit_amount: Amount,
+) -> Result<()> {
+    for (tx, _, msg, nonce_pk) in taker_cets.iter() {
+        let maker_encsig = cets
+            .iter()
+            .find_map(|(txid, encsig)| (txid == &tx.txid()).then(|| encsig))
+            .expect("one encsig per cet, per party");
+
+        verify_cet_encsig(
+            tx,
+            maker_encsig,
+            msg,
+            &maker.identity_pk,
+            (oracle_pk, nonce_pk),
+            commit_desc,
+            commit_amount,
+        )
+        .expect("valid maker cet encsig")
+    }
+    Ok(())
+}
+
+fn verify_adaptor_signature(
+    tx: &Transaction,
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+    encsig: &AdaptorSignature,
+    encryption_point: &PublicKey,
+    pk: &PublicKey,
+) -> Result<()> {
+    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
+
+    encsig
+        .verify(SECP256K1, &sighash, &pk.key, &encryption_point.key)
+        .context("failed to verify encsig spend tx")
+}
+
+fn verify_signature(
+    tx: &Transaction,
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+    sig: &Signature,
+    pk: &PublicKey,
+) -> Result<()> {
+    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
+    SECP256K1.verify(&sighash, sig, &pk.key)?;
+    Ok(())
+}
+
+fn verify_cet_encsig(
+    tx: &Transaction,
+    encsig: &AdaptorSignature,
+    msg: &[u8],
+    pk: &PublicKey,
+    (oracle_pk, nonce_pk): (&schnorrsig::PublicKey, &schnorrsig::PublicKey),
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+) -> Result<()> {
+    let sig_point = compute_signature_point(oracle_pk, nonce_pk, msg)
+        .context("could not calculate signature point")?;
+    verify_adaptor_signature(
+        tx,
+        spent_descriptor,
+        spent_amount,
+        encsig,
+        &PublicKey::new(sig_point),
+        pk,
+    )
 }
