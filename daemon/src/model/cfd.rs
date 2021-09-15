@@ -299,6 +299,20 @@ fn calculate_profit(
     Ok((Amount::ZERO, Usd::ZERO))
 }
 
+pub trait AsBlocks {
+    /// Calculates the duration in Bitcoin blocks.
+    ///
+    /// On Bitcoin there is a block every 10 minutes/600 seconds on average.
+    /// It's the caller's responsibility to round the resulting floating point number.
+    fn as_blocks(&self) -> f32;
+}
+
+impl AsBlocks for Duration {
+    fn as_blocks(&self) -> f32 {
+        self.as_secs_f32() / 60.0 / 10.0
+    }
+}
+
 /// Calculates the buyer's margin in BTC
 ///
 /// The margin is the initial margin and represents the collateral the buyer has to come up with to
@@ -509,6 +523,23 @@ mod tests {
             json,
             r#"{"type":"Error","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}}}}"#
         );
+    }
+
+    #[test]
+    fn test_secs_into_blocks() {
+        let error_margin = f32::EPSILON;
+
+        let duration = Duration::from_secs(600);
+        let blocks = duration.as_blocks();
+        assert!(blocks - error_margin < 1.0 && blocks + error_margin > 1.0);
+
+        let duration = Duration::from_secs(0);
+        let blocks = duration.as_blocks();
+        assert!(blocks - error_margin < 0.0 && blocks + error_margin > 0.0);
+
+        let duration = Duration::from_secs(60);
+        let blocks = duration.as_blocks();
+        assert!(blocks - error_margin < 0.1 && blocks + error_margin > 0.1);
     }
 }
 

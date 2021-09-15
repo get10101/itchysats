@@ -2,7 +2,9 @@ use crate::db::{
     insert_cfd, insert_cfd_offer, insert_new_cfd_state_by_offer_id, load_all_cfds,
     load_offer_by_id, OfferOrigin,
 };
-use crate::model::cfd::{Cfd, CfdOffer, CfdOfferId, CfdState, CfdStateCommon, FinalizedCfd};
+use crate::model::cfd::{
+    AsBlocks, Cfd, CfdOffer, CfdOfferId, CfdState, CfdStateCommon, FinalizedCfd,
+};
 use crate::model::Usd;
 use crate::wire;
 use crate::wire::{AdaptorSignature, Msg0, Msg1, SetupMsg};
@@ -20,6 +22,20 @@ use futures::Future;
 use std::collections::HashMap;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
+
+/// A factor to be added to the CFD offer term for calculating the refund timelock.
+///
+/// The refund timelock is important in case the oracle disappears or never publishes a signature.
+/// Ideally, both users collaboratively settle in the refund scenario. This factor is important if
+/// the users do not settle collaboratively.
+/// `1.5` times the term as defined in CFD offer should be safe in the extreme case where a user
+/// publishes the commit transaction right after the contract was initialized. In this case, the  
+/// oracle still has `1.0 * cfdoffer.term` time to attest and no one can publish the refund
+/// transaction.
+/// The downside is that if the oracle disappears: the users would only notice at the end
+/// of the cfd term. In this case the users has to wait for another `1.5` times of the
+/// term to get his funds back.
+pub const REFUND_THRESHOLD: f32 = 1.5;
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -119,15 +135,17 @@ where
                             .build_party_params(bitcoin::Amount::ZERO, pk) // TODO: Load correct quantity from DB
                             .unwrap();
 
+                        let cfd = load_offer_by_id(offer_id, &mut conn).await.unwrap();
+
                         let (actor, inbox) = setup_contract(
                             {
                                 let inbox = out_msg_maker_inbox.clone();
-
                                 move |msg| inbox.send(wire::TakerToMaker::Protocol(msg)).unwrap()
                             },
                             taker_params,
                             sk,
                             oracle_pk,
+                            cfd,
                         );
 
                         tokio::spawn({
@@ -170,6 +188,7 @@ fn setup_contract(
     taker: PartyParams,
     sk: SecretKey,
     oracle_pk: schnorrsig::PublicKey,
+    offer: CfdOffer,
 ) -> (
     impl Future<Output = FinalizedCfd>,
     mpsc::UnboundedSender<SetupMsg>,
@@ -193,7 +212,7 @@ fn setup_contract(
             (maker.clone(), maker_punish),
             (taker.clone(), taker_punish),
             oracle_pk,
-            0, // TODO: Calculate refund timelock based on CFD term
+            offer.term.mul_f32(REFUND_THRESHOLD).as_blocks().ceil() as u32,
             vec![],
             sk,
         )
