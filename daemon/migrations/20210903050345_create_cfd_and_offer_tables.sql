@@ -11,7 +11,8 @@ create table if not exists offers
     leverage           integer     not null,
     liquidation_price  text        not null,
     creation_timestamp text        not null,
-    term               text        not null
+    term               text        not null,
+    origin             text        not null
 );
 
 create unique index if not exists offers_uuid
@@ -32,8 +33,8 @@ create unique index if not exists cfd_offer_uuid
 
 create table if not exists cfd_states
 (
-    id                   integer primary key autoincrement,
-    cfd_id               integer not null,
-    state                text    not null,
+    id     integer primary key autoincrement,
+    cfd_id integer not null,
+    state  text    not null,
     foreign key (cfd_id) references cfds (id)
 );

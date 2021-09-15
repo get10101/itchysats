@@ -1,5 +1,6 @@
 use crate::maker_cfd_actor;
-use crate::model::cfd::{Cfd, CfdNewOfferRequest, CfdOffer};
+use crate::model::cfd::{Cfd, CfdOffer};
+use crate::model::Usd;
 use crate::to_sse_event::ToSseEvent;
 use anyhow::Result;
 use bdk::bitcoin::Amount;
@@ -7,6 +8,7 @@ use rocket::response::status;
 use rocket::response::stream::EventStream;
 use rocket::serde::json::Json;
 use rocket::State;
+use serde::Deserialize;
 use tokio::select;
 use tokio::sync::{mpsc, watch};
 
@@ -47,6 +49,17 @@ pub async fn maker_feed(
             }
         }
     }
+}
+
+/// The maker POSTs this to create a new CfdOffer
+// TODO: Use Rocket form?
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfdNewOfferRequest {
+    pub price: Usd,
+    // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
+    // always 1 USD
+    pub min_quantity: Usd,
+    pub max_quantity: Usd,
 }
 
 #[rocket::post("/offer/sell", data = "<offer>")]

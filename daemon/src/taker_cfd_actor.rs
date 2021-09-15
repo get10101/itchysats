@@ -1,7 +1,11 @@
+use crate::db::{
+    insert_cfd, insert_cfd_offer, insert_new_cfd_state_by_offer_id, load_all_cfds,
+    load_offer_by_id, OfferOrigin,
+};
 use crate::model::cfd::{Cfd, CfdOffer, CfdOfferId, CfdState, CfdStateCommon, FinalizedCfd};
 use crate::model::Usd;
+use crate::wire;
 use crate::wire::{Msg0, Msg1, SetupMsg};
-use crate::{db, wire};
 use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey};
 
 use bdk::bitcoin::{self, Amount};
@@ -47,7 +51,7 @@ where
             // populate the CFD feed with existing CFDs
             let mut conn = db.acquire().await.unwrap();
             cfd_feed_actor_inbox
-                .send(db::load_all_cfds(&mut conn).await.unwrap())
+                .send(load_all_cfds(&mut conn).await.unwrap())
                 .unwrap();
 
             while let Some(message) = receiver.recv().await {
@@ -55,27 +59,25 @@ where
                     Command::TakeOffer { offer_id, quantity } => {
                         let mut conn = db.acquire().await.unwrap();
 
-                        let current_offer =
-                            db::load_offer_by_id(offer_id, &mut conn).await.unwrap();
+                        let current_offer = load_offer_by_id(offer_id, &mut conn).await.unwrap();
 
                         println!("Accepting current offer: {:?}", &current_offer);
 
                         let cfd = Cfd::new(
-                            current_offer,
+                            current_offer.clone(),
                             quantity,
                             CfdState::PendingTakeRequest {
                                 common: CfdStateCommon {
                                     transition_timestamp: SystemTime::now(),
                                 },
                             },
-                            Usd::ZERO,
-                        )
-                        .unwrap();
+                            current_offer.position.counter_position(),
+                        );
 
-                        db::insert_cfd(cfd, &mut conn).await.unwrap();
+                        insert_cfd(cfd, &mut conn).await.unwrap();
 
                         cfd_feed_actor_inbox
-                            .send(db::load_all_cfds(&mut conn).await.unwrap())
+                            .send(load_all_cfds(&mut conn).await.unwrap())
                             .unwrap();
                         out_msg_maker_inbox
                             .send(wire::TakerToMaker::TakeOffer { offer_id, quantity })
@@ -83,15 +85,18 @@ where
                     }
                     Command::NewOffer(Some(offer)) => {
                         let mut conn = db.acquire().await.unwrap();
-                        db::insert_cfd_offer(&offer, &mut conn).await.unwrap();
+                        insert_cfd_offer(&offer, &mut conn, OfferOrigin::Others)
+                            .await
+                            .unwrap();
                         offer_feed_actor_inbox.send(Some(offer)).unwrap();
                     }
+
                     Command::NewOffer(None) => {
                         offer_feed_actor_inbox.send(None).unwrap();
                     }
                     Command::OfferAccepted(offer_id) => {
                         let mut conn = db.acquire().await.unwrap();
-                        db::insert_new_cfd_state_by_offer_id(
+                        insert_new_cfd_state_by_offer_id(
                             offer_id,
                             CfdState::ContractSetup {
                                 common: CfdStateCommon {
@@ -104,7 +109,7 @@ where
                         .unwrap();
 
                         cfd_feed_actor_inbox
-                            .send(db::load_all_cfds(&mut conn).await.unwrap())
+                            .send(load_all_cfds(&mut conn).await.unwrap())
                             .unwrap();
 
                         let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());

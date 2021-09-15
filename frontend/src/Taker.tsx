@@ -19,12 +19,32 @@ interface CfdTakeRequestPayload {
     quantity: number;
 }
 
+interface MarginRequestPayload {
+    price: number;
+    quantity: number;
+    leverage: number;
+}
+
+interface MarginResponse {
+    margin: number;
+}
+
 async function postCfdTakeRequest(payload: CfdTakeRequestPayload) {
     let res = await axios.post(BASE_URL + `/cfd`, JSON.stringify(payload));
 
     if (!res.status.toString().startsWith("2")) {
         throw new Error("failed to create new CFD take request: " + res.status + ", " + res.statusText);
     }
+}
+
+async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse> {
+    let res = await axios.post(BASE_URL + `/calculate/margin`, JSON.stringify(payload));
+
+    if (!res.status.toString().startsWith("2")) {
+        throw new Error("failed to create new CFD take request: " + res.status + ", " + res.statusText);
+    }
+
+    return res.data;
 }
 
 export default function App() {
@@ -35,7 +55,28 @@ export default function App() {
     const balance = useLatestEvent<number>(source, "balance");
 
     const toast = useToast();
-    let [quantity, setQuantity] = useState<string>("10000");
+    let [quantity, setQuantity] = useState("0");
+    let [margin, setMargin] = useState("0");
+
+    let { run: calculateMargin } = useAsync({
+        deferFn: async ([payload]: any[]) => {
+            try {
+                let res = await getMargin(payload as MarginRequestPayload);
+                setMargin(res.margin.toString());
+            } catch (e) {
+                const description = typeof e === "string" ? e : JSON.stringify(e);
+
+                toast({
+                    title: "Error",
+                    description,
+                    status: "error",
+                    duration: 9000,
+                    isClosable: true,
+                });
+            }
+        },
+    });
+
     const format = (val: any) => `$` + val;
     const parse = (val: any) => val.replace(/^\$/, "");
 
@@ -110,9 +151,27 @@ export default function App() {
                                         <HStack>
                                             <Text>Quantity:</Text>
                                             <CurrencyInputField
-                                                onChange={(valueString: string) => setQuantity(parse(valueString))}
+                                                onChange={(valueString: string) => {
+                                                    setQuantity(parse(valueString))
+
+                                                    if (!offer) {
+                                                        return;
+                                                    }
+
+                                                    let quantity = valueString ? Number.parseFloat(valueString) : 0;
+                                                    let payload: MarginRequestPayload = {
+                                                        leverage: offer.leverage,
+                                                        price: offer.price,
+                                                        quantity
+                                                    }
+                                                    calculateMargin(payload);
+                                                }}
                                                 value={format(quantity)}
                                             />
+                                        </HStack>
+                                        <HStack>
+                                            <Text>Margin in BTC:</Text>
+                                            <Text>{margin}</Text>
                                         </HStack>
                                         <Text>Leverage:</Text>
                                         {/* TODO: consider button group */}

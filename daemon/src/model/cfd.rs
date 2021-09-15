@@ -1,5 +1,5 @@
 use crate::model::{Leverage, Position, TradingPair, Usd};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Amount, Transaction};
@@ -88,46 +88,18 @@ fn calculate_liquidation_price(
     price: &Usd,
     maintenance_margin_rate: &Decimal,
 ) -> Result<Usd> {
-    let leverage = Decimal::from(leverage.0);
-    let price = price.0;
+    let leverage = Decimal::from(leverage.0).into();
+    let maintenance_margin_rate: Usd = (*maintenance_margin_rate).into();
 
     // liquidation price calc in isolated margin mode
     // currently based on: https://help.bybit.com/hc/en-us/articles/360039261334-How-to-calculate-Liquidation-Price-Inverse-Contract-
-    let liquidation_price = price
-        .checked_mul(leverage)
-        .context("multiplication error")?
-        .checked_div(
-            leverage
-                .checked_add(Decimal::ONE)
-                .context("addition error")?
-                .checked_sub(
-                    maintenance_margin_rate
-                        .checked_mul(leverage)
-                        .context("multiplication error")?,
-                )
-                .context("subtraction error")?,
-        )
-        .context("division error")?;
+    let liquidation_price = price.checked_mul(leverage)?.checked_div(
+        leverage
+            .checked_add(Decimal::ONE.into())?
+            .checked_sub(maintenance_margin_rate.checked_mul(leverage)?)?,
+    )?;
 
-    Ok(Usd(liquidation_price))
-}
-
-/// The taker POSTs this to create a Cfd
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CfdTakeRequest {
-    pub offer_id: CfdOfferId,
-    pub quantity: Usd,
-}
-
-/// The maker POSTs this to create a new CfdOffer
-// TODO: Use Rocket form?
-#[derive(Debug, Clone, Deserialize)]
-pub struct CfdNewOfferRequest {
-    pub price: Usd,
-    // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
-    // always 1 USD
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
+    Ok(liquidation_price)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +154,8 @@ pub enum CfdState {
     Open {
         common: CfdStateCommon,
         settlement_timestamp: SystemTime,
+        #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
+        margin: Amount,
     },
 
     /// Requested close the position, but we have not passed that on to the blockchain yet.
@@ -204,26 +178,26 @@ pub enum CfdState {
 }
 
 impl CfdState {
-    // fn get_common(&self) -> CfdStateCommon {
-    //     let common = match self {
-    //         CfdState::TakeRequested { common } => common,
-    //         CfdState::PendingTakeRequest { common } => common,
-    //         CfdState::Accepted { common } => common,
-    //         CfdState::Rejected { common } => common,
-    //         CfdState::ContractSetup { common } => common,
-    //         CfdState::Open { common, .. } => common,
-    //         CfdState::CloseRequested { common } => common,
-    //         CfdState::PendingClose { common } => common,
-    //         CfdState::Closed { common } => common,
-    //         CfdState::Error { common } => common,
-    //     };
+    fn get_common(&self) -> CfdStateCommon {
+        let common = match self {
+            CfdState::TakeRequested { common } => common,
+            CfdState::PendingTakeRequest { common } => common,
+            CfdState::Accepted { common } => common,
+            CfdState::Rejected { common } => common,
+            CfdState::ContractSetup { common } => common,
+            CfdState::Open { common, .. } => common,
+            CfdState::CloseRequested { common } => common,
+            CfdState::PendingClose { common } => common,
+            CfdState::Closed { common } => common,
+            CfdState::Error { common } => common,
+        };
 
-    //     *common
-    // }
+        *common
+    }
 
-    // pub fn get_transition_timestamp(&self) -> SystemTime {
-    //     self.get_common().transition_timestamp
-    // }
+    pub fn get_transition_timestamp(&self) -> SystemTime {
+        self.get_common().transition_timestamp
+    }
 }
 
 impl Display for CfdState {
@@ -276,36 +250,42 @@ pub struct Cfd {
 
     pub quantity_usd: Usd,
 
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub profit_btc: Amount,
-    pub profit_usd: Usd,
-
     pub state: CfdState,
 }
 
 impl Cfd {
-    pub fn new(
-        cfd_offer: CfdOffer,
-        quantity: Usd,
-        state: CfdState,
-        current_price: Usd,
-    ) -> Result<Self> {
-        let (profit_btc, profit_usd) =
-            calculate_profit(cfd_offer.price, current_price, dec!(0.005), Usd(dec!(0.1)))?;
-
-        Ok(Cfd {
+    pub fn new(cfd_offer: CfdOffer, quantity: Usd, state: CfdState, position: Position) -> Self {
+        Cfd {
             offer_id: cfd_offer.id,
             initial_price: cfd_offer.price,
             leverage: cfd_offer.leverage,
             trading_pair: cfd_offer.trading_pair,
-            position: cfd_offer.position,
+            position,
             liquidation_price: cfd_offer.liquidation_price,
             quantity_usd: quantity,
-            // initially the profit is zero
-            profit_btc,
-            profit_usd,
             state,
-        })
+        }
+    }
+
+    pub fn calc_margin(&self) -> Result<Amount> {
+        let margin = match self.position {
+            Position::Buy => {
+                calculate_buy_margin(self.initial_price, self.quantity_usd, self.leverage)?
+            }
+            Position::Sell => calculate_sell_margin(self.initial_price, self.quantity_usd)?,
+        };
+
+        Ok(margin)
+    }
+
+    pub fn calc_profit(&self, current_price: Usd) -> Result<(Amount, Usd)> {
+        let profit = calculate_profit(
+            self.initial_price,
+            current_price,
+            dec!(0.005),
+            Usd(dec!(0.1)),
+        )?;
+        Ok(profit)
     }
 }
 
@@ -317,6 +297,38 @@ fn calculate_profit(
 ) -> Result<(Amount, Usd)> {
     // TODO: profit calculation
     Ok((Amount::ZERO, Usd::ZERO))
+}
+
+/// Calculates the buyer's margin in BTC
+///
+/// The margin is the initial margin and represents the collateral the buyer has to come up with to
+/// satisfy the contract. Here we calculate the initial buy margin as: quantity / (initial_price *
+/// leverage)
+pub fn calculate_buy_margin(price: Usd, quantity: Usd, leverage: Leverage) -> Result<Amount> {
+    let leverage = Decimal::from(leverage.0).into();
+
+    let margin = quantity.checked_div(price.checked_mul(leverage)?)?;
+
+    let sat_adjust = Decimal::from(Amount::ONE_BTC.as_sat()).into();
+    let margin = margin.checked_mul(sat_adjust)?;
+    let margin = Amount::from_sat(margin.try_into_u64()?);
+
+    Ok(margin)
+}
+
+/// Calculates the seller's margin in BTC
+///
+/// The seller margin is represented as the quantity of the contract given the initial price.
+/// The seller can currently not leverage the position but always has to cover the complete
+/// quantity.
+fn calculate_sell_margin(price: Usd, quantity: Usd) -> Result<Amount> {
+    let margin = quantity.checked_div(price)?;
+
+    let sat_adjust = Decimal::from(Amount::ONE_BTC.as_sat()).into();
+    let margin = margin.checked_mul(sat_adjust)?;
+    let margin = Amount::from_sat(margin.try_into_u64()?);
+
+    Ok(margin)
 }
 
 #[cfg(test)]
@@ -338,8 +350,60 @@ mod tests {
     }
 
     #[test]
+    fn given_leverage_of_one_and_equal_price_and_quantity_then_buy_margin_is_one_btc() {
+        let price = Usd(dec!(40000));
+        let quantity = Usd(dec![40000]);
+        let leverage = Leverage(1);
+
+        let buy_margin = calculate_buy_margin(price, quantity, leverage).unwrap();
+
+        assert_eq!(buy_margin, Amount::ONE_BTC);
+    }
+
+    #[test]
+    fn given_leverage_of_one_and_leverage_of_ten_then_buy_margin_is_lower_factor_ten() {
+        let price = Usd(dec!(40000));
+        let quantity = Usd(dec![40000]);
+        let leverage = Leverage(10);
+
+        let buy_margin = calculate_buy_margin(price, quantity, leverage).unwrap();
+
+        assert_eq!(buy_margin, Amount::from_btc(0.1).unwrap());
+    }
+
+    #[test]
+    fn given_quantity_equals_price_then_sell_margin_is_one_btc() {
+        let price = Usd(dec!(40000));
+        let quantity = Usd(dec![40000]);
+
+        let sell_margin = calculate_sell_margin(price, quantity).unwrap();
+
+        assert_eq!(sell_margin, Amount::ONE_BTC);
+    }
+
+    #[test]
+    fn given_quantity_half_of_price_then_sell_margin_is_half_btc() {
+        let price = Usd(dec!(40000));
+        let quantity = Usd(dec![20000]);
+
+        let sell_margin = calculate_sell_margin(price, quantity).unwrap();
+
+        assert_eq!(sell_margin, Amount::from_btc(0.5).unwrap());
+    }
+
+    #[test]
+    fn given_quantity_double_of_price_then_sell_margin_is_two_btc() {
+        let price = Usd(dec!(40000));
+        let quantity = Usd(dec![80000]);
+
+        let sell_margin = calculate_sell_margin(price, quantity).unwrap();
+
+        assert_eq!(sell_margin, Amount::from_btc(2.0).unwrap());
+    }
+
+    #[test]
     fn serialize_cfd_state_snapshot() {
-        // This test is to prevent us from breaking the cfd_state API used by the UI and database!
+        // This test is to prevent us from breaking the CfdState API against the database.
         // We serialize the state into the database, so changes to the enum result in breaking
         // program version changes.
 
@@ -394,11 +458,12 @@ mod tests {
                 transition_timestamp: fixed_timestamp,
             },
             settlement_timestamp: fixed_timestamp,
+            margin: Amount::from_btc(0.5).unwrap(),
         };
         let json = serde_json::to_string(&cfd_state).unwrap();
         assert_eq!(
             json,
-            r#"{"type":"Open","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}},"settlement_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}}}"#
+            r#"{"type":"Open","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}},"settlement_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0},"margin":50000000}}"#
         );
 
         let cfd_state = CfdState::CloseRequested {

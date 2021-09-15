@@ -18,18 +18,8 @@
       ]
     }
   },
-  "29bc1b2bd17146eb36e2c61acc1bed3c9b5b3014e35874c752cbd50016e99b74": {
-    "query": "\n            insert into offers (\n                uuid,\n                trading_pair,\n                position,\n                initial_price,\n                min_quantity,\n                max_quantity,\n                leverage,\n                liquidation_price,\n                creation_timestamp,\n                term\n            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);\n            ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Right": 10
-      },
-      "nullable": []
-    }
-  },
-  "4896e2d2e2c6cc03f9ae2b7de85279f295fb7e70e083e0a1a3faf3e7551650f3": {
-    "query": "\n        select\n            cfds.id as cfd_id,\n            offers.uuid as offer_id,\n            offers.initial_price as initial_price,\n            offers.leverage as leverage,\n            offers.trading_pair as trading_pair,\n            offers.position as position,\n            offers.liquidation_price as liquidation_price,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join offers as offers on cfds.offer_id = offers.id\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        ",
+  "2bfe23378b852e9c98f1db3e7c7694e1a7037183eb6fa8d81916cdb46c760547": {
+    "query": "\n        select\n            cfds.id as cfd_id,\n            offers.uuid as offer_id,\n            offers.initial_price as initial_price,\n            offers.leverage as leverage,\n            offers.trading_pair as trading_pair,\n            offers.position as position,\n            offers.origin as origin,\n            offers.liquidation_price as liquidation_price,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join offers as offers on cfds.offer_id = offers.id\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        ",
     "describe": {
       "columns": [
         {
@@ -63,18 +53,23 @@
           "type_info": "Text"
         },
         {
-          "name": "liquidation_price",
+          "name": "origin",
           "ordinal": 6,
           "type_info": "Text"
         },
         {
-          "name": "quantity_usd",
+          "name": "liquidation_price",
           "ordinal": 7,
           "type_info": "Text"
         },
         {
-          "name": "state",
+          "name": "quantity_usd",
           "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "state",
+          "ordinal": 9,
           "type_info": "Text"
         }
       ],
@@ -90,8 +85,19 @@
         false,
         false,
         false,
+        false,
         false
       ]
+    }
+  },
+  "4a8db91aaef56a804d0151460297175355c9adee100b87fa9052245cdd18d7e9": {
+    "query": "\n            insert into offers (\n                uuid,\n                trading_pair,\n                position,\n                initial_price,\n                min_quantity,\n                max_quantity,\n                leverage,\n                liquidation_price,\n                creation_timestamp,\n                term,\n                origin\n            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 11
+      },
+      "nullable": []
     }
   },
   "50abbb297394739ec9d85917f8c32aa8bcfa0bfe140b24e9eeda4ce8d30d4f8d": {
@@ -190,6 +196,11 @@
           "name": "term",
           "ordinal": 10,
           "type_info": "Text"
+        },
+        {
+          "name": "origin",
+          "ordinal": 11,
+          "type_info": "Text"
         }
       ],
       "parameters": {
@@ -197,6 +208,7 @@
       },
       "nullable": [
         true,
+        false,
         false,
         false,
         false,
