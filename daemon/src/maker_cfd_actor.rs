@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use crate::db::{insert_cfd, insert_cfd_offer, load_all_cfds, load_offer_by_id, OfferOrigin};
+use crate::db::{insert_cfd, insert_cfd_offer, load_all_cfds, load_offer_by_id, Origin};
 use crate::model::cfd::{Cfd, CfdOffer, CfdOfferId, CfdState, CfdStateCommon, FinalizedCfd};
 use crate::model::{TakerId, Usd};
 use crate::wire::{Msg0, Msg1, SetupMsg};
@@ -131,7 +131,7 @@ where
                     maker_cfd_actor::Command::NewOffer(offer) => {
                         // 1. Save to DB
                         let mut conn = db.acquire().await.unwrap();
-                        insert_cfd_offer(&offer, &mut conn, OfferOrigin::Mine)
+                        insert_cfd_offer(&offer, &mut conn, Origin::Ours)
                             .await
                             .unwrap();
 

@@ -1,6 +1,6 @@
 use crate::db::{
     insert_cfd, insert_cfd_offer, insert_new_cfd_state_by_offer_id, load_all_cfds,
-    load_offer_by_id, OfferOrigin,
+    load_offer_by_id, Origin,
 };
 use crate::model::cfd::{
     AsBlocks, Cfd, CfdOffer, CfdOfferId, CfdState, CfdStateCommon, FinalizedCfd,
@@ -102,7 +102,7 @@ where
                     }
                     Command::NewOffer(Some(offer)) => {
                         let mut conn = db.acquire().await.unwrap();
-                        insert_cfd_offer(&offer, &mut conn, OfferOrigin::Others)
+                        insert_cfd_offer(&offer, &mut conn, Origin::Theirs)
                             .await
                             .unwrap();
                         offer_feed_actor_inbox.send(Some(offer)).unwrap();

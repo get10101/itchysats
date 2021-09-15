@@ -9,9 +9,9 @@ use std::convert::TryInto;
 use std::mem;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum OfferOrigin {
-    Mine,
-    Others,
+pub enum Origin {
+    Ours,
+    Theirs,
 }
 
 pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
@@ -22,7 +22,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
 pub async fn insert_cfd_offer(
     cfd_offer: &CfdOffer,
     conn: &mut PoolConnection<Sqlite>,
-    origin: OfferOrigin,
+    origin: Origin,
 ) -> anyhow::Result<()> {
     let uuid = serde_json::to_string(&cfd_offer.id).unwrap();
     let trading_pair = serde_json::to_string(&cfd_offer.trading_pair).unwrap();
@@ -293,12 +293,12 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
             let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
 
-            let origin: OfferOrigin = serde_json::from_str(row.origin.as_str()).unwrap();
+            let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
             let position: Position = serde_json::from_str(row.position.as_str()).unwrap();
 
             let position = match origin {
-                OfferOrigin::Mine => position,
-                OfferOrigin::Others => position.counter_position(),
+                Origin::Ours => position,
+                Origin::Theirs => position.counter_position(),
             };
 
             Cfd {
@@ -338,7 +338,7 @@ mod tests {
         let mut conn = pool.acquire().await.unwrap();
 
         let cfd_offer = CfdOffer::from_default_with_price(Usd(dec!(10000))).unwrap();
-        insert_cfd_offer(&cfd_offer, &mut conn, OfferOrigin::Others)
+        insert_cfd_offer(&cfd_offer, &mut conn, Origin::Theirs)
             .await
             .unwrap();
 
@@ -365,7 +365,7 @@ mod tests {
         );
 
         // the order ahs to exist in the db in order to be able to insert the cfd
-        insert_cfd_offer(&cfd_offer, &mut conn, OfferOrigin::Others)
+        insert_cfd_offer(&cfd_offer, &mut conn, Origin::Theirs)
             .await
             .unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
@@ -393,7 +393,7 @@ mod tests {
         );
 
         // the order ahs to exist in the db in order to be able to insert the cfd
-        insert_cfd_offer(&cfd_offer, &mut conn, OfferOrigin::Others)
+        insert_cfd_offer(&cfd_offer, &mut conn, Origin::Theirs)
             .await
             .unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
