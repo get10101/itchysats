@@ -2,48 +2,48 @@
 
 actor "Buyer=Taker \n[frontend]" as Buyer
 participant "Buyer \n[daemon]" as BuyerApp
-participant "Buyer Offer Feed \n[in daemon]" as BuyerOfferFeed
+participant "Buyer OrderTile Feed \n[in daemon]" as BuyerOrderFeed
 participant "Buyer CFD Feed \n[in daemon]" as BuyerCfdFeed
 participant "Seller CFD Feed \n[in daemon]" as SellerCfdFeed
-participant "Seller Offer Feed \n[in daemon]" as SellerOfferFeed
+participant "Seller OrderTile Feed \n[in daemon]" as SellerOrderFeed
 participant "Seller \n[daemon]" as SellerApp
 actor "Seller=Maker \n[frontend]" as Seller
 participant Oracle as Oracle
 
-note over Seller : currently static offer in the frontend
-Seller -> SellerOfferFeed: Subscribe
-note over Seller: The seller should see the current active offer \nInitially there is none (until one POSTed)
-Seller -> SellerApp: POST sell offer
+note over Seller : currently static order in the frontend
+Seller -> SellerOrderFeed: Subscribe
+note over Seller: The seller should see the current active order \nInitially there is none (until one POSTed)
+Seller -> SellerApp: POST sell order
 
 group Oracle stuff?
-SellerApp -> Oracle: Attestation for sell offer
+SellerApp -> Oracle: Attestation for sell order
 Oracle --> SellerApp: Attestation pubkey
 end group
 
-SellerApp -> SellerApp: Store current offer
-SellerApp -> SellerOfferFeed: Push offer
-SellerOfferFeed --> Seller: offer [Untaken]
+SellerApp -> SellerApp: Store current order
+SellerApp -> SellerOrderFeed: Push order
+SellerOrderFeed --> Seller: order [Untaken]
 
 Buyer -> BuyerApp: Start daemon & UI
-BuyerApp -> BuyerOfferFeed: Subscribe
+BuyerApp -> BuyerOrderFeed: Subscribe
 BuyerApp -> BuyerCfdFeed: Subscribe
 BuyerApp -> SellerApp: Open TCP (socket) connection
 SellerApp -> SellerApp: New connection
-SellerApp -> BuyerApp: {TCP} Current offer
+SellerApp -> BuyerApp: {TCP} Current order
 
-note over SellerOfferFeed : Assumption: Current offer \nalways available for new subscriptions
-BuyerApp -> BuyerOfferFeed: push offer
-BuyerOfferFeed --> Buyer: offer
+note over SellerOrderFeed : Assumption: Current order \nalways available for new subscriptions
+BuyerApp -> BuyerOrderFeed: push order
+BuyerOrderFeed --> Buyer: order
 
 Buyer -> Buyer: Click BUY
 Buyer -> BuyerApp: POST cfd_take_request
 BuyerApp -> BuyerApp: Create cfd [TakeRequested]
-note over BuyerApp: Must include offer_id
+note over BuyerApp: Must include order_id
 
 BuyerApp -> BuyerCfdFeed: Push cfd
 BuyerCfdFeed --> Buyer: cfd [TakeRequested]
 
-BuyerApp -> SellerApp: {TCP} cfd_take_request (offer_id, quantity)
+BuyerApp -> SellerApp: {TCP} cfd_take_request (order_id, quantity)
 SellerApp -> SellerApp: Create cfd [TakeRequested]
 SellerApp -> SellerCfdFeed: cfd [TakeRequested]
 SellerCfdFeed --> Seller: cfd [TakeRequested]

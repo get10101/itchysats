@@ -1,10 +1,8 @@
 use crate::db::{
-    insert_cfd, insert_cfd_offer, insert_new_cfd_state_by_offer_id, load_all_cfds,
-    load_offer_by_id, Origin,
+    insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds, load_order_by_id,
+    Origin,
 };
-use crate::model::cfd::{
-    AsBlocks, Cfd, CfdOffer, CfdOfferId, CfdState, CfdStateCommon, FinalizedCfd,
-};
+use crate::model::cfd::{AsBlocks, Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
 use crate::model::Usd;
 use crate::wire;
 use crate::wire::{AdaptorSignature, Msg0, Msg1, SetupMsg};
@@ -23,14 +21,14 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
 
-/// A factor to be added to the CFD offer term for calculating the refund timelock.
+/// A factor to be added to the CFD order term for calculating the refund timelock.
 ///
 /// The refund timelock is important in case the oracle disappears or never publishes a signature.
 /// Ideally, both users collaboratively settle in the refund scenario. This factor is important if
 /// the users do not settle collaboratively.
-/// `1.5` times the term as defined in CFD offer should be safe in the extreme case where a user
-/// publishes the commit transaction right after the contract was initialized. In this case, the  
-/// oracle still has `1.0 * cfdoffer.term` time to attest and no one can publish the refund
+/// `1.5` times the term as defined in CFD order should be safe in the extreme case where a user
+/// publishes the commit transaction right after the contract was initialized. In this case, the
+/// oracle still has `1.0 * cfdorder.term` time to attest and no one can publish the refund
 /// transaction.
 /// The downside is that if the oracle disappears: the users would only notice at the end
 /// of the cfd term. In this case the users has to wait for another `1.5` times of the
@@ -40,9 +38,9 @@ pub const REFUND_THRESHOLD: f32 = 1.5;
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Command {
-    TakeOffer { offer_id: CfdOfferId, quantity: Usd },
-    NewOffer(Option<CfdOffer>),
-    OfferAccepted(CfdOfferId),
+    TakeOrder { order_id: OrderId, quantity: Usd },
+    NewOrder(Option<Order>),
+    OrderAccepted(OrderId),
     IncProtocolMsg(SetupMsg),
     CfdSetupCompleted(FinalizedCfd),
 }
@@ -52,7 +50,7 @@ pub fn new<B, D>(
     wallet: bdk::Wallet<B, D>,
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
-    offer_feed_actor_inbox: watch::Sender<Option<CfdOffer>>,
+    order_feed_actor_inbox: watch::Sender<Option<Order>>,
     out_msg_maker_inbox: mpsc::UnboundedSender<wire::TakerToMaker>,
 ) -> (impl Future<Output = ()>, mpsc::UnboundedSender<Command>)
 where
@@ -73,22 +71,22 @@ where
 
             while let Some(message) = receiver.recv().await {
                 match message {
-                    Command::TakeOffer { offer_id, quantity } => {
+                    Command::TakeOrder { order_id, quantity } => {
                         let mut conn = db.acquire().await.unwrap();
 
-                        let current_offer = load_offer_by_id(offer_id, &mut conn).await.unwrap();
+                        let current_order = load_order_by_id(order_id, &mut conn).await.unwrap();
 
-                        println!("Accepting current offer: {:?}", &current_offer);
+                        println!("Accepting current order: {:?}", &current_order);
 
                         let cfd = Cfd::new(
-                            current_offer.clone(),
+                            current_order.clone(),
                             quantity,
                             CfdState::PendingTakeRequest {
                                 common: CfdStateCommon {
                                     transition_timestamp: SystemTime::now(),
                                 },
                             },
-                            current_offer.position.counter_position(),
+                            current_order.position.counter_position(),
                         );
 
                         insert_cfd(cfd, &mut conn).await.unwrap();
@@ -97,24 +95,24 @@ where
                             .send(load_all_cfds(&mut conn).await.unwrap())
                             .unwrap();
                         out_msg_maker_inbox
-                            .send(wire::TakerToMaker::TakeOffer { offer_id, quantity })
+                            .send(wire::TakerToMaker::TakeOrder { order_id, quantity })
                             .unwrap();
                     }
-                    Command::NewOffer(Some(offer)) => {
+                    Command::NewOrder(Some(order)) => {
                         let mut conn = db.acquire().await.unwrap();
-                        insert_cfd_offer(&offer, &mut conn, Origin::Theirs)
+                        insert_order(&order, &mut conn, Origin::Theirs)
                             .await
                             .unwrap();
-                        offer_feed_actor_inbox.send(Some(offer)).unwrap();
+                        order_feed_actor_inbox.send(Some(order)).unwrap();
                     }
 
-                    Command::NewOffer(None) => {
-                        offer_feed_actor_inbox.send(None).unwrap();
+                    Command::NewOrder(None) => {
+                        order_feed_actor_inbox.send(None).unwrap();
                     }
-                    Command::OfferAccepted(offer_id) => {
+                    Command::OrderAccepted(order_id) => {
                         let mut conn = db.acquire().await.unwrap();
-                        insert_new_cfd_state_by_offer_id(
-                            offer_id,
+                        insert_new_cfd_state_by_order_id(
+                            order_id,
                             CfdState::ContractSetup {
                                 common: CfdStateCommon {
                                     transition_timestamp: SystemTime::now(),
@@ -135,7 +133,7 @@ where
                             .build_party_params(bitcoin::Amount::ZERO, pk) // TODO: Load correct quantity from DB
                             .unwrap();
 
-                        let cfd = load_offer_by_id(offer_id, &mut conn).await.unwrap();
+                        let cfd = load_order_by_id(order_id, &mut conn).await.unwrap();
 
                         let (actor, inbox) = setup_contract(
                             {
@@ -188,7 +186,7 @@ fn setup_contract(
     taker: PartyParams,
     sk: SecretKey,
     oracle_pk: schnorrsig::PublicKey,
-    offer: CfdOffer,
+    order: Order,
 ) -> (
     impl Future<Output = FinalizedCfd>,
     mpsc::UnboundedSender<SetupMsg>,
@@ -212,7 +210,7 @@ fn setup_contract(
             (maker.clone(), maker_punish),
             (taker.clone(), taker_punish),
             oracle_pk,
-            offer.term.mul_f32(REFUND_THRESHOLD).as_blocks().ceil() as u32,
+            order.term.mul_f32(REFUND_THRESHOLD).as_blocks().ceil() as u32,
             vec![],
             sk,
         )

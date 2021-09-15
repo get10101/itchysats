@@ -20,7 +20,7 @@ Once the maker is started you can start the taker:
 cargo run --bin taker
 ```
 
-Upon startup the taker daemon will connect to the (hardcoded) maker and retrieve the current offer.
+Upon startup the taker daemon will connect to the (hardcoded) maker and retrieve the current order.
 
 Note: The sqlite databases for maker and taker are currently created in the project root.
 

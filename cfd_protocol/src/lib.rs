@@ -409,7 +409,7 @@ pub fn punish_transaction(
     Ok(punish_tx)
 }
 
-// NOTE: We have decided to not offer any verification utility because
+// NOTE: We have decided to not order any verification utility because
 // the APIs would be incredibly thin
 
 #[derive(Clone)]

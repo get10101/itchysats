@@ -1,5 +1,5 @@
 -- todo: Decimal is had to deserialize as number so we use text
-create table if not exists offers
+create table if not exists orders
 (
     id                 integer primary key autoincrement,
     uuid               text unique not null,
@@ -15,21 +15,21 @@ create table if not exists offers
     origin             text        not null
 );
 
-create unique index if not exists offers_uuid
-    on offers (uuid);
+create unique index if not exists orders_uuid
+    on orders (uuid);
 
 create table if not exists cfds
 (
     id           integer primary key autoincrement,
-    offer_id     integer unique not null,
-    offer_uuid   text unique    not null,
+    order_id     integer unique not null,
+    order_uuid   text unique    not null,
     quantity_usd text           not null,
 
-    foreign key (offer_id) references offers (id)
+    foreign key (order_id) references orders (id)
 );
 
-create unique index if not exists cfd_offer_uuid
-    on cfds (offer_uuid);
+create unique index if not exists cfd_order_uuid
+    on cfds (order_uuid);
 
 create table if not exists cfd_states
 (
