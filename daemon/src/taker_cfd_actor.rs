@@ -1,5 +1,6 @@
 use crate::db::{
-    insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds, load_order_by_id,
+    insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
+    load_cfd_by_order_id, load_order_by_id,
 };
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
 use crate::model::Usd;
@@ -7,7 +8,6 @@ use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
 use crate::{setup_contract_actor, wire};
 use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::{self};
 use core::panic;
 use futures::Future;
 use std::time::SystemTime;
@@ -101,11 +101,10 @@ pub fn new(
 
                         let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
 
-                        let taker_params = wallet
-                            .build_party_params(bitcoin::Amount::ZERO, pk) // TODO: Load correct quantity from DB
-                            .unwrap();
+                        let cfd = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
+                        let margin = cfd.calc_margin().unwrap();
 
-                        let cfd = load_order_by_id(order_id, &mut conn).await.unwrap();
+                        let taker_params = wallet.build_party_params(margin, pk).unwrap();
 
                         let (actor, inbox) = setup_contract_actor::new(
                             {
@@ -139,6 +138,8 @@ pub fn new(
                     }
                     Command::CfdSetupCompleted(_finalized_cfd) => {
                         todo!("but what?")
+
+                        // Assumption: The maker publishes the CFD on chain
                     }
                 }
             }

@@ -277,6 +277,17 @@ impl Cfd {
         Ok(margin)
     }
 
+    pub fn calc_counterparty_margin(&self) -> Result<Amount> {
+        let margin = match self.position() {
+            Position::Buy => calculate_sell_margin(self.order.price, self.quantity_usd)?,
+            Position::Sell => {
+                calculate_buy_margin(self.order.price, self.quantity_usd, self.order.leverage)?
+            }
+        };
+
+        Ok(margin)
+    }
+
     pub fn calc_profit(&self, current_price: Usd) -> Result<(Amount, Usd)> {
         let profit =
             calculate_profit(self.order.price, current_price, dec!(0.005), Usd(dec!(0.1)))?;

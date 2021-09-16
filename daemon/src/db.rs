@@ -241,6 +241,82 @@ async fn load_latest_cfd_state(
     Ok(latest_cfd_state_in_db)
 }
 
+pub async fn load_cfd_by_order_id(
+    order_id: OrderId,
+    conn: &mut PoolConnection<Sqlite>,
+) -> anyhow::Result<Cfd> {
+    let order_uuid = serde_json::to_string(&order_id)?;
+
+    let row = sqlx::query!(
+        r#"
+        select
+            cfds.id as cfd_id,
+            orders.uuid as order_id,
+            orders.initial_price as price,
+            orders.min_quantity as min_quantity,
+            orders.max_quantity as max_quantity,
+            orders.leverage as leverage,
+            orders.trading_pair as trading_pair,
+            orders.position as position,
+            orders.origin as origin,
+            orders.liquidation_price as liquidation_price,
+            orders.creation_timestamp as creation_timestamp,
+            orders.term as term,
+            cfds.quantity_usd as quantity_usd,
+            cfd_states.state as state
+        from cfds as cfds
+        inner join orders as orders on cfds.order_uuid = ?
+        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id
+        where cfd_states.state in (
+            select
+              state
+              from cfd_states
+            where cfd_id = cfds.id
+            order by id desc
+            limit 1
+        )
+        "#,
+        order_uuid
+    )
+    .fetch_one(conn)
+    .await?;
+
+    let order_id = serde_json::from_str(row.order_id.as_str()).unwrap();
+    let trading_pair = serde_json::from_str(row.trading_pair.as_str()).unwrap();
+    let position: Position = serde_json::from_str(row.position.as_str()).unwrap();
+    let price = serde_json::from_str(row.price.as_str()).unwrap();
+    let min_quantity = serde_json::from_str(row.min_quantity.as_str()).unwrap();
+    let max_quantity = serde_json::from_str(row.max_quantity.as_str()).unwrap();
+    let leverage = Leverage(row.leverage.try_into().unwrap());
+    let liquidation_price = serde_json::from_str(row.liquidation_price.as_str()).unwrap();
+    let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
+    let term = serde_json::from_str(row.term.as_str()).unwrap();
+    let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
+
+    let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
+    let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
+
+    let order = Order {
+        id: order_id,
+        trading_pair,
+        position,
+        price,
+        min_quantity,
+        max_quantity,
+        leverage,
+        liquidation_price,
+        creation_timestamp,
+        term,
+        origin,
+    };
+
+    Ok(Cfd {
+        order,
+        quantity_usd: quantity,
+        state: latest_state,
+    })
+}
+
 /// Loads all CFDs with the latest state as the CFD state
 pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<Vec<Cfd>> {
     // TODO: Could be optimized with something like but not sure it's worth the complexity:
@@ -371,6 +447,32 @@ mod tests {
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         let cfd_from_db = cfds_from_db.first().unwrap().clone();
+        assert_eq!(cfd, cfd_from_db)
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_load_cfd_by_order_id() {
+        let pool = setup_test_db().await;
+        let mut conn = pool.acquire().await.unwrap();
+
+        let order = Order::from_default_with_price(Usd(dec!(10000)), Origin::Theirs).unwrap();
+        let cfd = Cfd::new(
+            order.clone(),
+            Usd(dec!(1000)),
+            CfdState::PendingTakeRequest {
+                common: CfdStateCommon {
+                    transition_timestamp: SystemTime::now(),
+                },
+            },
+        );
+
+        let order_id = order.id;
+
+        // the order ahs to exist in the db in order to be able to insert the cfd
+        insert_order(&order, &mut conn).await.unwrap();
+        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
+
+        let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
         assert_eq!(cfd, cfd_from_db)
     }
 

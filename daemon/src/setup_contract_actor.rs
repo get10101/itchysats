@@ -1,4 +1,4 @@
-use crate::model::cfd::{AsBlocks, FinalizedCfd, Order};
+use crate::model::cfd::{AsBlocks, Cfd, FinalizedCfd};
 use crate::wire::{AdaptorSignature, Msg0, Msg1, SetupMsg};
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey, Signature, SECP256K1};
@@ -37,7 +37,7 @@ pub fn new(
     own_params: OwnParams,
     sk: SecretKey,
     oracle_pk: schnorrsig::PublicKey,
-    order: Order,
+    cfd: Cfd,
 ) -> (
     impl Future<Output = FinalizedCfd>,
     mpsc::UnboundedSender<SetupMsg>,
@@ -66,11 +66,15 @@ pub fn new(
             AllParams::new(own, own_punish, other, other_punish, own_role)
         };
 
+        if params.other.lock_amount != cfd.calc_counterparty_margin().unwrap() {
+            panic!("Sorry, have to panic 😬 - the amounts that the counterparty sent were wrong, expected {} actual {}", cfd.calc_counterparty_margin().unwrap(), params.other.lock_amount)
+        }
+
         let own_cfd_txs = create_cfd_transactions(
             (params.maker().clone(), *params.maker_punish()),
             (params.taker().clone(), *params.taker_punish()),
             oracle_pk,
-            order.term.mul_f32(REFUND_THRESHOLD).as_blocks().ceil() as u32,
+            cfd.order.term.mul_f32(REFUND_THRESHOLD).as_blocks().ceil() as u32,
             vec![],
             sk,
         )
