@@ -11,9 +11,6 @@ import useLatestEvent from "./components/Hooks";
 import NavLink from "./components/NavLink";
 import { Cfd, Order } from "./components/Types";
 
-/* TODO: Change from localhost:8000 */
-const BASE_URL = "http://localhost:8000";
-
 interface CfdTakeRequestPayload {
     order_id: string;
     quantity: number;
@@ -30,7 +27,7 @@ interface MarginResponse {
 }
 
 async function postCfdTakeRequest(payload: CfdTakeRequestPayload) {
-    let res = await axios.post(BASE_URL + `/cfd`, JSON.stringify(payload));
+    let res = await axios.post(`/api/cfd`, JSON.stringify(payload));
 
     if (!res.status.toString().startsWith("2")) {
         throw new Error("failed to create new CFD take request: " + res.status + ", " + res.statusText);
@@ -38,7 +35,7 @@ async function postCfdTakeRequest(payload: CfdTakeRequestPayload) {
 }
 
 async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse> {
-    let res = await axios.post(BASE_URL + `/calculate/margin`, JSON.stringify(payload));
+    let res = await axios.post(`/api/calculate/margin`, JSON.stringify(payload));
 
     if (!res.status.toString().startsWith("2")) {
         throw new Error("failed to create new CFD take request: " + res.status + ", " + res.statusText);
@@ -48,7 +45,7 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
 }
 
 export default function App() {
-    let source = useEventSource({ source: BASE_URL + "/feed" });
+    let source = useEventSource({ source: "/api/feed" });
 
     const cfds = useLatestEvent<Cfd[]>(source, "cfds");
     const order = useLatestEvent<Order>(source, "order");
