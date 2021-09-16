@@ -10,6 +10,8 @@ use rocket_db_pools::Database;
 use seed::Seed;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::thread::sleep;
+use std::time::Duration;
 use tokio::sync::watch;
 
 mod db;
@@ -22,6 +24,8 @@ mod taker_cfd_actor;
 mod taker_inc_message_actor;
 mod to_sse_event;
 mod wire;
+
+const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Database)]
 #[database("taker")]
@@ -88,13 +92,18 @@ async fn main() -> Result<()> {
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (_balance_feed_sender, balance_feed_receiver) = watch::channel::<Amount>(Amount::ZERO);
 
-    let socket = tokio::net::TcpSocket::new_v4()?;
-    let connection = socket
-        .connect(opts.taker)
-        .await
-        .expect("Maker should be online first");
-
-    let (read, write) = connection.into_split();
+    let (read, write) = loop {
+        let socket = tokio::net::TcpSocket::new_v4()?;
+        if let Ok(connection) = socket.connect(opts.taker).await {
+            break connection.into_split();
+        } else {
+            println!(
+                "Could not connect to the maker, retrying in {}s ...",
+                CONNECTION_RETRY_INTERVAL.as_secs()
+            );
+            sleep(CONNECTION_RETRY_INTERVAL);
+        }
+    };
 
     let figment = rocket::Config::figment()
         .merge(("databases.taker.url", data_dir.join("taker.sqlite")))
