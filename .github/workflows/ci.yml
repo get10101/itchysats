@@ -53,25 +53,36 @@ jobs:
             os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macos-latest
+          - target: armv7-unknown-linux-gnueabihf
+            os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          override: true
-          toolchain: stable
+      - name: Setup rust toolchain
+        run: rustup show
       - uses: Swatinem/rust-cache@v1.3.0
-      - run: cargo build --all-targets --all-features
+      - name: Install compiler for armhf arch
+        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
+        run: |
+          sudo apt-get update
+          sudo apt-get install gcc-arm-linux-gnueabihf
+      - run: cargo build --target ${{ matrix.target }}
       - run: cargo test --workspace
       - name: Smoke test ${{ matrix.target }} binary
+        if: matrix.target != 'armv7-unknown-linux-gnueabihf'
         run: |
-          target/debug/maker --data-dir=/tmp/maker --generate-seed &
+          target/${{ matrix.target }}/debug/maker --data-dir=/tmp/maker --generate-seed &
           sleep 5s # Wait for maker to start
 
-          target/debug/taker --data-dir=/tmp/taker --generate-seed &
+          target/${{ matrix.target }}/debug/taker --data-dir=/tmp/taker --generate-seed &
           sleep 5s # Wait for taker to start
 
           curl --fail http://localhost:8000/api/alive
           curl --fail http://localhost:8001/api/alive
+      - name: Upload binaries
+        uses: actions/upload-artifact@v2
+        with:
+          name: maker-and-taker-binaries-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/debug/maker
+            target/${{ matrix.target }}/debug/taker
