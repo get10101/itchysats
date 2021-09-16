@@ -3,7 +3,7 @@ use anyhow::Result;
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Amount, Transaction};
-use cfd_protocol::EcdsaAdaptorSignature;
+use cfd_protocol::secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
@@ -597,6 +597,10 @@ pub struct FinalizedCfd {
 
     pub lock: PartiallySignedTransaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
-    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, Vec<u8>)>,
+    pub cets: Vec<(
+        Transaction,
+        EcdsaAdaptorSignature,
+        Vec<(Vec<u8>, schnorrsig::PublicKey)>,
+    )>,
     pub refund: (Transaction, Signature),
 }

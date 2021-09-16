@@ -1,4 +1,4 @@
-pub use secp256k1_zkp::EcdsaAdaptorSignature;
+pub use secp256k1_zkp;
 
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::hashes::hex::ToHex;
@@ -16,7 +16,7 @@ use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
 use itertools::Itertools;
 use secp256k1_zkp::bitcoin_hashes::sha256;
-use secp256k1_zkp::{self, schnorrsig, SecretKey, Signature, SECP256K1};
+use secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
@@ -205,19 +205,17 @@ fn build_cfds(
     let cets = payouts
         .into_iter()
         .map(|payout| {
-            let nonce_pk = payout.nonce_pk;
-            let message = payout.message.clone();
             let cet = ContractExecutionTransaction::new(
                 &commit_tx,
-                payout,
+                payout.clone(),
                 &maker_address,
                 &taker_address,
                 CET_TIMELOCK,
             )?;
 
-            let encsig = cet.encsign(identity_sk, &oracle_pk, &nonce_pk)?;
+            let encsig = cet.encsign(identity_sk, &oracle_pk)?;
 
-            Ok((cet.inner, encsig, message, nonce_pk))
+            Ok((cet.inner, encsig, payout.msg_nonce_pairs))
         })
         .collect::<Result<Vec<_>>>()
         .context("cannot build and sign all cets")?;
@@ -432,35 +430,30 @@ pub struct PunishParams {
 pub struct CfdTransactions {
     pub lock: PartiallySignedTransaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
+    #[allow(clippy::type_complexity)] // TODO: Introduce type
     pub cets: Vec<(
         Transaction,
         EcdsaAdaptorSignature,
-        Vec<u8>,
-        schnorrsig::PublicKey,
+        Vec<(Vec<u8>, schnorrsig::PublicKey)>,
     )>,
     pub refund: (Transaction, Signature),
 }
 
-// TODO: We will very likely have multiple `(message, nonce_pk)` pairs
-// per payout in the future
 #[derive(Debug, Clone)]
 pub struct Payout {
-    message: Vec<u8>,
-    nonce_pk: schnorrsig::PublicKey,
+    msg_nonce_pairs: Vec<(Vec<u8>, schnorrsig::PublicKey)>,
     maker_amount: Amount,
     taker_amount: Amount,
 }
 
 impl Payout {
     pub fn new(
-        message: Vec<u8>,
-        nonce_pk: schnorrsig::PublicKey,
+        msg_nonce_pairs: Vec<(Vec<u8>, schnorrsig::PublicKey)>,
         maker_amount: Amount,
         taker_amount: Amount,
     ) -> Self {
         Self {
-            message,
-            nonce_pk,
+            msg_nonce_pairs,
             maker_amount,
             taker_amount,
         }
@@ -544,7 +537,7 @@ sha256t_hash_newtype!(
 
 /// Compute a signature point for the given oracle public key, announcement nonce public key and
 /// message.
-pub fn compute_signature_point(
+fn compute_signature_point(
     oracle_pk: &schnorrsig::PublicKey,
     nonce_pk: &schnorrsig::PublicKey,
     msg: &[u8],
@@ -576,7 +569,7 @@ pub fn compute_signature_point(
 #[derive(Debug, Clone)]
 struct ContractExecutionTransaction {
     inner: Transaction,
-    message: Vec<u8>,
+    msg_nonce_pairs: Vec<(Vec<u8>, schnorrsig::PublicKey)>,
     sighash: SigHash,
     commit_descriptor: Descriptor<PublicKey>,
 }
@@ -593,8 +586,7 @@ impl ContractExecutionTransaction {
         taker_address: &Address,
         relative_timelock_in_blocks: u32,
     ) -> Result<Self> {
-        let message = payout.message.clone();
-
+        let msg_nonce_pairs = payout.msg_nonce_pairs.clone();
         let commit_input = TxIn {
             previous_output: commit_tx.outpoint(),
             sequence: relative_timelock_in_blocks,
@@ -627,7 +619,7 @@ impl ContractExecutionTransaction {
 
         Ok(Self {
             inner: tx,
-            message,
+            msg_nonce_pairs,
             sighash,
             commit_descriptor: commit_tx.descriptor(),
         })
@@ -637,17 +629,30 @@ impl ContractExecutionTransaction {
         &self,
         sk: SecretKey,
         oracle_pk: &schnorrsig::PublicKey,
-        nonce_pk: &schnorrsig::PublicKey,
     ) -> Result<EcdsaAdaptorSignature> {
-        let signature_point = compute_signature_point(oracle_pk, nonce_pk, &self.message)?;
+        let adaptor_point = compute_adaptor_point(oracle_pk, &self.msg_nonce_pairs)?;
 
         Ok(EcdsaAdaptorSignature::encrypt(
             SECP256K1,
             &self.sighash.to_message(),
             &sk,
-            &signature_point,
+            &adaptor_point,
         ))
     }
+}
+
+pub fn compute_adaptor_point(
+    oracle_pk: &schnorrsig::PublicKey,
+    msg_nonce_pairs: &[(Vec<u8>, schnorrsig::PublicKey)],
+) -> Result<secp256k1_zkp::PublicKey> {
+    let sig_points = msg_nonce_pairs
+        .iter()
+        .map(|(msg, nonce_pk)| compute_signature_point(oracle_pk, nonce_pk, msg))
+        .collect::<Result<Vec<_>>>()?;
+    let adaptor_point =
+        secp256k1_zkp::PublicKey::combine_keys(sig_points.iter().collect::<Vec<_>>().as_slice())?;
+
+    Ok(adaptor_point)
 }
 
 #[derive(Debug, Clone)]
@@ -938,8 +943,7 @@ mod tests {
         let orig_maker_amount = 1000;
         let orig_taker_amount = 1000;
         let payout = Payout::new(
-            b"win".to_vec(),
-            nonce_pk,
+            vec![(b"win".to_vec(), nonce_pk)],
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         );
@@ -972,8 +976,7 @@ mod tests {
         let orig_maker_amount = dummy_dust_limit.as_sat() - 1;
         let orig_taker_amount = 1000;
         let payout = Payout::new(
-            b"win".to_vec(),
-            nonce_pk,
+            vec![(b"win".to_vec(), nonce_pk)],
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         );

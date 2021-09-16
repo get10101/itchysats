@@ -4,9 +4,10 @@ use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey, Signature, SECP256K1};
 use bdk::bitcoin::{Amount, PublicKey, Transaction, Txid};
 use bdk::descriptor::Descriptor;
+use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use cfd_protocol::{
-    commit_descriptor, compute_signature_point, create_cfd_transactions, lock_descriptor,
-    spending_tx_sighash, EcdsaAdaptorSignature, PartyParams, PunishParams,
+    commit_descriptor, compute_adaptor_point, create_cfd_transactions, lock_descriptor,
+    spending_tx_sighash, PartyParams, PunishParams,
 };
 use futures::Future;
 use std::collections::HashMap;
@@ -125,7 +126,7 @@ pub fn new(
 
         let mut cet_by_id = own_cets
             .into_iter()
-            .map(|(tx, _, msg, _)| (tx.txid(), (tx, msg)))
+            .map(|(tx, _, msg_nonce_pairs)| (tx.txid(), (tx, msg_nonce_pairs)))
             .collect::<HashMap<_, _>>();
 
         FinalizedCfd {
@@ -224,14 +225,13 @@ fn verify_cets(
     own_cets: &[(
         Transaction,
         EcdsaAdaptorSignature,
-        Vec<u8>,
-        schnorrsig::PublicKey,
+        Vec<(Vec<u8>, schnorrsig::PublicKey)>,
     )],
     cets: &[(Txid, EcdsaAdaptorSignature)],
     commit_desc: &Descriptor<PublicKey>,
     commit_amount: Amount,
 ) -> Result<()> {
-    for (tx, _, msg, nonce_pk) in own_cets.iter() {
+    for (tx, _, msg_nonce_pairs) in own_cets.iter() {
         let other_encsig = cets
             .iter()
             .find_map(|(txid, encsig)| (txid == &tx.txid()).then(|| encsig))
@@ -240,9 +240,9 @@ fn verify_cets(
         verify_cet_encsig(
             tx,
             other_encsig,
-            msg,
+            &msg_nonce_pairs,
             &other.identity_pk,
-            (oracle_pk, nonce_pk),
+            oracle_pk,
             commit_desc,
             commit_amount,
         )
@@ -281,13 +281,13 @@ fn verify_signature(
 fn verify_cet_encsig(
     tx: &Transaction,
     encsig: &EcdsaAdaptorSignature,
-    msg: &[u8],
+    msg_nonce_pairs: &[(Vec<u8>, schnorrsig::PublicKey)],
     pk: &PublicKey,
-    (oracle_pk, nonce_pk): (&schnorrsig::PublicKey, &schnorrsig::PublicKey),
+    oracle_pk: &schnorrsig::PublicKey,
     spent_descriptor: &Descriptor<PublicKey>,
     spent_amount: Amount,
 ) -> Result<()> {
-    let sig_point = compute_signature_point(oracle_pk, nonce_pk, msg)
+    let sig_point = compute_adaptor_point(oracle_pk, msg_nonce_pairs)
         .context("could not calculate signature point")?;
     verify_adaptor_signature(
         tx,

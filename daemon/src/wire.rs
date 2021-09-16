@@ -4,7 +4,8 @@ use crate::Order;
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Amount, PublicKey, Txid};
-use cfd_protocol::{CfdTransactions, EcdsaAdaptorSignature, PartyParams, PunishParams};
+use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
+use cfd_protocol::{CfdTransactions, PartyParams, PunishParams};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -129,7 +130,7 @@ impl From<CfdTransactions> for Msg1 {
             cets: txs
                 .cets
                 .into_iter()
-                .map(|(tx, sig, _, _)| (tx.txid(), sig))
+                .map(|(tx, sig, _)| (tx.txid(), sig))
                 .collect(),
             refund: txs.refund.1,
         }
