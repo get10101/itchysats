@@ -18,6 +18,8 @@ use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signatur
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
+pub mod curve_handlers;
+
 /// In satoshi per vbyte.
 const SATS_PER_VBYTE: f64 = 1.0;
 
