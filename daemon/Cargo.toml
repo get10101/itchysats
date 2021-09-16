@@ -10,7 +10,7 @@ cfd_protocol = { path = "../cfd_protocol" }
 clap = "3.0.0-beta.4"
 futures = { version = "0.3", default-features = false }
 hkdf = "0.11"
-rand = "0.6"
+rand = "0.8"
 rocket = { git = "https://github.com/SergioBenitez/Rocket", features = ["json"] }
 rocket_db_pools = { git = "https://github.com/SergioBenitez/Rocket", features = ["sqlx_sqlite"] }
 rust_decimal = { version = "1.15", features = ["serde-float", "serde-arbitrary-precision"] }

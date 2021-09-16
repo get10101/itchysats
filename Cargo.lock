@@ -258,7 +258,7 @@ dependencies = [
  "bdk",
  "bitcoin",
  "itertools",
- "rand 0.6.5",
+ "rand 0.8.4",
  "rand_chacha 0.1.1",
  "secp256k1-zkp",
 ]
@@ -416,7 +416,7 @@ dependencies = [
  "clap",
  "futures",
  "hkdf",
- "rand 0.6.5",
+ "rand 0.8.4",
  "rocket",
  "rocket_db_pools",
  "rust_decimal",
