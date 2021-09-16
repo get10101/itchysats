@@ -152,7 +152,7 @@ export default function App() {
                                             <Text>Quantity:</Text>
                                             <CurrencyInputField
                                                 onChange={(valueString: string) => {
-                                                    setQuantity(parse(valueString))
+                                                    setQuantity(parse(valueString));
 
                                                     if (!order) {
                                                         return;
@@ -162,8 +162,8 @@ export default function App() {
                                                     let payload: MarginRequestPayload = {
                                                         leverage: order.leverage,
                                                         price: order.price,
-                                                        quantity
-                                                    }
+                                                        quantity,
+                                                    };
                                                     calculateMargin(payload);
                                                 }}
                                                 value={format(quantity)}

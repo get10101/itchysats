@@ -17,11 +17,11 @@ import { useAsync } from "react-async";
 import { Route, Routes } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import "./App.css";
-import OrderTile from "./components/OrderTile";
 import CfdTile from "./components/CfdTile";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
 import NavLink from "./components/NavLink";
+import OrderTile from "./components/OrderTile";
 import { Cfd, Order } from "./components/Types";
 
 /* TODO: Change from localhost:8001 */
