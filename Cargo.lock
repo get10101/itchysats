@@ -134,7 +134,7 @@ dependencies = [
 [[package]]
 name = "bdk"
 version = "0.10.1-dev"
-source = "git+https://github.com/bitcoindevkit/bdk/#acf157a99a305226203d2b55a567291a93c64720"
+source = "git+https://github.com/bitcoindevkit/bdk/#10b53a56d71ca4a923464f9cd12b5738f280d84a"
 dependencies = [
  "async-trait",
  "bdk-macros",
@@ -147,13 +147,13 @@ dependencies = [
  "serde",
  "serde_json",
  "sled",
+ "tokio",
 ]
 
 [[package]]
 name = "bdk-macros"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3f510015e946c5995cc169f7ed4c92ba032bbce795c0956ee0d98d82f7aff78"
+source = "git+https://github.com/bitcoindevkit/bdk/#10b53a56d71ca4a923464f9cd12b5738f280d84a"
 dependencies = [
  "proc-macro2",
  "quote",
