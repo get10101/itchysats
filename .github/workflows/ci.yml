@@ -66,8 +66,8 @@ jobs:
       - run: cargo test --workspace
       - name: Smoke test ${{ matrix.target }} binary
         run: |
-          target/debug/maker &
+          target/debug/maker --data-dir=/tmp/maker --generate-seed &
           sleep 5s # Wait for maker to start
-          target/debug/taker &
+          target/debug/taker --data-dir=/tmp/taker --generate-seed &
           sleep 5s # Wait for taker to start
           curl --fail http://localhost:8000/alive
