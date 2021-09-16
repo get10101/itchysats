@@ -40,7 +40,7 @@ async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
 }
 
 export default function App() {
-    let source = useEventSource({ source: "/api/maker-feed" });
+    let source = useEventSource({ source: "/api/feed" });
 
     const cfds = useLatestEvent<Cfd[]>(source, "cfds");
     const order = useLatestEvent<Order>(source, "order");

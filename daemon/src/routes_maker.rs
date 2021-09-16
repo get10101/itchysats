@@ -12,7 +12,7 @@ use serde::Deserialize;
 use tokio::select;
 use tokio::sync::{mpsc, watch};
 
-#[rocket::get("/maker-feed")]
+#[rocket::get("/feed")]
 pub async fn maker_feed(
     rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
     rx_order: &State<watch::Receiver<Option<Order>>>,
