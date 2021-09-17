@@ -7,6 +7,7 @@ edition = "2018"
 anyhow = "1"
 bdk = { git = "https://github.com/bitcoindevkit/bdk/", rev = "acf157a99a305226203d2b55a567291a93c64720" }
 itertools = "0.10"
+nalgebra = "0.29.0"
 ndarray = "0.15.3"
 rand = "0.6"
 rand_chacha = "0.1"

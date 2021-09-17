@@ -1,13 +1,23 @@
-use crate::curve_handlers::basis_eval::Basis;
+use crate::curve_handlers::basis::BSplineBasis;
 use crate::curve_handlers::csr_tools::CSR;
-use ndarray::{s, Array1};
+use ndarray::{s, Array1, Array2};
+
+use super::basis::BSplineBasis;
 
 pub struct Curve {
-    knots: Array1<f64>,
-    order: usize,
-    periodic: isize,
+    basis: BSplineBasis,
+    control_points: Array2<f64>,
 }
 
+impl Curve {
+    // standin
+    pub fn new(basis: BSplineBasis, control_points: Array2<f64>) -> Self {
+        Curve {
+            basis,
+            control_points,
+        }
+    }
+}
 
 // class Curve(SplineObject):
 //     """Curve()

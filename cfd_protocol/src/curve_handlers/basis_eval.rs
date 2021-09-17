@@ -1,6 +1,15 @@
 use ndarray::Array1;
 use std::cmp::min;
 
+
+struct Error {}
+
+impl From<crate::curve_handlers::csr_tools::Error> for Error {
+    fn from(_: crate::curve_handlers::csr_tools::Error) -> Self {
+        Error {}
+    }
+}
+
 pub struct Basis {
     knots: Array1<f64>,
     order: usize,
@@ -77,7 +86,7 @@ impl Basis {
         t: &Array1<f64>,
         d: usize,
         from_right: Option<bool>,
-    ) -> (Array1<f64>, CSR) {
+    ) -> Result<(Array1<f64>, CSR), Error> {
         let m = t.len();
         let mut right = from_right.unwrap_or(true);
 
@@ -170,7 +179,13 @@ impl Basis {
                 indices[k] = (mu - self.order + j) % self.n;
             }
         }
-        let csr = CSR::new(data, indices, indptr, (m, self.n));
+
+        // let csr_out = match CSR::new(data, indices, indptr, (m, self.n)) {
+        //     Ok(csr) => csr,
+        //     Err(e) => return Error::from(e),
+        // };
+
+        let csr = CSR::new(data, indices, indptr, (m, self.n)?;
 
         (out, csr)
     }

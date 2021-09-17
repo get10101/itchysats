@@ -1,2 +1,5 @@
 mod basis;
-mod basis_tools;
+mod basis_eval;
+mod csr_tools;
+mod curve;
+mod curve_factory;

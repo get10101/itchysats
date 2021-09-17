@@ -1,6 +1,7 @@
 use crate::curve_handlers::basis::BSplineBasis;
 use crate::curve_handlers::csr_tools::CSR;
-use ndarray::{s, Array1};
+use crate::curve_handlers::curve::Curve;
+use ndarray::{Array1, Array2, Axis, stack};
 
 /// Perform general spline interpolation on a provided basis.
 /// :param matrix-like x: Matrix *X[i,j]* of interpolation points *xi* with
@@ -16,7 +17,9 @@ fn interpolate(x: Array2<f64>, basis: BSplineBasis, pts: Option<Array1<f64>>) ->
 
     // ah crap! I need to use SuperLU or some other solver here,
     // which is not implemented in rust yet!
-    //
+
+    spase(A) x = b, know A, b, want x:
+        x = nalgebra::solve(A.todense(), b)
     // this is the splipy implementation:
     // cp = splinalg.spsolve(csr, t_pts)
     // cp = cp.reshape(t_pts.shape)
@@ -41,7 +44,8 @@ fn interpolate(x: Array2<f64>, basis: BSplineBasis, pts: Option<Array1<f64>>) ->
     //
     // as a standin while I work out an FFI for SuperLU we just make
     // cp an array of ones
-    let cp = Array1::<f64>::ones(t_pts.len());
+    let cp_vals = Array1::<f64>::ones(t_pts.len());
+    let cp = stack(Axis(1), &[t_pts.view(), cp_vals.view()]);
 
     Curve::new(basis, cp);
 }
