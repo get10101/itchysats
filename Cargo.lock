@@ -267,7 +267,6 @@ dependencies = [
  "itertools",
  "proptest",
  "rand 0.6.5",
- "rand_chacha 0.1.1",
  "secp256k1-zkp",
 ]
 

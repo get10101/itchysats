@@ -13,13 +13,12 @@ use cfd_protocol::{
     lock_descriptor, oracle, punish_transaction, renew_cfd_transactions, spending_tx_sighash,
     CfdTransactions, Payout, PunishParams, TransactionExt, WalletExt,
 };
-use rand::{CryptoRng, RngCore, SeedableRng};
-use rand_chacha::ChaChaRng;
+use rand::{thread_rng, CryptoRng, RngCore};
 use secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 
 #[test]
 fn create_cfd() {
-    let mut rng = ChaChaRng::seed_from_u64(0);
+    let mut rng = thread_rng();
 
     let maker_lock_amount = Amount::ONE_BTC;
     let taker_lock_amount = Amount::ONE_BTC;
@@ -103,7 +102,7 @@ fn create_cfd() {
 
 #[test]
 fn renew_cfd() {
-    let mut rng = ChaChaRng::seed_from_u64(0);
+    let mut rng = thread_rng();
 
     let maker_lock_amount = Amount::ONE_BTC;
     let taker_lock_amount = Amount::ONE_BTC;
@@ -265,8 +264,8 @@ fn renew_cfd() {
     )
 }
 
-fn create_cfd_txs(
-    rng: &mut ChaChaRng,
+fn create_cfd_txs<R>(
+    rng: &mut R,
     (maker_wallet, maker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
     (taker_wallet, taker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
     oracle_pk: schnorrsig::PublicKey,
@@ -279,7 +278,10 @@ fn create_cfd_txs(
     CfdKeys,
     Address,
     Address,
-) {
+)
+where
+    R: RngCore + CryptoRng,
+{
     let (maker_sk, maker_pk) = make_keypair(rng);
     let (taker_sk, taker_pk) = make_keypair(rng);
 

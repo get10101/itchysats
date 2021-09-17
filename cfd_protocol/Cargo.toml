@@ -9,8 +9,7 @@ bdk = { git = "https://github.com/bitcoindevkit/bdk/" }
 bit-vec = "0.6"
 itertools = "0.10"
 rand = "0.6"
-rand_chacha = "0.1"
-secp256k1-zkp = { git = "https://github.com/ElementsProject/rust-secp256k1-zkp", default-features = false, features = ["bitcoin_hashes", "global-context", "serde"] }
+secp256k1-zkp = { git = "https://github.com/ElementsProject/rust-secp256k1-zkp", features = ["bitcoin_hashes", "global-context", "serde"] }
 
 [dev-dependencies]
 bitcoin = { version = "0.27", features = ["rand", "bitcoinconsensus"] }
