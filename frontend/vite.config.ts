@@ -1,7 +1,18 @@
-import { resolve } from "path";
-
 import reactRefresh from "@vitejs/plugin-react-refresh";
+import { resolve } from "path";
 import { defineConfig } from "vite";
+import dynamicApp from "./dynamicApp";
+
+const app = process.env.APP;
+
+if (!app || (app !== "maker" && app !== "taker")) {
+    throw new Error("APP environment variable needs to be set to `maker` `taker`");
+}
+
+const backendPorts = {
+    "taker": 8000,
+    "maker": 8001,
+};
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -11,40 +22,17 @@ export default defineConfig({
                 ? [reactRefresh()]
                 : []
         ),
+        dynamicApp(app),
     ],
     build: {
         rollupOptions: {
-            input: {
-                maker: resolve(__dirname, "maker.html"),
-                taker: resolve(__dirname, "taker.html"),
-            },
+            input: resolve(__dirname, `index.html`),
         },
+        outDir: `dist/${app}`,
     },
     server: {
-        open: "/maker",
+        proxy: {
+            "/api": `http://localhost:${backendPorts[app]}`,
+        },
     },
-    // server: {
-    //     proxy: {
-    //         '/foo': 'http://localhost:4567',
-    //         '/api': {
-    //             target: 'http://jsonplaceholder.typicode.com',
-    //             changeOrigin: true,
-    //             rewrite: (path) => path.replace(/^\/api/, '')
-    //         },
-    //         // with RegEx
-    //         '^/fallback/.*': {
-    //             target: 'http://jsonplaceholder.typicode.com',
-    //             changeOrigin: true,
-    //             rewrite: (path) => path.replace(/^\/fallback/, '')
-    //         },
-    //         // Using the proxy instance
-    //         '/api': {
-    //             target: 'http://jsonplaceholder.typicode.com',
-    //             changeOrigin: true,
-    //             configure: (proxy, options) => {
-    //                 // proxy will be an instance of 'http-proxy'
-    //             }
-    //         }
-    //     }
-    // }
 });

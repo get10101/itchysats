@@ -156,7 +156,7 @@ async fn main() -> Result<()> {
             },
         ))
         .mount(
-            "/",
+            "/api",
             rocket::routes![
                 routes_taker::feed,
                 routes_taker::post_cfd,

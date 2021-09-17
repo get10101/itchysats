@@ -17,15 +17,12 @@ import { useAsync } from "react-async";
 import { Route, Routes } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import "./App.css";
-import OrderTile from "./components/OrderTile";
 import CfdTile from "./components/CfdTile";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
 import NavLink from "./components/NavLink";
+import OrderTile from "./components/OrderTile";
 import { Cfd, Order } from "./components/Types";
-
-/* TODO: Change from localhost:8001 */
-const BASE_URL = "http://localhost:8001";
 
 interface CfdSellOrderPayload {
     price: number;
@@ -34,7 +31,7 @@ interface CfdSellOrderPayload {
 }
 
 async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
-    let res = await axios.post(BASE_URL + `/order/sell`, JSON.stringify(payload));
+    let res = await axios.post(`/api/order/sell`, JSON.stringify(payload));
 
     if (!res.status.toString().startsWith("2")) {
         console.log("Status: " + res.status + ", " + res.statusText);
@@ -43,7 +40,7 @@ async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
 }
 
 export default function App() {
-    let source = useEventSource({ source: BASE_URL + "/maker-feed" });
+    let source = useEventSource({ source: "/api/feed" });
 
     const cfds = useLatestEvent<Cfd[]>(source, "cfds");
     const order = useLatestEvent<Order>(source, "order");

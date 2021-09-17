@@ -27,15 +27,14 @@ Note: The sqlite databases for maker and taker are currently created in the proj
 ## Starting the maker and taker frontend
 
 We use a single react project for hosting both the taker and the maker frontends.
-
-To start it in development mode:
+However, the development environment still needs to be start twice!
+Which frontend to start is configured via the `APP` environment variable.
 
 ```bash
-cd frontend && yarn dev
+cd frontend;
+APP=taker yarn dev
+APP=maker yarn dev
 ```
-
-- To access maker: [Maker](http://localhost:3000/maker)
-- To access taker: [Taker](http://localhost:3000/taker)
 
 Bundling the web frontend and serving it from the respective daemon is yet to be configured.
 At the moment you will need a browser extension to allow CORS headers like `CORS Everywhere` ([Firefox Extension](https://addons.mozilla.org/en-US/firefox/addon/cors-everywhere/)) to use the frontends.
