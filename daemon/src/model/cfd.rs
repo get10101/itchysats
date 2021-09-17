@@ -597,6 +597,7 @@ pub struct FinalizedCfd {
 
     pub lock: PartiallySignedTransaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
+    #[allow(clippy::type_complexity)]
     pub cets: Vec<(
         Transaction,
         EcdsaAdaptorSignature,

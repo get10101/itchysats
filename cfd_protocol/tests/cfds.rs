@@ -7,6 +7,7 @@ use bdk::wallet::AddressIndex;
 use bdk::SignOptions;
 use bitcoin::util::psbt::PartiallySignedTransaction;
 use bitcoin::Txid;
+use cfd_protocol::interval::Interval;
 use cfd_protocol::{
     commit_descriptor, compute_adaptor_point, create_cfd_transactions, finalize_spend_transaction,
     lock_descriptor, punish_transaction, renew_cfd_transactions, spending_tx_sighash,
@@ -32,22 +33,19 @@ fn create_cfd() {
 
     let payouts = vec![
         Payout::new(
-            vec![vec![0u8]; 20]
-                .into_iter()
-                .zip(announcement.nonce_pks())
-                .collect(),
+            Interval::new(0, 10_000).unwrap(),
+            announcement.nonce_pks(),
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
         ),
         Payout::new(
-            vec![vec![1u8]; 20]
-                .into_iter()
-                .zip(announcement.nonce_pks())
-                .collect(),
+            Interval::new(10_001, 20_000).unwrap(),
+            announcement.nonce_pks(),
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
         ),
-    ];
+    ]
+    .concat();
 
     let refund_timelock = 0;
 
@@ -119,22 +117,19 @@ fn renew_cfd() {
 
     let payouts = vec![
         Payout::new(
-            vec![vec![0u8]; 20]
-                .into_iter()
-                .zip(announcement.nonce_pks())
-                .collect(),
+            Interval::new(0, 10_000).unwrap(),
+            announcement.nonce_pks(),
             Amount::from_btc(2.0).unwrap(),
             Amount::ZERO,
         ),
         Payout::new(
-            vec![vec![1u8]; 20]
-                .into_iter()
-                .zip(announcement.nonce_pks())
-                .collect(),
+            Interval::new(10_001, 20_000).unwrap(),
+            announcement.nonce_pks(),
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
         ),
-    ];
+    ]
+    .concat();
 
     let refund_timelock = 0;
 
@@ -159,22 +154,19 @@ fn renew_cfd() {
 
     let payouts = vec![
         Payout::new(
-            vec![vec![0u8]; 20]
-                .into_iter()
-                .zip(announcement.nonce_pks())
-                .collect(),
+            Interval::new(0, 10_000).unwrap(),
+            announcement.nonce_pks(),
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
         ),
         Payout::new(
-            vec![vec![1u8]; 20]
-                .into_iter()
-                .zip(announcement.nonce_pks())
-                .collect(),
+            Interval::new(10_001, 20_000).unwrap(),
+            announcement.nonce_pks(),
             Amount::from_btc(0.5).unwrap(),
             Amount::from_btc(1.5).unwrap(),
         ),
-    ];
+    ]
+    .concat();
 
     let maker_cfd_txs = renew_cfd_transactions(
         maker_cfd_txs.lock,

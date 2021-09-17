@@ -219,6 +219,7 @@ impl AllParams {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn verify_cets(
     oracle_pk: &schnorrsig::PublicKey,
     other: &PartyParams,
@@ -240,7 +241,7 @@ fn verify_cets(
         verify_cet_encsig(
             tx,
             other_encsig,
-            &msg_nonce_pairs,
+            msg_nonce_pairs,
             &other.identity_pk,
             oracle_pk,
             commit_desc,

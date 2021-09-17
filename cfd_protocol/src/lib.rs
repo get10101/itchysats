@@ -1,3 +1,4 @@
+pub use interval::Interval;
 pub use secp256k1_zkp;
 
 use anyhow::{bail, Context, Result};
@@ -448,15 +449,23 @@ pub struct Payout {
 
 impl Payout {
     pub fn new(
-        msg_nonce_pairs: Vec<(Vec<u8>, schnorrsig::PublicKey)>,
+        interval: Interval,
+        nonce_pks: Vec<schnorrsig::PublicKey>,
         maker_amount: Amount,
         taker_amount: Amount,
-    ) -> Self {
-        Self {
-            msg_nonce_pairs,
-            maker_amount,
-            taker_amount,
-        }
+    ) -> Vec<Self> {
+        interval
+            .as_digits()
+            .into_iter()
+            .map(|digits| {
+                let msg_nonce_pairs = digits.zip(nonce_pks.clone()).collect();
+                Self {
+                    msg_nonce_pairs,
+                    maker_amount,
+                    taker_amount,
+                }
+            })
+            .collect()
     }
 
     fn into_txouts(self, maker_address: &Address, taker_address: &Address) -> Vec<TxOut> {
@@ -942,24 +951,28 @@ mod tests {
 
         let orig_maker_amount = 1000;
         let orig_taker_amount = 1000;
-        let payout = Payout::new(
-            vec![(b"win".to_vec(), nonce_pk)],
+        let payouts = Payout::new(
+            Interval::new(0, 10_000).unwrap(),
+            vec![nonce_pk; 20],
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         );
         let fee = 100;
-        let updated_payout = payout
-            .with_updated_fee(Amount::from_sat(fee), dummy_dust_limit, dummy_dust_limit)
-            .unwrap();
 
-        assert_eq!(
-            updated_payout.maker_amount,
-            Amount::from_sat(orig_maker_amount - fee / 2)
-        );
-        assert_eq!(
-            updated_payout.taker_amount,
-            Amount::from_sat(orig_taker_amount - fee / 2)
-        );
+        for payout in payouts {
+            let updated_payout = payout
+                .with_updated_fee(Amount::from_sat(fee), dummy_dust_limit, dummy_dust_limit)
+                .unwrap();
+
+            assert_eq!(
+                updated_payout.maker_amount,
+                Amount::from_sat(orig_maker_amount - fee / 2)
+            );
+            assert_eq!(
+                updated_payout.taker_amount,
+                Amount::from_sat(orig_taker_amount - fee / 2)
+            );
+        }
     }
 
     #[test]
@@ -975,20 +988,24 @@ mod tests {
 
         let orig_maker_amount = dummy_dust_limit.as_sat() - 1;
         let orig_taker_amount = 1000;
-        let payout = Payout::new(
-            vec![(b"win".to_vec(), nonce_pk)],
+        let payouts = Payout::new(
+            Interval::new(0, 10_000).unwrap(),
+            vec![nonce_pk; 20],
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         );
         let fee = 100;
-        let updated_payout = payout
-            .with_updated_fee(Amount::from_sat(fee), dummy_dust_limit, dummy_dust_limit)
-            .unwrap();
 
-        assert_eq!(updated_payout.maker_amount, Amount::from_sat(0));
-        assert_eq!(
-            updated_payout.taker_amount,
-            Amount::from_sat(orig_taker_amount - (fee + orig_maker_amount))
-        );
+        for payout in payouts {
+            let updated_payout = payout
+                .with_updated_fee(Amount::from_sat(fee), dummy_dust_limit, dummy_dust_limit)
+                .unwrap();
+
+            assert_eq!(updated_payout.maker_amount, Amount::from_sat(0));
+            assert_eq!(
+                updated_payout.taker_amount,
+                Amount::from_sat(orig_taker_amount - (fee + orig_maker_amount))
+            );
+        }
     }
 }
