@@ -3,7 +3,7 @@ pub use secp256k1_zkp;
 
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::hashes::hex::ToHex;
-use bdk::bitcoin::hashes::*;
+use bdk::bitcoin::hashes::Hash;
 use bdk::bitcoin::util::bip143::SigHashCache;
 use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
 use bdk::bitcoin::{
@@ -16,12 +16,12 @@ use bdk::miniscript::DescriptorTrait;
 use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
 use itertools::Itertools;
-use secp256k1_zkp::bitcoin_hashes::sha256;
 use secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
 pub mod interval;
+pub mod oracle;
 
 /// In satoshi per vbyte.
 const SATS_PER_VBYTE: f64 = 1.0;
@@ -530,20 +530,6 @@ impl Payout {
     }
 }
 
-const BIP340_MIDSTATE: [u8; 32] = [
-    0x9c, 0xec, 0xba, 0x11, 0x23, 0x92, 0x53, 0x81, 0x11, 0x67, 0x91, 0x12, 0xd1, 0x62, 0x7e, 0x0f,
-    0x97, 0xc8, 0x75, 0x50, 0x00, 0x3c, 0xc7, 0x65, 0x90, 0xf6, 0x11, 0x64, 0x33, 0xe9, 0xb6, 0x6a,
-];
-
-sha256t_hash_newtype!(
-    BIP340Hash,
-    BIP340HashTag,
-    BIP340_MIDSTATE,
-    64,
-    doc = "bip340 hash",
-    true
-);
-
 /// Compute a signature point for the given oracle public key, announcement nonce public key and
 /// message.
 fn compute_signature_point(
@@ -558,17 +544,7 @@ fn compute_signature_point(
         Ok(secp256k1_zkp::PublicKey::from_slice(&buf)?)
     }
 
-    let hash = {
-        let mut buf = Vec::<u8>::new();
-        buf.extend(&nonce_pk.serialize());
-        buf.extend(&oracle_pk.serialize());
-        buf.extend(
-            secp256k1_zkp::Message::from_hashed_data::<sha256::Hash>(msg)
-                .as_ref()
-                .to_vec(),
-        );
-        BIP340Hash::hash(&buf).into_inner().to_vec()
-    };
+    let hash = oracle::msg_hash(oracle_pk, nonce_pk, msg);
     let mut oracle_pk = schnorr_pubkey_to_pubkey(oracle_pk)?;
     oracle_pk.mul_assign(SECP256K1, &hash)?;
     let nonce_pk = schnorr_pubkey_to_pubkey(nonce_pk)?;

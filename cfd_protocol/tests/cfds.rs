@@ -10,12 +10,11 @@ use bitcoin::Txid;
 use cfd_protocol::interval::Interval;
 use cfd_protocol::{
     commit_descriptor, compute_adaptor_point, create_cfd_transactions, finalize_spend_transaction,
-    lock_descriptor, punish_transaction, renew_cfd_transactions, spending_tx_sighash,
+    lock_descriptor, oracle, punish_transaction, renew_cfd_transactions, spending_tx_sighash,
     CfdTransactions, Payout, PunishParams, TransactionExt, WalletExt,
 };
 use rand::{CryptoRng, RngCore, SeedableRng};
 use rand_chacha::ChaChaRng;
-use secp256k1_zkp::bitcoin_hashes::sha256;
 use secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 
 #[test]
@@ -844,10 +843,7 @@ impl Oracle {
     fn attest(&self, event: &Event, msgs: &[&[u8]]) -> Vec<schnorrsig::Signature> {
         msgs.iter()
             .zip(&event.nonces)
-            .map(|(msg, nonce)| {
-                let msg = secp256k1_zkp::Message::from_hashed_data::<sha256::Hash>(msg);
-                secp_utils::schnorr_sign_with_nonce(&msg, &self.key_pair, nonce)
-            })
+            .map(|(msg, nonce)| oracle::attest(&self.key_pair, nonce, msg))
             .collect()
     }
 }
@@ -877,16 +873,7 @@ impl Event {
     where
         R: RngCore + CryptoRng,
     {
-        let (nonces, nonce_pks) = (0..20)
-            .map(|_| {
-                let nonce = SecretKey::new(rng);
-
-                let key_pair = schnorrsig::KeyPair::from_secret_key(SECP256K1, nonce);
-                let nonce_pk = schnorrsig::PublicKey::from_keypair(SECP256K1, &key_pair);
-
-                (nonce, nonce_pk)
-            })
-            .unzip();
+        let (nonces, nonce_pks) = (0..20).map(|_| oracle::nonce(rng)).unzip();
 
         Self { nonces, nonce_pks }
     }
@@ -934,51 +921,4 @@ fn schnorrsig_decompose(signature: &schnorrsig::Signature) -> (schnorrsig::Publi
     let s = SecretKey::from_slice(&bytes[32..64]).expect("s value in sig");
 
     (nonce_pk, s)
-}
-
-mod secp_utils {
-    use super::*;
-
-    use secp256k1_zkp::secp256k1_zkp_sys::types::c_void;
-    use secp256k1_zkp::secp256k1_zkp_sys::CPtr;
-    use std::os::raw::{c_int, c_uchar};
-    use std::ptr;
-
-    /// Create a Schnorr signature using the provided nonce instead of generating one.
-    pub fn schnorr_sign_with_nonce(
-        msg: &secp256k1_zkp::Message,
-        keypair: &schnorrsig::KeyPair,
-        nonce: &SecretKey,
-    ) -> schnorrsig::Signature {
-        unsafe {
-            let mut sig = [0u8; secp256k1_zkp::constants::SCHNORRSIG_SIGNATURE_SIZE];
-            assert_eq!(
-                1,
-                secp256k1_zkp::ffi::secp256k1_schnorrsig_sign(
-                    *SECP256K1.ctx(),
-                    sig.as_mut_c_ptr(),
-                    msg.as_c_ptr(),
-                    keypair.as_ptr(),
-                    Some(constant_nonce_fn),
-                    nonce.as_c_ptr() as *const c_void
-                )
-            );
-
-            schnorrsig::Signature::from_slice(&sig).unwrap()
-        }
-    }
-
-    extern "C" fn constant_nonce_fn(
-        nonce32: *mut c_uchar,
-        _msg32: *const c_uchar,
-        _key32: *const c_uchar,
-        _xonly_pk32: *const c_uchar,
-        _algo16: *const c_uchar,
-        data: *mut c_void,
-    ) -> c_int {
-        unsafe {
-            ptr::copy_nonoverlapping(data as *const c_uchar, nonce32, 32);
-        }
-        1
-    }
 }
