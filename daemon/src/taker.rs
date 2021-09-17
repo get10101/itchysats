@@ -20,6 +20,7 @@ mod model;
 mod routes_taker;
 mod seed;
 mod send_wire_message_actor;
+mod setup_contract_actor;
 mod taker_cfd_actor;
 mod taker_inc_message_actor;
 mod to_sse_event;

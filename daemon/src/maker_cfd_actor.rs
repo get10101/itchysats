@@ -1,18 +1,14 @@
-use std::collections::HashMap;
 use std::time::SystemTime;
 
 use crate::db::{insert_cfd, insert_order, load_all_cfds, load_order_by_id, Origin};
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
 use crate::model::{TakerId, Usd};
-use crate::wire::{Msg0, Msg1, SetupMsg};
-use crate::{maker_cfd_actor, maker_inc_connections_actor};
-use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey};
-use bdk::bitcoin::{self, Amount};
+use crate::wire::SetupMsg;
+use crate::{maker_cfd_actor, maker_inc_connections_actor, setup_contract_actor};
+use bdk::bitcoin::secp256k1::schnorrsig;
+use bdk::bitcoin::{self};
 use bdk::database::BatchDatabase;
-use cfd_protocol::{
-    commit_descriptor, create_cfd_transactions, lock_descriptor, PartyParams, PunishParams,
-    WalletExt,
-};
+use cfd_protocol::WalletExt;
 use futures::Future;
 use tokio::sync::{mpsc, watch};
 
@@ -161,10 +157,7 @@ where
                             })
                             .unwrap();
                     }
-                    maker_cfd_actor::Command::StartContractSetup {
-                        taker_id,
-                        order_id: _order_id,
-                    } => {
+                    maker_cfd_actor::Command::StartContractSetup { taker_id, order_id } => {
                         // Kick-off the CFD protocol
                         let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
 
@@ -173,7 +166,9 @@ where
                             .build_party_params(bitcoin::Amount::ZERO, pk)
                             .unwrap();
 
-                        let (actor, inbox) = setup_contract(
+                        let cfd = load_order_by_id(order_id, &mut conn).await.unwrap();
+
+                        let (actor, inbox) = setup_contract_actor::new(
                             {
                                 let inbox = takers.clone();
                                 move |msg| {
@@ -187,9 +182,10 @@ where
                                         .unwrap()
                                 }
                             },
-                            maker_params,
+                            setup_contract_actor::OwnParams::Maker(maker_params),
                             sk,
                             oracle_pk,
+                            cfd,
                         );
 
                         tokio::spawn({
@@ -216,94 +212,6 @@ where
                     }
                 }
             }
-        }
-    };
-
-    (actor, sender)
-}
-
-/// Given an initial set of parameters, sets up the CFD contract with the taker.
-///
-/// Returns the [`FinalizedCfd`] which contains the lock transaction, ready to be signed and sent to
-/// the taker. Signing of the lock transaction is not included in this function because we want the
-/// actor above to own the wallet.
-fn setup_contract(
-    send_to_taker: impl Fn(SetupMsg),
-    maker: PartyParams,
-    sk: SecretKey,
-    oracle_pk: schnorrsig::PublicKey,
-) -> (
-    impl Future<Output = FinalizedCfd>,
-    mpsc::UnboundedSender<SetupMsg>,
-) {
-    let (sender, mut receiver) = mpsc::unbounded_channel::<SetupMsg>();
-
-    let actor = async move {
-        let (rev_sk, rev_pk) = crate::keypair::new(&mut rand::thread_rng());
-        let (publish_sk, publish_pk) = crate::keypair::new(&mut rand::thread_rng());
-
-        let maker_punish = PunishParams {
-            revocation_pk: rev_pk,
-            publish_pk,
-        };
-        send_to_taker(SetupMsg::Msg0(Msg0::from((maker.clone(), maker_punish))));
-
-        let msg0 = receiver.recv().await.unwrap().try_into_msg0().unwrap();
-        let (taker, taker_punish) = msg0.into();
-
-        let maker_cfd_txs = create_cfd_transactions(
-            (maker.clone(), maker_punish),
-            (taker.clone(), taker_punish),
-            oracle_pk,
-            0, // TODO: Calculate refund timelock based on CFD term
-            vec![],
-            sk,
-        )
-        .unwrap();
-
-        send_to_taker(SetupMsg::Msg1(Msg1::from(maker_cfd_txs.clone())));
-        let msg1 = receiver.recv().await.unwrap().try_into_msg1().unwrap();
-
-        let _lock_desc = lock_descriptor(taker.identity_pk, taker.identity_pk);
-        // let lock_amount = maker_lock_amount + taker_lock_amount;
-        let _commit_desc = commit_descriptor(
-            (
-                taker.identity_pk,
-                taker_punish.revocation_pk,
-                taker_punish.publish_pk,
-            ),
-            (taker.identity_pk, rev_pk, publish_pk),
-        );
-        let commit_tx = maker_cfd_txs.commit.0;
-        let _commit_amount = Amount::from_sat(commit_tx.output[0].value);
-
-        // TODO: Verify all signatures from the taker here
-
-        let lock_tx = maker_cfd_txs.lock;
-        let refund_tx = maker_cfd_txs.refund.0;
-
-        let mut cet_by_id = maker_cfd_txs
-            .cets
-            .into_iter()
-            .map(|(tx, _, msg, _)| (tx.txid(), (tx, msg)))
-            .collect::<HashMap<_, _>>();
-
-        FinalizedCfd {
-            identity: sk,
-            revocation: rev_sk,
-            publish: publish_sk,
-            lock: lock_tx,
-            commit: (commit_tx, *msg1.commit),
-            cets: msg1
-                .cets
-                .into_iter()
-                .map(|(txid, sig)| {
-                    let (cet, msg) = cet_by_id.remove(&txid).expect("unknown CET");
-
-                    (cet, *sig, msg)
-                })
-                .collect::<Vec<_>>(),
-            refund: (refund_tx, msg1.refund),
         }
     };
 

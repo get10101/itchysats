@@ -19,6 +19,7 @@ mod model;
 mod routes_maker;
 mod seed;
 mod send_wire_message_actor;
+mod setup_contract_actor;
 mod to_sse_event;
 mod wire;
 
