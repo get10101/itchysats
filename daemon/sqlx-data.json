@@ -28,8 +28,8 @@
       ]
     }
   },
-  "7941da81b43abcaa82d51bbfecaed51f13fc637dc611cebb87eea638ba055a42": {
-    "query": "\n        select\n            cfds.id as cfd_id,\n            orders.uuid as order_id,\n            orders.initial_price as initial_price,\n            orders.leverage as leverage,\n            orders.trading_pair as trading_pair,\n            orders.position as position,\n            orders.origin as origin,\n            orders.liquidation_price as liquidation_price,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join orders as orders on cfds.order_id = orders.id\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        ",
+  "57c0eb6669321997352d87372431788aa039dd1898ca0b11ba4600f743ff4d93": {
+    "query": "\n        select\n            cfds.id as cfd_id,\n            orders.uuid as order_id,\n            orders.initial_price as price,\n            orders.min_quantity as min_quantity,\n            orders.max_quantity as max_quantity,\n            orders.leverage as leverage,\n            orders.trading_pair as trading_pair,\n            orders.position as position,\n            orders.origin as origin,\n            orders.liquidation_price as liquidation_price,\n            orders.creation_timestamp as creation_timestamp,\n            orders.term as term,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join orders as orders on cfds.order_id = orders.id\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        ",
     "describe": {
       "columns": [
         {
@@ -43,43 +43,63 @@
           "type_info": "Text"
         },
         {
-          "name": "initial_price",
+          "name": "price",
           "ordinal": 2,
           "type_info": "Text"
         },
         {
-          "name": "leverage",
+          "name": "min_quantity",
           "ordinal": 3,
-          "type_info": "Int64"
+          "type_info": "Text"
         },
         {
-          "name": "trading_pair",
+          "name": "max_quantity",
           "ordinal": 4,
           "type_info": "Text"
         },
         {
-          "name": "position",
+          "name": "leverage",
           "ordinal": 5,
-          "type_info": "Text"
+          "type_info": "Int64"
         },
         {
-          "name": "origin",
+          "name": "trading_pair",
           "ordinal": 6,
           "type_info": "Text"
         },
         {
-          "name": "liquidation_price",
+          "name": "position",
           "ordinal": 7,
           "type_info": "Text"
         },
         {
-          "name": "quantity_usd",
+          "name": "origin",
           "ordinal": 8,
           "type_info": "Text"
         },
         {
-          "name": "state",
+          "name": "liquidation_price",
           "ordinal": 9,
+          "type_info": "Text"
+        },
+        {
+          "name": "creation_timestamp",
+          "ordinal": 10,
+          "type_info": "Text"
+        },
+        {
+          "name": "term",
+          "ordinal": 11,
+          "type_info": "Text"
+        },
+        {
+          "name": "quantity_usd",
+          "ordinal": 12,
+          "type_info": "Text"
+        },
+        {
+          "name": "state",
+          "ordinal": 13,
           "type_info": "Text"
         }
       ],
@@ -87,6 +107,10 @@
         "Right": 0
       },
       "nullable": [
+        false,
+        false,
+        false,
+        false,
         false,
         false,
         false,

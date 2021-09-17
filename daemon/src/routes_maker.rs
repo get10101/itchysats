@@ -1,5 +1,5 @@
 use crate::maker_cfd_actor;
-use crate::model::cfd::{Cfd, Order};
+use crate::model::cfd::{Cfd, Order, Origin};
 use crate::model::Usd;
 use crate::to_sse_event::ToSseEvent;
 use anyhow::Result;
@@ -67,7 +67,7 @@ pub async fn post_sell_order(
     order: Json<CfdNewOrderRequest>,
     cfd_actor_inbox: &State<mpsc::UnboundedSender<maker_cfd_actor::Command>>,
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
-    let order = Order::from_default_with_price(order.price)
+    let order = Order::from_default_with_price(order.price, Origin::Ours)
         .map_err(|e| status::BadRequest(Some(e.to_string())))?
         .with_min_quantity(order.min_quantity)
         .with_max_quantity(order.max_quantity);

@@ -26,6 +26,12 @@ impl Display for OrderId {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum Origin {
+    Ours,
+    Theirs,
+}
+
 /// A concrete order created by a maker for a taker
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Order {
@@ -37,11 +43,12 @@ pub struct Order {
     pub price: Usd,
 
     // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
-    // always 1 USD
+    //  always 1 USD
     pub min_quantity: Usd,
     pub max_quantity: Usd,
 
-    // TODO: [post-MVP] Allow different values
+    // TODO: [post-MVP] - Once we have multiple leverage we will have to move leverage and
+    //  liquidation_price into the CFD and add a calculation endpoint for the taker buy screen
     pub leverage: Leverage,
     pub liquidation_price: Usd,
 
@@ -49,11 +56,13 @@ pub struct Order {
 
     /// The duration that will be used for calculating the settlement timestamp
     pub term: Duration,
+
+    pub origin: Origin,
 }
 
 #[allow(dead_code)] // Only one binary and the tests use this.
 impl Order {
-    pub fn from_default_with_price(price: Usd) -> Result<Self> {
+    pub fn from_default_with_price(price: Usd, origin: Origin) -> Result<Self> {
         let leverage = Leverage(5);
         let maintenance_margin_rate = dec!(0.005);
         let liquidation_price =
@@ -70,6 +79,7 @@ impl Order {
             position: Position::Sell,
             creation_timestamp: SystemTime::now(),
             term: Duration::from_secs(60 * 60 * 8), // 8 hours
+            origin,
         })
     }
     pub fn with_min_quantity(mut self, min_quantity: Usd) -> Order {
@@ -240,52 +250,49 @@ impl Display for CfdState {
 /// Represents a cfd (including state)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Cfd {
-    pub order_id: OrderId,
-    pub initial_price: Usd,
-
-    pub leverage: Leverage,
-    pub trading_pair: TradingPair,
-    pub position: Position,
-    pub liquidation_price: Usd,
-
+    pub order: Order,
     pub quantity_usd: Usd,
-
     pub state: CfdState,
+    /* TODO: Leverage is currently derived from the Order, but the actual leverage should be
+     * stored in the Cfd once there is multiple choices of leverage */
 }
 
 impl Cfd {
-    pub fn new(cfd_order: Order, quantity: Usd, state: CfdState, position: Position) -> Self {
+    pub fn new(order: Order, quantity: Usd, state: CfdState) -> Self {
         Cfd {
-            order_id: cfd_order.id,
-            initial_price: cfd_order.price,
-            leverage: cfd_order.leverage,
-            trading_pair: cfd_order.trading_pair,
-            position,
-            liquidation_price: cfd_order.liquidation_price,
+            order,
             quantity_usd: quantity,
             state,
         }
     }
 
     pub fn calc_margin(&self) -> Result<Amount> {
-        let margin = match self.position {
+        let margin = match self.position() {
             Position::Buy => {
-                calculate_buy_margin(self.initial_price, self.quantity_usd, self.leverage)?
+                calculate_buy_margin(self.order.price, self.quantity_usd, self.order.leverage)?
             }
-            Position::Sell => calculate_sell_margin(self.initial_price, self.quantity_usd)?,
+            Position::Sell => calculate_sell_margin(self.order.price, self.quantity_usd)?,
         };
 
         Ok(margin)
     }
 
     pub fn calc_profit(&self, current_price: Usd) -> Result<(Amount, Usd)> {
-        let profit = calculate_profit(
-            self.initial_price,
-            current_price,
-            dec!(0.005),
-            Usd(dec!(0.1)),
-        )?;
+        let profit =
+            calculate_profit(self.order.price, current_price, dec!(0.005), Usd(dec!(0.1)))?;
         Ok(profit)
+    }
+
+    pub fn position(&self) -> Position {
+        match self.order.origin {
+            Origin::Ours => self.order.position.clone(),
+
+            // If the order is not our own we take the counter-position in the CFD
+            Origin::Theirs => match self.order.position {
+                Position::Buy => Position::Sell,
+                Position::Sell => Position::Buy,
+            },
+        }
     }
 }
 

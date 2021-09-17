@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use crate::db::{insert_cfd, insert_order, load_all_cfds, load_order_by_id, Origin};
+use crate::db::{insert_cfd, insert_order, load_all_cfds, load_order_by_id};
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
 use crate::model::{TakerId, Usd};
 use crate::wire::SetupMsg;
@@ -101,7 +101,6 @@ where
                                     transition_timestamp: SystemTime::now(),
                                 },
                             },
-                            current_order.position,
                         );
                         insert_cfd(cfd, &mut conn).await.unwrap();
 
@@ -125,7 +124,7 @@ where
                     maker_cfd_actor::Command::NewOrder(order) => {
                         // 1. Save to DB
                         let mut conn = db.acquire().await.unwrap();
-                        insert_order(&order, &mut conn, Origin::Ours).await.unwrap();
+                        insert_order(&order, &mut conn).await.unwrap();
 
                         // 2. Update actor state to current order
                         current_order_id.replace(order.id);

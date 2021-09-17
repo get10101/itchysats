@@ -69,16 +69,6 @@ pub enum Position {
     Sell,
 }
 
-impl Position {
-    #[allow(dead_code)]
-    pub fn counter_position(&self) -> Self {
-        match self {
-            Position::Buy => Position::Sell,
-            Position::Sell => Position::Buy,
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TakerId(Uuid);
 

@@ -1,3 +1,4 @@
+use crate::model::cfd::Origin;
 use crate::{taker_cfd_actor, wire};
 use futures::{Future, StreamExt};
 use tokio::net::tcp::OwnedReadHalf;
@@ -18,7 +19,11 @@ pub fn new(
     async move {
         while let Some(message) = messages.next().await {
             match message {
-                Ok(wire::MakerToTaker::CurrentOrder(order)) => {
+                Ok(wire::MakerToTaker::CurrentOrder(mut order)) => {
+                    if let Some(order) = order.as_mut() {
+                        order.origin = Origin::Theirs;
+                    }
+
                     cfd_actor
                         .send(taker_cfd_actor::Command::NewOrder(order))
                         .unwrap();

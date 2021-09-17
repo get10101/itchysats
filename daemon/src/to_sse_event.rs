@@ -63,12 +63,12 @@ impl ToSseEvent for Vec<model::cfd::Cfd> {
                 let (profit_btc, profit_usd) = cfd.calc_profit(current_price).unwrap();
 
                 Cfd {
-                    order_id: cfd.order_id,
-                    initial_price: cfd.initial_price,
-                    leverage: cfd.leverage,
-                    trading_pair: cfd.trading_pair.clone(),
-                    position: cfd.position.clone(),
-                    liquidation_price: cfd.liquidation_price,
+                    order_id: cfd.order.id,
+                    initial_price: cfd.order.price,
+                    leverage: cfd.order.leverage,
+                    trading_pair: cfd.order.trading_pair.clone(),
+                    position: cfd.position(),
+                    liquidation_price: cfd.order.liquidation_price,
                     quantity_usd: cfd.quantity_usd,
                     profit_btc,
                     profit_usd,
