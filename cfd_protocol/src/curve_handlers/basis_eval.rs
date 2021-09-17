@@ -1,38 +1,6 @@
 use ndarray::Array1;
 use std::cmp::min;
 
-fn knot_tolerance(tol: Option<f64>) -> f64 {
-    tol.unwrap_or_else(|| 1e-10)
-}
-
-fn bisect_left(arr: &Array1<f64>, val: &f64, mut hi: usize) -> usize {
-    let mut lo: usize = 0;
-    while lo < hi {
-        let mid = (lo + hi) / 2;
-        if arr[mid] < *val {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-
-    lo
-}
-
-fn bisect_right(arr: &Array1<f64>, val: &f64, mut hi: usize) -> usize {
-    let mut lo: usize = 0;
-    while lo < hi {
-        let mid = (lo + hi) / 2;
-        if *val < arr[mid] {
-            hi = mid;
-        } else {
-            lo = mid + 1;
-        }
-    }
-
-    lo
-}
-
 pub struct Basis {
     knots: Array1<f64>,
     order: usize,
@@ -45,7 +13,7 @@ pub struct Basis {
 }
 
 impl Basis {
-    fn new(
+    pub fn new(
         order: usize,
         knots: Array1<f64>,
         periodic: Option<isize>,
@@ -69,11 +37,11 @@ impl Basis {
         }
     }
 
+    /// Snap evaluation points to knots if they are sufficiently close
+    /// as specified by self.ktol
+    ///
+    /// :param t:        The parametric coordinate(s) in which to evaluate
     pub fn snap(&self, t: &Array1<f64>) -> Array1<f64> {
-        // Snap evaluation points to knots if they are sufficiently close
-        // as specified by self.ktol
-
-        // :param t:        The parametric coordinate(s) in which to evaluate
         let mut out = t.clone().to_owned();
 
         for j in 0..t.len() {
@@ -89,7 +57,7 @@ impl Basis {
     }
 
     fn wrap_periodic(&self, t: &Array1<f64>, right: &bool) -> Array1<f64> {
-        // # Wrap periodic evaluation into domain
+        // Wrap periodic evaluation into domain
         let mut out = t.clone().to_owned();
 
         for i in 0..t.len() {
@@ -109,13 +77,9 @@ impl Basis {
         t: &Array1<f64>,
         d: usize,
         from_right: Option<bool>,
-    ) -> (
-        Array1<f64>,
-        (Array1<f64>, Array1<usize>, Array1<usize>),
-        (usize, usize),
-    ) {
+    ) -> (Array1<f64>, CSR) {
         let m = t.len();
-        let mut right = from_right.unwrap_or_else(|| true).clone();
+        let mut right = from_right.unwrap_or(true);
 
         let mut out = t.clone().to_owned();
         if self.periodic >= 0 {
@@ -135,7 +99,7 @@ impl Basis {
             Array1::<usize>::from_vec((0..m * self.order + 1).step_by(self.order).collect());
 
         for i in 0..m {
-            right = from_right.unwrap_or_else(|| true).clone();
+            right = from_right.unwrap_or(true).clone();
             eval_t = out[i];
             // Special-case the endpoint, so the user doesn't need to
             if (out[i] - self.end).abs() < self.ktol {
@@ -206,7 +170,40 @@ impl Basis {
                 indices[k] = (mu - self.order + j) % self.n;
             }
         }
+        let csr = CSR::new(data, indices, indptr, (m, self.n));
 
-        (out, (data, indices, indptr), (m, self.n))
+        (out, csr)
     }
+}
+
+fn knot_tolerance(tol: Option<f64>) -> f64 {
+    tol.unwrap_or(1e-10)
+}
+
+fn bisect_left(arr: &Array1<f64>, val: &f64, mut hi: usize) -> usize {
+    let mut lo: usize = 0;
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if arr[mid] < *val {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+
+    lo
+}
+
+fn bisect_right(arr: &Array1<f64>, val: &f64, mut hi: usize) -> usize {
+    let mut lo: usize = 0;
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if *val < arr[mid] {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+
+    lo
 }
