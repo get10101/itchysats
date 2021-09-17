@@ -1,6 +1,5 @@
 use crate::db::{
     insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds, load_order_by_id,
-    Origin,
 };
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
 use crate::model::Usd;
@@ -66,7 +65,6 @@ where
                                     transition_timestamp: SystemTime::now(),
                                 },
                             },
-                            current_order.position.counter_position(),
                         );
 
                         insert_cfd(cfd, &mut conn).await.unwrap();
@@ -80,9 +78,7 @@ where
                     }
                     Command::NewOrder(Some(order)) => {
                         let mut conn = db.acquire().await.unwrap();
-                        insert_order(&order, &mut conn, Origin::Theirs)
-                            .await
-                            .unwrap();
+                        insert_order(&order, &mut conn).await.unwrap();
                         order_feed_actor_inbox.send(Some(order)).unwrap();
                     }
 
