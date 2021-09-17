@@ -541,14 +541,13 @@ fn check_cfd_txs(
     for (tx, _, msg_nonce_pairs) in maker_cfd_txs.cets.clone().into_iter() {
         build_and_check_cet(
             tx,
-            &oracle.attest(
-                &event,
-                msg_nonce_pairs
-                    .iter()
-                    .map(|(msg, _)| msg.as_slice())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            ),
+            event
+                .nonces
+                .iter()
+                .zip(msg_nonce_pairs)
+                .map(|(nonce, (msg, _))| oracle.attest(msg.as_slice(), nonce))
+                .collect::<Vec<_>>()
+                .as_slice(),
             taker_cfd_txs
                 .cets
                 .iter()
@@ -562,14 +561,13 @@ fn check_cfd_txs(
     for (tx, _, msg_nonce_pairs) in taker_cfd_txs.cets.into_iter() {
         build_and_check_cet(
             tx,
-            &oracle.attest(
-                &event,
-                msg_nonce_pairs
-                    .iter()
-                    .map(|(msg, _)| msg.as_slice())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            ),
+            event
+                .nonces
+                .iter()
+                .zip(msg_nonce_pairs)
+                .map(|(nonce, (msg, _))| oracle.attest(msg.as_slice(), nonce))
+                .collect::<Vec<_>>()
+                .as_slice(),
             maker_cfd_txs
                 .cets
                 .iter()
@@ -842,11 +840,8 @@ impl Oracle {
         schnorrsig::PublicKey::from_keypair(SECP256K1, &self.key_pair)
     }
 
-    fn attest(&self, event: &Event, msgs: &[&[u8]]) -> Vec<schnorrsig::Signature> {
-        msgs.iter()
-            .zip(&event.nonces)
-            .map(|(msg, nonce)| oracle::attest(&self.key_pair, nonce, msg))
-            .collect()
+    fn attest(&self, msg: &[u8], nonce: &SecretKey) -> schnorrsig::Signature {
+        oracle::attest(&self.key_pair, nonce, msg)
     }
 }
 
