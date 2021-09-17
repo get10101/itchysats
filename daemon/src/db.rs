@@ -441,7 +441,6 @@ mod tests {
             },
         );
 
-        // the order ahs to exist in the db in order to be able to insert the cfd
         insert_order(&order, &mut conn).await.unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
@@ -468,7 +467,6 @@ mod tests {
 
         let order_id = order.id;
 
-        // the order ahs to exist in the db in order to be able to insert the cfd
         insert_order(&order, &mut conn).await.unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
@@ -492,7 +490,6 @@ mod tests {
             },
         );
 
-        // the order ahs to exist in the db in order to be able to insert the cfd
         insert_order(&order, &mut conn).await.unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
