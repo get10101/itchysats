@@ -1,6 +1,6 @@
 use crate::db::{insert_cfd, insert_order, load_all_cfds, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
-use crate::model::{TakerId, Usd};
+use crate::model::{TakerId, Usd, WalletInfo};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
 use crate::{maker_cfd_actor, maker_inc_connections_actor, setup_contract_actor};
@@ -12,6 +12,7 @@ use tokio::sync::{mpsc, watch};
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Command {
+    SyncWallet,
     TakeOrder {
         taker_id: TakerId,
         order_id: OrderId,
@@ -36,6 +37,7 @@ pub fn new(
     takers: mpsc::UnboundedSender<maker_inc_connections_actor::Command>,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_sender: watch::Sender<Option<Order>>,
+    wallet_feed_sender: watch::Sender<WalletInfo>,
 ) -> (
     impl Future<Output = ()>,
     mpsc::UnboundedSender<maker_cfd_actor::Command>,
@@ -57,6 +59,10 @@ pub fn new(
 
             while let Some(message) = receiver.recv().await {
                 match message {
+                    maker_cfd_actor::Command::SyncWallet => {
+                        let wallet_info = wallet.sync().unwrap();
+                        wallet_feed_sender.send(wallet_info).unwrap();
+                    }
                     maker_cfd_actor::Command::TakeOrder {
                         taker_id,
                         order_id,

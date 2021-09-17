@@ -5,6 +5,8 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use bdk::bitcoin::{Address, Amount};
+use std::time::SystemTime;
 use uuid::Uuid;
 
 pub mod cfd;
@@ -82,4 +84,11 @@ impl Display for TakerId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct WalletInfo {
+    pub balance: Amount,
+    pub address: Address,
+    pub last_updated_at: SystemTime,
 }

@@ -1,9 +1,9 @@
 use crate::maker_cfd_actor;
 use crate::model::cfd::{Cfd, Order, Origin};
-use crate::model::Usd;
+use crate::model::{Usd, WalletInfo};
 use crate::to_sse_event::ToSseEvent;
 use anyhow::Result;
-use bdk::bitcoin::Amount;
+
 use rocket::response::status;
 use rocket::response::stream::EventStream;
 use rocket::serde::json::Json;
@@ -16,15 +16,15 @@ use tokio::sync::{mpsc, watch};
 pub async fn maker_feed(
     rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
     rx_order: &State<watch::Receiver<Option<Order>>>,
-    rx_balance: &State<watch::Receiver<Amount>>,
+    rx_wallet: &State<watch::Receiver<WalletInfo>>,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
     let mut rx_order = rx_order.inner().clone();
-    let mut rx_balance = rx_balance.inner().clone();
+    let mut rx_wallet = rx_wallet.inner().clone();
 
     EventStream! {
-        let balance = rx_balance.borrow().clone();
-        yield balance.to_sse_event();
+        let wallet_info = rx_wallet.borrow().clone();
+        yield wallet_info.to_sse_event();
 
         let order = rx_order.borrow().clone();
         yield order.to_sse_event();
@@ -34,9 +34,9 @@ pub async fn maker_feed(
 
         loop{
             select! {
-                Ok(()) = rx_balance.changed() => {
-                    let balance = rx_balance.borrow().clone();
-                    yield balance.to_sse_event();
+                Ok(()) = rx_wallet.changed() => {
+                    let wallet_info = rx_wallet.borrow().clone();
+                    yield wallet_info.to_sse_event();
                 },
                 Ok(()) = rx_order.changed() => {
                     let order = rx_order.borrow().clone();

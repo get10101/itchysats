@@ -1,6 +1,6 @@
 import { Box, Button, SimpleGrid, Text, VStack } from "@chakra-ui/react";
 import React from "react";
-import { Cfd } from "./Types";
+import { Cfd, unixTimestampToDate } from "./Types";
 
 interface CfdTileProps {
     index: number;
@@ -46,7 +46,7 @@ export default function CfdTile(
                     <Text>Open since</Text>
                     {/* TODO: Format date in a more compact way */}
                     <Text>
-                        {(new Date(cfd.state_transition_unix_timestamp * 1000).toString())}
+                        {unixTimestampToDate(cfd.state_transition_timestamp).toString()}
                     </Text>
                     <Text>Status</Text>
                     <Text>{cfd.state}</Text>
