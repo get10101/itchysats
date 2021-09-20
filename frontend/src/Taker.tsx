@@ -1,5 +1,4 @@
 import { Box, Button, Center, Flex, HStack, SimpleGrid, StackDivider, Text, useToast, VStack } from "@chakra-ui/react";
-import axios from "axios";
 import React, { useState } from "react";
 import { useAsync } from "react-async";
 import { Route, Routes } from "react-router-dom";
@@ -28,7 +27,7 @@ interface MarginResponse {
 }
 
 async function postCfdTakeRequest(payload: CfdTakeRequestPayload) {
-    let res = await axios.post(`/api/cfd`, JSON.stringify(payload));
+    let res = await fetch(`/api/cfd`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
         throw new Error("failed to create new CFD take request: " + res.status + ", " + res.statusText);
@@ -36,13 +35,13 @@ async function postCfdTakeRequest(payload: CfdTakeRequestPayload) {
 }
 
 async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse> {
-    let res = await axios.post(`/api/calculate/margin`, JSON.stringify(payload));
+    let res = await fetch(`/api/calculate/margin`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
         throw new Error("failed to create new CFD take request: " + res.status + ", " + res.statusText);
     }
 
-    return res.data;
+    return res.json();
 }
 
 export default function App() {

@@ -11,7 +11,6 @@ import {
     useToast,
     VStack,
 } from "@chakra-ui/react";
-import axios from "axios";
 import React, { useState } from "react";
 import { useAsync } from "react-async";
 import { Route, Routes } from "react-router-dom";
@@ -32,7 +31,7 @@ interface CfdSellOrderPayload {
 }
 
 async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
-    let res = await axios.post(`/api/order/sell`, JSON.stringify(payload));
+    let res = await fetch(`/api/order/sell`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
         console.log("Status: " + res.status + ", " + res.statusText);
