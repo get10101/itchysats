@@ -1,37 +1,34 @@
-use anyhow::{bail, Result};
 use bit_vec::BitVec;
 use std::fmt::Display;
 use std::ops::RangeInclusive;
 
 mod digit_decomposition;
 
-const BASE: usize = 2;
+/// Maximum supported BTC price in whole USD.
+const MAX_PRICE_DEC: u64 = (BASE as u64).pow(MAX_DIGITS as u32);
 
 /// Maximum number of binary digits for BTC price in whole USD.
 const MAX_DIGITS: usize = 20;
 
-const MAX_PRICE_DEC: u64 = (BASE as u64).pow(MAX_DIGITS as u32);
+const BASE: usize = 2;
 
-#[derive(Debug, Clone)]
-pub struct Interval(RangeInclusive<u64>);
+/// Binary representation of a price interval.
+#[derive(Clone, Debug)]
+pub struct Digits(BitVec);
 
-impl Interval {
-    pub fn new(start: u64, end: u64) -> Result<Self> {
+impl Digits {
+    pub fn new(start: u64, end: u64) -> Result<Vec<Self>, Error> {
         if start > MAX_PRICE_DEC || end > MAX_PRICE_DEC {
-            bail!("price over maximum")
+            return Err(Error::RangeOverMax);
         }
 
         if start > end {
-            bail!("invalid interval: start > end")
+            return Err(Error::DecreasingRange);
         }
 
-        Ok(Self(start..=end))
-    }
-
-    pub fn as_digits(&self) -> Vec<Digits> {
-        digit_decomposition::group_by_ignoring_digits(
-            *self.0.start() as usize,
-            *self.0.end() as usize,
+        let digits = digit_decomposition::group_by_ignoring_digits(
+            start as usize,
+            end as usize,
             BASE,
             MAX_DIGITS,
         )
@@ -40,20 +37,15 @@ impl Interval {
             let digits = digits.iter().map(|n| *n != 0).collect::<BitVec>();
             Digits(digits)
         })
-        .collect()
+        .collect();
+
+        Ok(digits)
     }
-}
 
-impl From<Interval> for RangeInclusive<u64> {
-    fn from(interval: Interval) -> Self {
-        interval.0
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Digits(BitVec);
-
-impl Digits {
+    /// Calculate the range of prices expressed by these digits.
+    ///
+    /// With the resulting range one can assess wether a particular
+    /// price corresponds to the described interval.
     pub fn range(&self) -> RangeInclusive<u64> {
         let missing_bits = MAX_DIGITS - self.0.len();
 
@@ -68,11 +60,40 @@ impl Digits {
         start..=end
     }
 
+    /// Convert underlying bit representation into bytes.
+    ///
+    /// Useful for signing each digit.
     pub fn to_bytes(&self) -> Vec<Vec<u8>> {
         self.0
             .iter()
             .map(|bit| vec![if bit { 1u8 } else { 0u8 }])
             .collect()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Interval would generate values over maximum price of {MAX_PRICE_DEC}.")]
+    RangeOverMax,
+    #[error("Invalid decreasing interval.")]
+    DecreasingRange,
+}
+
+impl Display for Digits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0
+            .iter()
+            .try_for_each(|digit| write!(f, "{}", digit as u8))?;
+
+        Ok(())
     }
 }
 
@@ -90,20 +111,27 @@ impl BitVecExt for BitVec {
     }
 }
 
-impl Display for Digits {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0
-            .iter()
-            .try_for_each(|digit| write!(f, "{}", digit as u8))?;
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use anyhow::Result;
     use proptest::prelude::*;
+
+    #[derive(Debug, Clone)]
+    struct Interval(RangeInclusive<u64>);
+
+    impl Interval {
+        fn new(range: RangeInclusive<u64>) -> Self {
+            Self(range)
+        }
+
+        fn to_digits(&self) -> Result<Vec<Digits>> {
+            let digits = Digits::new(*self.0.start(), *self.0.end())?;
+
+            Ok(digits)
+        }
+    }
 
     impl PartialEq<Vec<Digits>> for Interval {
         fn eq(&self, other: &Vec<Digits>) -> bool {
@@ -116,14 +144,14 @@ mod tests {
         fn interval()(x in 0u64..=MAX_PRICE_DEC, y in 0u64..=MAX_PRICE_DEC) -> Interval {
             let (start, end) = if x < y { (x, y) } else { (y, x) };
 
-            Interval::new(start, end).unwrap()
+            Interval::new(start..=end)
         }
     }
 
     proptest! {
         #[test]
         fn interval_equal_to_sum_of_sub_intervals_described_by_digits(interval in interval()) {
-            prop_assert!(interval == interval.as_digits())
+            prop_assert!(interval == interval.to_digits().unwrap())
         }
     }
 }

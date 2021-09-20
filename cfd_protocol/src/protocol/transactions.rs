@@ -206,9 +206,15 @@ impl ContractExecutionTransaction {
         payout: Payout,
         maker_address: &Address,
         taker_address: &Address,
+        nonce_pks: &[schnorrsig::PublicKey],
         relative_timelock_in_blocks: u32,
     ) -> Result<Self> {
-        let msg_nonce_pairs = payout.msg_nonce_pairs.clone();
+        let msg_nonce_pairs = payout
+            .digits
+            .to_bytes()
+            .into_iter()
+            .zip(nonce_pks.iter().cloned())
+            .collect();
         let commit_input = TxIn {
             previous_output: commit_tx.outpoint(),
             sequence: relative_timelock_in_blocks,

@@ -268,6 +268,7 @@ dependencies = [
  "proptest",
  "rand 0.6.5",
  "secp256k1-zkp",
+ "thiserror",
 ]
 
 [[package]]

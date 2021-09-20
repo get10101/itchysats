@@ -1,6 +1,7 @@
-mod interval;
 mod oracle;
 mod protocol;
+
+pub mod interval;
 
 pub use oracle::{attest, nonce};
 pub use protocol::{

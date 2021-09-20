@@ -122,7 +122,7 @@ fn middle_grouping(first_digit_start: usize, first_digit_end: usize) -> Vec<Vec<
 }
 
 /// Returns the set of decomposed prefixes that cover the range [start, end].
-pub(crate) fn group_by_ignoring_digits(
+pub(super) fn group_by_ignoring_digits(
     start: usize,
     end: usize,
     base: usize,

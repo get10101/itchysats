@@ -1,4 +1,7 @@
-use crate::interval::Interval;
+pub use transaction_ext::TransactionExt;
+pub use transactions::punish_transaction;
+
+use crate::interval;
 use crate::protocol::sighash_ext::SigHashExt;
 use crate::protocol::transactions::{
     lock_transaction, CommitTransaction, ContractExecutionTransaction as ContractExecutionTx,
@@ -20,12 +23,10 @@ use itertools::Itertools;
 use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
 use std::iter::FromIterator;
+
 mod sighash_ext;
 mod transaction_ext;
 mod transactions;
-
-pub use transaction_ext::TransactionExt;
-pub use transactions::punish_transaction;
 
 /// Static script to be used to create lock tx
 const DUMMY_2OF2_MULTISIG: &str =
@@ -62,7 +63,7 @@ where
 pub fn create_cfd_transactions(
     (maker, maker_punish_params): (PartyParams, PunishParams),
     (taker, taker_punish_params): (PartyParams, PunishParams),
-    oracle_pk: schnorrsig::PublicKey,
+    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
     refund_timelock: u32,
     payouts: Vec<Payout>,
     identity_sk: SecretKey,
@@ -89,7 +90,7 @@ pub fn create_cfd_transactions(
             taker.address,
             taker_punish_params,
         ),
-        oracle_pk,
+        (oracle_pk, nonce_pks),
         refund_timelock,
         payouts,
         identity_sk,
@@ -110,7 +111,7 @@ pub fn renew_cfd_transactions(
         Address,
         PunishParams,
     ),
-    oracle_pk: schnorrsig::PublicKey,
+    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
     refund_timelock: u32,
     payouts: Vec<Payout>,
     identity_sk: SecretKey,
@@ -129,7 +130,7 @@ pub fn renew_cfd_transactions(
             taker_address,
             taker_punish_params,
         ),
-        oracle_pk,
+        (oracle_pk, nonce_pks),
         refund_timelock,
         payouts,
         identity_sk,
@@ -150,7 +151,7 @@ fn build_cfds(
         Address,
         PunishParams,
     ),
-    oracle_pk: schnorrsig::PublicKey,
+    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
     refund_timelock: u32,
     payouts: Vec<Payout>,
     identity_sk: SecretKey,
@@ -210,12 +211,13 @@ fn build_cfds(
                 payout.clone(),
                 &maker_address,
                 &taker_address,
+                nonce_pks,
                 CET_TIMELOCK,
             )?;
 
             let encsig = cet.encsign(identity_sk, &oracle_pk)?;
 
-            Ok((cet.into_inner(), encsig, payout.msg_nonce_pairs))
+            Ok((cet.into_inner(), encsig, payout.digits))
         })
         .collect::<Result<Vec<_>>>()
         .context("cannot build and sign all cets")?;
@@ -327,18 +329,13 @@ pub struct PunishParams {
 pub struct CfdTransactions {
     pub lock: PartiallySignedTransaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
-    #[allow(clippy::type_complexity)] // TODO: Introduce type
-    pub cets: Vec<(
-        Transaction,
-        EcdsaAdaptorSignature,
-        Vec<(Vec<u8>, schnorrsig::PublicKey)>,
-    )>,
+    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
     pub refund: (Transaction, Signature),
 }
 
 #[derive(Debug, Clone)]
 pub struct Payout {
-    msg_nonce_pairs: Vec<(Vec<u8>, schnorrsig::PublicKey)>,
+    digits: interval::Digits,
     maker_amount: Amount,
     taker_amount: Amount,
 }
@@ -347,25 +344,16 @@ impl Payout {
     pub fn new(
         start: u64,
         end: u64,
-        nonce_pks: Vec<schnorrsig::PublicKey>,
         maker_amount: Amount,
         taker_amount: Amount,
     ) -> Result<Vec<Self>> {
-        let interval = Interval::new(start, end).context("invalid interval")?;
-        Ok(interval
-            .as_digits()
+        let digits = interval::Digits::new(start, end).context("invalid interval")?;
+        Ok(digits
             .into_iter()
-            .map(|digits| {
-                let msg_nonce_pairs = digits
-                    .to_bytes()
-                    .into_iter()
-                    .zip(nonce_pks.clone())
-                    .collect();
-                Self {
-                    msg_nonce_pairs,
-                    maker_amount,
-                    taker_amount,
-                }
+            .map(|digits| Self {
+                digits,
+                maker_amount,
+                taker_amount,
             })
             .collect())
     }
@@ -477,9 +465,6 @@ mod tests {
 
     #[test]
     fn test_fee_subtraction_bigger_than_dust() {
-        let nonce_pk = "18845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
-            .parse()
-            .unwrap();
         let key = "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af"
             .parse()
             .unwrap();
@@ -491,7 +476,6 @@ mod tests {
         let payouts = Payout::new(
             0,
             10_000,
-            vec![nonce_pk; 20],
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         )
@@ -516,9 +500,6 @@ mod tests {
 
     #[test]
     fn test_fee_subtraction_smaller_than_dust() {
-        let nonce_pk = "18845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
-            .parse()
-            .unwrap();
         let key = "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af"
             .parse()
             .unwrap();
@@ -530,7 +511,6 @@ mod tests {
         let payouts = Payout::new(
             0,
             10_000,
-            vec![nonce_pk; 20],
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         )
