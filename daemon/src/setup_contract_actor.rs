@@ -1,5 +1,5 @@
 use crate::model::cfd::{Cfd, FinalizedCfd};
-use crate::wire::{AdaptorSignature, Msg0, Msg1, SetupMsg};
+use crate::wire::{Msg0, Msg1, SetupMsg};
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey, Signature, SECP256K1};
 use bdk::bitcoin::{Amount, PublicKey, Transaction, Txid};
@@ -133,14 +133,14 @@ pub fn new(
             revocation: rev_sk,
             publish: publish_sk,
             lock: lock_tx,
-            commit: (commit_tx, *msg1.commit),
+            commit: (commit_tx, msg1.commit),
             cets: msg1
                 .cets
                 .into_iter()
                 .map(|(txid, sig)| {
                     let (cet, msg) = cet_by_id.remove(&txid).expect("unknown CET");
 
-                    (cet, *sig, msg)
+                    (cet, sig, msg)
                 })
                 .collect::<Vec<_>>(),
             refund: (refund_tx, msg1.refund),
@@ -227,7 +227,7 @@ fn verify_cets(
         Vec<u8>,
         schnorrsig::PublicKey,
     )],
-    cets: &[(Txid, AdaptorSignature)],
+    cets: &[(Txid, EcdsaAdaptorSignature)],
     commit_desc: &Descriptor<PublicKey>,
     commit_amount: Amount,
 ) -> Result<()> {
@@ -255,7 +255,7 @@ fn verify_adaptor_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<PublicKey>,
     spent_amount: Amount,
-    encsig: &AdaptorSignature,
+    encsig: &EcdsaAdaptorSignature,
     encryption_point: &PublicKey,
     pk: &PublicKey,
 ) -> Result<()> {
@@ -280,7 +280,7 @@ fn verify_signature(
 
 fn verify_cet_encsig(
     tx: &Transaction,
-    encsig: &AdaptorSignature,
+    encsig: &EcdsaAdaptorSignature,
     msg: &[u8],
     pk: &PublicKey,
     (oracle_pk, nonce_pk): (&schnorrsig::PublicKey, &schnorrsig::PublicKey),
