@@ -31,7 +31,7 @@ interface CfdSellOrderPayload {
 }
 
 async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
-    let res = await fetch(`/api/order/sell`, { method: "POST", body: JSON.stringify(payload) });
+    let res = await fetch(`/api/order/sell`, { method: "POST", body: JSON.stringify(payload), credentials: "include" });
 
     if (!res.status.toString().startsWith("2")) {
         console.log("Status: " + res.status + ", " + res.statusText);
@@ -40,7 +40,7 @@ async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
 }
 
 export default function App() {
-    let source = useEventSource({ source: "/api/feed" });
+    let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });
 
     const cfds = useLatestEvent<Cfd[]>(source, "cfds");
     const order = useLatestEvent<Order>(source, "order");
