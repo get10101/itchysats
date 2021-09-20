@@ -155,7 +155,7 @@ pub fn new(
                         let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
 
                         let cfd = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
-                        let margin = cfd.calc_margin().unwrap();
+                        let margin = cfd.margin().unwrap();
 
                         let maker_params = wallet.build_party_params(margin, pk).unwrap();
 

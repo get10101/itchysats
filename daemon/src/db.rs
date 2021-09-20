@@ -1,8 +1,7 @@
 use crate::model::cfd::{Cfd, CfdState, Order, OrderId, Origin};
 use crate::model::{Leverage, Position};
-use anyhow::Context;
+use anyhow::{Context, Result};
 use rocket_db_pools::sqlx;
-
 use sqlx::pool::PoolConnection;
 use sqlx::{Acquire, Sqlite, SqlitePool};
 use std::convert::TryInto;
@@ -244,7 +243,7 @@ async fn load_latest_cfd_state(
 pub async fn load_cfd_by_order_id(
     order_id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
-) -> anyhow::Result<Cfd> {
+) -> Result<Cfd> {
     let order_uuid = serde_json::to_string(&order_id)?;
 
     let row = sqlx::query!(

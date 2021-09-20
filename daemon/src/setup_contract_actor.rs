@@ -66,8 +66,8 @@ pub fn new(
             AllParams::new(own, own_punish, other, other_punish, own_role)
         };
 
-        if params.other.lock_amount != cfd.calc_counterparty_margin().unwrap() {
-            panic!("Sorry, have to panic 😬 - the amounts that the counterparty sent were wrong, expected {} actual {}", cfd.calc_counterparty_margin().unwrap(), params.other.lock_amount)
+        if params.other.lock_amount != cfd.counterparty_margin().unwrap() {
+            panic!("Sorry, have to panic 😬 - the amounts that the counterparty sent were wrong, expected {} actual {}", cfd.counterparty_margin().unwrap(), params.other.lock_amount)
         }
 
         let own_cfd_txs = create_cfd_transactions(
