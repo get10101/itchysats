@@ -1,8 +1,9 @@
+use crate::interval::Interval;
 use crate::protocol::sighash_ext::SigHashExt;
 use crate::protocol::transactions::{
-    lock_transaction, CommitTransaction, ContractExecutionTransaction, RefundTransaction,
+    lock_transaction, CommitTransaction, ContractExecutionTransaction as ContractExecutionTx,
+    RefundTransaction,
 };
-use crate::{oracle, Interval};
 
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::hashes::hex::ToHex;
@@ -204,7 +205,7 @@ fn build_cfds(
     let cets = payouts
         .into_iter()
         .map(|payout| {
-            let cet = ContractExecutionTransaction::new(
+            let cet = ContractExecutionTx::new(
                 &commit_tx,
                 payout.clone(),
                 &maker_address,
@@ -344,12 +345,14 @@ pub struct Payout {
 
 impl Payout {
     pub fn new(
-        interval: Interval,
+        start: u64,
+        end: u64,
         nonce_pks: Vec<schnorrsig::PublicKey>,
         maker_amount: Amount,
         taker_amount: Amount,
-    ) -> Vec<Self> {
-        interval
+    ) -> Result<Vec<Self>> {
+        let interval = Interval::new(start, end).context("invalid interval")?;
+        Ok(interval
             .as_digits()
             .into_iter()
             .map(|digits| {
@@ -364,7 +367,7 @@ impl Payout {
                     taker_amount,
                 }
             })
-            .collect()
+            .collect())
     }
 
     fn into_txouts(self, maker_address: &Address, taker_address: &Address) -> Vec<TxOut> {
@@ -443,7 +446,7 @@ fn compute_signature_point(
         Ok(secp256k1_zkp::PublicKey::from_slice(&buf)?)
     }
 
-    let hash = oracle::msg_hash(oracle_pk, nonce_pk, msg);
+    let hash = crate::oracle::msg_hash(oracle_pk, nonce_pk, msg);
     let mut oracle_pk = schnorr_pubkey_to_pubkey(oracle_pk)?;
     oracle_pk.mul_assign(SECP256K1, &hash)?;
     let nonce_pk = schnorr_pubkey_to_pubkey(nonce_pk)?;
@@ -486,11 +489,13 @@ mod tests {
         let orig_maker_amount = 1000;
         let orig_taker_amount = 1000;
         let payouts = Payout::new(
-            Interval::new(0, 10_000).unwrap(),
+            0,
+            10_000,
             vec![nonce_pk; 20],
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
-        );
+        )
+        .unwrap();
         let fee = 100;
 
         for payout in payouts {
@@ -523,11 +528,13 @@ mod tests {
         let orig_maker_amount = dummy_dust_limit.as_sat() - 1;
         let orig_taker_amount = 1000;
         let payouts = Payout::new(
-            Interval::new(0, 10_000).unwrap(),
+            0,
+            10_000,
             vec![nonce_pk; 20],
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
-        );
+        )
+        .unwrap();
         let fee = 100;
 
         for payout in payouts {

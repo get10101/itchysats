@@ -10,13 +10,11 @@ use bitcoin::util::psbt::PartiallySignedTransaction;
 use cfd_protocol::{
     attest, commit_descriptor, compute_adaptor_point, create_cfd_transactions,
     finalize_spend_transaction, lock_descriptor, nonce, punish_transaction, renew_cfd_transactions,
-    spending_tx_sighash, CfdTransactions, Interval, Payout, PunishParams, TransactionExt,
-    WalletExt,
+    spending_tx_sighash, CfdTransactions, Payout, PunishParams, TransactionExt, WalletExt,
 };
 use rand::{thread_rng, CryptoRng, Rng, RngCore};
 use secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::convert::TryInto;
-use std::ops::RangeInclusive;
 
 #[test]
 fn create_cfd() {
@@ -33,17 +31,21 @@ fn create_cfd() {
 
     let payouts = vec![
         Payout::new(
-            Interval::new(0, 10_000).unwrap(),
+            0,
+            10_000,
             announcement.nonce_pks(),
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
-        ),
+        )
+        .unwrap(),
         Payout::new(
-            Interval::new(10_001, 20_000).unwrap(),
+            10,
+            20_000,
             announcement.nonce_pks(),
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
-        ),
+        )
+        .unwrap(),
     ]
     .concat();
 
@@ -117,17 +119,21 @@ fn renew_cfd() {
 
     let payouts = vec![
         Payout::new(
-            Interval::new(0, 10_000).unwrap(),
+            0,
+            10_000,
             announcement.nonce_pks(),
             Amount::from_btc(2.0).unwrap(),
             Amount::ZERO,
-        ),
+        )
+        .unwrap(),
         Payout::new(
-            Interval::new(10_001, 20_000).unwrap(),
+            10,
+            20_000,
             announcement.nonce_pks(),
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
-        ),
+        )
+        .unwrap(),
     ]
     .concat();
 
@@ -154,17 +160,21 @@ fn renew_cfd() {
 
     let payouts = vec![
         Payout::new(
-            Interval::new(0, 10_000).unwrap(),
+            0,
+            10_000,
             announcement.nonce_pks(),
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
-        ),
+        )
+        .unwrap(),
         Payout::new(
-            Interval::new(10_001, 20_000).unwrap(),
+            10,
+            20_000,
             announcement.nonce_pks(),
             Amount::from_btc(0.5).unwrap(),
             Amount::from_btc(1.5).unwrap(),
-        ),
+        )
+        .unwrap(),
     ]
     .concat();
 
@@ -279,13 +289,17 @@ fn cet_unlocked_with_oracle_sig_on_price_in_interval() {
     let oracle = Oracle::new(&mut rng);
     let (event, announcement) = announce(&mut rng);
 
-    let interval = Interval::new(5_000, 10_000).unwrap();
+    let interval_start = 5_000;
+    let interval_end = 10_000;
+
     let payouts = Payout::new(
-        interval.clone(),
+        interval_start,
+        interval_end,
         announcement.nonce_pks(),
         Amount::from_btc(1.5).unwrap(),
         Amount::from_btc(0.5).unwrap(),
-    );
+    )
+    .unwrap();
 
     let refund_timelock = 0;
 
@@ -304,9 +318,7 @@ fn cet_unlocked_with_oracle_sig_on_price_in_interval() {
     );
     let commit_amount = Amount::from_sat(maker_cfd_txs.commit.0.output[0].value);
 
-    let interval = RangeInclusive::<u64>::from(interval);
-    let price = rng.gen_range(interval.start(), interval.end());
-
+    let price = rng.gen_range(interval_start, interval_end);
     let oracle_sigs = oracle.attest_price(price, &event.nonces.try_into().unwrap());
 
     maker_cfd_txs

@@ -2,7 +2,6 @@ mod interval;
 mod oracle;
 mod protocol;
 
-pub use interval::Interval;
 pub use oracle::{attest, nonce};
 pub use protocol::{
     commit_descriptor, compute_adaptor_point, create_cfd_transactions, finalize_spend_transaction,
