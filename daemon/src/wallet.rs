@@ -1,10 +1,13 @@
+use crate::model::WalletInfo;
 use anyhow::{Context, Result};
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::{Amount, PublicKey};
 use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
+use bdk::wallet::AddressIndex;
 use bdk::KeychainKind;
 use cfd_protocol::{PartyParams, WalletExt};
 use std::path::Path;
+use std::time::SystemTime;
 
 const SLED_TREE_NAME: &str = "wallet";
 
@@ -32,10 +35,6 @@ impl Wallet {
             ElectrumBlockchain::from(client),
         )?;
 
-        wallet
-            .sync(NoopProgress, None)
-            .context("Failed to sync the wallet")?; // TODO: Use LogProgress once we have logging.
-
         Ok(Self { wallet })
     }
 
@@ -45,5 +44,21 @@ impl Wallet {
         identity_pk: PublicKey,
     ) -> Result<PartyParams> {
         self.wallet.build_party_params(amount, identity_pk)
+    }
+
+    pub fn sync(&self) -> Result<WalletInfo> {
+        self.wallet.sync(NoopProgress, None)?;
+
+        let balance = self.wallet.get_balance()?;
+
+        let address = self.wallet.get_address(AddressIndex::LastUnused)?.address;
+
+        let wallet_info = WalletInfo {
+            balance: Amount::from_sat(balance),
+            address,
+            last_updated_at: SystemTime::now(),
+        };
+
+        Ok(wallet_info)
     }
 }

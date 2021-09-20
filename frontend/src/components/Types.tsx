@@ -7,7 +7,7 @@ export interface Order {
     max_quantity: number;
     leverage: number;
     liquidation_price: number;
-    creation_unix_timestamp: number;
+    creation_timestamp: number;
     term_in_secs: number;
 }
 
@@ -28,5 +28,15 @@ export interface Cfd {
     profit_usd: number;
 
     state: string;
-    state_transition_unix_timestamp: number;
+    state_transition_timestamp: number;
+}
+
+export interface WalletInfo {
+    balance: number;
+    address: string;
+    last_updated_at: number;
+}
+
+export function unixTimestampToDate(unixTimestamp: number): Date {
+    return new Date(unixTimestamp * 1000);
 }

@@ -1,13 +1,16 @@
+use crate::maker_cfd_actor::Command;
 use crate::seed::Seed;
 use crate::wallet::Wallet;
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
-use bdk::bitcoin::{Amount, Network};
+use bdk::bitcoin::Network;
 use clap::Clap;
 use model::cfd::{Cfd, Order};
+use model::WalletInfo;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 
 mod db;
@@ -72,12 +75,13 @@ async fn main() -> Result<()> {
         ext_priv_key,
     )
     .await?;
+    let wallet_info = wallet.sync().unwrap();
 
     let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
 
     let (cfd_feed_sender, cfd_feed_receiver) = watch::channel::<Vec<Cfd>>(vec![]);
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
-    let (_balance_feed_sender, balance_feed_receiver) = watch::channel::<Amount>(Amount::ZERO);
+    let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
 
     let figment = rocket::Config::figment()
         .merge(("databases.maker.url", data_dir.join("maker.sqlite")))
@@ -91,7 +95,7 @@ async fn main() -> Result<()> {
     rocket::custom(figment)
         .manage(cfd_feed_receiver)
         .manage(order_feed_receiver)
-        .manage(balance_feed_receiver)
+        .manage(wallet_feed_receiver)
         .attach(Db::init())
         .attach(AdHoc::try_on_ignite(
             "SQL migrations",
@@ -123,12 +127,25 @@ async fn main() -> Result<()> {
                     connections_actor_inbox_sender,
                     cfd_feed_sender,
                     order_feed_sender,
+                    wallet_feed_sender,
                 );
                 let connections_actor = maker_inc_connections_actor::new(
                     listener,
                     cfd_maker_actor_inbox.clone(),
                     connections_actor_inbox_recv,
                 );
+
+                // consecutive wallet syncs handled by task that triggers sync
+                let wallet_sync_interval = Duration::from_secs(10);
+                tokio::spawn({
+                    let cfd_actor_inbox = cfd_maker_actor_inbox.clone();
+                    async move {
+                        loop {
+                            cfd_actor_inbox.send(Command::SyncWallet).unwrap();
+                            tokio::time::sleep(wallet_sync_interval).await;
+                        }
+                    }
+                });
 
                 tokio::spawn(cfd_maker_actor);
                 tokio::spawn(connections_actor);

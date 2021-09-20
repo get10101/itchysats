@@ -26,7 +26,7 @@ pub struct Cfd {
     pub profit_usd: Usd,
 
     pub state: String,
-    pub state_transition_unix_timestamp: u64,
+    pub state_transition_timestamp: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -44,7 +44,7 @@ pub struct CfdOrder {
     pub leverage: Leverage,
     pub liquidation_price: Usd,
 
-    pub creation_unix_timestamp: u64,
+    pub creation_timestamp: u64,
     pub term_in_secs: u64,
 }
 
@@ -73,7 +73,7 @@ impl ToSseEvent for Vec<model::cfd::Cfd> {
                     profit_btc,
                     profit_usd,
                     state: cfd.state.to_string(),
-                    state_transition_unix_timestamp: cfd
+                    state_transition_timestamp: cfd
                         .state
                         .get_transition_timestamp()
                         .duration_since(UNIX_EPOCH)
@@ -102,7 +102,7 @@ impl ToSseEvent for Option<model::cfd::Order> {
             max_quantity: order.max_quantity,
             leverage: order.leverage,
             liquidation_price: order.liquidation_price,
-            creation_unix_timestamp: order
+            creation_timestamp: order
                 .creation_timestamp
                 .duration_since(UNIX_EPOCH)
                 .expect("timestamp to be convertible to duration since epoch")
@@ -114,8 +114,26 @@ impl ToSseEvent for Option<model::cfd::Order> {
     }
 }
 
-impl ToSseEvent for Amount {
+#[derive(Debug, Clone, Serialize)]
+pub struct WalletInfo {
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    balance: Amount,
+    address: String,
+    last_updated_at: u64,
+}
+
+impl ToSseEvent for model::WalletInfo {
     fn to_sse_event(&self) -> Event {
-        Event::json(&self.as_btc()).event("balance")
+        let wallet_info = WalletInfo {
+            balance: self.balance,
+            address: self.address.to_string(),
+            last_updated_at: self
+                .last_updated_at
+                .duration_since(UNIX_EPOCH)
+                .expect("timestamp to be convertible to duration since epoch")
+                .as_secs(),
+        };
+
+        Event::json(&wallet_info).event("wallet")
     }
 }

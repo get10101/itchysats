@@ -9,7 +9,8 @@ import CfdTile from "./components/CfdTile";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
 import NavLink from "./components/NavLink";
-import { Cfd, Order } from "./components/Types";
+import { Cfd, Order, WalletInfo } from "./components/Types";
+import Wallet from "./components/Wallet";
 
 interface CfdTakeRequestPayload {
     order_id: string;
@@ -49,7 +50,7 @@ export default function App() {
 
     const cfds = useLatestEvent<Cfd[]>(source, "cfds");
     const order = useLatestEvent<Order>(source, "order");
-    const balance = useLatestEvent<number>(source, "balance");
+    const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
     const toast = useToast();
     let [quantity, setQuantity] = useState("0");
@@ -132,10 +133,7 @@ export default function App() {
                                 </Flex>
                                 <Flex width={"50%"} marginLeft={5}>
                                     <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"}>
-                                        <HStack>
-                                            <Text align={"left"}>Your balance:</Text>
-                                            <Text>{balance}</Text>
-                                        </HStack>
+                                        <Wallet walletInfo={walletInfo} />
                                         <HStack>
                                             {/*TODO: Do we need this? does it make sense to only display the price from the order?*/}
                                             <Text align={"left"}>Current Price (Kraken):</Text>

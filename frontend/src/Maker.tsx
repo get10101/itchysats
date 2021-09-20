@@ -22,7 +22,8 @@ import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
 import NavLink from "./components/NavLink";
 import OrderTile from "./components/OrderTile";
-import { Cfd, Order } from "./components/Types";
+import { Cfd, Order, WalletInfo } from "./components/Types";
+import Wallet from "./components/Wallet";
 
 interface CfdSellOrderPayload {
     price: number;
@@ -47,7 +48,7 @@ export default function App() {
 
     console.log(cfds);
 
-    const balance = useLatestEvent<number>(source, "balance");
+    const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
     const toast = useToast();
     let [minQuantity, setMinQuantity] = useState<string>("100");
@@ -111,12 +112,9 @@ export default function App() {
                                         </Box>
                                     </VStack>
                                 </Flex>
-                                <Flex width={"50%"} marginLeft={5}>
-                                    <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"}>
-                                        <HStack>
-                                            <Text align={"left"}>Your balance:</Text>
-                                            <Text>{balance}</Text>
-                                        </HStack>
+                                <Flex width={"50%"} marginLeft={5} direction={"column"}>
+                                    <Wallet walletInfo={walletInfo} />
+                                    <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"} height={"100%"}>
                                         <HStack>
                                             <Text align={"left"}>Current Price:</Text>
                                             <Text>{49000}</Text>
