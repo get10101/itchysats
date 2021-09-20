@@ -392,7 +392,6 @@ fn calculate_sell_margin(price: Usd, quantity: Usd) -> Result<Amount> {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
-    use std::time::UNIX_EPOCH;
 
     #[test]
     fn given_default_values_then_expected_liquidation_price() {
@@ -456,116 +455,6 @@ mod tests {
         let sell_margin = calculate_sell_margin(price, quantity).unwrap();
 
         assert_eq!(sell_margin, Amount::from_btc(2.0).unwrap());
-    }
-
-    #[test]
-    fn serialize_cfd_state_snapshot() {
-        // This test is to prevent us from breaking the CfdState API against the database.
-        // We serialize the state into the database, so changes to the enum result in breaking
-        // program version changes.
-
-        let fixed_timestamp = UNIX_EPOCH;
-
-        let cfd_state = CfdState::TakeRequested {
-            common: CfdStateCommon {
-                transition_timestamp: fixed_timestamp,
-            },
-        };
-        let json = serde_json::to_string(&cfd_state).unwrap();
-        assert_eq!(
-            json,
-            r#"{"type":"TakeRequested","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}}}}"#
-        );
-
-        let cfd_state = CfdState::PendingTakeRequest {
-            common: CfdStateCommon {
-                transition_timestamp: fixed_timestamp,
-            },
-        };
-        let json = serde_json::to_string(&cfd_state).unwrap();
-        assert_eq!(
-            json,
-            r#"{"type":"PendingTakeRequest","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}}}}"#
-        );
-
-        let cfd_state = CfdState::Accepted {
-            common: CfdStateCommon {
-                transition_timestamp: fixed_timestamp,
-            },
-        };
-        let json = serde_json::to_string(&cfd_state).unwrap();
-        assert_eq!(
-            json,
-            r#"{"type":"Accepted","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}}}}"#
-        );
-
-        let cfd_state = CfdState::ContractSetup {
-            common: CfdStateCommon {
-                transition_timestamp: fixed_timestamp,
-            },
-        };
-        let json = serde_json::to_string(&cfd_state).unwrap();
-        assert_eq!(
-            json,
-            r#"{"type":"ContractSetup","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}}}}"#
-        );
-
-        let cfd_state = CfdState::Open {
-            common: CfdStateCommon {
-                transition_timestamp: fixed_timestamp,
-            },
-            settlement_timestamp: fixed_timestamp,
-            margin: Amount::from_btc(0.5).unwrap(),
-        };
-        let json = serde_json::to_string(&cfd_state).unwrap();
-        assert_eq!(
-            json,
-            r#"{"type":"Open","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}},"settlement_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0},"margin":50000000}}"#
-        );
-
-        let cfd_state = CfdState::CloseRequested {
-            common: CfdStateCommon {
-                transition_timestamp: fixed_timestamp,
-            },
-        };
-        let json = serde_json::to_string(&cfd_state).unwrap();
-        assert_eq!(
-            json,
-            r#"{"type":"CloseRequested","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}}}}"#
-        );
-
-        let cfd_state = CfdState::PendingClose {
-            common: CfdStateCommon {
-                transition_timestamp: fixed_timestamp,
-            },
-        };
-        let json = serde_json::to_string(&cfd_state).unwrap();
-        assert_eq!(
-            json,
-            r#"{"type":"PendingClose","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}}}}"#
-        );
-
-        let cfd_state = CfdState::Closed {
-            common: CfdStateCommon {
-                transition_timestamp: fixed_timestamp,
-            },
-        };
-        let json = serde_json::to_string(&cfd_state).unwrap();
-        assert_eq!(
-            json,
-            r#"{"type":"Closed","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}}}}"#
-        );
-
-        let cfd_state = CfdState::Error {
-            common: CfdStateCommon {
-                transition_timestamp: fixed_timestamp,
-            },
-        };
-        let json = serde_json::to_string(&cfd_state).unwrap();
-        assert_eq!(
-            json,
-            r#"{"type":"Error","payload":{"common":{"transition_timestamp":{"secs_since_epoch":0,"nanos_since_epoch":0}}}}"#
-        );
     }
 
     #[test]
