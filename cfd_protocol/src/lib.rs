@@ -458,7 +458,11 @@ impl Payout {
             .as_digits()
             .into_iter()
             .map(|digits| {
-                let msg_nonce_pairs = digits.zip(nonce_pks.clone()).collect();
+                let msg_nonce_pairs = digits
+                    .to_bytes()
+                    .into_iter()
+                    .zip(nonce_pks.clone())
+                    .collect();
                 Self {
                     msg_nonce_pairs,
                     maker_amount,
@@ -532,7 +536,7 @@ impl Payout {
 
 /// Compute a signature point for the given oracle public key, announcement nonce public key and
 /// message.
-fn compute_signature_point(
+pub fn compute_signature_point(
     oracle_pk: &schnorrsig::PublicKey,
     nonce_pk: &schnorrsig::PublicKey,
     msg: &[u8],

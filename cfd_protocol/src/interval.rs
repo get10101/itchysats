@@ -12,7 +12,7 @@ const MAX_DIGITS: usize = 20;
 
 const MAX_PRICE_DEC: u64 = (BASE as u64).pow(MAX_DIGITS as u32);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Interval(RangeInclusive<u64>);
 
 impl Interval {
@@ -44,6 +44,12 @@ impl Interval {
     }
 }
 
+impl From<Interval> for RangeInclusive<u64> {
+    fn from(interval: Interval) -> Self {
+        interval.0
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Digits(BitVec);
 
@@ -61,13 +67,12 @@ impl Digits {
 
         start..=end
     }
-}
 
-impl std::iter::Iterator for Digits {
-    type Item = Vec<u8>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.iter().map(|bit| vec![bit as u8]).next()
+    pub fn to_bytes(&self) -> Vec<Vec<u8>> {
+        self.0
+            .iter()
+            .map(|bit| vec![if bit { 1u8 } else { 0u8 }])
+            .collect()
     }
 }
 

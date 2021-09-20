@@ -5,16 +5,18 @@ use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use bdk::wallet::AddressIndex;
 use bdk::SignOptions;
+use bit_vec::BitVec;
 use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::Txid;
 use cfd_protocol::interval::Interval;
 use cfd_protocol::{
     commit_descriptor, compute_adaptor_point, create_cfd_transactions, finalize_spend_transaction,
     lock_descriptor, oracle, punish_transaction, renew_cfd_transactions, spending_tx_sighash,
     CfdTransactions, Payout, PunishParams, TransactionExt, WalletExt,
 };
-use rand::{thread_rng, CryptoRng, RngCore};
+use rand::{thread_rng, CryptoRng, Rng, RngCore};
 use secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
+use std::convert::TryInto;
+use std::ops::RangeInclusive;
 
 #[test]
 fn create_cfd() {
@@ -264,6 +266,67 @@ fn renew_cfd() {
     )
 }
 
+#[test]
+fn cet_unlocked_with_oracle_sig_on_price_in_interval() {
+    let mut rng = thread_rng();
+
+    let maker_lock_amount = Amount::ONE_BTC;
+    let taker_lock_amount = Amount::ONE_BTC;
+
+    let maker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+    let taker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+
+    let oracle = Oracle::new(&mut rng);
+    let (event, announcement) = announce(&mut rng);
+
+    let interval = Interval::new(5_000, 10_000).unwrap();
+    let payouts = Payout::new(
+        interval.clone(),
+        announcement.nonce_pks(),
+        Amount::from_btc(1.5).unwrap(),
+        Amount::from_btc(0.5).unwrap(),
+    );
+
+    let refund_timelock = 0;
+
+    let (maker_cfd_txs, taker_cfd_txs, maker, taker, _maker_addr, _taker_addr) = create_cfd_txs(
+        &mut rng,
+        (&maker_wallet, maker_lock_amount),
+        (&taker_wallet, taker_lock_amount),
+        oracle.public_key(),
+        payouts,
+        refund_timelock,
+    );
+
+    let commit_desc = commit_descriptor(
+        (maker.pk, maker.rev_pk, maker.pub_pk),
+        (taker.pk, taker.rev_pk, taker.pub_pk),
+    );
+    let commit_amount = Amount::from_sat(maker_cfd_txs.commit.0.output[0].value);
+
+    let interval = RangeInclusive::<u64>::from(interval);
+    let price = rng.gen_range(interval.start(), interval.end());
+
+    let oracle_sigs = oracle.attest_price(price, &event.nonces.try_into().unwrap());
+
+    maker_cfd_txs
+        .cets
+        .iter()
+        .find(|(tx, _, msg_nonce_pairs)| {
+            build_and_check_cet(
+                tx.clone(),
+                &msg_nonce_pairs,
+                &taker_cfd_txs.cets,
+                (&maker.sk, &maker.pk),
+                &taker.pk,
+                &oracle_sigs,
+                (&maker_cfd_txs.commit.0, &commit_desc, commit_amount),
+            )
+            .is_ok()
+        })
+        .expect("to build one valid signed CET with price signatures");
+}
+
 fn create_cfd_txs<R>(
     rng: &mut R,
     (maker_wallet, maker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
@@ -397,40 +460,42 @@ fn verify_cfd_sigs(
     )
     .expect("valid taker refund sig");
     for (tx, _, msg_nonce_pairs) in taker_cfd_txs.cets.iter() {
-        let maker_encsig = maker_cfd_txs
+        maker_cfd_txs
             .cets
             .iter()
-            .find_map(|(maker_tx, encsig, _)| (maker_tx.txid() == tx.txid()).then(|| encsig))
-            .expect("one encsig per cet, per party");
-
-        verify_cet_encsig(
-            tx,
-            maker_encsig,
-            msg_nonce_pairs,
-            &maker_pk.key,
-            &oracle_pk,
-            commit_desc,
-            commit_amount,
-        )
-        .expect("valid maker cet encsig")
+            .find(|(maker_tx, maker_encsig, _)| {
+                maker_tx.txid() == tx.txid()
+                    && verify_cet_encsig(
+                        tx,
+                        maker_encsig,
+                        msg_nonce_pairs,
+                        &maker_pk.key,
+                        &oracle_pk,
+                        commit_desc,
+                        commit_amount,
+                    )
+                    .is_ok()
+            })
+            .expect("one valid maker cet encsig per cet");
     }
     for (tx, _, msg_nonce_pairs) in maker_cfd_txs.cets.iter() {
-        let taker_encsig = taker_cfd_txs
+        taker_cfd_txs
             .cets
             .iter()
-            .find_map(|(taker_tx, encsig, _)| (taker_tx.txid() == tx.txid()).then(|| encsig))
-            .expect("one encsig per cet, per party");
-
-        verify_cet_encsig(
-            tx,
-            taker_encsig,
-            msg_nonce_pairs,
-            &taker_pk.key,
-            &oracle_pk,
-            commit_desc,
-            commit_amount,
-        )
-        .expect("valid taker cet encsig")
+            .find(|(taker_tx, taker_encsig, _)| {
+                taker_tx.txid() == tx.txid()
+                    && verify_cet_encsig(
+                        tx,
+                        taker_encsig,
+                        msg_nonce_pairs,
+                        &taker_pk.key,
+                        &oracle_pk,
+                        commit_desc,
+                        commit_amount,
+                    )
+                    .is_ok()
+            })
+            .expect("one valid taker cet encsig per cet");
     }
     encverify_spend(
         &taker_cfd_txs.commit.0,
@@ -539,41 +604,39 @@ fn check_cfd_txs(
     // CETs:
 
     for (tx, _, msg_nonce_pairs) in maker_cfd_txs.cets.clone().into_iter() {
+        let oracle_sigs = event
+            .nonces
+            .iter()
+            .zip(&msg_nonce_pairs)
+            .map(|(nonce, (msg, _))| oracle.attest(&msg, nonce))
+            .collect::<Vec<_>>();
+
         build_and_check_cet(
             tx,
-            event
-                .nonces
-                .iter()
-                .zip(msg_nonce_pairs)
-                .map(|(nonce, (msg, _))| oracle.attest(msg.as_slice(), nonce))
-                .collect::<Vec<_>>()
-                .as_slice(),
-            taker_cfd_txs
-                .cets
-                .iter()
-                .map(|(tx, encsig, _)| (tx.txid(), *encsig)),
+            &msg_nonce_pairs,
+            &taker_cfd_txs.cets,
             (&maker_sk, &maker_pk),
             &taker_pk,
+            &oracle_sigs,
             (&signed_commit_tx_maker, &commit_desc, commit_amount),
         )
         .expect("valid maker cet");
     }
     for (tx, _, msg_nonce_pairs) in taker_cfd_txs.cets.into_iter() {
+        let oracle_sigs = event
+            .nonces
+            .iter()
+            .zip(&msg_nonce_pairs)
+            .map(|(nonce, (msg, _))| oracle.attest(&msg, nonce))
+            .collect::<Vec<_>>();
+
         build_and_check_cet(
             tx,
-            event
-                .nonces
-                .iter()
-                .zip(msg_nonce_pairs)
-                .map(|(nonce, (msg, _))| oracle.attest(msg.as_slice(), nonce))
-                .collect::<Vec<_>>()
-                .as_slice(),
-            maker_cfd_txs
-                .cets
-                .iter()
-                .map(|(tx, encsig, _)| (tx.txid(), *encsig)),
+            &msg_nonce_pairs,
+            maker_cfd_txs.cets.as_slice(),
             (&taker_sk, &taker_pk),
             &maker_pk,
+            &oracle_sigs,
             (&signed_commit_tx_maker, &commit_desc, commit_amount),
         )
         .expect("valid taker cet");
@@ -609,12 +672,20 @@ fn check_cfd_txs(
 
 fn build_and_check_cet(
     cet: Transaction,
+    msg_nonce_pairs: &[(Vec<u8>, schnorrsig::PublicKey)],
+    cets_other: &[(
+        Transaction,
+        EcdsaAdaptorSignature,
+        Vec<(Vec<u8>, schnorrsig::PublicKey)>,
+    )],
+    (sk, pk): (&SecretKey, &PublicKey),
+    pk_other: &PublicKey,
     oracle_sigs: &[schnorrsig::Signature],
-    mut cets_other: impl Iterator<Item = (Txid, EcdsaAdaptorSignature)>,
-    (maker_sk, maker_pk): (&SecretKey, &PublicKey),
-    taker_pk: &PublicKey,
     (commit_tx, commit_desc, commit_amount): (&Transaction, &Descriptor<PublicKey>, Amount),
 ) -> Result<()> {
+    let n_bits = msg_nonce_pairs.len();
+    let (oracle_sigs, _) = oracle_sigs.split_at(n_bits);
+
     let (_nonce_pk, signature_scalar) = schnorrsig_decompose(&oracle_sigs[0]);
     let mut decryption_sk = signature_scalar;
 
@@ -623,15 +694,18 @@ fn build_and_check_cet(
         decryption_sk.add_assign(signature_scalar.as_ref())?;
     }
 
-    let taker_encsig = cets_other
-        .find_map(|(txid, encsig)| (txid == cet.txid()).then(|| encsig))
+    let encsig_other = cets_other
+        .iter()
+        .find_map(|(_tx, encsig, msg_nonce_pairs_other)| {
+            (msg_nonce_pairs == msg_nonce_pairs_other).then(|| encsig)
+        })
         .expect("one encsig per cet, per party");
     let signed_cet = decrypt_and_sign(
         cet,
-        (maker_sk, maker_pk),
+        (sk, pk),
         &decryption_sk,
-        taker_pk,
-        &taker_encsig,
+        pk_other,
+        &encsig_other,
         commit_desc,
         commit_amount,
     )
@@ -827,6 +901,9 @@ struct Oracle {
 }
 
 impl Oracle {
+    /// Maximum number of binary digits for BTC price in whole USD.
+    const MAX_DIGITS: usize = 20;
+
     fn new<R>(rng: &mut R) -> Self
     where
         R: RngCore + CryptoRng,
@@ -842,6 +919,20 @@ impl Oracle {
 
     fn attest(&self, msg: &[u8], nonce: &SecretKey) -> schnorrsig::Signature {
         oracle::attest(&self.key_pair, nonce, msg)
+    }
+
+    fn attest_price(
+        &self,
+        price: u64,
+        nonces: &[SecretKey; Self::MAX_DIGITS],
+    ) -> Vec<schnorrsig::Signature> {
+        let mut bits = BitVec::from_bytes(&price.to_be_bytes());
+        let bits = bits.split_off(bits.len() - 20);
+
+        bits.iter()
+            .zip(nonces)
+            .map(|(msg, nonce)| self.attest(&[msg as u8], nonce))
+            .collect()
     }
 }
 
