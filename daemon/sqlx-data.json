@@ -152,6 +152,102 @@
       "nullable": []
     }
   },
+  "a8454a2e4288b58d625f10722c6e23a51d5d17e6bb7af9685bcdbe64546969fa": {
+    "query": "\n        select\n            cfds.id as cfd_id,\n            orders.uuid as order_id,\n            orders.initial_price as price,\n            orders.min_quantity as min_quantity,\n            orders.max_quantity as max_quantity,\n            orders.leverage as leverage,\n            orders.trading_pair as trading_pair,\n            orders.position as position,\n            orders.origin as origin,\n            orders.liquidation_price as liquidation_price,\n            orders.creation_timestamp as creation_timestamp,\n            orders.term as term,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join orders as orders on cfds.order_uuid = ?\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "order_id",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "price",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "min_quantity",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "max_quantity",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "leverage",
+          "ordinal": 5,
+          "type_info": "Int64"
+        },
+        {
+          "name": "trading_pair",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "position",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "origin",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "liquidation_price",
+          "ordinal": 9,
+          "type_info": "Text"
+        },
+        {
+          "name": "creation_timestamp",
+          "ordinal": 10,
+          "type_info": "Text"
+        },
+        {
+          "name": "term",
+          "ordinal": 11,
+          "type_info": "Text"
+        },
+        {
+          "name": "quantity_usd",
+          "ordinal": 12,
+          "type_info": "Text"
+        },
+        {
+          "name": "state",
+          "ordinal": 13,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "f3dce76f316212c91cb3402b0cef00f1c9adbef8519c54e9bdbd373aab946209": {
     "query": "\n        select * from orders where uuid = ?;\n        ",
     "describe": {

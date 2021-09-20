@@ -60,7 +60,7 @@ impl ToSseEvent for Vec<model::cfd::Cfd> {
             .map(|cfd| {
                 // TODO: Get the actual current price here
                 let current_price = Usd::ZERO;
-                let (profit_btc, profit_usd) = cfd.calc_profit(current_price).unwrap();
+                let (profit_btc, profit_usd) = cfd.profit(current_price).unwrap();
 
                 Cfd {
                     order_id: cfd.order.id,
@@ -82,7 +82,7 @@ impl ToSseEvent for Vec<model::cfd::Cfd> {
 
                     // TODO: Depending on the state the margin might be set (i.e. in Open we save it
                     // in the DB internally) and does not have to be calculated
-                    margin: cfd.calc_margin().unwrap(),
+                    margin: cfd.margin().unwrap(),
                 }
             })
             .collect::<Vec<Cfd>>();

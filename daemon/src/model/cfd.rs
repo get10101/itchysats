@@ -266,7 +266,7 @@ impl Cfd {
         }
     }
 
-    pub fn calc_margin(&self) -> Result<Amount> {
+    pub fn margin(&self) -> Result<Amount> {
         let margin = match self.position() {
             Position::Buy => {
                 calculate_buy_margin(self.order.price, self.quantity_usd, self.order.leverage)?
@@ -277,7 +277,18 @@ impl Cfd {
         Ok(margin)
     }
 
-    pub fn calc_profit(&self, current_price: Usd) -> Result<(Amount, Usd)> {
+    pub fn counterparty_margin(&self) -> Result<Amount> {
+        let margin = match self.position() {
+            Position::Buy => calculate_sell_margin(self.order.price, self.quantity_usd)?,
+            Position::Sell => {
+                calculate_buy_margin(self.order.price, self.quantity_usd, self.order.leverage)?
+            }
+        };
+
+        Ok(margin)
+    }
+
+    pub fn profit(&self, current_price: Usd) -> Result<(Amount, Usd)> {
         let profit =
             calculate_profit(self.order.price, current_price, dec!(0.005), Usd(dec!(0.1)))?;
         Ok(profit)
@@ -294,6 +305,30 @@ impl Cfd {
             },
         }
     }
+
+    #[allow(dead_code)]
+    pub fn refund_timelock_in_blocks(&self) -> u32 {
+        self.order
+            .term
+            .mul_f32(Cfd::REFUND_THRESHOLD)
+            .as_blocks()
+            .ceil() as u32
+    }
+
+    /// A factor to be added to the CFD order term for calculating the refund timelock.
+    ///
+    /// The refund timelock is important in case the oracle disappears or never publishes a
+    /// signature. Ideally, both users collaboratively settle in the refund scenario. This
+    /// factor is important if the users do not settle collaboratively.
+    /// `1.5` times the term as defined in CFD order should be safe in the extreme case where a user
+    /// publishes the commit transaction right after the contract was initialized. In this case, the
+    /// oracle still has `1.0 * cfdorder.term` time to attest and no one can publish the refund
+    /// transaction.
+    /// The downside is that if the oracle disappears: the users would only notice at the end
+    /// of the cfd term. In this case the users has to wait for another `1.5` times of the
+    /// term to get his funds back.
+    #[allow(dead_code)]
+    const REFUND_THRESHOLD: f32 = 1.5;
 }
 
 fn calculate_profit(

@@ -1,14 +1,12 @@
-use std::time::SystemTime;
-
-use crate::db::{insert_cfd, insert_order, load_all_cfds, load_order_by_id};
+use crate::db::{insert_cfd, insert_order, load_all_cfds, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
 use crate::model::{TakerId, Usd};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
 use crate::{maker_cfd_actor, maker_inc_connections_actor, setup_contract_actor};
 use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::{self};
 use futures::Future;
+use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
 
 #[allow(clippy::large_enum_variant)]
@@ -156,12 +154,10 @@ pub fn new(
                         // Kick-off the CFD protocol
                         let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
 
-                        // TODO: Load correct quantity from DB with order_id
-                        let maker_params = wallet
-                            .build_party_params(bitcoin::Amount::ZERO, pk)
-                            .unwrap();
+                        let cfd = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
+                        let margin = cfd.margin().unwrap();
 
-                        let cfd = load_order_by_id(order_id, &mut conn).await.unwrap();
+                        let maker_params = wallet.build_party_params(margin, pk).unwrap();
 
                         let (actor, inbox) = setup_contract_actor::new(
                             {
