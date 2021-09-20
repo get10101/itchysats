@@ -7,11 +7,11 @@ use bdk::wallet::AddressIndex;
 use bdk::SignOptions;
 use bit_vec::BitVec;
 use bitcoin::util::psbt::PartiallySignedTransaction;
-use cfd_protocol::interval::Interval;
 use cfd_protocol::{
-    commit_descriptor, compute_adaptor_point, create_cfd_transactions, finalize_spend_transaction,
-    lock_descriptor, oracle, punish_transaction, renew_cfd_transactions, spending_tx_sighash,
-    CfdTransactions, Payout, PunishParams, TransactionExt, WalletExt,
+    attest, commit_descriptor, compute_adaptor_point, create_cfd_transactions,
+    finalize_spend_transaction, lock_descriptor, nonce, punish_transaction, renew_cfd_transactions,
+    spending_tx_sighash, CfdTransactions, Interval, Payout, PunishParams, TransactionExt,
+    WalletExt,
 };
 use rand::{thread_rng, CryptoRng, Rng, RngCore};
 use secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
@@ -315,7 +315,7 @@ fn cet_unlocked_with_oracle_sig_on_price_in_interval() {
         .find(|(tx, _, msg_nonce_pairs)| {
             build_and_check_cet(
                 tx.clone(),
-                &msg_nonce_pairs,
+                msg_nonce_pairs,
                 &taker_cfd_txs.cets,
                 (&maker.sk, &maker.pk),
                 &taker.pk,
@@ -608,7 +608,7 @@ fn check_cfd_txs(
             .nonces
             .iter()
             .zip(&msg_nonce_pairs)
-            .map(|(nonce, (msg, _))| oracle.attest(&msg, nonce))
+            .map(|(nonce, (msg, _))| oracle.attest(msg, nonce))
             .collect::<Vec<_>>();
 
         build_and_check_cet(
@@ -627,7 +627,7 @@ fn check_cfd_txs(
             .nonces
             .iter()
             .zip(&msg_nonce_pairs)
-            .map(|(nonce, (msg, _))| oracle.attest(&msg, nonce))
+            .map(|(nonce, (msg, _))| oracle.attest(msg, nonce))
             .collect::<Vec<_>>();
 
         build_and_check_cet(
@@ -670,6 +670,7 @@ fn check_cfd_txs(
         .expect("valid taker punish tx");
 }
 
+#[allow(clippy::type_complexity)]
 fn build_and_check_cet(
     cet: Transaction,
     msg_nonce_pairs: &[(Vec<u8>, schnorrsig::PublicKey)],
@@ -705,7 +706,7 @@ fn build_and_check_cet(
         (sk, pk),
         &decryption_sk,
         pk_other,
-        &encsig_other,
+        encsig_other,
         commit_desc,
         commit_amount,
     )
@@ -918,7 +919,7 @@ impl Oracle {
     }
 
     fn attest(&self, msg: &[u8], nonce: &SecretKey) -> schnorrsig::Signature {
-        oracle::attest(&self.key_pair, nonce, msg)
+        attest(&self.key_pair, nonce, msg)
     }
 
     fn attest_price(
@@ -961,7 +962,7 @@ impl Event {
     where
         R: RngCore + CryptoRng,
     {
-        let (nonces, nonce_pks) = (0..20).map(|_| oracle::nonce(rng)).unzip();
+        let (nonces, nonce_pks) = (0..20).map(|_| nonce(rng)).unzip();
 
         Self { nonces, nonce_pks }
     }
