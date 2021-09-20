@@ -70,7 +70,7 @@ pub fn new(
             while let Some(message) = receiver.recv().await {
                 match message {
                     maker_cfd_actor::Command::SyncWallet => {
-                        let wallet_info = wallet.sync().unwrap();
+                        let wallet_info = wallet.sync().await.unwrap();
                         wallet_feed_sender.send(wallet_info).unwrap();
                     }
                     maker_cfd_actor::Command::TakeOrder {
@@ -175,7 +175,7 @@ pub fn new(
                         let cfd = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
                         let margin = cfd.margin().unwrap();
 
-                        let maker_params = wallet.build_party_params(margin, pk).unwrap();
+                        let maker_params = wallet.build_party_params(margin, pk).await.unwrap();
 
                         let (actor, inbox) = setup_contract_actor::new(
                             {
@@ -195,6 +195,7 @@ pub fn new(
                             sk,
                             oracle_pk,
                             cfd,
+                            wallet.clone(),
                         );
 
                         current_contract_setup = Some(inbox.clone());
@@ -255,7 +256,7 @@ pub fn new(
                                 common: CfdStateCommon {
                                     transition_timestamp: SystemTime::now(),
                                 },
-                                dlc,
+                                dlc: dlc.clone(),
                             },
                             &mut conn,
                         )
@@ -266,9 +267,12 @@ pub fn new(
                             .send(load_all_cfds(&mut conn).await.unwrap())
                             .unwrap();
 
-                        // TODO: Publish on chain and only then transition to open - this might
-                        // require saving some internal state to make sure we are able to monitor
-                        // the publication after a restart
+                        let txid = wallet.try_broadcast_transaction(dlc.lock).await.unwrap();
+
+                        println!("Lock transaction published with txid {}", txid);
+
+                        // TODO: tx monitoring, once confirmed with x blocks transition the Cfd to
+                        // Open
                     }
                 }
             }

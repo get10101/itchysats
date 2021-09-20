@@ -34,8 +34,23 @@ pub enum MakerToTaker {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum SetupMsg {
+    /// Message enabling setting up lock and based on that commit, refund and cets
+    ///
+    /// Each party sends and receives this message.
+    /// After receiving this message each party is able to construct the lock transaction.
     Msg0(Msg0),
+    /// Message that ensures complete commit, cets and refund transactions
+    ///
+    /// Each party sends and receives this message.
+    /// After receiving this message the commit, refund and cet transactions are complete.
+    /// Once verified we can sign and send the lock PSBT.
     Msg1(Msg1),
+    /// Message adding signature to the lock PSBT
+    ///
+    /// Each party sends and receives this message.
+    /// Upon receiving this message from the other party we merge our signature and then the lock
+    /// tx is fully signed and can be published on chain.
+    Msg2(Msg2),
 }
 
 impl SetupMsg {
@@ -49,6 +64,14 @@ impl SetupMsg {
 
     pub fn try_into_msg1(self) -> Result<Msg1, Self> {
         if let Self::Msg1(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
+
+    pub fn try_into_msg2(self) -> Result<Msg2, Self> {
+        if let Self::Msg2(v) = self {
             Ok(v)
         } else {
             Err(self)
@@ -136,4 +159,9 @@ impl From<CfdTransactions> for Msg1 {
             refund: txs.refund.1,
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Msg2 {
+    pub signed_lock: PartiallySignedTransaction, // TODO: Use binary representation
 }
