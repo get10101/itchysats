@@ -423,9 +423,11 @@ dependencies = [
  "cfd_protocol",
  "clap",
  "futures",
+ "hex",
  "hkdf",
  "rand 0.6.5",
  "rocket",
+ "rocket-basicauth",
  "rocket_db_pools",
  "rust-embed",
  "rust_decimal",
@@ -1657,6 +1659,16 @@ dependencies = [
  "ubyte",
  "version_check",
  "yansi",
+]
+
+[[package]]
+name = "rocket-basicauth"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79128c0f55b7bc6785c13816d71af4baee156bd615b09468800edaaa7da56a08"
+dependencies = [
+ "base64 0.13.0",
+ "rocket",
 ]
 
 [[package]]

@@ -62,6 +62,17 @@ impl Seed {
 
         Ok(ext_priv_key)
     }
+
+    #[allow(dead_code)] // Not used by all binaries.
+    pub fn derive_auth_password<P: From<[u8; 32]>>(&self) -> P {
+        let mut password = [0u8; 32];
+
+        Hkdf::<Sha256>::new(None, &self.0)
+            .expand(b"HTTP_AUTH_PASSWORD", &mut password)
+            .expect("okm array is of correct length");
+
+        P::from(password)
+    }
 }
 
 impl Default for Seed {
