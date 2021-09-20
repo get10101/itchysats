@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: dprint/check@v1.5
+      - uses: dprint/check@v2.0
 
   clippy:
     runs-on: ubuntu-latest
