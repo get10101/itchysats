@@ -1,9 +1,8 @@
 use crate::seed::Seed;
+use crate::wallet::Wallet;
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::{Amount, Network};
-use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
-use bdk::KeychainKind;
 use clap::Clap;
 use model::cfd::{Cfd, Order};
 use rocket::fairing::AdHoc;
@@ -21,6 +20,7 @@ mod seed;
 mod send_wire_message_actor;
 mod setup_contract_actor;
 mod to_sse_event;
+mod wallet;
 mod wire;
 
 #[derive(Database)]
@@ -64,23 +64,14 @@ async fn main() -> Result<()> {
 
     let seed = Seed::initialize(&data_dir.join("maker_seed"), opts.generate_seed).await?;
 
-    let client = bdk::electrum_client::Client::new(&opts.electrum).unwrap();
-
-    // TODO: Replace with sqlite once https://github.com/bitcoindevkit/bdk/pull/376 is merged.
-    let db = bdk::sled::open(data_dir.join("maker_wallet_db"))?;
-    let wallet_db = db.open_tree("wallet")?;
-
     let ext_priv_key = seed.derive_extended_priv_key(Network::Testnet)?;
 
-    let wallet = bdk::Wallet::new(
-        bdk::template::Bip84(ext_priv_key, KeychainKind::External),
-        Some(bdk::template::Bip84(ext_priv_key, KeychainKind::Internal)),
-        ext_priv_key.network,
-        wallet_db,
-        ElectrumBlockchain::from(client),
+    let wallet = Wallet::new(
+        &opts.electrum,
+        &data_dir.join("maker_wallet_db"),
+        ext_priv_key,
     )
-    .unwrap();
-    wallet.sync(NoopProgress, None).unwrap(); // TODO: Use LogProgress once we have logging.
+    .await?;
 
     let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
 

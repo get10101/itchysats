@@ -3,12 +3,11 @@ use std::time::SystemTime;
 use crate::db::{insert_cfd, insert_order, load_all_cfds, load_order_by_id};
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
 use crate::model::{TakerId, Usd};
+use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
 use crate::{maker_cfd_actor, maker_inc_connections_actor, setup_contract_actor};
 use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::{self};
-use bdk::database::BatchDatabase;
-use cfd_protocol::WalletExt;
 use futures::Future;
 use tokio::sync::{mpsc, watch};
 
@@ -32,9 +31,9 @@ pub enum Command {
     CfdSetupCompleted(FinalizedCfd),
 }
 
-pub fn new<B, D>(
+pub fn new(
     db: sqlx::SqlitePool,
-    wallet: bdk::Wallet<B, D>,
+    wallet: Wallet,
     oracle_pk: schnorrsig::PublicKey,
     takers: mpsc::UnboundedSender<maker_inc_connections_actor::Command>,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
@@ -42,10 +41,7 @@ pub fn new<B, D>(
 ) -> (
     impl Future<Output = ()>,
     mpsc::UnboundedSender<maker_cfd_actor::Command>,
-)
-where
-    D: BatchDatabase,
-{
+) {
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let mut current_contract_setup = None;
 
