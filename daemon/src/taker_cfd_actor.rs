@@ -2,7 +2,7 @@ use crate::db::{
     insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
     load_cfd_by_order_id, load_order_by_id,
 };
-use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
+use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Dlc, Order, OrderId};
 use crate::model::{Usd, WalletInfo};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
@@ -21,7 +21,7 @@ pub enum Command {
     NewOrder(Option<Order>),
     OrderAccepted(OrderId),
     IncProtocolMsg(SetupMsg),
-    CfdSetupCompleted(FinalizedCfd),
+    CfdSetupCompleted { order_id: OrderId, dlc: Dlc },
 }
 
 pub fn new(
@@ -101,6 +101,10 @@ pub fn new(
                         .await
                         .unwrap();
 
+                        out_msg_maker_inbox
+                            .send(wire::TakerToMaker::StartContractSetup(order_id))
+                            .unwrap();
+
                         cfd_feed_actor_inbox
                             .send(load_all_cfds(&mut conn).await.unwrap())
                             .unwrap();
@@ -128,7 +132,10 @@ pub fn new(
 
                             async move {
                                 sender
-                                    .send(Command::CfdSetupCompleted(actor.await))
+                                    .send(Command::CfdSetupCompleted {
+                                        order_id,
+                                        dlc: actor.await,
+                                    })
                                     .unwrap()
                             }
                         });
@@ -142,10 +149,33 @@ pub fn new(
 
                         inbox.send(msg).unwrap();
                     }
-                    Command::CfdSetupCompleted(_finalized_cfd) => {
-                        todo!("but what?")
+                    Command::CfdSetupCompleted { order_id, dlc } => {
+                        println!("Setup complete, publishing on chain now...");
 
-                        // Assumption: The maker publishes the CFD on chain
+                        current_contract_setup = None;
+
+                        insert_new_cfd_state_by_order_id(
+                            order_id,
+                            CfdState::PendingOpen {
+                                common: CfdStateCommon {
+                                    transition_timestamp: SystemTime::now(),
+                                },
+                                dlc,
+                            },
+                            &mut conn,
+                        )
+                        .await
+                        .unwrap();
+
+                        cfd_feed_actor_inbox
+                            .send(load_all_cfds(&mut conn).await.unwrap())
+                            .unwrap();
+
+                        // TODO: Some code duplication with maker in this block
+
+                        // TODO: Publish on chain and only then transition to open - this might
+                        // require saving some internal state to make sure we are able to monitor
+                        // the publication after a restart
                     }
                 }
             }

@@ -1,5 +1,8 @@
-use crate::db::{insert_cfd, insert_order, load_all_cfds, load_cfd_by_order_id, load_order_by_id};
-use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, FinalizedCfd, Order, OrderId};
+use crate::db::{
+    insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
+    load_cfd_by_order_id, load_order_by_id,
+};
+use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Dlc, Order, OrderId};
 use crate::model::{TakerId, Usd, WalletInfo};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
@@ -27,7 +30,10 @@ pub enum Command {
         id: TakerId,
     },
     IncProtocolMsg(SetupMsg),
-    CfdSetupCompleted(FinalizedCfd),
+    CfdSetupCompleted {
+        order_id: OrderId,
+        dlc: Dlc,
+    },
 }
 
 pub fn new(
@@ -43,7 +49,11 @@ pub fn new(
     mpsc::UnboundedSender<maker_cfd_actor::Command>,
 ) {
     let (sender, mut receiver) = mpsc::unbounded_channel();
+
+    // TODO: Move the contract setup into a dedicated actor and send messages to that actor that
+    // manages the state instead of this ugly buffer
     let mut current_contract_setup = None;
+    let mut contract_setup_message_buffer = vec![];
 
     let mut current_order_id = None;
 
@@ -157,6 +167,8 @@ pub fn new(
                             .unwrap();
                     }
                     maker_cfd_actor::Command::StartContractSetup { taker_id, order_id } => {
+                        println!("CONTRACT SETUP");
+
                         // Kick-off the CFD protocol
                         let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
 
@@ -185,27 +197,78 @@ pub fn new(
                             cfd,
                         );
 
+                        current_contract_setup = Some(inbox.clone());
+
+                        for msg in contract_setup_message_buffer.drain(..) {
+                            inbox.send(msg).unwrap();
+                        }
+
+                        // TODO: Should we do this here or already earlier or after the spawn?
+                        insert_new_cfd_state_by_order_id(
+                            order_id,
+                            CfdState::ContractSetup {
+                                common: CfdStateCommon {
+                                    transition_timestamp: SystemTime::now(),
+                                },
+                            },
+                            &mut conn,
+                        )
+                        .await
+                        .unwrap();
+                        cfd_feed_actor_inbox
+                            .send(load_all_cfds(&mut conn).await.unwrap())
+                            .unwrap();
+
                         tokio::spawn({
                             let sender = sender.clone();
 
                             async move {
                                 sender
-                                    .send(Command::CfdSetupCompleted(actor.await))
+                                    .send(Command::CfdSetupCompleted {
+                                        order_id,
+                                        dlc: actor.await,
+                                    })
                                     .unwrap()
                             }
                         });
-                        current_contract_setup = Some(inbox);
                     }
                     maker_cfd_actor::Command::IncProtocolMsg(msg) => {
                         let inbox = match &current_contract_setup {
-                            None => panic!("whoops"),
+                            None => {
+                                contract_setup_message_buffer.push(msg);
+                                continue;
+                            }
                             Some(inbox) => inbox,
                         };
 
                         inbox.send(msg).unwrap();
                     }
-                    maker_cfd_actor::Command::CfdSetupCompleted(_finalized_cfd) => {
-                        todo!("but what?")
+                    maker_cfd_actor::Command::CfdSetupCompleted { order_id, dlc } => {
+                        println!("Setup complete, publishing on chain now...");
+
+                        current_contract_setup = None;
+                        contract_setup_message_buffer = vec![];
+
+                        insert_new_cfd_state_by_order_id(
+                            order_id,
+                            CfdState::PendingOpen {
+                                common: CfdStateCommon {
+                                    transition_timestamp: SystemTime::now(),
+                                },
+                                dlc,
+                            },
+                            &mut conn,
+                        )
+                        .await
+                        .unwrap();
+
+                        cfd_feed_actor_inbox
+                            .send(load_all_cfds(&mut conn).await.unwrap())
+                            .unwrap();
+
+                        // TODO: Publish on chain and only then transition to open - this might
+                        // require saving some internal state to make sure we are able to monitor
+                        // the publication after a restart
                     }
                 }
             }

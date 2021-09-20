@@ -497,7 +497,7 @@ mod tests {
                 transition_timestamp: SystemTime::now(),
             },
         };
-        insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state, &mut conn)
+        insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn)
             .await
             .unwrap();
 

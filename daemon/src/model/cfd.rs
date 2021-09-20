@@ -3,12 +3,12 @@ use anyhow::Result;
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Amount, Transaction};
-use cfd_protocol::interval;
 use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
+use std::ops::RangeInclusive;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
@@ -131,61 +131,83 @@ pub struct CfdStateCommon {
 }
 
 // Note: De-/Serialize with type tag to make handling on UI easier
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "payload")]
 pub enum CfdState {
     /// The taker has requested to take a CFD, but has not messaged the maker yet.
     ///
     /// This state only applies to the taker.
-    TakeRequested { common: CfdStateCommon },
+    TakeRequested {
+        common: CfdStateCommon,
+    },
     /// The taker sent an open request to the maker to open the CFD but don't have a response yet.
     ///
     /// This state applies to taker and maker.
     /// Initial state for the maker.
-    PendingTakeRequest { common: CfdStateCommon },
+    PendingTakeRequest {
+        common: CfdStateCommon,
+    },
     /// The maker has accepted the CFD take request, but the contract is not set up on chain yet.
     ///
     /// This state applies to taker and maker.
-    Accepted { common: CfdStateCommon },
+    Accepted {
+        common: CfdStateCommon,
+    },
 
     /// The maker rejected the CFD take request.
     ///
     /// This state applies to taker and maker.
-    Rejected { common: CfdStateCommon },
+    Rejected {
+        common: CfdStateCommon,
+    },
 
     /// State used during contract setup.
     ///
     /// This state applies to taker and maker.
     /// All contract setup messages between taker and maker are expected to be sent in on scope.
-    ContractSetup { common: CfdStateCommon },
+    ContractSetup {
+        common: CfdStateCommon,
+    },
+
+    PendingOpen {
+        common: CfdStateCommon,
+        dlc: Dlc,
+    },
 
     /// The CFD contract is set up on chain.
     ///
     /// This state applies to taker and maker.
     Open {
         common: CfdStateCommon,
-        settlement_timestamp: SystemTime,
-        #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
-        margin: Amount,
+        dlc: Dlc,
     },
 
     /// Requested close the position, but we have not passed that on to the blockchain yet.
     ///
     /// This state applies to taker and maker.
-    CloseRequested { common: CfdStateCommon },
+    CloseRequested {
+        common: CfdStateCommon,
+    },
     /// The close transaction (CET) was published on the Bitcoin blockchain but we don't have a
     /// confirmation yet.
     ///
     /// This state applies to taker and maker.
-    PendingClose { common: CfdStateCommon },
+    PendingClose {
+        common: CfdStateCommon,
+    },
     /// The close transaction is confirmed with at least one block.
     ///
     /// This state applies to taker and maker.
-    Closed { common: CfdStateCommon },
+    Closed {
+        common: CfdStateCommon,
+    },
     /// Error state
     ///
     /// This state applies to taker and maker.
-    Error { common: CfdStateCommon },
+    Error {
+        common: CfdStateCommon,
+    },
 }
 
 impl CfdState {
@@ -196,6 +218,7 @@ impl CfdState {
             CfdState::Accepted { common } => common,
             CfdState::Rejected { common } => common,
             CfdState::ContractSetup { common } => common,
+            CfdState::PendingOpen { common, .. } => common,
             CfdState::Open { common, .. } => common,
             CfdState::CloseRequested { common } => common,
             CfdState::PendingClose { common } => common,
@@ -228,6 +251,9 @@ impl Display for CfdState {
             }
             CfdState::ContractSetup { .. } => {
                 write!(f, "Contract Setup")
+            }
+            CfdState::PendingOpen { .. } => {
+                write!(f, "Pending Open")
             }
             CfdState::Open { .. } => {
                 write!(f, "Open")
@@ -479,14 +505,14 @@ mod tests {
 ///
 /// All contained signatures are the signatures of THE OTHER PARTY.
 /// To use any of these transactions, we need to re-sign them with the correct secret key.
-#[derive(Debug)]
-pub struct FinalizedCfd {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Dlc {
     pub identity: SecretKey,
     pub revocation: SecretKey,
     pub publish: SecretKey,
 
     pub lock: PartiallySignedTransaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
-    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
+    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, RangeInclusive<u64>)>,
     pub refund: (Transaction, Signature),
 }
