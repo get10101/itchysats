@@ -108,9 +108,6 @@ pub async fn post_sell_order(
 #[rocket::get("/alive")]
 pub fn get_health_check() {}
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct RetrieveCurrentOrder;
-
 #[derive(RustEmbed)]
 #[folder = "../frontend/dist/maker"]
 struct Asset;
