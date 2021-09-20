@@ -1,4 +1,4 @@
-use crate::model::cfd::{AsBlocks, Cfd, FinalizedCfd};
+use crate::model::cfd::{Cfd, FinalizedCfd};
 use crate::wire::{AdaptorSignature, Msg0, Msg1, SetupMsg};
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey, Signature, SECP256K1};
@@ -11,20 +11,6 @@ use cfd_protocol::{
 use futures::Future;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-
-/// A factor to be added to the CFD order term for calculating the refund timelock.
-///
-/// The refund timelock is important in case the oracle disappears or never publishes a signature.
-/// Ideally, both users collaboratively settle in the refund scenario. This factor is important if
-/// the users do not settle collaboratively.
-/// `1.5` times the term as defined in CFD order should be safe in the extreme case where a user
-/// publishes the commit transaction right after the contract was initialized. In this case, the
-/// oracle still has `1.0 * cfdorder.term` time to attest and no one can publish the refund
-/// transaction.
-/// The downside is that if the oracle disappears: the users would only notice at the end
-/// of the cfd term. In this case the users has to wait for another `1.5` times of the
-/// term to get his funds back.
-pub const REFUND_THRESHOLD: f32 = 1.5;
 
 /// Given an initial set of parameters, sets up the CFD contract with the other party.
 /// Passing OwnParams identifies whether caller is the maker or the taker.
@@ -74,7 +60,7 @@ pub fn new(
             (params.maker().clone(), *params.maker_punish()),
             (params.taker().clone(), *params.taker_punish()),
             oracle_pk,
-            cfd.order.term.mul_f32(REFUND_THRESHOLD).as_blocks().ceil() as u32,
+            cfd.refund_timelock_in_blocks(),
             vec![],
             sk,
         )
