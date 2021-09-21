@@ -1,5 +1,5 @@
 pub use transaction_ext::TransactionExt;
-pub use transactions::punish_transaction;
+pub use transactions::{close_transaction, punish_transaction};
 
 use crate::interval;
 use crate::protocol::sighash_ext::SigHashExt;

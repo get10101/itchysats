@@ -345,6 +345,61 @@ impl RefundTransaction {
     }
 }
 
+/// Build a transaction which closes the CFD contract.
+///
+/// This transaction spends directly from the lock transaction. Both
+/// parties must agree on the split of coins between `maker_amount`
+/// and `taker_amount`.
+pub fn close_transaction(
+    lock_descriptor: &Descriptor<PublicKey>,
+    lock_outpoint: OutPoint,
+    lock_amount: Amount,
+    (maker_address, maker_amount): (&Address, Amount),
+    (taker_address, taker_amount): (&Address, Amount),
+) -> Result<(Transaction, secp256k1_zkp::Message)> {
+    /// Expected size of signed transaction in virtual bytes, plus a
+    /// buffer to account for different signature lengths.
+    const SIGNED_VBYTES: f64 = 167.5 + (3.0 * 2.0) / 4.0;
+
+    let lock_input = TxIn {
+        previous_output: lock_outpoint,
+        ..Default::default()
+    };
+
+    // TODO: The fee could take into account the network state in this
+    // case, since this transaction is to be broadcast immediately
+    // after building and signing it
+    let fee = SIGNED_VBYTES * SATS_PER_VBYTE as f64;
+    let fee_per_party = (fee / 2.0) as u64;
+
+    let maker_output = TxOut {
+        value: maker_amount.as_sat() - fee_per_party,
+        script_pubkey: maker_address.script_pubkey(),
+    };
+    let taker_output = TxOut {
+        value: taker_amount.as_sat() - fee_per_party,
+        script_pubkey: taker_address.script_pubkey(),
+    };
+
+    let tx = Transaction {
+        version: 2,
+        lock_time: 0,
+        input: vec![lock_input],
+        output: vec![maker_output, taker_output],
+    };
+
+    let sighash = SigHashCache::new(&tx)
+        .signature_hash(
+            0,
+            &lock_descriptor.script_code(),
+            lock_amount.as_sat(),
+            SigHashType::All,
+        )
+        .to_message();
+
+    Ok((tx, sighash))
+}
+
 pub fn punish_transaction(
     commit_descriptor: &Descriptor<PublicKey>,
     address: &Address,
