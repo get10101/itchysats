@@ -1,7 +1,7 @@
 use crate::model::WalletInfo;
 use crate::taker_cfd_actor::Command;
 use crate::wallet::Wallet;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::Network;
 use clap::Clap;
@@ -14,9 +14,11 @@ use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
 use tokio::sync::watch;
+use tracing_subscriber::filter::LevelFilter;
 
 mod db;
 mod keypair;
+mod logger;
 mod model;
 mod routes;
 mod routes_taker;
@@ -56,11 +58,17 @@ struct Opts {
     /// Generate a seed file within the data directory.
     #[clap(long)]
     generate_seed: bool,
+
+    /// If enabled logs will be in json format
+    #[clap(short, long)]
+    json: bool,
 }
 
 #[rocket::main]
 async fn main() -> Result<()> {
     let opts = Opts::parse();
+
+    logger::init(LevelFilter::DEBUG, opts.json).context("initialize logger")?;
 
     let data_dir = opts
         .data_dir
@@ -93,7 +101,7 @@ async fn main() -> Result<()> {
         if let Ok(connection) = socket.connect(opts.taker).await {
             break connection.into_split();
         } else {
-            println!(
+            tracing::warn!(
                 "Could not connect to the maker, retrying in {}s ...",
                 CONNECTION_RETRY_INTERVAL.as_secs()
             );

@@ -57,7 +57,7 @@ pub fn new(
 
                         let current_order = load_order_by_id(order_id, &mut conn).await.unwrap();
 
-                        println!("Accepting current order: {:?}", &current_order);
+                        tracing::info!("Accepting current order: {:?}", &current_order);
 
                         let cfd = Cfd::new(
                             current_order.clone(),

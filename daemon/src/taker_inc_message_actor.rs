@@ -43,7 +43,7 @@ pub fn new(
                         .unwrap();
                 }
                 Err(error) => {
-                    eprintln!("Error in reading message: {}", error);
+                    tracing::error!("Error in reading message: {}", error);
                 }
             }
         }

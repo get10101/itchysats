@@ -1,7 +1,7 @@
 use crate::maker_cfd_actor::Command;
 use crate::seed::Seed;
 use crate::wallet::Wallet;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::Network;
 use clap::Clap;
@@ -12,9 +12,11 @@ use rocket_db_pools::Database;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
+use tracing_subscriber::filter::LevelFilter;
 
 mod db;
 mod keypair;
+mod logger;
 mod maker_cfd_actor;
 mod maker_inc_connections_actor;
 mod model;
@@ -52,11 +54,17 @@ struct Opts {
     /// Generate a seed file within the data directory.
     #[clap(long)]
     generate_seed: bool,
+
+    /// If enabled logs will be in json format
+    #[clap(short, long)]
+    json: bool,
 }
 
 #[rocket::main]
 async fn main() -> Result<()> {
     let opts = Opts::parse();
+
+    logger::init(LevelFilter::DEBUG, opts.json).context("initialize logger")?;
 
     let data_dir = opts
         .data_dir
@@ -91,7 +99,7 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(&format!("0.0.0.0:{}", opts.p2p_port)).await?;
     let local_addr = listener.local_addr().unwrap();
 
-    println!("Listening on {}", local_addr);
+    tracing::info!("Listening on {}", local_addr);
 
     rocket::custom(figment)
         .manage(cfd_feed_receiver)
