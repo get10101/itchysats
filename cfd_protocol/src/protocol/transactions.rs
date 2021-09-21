@@ -3,7 +3,6 @@ use crate::protocol::transaction_ext::TransactionExt;
 use crate::protocol::{
     commit_descriptor, compute_adaptor_point, lock_descriptor, Payout, DUMMY_2OF2_MULTISIG,
 };
-
 use anyhow::{Context, Result};
 use bdk::bitcoin::util::bip143::SigHashCache;
 use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};

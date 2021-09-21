@@ -7,7 +7,6 @@ use crate::protocol::transactions::{
     lock_transaction, CommitTransaction, ContractExecutionTransaction as ContractExecutionTx,
     RefundTransaction,
 };
-
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::hashes::hex::ToHex;
 use bdk::bitcoin::util::bip143::SigHashCache;
