@@ -20,7 +20,7 @@ where
             {
                 Ok(_) => {}
                 Err(_) => {
-                    eprintln!("TCP connection error");
+                    tracing::error!("TCP connection error");
                     break;
                 }
             }

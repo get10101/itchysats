@@ -43,7 +43,7 @@ pub fn new(
         loop {
             tokio::select! {
                 Ok((socket, remote_addr)) = listener.accept() => {
-                    println!("Connected to {}", remote_addr);
+                    tracing::info!("Connected to {}", remote_addr);
                     let taker_id = TakerId::default();
                     let (read, write) = socket.into_split();
 
@@ -114,7 +114,7 @@ fn in_taker_messages(
                     .send(maker_cfd_actor::Command::IncProtocolMsg(msg))
                     .unwrap(),
                 Err(error) => {
-                    eprintln!("Error in reading message: {}", error);
+                    tracing::error!(%error, "Error in reading message");
                 }
             }
         }

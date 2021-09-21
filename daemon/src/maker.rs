@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(&format!("0.0.0.0:{}", opts.p2p_port)).await?;
     let local_addr = listener.local_addr().unwrap();
 
-    println!("Listening on {}", local_addr);
+    tracing::info!("Listening on {}", local_addr);
 
     rocket::custom(figment)
         .manage(cfd_feed_receiver)

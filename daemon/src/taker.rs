@@ -100,7 +100,7 @@ async fn main() -> Result<()> {
         if let Ok(connection) = socket.connect(opts.taker).await {
             break connection.into_split();
         } else {
-            println!(
+            tracing::warn!(
                 "Could not connect to the maker, retrying in {}s ...",
                 CONNECTION_RETRY_INTERVAL.as_secs()
             );

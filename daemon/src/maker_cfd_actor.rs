@@ -68,9 +68,8 @@ pub fn new(
                         order_id,
                         quantity,
                     } => {
-                        println!(
-                            "Taker {} wants to take {} of order {}",
-                            taker_id, quantity, order_id
+                        tracing::debug!(%taker_id, %quantity, %order_id,
+                            "Taker wants to take an order"
                         );
 
                         let mut conn = db.acquire().await.unwrap();
