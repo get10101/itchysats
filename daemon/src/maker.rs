@@ -18,6 +18,7 @@ mod keypair;
 mod maker_cfd_actor;
 mod maker_inc_connections_actor;
 mod model;
+mod routes;
 mod routes_maker;
 mod seed;
 mod send_wire_message_actor;

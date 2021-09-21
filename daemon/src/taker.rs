@@ -18,6 +18,7 @@ use tokio::sync::watch;
 mod db;
 mod keypair;
 mod model;
+mod routes;
 mod routes_taker;
 mod seed;
 mod send_wire_message_actor;

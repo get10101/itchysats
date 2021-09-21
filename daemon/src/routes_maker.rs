@@ -1,9 +1,9 @@
 use crate::maker_cfd_actor;
 use crate::model::cfd::{Cfd, Order, Origin};
 use crate::model::{Usd, WalletInfo};
+use crate::routes::EmbeddedFileExt;
 use crate::to_sse_event::ToSseEvent;
 use anyhow::Result;
-
 use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
 use rocket::response::{status, Responder};
@@ -11,7 +11,7 @@ use rocket::serde::json::Json;
 use rocket::State;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
-use std::ffi::OsStr;
+use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::{mpsc, watch};
@@ -118,24 +118,11 @@ struct Asset;
 #[rocket::get("/assets/<file..>")]
 pub fn dist<'r>(file: PathBuf) -> impl Responder<'r, 'static> {
     let filename = format!("assets/{}", file.display().to_string());
-    Asset::get(&filename).map_or_else(
-        || Err(Status::NotFound),
-        |d| {
-            let ext = file
-                .as_path()
-                .extension()
-                .and_then(OsStr::to_str)
-                .ok_or_else(|| Status::new(400))?;
-            let content_type = ContentType::from_extension(ext).ok_or_else(|| Status::new(400))?;
-            Ok((content_type, d.data))
-        },
-    )
+    Asset::get(&filename).into_response(file)
 }
 
-#[rocket::get("/<_paths..>")]
+#[rocket::get("/<_paths..>", format = "text/html")]
 pub fn index<'r>(_paths: PathBuf) -> impl Responder<'r, 'static> {
-    Asset::get("index.html").map_or_else(
-        || Err(Status::NotFound),
-        |d| Ok((ContentType::HTML, d.data)),
-    )
+    let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
+    Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
 }
