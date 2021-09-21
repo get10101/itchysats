@@ -27,6 +27,7 @@ use std::ops::RangeInclusive;
 mod sighash_ext;
 mod transaction_ext;
 mod transactions;
+mod txin_ext;
 
 /// Static script to be used to create lock tx
 const DUMMY_2OF2_MULTISIG: &str =
