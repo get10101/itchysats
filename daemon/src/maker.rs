@@ -14,6 +14,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tracing_subscriber::filter::LevelFilter;
 
+mod auth;
 mod db;
 mod keypair;
 mod logger;
@@ -86,6 +87,10 @@ async fn main() -> Result<()> {
     .await?;
     let wallet_info = wallet.sync().await.unwrap();
 
+    let auth_password = seed.derive_auth_password::<auth::Password>();
+
+    println!("Auth password: {}", auth_password);
+
     let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
 
     let (cfd_feed_sender, cfd_feed_receiver) = watch::channel::<Vec<Cfd>>(vec![]);
@@ -105,6 +110,7 @@ async fn main() -> Result<()> {
         .manage(cfd_feed_receiver)
         .manage(order_feed_receiver)
         .manage(wallet_feed_receiver)
+        .manage(auth_password)
         .attach(Db::init())
         .attach(AdHoc::try_on_ignite(
             "SQL migrations",
@@ -171,10 +177,12 @@ async fn main() -> Result<()> {
                 routes_maker::get_health_check
             ],
         )
+        .register("/api", rocket::catchers![routes_maker::unauthorized])
         .mount(
             "/",
             rocket::routes![routes_maker::dist, routes_maker::index],
         )
+        .register("/", rocket::catchers![routes_maker::unauthorized])
         .launch()
         .await?;
 

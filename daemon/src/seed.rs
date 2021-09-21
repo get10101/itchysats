@@ -52,14 +52,26 @@ impl Seed {
     }
 
     pub fn derive_extended_priv_key(&self, network: Network) -> Result<ExtendedPrivKey> {
-        let h = Hkdf::<Sha256>::new(None, &self.0);
-        let mut okm = [0u8; 64];
-        h.expand(b"BITCOIN_WALLET_SEED", &mut okm)
+        let mut ext_priv_key_seed = [0u8; 64];
+
+        Hkdf::<Sha256>::new(None, &self.0)
+            .expand(b"BITCOIN_WALLET_SEED", &mut ext_priv_key_seed)
             .expect("okm array is of correct length");
 
-        let ext_priv_key = ExtendedPrivKey::new_master(network, &okm)?;
+        let ext_priv_key = ExtendedPrivKey::new_master(network, &ext_priv_key_seed)?;
 
         Ok(ext_priv_key)
+    }
+
+    #[allow(dead_code)] // Not used by all binaries.
+    pub fn derive_auth_password<P: From<[u8; 32]>>(&self) -> P {
+        let mut password = [0u8; 32];
+
+        Hkdf::<Sha256>::new(None, &self.0)
+            .expand(b"HTTP_AUTH_PASSWORD", &mut password)
+            .expect("okm array is of correct length");
+
+        P::from(password)
     }
 }
 

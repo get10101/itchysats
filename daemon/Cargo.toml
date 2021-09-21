@@ -10,9 +10,11 @@ bdk = { git = "https://github.com/bitcoindevkit/bdk/" }
 cfd_protocol = { path = "../cfd_protocol" }
 clap = "3.0.0-beta.4"
 futures = { version = "0.3", default-features = false }
+hex = "0.4"
 hkdf = "0.11"
 rand = "0.6"
-rocket = { git = "https://github.com/SergioBenitez/Rocket", features = ["json"] }
+rocket = { version = "0.5.0-rc.1", features = ["json"] }
+rocket-basicauth = { version = "2", default-features = false }
 rocket_db_pools = { git = "https://github.com/SergioBenitez/Rocket", features = ["sqlx_sqlite"] }
 rust-embed = "6.2"
 rust_decimal = { version = "1.16", features = ["serde-float", "serde-arbitrary-precision"] }
