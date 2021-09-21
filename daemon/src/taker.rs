@@ -171,6 +171,10 @@ async fn main() -> Result<()> {
                 routes_taker::margin_calc,
             ],
         )
+        .mount(
+            "/",
+            rocket::routes![routes_taker::dist, routes_taker::index],
+        )
         .launch()
         .await?;
 

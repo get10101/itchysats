@@ -162,6 +162,10 @@ async fn main() -> Result<()> {
                 routes_maker::get_health_check
             ],
         )
+        .mount(
+            "/",
+            rocket::routes![routes_maker::dist, routes_maker::index],
+        )
         .launch()
         .await?;
 

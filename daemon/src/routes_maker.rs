@@ -4,11 +4,15 @@ use crate::model::{Usd, WalletInfo};
 use crate::to_sse_event::ToSseEvent;
 use anyhow::Result;
 
-use rocket::response::status;
+use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
+use rocket::response::{status, Responder};
 use rocket::serde::json::Json;
 use rocket::State;
+use rust_embed::RustEmbed;
 use serde::Deserialize;
+use std::ffi::OsStr;
+use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::{mpsc, watch};
 
@@ -106,3 +110,32 @@ pub fn get_health_check() {}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct RetrieveCurrentOrder;
+
+#[derive(RustEmbed)]
+#[folder = "../frontend/dist/maker"]
+struct Asset;
+
+#[rocket::get("/assets/<file..>")]
+pub fn dist<'r>(file: PathBuf) -> impl Responder<'r, 'static> {
+    let filename = format!("assets/{}", file.display().to_string());
+    Asset::get(&filename).map_or_else(
+        || Err(Status::NotFound),
+        |d| {
+            let ext = file
+                .as_path()
+                .extension()
+                .and_then(OsStr::to_str)
+                .ok_or_else(|| Status::new(400))?;
+            let content_type = ContentType::from_extension(ext).ok_or_else(|| Status::new(400))?;
+            Ok((content_type, d.data))
+        },
+    )
+}
+
+#[rocket::get("/<_paths..>")]
+pub fn index<'r>(_paths: PathBuf) -> impl Responder<'r, 'static> {
+    Asset::get("index.html").map_or_else(
+        || Err(Status::NotFound),
+        |d| Ok((ContentType::HTML, d.data)),
+    )
+}
