@@ -60,6 +60,23 @@ where
     }
 }
 
+/// Build all the transactions and some of the signatures and
+/// encrypted signatures needed to perform the CFD protocol.
+///
+/// # Arguments
+///
+/// * `maker` - The initial parameters of the maker.
+/// * `maker_punish_params` - The punish parameters of the maker.
+/// * `taker` - The initial parameters of the taker.
+/// * `taker_punish_params` - The punish parameters of the taker.
+/// * `oracle_pk` - The public key of the oracle.
+/// * `nonce_pks` - One R-value per price digit signed by the oracle. Their order matches a big
+///   endian encoding of the price.
+/// * `refund_timelock` - Relative timelock of the refund transaction with respect to the commit
+///   transaction.
+/// * `payouts` - All the possible ways in which the contract can be settled, according to the
+///   conditions of the bet.
+/// * `identity_sk` - The secret key of the caller, used to sign and encsign different transactions.
 pub fn create_cfd_transactions(
     (maker, maker_punish_params): (PartyParams, PunishParams),
     (taker, taker_punish_params): (PartyParams, PunishParams),
