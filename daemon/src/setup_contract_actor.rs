@@ -1,4 +1,4 @@
-use crate::model::cfd::{Cfd, FinalizedCfd};
+use crate::model::cfd::{Cfd, Dlc};
 use crate::wire::{Msg0, Msg1, SetupMsg};
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey, Signature, SECP256K1};
@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 /// Given an initial set of parameters, sets up the CFD contract with the other party.
 /// Passing OwnParams identifies whether caller is the maker or the taker.
 ///
-/// Returns the [`FinalizedCfd`] which contains the lock transaction, ready to be signed and sent to
+/// Returns the [`Dlc`] which contains the lock transaction, ready to be signed and sent to
 /// the other party. Signing of the lock transaction is not included in this function because we
 /// want the Cfd actor to own the wallet.
 pub fn new(
@@ -26,10 +26,7 @@ pub fn new(
     sk: SecretKey,
     oracle_pk: schnorrsig::PublicKey,
     cfd: Cfd,
-) -> (
-    impl Future<Output = FinalizedCfd>,
-    mpsc::UnboundedSender<SetupMsg>,
-) {
+) -> (impl Future<Output = Dlc>, mpsc::UnboundedSender<SetupMsg>) {
     let (sender, mut receiver) = mpsc::unbounded_channel::<SetupMsg>();
 
     let actor = async move {
@@ -130,7 +127,7 @@ pub fn new(
             .map(|(tx, _, digits)| (digits.range(), (tx, digits)))
             .collect::<HashMap<_, _>>();
 
-        FinalizedCfd {
+        Dlc {
             identity: sk,
             revocation: rev_sk,
             publish: publish_sk,
@@ -142,7 +139,7 @@ pub fn new(
                 .map(|(range, sig)| {
                     let (cet, digits) = cet_by_digits.remove(&range).expect("unknown CET");
 
-                    (cet, sig, digits)
+                    (cet, sig, digits.range())
                 })
                 .collect::<Vec<_>>(),
             refund: (refund_tx, msg1.refund),
