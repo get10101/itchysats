@@ -21,10 +21,7 @@ pub fn attest(
     secp_utils::schnorr_sign_with_nonce(&msg, key_pair, nonce)
 }
 
-pub fn nonce<R>(rng: &mut R) -> (SecretKey, schnorrsig::PublicKey)
-where
-    R: RngCore + CryptoRng,
-{
+pub fn nonce(rng: &mut (impl RngCore + CryptoRng)) -> (SecretKey, schnorrsig::PublicKey) {
     let nonce = SecretKey::new(rng);
 
     let key_pair = schnorrsig::KeyPair::from_secret_key(SECP256K1, nonce);

@@ -255,8 +255,8 @@ fn renew_cfd() {
     )
 }
 
-fn create_cfd_txs<R>(
-    rng: &mut R,
+fn create_cfd_txs(
+    rng: &mut (impl RngCore + CryptoRng),
     (maker_wallet, maker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
     (taker_wallet, taker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
     (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
@@ -269,10 +269,7 @@ fn create_cfd_txs<R>(
     CfdKeys,
     Address,
     Address,
-)
-where
-    R: RngCore + CryptoRng,
-{
+) {
     let (maker_sk, maker_pk) = make_keypair(rng);
     let (taker_sk, taker_pk) = make_keypair(rng);
 
@@ -445,8 +442,8 @@ fn verify_cfd_sigs(
     .expect("valid taker commit encsig");
 }
 
-fn check_cfd_txs<R>(
-    rng: &mut R,
+fn check_cfd_txs(
+    rng: &mut (impl RngCore + CryptoRng),
     (
         maker_wallet,
         maker_cfd_txs,
@@ -488,9 +485,7 @@ fn check_cfd_txs<R>(
     (oracle, event): (Oracle, Event),
     (lock_desc, lock_amount): (Descriptor<PublicKey>, Amount),
     (commit_desc, commit_amount): (Descriptor<PublicKey>, Amount),
-) where
-    R: RngCore + CryptoRng,
-{
+) {
     // Lock transaction (either party can do this):
 
     let signed_lock_tx = sign_lock_tx(maker_cfd_txs.lock, maker_wallet, taker_wallet)
@@ -785,14 +780,11 @@ fn check_tx_fee(input_txs: &[&Transaction], spend_tx: &Transaction) -> Result<()
     Ok(())
 }
 
-fn build_wallet<R>(
-    rng: &mut R,
+fn build_wallet(
+    rng: &mut (impl RngCore + CryptoRng),
     utxo_amount: Amount,
     num_utxos: u8,
-) -> Result<bdk::Wallet<(), bdk::database::MemoryDatabase>>
-where
-    R: RngCore + CryptoRng,
-{
+) -> Result<bdk::Wallet<(), bdk::database::MemoryDatabase>> {
     use bdk::{populate_test_db, testutils};
 
     let mut seed = [0u8; 32];
@@ -826,10 +818,7 @@ impl Oracle {
     /// Maximum number of binary digits for BTC price in whole USD.
     const MAX_DIGITS: usize = 20;
 
-    fn new<R>(rng: &mut R) -> Self
-    where
-        R: RngCore + CryptoRng,
-    {
+    fn new(rng: &mut (impl RngCore + CryptoRng)) -> Self {
         let key_pair = schnorrsig::KeyPair::new(SECP256K1, rng);
 
         Self { key_pair }
@@ -854,10 +843,7 @@ impl Oracle {
     }
 }
 
-fn announce<R>(rng: &mut R) -> (Event, Announcement)
-where
-    R: RngCore + CryptoRng,
-{
+fn announce(rng: &mut (impl RngCore + CryptoRng)) -> (Event, Announcement) {
     let event = Event::new(rng);
     let announcement = event.announcement();
 
@@ -875,10 +861,7 @@ struct Event {
 }
 
 impl Event {
-    fn new<R>(rng: &mut R) -> Self
-    where
-        R: RngCore + CryptoRng,
-    {
+    fn new(rng: &mut (impl RngCore + CryptoRng)) -> Self {
         let (nonces, nonce_pks) = (0..20).map(|_| nonce(rng)).unzip::<_, _, Vec<_>, _>();
         let nonces = nonces.try_into().expect("20 nonces");
 
@@ -903,10 +886,7 @@ impl Announcement {
     }
 }
 
-fn make_keypair<R>(rng: &mut R) -> (SecretKey, PublicKey)
-where
-    R: RngCore + CryptoRng,
-{
+fn make_keypair(rng: &mut (impl RngCore + CryptoRng)) -> (SecretKey, PublicKey) {
     let sk = SecretKey::new(rng);
     let pk = PublicKey::from_private_key(
         SECP256K1,
@@ -930,10 +910,7 @@ fn schnorrsig_decompose(signature: &schnorrsig::Signature) -> (schnorrsig::Publi
     (nonce_pk, s)
 }
 
-fn gen_price<R>(rng: &mut R, digits: &interval::Digits) -> u64
-where
-    R: RngCore,
-{
+fn gen_price(rng: &mut impl RngCore, digits: &interval::Digits) -> u64 {
     let (start, end) = digits.range().into_inner();
     if start == end {
         start
