@@ -32,13 +32,17 @@ fn create_cfd() {
 
     let payouts = vec![
         Payout::new(
-            0,
-            10_000,
+            0..=10_000,
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
         )
         .unwrap(),
-        Payout::new(10_001, 20_000, Amount::ZERO, Amount::from_btc(2.0).unwrap()).unwrap(),
+        Payout::new(
+            10_001..=20_000,
+            Amount::ZERO,
+            Amount::from_btc(2.0).unwrap(),
+        )
+        .unwrap(),
     ]
     .concat();
 
@@ -112,8 +116,13 @@ fn renew_cfd() {
     let (_event, announcement) = announce(&mut rng);
 
     let payouts = vec![
-        Payout::new(0, 10_000, Amount::from_btc(2.0).unwrap(), Amount::ZERO).unwrap(),
-        Payout::new(10_001, 20_000, Amount::ZERO, Amount::from_btc(2.0).unwrap()).unwrap(),
+        Payout::new(0..=10_000, Amount::from_btc(2.0).unwrap(), Amount::ZERO).unwrap(),
+        Payout::new(
+            10_001..=20_000,
+            Amount::ZERO,
+            Amount::from_btc(2.0).unwrap(),
+        )
+        .unwrap(),
     ]
     .concat();
 
@@ -140,15 +149,13 @@ fn renew_cfd() {
 
     let payouts = vec![
         Payout::new(
-            0,
-            10_000,
+            0..=10_000,
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
         )
         .unwrap(),
         Payout::new(
-            10_001,
-            20_000,
+            10_001..=20_000,
             Amount::from_btc(0.5).unwrap(),
             Amount::from_btc(1.5).unwrap(),
         )

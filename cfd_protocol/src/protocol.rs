@@ -22,6 +22,7 @@ use itertools::Itertools;
 use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
 use std::iter::FromIterator;
+use std::ops::RangeInclusive;
 
 mod sighash_ext;
 mod transaction_ext;
@@ -341,12 +342,11 @@ pub struct Payout {
 
 impl Payout {
     pub fn new(
-        start: u64,
-        end: u64,
+        range: RangeInclusive<u64>,
         maker_amount: Amount,
         taker_amount: Amount,
     ) -> Result<Vec<Self>> {
-        let digits = interval::Digits::new(start, end).context("invalid interval")?;
+        let digits = interval::Digits::new(range).context("invalid interval")?;
         Ok(digits
             .into_iter()
             .map(|digits| Self {
@@ -473,8 +473,7 @@ mod tests {
         let orig_maker_amount = 1000;
         let orig_taker_amount = 1000;
         let payouts = Payout::new(
-            0,
-            10_000,
+            0..=10_000,
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         )
@@ -508,8 +507,7 @@ mod tests {
         let orig_maker_amount = dummy_dust_limit.as_sat() - 1;
         let orig_taker_amount = 1000;
         let payouts = Payout::new(
-            0,
-            10_000,
+            0..=10_000,
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
         )

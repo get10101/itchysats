@@ -17,7 +17,8 @@ const BASE: usize = 2;
 pub struct Digits(BitVec);
 
 impl Digits {
-    pub fn new(start: u64, end: u64) -> Result<Vec<Self>, Error> {
+    pub fn new(range: RangeInclusive<u64>) -> Result<Vec<Self>, Error> {
+        let (start, end) = range.into_inner();
         if start > MAX_PRICE_DEC || end > MAX_PRICE_DEC {
             return Err(Error::RangeOverMax);
         }
@@ -127,7 +128,7 @@ mod tests {
         }
 
         fn to_digits(&self) -> Result<Vec<Digits>> {
-            let digits = Digits::new(*self.0.start(), *self.0.end())?;
+            let digits = Digits::new(self.0.clone())?;
 
             Ok(digits)
         }
