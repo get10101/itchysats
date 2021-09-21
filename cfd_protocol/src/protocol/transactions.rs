@@ -20,7 +20,7 @@ use std::iter::FromIterator;
 /// In satoshi per vbyte.
 const SATS_PER_VBYTE: f64 = 1.0;
 
-pub(super) fn lock_transaction(
+pub(crate) fn lock_transaction(
     maker_psbt: PartiallySignedTransaction,
     taker_psbt: PartiallySignedTransaction,
     maker_pk: PublicKey,
@@ -80,7 +80,7 @@ pub(super) fn lock_transaction(
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct CommitTransaction {
+pub(crate) struct CommitTransaction {
     inner: Transaction,
     descriptor: Descriptor<PublicKey>,
     amount: Amount,
@@ -94,7 +94,7 @@ impl CommitTransaction {
     /// buffer to account for different signature lengths.
     const SIGNED_VBYTES: f64 = 148.5 + (3.0 * 2.0) / 4.0;
 
-    pub(super) fn new(
+    pub(crate) fn new(
         lock_tx: &Transaction,
         (maker_pk, maker_rev_pk, maker_publish_pk): (PublicKey, PublicKey, PublicKey),
         (taker_pk, taker_rev_pk, taker_publish_pk): (PublicKey, PublicKey, PublicKey),
@@ -152,7 +152,7 @@ impl CommitTransaction {
         })
     }
 
-    pub(super) fn encsign(
+    pub(crate) fn encsign(
         &self,
         sk: SecretKey,
         publish_them_pk: &PublicKey,
@@ -165,7 +165,7 @@ impl CommitTransaction {
         )
     }
 
-    pub(super) fn into_inner(self) -> Transaction {
+    pub(crate) fn into_inner(self) -> Transaction {
         self.inner
     }
 
@@ -189,7 +189,7 @@ impl CommitTransaction {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ContractExecutionTransaction {
+pub(crate) struct ContractExecutionTransaction {
     inner: Transaction,
     msg_nonce_pairs: Vec<(Vec<u8>, schnorrsig::PublicKey)>,
     sighash: SigHash,
@@ -201,7 +201,7 @@ impl ContractExecutionTransaction {
     /// buffer to account for different signature lengths.
     const SIGNED_VBYTES: f64 = 206.5 + (3.0 * 2.0) / 4.0;
 
-    pub(super) fn new(
+    pub(crate) fn new(
         commit_tx: &CommitTransaction,
         payout: Payout,
         maker_address: &Address,
@@ -253,7 +253,7 @@ impl ContractExecutionTransaction {
         })
     }
 
-    pub(super) fn encsign(
+    pub(crate) fn encsign(
         &self,
         sk: SecretKey,
         oracle_pk: &schnorrsig::PublicKey,
@@ -268,13 +268,13 @@ impl ContractExecutionTransaction {
         ))
     }
 
-    pub(super) fn into_inner(self) -> Transaction {
+    pub(crate) fn into_inner(self) -> Transaction {
         self.inner
     }
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct RefundTransaction {
+pub(crate) struct RefundTransaction {
     inner: Transaction,
     sighash: SigHash,
     commit_output_descriptor: Descriptor<PublicKey>,
@@ -285,7 +285,7 @@ impl RefundTransaction {
     /// buffer to account for different signature lengths.
     const SIGNED_VBYTES: f64 = 206.5 + (3.0 * 2.0) / 4.0;
 
-    pub(super) fn new(
+    pub(crate) fn new(
         commit_tx: &CommitTransaction,
         relative_locktime_in_blocks: u32,
         maker_address: &Address,
@@ -337,11 +337,11 @@ impl RefundTransaction {
         }
     }
 
-    pub(super) fn sighash(&self) -> SigHash {
+    pub(crate) fn sighash(&self) -> SigHash {
         self.sighash
     }
 
-    pub(super) fn into_inner(self) -> Transaction {
+    pub(crate) fn into_inner(self) -> Transaction {
         self.inner
     }
 }

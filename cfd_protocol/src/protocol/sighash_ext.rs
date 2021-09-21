@@ -1,7 +1,7 @@
 use bdk::bitcoin::hashes::Hash;
 use bdk::bitcoin::SigHash;
 
-pub(super) trait SigHashExt {
+pub(crate) trait SigHashExt {
     fn to_message(self) -> secp256k1_zkp::Message;
 }
 
