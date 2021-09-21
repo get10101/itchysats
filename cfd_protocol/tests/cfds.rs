@@ -5,21 +5,21 @@ use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use bdk::wallet::AddressIndex;
 use bdk::SignOptions;
+use bit_vec::BitVec;
 use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::Txid;
 use cfd_protocol::{
-    commit_descriptor, compute_signature_point, create_cfd_transactions,
-    finalize_spend_transaction, lock_descriptor, punish_transaction, renew_cfd_transactions,
-    spending_tx_sighash, CfdTransactions, Payout, PunishParams, TransactionExt, WalletExt,
+    attest, commit_descriptor, compute_adaptor_point, create_cfd_transactions,
+    finalize_spend_transaction, interval, lock_descriptor, nonce, punish_transaction,
+    renew_cfd_transactions, spending_tx_sighash, CfdTransactions, Payout, PunishParams,
+    TransactionExt, WalletExt,
 };
-use rand::{CryptoRng, RngCore, SeedableRng};
-use rand_chacha::ChaChaRng;
-use secp256k1_zkp::bitcoin_hashes::sha256;
+use rand::{thread_rng, CryptoRng, Rng, RngCore};
 use secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
+use std::convert::TryInto;
 
 #[test]
 fn create_cfd() {
-    let mut rng = ChaChaRng::seed_from_u64(0);
+    let mut rng = thread_rng();
 
     let maker_lock_amount = Amount::ONE_BTC;
     let taker_lock_amount = Amount::ONE_BTC;
@@ -32,18 +32,19 @@ fn create_cfd() {
 
     let payouts = vec![
         Payout::new(
-            b"win".to_vec(),
-            announcement.nonce_pk(),
+            0..=10_000,
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
-        ),
+        )
+        .unwrap(),
         Payout::new(
-            b"lose".to_vec(),
-            announcement.nonce_pk(),
+            10_001..=20_000,
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
-        ),
-    ];
+        )
+        .unwrap(),
+    ]
+    .concat();
 
     let refund_timelock = 0;
 
@@ -51,7 +52,7 @@ fn create_cfd() {
         &mut rng,
         (&maker_wallet, maker_lock_amount),
         (&taker_wallet, taker_lock_amount),
-        oracle.public_key(),
+        (oracle.public_key(), &announcement.nonce_pks()),
         payouts,
         refund_timelock,
     );
@@ -68,12 +69,13 @@ fn create_cfd() {
     verify_cfd_sigs(
         (&maker_cfd_txs, maker.pk, maker.pub_pk),
         (&taker_cfd_txs, taker.pk, taker.pub_pk),
-        oracle.public_key(),
+        (oracle.public_key(), &announcement.nonce_pks()),
         (&lock_desc, lock_amount),
         (&commit_desc, commit_amount),
     );
 
     check_cfd_txs(
+        &mut rng,
         (
             maker_wallet,
             maker_cfd_txs,
@@ -102,7 +104,7 @@ fn create_cfd() {
 
 #[test]
 fn renew_cfd() {
-    let mut rng = ChaChaRng::seed_from_u64(0);
+    let mut rng = thread_rng();
 
     let maker_lock_amount = Amount::ONE_BTC;
     let taker_lock_amount = Amount::ONE_BTC;
@@ -114,19 +116,15 @@ fn renew_cfd() {
     let (_event, announcement) = announce(&mut rng);
 
     let payouts = vec![
+        Payout::new(0..=10_000, Amount::from_btc(2.0).unwrap(), Amount::ZERO).unwrap(),
         Payout::new(
-            b"win".to_vec(),
-            announcement.nonce_pk(),
-            Amount::from_btc(2.0).unwrap(),
-            Amount::ZERO,
-        ),
-        Payout::new(
-            b"lose".to_vec(),
-            announcement.nonce_pk(),
+            10_001..=20_000,
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
-        ),
-    ];
+        )
+        .unwrap(),
+    ]
+    .concat();
 
     let refund_timelock = 0;
 
@@ -134,7 +132,7 @@ fn renew_cfd() {
         &mut rng,
         (&maker_wallet, maker_lock_amount),
         (&taker_wallet, taker_lock_amount),
-        oracle.public_key(),
+        (oracle.public_key(), &announcement.nonce_pks()),
         payouts,
         refund_timelock,
     );
@@ -151,18 +149,19 @@ fn renew_cfd() {
 
     let payouts = vec![
         Payout::new(
-            b"win".to_vec(),
-            announcement.nonce_pk(),
+            0..=10_000,
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
-        ),
+        )
+        .unwrap(),
         Payout::new(
-            b"lose".to_vec(),
-            announcement.nonce_pk(),
+            10_001..=20_000,
             Amount::from_btc(0.5).unwrap(),
             Amount::from_btc(1.5).unwrap(),
-        ),
-    ];
+        )
+        .unwrap(),
+    ]
+    .concat();
 
     let maker_cfd_txs = renew_cfd_transactions(
         maker_cfd_txs.lock,
@@ -184,7 +183,7 @@ fn renew_cfd() {
                 publish_pk: taker_pub_pk,
             },
         ),
-        oracle.public_key(),
+        (oracle.public_key(), &announcement.nonce_pks()),
         refund_timelock,
         payouts.clone(),
         maker.sk,
@@ -211,7 +210,7 @@ fn renew_cfd() {
                 publish_pk: taker_pub_pk,
             },
         ),
-        oracle.public_key(),
+        (oracle.public_key(), &announcement.nonce_pks()),
         refund_timelock,
         payouts,
         taker.sk,
@@ -230,12 +229,13 @@ fn renew_cfd() {
     verify_cfd_sigs(
         (&maker_cfd_txs, maker.pk, maker_pub_pk),
         (&taker_cfd_txs, taker.pk, taker_pub_pk),
-        oracle.public_key(),
+        (oracle.public_key(), &announcement.nonce_pks()),
         (&lock_desc, lock_amount),
         (&commit_desc, commit_amount),
     );
 
     check_cfd_txs(
+        &mut rng,
         (
             maker_wallet,
             maker_cfd_txs,
@@ -263,10 +263,10 @@ fn renew_cfd() {
 }
 
 fn create_cfd_txs(
-    rng: &mut ChaChaRng,
+    rng: &mut (impl RngCore + CryptoRng),
     (maker_wallet, maker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
     (taker_wallet, taker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
-    oracle_pk: schnorrsig::PublicKey,
+    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
     payouts: Vec<Payout>,
     refund_timelock: u32,
 ) -> (
@@ -308,7 +308,7 @@ fn create_cfd_txs(
                 publish_pk: taker_pub_pk,
             },
         ),
-        oracle_pk,
+        (oracle_pk, nonce_pks),
         refund_timelock,
         payouts.clone(),
         maker_sk,
@@ -329,7 +329,7 @@ fn create_cfd_txs(
                 publish_pk: taker_pub_pk,
             },
         ),
-        oracle_pk,
+        (oracle_pk, nonce_pks),
         refund_timelock,
         payouts,
         taker_sk,
@@ -371,7 +371,7 @@ struct CfdKeys {
 fn verify_cfd_sigs(
     (maker_cfd_txs, maker_pk, maker_publish_pk): (&CfdTransactions, PublicKey, PublicKey),
     (taker_cfd_txs, taker_pk, taker_publish_pk): (&CfdTransactions, PublicKey, PublicKey),
-    oracle_pk: schnorrsig::PublicKey,
+    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
     (lock_desc, lock_amount): (&Descriptor<PublicKey>, Amount),
     (commit_desc, commit_amount): (&Descriptor<PublicKey>, Amount),
 ) {
@@ -391,41 +391,43 @@ fn verify_cfd_sigs(
         &taker_pk.key,
     )
     .expect("valid taker refund sig");
-    for (tx, _, msg, nonce_pk) in taker_cfd_txs.cets.iter() {
-        let maker_encsig = maker_cfd_txs
+    for (tx, _, digits) in taker_cfd_txs.cets.iter() {
+        maker_cfd_txs
             .cets
             .iter()
-            .find_map(|(maker_tx, encsig, _, _)| (maker_tx.txid() == tx.txid()).then(|| encsig))
-            .expect("one encsig per cet, per party");
-
-        verify_cet_encsig(
-            tx,
-            maker_encsig,
-            msg,
-            &maker_pk.key,
-            (&oracle_pk, nonce_pk),
-            commit_desc,
-            commit_amount,
-        )
-        .expect("valid maker cet encsig")
+            .find(|(maker_tx, maker_encsig, _)| {
+                maker_tx.txid() == tx.txid()
+                    && verify_cet_encsig(
+                        tx,
+                        maker_encsig,
+                        digits,
+                        &maker_pk.key,
+                        (oracle_pk, nonce_pks),
+                        commit_desc,
+                        commit_amount,
+                    )
+                    .is_ok()
+            })
+            .expect("one valid maker cet encsig per cet");
     }
-    for (tx, _, msg, nonce_pk) in maker_cfd_txs.cets.iter() {
-        let taker_encsig = taker_cfd_txs
+    for (tx, _, msg_nonce_pairs) in maker_cfd_txs.cets.iter() {
+        taker_cfd_txs
             .cets
             .iter()
-            .find_map(|(taker_tx, encsig, _, _)| (taker_tx.txid() == tx.txid()).then(|| encsig))
-            .expect("one encsig per cet, per party");
-
-        verify_cet_encsig(
-            tx,
-            taker_encsig,
-            msg,
-            &taker_pk.key,
-            (&oracle_pk, nonce_pk),
-            commit_desc,
-            commit_amount,
-        )
-        .expect("valid taker cet encsig")
+            .find(|(taker_tx, taker_encsig, _)| {
+                taker_tx.txid() == tx.txid()
+                    && verify_cet_encsig(
+                        tx,
+                        taker_encsig,
+                        msg_nonce_pairs,
+                        &taker_pk.key,
+                        (oracle_pk, nonce_pks),
+                        commit_desc,
+                        commit_amount,
+                    )
+                    .is_ok()
+            })
+            .expect("one valid taker cet encsig per cet");
     }
     encverify_spend(
         &taker_cfd_txs.commit.0,
@@ -448,6 +450,7 @@ fn verify_cfd_sigs(
 }
 
 fn check_cfd_txs(
+    rng: &mut (impl RngCore + CryptoRng),
     (
         maker_wallet,
         maker_cfd_txs,
@@ -533,30 +536,30 @@ fn check_cfd_txs(
 
     // CETs:
 
-    for (tx, _, msg, _) in maker_cfd_txs.cets.clone().into_iter() {
+    for (tx, _, digits) in maker_cfd_txs.cets.clone().into_iter() {
+        let price = gen_price(rng, &digits);
+        let oracle_sigs = oracle.attest_price(price, &event.nonces);
+
         build_and_check_cet(
             tx,
-            &oracle.attest(&event, &msg),
-            taker_cfd_txs
-                .cets
-                .iter()
-                .map(|(tx, encsig, _, _)| (tx.txid(), *encsig)),
+            &taker_cfd_txs.cets,
             (&maker_sk, &maker_pk),
             &taker_pk,
+            (price, &oracle_sigs),
             (&signed_commit_tx_maker, &commit_desc, commit_amount),
         )
         .expect("valid maker cet");
     }
-    for (tx, _, msg, _) in taker_cfd_txs.cets.into_iter() {
+    for (tx, _, digits) in taker_cfd_txs.cets.into_iter() {
+        let price = gen_price(rng, &digits);
+        let oracle_sigs = oracle.attest_price(price, &event.nonces);
+
         build_and_check_cet(
             tx,
-            &oracle.attest(&event, &msg),
-            maker_cfd_txs
-                .cets
-                .iter()
-                .map(|(tx, encsig, _, _)| (tx.txid(), *encsig)),
+            &maker_cfd_txs.cets,
             (&taker_sk, &taker_pk),
             &maker_pk,
+            (price, &oracle_sigs),
             (&signed_commit_tx_maker, &commit_desc, commit_amount),
         )
         .expect("valid taker cet");
@@ -592,22 +595,35 @@ fn check_cfd_txs(
 
 fn build_and_check_cet(
     cet: Transaction,
-    oracle_sig: &schnorrsig::Signature,
-    mut cets_other: impl Iterator<Item = (Txid, EcdsaAdaptorSignature)>,
-    (maker_sk, maker_pk): (&SecretKey, &PublicKey),
-    taker_pk: &PublicKey,
+    cets_other: &[(Transaction, EcdsaAdaptorSignature, interval::Digits)],
+    (sk, pk): (&SecretKey, &PublicKey),
+    pk_other: &PublicKey,
+    (price, oracle_sigs): (u64, &[schnorrsig::Signature]),
     (commit_tx, commit_desc, commit_amount): (&Transaction, &Descriptor<PublicKey>, Amount),
 ) -> Result<()> {
-    let (_nonce_pk, signature_scalar) = schnorrsig_decompose(oracle_sig);
-    let taker_encsig = cets_other
-        .find_map(|(txid, encsig)| (txid == cet.txid()).then(|| encsig))
+    let (encsig_other, n_bits) = cets_other
+        .iter()
+        .find_map(|(_, encsig, digits)| {
+            (digits.range().contains(&price)).then(|| (encsig, digits.len()))
+        })
         .expect("one encsig per cet, per party");
+
+    let (oracle_sigs, _) = oracle_sigs.split_at(n_bits);
+
+    let (_nonce_pk, signature_scalar) = schnorrsig_decompose(&oracle_sigs[0]);
+    let mut decryption_sk = signature_scalar;
+
+    for oracle_sig in oracle_sigs[1..].iter() {
+        let (_nonce_pk, signature_scalar) = schnorrsig_decompose(oracle_sig);
+        decryption_sk.add_assign(signature_scalar.as_ref())?;
+    }
+
     let signed_cet = decrypt_and_sign(
         cet,
-        (maker_sk, maker_pk),
-        &signature_scalar,
-        taker_pk,
-        &taker_encsig,
+        (sk, pk),
+        &decryption_sk,
+        pk_other,
+        encsig_other,
         commit_desc,
         commit_amount,
     )
@@ -705,13 +721,19 @@ fn verify_spend(
 fn verify_cet_encsig(
     tx: &Transaction,
     encsig: &EcdsaAdaptorSignature,
-    msg: &[u8],
+    digits: &interval::Digits,
     pk: &secp256k1_zkp::PublicKey,
-    (oracle_pk, nonce_pk): (&schnorrsig::PublicKey, &schnorrsig::PublicKey),
+    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
     spent_descriptor: &Descriptor<PublicKey>,
     spent_amount: Amount,
 ) -> Result<()> {
-    let sig_point = compute_signature_point(oracle_pk, nonce_pk, msg)
+    let msg_nonce_pairs = &digits
+        .to_bytes()
+        .into_iter()
+        .zip(nonce_pks.iter().cloned())
+        .collect::<Vec<_>>();
+
+    let sig_point = compute_adaptor_point(&oracle_pk, msg_nonce_pairs)
         .context("could not calculate signature point")?;
     encverify_spend(tx, encsig, spent_descriptor, spent_amount, &sig_point, pk)
 }
@@ -765,14 +787,11 @@ fn check_tx_fee(input_txs: &[&Transaction], spend_tx: &Transaction) -> Result<()
     Ok(())
 }
 
-fn build_wallet<R>(
-    rng: &mut R,
+fn build_wallet(
+    rng: &mut (impl RngCore + CryptoRng),
     utxo_amount: Amount,
     num_utxos: u8,
-) -> Result<bdk::Wallet<(), bdk::database::MemoryDatabase>>
-where
-    R: RngCore + CryptoRng,
-{
+) -> Result<bdk::Wallet<(), bdk::database::MemoryDatabase>> {
     use bdk::{populate_test_db, testutils};
 
     let mut seed = [0u8; 32];
@@ -803,10 +822,10 @@ struct Oracle {
 }
 
 impl Oracle {
-    fn new<R>(rng: &mut R) -> Self
-    where
-        R: RngCore + CryptoRng,
-    {
+    /// Maximum number of binary digits for BTC price in whole USD.
+    const MAX_DIGITS: usize = 20;
+
+    fn new(rng: &mut (impl RngCore + CryptoRng)) -> Self {
         let key_pair = schnorrsig::KeyPair::new(SECP256K1, rng);
 
         Self { key_pair }
@@ -816,74 +835,69 @@ impl Oracle {
         schnorrsig::PublicKey::from_keypair(SECP256K1, &self.key_pair)
     }
 
-    fn attest(&self, event: &Event, msg: &[u8]) -> schnorrsig::Signature {
-        let msg = secp256k1_zkp::Message::from_hashed_data::<sha256::Hash>(msg);
+    fn attest_price(
+        &self,
+        price: u64,
+        nonces: &[SecretKey; Self::MAX_DIGITS],
+    ) -> Vec<schnorrsig::Signature> {
+        let mut bits = BitVec::from_bytes(&price.to_be_bytes());
+        let bits = bits.split_off(bits.len() - Self::MAX_DIGITS);
 
-        secp_utils::schnorr_sign_with_nonce(&msg, &self.key_pair, &event.nonce)
+        bits.iter()
+            .zip(nonces)
+            .map(|(msg, nonce)| attest(&self.key_pair, nonce, &[msg as u8]))
+            .collect()
     }
 }
 
-fn announce<R>(rng: &mut R) -> (Event, Announcement)
-where
-    R: RngCore + CryptoRng,
-{
+fn announce(rng: &mut (impl RngCore + CryptoRng)) -> (Event, Announcement) {
     let event = Event::new(rng);
     let announcement = event.announcement();
 
     (event, announcement)
 }
 
-/// Represents the oracle's commitment to a nonce that will be used to
-/// sign a specific event in the future.
+/// Represents the oracle's commitment to a set of nonces that will be used to
+/// sign each digit of the price of BTC in USD at a specific time in the future.
 struct Event {
-    /// Nonce.
+    /// Nonces.
     ///
     /// Must remain secret.
-    nonce: SecretKey,
-    nonce_pk: schnorrsig::PublicKey,
+    nonces: [SecretKey; Oracle::MAX_DIGITS],
+    nonce_pks: Vec<schnorrsig::PublicKey>,
 }
 
 impl Event {
-    fn new<R>(rng: &mut R) -> Self
-    where
-        R: RngCore + CryptoRng,
-    {
-        let nonce = SecretKey::new(rng);
+    fn new(rng: &mut (impl RngCore + CryptoRng)) -> Self {
+        let (nonces, nonce_pks) = (0..Oracle::MAX_DIGITS)
+            .map(|_| nonce(rng))
+            .unzip::<_, _, Vec<_>, _>();
+        let nonces = nonces
+            .try_into()
+            .unwrap_or_else(|_| panic!("{} nonces", Oracle::MAX_DIGITS));
 
-        let key_pair = schnorrsig::KeyPair::from_secret_key(SECP256K1, nonce);
-        let nonce_pk = schnorrsig::PublicKey::from_keypair(SECP256K1, &key_pair);
-
-        Self { nonce, nonce_pk }
+        Self { nonces, nonce_pks }
     }
 
     fn announcement(&self) -> Announcement {
         Announcement {
-            nonce_pk: self.nonce_pk,
+            nonce_pks: self.nonce_pks.clone(),
         }
     }
 }
 
-/// Public message which can be used by anyone to perform a DLC
-/// protocol based on a specific event.
-///
-/// These would normally include more information to identify the
-/// specific event, but we omit this for simplicity. See:
-/// https://github.com/discreetlogcontracts/dlcspecs/blob/master/Oracle.md#oracle-events
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Announcement {
-    nonce_pk: schnorrsig::PublicKey,
+    nonce_pks: Vec<schnorrsig::PublicKey>,
 }
 
 impl Announcement {
-    fn nonce_pk(&self) -> schnorrsig::PublicKey {
-        self.nonce_pk
+    fn nonce_pks(&self) -> Vec<schnorrsig::PublicKey> {
+        self.nonce_pks.clone()
     }
 }
 
-fn make_keypair<R>(rng: &mut R) -> (SecretKey, PublicKey)
-where
-    R: RngCore + CryptoRng,
-{
+fn make_keypair(rng: &mut (impl RngCore + CryptoRng)) -> (SecretKey, PublicKey) {
     let sk = SecretKey::new(rng);
     let pk = PublicKey::from_private_key(
         SECP256K1,
@@ -907,49 +921,11 @@ fn schnorrsig_decompose(signature: &schnorrsig::Signature) -> (schnorrsig::Publi
     (nonce_pk, s)
 }
 
-mod secp_utils {
-    use super::*;
-
-    use secp256k1_zkp::secp256k1_zkp_sys::types::c_void;
-    use secp256k1_zkp::secp256k1_zkp_sys::CPtr;
-    use std::os::raw::{c_int, c_uchar};
-    use std::ptr;
-
-    /// Create a Schnorr signature using the provided nonce instead of generating one.
-    pub fn schnorr_sign_with_nonce(
-        msg: &secp256k1_zkp::Message,
-        keypair: &schnorrsig::KeyPair,
-        nonce: &SecretKey,
-    ) -> schnorrsig::Signature {
-        unsafe {
-            let mut sig = [0u8; secp256k1_zkp::constants::SCHNORRSIG_SIGNATURE_SIZE];
-            assert_eq!(
-                1,
-                secp256k1_zkp::ffi::secp256k1_schnorrsig_sign(
-                    *SECP256K1.ctx(),
-                    sig.as_mut_c_ptr(),
-                    msg.as_c_ptr(),
-                    keypair.as_ptr(),
-                    Some(constant_nonce_fn),
-                    nonce.as_c_ptr() as *const c_void
-                )
-            );
-
-            schnorrsig::Signature::from_slice(&sig).unwrap()
-        }
-    }
-
-    extern "C" fn constant_nonce_fn(
-        nonce32: *mut c_uchar,
-        _msg32: *const c_uchar,
-        _key32: *const c_uchar,
-        _xonly_pk32: *const c_uchar,
-        _algo16: *const c_uchar,
-        data: *mut c_void,
-    ) -> c_int {
-        unsafe {
-            ptr::copy_nonoverlapping(data as *const c_uchar, nonce32, 32);
-        }
-        1
+fn gen_price(rng: &mut impl RngCore, digits: &interval::Digits) -> u64 {
+    let (start, end) = digits.range().into_inner();
+    if start == end {
+        start
+    } else {
+        rng.gen_range(start, end)
     }
 }

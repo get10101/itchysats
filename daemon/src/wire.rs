@@ -3,9 +3,11 @@ use crate::model::Usd;
 use crate::Order;
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::{Address, Amount, PublicKey, Txid};
-use cfd_protocol::{CfdTransactions, EcdsaAdaptorSignature, PartyParams, PunishParams};
+use bdk::bitcoin::{Address, Amount, PublicKey};
+use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
+use cfd_protocol::{CfdTransactions, PartyParams, PunishParams};
 use serde::{Deserialize, Serialize};
+use std::ops::RangeInclusive;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
@@ -118,7 +120,7 @@ impl From<Msg0> for (PartyParams, PunishParams) {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Msg1 {
     pub commit: EcdsaAdaptorSignature,
-    pub cets: Vec<(Txid, EcdsaAdaptorSignature)>,
+    pub cets: Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>,
     pub refund: Signature,
 }
 
@@ -129,7 +131,7 @@ impl From<CfdTransactions> for Msg1 {
             cets: txs
                 .cets
                 .into_iter()
-                .map(|(tx, sig, _, _)| (tx.txid(), sig))
+                .map(|(_, sig, digits)| (digits.range(), sig))
                 .collect(),
             refund: txs.refund.1,
         }

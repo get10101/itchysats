@@ -2,14 +2,16 @@ use crate::model::cfd::{Cfd, FinalizedCfd};
 use crate::wire::{Msg0, Msg1, SetupMsg};
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey, Signature, SECP256K1};
-use bdk::bitcoin::{Amount, PublicKey, Transaction, Txid};
+use bdk::bitcoin::{Amount, PublicKey, Transaction};
 use bdk::descriptor::Descriptor;
+use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use cfd_protocol::{
-    commit_descriptor, compute_signature_point, create_cfd_transactions, lock_descriptor,
-    spending_tx_sighash, EcdsaAdaptorSignature, PartyParams, PunishParams,
+    commit_descriptor, compute_adaptor_point, create_cfd_transactions, interval, lock_descriptor,
+    spending_tx_sighash, PartyParams, PunishParams,
 };
 use futures::Future;
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 use tokio::sync::mpsc;
 
 /// Given an initial set of parameters, sets up the CFD contract with the other party.
@@ -59,7 +61,7 @@ pub fn new(
         let own_cfd_txs = create_cfd_transactions(
             (params.maker().clone(), *params.maker_punish()),
             (params.taker().clone(), *params.taker_punish()),
-            oracle_pk,
+            (oracle_pk, &[]),
             cfd.refund_timelock_in_blocks(),
             vec![],
             sk,
@@ -102,7 +104,7 @@ pub fn new(
         .unwrap();
 
         verify_cets(
-            &oracle_pk,
+            (&oracle_pk, &[]),
             &params.other,
             &own_cets,
             &msg1.cets,
@@ -123,9 +125,9 @@ pub fn new(
         )
         .unwrap();
 
-        let mut cet_by_id = own_cets
+        let mut cet_by_digits = own_cets
             .into_iter()
-            .map(|(tx, _, msg, _)| (tx.txid(), (tx, msg)))
+            .map(|(tx, _, digits)| (digits.range(), (tx, digits)))
             .collect::<HashMap<_, _>>();
 
         FinalizedCfd {
@@ -137,10 +139,10 @@ pub fn new(
             cets: msg1
                 .cets
                 .into_iter()
-                .map(|(txid, sig)| {
-                    let (cet, msg) = cet_by_id.remove(&txid).expect("unknown CET");
+                .map(|(range, sig)| {
+                    let (cet, digits) = cet_by_digits.remove(&range).expect("unknown CET");
 
-                    (cet, sig, msg)
+                    (cet, sig, digits)
                 })
                 .collect::<Vec<_>>(),
             refund: (refund_tx, msg1.refund),
@@ -219,30 +221,25 @@ impl AllParams {
 }
 
 fn verify_cets(
-    oracle_pk: &schnorrsig::PublicKey,
+    oracle_params: (&schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
     other: &PartyParams,
-    own_cets: &[(
-        Transaction,
-        EcdsaAdaptorSignature,
-        Vec<u8>,
-        schnorrsig::PublicKey,
-    )],
-    cets: &[(Txid, EcdsaAdaptorSignature)],
+    own_cets: &[(Transaction, EcdsaAdaptorSignature, interval::Digits)],
+    cets: &[(RangeInclusive<u64>, EcdsaAdaptorSignature)],
     commit_desc: &Descriptor<PublicKey>,
     commit_amount: Amount,
 ) -> Result<()> {
-    for (tx, _, msg, nonce_pk) in own_cets.iter() {
+    for (tx, _, digits) in own_cets.iter() {
         let other_encsig = cets
             .iter()
-            .find_map(|(txid, encsig)| (txid == &tx.txid()).then(|| encsig))
+            .find_map(|(range, encsig)| (range == &digits.range()).then(|| encsig))
             .expect("one encsig per cet, per party");
 
         verify_cet_encsig(
             tx,
             other_encsig,
-            msg,
+            digits,
             &other.identity_pk,
-            (oracle_pk, nonce_pk),
+            oracle_params,
             commit_desc,
             commit_amount,
         )
@@ -281,13 +278,18 @@ fn verify_signature(
 fn verify_cet_encsig(
     tx: &Transaction,
     encsig: &EcdsaAdaptorSignature,
-    msg: &[u8],
+    digits: &interval::Digits,
     pk: &PublicKey,
-    (oracle_pk, nonce_pk): (&schnorrsig::PublicKey, &schnorrsig::PublicKey),
+    (oracle_pk, nonce_pks): (&schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
     spent_descriptor: &Descriptor<PublicKey>,
     spent_amount: Amount,
 ) -> Result<()> {
-    let sig_point = compute_signature_point(oracle_pk, nonce_pk, msg)
+    let msg_nonce_pairs = &digits
+        .to_bytes()
+        .into_iter()
+        .zip(nonce_pks.iter().cloned())
+        .collect::<Vec<_>>();
+    let sig_point = compute_adaptor_point(oracle_pk, msg_nonce_pairs)
         .context("could not calculate signature point")?;
     verify_adaptor_signature(
         tx,
