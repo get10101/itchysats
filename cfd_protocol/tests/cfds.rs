@@ -834,7 +834,7 @@ impl Oracle {
         nonces: &[SecretKey; Self::MAX_DIGITS],
     ) -> Vec<schnorrsig::Signature> {
         let mut bits = BitVec::from_bytes(&price.to_be_bytes());
-        let bits = bits.split_off(bits.len() - 20);
+        let bits = bits.split_off(bits.len() - Self::MAX_DIGITS);
 
         bits.iter()
             .zip(nonces)
@@ -862,8 +862,12 @@ struct Event {
 
 impl Event {
     fn new(rng: &mut (impl RngCore + CryptoRng)) -> Self {
-        let (nonces, nonce_pks) = (0..20).map(|_| nonce(rng)).unzip::<_, _, Vec<_>, _>();
-        let nonces = nonces.try_into().expect("20 nonces");
+        let (nonces, nonce_pks) = (0..Oracle::MAX_DIGITS)
+            .map(|_| nonce(rng))
+            .unzip::<_, _, Vec<_>, _>();
+        let nonces = nonces
+            .try_into()
+            .unwrap_or_else(|_| panic!("{} nonces", Oracle::MAX_DIGITS));
 
         Self { nonces, nonce_pks }
     }
