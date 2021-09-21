@@ -1,5 +1,6 @@
 use crate::model::cfd::{Cfd, Dlc};
-use crate::wire::{Msg0, Msg1, SetupMsg};
+use crate::wallet::Wallet;
+use crate::wire::{Msg0, Msg1, Msg2, SetupMsg};
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SecretKey, Signature, SECP256K1};
 use bdk::bitcoin::{Amount, PublicKey, Transaction};
@@ -26,6 +27,7 @@ pub fn new(
     sk: SecretKey,
     oracle_pk: schnorrsig::PublicKey,
     cfd: Cfd,
+    wallet: Wallet,
 ) -> (impl Future<Output = Dlc>, mpsc::UnboundedSender<SetupMsg>) {
     let (sender, mut receiver) = mpsc::unbounded_channel::<SetupMsg>();
 
@@ -127,11 +129,22 @@ pub fn new(
             .map(|(tx, _, digits)| (digits.range(), (tx, digits)))
             .collect::<HashMap<_, _>>();
 
+        let mut signed_lock_tx = wallet.sign(lock_tx).await.unwrap();
+        send_to_other(SetupMsg::Msg2(Msg2 {
+            signed_lock: signed_lock_tx.clone(),
+        }));
+        let msg2 = receiver.recv().await.unwrap().try_into_msg2().unwrap();
+        signed_lock_tx.merge(msg2.signed_lock).unwrap();
+
+        // TODO: In case we sign+send but never receive (the signed lock_tx from the other party) we
+        // need some fallback handling (after x time) to spend the outputs in a different way so the
+        // other party cannot hold us hostage
+
         Dlc {
             identity: sk,
             revocation: rev_sk,
             publish: publish_sk,
-            lock: lock_tx,
+            lock: signed_lock_tx.extract_tx(),
             commit: (commit_tx, msg1.commit),
             cets: msg1
                 .cets

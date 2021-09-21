@@ -1,7 +1,6 @@
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Amount, Transaction};
 use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use rust_decimal::Decimal;
@@ -511,7 +510,8 @@ pub struct Dlc {
     pub revocation: SecretKey,
     pub publish: SecretKey,
 
-    pub lock: PartiallySignedTransaction,
+    /// The fully signed lock transaction ready to be published on chain
+    pub lock: Transaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
     pub cets: Vec<(Transaction, EcdsaAdaptorSignature, RangeInclusive<u64>)>,
     pub refund: (Transaction, Signature),

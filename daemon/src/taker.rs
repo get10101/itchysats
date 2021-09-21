@@ -88,7 +88,7 @@ async fn main() -> Result<()> {
         ext_priv_key,
     )
     .await?;
-    let wallet_info = wallet.sync().unwrap();
+    let wallet_info = wallet.sync().await.unwrap();
 
     let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
 
