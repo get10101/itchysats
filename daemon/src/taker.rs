@@ -18,6 +18,7 @@ use tokio::sync::watch;
 mod db;
 mod keypair;
 mod model;
+mod routes;
 mod routes_taker;
 mod seed;
 mod send_wire_message_actor;
@@ -170,6 +171,10 @@ async fn main() -> Result<()> {
                 routes_taker::get_health_check,
                 routes_taker::margin_calc,
             ],
+        )
+        .mount(
+            "/",
+            rocket::routes![routes_taker::dist, routes_taker::index],
         )
         .launch()
         .await?;

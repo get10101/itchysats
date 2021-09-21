@@ -13,6 +13,7 @@ hkdf = "0.11"
 rand = "0.6"
 rocket = { git = "https://github.com/SergioBenitez/Rocket", features = ["json"] }
 rocket_db_pools = { git = "https://github.com/SergioBenitez/Rocket", features = ["sqlx_sqlite"] }
+rust-embed = "6.2"
 rust_decimal = { version = "1.16", features = ["serde-float", "serde-arbitrary-precision"] }
 rust_decimal_macros = "1.15"
 serde = { version = "1", features = ["derive"] }
@@ -20,7 +21,6 @@ serde_json = "1"
 serde_with = { version = "1", features = ["macros"] }
 sha2 = "0.9"
 sqlx = { version = "0.5", features = ["offline"] }
-thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-util = { version = "0.6", features = ["codec"] }
 uuid = { version = "0.8", features = ["serde", "v4"] }

@@ -1,13 +1,18 @@
 use crate::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId};
 use crate::model::{Leverage, Usd, WalletInfo};
+use crate::routes::EmbeddedFileExt;
 use crate::taker_cfd_actor;
 use crate::to_sse_event::ToSseEvent;
 use bdk::bitcoin::Amount;
-use rocket::response::status;
+use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
+use rocket::response::{status, Responder};
 use rocket::serde::json::Json;
 use rocket::State;
+use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::{mpsc, watch};
 
@@ -100,4 +105,20 @@ pub fn margin_calc(
     .map_err(|e| status::BadRequest(Some(e.to_string())))?;
 
     Ok(status::Accepted(Some(Json(MarginResponse { margin }))))
+}
+
+#[derive(RustEmbed)]
+#[folder = "../frontend/dist/maker"]
+struct Asset;
+
+#[rocket::get("/assets/<file..>")]
+pub fn dist<'r>(file: PathBuf) -> impl Responder<'r, 'static> {
+    let filename = format!("assets/{}", file.display().to_string());
+    Asset::get(&filename).into_response(file)
+}
+
+#[rocket::get("/<_paths..>", format = "text/html")]
+pub fn index<'r>(_paths: PathBuf) -> impl Responder<'r, 'static> {
+    let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
+    Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
 }

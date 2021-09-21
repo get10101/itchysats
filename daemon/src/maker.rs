@@ -18,6 +18,7 @@ mod keypair;
 mod maker_cfd_actor;
 mod maker_inc_connections_actor;
 mod model;
+mod routes;
 mod routes_maker;
 mod seed;
 mod send_wire_message_actor;
@@ -161,6 +162,10 @@ async fn main() -> Result<()> {
                 // routes_maker::post_confirm_order,
                 routes_maker::get_health_check
             ],
+        )
+        .mount(
+            "/",
+            rocket::routes![routes_maker::dist, routes_maker::index],
         )
         .launch()
         .await?;
