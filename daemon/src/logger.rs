@@ -12,7 +12,8 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
 
     let filter = EnvFilter::from_default_env()
         .add_directive(format!("taker={}", level).parse()?)
-        .add_directive(format!("maker={}", level).parse()?);
+        .add_directive(format!("maker={}", level).parse()?)
+        .add_directive(format!("rocket={}", level).parse()?);
 
     let builder = FmtSubscriber::builder()
         .with_env_filter(filter)
