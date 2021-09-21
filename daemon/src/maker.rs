@@ -1,3 +1,4 @@
+use crate::auth::MAKER_USERNAME;
 use crate::maker_cfd_actor::Command;
 use crate::seed::Seed;
 use crate::wallet::Wallet;
@@ -89,7 +90,11 @@ async fn main() -> Result<()> {
 
     let auth_password = seed.derive_auth_password::<auth::Password>();
 
-    println!("Auth password: {}", auth_password);
+    tracing::info!(
+        "Authentication details: username='{}' password='{}'",
+        MAKER_USERNAME,
+        auth_password
+    );
 
     let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
 
