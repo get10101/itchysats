@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
+async-trait = "0.1.51"
 atty = "0.2"
 bdk = { git = "https://github.com/bitcoindevkit/bdk/" }
 cfd_protocol = { path = "../cfd_protocol" }
@@ -30,6 +31,7 @@ tokio-util = { version = "0.6", features = ["codec"] }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.2", default-features = false, features = ["fmt", "ansi", "env-filter", "chrono", "tracing-log", "json"] }
 uuid = { version = "0.8", features = ["serde", "v4"] }
+xtra = { version = "0.5", features = ["with-tokio-1"] }
 
 [[bin]]
 name = "taker"
