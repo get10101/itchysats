@@ -165,12 +165,6 @@ pub fn in_taker_messages(
                         .await
                         .unwrap();
                 }
-                Ok(wire::TakerToMaker::StartContractSetup(order_id)) => {
-                    cfd_actor_inbox
-                        .do_send_async(maker_cfd_actor::StartContractSetup { taker_id, order_id })
-                        .await
-                        .unwrap();
-                }
                 Ok(wire::TakerToMaker::Protocol(msg)) => {
                     cfd_actor_inbox
                         .do_send_async(maker_cfd_actor::IncProtocolMsg(msg))

@@ -37,15 +37,6 @@ impl Message for NewOrder {
     type Result = Result<()>;
 }
 
-pub struct StartContractSetup {
-    pub taker_id: TakerId,
-    pub order_id: OrderId,
-}
-
-impl Message for StartContractSetup {
-    type Result = Result<()>;
-}
-
 pub struct NewTakerOnline {
     pub id: TakerId,
 }
@@ -148,13 +139,114 @@ impl MakerCfdActor {
             .context("Maker inc connections actor to be initialised")
     }
 
-    async fn handle_start_contract_setup(
-        &mut self,
-        msg: StartContractSetup,
-        ctx: &mut Context<Self>,
-    ) -> Result<()> {
-        let StartContractSetup { taker_id, order_id } = msg;
+    async fn handle_new_taker_online(&mut self, msg: NewTakerOnline) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
 
+        let current_order = match self.current_order_id {
+            Some(current_order_id) => Some(load_order_by_id(current_order_id, &mut conn).await?),
+            None => None,
+        };
+
+        self.takers()?
+            .do_send_async(maker_inc_connections_actor::TakerMessage {
+                taker_id: msg.id,
+                command: TakerCommand::SendOrder {
+                    order: current_order,
+                },
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    async fn handle_inc_protocol_msg(&mut self, msg: IncProtocolMsg) -> Result<()> {
+        let msg = msg.0;
+        let inbox = match &self.current_contract_setup {
+            None => {
+                self.contract_setup_message_buffer.push(msg);
+                return Ok(());
+            }
+            Some(inbox) => inbox,
+        };
+        inbox.send(msg)?;
+        Ok(())
+    }
+
+    async fn handle_sync_wallet(&mut self) -> Result<()> {
+        let wallet_info = self.wallet.sync().await?;
+        self.wallet_feed_sender.send(wallet_info)?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<Initialized> for MakerCfdActor {
+    async fn handle(&mut self, msg: Initialized, _ctx: &mut Context<Self>) -> Result<()> {
+        self.takers.replace(msg.0);
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<TakeOrder> for MakerCfdActor {
+    async fn handle(&mut self, msg: TakeOrder, ctx: &mut Context<Self>) -> Result<()> {
+        let TakeOrder {
+            taker_id,
+            order_id,
+            quantity,
+        } = msg;
+
+        tracing::debug!(%taker_id, %quantity, %order_id, "Taker wants to take an order");
+
+        let mut conn = self.db.acquire().await?;
+
+        // 1. Validate if order is still valid
+        let current_order = match self.current_order_id {
+            Some(current_order_id) if current_order_id == order_id => {
+                load_order_by_id(current_order_id, &mut conn).await.unwrap()
+            }
+            _ => {
+                self.takers()?
+                    .do_send_async(maker_inc_connections_actor::TakerMessage {
+                        taker_id,
+                        command: TakerCommand::NotifyInvalidOrderId { id: order_id },
+                    })
+                    .await?;
+                // TODO: Return an error here?
+                return Ok(());
+            }
+        };
+
+        // 2. Insert CFD in DB
+        // TODO: Don't auto-accept, present to user in UI instead
+        let cfd = Cfd::new(
+            current_order.clone(),
+            quantity,
+            CfdState::Accepted {
+                common: CfdStateCommon {
+                    transition_timestamp: SystemTime::now(),
+                },
+            },
+        );
+        insert_cfd(cfd, &mut conn).await?;
+
+        self.takers()?
+            .do_send_async(maker_inc_connections_actor::TakerMessage {
+                taker_id,
+                command: TakerCommand::NotifyOrderAccepted { id: order_id },
+            })
+            .await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
+
+        // 3. Remove current order
+        self.current_order_id = None;
+        self.takers()?
+            .do_send_async(maker_inc_connections_actor::BroadcastOrder(None))
+            .await?;
+        self.order_feed_sender.send(None)?;
+
+        // 4. Start contract setup
         tracing::info!("Starting contract setup");
 
         // Kick-off the CFD protocol
@@ -219,116 +311,6 @@ impl MakerCfdActor {
 
         Ok(())
     }
-
-    async fn handle_new_taker_online(&mut self, msg: NewTakerOnline) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-
-        let current_order = match self.current_order_id {
-            Some(current_order_id) => Some(load_order_by_id(current_order_id, &mut conn).await?),
-            None => None,
-        };
-
-        self.takers()?
-            .do_send_async(maker_inc_connections_actor::TakerMessage {
-                taker_id: msg.id,
-                command: TakerCommand::SendOrder {
-                    order: current_order,
-                },
-            })
-            .await?;
-
-        Ok(())
-    }
-
-    async fn handle_inc_protocol_msg(&mut self, msg: IncProtocolMsg) -> Result<()> {
-        let msg = msg.0;
-        let inbox = match &self.current_contract_setup {
-            None => {
-                self.contract_setup_message_buffer.push(msg);
-                return Ok(());
-            }
-            Some(inbox) => inbox,
-        };
-        inbox.send(msg)?;
-        Ok(())
-    }
-
-    async fn handle_sync_wallet(&mut self) -> Result<()> {
-        let wallet_info = self.wallet.sync().await?;
-        self.wallet_feed_sender.send(wallet_info)?;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<Initialized> for MakerCfdActor {
-    async fn handle(&mut self, msg: Initialized, _ctx: &mut Context<Self>) -> Result<()> {
-        self.takers.replace(msg.0);
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<TakeOrder> for MakerCfdActor {
-    async fn handle(&mut self, msg: TakeOrder, _ctx: &mut Context<Self>) -> Result<()> {
-        let TakeOrder {
-            taker_id,
-            order_id,
-            quantity,
-        } = msg;
-
-        tracing::debug!(%taker_id, %quantity, %order_id, "Taker wants to take an order");
-
-        let mut conn = self.db.acquire().await?;
-
-        // 1. Validate if order is still valid
-        let current_order = match self.current_order_id {
-            Some(current_order_id) if current_order_id == order_id => {
-                load_order_by_id(current_order_id, &mut conn).await.unwrap()
-            }
-            _ => {
-                self.takers()?
-                    .do_send_async(maker_inc_connections_actor::TakerMessage {
-                        taker_id,
-                        command: TakerCommand::NotifyInvalidOrderId { id: order_id },
-                    })
-                    .await?;
-                // TODO: Return an error here?
-                return Ok(());
-            }
-        };
-
-        // 2. Insert CFD in DB
-        // TODO: Don't auto-accept, present to user in UI instead
-        let cfd = Cfd::new(
-            current_order.clone(),
-            quantity,
-            CfdState::Accepted {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-        );
-        insert_cfd(cfd, &mut conn).await?;
-
-        self.takers()?
-            .do_send_async(maker_inc_connections_actor::TakerMessage {
-                taker_id,
-                command: TakerCommand::NotifyOrderAccepted { id: order_id },
-            })
-            .await?;
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
-
-        // 3. Remove current order
-        self.current_order_id = None;
-        self.takers()?
-            .do_send_async(maker_inc_connections_actor::BroadcastOrder(None))
-            .await?;
-        self.order_feed_sender.send(None)?;
-
-        Ok(())
-    }
 }
 
 macro_rules! log_error {
@@ -343,14 +325,6 @@ macro_rules! log_error {
 impl Handler<NewOrder> for MakerCfdActor {
     async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) -> Result<()> {
         log_error!(self.handle_new_order(msg));
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<StartContractSetup> for MakerCfdActor {
-    async fn handle(&mut self, msg: StartContractSetup, ctx: &mut Context<Self>) -> Result<()> {
-        log_error!(self.handle_start_contract_setup(msg, ctx));
         Ok(())
     }
 }
