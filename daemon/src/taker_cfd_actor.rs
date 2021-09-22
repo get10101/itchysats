@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, watch};
 #[allow(clippy::large_enum_variant)]
 pub enum Command {
     SyncWallet,
+    // TODO: should this be TakeOffer ?
     TakeOrder { order_id: OrderId, quantity: Usd },
     NewOrder(Option<Order>),
     OrderAccepted(OrderId),
@@ -62,7 +63,7 @@ pub fn new(
                         let cfd = Cfd::new(
                             current_order.clone(),
                             quantity,
-                            CfdState::PendingTakeRequest {
+                            CfdState::PendingOrderRequest {
                                 common: CfdStateCommon {
                                     transition_timestamp: SystemTime::now(),
                                 },

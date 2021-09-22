@@ -56,20 +56,20 @@ pub async fn feed(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CfdTakeRequest {
+pub struct CfdOrderRequest {
     pub order_id: OrderId,
     pub quantity: Usd,
 }
 
-#[rocket::post("/cfd", data = "<cfd_take_request>")]
-pub async fn post_cfd(
-    cfd_take_request: Json<CfdTakeRequest>,
+#[rocket::post("/cfd", data = "<cfd_order_request>")]
+pub async fn post_order_request(
+    cfd_order_request: Json<CfdOrderRequest>,
     cfd_actor_inbox: &State<mpsc::UnboundedSender<taker_cfd_actor::Command>>,
 ) {
     cfd_actor_inbox
         .send(taker_cfd_actor::Command::TakeOrder {
-            order_id: cfd_take_request.order_id,
-            quantity: cfd_take_request.quantity,
+            order_id: cfd_order_request.order_id,
+            quantity: cfd_order_request.quantity,
         })
         .expect("actor to never disappear");
 }

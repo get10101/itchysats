@@ -137,14 +137,15 @@ pub enum CfdState {
     /// The taker has requested to take a CFD, but has not messaged the maker yet.
     ///
     /// This state only applies to the taker.
+    /// TODO: unused?
     TakeRequested {
         common: CfdStateCommon,
     },
-    /// The taker sent an open request to the maker to open the CFD but don't have a response yet.
+    /// The taker sent an order to the maker to open the CFD but doesn't have a response yet.
     ///
     /// This state applies to taker and maker.
     /// Initial state for the maker.
-    PendingTakeRequest {
+    PendingOrderRequest {
         common: CfdStateCommon,
     },
     /// The maker has accepted the CFD take request, but the contract is not set up on chain yet.
@@ -154,7 +155,7 @@ pub enum CfdState {
         common: CfdStateCommon,
     },
 
-    /// The maker rejected the CFD take request.
+    /// The maker rejected the CFD order.
     ///
     /// This state applies to taker and maker.
     Rejected {
@@ -213,7 +214,7 @@ impl CfdState {
     fn get_common(&self) -> CfdStateCommon {
         let common = match self {
             CfdState::TakeRequested { common } => common,
-            CfdState::PendingTakeRequest { common } => common,
+            CfdState::PendingOrderRequest { common } => common,
             CfdState::Accepted { common } => common,
             CfdState::Rejected { common } => common,
             CfdState::ContractSetup { common } => common,
@@ -237,10 +238,10 @@ impl Display for CfdState {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CfdState::TakeRequested { .. } => {
-                write!(f, "Take Requested")
+                write!(f, "Order created")
             }
-            CfdState::PendingTakeRequest { .. } => {
-                write!(f, "Pending Take Request")
+            CfdState::PendingOrderRequest { .. } => {
+                write!(f, "Pending order")
             }
             CfdState::Accepted { .. } => {
                 write!(f, "Accepted")
