@@ -1,5 +1,6 @@
 use crate::protocol::sighash_ext::SigHashExt;
 use crate::protocol::transaction_ext::TransactionExt;
+use crate::protocol::txin_ext::TxInExt;
 use crate::protocol::{
     commit_descriptor, compute_adaptor_point, lock_descriptor, Payout, DUMMY_2OF2_MULTISIG,
 };
@@ -12,7 +13,7 @@ use bdk::bitcoin::{
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use itertools::Itertools;
-use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
+use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, SECP256K1};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
@@ -366,13 +367,7 @@ pub fn punish_transaction(
         .context("commit transaction inputs != 1")?;
 
     let publish_them_sk = input
-        .witness
-        .iter()
-        .filter_map(|elem| {
-            let elem = elem.as_slice();
-            Signature::from_der(&elem[..elem.len() - 1]).ok()
-        })
-        .find_map(|sig| encsig.recover(SECP256K1, &sig, &pub_them_pk.key).ok())
+        .find_map_signature(|sig| encsig.recover(SECP256K1, &sig, &pub_them_pk.key).ok())
         .context("could not recover publish sk from commit tx")?;
 
     let commit_outpoint = revoked_commit_tx
