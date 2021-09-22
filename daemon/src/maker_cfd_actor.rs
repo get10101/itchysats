@@ -264,22 +264,26 @@ impl MakerCfdActor {
     }
 
     async fn handle_take_order(&mut self, msg: TakeOrder) -> Result<()> {
-        tracing::debug!(%msg.taker_id, %msg.quantity, %msg.order_id,
-                        "Taker wants to take an order"
-        );
+        let TakeOrder {
+            taker_id,
+            order_id,
+            quantity,
+        } = msg;
+
+        tracing::debug!(%taker_id, %quantity, %order_id, "Taker wants to take an order");
 
         let mut conn = self.db.acquire().await?;
 
         // 1. Validate if order is still valid
         let current_order = match self.current_order_id {
-            Some(current_order_id) if current_order_id == msg.order_id => {
+            Some(current_order_id) if current_order_id == order_id => {
                 load_order_by_id(current_order_id, &mut conn).await?
             }
             _ => {
                 self.takers()?
                     .do_send_async(maker_inc_connections_actor::TakerMessage {
-                        taker_id: msg.taker_id,
-                        command: TakerCommand::NotifyInvalidOrderId { id: msg.order_id },
+                        taker_id,
+                        command: TakerCommand::NotifyInvalidOrderId { id: order_id },
                     })
                     .await?;
                 // TODO: Return an error here?
@@ -291,7 +295,7 @@ impl MakerCfdActor {
         // TODO: Don't auto-accept, present to user in UI instead
         let cfd = Cfd::new(
             current_order.clone(),
-            msg.quantity,
+            quantity,
             CfdState::Accepted {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
@@ -302,8 +306,8 @@ impl MakerCfdActor {
 
         self.takers()?
             .do_send_async(maker_inc_connections_actor::TakerMessage {
-                taker_id: msg.taker_id,
-                command: TakerCommand::NotifyOrderAccepted { id: msg.order_id },
+                taker_id,
+                command: TakerCommand::NotifyOrderAccepted { id: order_id },
             })
             .await?;
         self.cfd_feed_actor_inbox
