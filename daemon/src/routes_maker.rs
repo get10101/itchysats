@@ -1,5 +1,5 @@
 use crate::auth::Authenticated;
-use crate::maker_cfd_actor;
+use crate::maker_cfd_actor::{self, MakerCfdActor};
 use crate::model::cfd::{Cfd, Order, Origin};
 use crate::model::{Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
@@ -15,7 +15,8 @@ use serde::Deserialize;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
+use xtra::Address;
 
 #[rocket::get("/feed")]
 pub async fn maker_feed(
@@ -71,7 +72,7 @@ pub struct CfdNewOrderRequest {
 #[rocket::post("/order/sell", data = "<order>")]
 pub async fn post_sell_order(
     order: Json<CfdNewOrderRequest>,
-    cfd_actor_inbox: &State<mpsc::UnboundedSender<maker_cfd_actor::Command>>,
+    cfd_actor_address: &State<Address<MakerCfdActor>>,
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
     let order = Order::from_default_with_price(order.price, Origin::Ours)
@@ -79,8 +80,9 @@ pub async fn post_sell_order(
         .with_min_quantity(order.min_quantity)
         .with_max_quantity(order.max_quantity);
 
-    cfd_actor_inbox
-        .send(maker_cfd_actor::Command::NewOrder(order))
+    cfd_actor_address
+        .do_send_async(maker_cfd_actor::NewOrder(order))
+        .await
         .expect("actor to always be available");
 
     Ok(status::Accepted(None))
