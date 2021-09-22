@@ -18,7 +18,7 @@ use xtra::prelude::*;
 pub struct Initialized(pub Address<MakerIncConnectionsActor>);
 
 impl Message for Initialized {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 pub struct TakeOrder {
@@ -28,13 +28,13 @@ pub struct TakeOrder {
 }
 
 impl Message for TakeOrder {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 pub struct NewOrder(pub Order);
 
 impl Message for NewOrder {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 pub struct NewTakerOnline {
@@ -42,13 +42,13 @@ pub struct NewTakerOnline {
 }
 
 impl Message for NewTakerOnline {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 pub struct IncProtocolMsg(pub SetupMsg);
 
 impl Message for IncProtocolMsg {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 pub struct CfdSetupCompleted {
@@ -57,13 +57,13 @@ pub struct CfdSetupCompleted {
 }
 
 impl Message for CfdSetupCompleted {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 pub struct SyncWallet;
 
 impl Message for SyncWallet {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 pub struct MakerCfdActor {
@@ -177,19 +177,8 @@ impl MakerCfdActor {
         self.wallet_feed_sender.send(wallet_info)?;
         Ok(())
     }
-}
 
-#[async_trait]
-impl Handler<Initialized> for MakerCfdActor {
-    async fn handle(&mut self, msg: Initialized, _ctx: &mut Context<Self>) -> Result<()> {
-        self.takers.replace(msg.0);
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<TakeOrder> for MakerCfdActor {
-    async fn handle(&mut self, msg: TakeOrder, ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle_take_order(&mut self, msg: TakeOrder, ctx: &mut Context<Self>) -> Result<()> {
         let TakeOrder {
             taker_id,
             order_id,
@@ -311,43 +300,8 @@ impl Handler<TakeOrder> for MakerCfdActor {
 
         Ok(())
     }
-}
 
-macro_rules! log_error {
-    ($future:expr) => {
-        if let Err(e) = $future.await {
-            tracing::error!(%e);
-        }
-    };
-}
-
-#[async_trait]
-impl Handler<NewOrder> for MakerCfdActor {
-    async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) -> Result<()> {
-        log_error!(self.handle_new_order(msg));
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<NewTakerOnline> for MakerCfdActor {
-    async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) -> Result<()> {
-        log_error!(self.handle_new_taker_online(msg));
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<IncProtocolMsg> for MakerCfdActor {
-    async fn handle(&mut self, msg: IncProtocolMsg, _ctx: &mut Context<Self>) -> Result<()> {
-        log_error!(self.handle_inc_protocol_msg(msg));
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<CfdSetupCompleted> for MakerCfdActor {
-    async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle_cfd_setup_completed(&mut self, msg: CfdSetupCompleted) -> Result<()> {
         let mut conn = self.db.acquire().await?;
 
         self.current_contract_setup = None;
@@ -378,14 +332,63 @@ impl Handler<CfdSetupCompleted> for MakerCfdActor {
 
         // TODO: tx monitoring, once confirmed with x blocks transition the Cfd to
         // Open
+
         Ok(())
     }
 }
 
 #[async_trait]
+impl Handler<Initialized> for MakerCfdActor {
+    async fn handle(&mut self, msg: Initialized, _ctx: &mut Context<Self>) {
+        self.takers.replace(msg.0);
+    }
+}
+
+macro_rules! log_error {
+    ($future:expr) => {
+        if let Err(e) = $future.await {
+            tracing::error!(%e);
+        }
+    };
+}
+
+#[async_trait]
+impl Handler<TakeOrder> for MakerCfdActor {
+    async fn handle(&mut self, msg: TakeOrder, ctx: &mut Context<Self>) {
+        log_error!(self.handle_take_order(msg, ctx));
+    }
+}
+#[async_trait]
+impl Handler<NewOrder> for MakerCfdActor {
+    async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_new_order(msg));
+    }
+}
+
+#[async_trait]
+impl Handler<NewTakerOnline> for MakerCfdActor {
+    async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_new_taker_online(msg));
+    }
+}
+
+#[async_trait]
+impl Handler<IncProtocolMsg> for MakerCfdActor {
+    async fn handle(&mut self, msg: IncProtocolMsg, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_inc_protocol_msg(msg));
+    }
+}
+
+#[async_trait]
+impl Handler<CfdSetupCompleted> for MakerCfdActor {
+    async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_cfd_setup_completed(msg));
+    }
+}
+
+#[async_trait]
 impl Handler<SyncWallet> for MakerCfdActor {
-    async fn handle(&mut self, _msg: SyncWallet, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle(&mut self, _msg: SyncWallet, _ctx: &mut Context<Self>) {
         log_error!(self.handle_sync_wallet());
-        Ok(())
     }
 }
