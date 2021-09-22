@@ -105,7 +105,10 @@ impl Wallet {
                     let error_code = match parse_rpc_protocol_error_code(value) {
                         Ok(error_code) => error_code,
                         Err(inner) => {
-                            eprintln!("Failed to parse error code from RPC message: {}", inner);
+                            tracing::error!(
+                                "Failed to parse error code from RPC message: {}",
+                                inner
+                            );
                             return Err(anyhow!(e));
                         }
                     };

@@ -151,7 +151,7 @@ pub fn new(
                         inbox.send(msg).unwrap();
                     }
                     Command::CfdSetupCompleted { order_id, dlc } => {
-                        println!("Setup complete, publishing on chain now...");
+                        tracing::info!("Setup complete, publishing on chain now");
 
                         current_contract_setup = None;
 
@@ -174,7 +174,7 @@ pub fn new(
 
                         let txid = wallet.try_broadcast_transaction(dlc.lock).await.unwrap();
 
-                        println!("Lock transaction published with txid {}", txid);
+                        tracing::info!("Lock transaction published with txid {}", txid);
 
                         // TODO: tx monitoring, once confirmed with x blocks transition the Cfd to
                         // Open
