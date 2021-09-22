@@ -86,6 +86,23 @@ pub async fn post_sell_order(
     Ok(status::Accepted(None))
 }
 
+/// Test route solely for the purposes of exercising authentication.
+/// It validates whether the posted order request was correct, but does not do
+/// anything else with it.
+#[cfg(test)]
+#[rocket::post("/order/test", data = "<order>")]
+pub async fn post_test_order(
+    order: Json<CfdNewOrderRequest>,
+    _auth: Authenticated,
+) -> Result<status::Accepted<()>, status::BadRequest<String>> {
+    let _order = Order::from_default_with_price(order.price, Origin::Ours)
+        .map_err(|e| status::BadRequest(Some(e.to_string())))?
+        .with_min_quantity(order.min_quantity)
+        .with_max_quantity(order.max_quantity);
+
+    Ok(status::Accepted(None))
+}
+
 /// A "catcher" for all 401 responses, triggers the browser's basic auth implementation.
 #[rocket::catch(401)]
 pub fn unauthorized() -> PromptAuthentication {
@@ -153,7 +170,6 @@ mod tests {
     use rocket::local::blocking::Client;
     use rocket::{Build, Rocket};
     use std::time::SystemTime;
-    use tokio::sync::mpsc;
 
     #[test]
     fn routes_are_password_protected() {
@@ -161,7 +177,7 @@ mod tests {
 
         let feed_response = client.get("/feed").dispatch();
         let new_sell_order_response = client
-            .post("/order/sell")
+            .post("/order/test")
             .body(r#"{"price":"40000", "min_quantity":"100", "max_quantity":"10000"}"#)
             .dispatch();
         let index_response = client.get("/").header(ContentType::HTML).dispatch();
@@ -177,7 +193,7 @@ mod tests {
 
         let feed_response = client.get("/feed").header(auth_header()).dispatch();
         let new_sell_order_response = client
-            .post("/order/sell")
+            .post("/order/test")
             .body(r#"{"price":"40000", "min_quantity":"100", "max_quantity":"10000"}"#)
             .header(auth_header())
             .dispatch();
@@ -210,16 +226,13 @@ mod tests {
             .unwrap(),
             last_updated_at: SystemTime::now(),
         });
-        let (state4, actor) = mpsc::unbounded_channel::<maker_cfd_actor::Command>();
-        std::mem::forget(actor); // pretend the actor is running so we can don't panic in the route handler
 
         rocket::build()
             .manage(state1)
             .manage(state2)
             .manage(state3)
-            .manage(state4)
             .manage(Password::from(*b"Now I'm feelin' so fly like a G6"))
-            .mount("/", rocket::routes![maker_feed, post_sell_order, index])
+            .mount("/", rocket::routes![maker_feed, post_test_order, index])
     }
 
     /// Creates an "Authorization" header that matches the password above,
