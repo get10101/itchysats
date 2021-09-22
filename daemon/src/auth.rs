@@ -10,6 +10,8 @@ use std::str::FromStr;
 /// A request guard that can be included in handler definitions to enforce authentication.
 pub struct Authenticated {}
 
+pub const MAKER_USERNAME: &str = "maker";
+
 #[derive(Debug)]
 pub enum Error {
     UnknownUser(String),
@@ -62,7 +64,7 @@ impl<'r> FromRequest<'r> for Authenticated {
             .await
             .map_failure(|(status, _)| (status, Error::MissingPassword)));
 
-        if basic_auth.username != "maker" {
+        if basic_auth.username != MAKER_USERNAME {
             return Outcome::Failure((
                 Status::Unauthorized,
                 Error::UnknownUser(basic_auth.username),
