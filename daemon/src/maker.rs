@@ -180,12 +180,13 @@ async fn main() -> Result<()> {
                                 tokio::spawn(in_taker_actor);
                                 tokio::spawn(out_msg_actor);
 
-                                maker_inc_connections_address.do_send_async(
-                                    maker_inc_connections_actor::NewTakerOnline {
+                                maker_inc_connections_address
+                                    .do_send_async(maker_inc_connections_actor::NewTakerOnline {
                                         taker_id,
                                         out_msg_actor_inbox,
-                                    },
-                                );
+                                    })
+                                    .await
+                                    .unwrap();
                             };
                         }
                     }
