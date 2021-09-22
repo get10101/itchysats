@@ -169,11 +169,19 @@ impl MakerCfdActor {
 
         let (actor, inbox) = setup_contract_actor::new(
             {
-                let inbox = self.takers()?.clone();
+                let takers = self.takers()?.clone();
                 move |msg| {
-                    inbox.send(maker_inc_connections_actor::TakerMessage {
-                        taker_id,
-                        command: TakerCommand::OutProtocolMsg { setup_msg: msg },
+                    tokio::spawn({
+                        let inbox = takers.clone();
+                        async move {
+                            inbox
+                                .do_send_async(maker_inc_connections_actor::TakerMessage {
+                                    taker_id,
+                                    command: TakerCommand::OutProtocolMsg { setup_msg: msg },
+                                })
+                                .await
+                                .unwrap();
+                        }
                     });
                 }
             },
