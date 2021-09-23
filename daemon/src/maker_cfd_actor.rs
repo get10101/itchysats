@@ -161,7 +161,7 @@ impl MakerCfdActor {
         self.current_contract_setup.replace(inbox.clone());
 
         for msg in self.contract_setup_message_buffer.drain(..) {
-            inbox.send(msg).unwrap();
+            inbox.send(msg)?;
         }
 
         // TODO: Should we do this here or already earlier or after the spawn?
@@ -254,11 +254,7 @@ impl MakerCfdActor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        let txid = self
-            .wallet
-            .try_broadcast_transaction(msg.dlc.lock)
-            .await
-            .unwrap();
+        let txid = self.wallet.try_broadcast_transaction(msg.dlc.lock).await?;
 
         tracing::info!("Lock transaction published with txid {}", txid);
 
@@ -277,7 +273,7 @@ impl MakerCfdActor {
         // 1. Validate if order is still valid
         let current_order = match self.current_order_id {
             Some(current_order_id) if current_order_id == msg.order_id => {
-                load_order_by_id(current_order_id, &mut conn).await.unwrap()
+                load_order_by_id(current_order_id, &mut conn).await?
             }
             _ => {
                 self.takers()?
