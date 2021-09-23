@@ -1,25 +1,11 @@
-import {
-    Box,
-    Button,
-    Center,
-    Divider,
-    Flex,
-    HStack,
-    SimpleGrid,
-    StackDivider,
-    Text,
-    useToast,
-    VStack,
-} from "@chakra-ui/react";
+import { Button, Container, Flex, Grid, GridItem, HStack, Stack, Text, useToast, VStack } from "@chakra-ui/react";
 import React, { useState } from "react";
 import { useAsync } from "react-async";
-import { Route, Routes } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import "./App.css";
 import CfdTile from "./components/CfdTile";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
-import NavLink from "./components/NavLink";
 import OrderTile from "./components/OrderTile";
 import { Cfd, Order, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
@@ -83,128 +69,74 @@ export default function App() {
     });
 
     return (
-        <Center marginTop={50}>
-            <HStack>
-                <Box marginRight={5}>
-                    <VStack align={"top"}>
-                        <NavLink text={"trade"} path={"trade"} />
-                        <NavLink text={"wallet"} path={"wallet"} />
-                        <NavLink text={"settings"} path={"settings"} />
+        <Container maxWidth="120ch" marginTop="1rem">
+            <Grid templateColumns="repeat(6, 1fr)" gap={4}>
+                <GridItem colSpan={4}>
+                    <Stack>
+                        {cfds && cfds.map((cfd, index) =>
+                            <CfdTile
+                                key={"cfd_" + index}
+                                index={index}
+                                cfd={cfd}
+                            />
+                        )}
+                    </Stack>
+                </GridItem>
+                <GridItem colStart={5} colSpan={2}>
+                    <Wallet walletInfo={walletInfo} />
+                    <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"}>
+                        <HStack>
+                            <Text align={"left"}>Current Price:</Text>
+                            <Text>{49000}</Text>
+                        </HStack>
+                        <HStack>
+                            <Text>Min Quantity:</Text>
+                            <CurrencyInputField
+                                onChange={(valueString: string) => setMinQuantity(parse(valueString))}
+                                value={format(minQuantity)}
+                            />
+                        </HStack>
+                        <HStack>
+                            <Text>Min Quantity:</Text>
+                            <CurrencyInputField
+                                onChange={(valueString: string) => setMaxQuantity(parse(valueString))}
+                                value={format(maxQuantity)}
+                            />
+                        </HStack>
+                        <HStack>
+                            <Text>Order Price:</Text>
+                        </HStack>
+                        <CurrencyInputField
+                            onChange={(valueString: string) => setOrderPrice(parse(valueString))}
+                            value={format(orderPrice)}
+                        />
+                        <Text>Leverage:</Text>
+                        <Flex justifyContent={"space-between"}>
+                            <Button disabled={true}>x1</Button>
+                            <Button disabled={true}>x2</Button>
+                            <Button colorScheme="blue" variant="solid">x{5}</Button>
+                        </Flex>
+                        <VStack>
+                            <Button
+                                disabled={isCreatingNewCfdOrder}
+                                variant={"solid"}
+                                colorScheme={"blue"}
+                                onClick={() => {
+                                    let payload: CfdSellOrderPayload = {
+                                        price: Number.parseFloat(orderPrice),
+                                        min_quantity: Number.parseFloat(minQuantity),
+                                        max_quantity: Number.parseFloat(maxQuantity),
+                                    };
+                                    makeNewCfdSellOrder(payload);
+                                }}
+                            >
+                                {order ? "Update Sell Order" : "Create Sell Order"}
+                            </Button>
+                            {order && <OrderTile order={order} />}
+                        </VStack>
                     </VStack>
-                </Box>
-                <Box width={1200} height="100%">
-                    <Routes>
-                        <Route
-                            path="trade"
-                            element={<Flex direction={"row"} height={"100%"}>
-                                <Flex direction={"row"} width={"100%"}>
-                                    <VStack
-                                        spacing={5}
-                                        shadow={"md"}
-                                        padding={5}
-                                        width={"100%"}
-                                        divider={<StackDivider borderColor="gray.200" />}
-                                    >
-                                        <Box width={"100%"} overflow={"scroll"}>
-                                            <SimpleGrid columns={2} spacing={10}>
-                                                {cfds && cfds.map((cfd, index) =>
-                                                    <CfdTile
-                                                        key={"cfd_" + index}
-                                                        index={index}
-                                                        cfd={cfd}
-                                                    />
-                                                )}
-                                            </SimpleGrid>
-                                        </Box>
-                                    </VStack>
-                                </Flex>
-                                <Flex width={"50%"} marginLeft={5} direction={"column"}>
-                                    <Wallet walletInfo={walletInfo} />
-                                    <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"} height={"100%"}>
-                                        <HStack>
-                                            <Text align={"left"}>Current Price:</Text>
-                                            <Text>{49000}</Text>
-                                        </HStack>
-                                        <HStack>
-                                            <Text>Min Quantity:</Text>
-                                            <CurrencyInputField
-                                                onChange={(valueString: string) => setMinQuantity(parse(valueString))}
-                                                value={format(minQuantity)}
-                                            />
-                                        </HStack>
-                                        <HStack>
-                                            <Text>Min Quantity:</Text>
-                                            <CurrencyInputField
-                                                onChange={(valueString: string) => setMaxQuantity(parse(valueString))}
-                                                value={format(maxQuantity)}
-                                            />
-                                        </HStack>
-                                        <HStack>
-                                            <Text>Order Price:</Text>
-                                        </HStack>
-                                        <CurrencyInputField
-                                            onChange={(valueString: string) => setOrderPrice(parse(valueString))}
-                                            value={format(orderPrice)}
-                                        />
-                                        <Text>Leverage:</Text>
-                                        <Flex justifyContent={"space-between"}>
-                                            <Button disabled={true}>x1</Button>
-                                            <Button disabled={true}>x2</Button>
-                                            <Button colorScheme="blue" variant="solid">x{5}</Button>
-                                        </Flex>
-                                        <VStack>
-                                            <Center><Text>Maker UI</Text></Center>
-                                            <Button
-                                                disabled={isCreatingNewCfdOrder}
-                                                variant={"solid"}
-                                                colorScheme={"blue"}
-                                                onClick={() => {
-                                                    let payload: CfdSellOrderPayload = {
-                                                        price: Number.parseFloat(orderPrice),
-                                                        min_quantity: Number.parseFloat(minQuantity),
-                                                        max_quantity: Number.parseFloat(maxQuantity),
-                                                    };
-                                                    makeNewCfdSellOrder(payload);
-                                                }}
-                                            >
-                                                {order ? "Update Sell Order" : "Create Sell Order"}
-                                            </Button>
-                                            <Divider />
-                                            <Box width={"100%"} overflow={"scroll"}>
-                                                <Box>
-                                                    {order
-                                                        && <OrderTile
-                                                            order={order}
-                                                        />}
-                                                </Box>
-                                            </Box>
-                                        </VStack>
-                                    </VStack>
-                                </Flex>
-                            </Flex>}
-                        >
-                        </Route>
-                        <Route
-                            path="wallet"
-                            element={<Center height={"100%"} shadow={"md"}>
-                                <Box>
-                                    <Text>Wallet</Text>
-                                </Box>
-                            </Center>}
-                        >
-                        </Route>
-                        <Route
-                            path="settings"
-                            element={<Center height={"100%"} shadow={"md"}>
-                                <Box>
-                                    <Text>Settings</Text>
-                                </Box>
-                            </Center>}
-                        >
-                        </Route>
-                    </Routes>
-                </Box>
-            </HStack>
-        </Center>
+                </GridItem>
+            </Grid>
+        </Container>
     );
 }
