@@ -1,13 +1,24 @@
-import { Box, Button, Center, Flex, HStack, SimpleGrid, StackDivider, Text, useToast, VStack } from "@chakra-ui/react";
+import {
+    Box,
+    Button,
+    Center,
+    Flex,
+    Grid,
+    GridItem,
+    HStack,
+    SimpleGrid,
+    StackDivider,
+    Text,
+    useToast,
+    VStack,
+} from "@chakra-ui/react";
 import React, { useState } from "react";
 import { useAsync } from "react-async";
-import { Route, Routes } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import "./App.css";
 import CfdTile from "./components/CfdTile";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
-import NavLink from "./components/NavLink";
 import { Cfd, Order, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 
@@ -96,119 +107,92 @@ export default function App() {
     });
 
     return (
-        <Center marginTop={50}>
-            <HStack>
-                <Box marginRight={5}>
-                    <VStack align={"top"}>
-                        <NavLink text={"trade"} path={"trade"} />
-                        <NavLink text={"wallet"} path={"wallet"} />
-                        <NavLink text={"settings"} path={"settings"} />
+        <Center>
+            <Grid templateColumns="repeat(6, 1fr)" gap={4}>
+                <GridItem colSpan={4}>
+                    <VStack
+                        spacing={5}
+                        shadow={"md"}
+                        padding={5}
+                        width={"100%"}
+                        divider={<StackDivider borderColor="gray.200" />}
+                    >
+                        <Box width={"100%"} overflow={"scroll"}>
+                            <SimpleGrid columns={2} spacing={10}>
+                                {cfds && cfds.map((cfd, index) =>
+                                    <CfdTile
+                                        key={"cfd_" + index}
+                                        index={index}
+                                        cfd={cfd}
+                                    />
+                                )}
+                            </SimpleGrid>
+                        </Box>
                     </VStack>
-                </Box>
-                <Box width={1200} height="100%" maxHeight={800}>
-                    <Routes>
-                        <Route path="trade">
-                            <Flex direction={"row"} height={"100%"}>
-                                <Flex direction={"row"} width={"100%"}>
-                                    <VStack
-                                        spacing={5}
-                                        shadow={"md"}
-                                        padding={5}
-                                        width={"100%"}
-                                        divider={<StackDivider borderColor="gray.200" />}
-                                    >
-                                        <Box width={"100%"} overflow={"scroll"}>
-                                            <SimpleGrid columns={2} spacing={10}>
-                                                {cfds && cfds.map((cfd, index) =>
-                                                    <CfdTile
-                                                        key={"cfd_" + index}
-                                                        index={index}
-                                                        cfd={cfd}
-                                                    />
-                                                )}
-                                            </SimpleGrid>
-                                        </Box>
-                                    </VStack>
-                                </Flex>
-                                <Flex width={"50%"} marginLeft={5}>
-                                    <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"}>
-                                        <Wallet walletInfo={walletInfo} />
-                                        <HStack>
-                                            {/*TODO: Do we need this? does it make sense to only display the price from the order?*/}
-                                            <Text align={"left"}>Current Price (Kraken):</Text>
-                                            <Text>tbd</Text>
-                                        </HStack>
-                                        <HStack>
-                                            <Text align={"left"}>Order Price:</Text>
-                                            <Text>{order?.price}</Text>
-                                        </HStack>
-                                        <HStack>
-                                            <Text>Quantity:</Text>
-                                            <CurrencyInputField
-                                                onChange={(valueString: string) => {
-                                                    setQuantity(parse(valueString));
+                </GridItem>
+                <GridItem colStart={5} colSpan={2}>
+                    <Wallet walletInfo={walletInfo} />
+                </GridItem>
+                <GridItem colStart={5} colSpan={2}>
+                    <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"} height={"100%"}>
+                        <HStack>
+                            {/*TODO: Do we need this? does it make sense to only display the price from the order?*/}
+                            <Text align={"left"}>Current Price (Kraken):</Text>
+                            <Text>tbd</Text>
+                        </HStack>
+                        <HStack>
+                            <Text align={"left"}>Order Price:</Text>
+                            <Text>{order?.price}</Text>
+                        </HStack>
+                        <HStack>
+                            <Text>Quantity:</Text>
+                            <CurrencyInputField
+                                onChange={(valueString: string) => {
+                                    setQuantity(parse(valueString));
 
-                                                    if (!order) {
-                                                        return;
-                                                    }
+                                    if (!order) {
+                                        return;
+                                    }
 
-                                                    let quantity = valueString ? Number.parseFloat(valueString) : 0;
-                                                    let payload: MarginRequestPayload = {
-                                                        leverage: order.leverage,
-                                                        price: order.price,
-                                                        quantity,
-                                                    };
-                                                    calculateMargin(payload);
-                                                }}
-                                                value={format(quantity)}
-                                            />
-                                        </HStack>
-                                        <HStack>
-                                            <Text>Margin in BTC:</Text>
-                                            <Text>{margin}</Text>
-                                        </HStack>
-                                        <Text>Leverage:</Text>
-                                        {/* TODO: consider button group */}
-                                        <Flex justifyContent={"space-between"}>
-                                            <Button disabled={true}>x1</Button>
-                                            <Button disabled={true}>x2</Button>
-                                            <Button colorScheme="blue" variant="solid">x{order?.leverage}</Button>
-                                        </Flex>
-                                        {<Button
-                                            disabled={isCreatingNewTakeRequest || !order}
-                                            variant={"solid"}
-                                            colorScheme={"blue"}
-                                            onClick={() => {
-                                                let payload: CfdTakeRequestPayload = {
-                                                    order_id: order!.id,
-                                                    quantity: Number.parseFloat(quantity),
-                                                };
-                                                makeNewTakeRequest(payload);
-                                            }}
-                                        >
-                                            BUY
-                                        </Button>}
-                                    </VStack>
-                                </Flex>
-                            </Flex>
-                        </Route>
-                        <Route path="wallet">
-                            <Center height={"100%"} shadow={"md"}>
-                                <Box>
-                                    <Text>Wallet</Text>
-                                </Box>
-                            </Center>
-                        </Route>
-                        <Route path="settings">
-                            <Center height={"100%"} shadow={"md"}>
-                                <Box>
-                                    <Text>Settings</Text>
-                                </Box>
-                            </Center>
-                        </Route>
-                    </Routes>
-                </Box>
-            </HStack>
+                                    let quantity = valueString ? Number.parseFloat(valueString) : 0;
+                                    let payload: MarginRequestPayload = {
+                                        leverage: order.leverage,
+                                        price: order.price,
+                                        quantity,
+                                    };
+                                    calculateMargin(payload);
+                                }}
+                                value={format(quantity)}
+                            />
+                        </HStack>
+                        <HStack>
+                            <Text>Margin in BTC:</Text>
+                            <Text>{margin}</Text>
+                        </HStack>
+                        <Text>Leverage:</Text>
+                        {/* TODO: consider button group */}
+                        <Flex justifyContent={"space-between"}>
+                            <Button disabled={true}>x1</Button>
+                            <Button disabled={true}>x2</Button>
+                            <Button colorScheme="blue" variant="solid">x{order?.leverage}</Button>
+                        </Flex>
+                        {<Button
+                            disabled={isCreatingNewTakeRequest || !order}
+                            variant={"solid"}
+                            colorScheme={"blue"}
+                            onClick={() => {
+                                let payload: CfdTakeRequestPayload = {
+                                    order_id: order!.id,
+                                    quantity: Number.parseFloat(quantity),
+                                };
+                                makeNewTakeRequest(payload);
+                            }}
+                        >
+                            BUY
+                        </Button>}
+                    </VStack>
+                </GridItem>
+            </Grid>
         </Center>
     );
 }
