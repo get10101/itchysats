@@ -16,8 +16,7 @@ use tokio::sync::{mpsc, watch};
 #[allow(clippy::large_enum_variant)]
 pub enum Command {
     SyncWallet,
-    // TODO: should this be TakeOffer ?
-    TakeOrder { order_id: OrderId, quantity: Usd },
+    TakeOffer { order_id: OrderId, quantity: Usd },
     NewOrder(Option<Order>),
     OrderAccepted(OrderId),
     OrderRejected(OrderId),
@@ -54,7 +53,7 @@ pub fn new(
                         let wallet_info = wallet.sync().await.unwrap();
                         wallet_feed_sender.send(wallet_info).unwrap();
                     }
-                    Command::TakeOrder { order_id, quantity } => {
+                    Command::TakeOffer { order_id, quantity } => {
                         let mut conn = db.acquire().await.unwrap();
 
                         let current_order = load_order_by_id(order_id, &mut conn).await.unwrap();

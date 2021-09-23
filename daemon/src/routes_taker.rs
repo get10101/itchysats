@@ -67,7 +67,7 @@ pub async fn post_order_request(
     cfd_actor_inbox: &State<mpsc::UnboundedSender<taker_cfd_actor::Command>>,
 ) {
     cfd_actor_inbox
-        .send(taker_cfd_actor::Command::TakeOrder {
+        .send(taker_cfd_actor::Command::TakeOffer {
             order_id: cfd_order_request.order_id,
             quantity: cfd_order_request.quantity,
         })
