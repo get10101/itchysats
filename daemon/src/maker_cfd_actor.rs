@@ -25,11 +25,6 @@ pub struct TakeOrder {
 
 pub struct NewOrder(pub Order);
 
-pub struct StartContractSetup {
-    pub taker_id: TakerId,
-    pub order_id: OrderId,
-}
-
 pub struct NewTakerOnline {
     pub id: TakerId,
 }
@@ -114,86 +109,6 @@ impl MakerCfdActor {
             .context("Maker inc connections actor to be initialised")
     }
 
-    async fn handle_start_contract_setup(
-        &mut self,
-        msg: StartContractSetup,
-        ctx: &mut Context<Self>,
-    ) -> Result<()> {
-        let StartContractSetup { taker_id, order_id } = msg;
-
-        tracing::info!("Starting contract setup");
-
-        // Kick-off the CFD protocol
-        let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
-
-        let mut conn = self.db.acquire().await?;
-
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        let margin = cfd.margin()?;
-
-        let maker_params = self.wallet.build_party_params(margin, pk).await?;
-
-        let (actor, inbox) = setup_contract_actor::new(
-            {
-                let takers = self.takers()?.clone();
-                move |msg| {
-                    tokio::spawn({
-                        let inbox = takers.clone();
-                        async move {
-                            inbox
-                                .do_send_async(maker_inc_connections_actor::TakerMessage {
-                                    taker_id,
-                                    command: TakerCommand::OutProtocolMsg { setup_msg: msg },
-                                })
-                                .await
-                                .unwrap();
-                        }
-                    });
-                }
-            },
-            setup_contract_actor::OwnParams::Maker(maker_params),
-            sk,
-            self.oracle_pk,
-            cfd,
-            self.wallet.clone(),
-        );
-
-        self.current_contract_setup.replace(inbox.clone());
-
-        for msg in self.contract_setup_message_buffer.drain(..) {
-            inbox.send(msg)?;
-        }
-
-        // TODO: Should we do this here or already earlier or after the spawn?
-        insert_new_cfd_state_by_order_id(
-            order_id,
-            CfdState::ContractSetup {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-            &mut conn,
-        )
-        .await?;
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
-
-        let address = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
-
-        tokio::spawn(async move {
-            address
-                .do_send_async(CfdSetupCompleted {
-                    order_id,
-                    dlc: actor.await,
-                })
-                .await
-        });
-
-        Ok(())
-    }
-
     async fn handle_new_taker_online(&mut self, msg: NewTakerOnline) -> Result<()> {
         let mut conn = self.db.acquire().await?;
 
@@ -263,23 +178,27 @@ impl MakerCfdActor {
         Ok(())
     }
 
-    async fn handle_take_order(&mut self, msg: TakeOrder) -> Result<()> {
-        tracing::debug!(%msg.taker_id, %msg.quantity, %msg.order_id,
-                        "Taker wants to take an order"
-        );
+    async fn handle_take_order(&mut self, msg: TakeOrder, ctx: &mut Context<Self>) -> Result<()> {
+        let TakeOrder {
+            taker_id,
+            order_id,
+            quantity,
+        } = msg;
+
+        tracing::debug!(%taker_id, %quantity, %order_id, "Taker wants to take an order");
 
         let mut conn = self.db.acquire().await?;
 
         // 1. Validate if order is still valid
         let current_order = match self.current_order_id {
-            Some(current_order_id) if current_order_id == msg.order_id => {
+            Some(current_order_id) if current_order_id == order_id => {
                 load_order_by_id(current_order_id, &mut conn).await?
             }
             _ => {
                 self.takers()?
                     .do_send_async(maker_inc_connections_actor::TakerMessage {
-                        taker_id: msg.taker_id,
-                        command: TakerCommand::NotifyInvalidOrderId { id: msg.order_id },
+                        taker_id,
+                        command: TakerCommand::NotifyInvalidOrderId { id: order_id },
                     })
                     .await?;
                 // TODO: Return an error here?
@@ -291,7 +210,7 @@ impl MakerCfdActor {
         // TODO: Don't auto-accept, present to user in UI instead
         let cfd = Cfd::new(
             current_order.clone(),
-            msg.quantity,
+            quantity,
             CfdState::Accepted {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
@@ -302,8 +221,8 @@ impl MakerCfdActor {
 
         self.takers()?
             .do_send_async(maker_inc_connections_actor::TakerMessage {
-                taker_id: msg.taker_id,
-                command: TakerCommand::NotifyOrderAccepted { id: msg.order_id },
+                taker_id,
+                command: TakerCommand::NotifyOrderAccepted { id: order_id },
             })
             .await?;
         self.cfd_feed_actor_inbox
@@ -316,10 +235,72 @@ impl MakerCfdActor {
             .await?;
         self.order_feed_sender.send(None)?;
 
+        // 4. Start contract setup
+        tracing::info!("Starting contract setup");
+
+        // Kick-off the CFD protocol
+        let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
+
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let margin = cfd.margin()?;
+
+        let maker_params = self.wallet.build_party_params(margin, pk).await?;
+
+        let (actor, inbox) = setup_contract_actor::new(
+            {
+                let inbox = self.takers()?.clone();
+                move |msg| {
+                    tokio::spawn(
+                        inbox.do_send_async(maker_inc_connections_actor::TakerMessage {
+                            taker_id,
+                            command: TakerCommand::OutProtocolMsg { setup_msg: msg },
+                        }),
+                    );
+                }
+            },
+            setup_contract_actor::OwnParams::Maker(maker_params),
+            sk,
+            self.oracle_pk,
+            cfd,
+            self.wallet.clone(),
+        );
+
+        self.current_contract_setup.replace(inbox.clone());
+
+        for msg in self.contract_setup_message_buffer.drain(..) {
+            inbox.send(msg)?;
+        }
+
+        // TODO: Should we do this here or already earlier or after the spawn?
+        insert_new_cfd_state_by_order_id(
+            order_id,
+            CfdState::ContractSetup {
+                common: CfdStateCommon {
+                    transition_timestamp: SystemTime::now(),
+                },
+            },
+            &mut conn,
+        )
+        .await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
+
+        let address = ctx
+            .address()
+            .expect("actor to be able to give address to itself");
+
+        tokio::spawn(async move {
+            address
+                .do_send_async(CfdSetupCompleted {
+                    order_id,
+                    dlc: actor.await,
+                })
+                .await
+        });
+
         Ok(())
     }
 }
-
 #[async_trait]
 impl Handler<Initialized> for MakerCfdActor {
     async fn handle(&mut self, msg: Initialized, _ctx: &mut Context<Self>) {
@@ -337,8 +318,8 @@ macro_rules! log_error {
 
 #[async_trait]
 impl Handler<TakeOrder> for MakerCfdActor {
-    async fn handle(&mut self, msg: TakeOrder, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_take_order(msg))
+    async fn handle(&mut self, msg: TakeOrder, ctx: &mut Context<Self>) {
+        log_error!(self.handle_take_order(msg, ctx))
     }
 }
 
@@ -346,13 +327,6 @@ impl Handler<TakeOrder> for MakerCfdActor {
 impl Handler<NewOrder> for MakerCfdActor {
     async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
         log_error!(self.handle_new_order(msg));
-    }
-}
-
-#[async_trait]
-impl Handler<StartContractSetup> for MakerCfdActor {
-    async fn handle(&mut self, msg: StartContractSetup, ctx: &mut Context<Self>) {
-        log_error!(self.handle_start_contract_setup(msg, ctx));
     }
 }
 
@@ -393,10 +367,6 @@ impl Message for TakeOrder {
 }
 
 impl Message for NewOrder {
-    type Result = ();
-}
-
-impl Message for StartContractSetup {
     type Result = ();
 }
 

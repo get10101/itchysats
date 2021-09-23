@@ -8,7 +8,6 @@ use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
 use crate::{setup_contract_actor, wire};
 use bdk::bitcoin::secp256k1::schnorrsig;
-use core::panic;
 use futures::Future;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
@@ -35,6 +34,7 @@ pub fn new(
 ) -> (impl Future<Output = ()>, mpsc::UnboundedSender<Command>) {
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let mut current_contract_setup = None;
+    let mut contract_setup_message_buffer = vec![];
 
     let actor = {
         let sender = sender.clone();
@@ -88,6 +88,8 @@ pub fn new(
                         order_feed_actor_inbox.send(None).unwrap();
                     }
                     Command::OrderAccepted(order_id) => {
+                        tracing::info!(%order_id, "Order got accepted");
+
                         let mut conn = db.acquire().await.unwrap();
                         insert_new_cfd_state_by_order_id(
                             order_id,
@@ -100,10 +102,6 @@ pub fn new(
                         )
                         .await
                         .unwrap();
-
-                        out_msg_maker_inbox
-                            .send(wire::TakerToMaker::StartContractSetup(order_id))
-                            .unwrap();
 
                         cfd_feed_actor_inbox
                             .send(load_all_cfds(&mut conn).await.unwrap())
@@ -128,6 +126,10 @@ pub fn new(
                             wallet.clone(),
                         );
 
+                        for msg in contract_setup_message_buffer.drain(..) {
+                            inbox.send(msg).unwrap();
+                        }
+
                         tokio::spawn({
                             let sender = sender.clone();
 
@@ -144,7 +146,10 @@ pub fn new(
                     }
                     Command::IncProtocolMsg(msg) => {
                         let inbox = match &current_contract_setup {
-                            None => panic!("whoops"),
+                            None => {
+                                contract_setup_message_buffer.push(msg);
+                                continue;
+                            }
                             Some(inbox) => inbox,
                         };
 
