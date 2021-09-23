@@ -31,7 +31,14 @@ interface CfdSellOrderPayload {
 }
 
 async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
-    let res = await fetch(`/api/order/sell`, { method: "POST", body: JSON.stringify(payload), credentials: "include" });
+    let res = await fetch(`/api/order/sell`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: {
+            "Content-Type": "application/json",
+        },
+        credentials: "include",
+    });
 
     if (!res.status.toString().startsWith("2")) {
         console.log("Status: " + res.status + ", " + res.statusText);
