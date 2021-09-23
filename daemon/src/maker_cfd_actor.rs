@@ -17,63 +17,31 @@ use xtra::prelude::*;
 
 pub struct Initialized(pub Address<MakerIncConnectionsActor>);
 
-impl Message for Initialized {
-    type Result = ();
-}
-
 pub struct TakeOrder {
     pub taker_id: TakerId,
     pub order_id: OrderId,
     pub quantity: Usd,
 }
 
-impl Message for TakeOrder {
-    type Result = ();
-}
-
 pub struct NewOrder(pub Order);
-
-impl Message for NewOrder {
-    type Result = ();
-}
 
 pub struct StartContractSetup {
     pub taker_id: TakerId,
     pub order_id: OrderId,
 }
 
-impl Message for StartContractSetup {
-    type Result = ();
-}
-
 pub struct NewTakerOnline {
     pub id: TakerId,
 }
 
-impl Message for NewTakerOnline {
-    type Result = ();
-}
-
 pub struct IncProtocolMsg(pub SetupMsg);
-
-impl Message for IncProtocolMsg {
-    type Result = ();
-}
 
 pub struct CfdSetupCompleted {
     pub order_id: OrderId,
     pub dlc: Dlc,
 }
 
-impl Message for CfdSetupCompleted {
-    type Result = ();
-}
-
 pub struct SyncWallet;
-
-impl Message for SyncWallet {
-    type Result = ();
-}
 
 pub struct MakerCfdActor {
     db: sqlx::SqlitePool,
@@ -89,8 +57,6 @@ pub struct MakerCfdActor {
     // manages the state instead of this ugly buffer
     contract_setup_message_buffer: Vec<SetupMsg>,
 }
-
-impl xtra::Actor for MakerCfdActor {}
 
 impl MakerCfdActor {
     pub async fn new(
@@ -421,3 +387,37 @@ impl Handler<SyncWallet> for MakerCfdActor {
         log_error!(self.handle_sync_wallet());
     }
 }
+
+impl Message for Initialized {
+    type Result = ();
+}
+
+impl Message for TakeOrder {
+    type Result = ();
+}
+
+impl Message for NewOrder {
+    type Result = ();
+}
+
+impl Message for StartContractSetup {
+    type Result = ();
+}
+
+impl Message for NewTakerOnline {
+    type Result = ();
+}
+
+impl Message for IncProtocolMsg {
+    type Result = ();
+}
+
+impl Message for CfdSetupCompleted {
+    type Result = ();
+}
+
+impl Message for SyncWallet {
+    type Result = ();
+}
+
+impl xtra::Actor for MakerCfdActor {}
