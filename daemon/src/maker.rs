@@ -18,6 +18,7 @@ use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
 
+mod actors;
 mod auth;
 mod bitmex_price_feed;
 mod db;

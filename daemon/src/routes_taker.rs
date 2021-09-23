@@ -1,7 +1,7 @@
 use crate::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId};
 use crate::model::{Leverage, Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
-use crate::taker_cfd_actor;
+use crate::taker_cfd_actor::{self, TakerCfdActor};
 use crate::to_sse_event::ToSseEvent;
 use bdk::bitcoin::Amount;
 use rocket::http::{ContentType, Status};
@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
+use xtra::Address;
 
 #[rocket::get("/feed")]
 pub async fn feed(
@@ -64,14 +65,15 @@ pub struct CfdOrderRequest {
 #[rocket::post("/cfd", data = "<cfd_order_request>")]
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
-    cfd_actor_inbox: &State<mpsc::UnboundedSender<taker_cfd_actor::Command>>,
+    cfd_actor_inbox: &State<Address<TakerCfdActor>>,
 ) {
     cfd_actor_inbox
-        .send(taker_cfd_actor::Command::TakeOffer {
+        .do_send_async(taker_cfd_actor::TakeOffer {
             order_id: cfd_order_request.order_id,
             quantity: cfd_order_request.quantity,
         })
-        .expect("actor to never disappear");
+        .await
+        .expect("actor to always be available");
 }
 
 #[rocket::get("/alive")]

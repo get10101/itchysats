@@ -1,3 +1,4 @@
+use crate::actors::log_error;
 use crate::maker_cfd_actor::MakerCfdActor;
 use crate::model::cfd::{Order, OrderId};
 use crate::model::TakerId;

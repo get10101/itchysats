@@ -1,3 +1,4 @@
+use crate::actors::log_error;
 use crate::db::{
     insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
     load_cfd_by_order_id, load_order_by_id,
@@ -411,14 +412,6 @@ impl Handler<Initialized> for MakerCfdActor {
     async fn handle(&mut self, msg: Initialized, _ctx: &mut Context<Self>) {
         self.takers.replace(msg.0);
     }
-}
-
-macro_rules! log_error {
-    ($future:expr) => {
-        if let Err(e) = $future.await {
-            tracing::error!(%e);
-        }
-    };
 }
 
 #[async_trait]

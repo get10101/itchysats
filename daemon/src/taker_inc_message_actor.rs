@@ -1,14 +1,12 @@
 use crate::model::cfd::Origin;
+use crate::taker_cfd_actor::TakerCfdActor;
 use crate::{taker_cfd_actor, wire};
 use futures::{Future, StreamExt};
 use tokio::net::tcp::OwnedReadHalf;
-use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
+use xtra::prelude::*;
 
-pub fn new(
-    read: OwnedReadHalf,
-    cfd_actor: mpsc::UnboundedSender<taker_cfd_actor::Command>,
-) -> impl Future<Output = ()> {
+pub fn new(read: OwnedReadHalf, cfd_actor: Address<TakerCfdActor>) -> impl Future<Output = ()> {
     let frame_read = FramedRead::new(read, LengthDelimitedCodec::new());
 
     let mut messages = frame_read.map(|result| {
@@ -23,29 +21,32 @@ pub fn new(
                     if let Some(order) = order.as_mut() {
                         order.origin = Origin::Theirs;
                     }
-
                     cfd_actor
-                        .send(taker_cfd_actor::Command::NewOrder(order))
-                        .unwrap();
+                        .do_send_async(taker_cfd_actor::NewOrder(order))
+                        .await
+                        .expect("actor to be always available");
                 }
                 Ok(wire::MakerToTaker::ConfirmOrder(order_id)) => {
                     // TODO: This naming is not well aligned.
                     cfd_actor
-                        .send(taker_cfd_actor::Command::OrderAccepted(order_id))
-                        .unwrap();
+                        .do_send_async(taker_cfd_actor::OrderAccepted(order_id))
+                        .await
+                        .expect("actor to be always available");
                 }
                 Ok(wire::MakerToTaker::RejectOrder(order_id)) => {
                     cfd_actor
-                        .send(taker_cfd_actor::Command::OrderRejected(order_id))
-                        .unwrap();
+                        .do_send_async(taker_cfd_actor::OrderRejected(order_id))
+                        .await
+                        .expect("actor to be always available");
                 }
                 Ok(wire::MakerToTaker::InvalidOrderId(_)) => {
                     todo!()
                 }
                 Ok(wire::MakerToTaker::Protocol(msg)) => {
                     cfd_actor
-                        .send(taker_cfd_actor::Command::IncProtocolMsg(msg))
-                        .unwrap();
+                        .do_send_async(taker_cfd_actor::IncProtocolMsg(msg))
+                        .await
+                        .expect("actor to be always available");
                 }
                 Err(error) => {
                     tracing::error!("Error in reading message: {}", error);
