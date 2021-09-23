@@ -9,14 +9,12 @@ use crate::model::{TakerId, Usd, WalletInfo};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
 use crate::{maker_inc_connections, setup_contract_actor};
-use anyhow::{Context as AnyhowContext, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
 use xtra::prelude::*;
-
-pub struct Initialized(pub Address<maker_inc_connections::Actor>);
 
 pub struct TakeOrder {
     pub taker_id: TakerId,
@@ -54,7 +52,7 @@ pub struct MakerCfdActor {
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_sender: watch::Sender<Option<Order>>,
     wallet_feed_sender: watch::Sender<WalletInfo>,
-    takers: Option<Address<maker_inc_connections::Actor>>,
+    takers: Address<maker_inc_connections::Actor>,
     current_order_id: Option<OrderId>,
     current_contract_setup: Option<mpsc::UnboundedSender<SetupMsg>>,
     // TODO: Move the contract setup into a dedicated actor and send messages to that actor that
@@ -70,6 +68,7 @@ impl MakerCfdActor {
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_sender: watch::Sender<Option<Order>>,
         wallet_feed_sender: watch::Sender<WalletInfo>,
+        takers: Address<maker_inc_connections::Actor>,
     ) -> Result<Self> {
         let mut conn = db.acquire().await?;
 
@@ -83,7 +82,7 @@ impl MakerCfdActor {
             cfd_feed_actor_inbox,
             order_feed_sender,
             wallet_feed_sender,
-            takers: None,
+            takers,
             current_order_id: None,
             current_contract_setup: None,
             contract_setup_message_buffer: vec![],
@@ -104,16 +103,10 @@ impl MakerCfdActor {
         self.order_feed_sender.send(Some(order.clone()))?;
 
         // 4. Inform connected takers
-        self.takers()?
+        self.takers
             .do_send_async(maker_inc_connections::BroadcastOrder(Some(order)))
             .await?;
         Ok(())
-    }
-
-    fn takers(&self) -> Result<&Address<maker_inc_connections::Actor>> {
-        self.takers
-            .as_ref()
-            .context("Maker inc connections actor to be initialised")
     }
 
     async fn handle_new_taker_online(&mut self, msg: NewTakerOnline) -> Result<()> {
@@ -124,7 +117,7 @@ impl MakerCfdActor {
             None => None,
         };
 
-        self.takers()?
+        self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id: msg.id,
                 command: TakerCommand::SendOrder {
@@ -202,7 +195,7 @@ impl MakerCfdActor {
                 load_order_by_id(current_order_id, &mut conn).await?
             }
             _ => {
-                self.takers()?
+                self.takers
                     .do_send_async(maker_inc_connections::TakerMessage {
                         taker_id,
                         command: TakerCommand::NotifyInvalidOrderId { id: order_id },
@@ -231,7 +224,7 @@ impl MakerCfdActor {
 
         // 3. Remove current order
         self.current_order_id = None;
-        self.takers()?
+        self.takers
             .do_send_async(maker_inc_connections::BroadcastOrder(None))
             .await?;
         self.order_feed_sender.send(None)?;
@@ -275,7 +268,7 @@ impl MakerCfdActor {
         .await
         .unwrap();
 
-        self.takers()?
+        self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id,
                 command: TakerCommand::NotifyOrderAccepted { id: msg.order_id },
@@ -284,7 +277,9 @@ impl MakerCfdActor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        self.takers()?
+        // 3. Remove current order
+        self.current_order_id = None;
+        self.takers
             .do_send_async(maker_inc_connections::BroadcastOrder(None))
             .await?;
         self.current_order_id = None;
@@ -303,7 +298,7 @@ impl MakerCfdActor {
 
         let (actor, inbox) = setup_contract_actor::new(
             {
-                let inbox = self.takers()?.clone();
+                let inbox = self.takers.clone();
                 move |msg| {
                     tokio::spawn(inbox.do_send_async(maker_inc_connections::TakerMessage {
                         taker_id,
@@ -383,7 +378,7 @@ impl MakerCfdActor {
         .await
         .unwrap();
 
-        self.takers()?
+        self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id,
                 command: TakerCommand::NotifyOrderRejected { id: msg.order_id },
@@ -394,19 +389,12 @@ impl MakerCfdActor {
 
         // Remove order for all
         self.current_order_id = None;
-        self.takers()?
+        self.takers
             .do_send_async(maker_inc_connections::BroadcastOrder(None))
             .await?;
         self.order_feed_sender.send(None)?;
 
         Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<Initialized> for MakerCfdActor {
-    async fn handle(&mut self, msg: Initialized, _ctx: &mut Context<Self>) {
-        self.takers.replace(msg.0);
     }
 }
 
@@ -464,10 +452,6 @@ impl Handler<SyncWallet> for MakerCfdActor {
     async fn handle(&mut self, _msg: SyncWallet, _ctx: &mut Context<Self>) {
         log_error!(self.handle_sync_wallet());
     }
-}
-
-impl Message for Initialized {
-    type Result = ();
 }
 
 impl Message for TakeOrder {

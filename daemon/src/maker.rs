@@ -157,6 +157,9 @@ async fn main() -> Result<()> {
                     None => return Err(rocket),
                 };
 
+                let (maker_inc_connections_address, maker_inc_connections_context) =
+                    xtra::Context::new(None);
+
                 let cfd_maker_actor_inbox = maker_cfd_actor::MakerCfdActor::new(
                     db,
                     wallet,
@@ -164,16 +167,18 @@ async fn main() -> Result<()> {
                     cfd_feed_sender,
                     order_feed_sender,
                     wallet_feed_sender,
+                    maker_inc_connections_address.clone(),
                 )
                 .await
                 .unwrap()
                 .create(None)
                 .spawn_global();
 
-                let maker_inc_connections_address =
-                    maker_inc_connections::Actor::new(cfd_maker_actor_inbox.clone())
-                        .create(None)
-                        .spawn_global();
+                tokio::spawn(
+                    maker_inc_connections_context.run(maker_inc_connections::Actor::new(
+                        cfd_maker_actor_inbox.clone(),
+                    )),
+                );
 
                 tokio::spawn({
                     let cfd_maker_actor_inbox = cfd_maker_actor_inbox.clone();
@@ -222,13 +227,6 @@ async fn main() -> Result<()> {
                         }
                     }
                 });
-
-                cfd_maker_actor_inbox
-                    .do_send_async(maker_cfd_actor::Initialized(
-                        maker_inc_connections_address.clone(),
-                    ))
-                    .await
-                    .expect("not to fail after actors were initialized");
 
                 Ok(rocket.manage(cfd_maker_actor_inbox))
             },
