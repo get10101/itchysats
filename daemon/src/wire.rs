@@ -14,9 +14,6 @@ use std::ops::RangeInclusive;
 #[allow(clippy::large_enum_variant)]
 pub enum TakerToMaker {
     TakeOrder { order_id: OrderId, quantity: Usd },
-    // TODO: Currently the taker starts, can already send some stuff for signing over in the first
-    // message.
-    StartContractSetup(OrderId),
     Protocol(SetupMsg),
 }
 

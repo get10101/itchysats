@@ -103,10 +103,6 @@ pub fn new(
                         .await
                         .unwrap();
 
-                        out_msg_maker_inbox
-                            .send(wire::TakerToMaker::StartContractSetup(order_id))
-                            .unwrap();
-
                         cfd_feed_actor_inbox
                             .send(load_all_cfds(&mut conn).await.unwrap())
                             .unwrap();
