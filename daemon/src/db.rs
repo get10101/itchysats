@@ -234,8 +234,7 @@ async fn load_latest_cfd_state(
     .fetch_one(conn)
     .await?;
 
-    let latest_cfd_state_in_db: CfdState =
-        serde_json::from_str(dbg!(latest_cfd_state).state.as_str())?;
+    let latest_cfd_state_in_db: CfdState = serde_json::from_str(latest_cfd_state.state.as_str())?;
 
     Ok(latest_cfd_state_in_db)
 }
