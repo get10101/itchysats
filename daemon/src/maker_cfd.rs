@@ -272,7 +272,6 @@ impl Actor {
         // Kick-off the CFD protocol
         let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
 
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         let margin = cfd.margin()?;
 
         let maker_params = self.wallet.build_party_params(margin, pk).await?;
