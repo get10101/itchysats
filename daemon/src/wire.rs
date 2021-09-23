@@ -22,8 +22,8 @@ pub enum TakerToMaker {
 #[allow(clippy::large_enum_variant)]
 pub enum MakerToTaker {
     CurrentOrder(Option<Order>),
-    // TODO: Needs RejectOrder as well
-    ConfirmTakeOrder(OrderId), // TODO: Include payout curve in "accept" message from maker
+    ConfirmOrder(OrderId), // TODO: Include payout curve in "accept" message from maker
+    RejectOrder(OrderId),
     InvalidOrderId(OrderId),
     Protocol(SetupMsg),
 }

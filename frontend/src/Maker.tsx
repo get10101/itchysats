@@ -23,28 +23,7 @@ import NavLink from "./components/NavLink";
 import OrderTile from "./components/OrderTile";
 import { Cfd, Order, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
-
-interface CfdSellOrderPayload {
-    price: number;
-    min_quantity: number;
-    max_quantity: number;
-}
-
-async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
-    let res = await fetch(`/api/order/sell`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-        headers: {
-            "Content-Type": "application/json",
-        },
-        credentials: "include",
-    });
-
-    if (!res.status.toString().startsWith("2")) {
-        console.log("Status: " + res.status + ", " + res.statusText);
-        throw new Error("failed to publish new order");
-    }
-}
+import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 
 export default function App() {
     let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });

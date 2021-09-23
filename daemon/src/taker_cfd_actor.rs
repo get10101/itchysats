@@ -20,6 +20,7 @@ pub enum Command {
     TakeOrder { order_id: OrderId, quantity: Usd },
     NewOrder(Option<Order>),
     OrderAccepted(OrderId),
+    OrderRejected(OrderId),
     IncProtocolMsg(SetupMsg),
     CfdSetupCompleted { order_id: OrderId, dlc: Dlc },
 }
@@ -58,12 +59,12 @@ pub fn new(
 
                         let current_order = load_order_by_id(order_id, &mut conn).await.unwrap();
 
-                        tracing::info!("Accepting current order: {:?}", &current_order);
+                        tracing::info!("Taking current order: {:?}", &current_order);
 
                         let cfd = Cfd::new(
                             current_order.clone(),
                             quantity,
-                            CfdState::PendingOrderRequest {
+                            CfdState::OutgoingOrderRequest {
                                 common: CfdStateCommon {
                                     transition_timestamp: SystemTime::now(),
                                 },
@@ -144,6 +145,25 @@ pub fn new(
                             }
                         });
                         current_contract_setup = Some(inbox);
+                    }
+                    Command::OrderRejected(order_id) => {
+                        tracing::debug!(%order_id, "Order rejected");
+                        let mut conn = db.acquire().await.unwrap();
+                        insert_new_cfd_state_by_order_id(
+                            order_id,
+                            CfdState::Rejected {
+                                common: CfdStateCommon {
+                                    transition_timestamp: SystemTime::now(),
+                                },
+                            },
+                            &mut conn,
+                        )
+                        .await
+                        .unwrap();
+
+                        cfd_feed_actor_inbox
+                            .send(load_all_cfds(&mut conn).await.unwrap())
+                            .unwrap();
                     }
                     Command::IncProtocolMsg(msg) => {
                         let inbox = match &current_contract_setup {

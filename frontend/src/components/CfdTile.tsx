@@ -1,5 +1,7 @@
-import { Box, Button, SimpleGrid, Text, VStack } from "@chakra-ui/react";
+import { Box, Button, HStack, SimpleGrid, Text, useToast, VStack } from "@chakra-ui/react";
 import React from "react";
+import { useAsync } from "react-async";
+import { postAcceptOrder, postRejectOrder } from "../MakerClient";
 import { Cfd, unixTimestampToDate } from "./Types";
 
 interface CfdTileProps {
@@ -13,6 +15,84 @@ export default function CfdTile(
         cfd,
     }: CfdTileProps,
 ) {
+    const toast = useToast();
+
+    let { run: acceptOrder, isLoading: isAccepting } = useAsync({
+        deferFn: async ([args]: any[]) => {
+            try {
+                let payload = {
+                    order_id: args.order_id,
+                };
+                await postAcceptOrder(payload);
+            } catch (e) {
+                const description = typeof e === "string" ? e : JSON.stringify(e);
+
+                toast({
+                    title: "Error",
+                    description,
+                    status: "error",
+                    duration: 9000,
+                    isClosable: true,
+                });
+            }
+        },
+    });
+
+    let { run: rejectOrder, isLoading: isRejecting } = useAsync({
+        deferFn: async ([args]: any[]) => {
+            try {
+                let payload = {
+                    order_id: args.order_id,
+                };
+                await postRejectOrder(payload);
+            } catch (e) {
+                const description = typeof e === "string" ? e : JSON.stringify(e);
+
+                toast({
+                    title: "Error",
+                    description,
+                    status: "error",
+                    duration: 9000,
+                    isClosable: true,
+                });
+            }
+        },
+    });
+
+    let actionButtons;
+    if (cfd.state === "Open") {
+        actionButtons = <Box paddingBottom={5}>
+            <Button colorScheme="blue" variant="solid">
+                Close
+            </Button>
+        </Box>;
+    } else if (cfd.state == "Requested") {
+        actionButtons = (
+            <HStack>
+                <Box paddingBottom={5}>
+                    <Button
+                        colorScheme="blue"
+                        variant="solid"
+                        onClick={async () => acceptOrder(cfd)}
+                        isLoading={isAccepting}
+                    >
+                        Accept
+                    </Button>
+                </Box>
+                <Box paddingBottom={5}>
+                    <Button
+                        colorScheme="blue"
+                        variant="solid"
+                        onClick={async () => rejectOrder(cfd)}
+                        isLoading={isRejecting}
+                    >
+                        Reject
+                    </Button>
+                </Box>
+            </HStack>
+        );
+    }
+
     return (
         <Box borderRadius={"md"} borderColor={"blue.800"} borderWidth={2} bg={"gray.50"}>
             <VStack>
@@ -51,8 +131,7 @@ export default function CfdTile(
                     <Text>Status</Text>
                     <Text>{cfd.state}</Text>
                 </SimpleGrid>
-                {cfd.state === "Open"
-                    && <Box paddingBottom={5}><Button colorScheme="blue" variant="solid">Close</Button></Box>}
+                {actionButtons}
             </VStack>
         </Box>
     );

@@ -1,4 +1,4 @@
-use crate::model::{Leverage, Position, TradingPair, Usd};
+use crate::model::{Leverage, Position, TakerId, TradingPair, Usd};
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Amount, Transaction};
@@ -143,11 +143,19 @@ pub enum CfdState {
     },
     /// The taker sent an order to the maker to open the CFD but doesn't have a response yet.
     ///
-    /// This state applies to taker and maker.
-    /// Initial state for the maker.
-    PendingOrderRequest {
+    /// This state applies to taker only.
+    OutgoingOrderRequest {
         common: CfdStateCommon,
     },
+
+    /// The maker received an order from the taker to open the CFD but doesn't have a response yet.
+    ///
+    /// This state applies to the maker only.
+    IncomingOrderRequest {
+        common: CfdStateCommon,
+        taker_id: TakerId,
+    },
+
     /// The maker has accepted the CFD take request, but the contract is not set up on chain yet.
     ///
     /// This state applies to taker and maker.
@@ -214,7 +222,8 @@ impl CfdState {
     fn get_common(&self) -> CfdStateCommon {
         let common = match self {
             CfdState::TakeRequested { common } => common,
-            CfdState::PendingOrderRequest { common } => common,
+            CfdState::OutgoingOrderRequest { common } => common,
+            CfdState::IncomingOrderRequest { common, .. } => common,
             CfdState::Accepted { common } => common,
             CfdState::Rejected { common } => common,
             CfdState::ContractSetup { common } => common,
@@ -240,8 +249,11 @@ impl Display for CfdState {
             CfdState::TakeRequested { .. } => {
                 write!(f, "Order created")
             }
-            CfdState::PendingOrderRequest { .. } => {
-                write!(f, "Pending order")
+            CfdState::OutgoingOrderRequest { .. } => {
+                write!(f, "Request sent")
+            }
+            CfdState::IncomingOrderRequest { .. } => {
+                write!(f, "Requested")
             }
             CfdState::Accepted { .. } => {
                 write!(f, "Accepted")
