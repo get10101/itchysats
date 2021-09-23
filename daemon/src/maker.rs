@@ -12,7 +12,6 @@ use model::WalletInfo;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use std::path::PathBuf;
-use std::time::Duration;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
@@ -34,6 +33,7 @@ mod send_wire_message_actor;
 mod setup_contract_actor;
 mod to_sse_event;
 mod wallet;
+mod wallet_sync;
 mod wire;
 
 #[derive(Database)]
@@ -162,11 +162,10 @@ async fn main() -> Result<()> {
 
                 let cfd_maker_actor_inbox = maker_cfd::Actor::new(
                     db,
-                    wallet,
+                    wallet.clone(),
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     cfd_feed_sender,
                     order_feed_sender,
-                    wallet_feed_sender,
                     maker_inc_connections_address.clone(),
                 )
                 .await
@@ -213,20 +212,7 @@ async fn main() -> Result<()> {
                     }
                 });
 
-                // consecutive wallet syncs handled by task that triggers sync
-                let wallet_sync_interval = Duration::from_secs(10);
-                tokio::spawn({
-                    let cfd_actor_inbox = cfd_maker_actor_inbox.clone();
-                    async move {
-                        loop {
-                            cfd_actor_inbox
-                                .do_send_async(maker_cfd::SyncWallet)
-                                .await
-                                .unwrap();
-                            tokio::time::sleep(wallet_sync_interval).await;
-                        }
-                    }
-                });
+                tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
 
                 Ok(rocket.manage(cfd_maker_actor_inbox))
             },

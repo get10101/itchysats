@@ -32,6 +32,7 @@ mod taker_cfd_actor;
 mod taker_inc_message_actor;
 mod to_sse_event;
 mod wallet;
+mod wallet_sync;
 mod wire;
 
 const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
@@ -161,11 +162,10 @@ async fn main() -> Result<()> {
 
                 let cfd_actor_inbox = taker_cfd_actor::TakerCfdActor::new(
                     db,
-                    wallet,
+                    wallet.clone(),
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     cfd_feed_sender,
                     order_feed_sender,
-                    wallet_feed_sender,
                     out_maker_actor_inbox,
                 )
                 .await
@@ -176,22 +176,7 @@ async fn main() -> Result<()> {
                 let inc_maker_messages_actor =
                     taker_inc_message_actor::new(read, cfd_actor_inbox.clone());
 
-                // consecutive wallet syncs handled by task that triggers sync
-                let wallet_sync_interval = Duration::from_secs(10);
-                tokio::spawn({
-                    let cfd_actor_inbox = cfd_actor_inbox.clone();
-                    async move {
-                        loop {
-                            cfd_actor_inbox
-                                .do_send_async(taker_cfd_actor::SyncWallet)
-                                .await
-                                .unwrap();
-
-                            tokio::time::sleep(wallet_sync_interval).await;
-                        }
-                    }
-                });
-
+                tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
                 tokio::spawn(inc_maker_messages_actor);
                 tokio::spawn(out_maker_messages_actor);
 

@@ -5,7 +5,7 @@ use crate::db::{
 
 use crate::actors::log_error;
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Dlc, Order, OrderId};
-use crate::model::{Usd, WalletInfo};
+use crate::model::Usd;
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
 use crate::{setup_contract_actor, wire};
@@ -15,8 +15,6 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
 use xtra::prelude::*;
-
-pub struct SyncWallet;
 
 pub struct TakeOffer {
     pub order_id: OrderId,
@@ -40,7 +38,6 @@ pub struct TakerCfdActor {
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_actor_inbox: watch::Sender<Option<Order>>,
-    wallet_feed_sender: watch::Sender<WalletInfo>,
     out_msg_maker_inbox: mpsc::UnboundedSender<wire::TakerToMaker>,
     current_contract_setup: Option<mpsc::UnboundedSender<SetupMsg>>,
     // TODO: Move the contract setup into a dedicated actor and send messages to that actor that
@@ -55,7 +52,6 @@ impl TakerCfdActor {
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
-        wallet_feed_sender: watch::Sender<WalletInfo>,
         out_msg_maker_inbox: mpsc::UnboundedSender<wire::TakerToMaker>,
     ) -> Result<Self> {
         let mut conn = db.acquire().await?;
@@ -67,17 +63,10 @@ impl TakerCfdActor {
             oracle_pk,
             cfd_feed_actor_inbox,
             order_feed_actor_inbox,
-            wallet_feed_sender,
             out_msg_maker_inbox,
             current_contract_setup: None,
             contract_setup_message_buffer: vec![],
         })
-    }
-
-    async fn handle_sync_wallet(&mut self) -> Result<()> {
-        let wallet_info = self.wallet.sync().await?;
-        self.wallet_feed_sender.send(wallet_info)?;
-        Ok(())
     }
 
     async fn handle_take_offer(&mut self, order_id: OrderId, quantity: Usd) -> Result<()> {
@@ -251,13 +240,6 @@ impl TakerCfdActor {
 }
 
 #[async_trait]
-impl Handler<SyncWallet> for TakerCfdActor {
-    async fn handle(&mut self, _msg: SyncWallet, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_sync_wallet());
-    }
-}
-
-#[async_trait]
 impl Handler<TakeOffer> for TakerCfdActor {
     async fn handle(&mut self, msg: TakeOffer, _ctx: &mut Context<Self>) {
         log_error!(self.handle_take_offer(msg.order_id, msg.quantity));
@@ -297,10 +279,6 @@ impl Handler<CfdSetupCompleted> for TakerCfdActor {
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_setup_completed(msg.order_id, msg.dlc));
     }
-}
-
-impl Message for SyncWallet {
-    type Result = ();
 }
 
 impl Message for TakeOffer {

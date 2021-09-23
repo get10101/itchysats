@@ -5,7 +5,7 @@ use crate::db::{
 };
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Dlc, Order, OrderId};
-use crate::model::{TakerId, Usd, WalletInfo};
+use crate::model::{TakerId, Usd};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
 use crate::{maker_inc_connections, setup_contract_actor};
@@ -43,15 +43,12 @@ pub struct CfdSetupCompleted {
     pub dlc: Dlc,
 }
 
-pub struct SyncWallet;
-
 pub struct Actor {
     db: sqlx::SqlitePool,
     wallet: Wallet,
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_sender: watch::Sender<Option<Order>>,
-    wallet_feed_sender: watch::Sender<WalletInfo>,
     takers: Address<maker_inc_connections::Actor>,
     current_order_id: Option<OrderId>,
     current_contract_setup: Option<mpsc::UnboundedSender<SetupMsg>>,
@@ -67,7 +64,6 @@ impl Actor {
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_sender: watch::Sender<Option<Order>>,
-        wallet_feed_sender: watch::Sender<WalletInfo>,
         takers: Address<maker_inc_connections::Actor>,
     ) -> Result<Self> {
         let mut conn = db.acquire().await?;
@@ -81,7 +77,6 @@ impl Actor {
             oracle_pk,
             cfd_feed_actor_inbox,
             order_feed_sender,
-            wallet_feed_sender,
             takers,
             current_order_id: None,
             current_contract_setup: None,
@@ -139,12 +134,6 @@ impl Actor {
             Some(inbox) => inbox,
         };
         inbox.send(msg)?;
-        Ok(())
-    }
-
-    async fn handle_sync_wallet(&mut self) -> Result<()> {
-        let wallet_info = self.wallet.sync().await?;
-        self.wallet_feed_sender.send(wallet_info)?;
         Ok(())
     }
 
@@ -447,13 +436,6 @@ impl Handler<CfdSetupCompleted> for Actor {
     }
 }
 
-#[async_trait]
-impl Handler<SyncWallet> for Actor {
-    async fn handle(&mut self, _msg: SyncWallet, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_sync_wallet());
-    }
-}
-
 impl Message for TakeOrder {
     type Result = ();
 }
@@ -471,10 +453,6 @@ impl Message for IncProtocolMsg {
 }
 
 impl Message for CfdSetupCompleted {
-    type Result = ();
-}
-
-impl Message for SyncWallet {
     type Result = ();
 }
 
