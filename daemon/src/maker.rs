@@ -33,7 +33,7 @@ mod routes;
 mod routes_maker;
 mod seed;
 mod send_to_socket;
-mod setup_contract_actor;
+mod setup_contract;
 mod to_sse_event;
 mod wallet;
 mod wallet_sync;
@@ -185,13 +185,11 @@ async fn main() -> Result<()> {
                         cfd_maker_actor_inbox.clone(),
                     )),
                 );
-
                 tokio::spawn(monitor_actor_context.run(monitor::Actor::new(
                     &opts.electrum,
                     HashMap::new(),
                     cfd_maker_actor_inbox.clone(),
                 )));
-
                 tokio::spawn({
                     let cfd_maker_actor_inbox = cfd_maker_actor_inbox.clone();
                     let maker_inc_connections_address = maker_inc_connections_address.clone();

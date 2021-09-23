@@ -1,6 +1,7 @@
 use crate::model::cfd::OrderId;
 use crate::model::Usd;
 use crate::Order;
+use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Amount, PublicKey};
@@ -125,27 +126,27 @@ pub enum SetupMsg {
 }
 
 impl SetupMsg {
-    pub fn try_into_msg0(self) -> Result<Msg0, Self> {
+    pub fn try_into_msg0(self) -> Result<Msg0> {
         if let Self::Msg0(v) = self {
             Ok(v)
         } else {
-            Err(self)
+            bail!("Not Msg0")
         }
     }
 
-    pub fn try_into_msg1(self) -> Result<Msg1, Self> {
+    pub fn try_into_msg1(self) -> Result<Msg1> {
         if let Self::Msg1(v) = self {
             Ok(v)
         } else {
-            Err(self)
+            bail!("Not Msg1")
         }
     }
 
-    pub fn try_into_msg2(self) -> Result<Msg2, Self> {
+    pub fn try_into_msg2(self) -> Result<Msg2> {
         if let Self::Msg2(v) = self {
             Ok(v)
         } else {
-            Err(self)
+            bail!("Not Msg2")
         }
     }
 }

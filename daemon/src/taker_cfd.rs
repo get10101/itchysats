@@ -7,15 +7,17 @@ use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
 };
 use crate::model::Usd;
-use crate::monitor::MonitorParams;
+use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
-use crate::{monitor, send_to_socket, setup_contract_actor, wire};
-use anyhow::Result;
+use crate::{send_to_socket, setup_contract, wire};
+use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
+use futures::channel::mpsc;
+use futures::{future, SinkExt};
 use std::time::SystemTime;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 use xtra::prelude::*;
 use xtra::KeepRunning;
 
@@ -30,7 +32,14 @@ pub struct MakerStreamMessage {
 
 pub struct CfdSetupCompleted {
     pub order_id: OrderId,
-    pub dlc: Dlc,
+    pub dlc: Result<Dlc>,
+}
+
+enum SetupState {
+    Active {
+        sender: mpsc::UnboundedSender<wire::SetupMsg>,
+    },
+    None,
 }
 
 pub struct Actor {
@@ -40,11 +49,8 @@ pub struct Actor {
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_actor_inbox: watch::Sender<Option<Order>>,
     send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
-    current_contract_setup: Option<mpsc::UnboundedSender<SetupMsg>>,
-    // TODO: Move the contract setup into a dedicated actor and send messages to that actor that
-    // manages the state instead of this ugly buffer
-    contract_setup_message_buffer: Vec<SetupMsg>,
     monitor_actor: Address<monitor::Actor<Actor>>,
+    setup_state: SetupState,
 }
 
 impl Actor {
@@ -67,9 +73,8 @@ impl Actor {
             cfd_feed_actor_inbox,
             order_feed_actor_inbox,
             send_to_maker,
-            current_contract_setup: None,
-            contract_setup_message_buffer: vec![],
             monitor_actor,
+            setup_state: SetupState::None,
         })
     }
 
@@ -124,6 +129,12 @@ impl Actor {
     ) -> Result<()> {
         tracing::info!(%order_id, "Order got accepted");
 
+        let (sender, receiver) = mpsc::unbounded();
+
+        if let SetupState::Active { .. } = self.setup_state {
+            anyhow::bail!("Already setting up a contract!")
+        }
+
         let mut conn = self.db.acquire().await?;
         insert_new_cfd_state_by_order_id(
             order_id,
@@ -138,46 +149,33 @@ impl Actor {
 
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
-
-        let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
-
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        let margin = cfd.margin()?;
 
-        let taker_params = self.wallet.build_party_params(margin, pk).await?;
-
-        let (actor, inbox) = setup_contract_actor::new(
-            {
-                let inbox = self.send_to_maker.clone();
-                move |msg| {
-                    tokio::spawn(inbox.do_send_async(wire::TakerToMaker::Protocol(msg)));
-                }
-            },
-            setup_contract_actor::OwnParams::Taker(taker_params),
-            sk,
+        let contract_future = setup_contract::new(
+            self.send_to_maker
+                .clone()
+                .into_sink()
+                .with(|msg| future::ok(wire::TakerToMaker::Protocol(msg))),
+            receiver,
             self.oracle_pk,
             cfd,
             self.wallet.clone(),
+            setup_contract::Role::Taker,
         );
 
-        for msg in self.contract_setup_message_buffer.drain(..) {
-            inbox.send(msg)?;
-        }
-
-        let address = ctx
+        let this = ctx
             .address()
             .expect("actor to be able to give address to itself");
 
         tokio::spawn(async move {
-            address
-                .do_send_async(CfdSetupCompleted {
-                    order_id,
-                    dlc: actor.await,
-                })
+            let dlc = contract_future.await;
+
+            this.do_send_async(CfdSetupCompleted { order_id, dlc })
                 .await
         });
 
-        self.current_contract_setup = Some(inbox);
+        self.setup_state = SetupState::Active { sender };
+
         Ok(())
     }
 
@@ -203,23 +201,25 @@ impl Actor {
     }
 
     async fn handle_inc_protocol_msg(&mut self, msg: SetupMsg) -> Result<()> {
-        let inbox = match &self.current_contract_setup {
-            None => {
-                self.contract_setup_message_buffer.push(msg);
-                return Ok(());
+        match &mut self.setup_state {
+            SetupState::Active { sender } => {
+                sender.send(msg).await?;
             }
-            Some(inbox) => inbox,
-        };
-        inbox.send(msg)?;
+            SetupState::None => anyhow::bail!("OrderAccepted message should arrive first"),
+        }
 
         Ok(())
     }
 
-    async fn handle_cfd_setup_completed(&mut self, order_id: OrderId, dlc: Dlc) -> Result<()> {
-        tracing::info!("Setup complete, publishing on chain now");
+    async fn handle_cfd_setup_completed(
+        &mut self,
+        order_id: OrderId,
+        dlc: Result<Dlc>,
+    ) -> Result<()> {
+        self.setup_state = SetupState::None;
+        let dlc = dlc.context("Failed to setup contract with maker")?;
 
-        self.current_contract_setup = None;
-        self.contract_setup_message_buffer = vec![];
+        tracing::info!("Setup complete, publishing on chain now");
 
         let mut conn = self.db.acquire().await?;
 

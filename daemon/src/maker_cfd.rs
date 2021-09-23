@@ -8,13 +8,14 @@ use crate::model::cfd::{Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc,
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
-use crate::wire::{self, SetupMsg};
-use crate::{maker_inc_connections, monitor, setup_contract_actor};
-use anyhow::Result;
+use crate::{maker_inc_connections, monitor, setup_contract, wire};
+use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
+use futures::channel::mpsc;
+use futures::{future, SinkExt};
 use std::time::SystemTime;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 use xtra::prelude::*;
 use xtra::KeepRunning;
 
@@ -34,7 +35,7 @@ pub struct NewTakerOnline {
 
 pub struct CfdSetupCompleted {
     pub order_id: OrderId,
-    pub dlc: Dlc,
+    pub dlc: Result<Dlc>,
 }
 
 pub struct TakerStreamMessage {
@@ -50,11 +51,16 @@ pub struct Actor {
     order_feed_sender: watch::Sender<Option<Order>>,
     takers: Address<maker_inc_connections::Actor>,
     current_order_id: Option<OrderId>,
-    current_contract_setup: Option<mpsc::UnboundedSender<SetupMsg>>,
-    // TODO: Move the contract setup into a dedicated actor and send messages to that actor that
-    // manages the state instead of this ugly buffer
-    contract_setup_message_buffer: Vec<SetupMsg>,
     monitor_actor: Address<monitor::Actor<Actor>>,
+    setup_state: SetupState,
+}
+
+enum SetupState {
+    Active {
+        taker: TakerId,
+        sender: mpsc::UnboundedSender<wire::SetupMsg>,
+    },
+    None,
 }
 
 impl Actor {
@@ -80,9 +86,8 @@ impl Actor {
             order_feed_sender,
             takers,
             current_order_id: None,
-            current_contract_setup: None,
-            contract_setup_message_buffer: vec![],
             monitor_actor,
+            setup_state: SetupState::None,
         })
     }
 
@@ -128,26 +133,30 @@ impl Actor {
 
     async fn handle_inc_protocol_msg(
         &mut self,
-        _taker_id: TakerId,
+        taker_id: TakerId,
         msg: wire::SetupMsg,
     ) -> Result<()> {
-        let inbox = match &self.current_contract_setup {
-            None => {
-                self.contract_setup_message_buffer.push(msg);
-                return Ok(());
+        match &mut self.setup_state {
+            SetupState::Active { taker, sender } if taker_id == *taker => {
+                sender.send(msg).await?;
             }
-            Some(inbox) => inbox,
-        };
-        inbox.send(msg)?;
+            SetupState::Active { taker, .. } => {
+                anyhow::bail!("Currently setting up contract with taker {}", taker)
+            }
+            SetupState::None => unreachable!(
+                "`SetupState` is guaranteed to be `Active` before anyone sends a message"
+            ),
+        }
 
         Ok(())
     }
 
     async fn handle_cfd_setup_completed(&mut self, msg: CfdSetupCompleted) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
+        self.setup_state = SetupState::None;
 
-        self.current_contract_setup = None;
-        self.contract_setup_message_buffer = vec![];
+        let dlc = msg.dlc.context("Failed to setup contract with taker")?;
+
+        let mut conn = self.db.acquire().await?;
 
         insert_new_cfd_state_by_order_id(
             msg.order_id,
@@ -155,7 +164,7 @@ impl Actor {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },
-                dlc: msg.dlc.clone(),
+                dlc: dlc.clone(),
             },
             &mut conn,
         )
@@ -166,7 +175,7 @@ impl Actor {
 
         let txid = self
             .wallet
-            .try_broadcast_transaction(msg.dlc.lock.0.clone())
+            .try_broadcast_transaction(dlc.lock.0.clone())
             .await?;
 
         tracing::info!("Lock transaction published with txid {}", txid);
@@ -175,21 +184,20 @@ impl Actor {
         // refund timelock
         let cfd = load_cfd_by_order_id(msg.order_id, &mut conn).await?;
 
-        let script_pubkey = msg.dlc.address.script_pubkey();
+        let script_pubkey = dlc.address.script_pubkey();
         self.monitor_actor
             .do_send_async(monitor::StartMonitoring {
                 id: msg.order_id,
                 params: MonitorParams {
-                    lock: (msg.dlc.lock.0.txid(), msg.dlc.lock.1),
-                    commit: (msg.dlc.commit.0.txid(), msg.dlc.commit.2),
-                    cets: msg
-                        .dlc
+                    lock: (dlc.lock.0.txid(), dlc.lock.1),
+                    commit: (dlc.commit.0.txid(), dlc.commit.2),
+                    cets: dlc
                         .cets
                         .into_iter()
                         .map(|(tx, _, range)| (tx.txid(), script_pubkey.clone(), range))
                         .collect(),
                     refund: (
-                        msg.dlc.refund.0.txid(),
+                        dlc.refund.0.txid(),
                         script_pubkey,
                         cfd.refund_timelock_in_blocks(),
                     ),
@@ -258,13 +266,18 @@ impl Actor {
         msg: AcceptOrder,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
-        tracing::debug!(%msg.order_id, "Maker accepts an order" );
+        if let SetupState::Active { .. } = self.setup_state {
+            anyhow::bail!("Already setting up a contract!")
+        }
+
+        let AcceptOrder { order_id } = msg;
+
+        tracing::debug!(%order_id, "Maker accepts an order" );
 
         let mut conn = self.db.acquire().await?;
 
         // Validate if order is still valid
         let cfd = load_cfd_by_order_id(msg.order_id, &mut conn).await?;
-
         let taker_id = match cfd {
             Cfd {
                 state: CfdState::IncomingOrderRequest { taker_id, .. },
@@ -275,19 +288,18 @@ impl Actor {
             }
         };
 
-        // Update order in db
-        let order_id = cfd.order.id;
+        let (sender, receiver) = mpsc::unbounded();
+
         insert_new_cfd_state_by_order_id(
-            order_id,
-            CfdState::Accepted {
+            msg.order_id,
+            CfdState::ContractSetup {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },
             },
             &mut conn,
         )
-        .await
-        .unwrap();
+        .await?;
 
         // use `.send` here to ensure we only continue once the message has been sent
         self.takers
@@ -300,65 +312,35 @@ impl Actor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        // Start contract setup
-        tracing::info!("Starting contract setup");
-
-        // Kick-off the CFD protocol
-        let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
-
-        let margin = cfd.margin()?;
-
-        let maker_params = self.wallet.build_party_params(margin, pk).await?;
-
-        let (actor, inbox) = setup_contract_actor::new(
-            {
-                let inbox = self.takers.clone();
-                move |msg| {
-                    tokio::spawn(inbox.do_send_async(maker_inc_connections::TakerMessage {
-                        taker_id,
-                        command: TakerCommand::OutProtocolMsg { setup_msg: msg },
-                    }));
-                }
-            },
-            setup_contract_actor::OwnParams::Maker(maker_params),
-            sk,
+        let contract_future = setup_contract::new(
+            self.takers.clone().into_sink().with(move |msg| {
+                future::ok(maker_inc_connections::TakerMessage {
+                    taker_id,
+                    command: TakerCommand::Protocol(msg),
+                })
+            }),
+            receiver,
             self.oracle_pk,
             cfd,
             self.wallet.clone(),
+            setup_contract::Role::Maker,
         );
 
-        self.current_contract_setup.replace(inbox.clone());
-
-        for msg in self.contract_setup_message_buffer.drain(..) {
-            inbox.send(msg)?;
-        }
-
-        // TODO: Should we do this here or already earlier or after the spawn?
-        insert_new_cfd_state_by_order_id(
-            order_id,
-            CfdState::ContractSetup {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-            &mut conn,
-        )
-        .await?;
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
-
-        let address = ctx
+        let this = ctx
             .address()
             .expect("actor to be able to give address to itself");
 
         tokio::spawn(async move {
-            address
-                .do_send_async(CfdSetupCompleted {
-                    order_id,
-                    dlc: actor.await,
-                })
+            let dlc = contract_future.await;
+
+            this.do_send_async(CfdSetupCompleted { order_id, dlc })
                 .await
         });
+
+        self.setup_state = SetupState::Active {
+            sender,
+            taker: taker_id,
+        };
 
         Ok(())
     }

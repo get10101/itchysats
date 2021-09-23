@@ -32,7 +32,7 @@ mod routes;
 mod routes_taker;
 mod seed;
 mod send_to_socket;
-mod setup_contract_actor;
+mod setup_contract;
 mod taker_cfd;
 mod to_sse_event;
 mod wallet;

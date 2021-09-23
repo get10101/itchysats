@@ -1,7 +1,6 @@
 use crate::actors::log_error;
 use crate::model::cfd::{Order, OrderId};
 use crate::model::TakerId;
-use crate::wire::SetupMsg;
 use crate::{maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
@@ -16,7 +15,7 @@ pub enum TakerCommand {
     NotifyInvalidOrderId { id: OrderId },
     NotifyOrderAccepted { id: OrderId },
     NotifyOrderRejected { id: OrderId },
-    OutProtocolMsg { setup_msg: SetupMsg },
+    Protocol(wire::SetupMsg),
 }
 
 pub struct TakerMessage {
@@ -83,7 +82,7 @@ impl Actor {
                 self.send_to_taker(msg.taker_id, wire::MakerToTaker::RejectOrder(id))
                     .await?;
             }
-            TakerCommand::OutProtocolMsg { setup_msg } => {
+            TakerCommand::Protocol(setup_msg) => {
                 self.send_to_taker(msg.taker_id, wire::MakerToTaker::Protocol(setup_msg))
                     .await?;
             }
