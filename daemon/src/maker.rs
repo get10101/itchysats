@@ -1,5 +1,5 @@
 use crate::auth::MAKER_USERNAME;
-use crate::maker_inc_connections_actor::in_taker_messages;
+use crate::maker_inc_connections::in_taker_messages;
 use crate::model::TakerId;
 use crate::seed::Seed;
 use crate::wallet::Wallet;
@@ -25,7 +25,7 @@ mod db;
 mod keypair;
 mod logger;
 mod maker_cfd_actor;
-mod maker_inc_connections_actor;
+mod maker_inc_connections;
 mod model;
 mod routes;
 mod routes_maker;
@@ -171,11 +171,9 @@ async fn main() -> Result<()> {
                 .spawn_global();
 
                 let maker_inc_connections_address =
-                    maker_inc_connections_actor::MakerIncConnectionsActor::new(
-                        cfd_maker_actor_inbox.clone(),
-                    )
-                    .create(None)
-                    .spawn_global();
+                    maker_inc_connections::Actor::new(cfd_maker_actor_inbox.clone())
+                        .create(None)
+                        .spawn_global();
 
                 tokio::spawn({
                     let cfd_maker_actor_inbox = cfd_maker_actor_inbox.clone();
@@ -199,7 +197,7 @@ async fn main() -> Result<()> {
                                 tokio::spawn(out_msg_actor);
 
                                 maker_inc_connections_address
-                                    .do_send_async(maker_inc_connections_actor::NewTakerOnline {
+                                    .do_send_async(maker_inc_connections::NewTakerOnline {
                                         taker_id,
                                         out_msg_actor_inbox,
                                     })

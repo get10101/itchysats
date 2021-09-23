@@ -3,12 +3,12 @@ use crate::db::{
     insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
     load_cfd_by_order_id, load_order_by_id,
 };
-use crate::maker_inc_connections_actor::{MakerIncConnectionsActor, TakerCommand};
+use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Dlc, Order, OrderId};
 use crate::model::{TakerId, Usd, WalletInfo};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
-use crate::{maker_inc_connections_actor, setup_contract_actor};
+use crate::{maker_inc_connections, setup_contract_actor};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -16,7 +16,7 @@ use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
 use xtra::prelude::*;
 
-pub struct Initialized(pub Address<MakerIncConnectionsActor>);
+pub struct Initialized(pub Address<maker_inc_connections::Actor>);
 
 pub struct TakeOrder {
     pub taker_id: TakerId,
@@ -54,7 +54,7 @@ pub struct MakerCfdActor {
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_sender: watch::Sender<Option<Order>>,
     wallet_feed_sender: watch::Sender<WalletInfo>,
-    takers: Option<Address<MakerIncConnectionsActor>>,
+    takers: Option<Address<maker_inc_connections::Actor>>,
     current_order_id: Option<OrderId>,
     current_contract_setup: Option<mpsc::UnboundedSender<SetupMsg>>,
     // TODO: Move the contract setup into a dedicated actor and send messages to that actor that
@@ -105,12 +105,12 @@ impl MakerCfdActor {
 
         // 4. Inform connected takers
         self.takers()?
-            .do_send_async(maker_inc_connections_actor::BroadcastOrder(Some(order)))
+            .do_send_async(maker_inc_connections::BroadcastOrder(Some(order)))
             .await?;
         Ok(())
     }
 
-    fn takers(&self) -> Result<&Address<MakerIncConnectionsActor>> {
+    fn takers(&self) -> Result<&Address<maker_inc_connections::Actor>> {
         self.takers
             .as_ref()
             .context("Maker inc connections actor to be initialised")
@@ -125,7 +125,7 @@ impl MakerCfdActor {
         };
 
         self.takers()?
-            .do_send_async(maker_inc_connections_actor::TakerMessage {
+            .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id: msg.id,
                 command: TakerCommand::SendOrder {
                     order: current_order,
@@ -203,7 +203,7 @@ impl MakerCfdActor {
             }
             _ => {
                 self.takers()?
-                    .do_send_async(maker_inc_connections_actor::TakerMessage {
+                    .do_send_async(maker_inc_connections::TakerMessage {
                         taker_id,
                         command: TakerCommand::NotifyInvalidOrderId { id: order_id },
                     })
@@ -232,7 +232,7 @@ impl MakerCfdActor {
         // 3. Remove current order
         self.current_order_id = None;
         self.takers()?
-            .do_send_async(maker_inc_connections_actor::BroadcastOrder(None))
+            .do_send_async(maker_inc_connections::BroadcastOrder(None))
             .await?;
         self.order_feed_sender.send(None)?;
 
@@ -276,7 +276,7 @@ impl MakerCfdActor {
         .unwrap();
 
         self.takers()?
-            .do_send_async(maker_inc_connections_actor::TakerMessage {
+            .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id,
                 command: TakerCommand::NotifyOrderAccepted { id: msg.order_id },
             })
@@ -285,7 +285,7 @@ impl MakerCfdActor {
             .send(load_all_cfds(&mut conn).await?)?;
 
         self.takers()?
-            .do_send_async(maker_inc_connections_actor::BroadcastOrder(None))
+            .do_send_async(maker_inc_connections::BroadcastOrder(None))
             .await?;
         self.current_order_id = None;
         self.order_feed_sender.send(None)?;
@@ -305,12 +305,10 @@ impl MakerCfdActor {
             {
                 let inbox = self.takers()?.clone();
                 move |msg| {
-                    tokio::spawn(
-                        inbox.do_send_async(maker_inc_connections_actor::TakerMessage {
-                            taker_id,
-                            command: TakerCommand::OutProtocolMsg { setup_msg: msg },
-                        }),
-                    );
+                    tokio::spawn(inbox.do_send_async(maker_inc_connections::TakerMessage {
+                        taker_id,
+                        command: TakerCommand::OutProtocolMsg { setup_msg: msg },
+                    }));
                 }
             },
             setup_contract_actor::OwnParams::Maker(maker_params),
@@ -386,7 +384,7 @@ impl MakerCfdActor {
         .unwrap();
 
         self.takers()?
-            .do_send_async(maker_inc_connections_actor::TakerMessage {
+            .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id,
                 command: TakerCommand::NotifyOrderRejected { id: msg.order_id },
             })
@@ -397,7 +395,7 @@ impl MakerCfdActor {
         // Remove order for all
         self.current_order_id = None;
         self.takers()?
-            .do_send_async(maker_inc_connections_actor::BroadcastOrder(None))
+            .do_send_async(maker_inc_connections::BroadcastOrder(None))
             .await?;
         self.order_feed_sender.send(None)?;
 

@@ -5,13 +5,12 @@ use crate::model::TakerId;
 use crate::wire::SetupMsg;
 use crate::{maker_cfd_actor, wire};
 use anyhow::{Context as AnyhowContext, Result};
+use async_trait::async_trait;
 use futures::{Future, StreamExt};
 use std::collections::HashMap;
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
-
-use async_trait::async_trait;
 use xtra::prelude::*;
 
 type MakerToTakerSender = mpsc::UnboundedSender<wire::MakerToTaker>;
@@ -49,14 +48,14 @@ impl Message for NewTakerOnline {
     type Result = Result<()>;
 }
 
-pub struct MakerIncConnectionsActor {
+pub struct Actor {
     write_connections: HashMap<TakerId, MakerToTakerSender>,
     cfd_maker_actor_address: Address<MakerCfdActor>,
 }
 
-impl Actor for MakerIncConnectionsActor {}
+impl xtra::Actor for Actor {}
 
-impl MakerIncConnectionsActor {
+impl Actor {
     pub fn new(cfd_maker_actor_address: Address<MakerCfdActor>) -> Self {
         Self {
             write_connections: HashMap::<TakerId, MakerToTakerSender>::new(),
@@ -122,7 +121,7 @@ macro_rules! log_error {
 }
 
 #[async_trait]
-impl Handler<BroadcastOrder> for MakerIncConnectionsActor {
+impl Handler<BroadcastOrder> for Actor {
     async fn handle(&mut self, msg: BroadcastOrder, _ctx: &mut Context<Self>) -> Result<()> {
         log_error!(self.handle_broadcast_order(msg));
         Ok(())
@@ -130,7 +129,7 @@ impl Handler<BroadcastOrder> for MakerIncConnectionsActor {
 }
 
 #[async_trait]
-impl Handler<TakerMessage> for MakerIncConnectionsActor {
+impl Handler<TakerMessage> for Actor {
     async fn handle(&mut self, msg: TakerMessage, _ctx: &mut Context<Self>) -> Result<()> {
         log_error!(self.handle_taker_message(msg));
         Ok(())
@@ -138,7 +137,7 @@ impl Handler<TakerMessage> for MakerIncConnectionsActor {
 }
 
 #[async_trait]
-impl Handler<NewTakerOnline> for MakerIncConnectionsActor {
+impl Handler<NewTakerOnline> for Actor {
     async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) -> Result<()> {
         log_error!(self.handle_new_taker_online(msg));
         Ok(())
