@@ -432,7 +432,7 @@ mod tests {
         let cfd = Cfd::new(
             order.clone(),
             Usd(dec!(1000)),
-            CfdState::PendingTakeRequest {
+            CfdState::OutgoingOrderRequest {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },
@@ -456,7 +456,7 @@ mod tests {
         let cfd = Cfd::new(
             order.clone(),
             Usd(dec!(1000)),
-            CfdState::PendingTakeRequest {
+            CfdState::OutgoingOrderRequest {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },
@@ -481,7 +481,7 @@ mod tests {
         let mut cfd = Cfd::new(
             order.clone(),
             Usd(dec!(1000)),
-            CfdState::PendingTakeRequest {
+            CfdState::OutgoingOrderRequest {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },

@@ -23,6 +23,14 @@ pub struct TakeOrder {
     pub quantity: Usd,
 }
 
+pub struct AcceptOrder {
+    pub order_id: OrderId,
+}
+
+pub struct RejectOrder {
+    pub order_id: OrderId,
+}
+
 pub struct NewOrder(pub Order);
 
 pub struct NewTakerOnline {
@@ -178,7 +186,7 @@ impl MakerCfdActor {
         Ok(())
     }
 
-    async fn handle_take_order(&mut self, msg: TakeOrder, ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle_take_order(&mut self, msg: TakeOrder) -> Result<()> {
         let TakeOrder {
             taker_id,
             order_id,
@@ -207,24 +215,18 @@ impl MakerCfdActor {
         };
 
         // 2. Insert CFD in DB
-        // TODO: Don't auto-accept, present to user in UI instead
         let cfd = Cfd::new(
             current_order.clone(),
-            quantity,
-            CfdState::Accepted {
+            msg.quantity,
+            CfdState::IncomingOrderRequest {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },
+                taker_id,
             },
         );
         insert_cfd(cfd, &mut conn).await?;
 
-        self.takers()?
-            .do_send_async(maker_inc_connections_actor::TakerMessage {
-                taker_id,
-                command: TakerCommand::NotifyOrderAccepted { id: order_id },
-            })
-            .await?;
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
@@ -233,6 +235,60 @@ impl MakerCfdActor {
         self.takers()?
             .do_send_async(maker_inc_connections_actor::BroadcastOrder(None))
             .await?;
+        self.order_feed_sender.send(None)?;
+
+        Ok(())
+    }
+
+    async fn handle_accept_order(
+        &mut self,
+        msg: AcceptOrder,
+        ctx: &mut Context<Self>,
+    ) -> Result<()> {
+        tracing::debug!(%msg.order_id, "Maker accepts an order" );
+
+        let mut conn = self.db.acquire().await?;
+
+        // Validate if order is still valid
+        let cfd = load_cfd_by_order_id(msg.order_id, &mut conn).await?;
+
+        let taker_id = match cfd {
+            Cfd {
+                state: CfdState::IncomingOrderRequest { taker_id, .. },
+                ..
+            } => taker_id,
+            _ => {
+                anyhow::bail!("Order is in invalid state. Ignoring trying to accept it.")
+            }
+        };
+
+        // Update order in db
+        let order_id = cfd.order.id;
+        insert_new_cfd_state_by_order_id(
+            order_id,
+            CfdState::Accepted {
+                common: CfdStateCommon {
+                    transition_timestamp: SystemTime::now(),
+                },
+            },
+            &mut conn,
+        )
+        .await
+        .unwrap();
+
+        self.takers()?
+            .do_send_async(maker_inc_connections_actor::TakerMessage {
+                taker_id,
+                command: TakerCommand::NotifyOrderAccepted { id: msg.order_id },
+            })
+            .await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
+
+        self.takers()?
+            .do_send_async(maker_inc_connections_actor::BroadcastOrder(None))
+            .await?;
+        self.current_order_id = None;
         self.order_feed_sender.send(None)?;
 
         // 4. Start contract setup
@@ -300,7 +356,56 @@ impl MakerCfdActor {
 
         Ok(())
     }
+
+    async fn handle_reject_order(&mut self, msg: RejectOrder) -> Result<()> {
+        tracing::debug!(%msg.order_id, "Maker rejects an order" );
+
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd_by_order_id(msg.order_id, &mut conn).await?;
+
+        let taker_id = match cfd {
+            Cfd {
+                state: CfdState::IncomingOrderRequest { taker_id, .. },
+                ..
+            } => taker_id,
+            _ => {
+                anyhow::bail!("Order is in invalid state. Ignoring trying to accept it.")
+            }
+        };
+
+        // Update order in db
+        insert_new_cfd_state_by_order_id(
+            msg.order_id,
+            CfdState::Rejected {
+                common: CfdStateCommon {
+                    transition_timestamp: SystemTime::now(),
+                },
+            },
+            &mut conn,
+        )
+        .await
+        .unwrap();
+
+        self.takers()?
+            .do_send_async(maker_inc_connections_actor::TakerMessage {
+                taker_id,
+                command: TakerCommand::NotifyOrderRejected { id: msg.order_id },
+            })
+            .await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
+
+        // Remove order for all
+        self.current_order_id = None;
+        self.takers()?
+            .do_send_async(maker_inc_connections_actor::BroadcastOrder(None))
+            .await?;
+        self.order_feed_sender.send(None)?;
+
+        Ok(())
+    }
 }
+
 #[async_trait]
 impl Handler<Initialized> for MakerCfdActor {
     async fn handle(&mut self, msg: Initialized, _ctx: &mut Context<Self>) {
@@ -318,8 +423,22 @@ macro_rules! log_error {
 
 #[async_trait]
 impl Handler<TakeOrder> for MakerCfdActor {
-    async fn handle(&mut self, msg: TakeOrder, ctx: &mut Context<Self>) {
-        log_error!(self.handle_take_order(msg, ctx))
+    async fn handle(&mut self, msg: TakeOrder, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_take_order(msg))
+    }
+}
+
+#[async_trait]
+impl Handler<AcceptOrder> for MakerCfdActor {
+    async fn handle(&mut self, msg: AcceptOrder, ctx: &mut Context<Self>) {
+        log_error!(self.handle_accept_order(msg, ctx))
+    }
+}
+
+#[async_trait]
+impl Handler<RejectOrder> for MakerCfdActor {
+    async fn handle(&mut self, msg: RejectOrder, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_reject_order(msg))
     }
 }
 
@@ -383,6 +502,14 @@ impl Message for CfdSetupCompleted {
 }
 
 impl Message for SyncWallet {
+    type Result = ();
+}
+
+impl Message for AcceptOrder {
+    type Result = ();
+}
+
+impl Message for RejectOrder {
     type Result = ();
 }
 

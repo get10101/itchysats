@@ -11,7 +11,7 @@ import NavLink from "./components/NavLink";
 import { Cfd, Order, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 
-interface CfdTakeRequestPayload {
+interface CfdOrderRequestPayload {
     order_id: string;
     quantity: number;
 }
@@ -26,11 +26,11 @@ interface MarginResponse {
     margin: number;
 }
 
-async function postCfdTakeRequest(payload: CfdTakeRequestPayload) {
+async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
     let res = await fetch(`/api/cfd`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
-        throw new Error("failed to create new CFD take request: " + res.status + ", " + res.statusText);
+        throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
     }
 }
 
@@ -38,7 +38,7 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
     let res = await fetch(`/api/calculate/margin`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
-        throw new Error("failed to create new CFD take request: " + res.status + ", " + res.statusText);
+        throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
     }
 
     return res.json();
@@ -77,10 +77,10 @@ export default function App() {
     const format = (val: any) => `$` + val;
     const parse = (val: any) => val.replace(/^\$/, "");
 
-    let { run: makeNewTakeRequest, isLoading: isCreatingNewTakeRequest } = useAsync({
+    let { run: makeNewOrderRequest, isLoading: isCreatingNewOrderRequest } = useAsync({
         deferFn: async ([payload]: any[]) => {
             try {
-                await postCfdTakeRequest(payload as CfdTakeRequestPayload);
+                await postCfdOrderRequest(payload as CfdOrderRequestPayload);
             } catch (e) {
                 const description = typeof e === "string" ? e : JSON.stringify(e);
 
@@ -175,15 +175,15 @@ export default function App() {
                                             <Button colorScheme="blue" variant="solid">x{order?.leverage}</Button>
                                         </Flex>
                                         {<Button
-                                            disabled={isCreatingNewTakeRequest || !order}
+                                            disabled={isCreatingNewOrderRequest || !order}
                                             variant={"solid"}
                                             colorScheme={"blue"}
                                             onClick={() => {
-                                                let payload: CfdTakeRequestPayload = {
+                                                let payload: CfdOrderRequestPayload = {
                                                     order_id: order!.id,
                                                     quantity: Number.parseFloat(quantity),
                                                 };
-                                                makeNewTakeRequest(payload);
+                                                makeNewOrderRequest(payload);
                                             }}
                                         >
                                             BUY

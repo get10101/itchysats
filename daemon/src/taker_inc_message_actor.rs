@@ -28,10 +28,15 @@ pub fn new(
                         .send(taker_cfd_actor::Command::NewOrder(order))
                         .unwrap();
                 }
-                Ok(wire::MakerToTaker::ConfirmTakeOrder(order_id)) => {
+                Ok(wire::MakerToTaker::ConfirmOrder(order_id)) => {
                     // TODO: This naming is not well aligned.
                     cfd_actor
                         .send(taker_cfd_actor::Command::OrderAccepted(order_id))
+                        .unwrap();
+                }
+                Ok(wire::MakerToTaker::RejectOrder(order_id)) => {
+                    cfd_actor
+                        .send(taker_cfd_actor::Command::OrderRejected(order_id))
                         .unwrap();
                 }
                 Ok(wire::MakerToTaker::InvalidOrderId(_)) => {

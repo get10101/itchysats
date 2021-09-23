@@ -36,17 +36,17 @@ BuyerApp -> BuyerOrderFeed: push order
 BuyerOrderFeed --> Buyer: order
 
 Buyer -> Buyer: Click BUY
-Buyer -> BuyerApp: POST cfd_take_request
-BuyerApp -> BuyerApp: Create cfd [TakeRequested]
+Buyer -> BuyerApp: POST cfd_order_request
+BuyerApp -> BuyerApp: Create cfd [OrderRequest]
 note over BuyerApp: Must include order_id
 
 BuyerApp -> BuyerCfdFeed: Push cfd
-BuyerCfdFeed --> Buyer: cfd [TakeRequested]
+BuyerCfdFeed --> Buyer: cfd [OrderRequest]
 
-BuyerApp -> SellerApp: {TCP} cfd_take_request (order_id, quantity)
-SellerApp -> SellerApp: Create cfd [TakeRequested]
-SellerApp -> SellerCfdFeed: cfd [TakeRequested]
-SellerCfdFeed --> Seller: cfd [TakeRequested]
+BuyerApp -> SellerApp: {TCP} cfd_order_request (order_id, quantity)
+SellerApp -> SellerApp: Create cfd [OrderRequest]
+SellerApp -> SellerCfdFeed: cfd [OrderRequest]
+SellerCfdFeed --> Seller: cfd [OrderRequest]
 Seller -> Seller: Accept cfd
 Seller -> SellerApp: POST cfd [Accepted]
 SellerApp -> BuyerApp: {TCP} cfd [Accepted]

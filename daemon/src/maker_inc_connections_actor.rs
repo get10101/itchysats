@@ -26,6 +26,7 @@ pub enum TakerCommand {
     SendOrder { order: Option<Order> },
     NotifyInvalidOrderId { id: OrderId },
     NotifyOrderAccepted { id: OrderId },
+    NotifyOrderRejected { id: OrderId },
     OutProtocolMsg { setup_msg: SetupMsg },
 }
 
@@ -88,7 +89,10 @@ impl MakerIncConnectionsActor {
                 self.send_to_taker(msg.taker_id, wire::MakerToTaker::InvalidOrderId(id))?;
             }
             TakerCommand::NotifyOrderAccepted { id } => {
-                self.send_to_taker(msg.taker_id, wire::MakerToTaker::ConfirmTakeOrder(id))?;
+                self.send_to_taker(msg.taker_id, wire::MakerToTaker::ConfirmOrder(id))?;
+            }
+            TakerCommand::NotifyOrderRejected { id } => {
+                self.send_to_taker(msg.taker_id, wire::MakerToTaker::RejectOrder(id))?;
             }
             TakerCommand::OutProtocolMsg { setup_msg } => {
                 self.send_to_taker(msg.taker_id, wire::MakerToTaker::Protocol(setup_msg))?;

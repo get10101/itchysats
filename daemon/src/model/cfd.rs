@@ -1,4 +1,4 @@
-use crate::model::{Leverage, Position, TradingPair, Usd};
+use crate::model::{Leverage, Position, TakerId, TradingPair, Usd};
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Amount, Transaction};
@@ -134,19 +134,21 @@ pub struct CfdStateCommon {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "payload")]
 pub enum CfdState {
-    /// The taker has requested to take a CFD, but has not messaged the maker yet.
+    /// The taker sent an order to the maker to open the CFD but doesn't have a response yet.
     ///
-    /// This state only applies to the taker.
-    TakeRequested {
+    /// This state applies to taker only.
+    OutgoingOrderRequest {
         common: CfdStateCommon,
     },
-    /// The taker sent an open request to the maker to open the CFD but don't have a response yet.
+
+    /// The maker received an order from the taker to open the CFD but doesn't have a response yet.
     ///
-    /// This state applies to taker and maker.
-    /// Initial state for the maker.
-    PendingTakeRequest {
+    /// This state applies to the maker only.
+    IncomingOrderRequest {
         common: CfdStateCommon,
+        taker_id: TakerId,
     },
+
     /// The maker has accepted the CFD take request, but the contract is not set up on chain yet.
     ///
     /// This state applies to taker and maker.
@@ -154,7 +156,7 @@ pub enum CfdState {
         common: CfdStateCommon,
     },
 
-    /// The maker rejected the CFD take request.
+    /// The maker rejected the CFD order.
     ///
     /// This state applies to taker and maker.
     Rejected {
@@ -212,8 +214,8 @@ pub enum CfdState {
 impl CfdState {
     fn get_common(&self) -> CfdStateCommon {
         let common = match self {
-            CfdState::TakeRequested { common } => common,
-            CfdState::PendingTakeRequest { common } => common,
+            CfdState::OutgoingOrderRequest { common } => common,
+            CfdState::IncomingOrderRequest { common, .. } => common,
             CfdState::Accepted { common } => common,
             CfdState::Rejected { common } => common,
             CfdState::ContractSetup { common } => common,
@@ -236,11 +238,11 @@ impl CfdState {
 impl Display for CfdState {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CfdState::TakeRequested { .. } => {
-                write!(f, "Take Requested")
+            CfdState::OutgoingOrderRequest { .. } => {
+                write!(f, "Request sent")
             }
-            CfdState::PendingTakeRequest { .. } => {
-                write!(f, "Pending Take Request")
+            CfdState::IncomingOrderRequest { .. } => {
+                write!(f, "Requested")
             }
             CfdState::Accepted { .. } => {
                 write!(f, "Accepted")

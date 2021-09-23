@@ -191,7 +191,7 @@ async fn main() -> Result<()> {
             "/api",
             rocket::routes![
                 routes_taker::feed,
-                routes_taker::post_cfd,
+                routes_taker::post_order_request,
                 routes_taker::get_health_check,
                 routes_taker::margin_calc,
             ],
