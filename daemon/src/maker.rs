@@ -166,6 +166,7 @@ async fn main() -> Result<()> {
                     wallet_feed_sender,
                 )
                 .await
+                .unwrap()
                 .create(None)
                 .spawn_global();
 

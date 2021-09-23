@@ -70,15 +70,13 @@ impl MakerCfdActor {
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_sender: watch::Sender<Option<Order>>,
         wallet_feed_sender: watch::Sender<WalletInfo>,
-    ) -> Self {
-        let mut conn = db.acquire().await.unwrap();
+    ) -> Result<Self> {
+        let mut conn = db.acquire().await?;
 
         // populate the CFD feed with existing CFDs
-        cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await.unwrap())
-            .unwrap();
+        cfd_feed_actor_inbox.send(load_all_cfds(&mut conn).await?)?;
 
-        Self {
+        Ok(Self {
             db,
             wallet,
             oracle_pk,
@@ -89,7 +87,7 @@ impl MakerCfdActor {
             current_order_id: None,
             current_contract_setup: None,
             contract_setup_message_buffer: vec![],
-        }
+        })
     }
 
     async fn handle_new_order(&mut self, msg: NewOrder) -> Result<()> {
