@@ -24,7 +24,7 @@ mod bitmex_price_feed;
 mod db;
 mod keypair;
 mod logger;
-mod maker_cfd_actor;
+mod maker_cfd;
 mod maker_inc_connections;
 mod model;
 mod routes;
@@ -160,7 +160,7 @@ async fn main() -> Result<()> {
                 let (maker_inc_connections_address, maker_inc_connections_context) =
                     xtra::Context::new(None);
 
-                let cfd_maker_actor_inbox = maker_cfd_actor::MakerCfdActor::new(
+                let cfd_maker_actor_inbox = maker_cfd::Actor::new(
                     db,
                     wallet,
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
@@ -220,7 +220,7 @@ async fn main() -> Result<()> {
                     async move {
                         loop {
                             cfd_actor_inbox
-                                .do_send_async(maker_cfd_actor::SyncWallet)
+                                .do_send_async(maker_cfd::SyncWallet)
                                 .await
                                 .unwrap();
                             tokio::time::sleep(wallet_sync_interval).await;

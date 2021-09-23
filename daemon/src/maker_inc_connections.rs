@@ -1,9 +1,8 @@
 use crate::actors::log_error;
-use crate::maker_cfd_actor::MakerCfdActor;
 use crate::model::cfd::{Order, OrderId};
 use crate::model::TakerId;
 use crate::wire::SetupMsg;
-use crate::{maker_cfd_actor, wire};
+use crate::{maker_cfd, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
 use futures::{Future, StreamExt};
@@ -50,13 +49,13 @@ impl Message for NewTakerOnline {
 
 pub struct Actor {
     write_connections: HashMap<TakerId, MakerToTakerSender>,
-    cfd_actor: Address<MakerCfdActor>,
+    cfd_actor: Address<maker_cfd::Actor>,
 }
 
 impl xtra::Actor for Actor {}
 
 impl Actor {
-    pub fn new(cfd_actor: Address<MakerCfdActor>) -> Self {
+    pub fn new(cfd_actor: Address<maker_cfd::Actor>) -> Self {
         Self {
             write_connections: HashMap::<TakerId, MakerToTakerSender>::new(),
             cfd_actor,
@@ -103,7 +102,7 @@ impl Actor {
 
     async fn handle_new_taker_online(&mut self, msg: NewTakerOnline) -> Result<()> {
         self.cfd_actor
-            .do_send_async(maker_cfd_actor::NewTakerOnline { id: msg.taker_id })
+            .do_send_async(maker_cfd::NewTakerOnline { id: msg.taker_id })
             .await?;
 
         self.write_connections
@@ -148,7 +147,7 @@ impl Handler<NewTakerOnline> for Actor {
 
 pub fn in_taker_messages(
     read: OwnedReadHalf,
-    cfd_actor_inbox: Address<MakerCfdActor>,
+    cfd_actor_inbox: Address<maker_cfd::Actor>,
     taker_id: TakerId,
 ) -> impl Future<Output = ()> {
     let mut messages = FramedRead::new(read, LengthDelimitedCodec::new()).map(|result| {
@@ -161,7 +160,7 @@ pub fn in_taker_messages(
             match message {
                 Ok(wire::TakerToMaker::TakeOrder { order_id, quantity }) => {
                     cfd_actor_inbox
-                        .do_send_async(maker_cfd_actor::TakeOrder {
+                        .do_send_async(maker_cfd::TakeOrder {
                             taker_id,
                             order_id,
                             quantity,
@@ -171,7 +170,7 @@ pub fn in_taker_messages(
                 }
                 Ok(wire::TakerToMaker::Protocol(msg)) => {
                     cfd_actor_inbox
-                        .do_send_async(maker_cfd_actor::IncProtocolMsg(msg))
+                        .do_send_async(maker_cfd::IncProtocolMsg(msg))
                         .await
                         .unwrap();
                 }

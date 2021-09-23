@@ -45,7 +45,7 @@ pub struct CfdSetupCompleted {
 
 pub struct SyncWallet;
 
-pub struct MakerCfdActor {
+pub struct Actor {
     db: sqlx::SqlitePool,
     wallet: Wallet,
     oracle_pk: schnorrsig::PublicKey,
@@ -60,7 +60,7 @@ pub struct MakerCfdActor {
     contract_setup_message_buffer: Vec<SetupMsg>,
 }
 
-impl MakerCfdActor {
+impl Actor {
     pub async fn new(
         db: sqlx::SqlitePool,
         wallet: Wallet,
@@ -399,56 +399,56 @@ impl MakerCfdActor {
 }
 
 #[async_trait]
-impl Handler<TakeOrder> for MakerCfdActor {
+impl Handler<TakeOrder> for Actor {
     async fn handle(&mut self, msg: TakeOrder, _ctx: &mut Context<Self>) {
         log_error!(self.handle_take_order(msg))
     }
 }
 
 #[async_trait]
-impl Handler<AcceptOrder> for MakerCfdActor {
+impl Handler<AcceptOrder> for Actor {
     async fn handle(&mut self, msg: AcceptOrder, ctx: &mut Context<Self>) {
         log_error!(self.handle_accept_order(msg, ctx))
     }
 }
 
 #[async_trait]
-impl Handler<RejectOrder> for MakerCfdActor {
+impl Handler<RejectOrder> for Actor {
     async fn handle(&mut self, msg: RejectOrder, _ctx: &mut Context<Self>) {
         log_error!(self.handle_reject_order(msg))
     }
 }
 
 #[async_trait]
-impl Handler<NewOrder> for MakerCfdActor {
+impl Handler<NewOrder> for Actor {
     async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
         log_error!(self.handle_new_order(msg));
     }
 }
 
 #[async_trait]
-impl Handler<NewTakerOnline> for MakerCfdActor {
+impl Handler<NewTakerOnline> for Actor {
     async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) {
         log_error!(self.handle_new_taker_online(msg));
     }
 }
 
 #[async_trait]
-impl Handler<IncProtocolMsg> for MakerCfdActor {
+impl Handler<IncProtocolMsg> for Actor {
     async fn handle(&mut self, msg: IncProtocolMsg, _ctx: &mut Context<Self>) {
         log_error!(self.handle_inc_protocol_msg(msg));
     }
 }
 
 #[async_trait]
-impl Handler<CfdSetupCompleted> for MakerCfdActor {
+impl Handler<CfdSetupCompleted> for Actor {
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_setup_completed(msg));
     }
 }
 
 #[async_trait]
-impl Handler<SyncWallet> for MakerCfdActor {
+impl Handler<SyncWallet> for Actor {
     async fn handle(&mut self, _msg: SyncWallet, _ctx: &mut Context<Self>) {
         log_error!(self.handle_sync_wallet());
     }
@@ -486,4 +486,4 @@ impl Message for RejectOrder {
     type Result = ();
 }
 
-impl xtra::Actor for MakerCfdActor {}
+impl xtra::Actor for Actor {}
