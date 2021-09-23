@@ -134,13 +134,6 @@ pub struct CfdStateCommon {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "payload")]
 pub enum CfdState {
-    /// The taker has requested to take a CFD, but has not messaged the maker yet.
-    ///
-    /// This state only applies to the taker.
-    /// TODO: unused?
-    TakeRequested {
-        common: CfdStateCommon,
-    },
     /// The taker sent an order to the maker to open the CFD but doesn't have a response yet.
     ///
     /// This state applies to taker only.
@@ -221,7 +214,6 @@ pub enum CfdState {
 impl CfdState {
     fn get_common(&self) -> CfdStateCommon {
         let common = match self {
-            CfdState::TakeRequested { common } => common,
             CfdState::OutgoingOrderRequest { common } => common,
             CfdState::IncomingOrderRequest { common, .. } => common,
             CfdState::Accepted { common } => common,
@@ -246,9 +238,6 @@ impl CfdState {
 impl Display for CfdState {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CfdState::TakeRequested { .. } => {
-                write!(f, "Order created")
-            }
             CfdState::OutgoingOrderRequest { .. } => {
                 write!(f, "Request sent")
             }
