@@ -50,16 +50,16 @@ impl Message for NewTakerOnline {
 
 pub struct Actor {
     write_connections: HashMap<TakerId, MakerToTakerSender>,
-    cfd_maker_actor_address: Address<MakerCfdActor>,
+    cfd_actor: Address<MakerCfdActor>,
 }
 
 impl xtra::Actor for Actor {}
 
 impl Actor {
-    pub fn new(cfd_maker_actor_address: Address<MakerCfdActor>) -> Self {
+    pub fn new(cfd_actor: Address<MakerCfdActor>) -> Self {
         Self {
             write_connections: HashMap::<TakerId, MakerToTakerSender>::new(),
-            cfd_maker_actor_address,
+            cfd_actor,
         }
     }
 
@@ -102,7 +102,7 @@ impl Actor {
     }
 
     async fn handle_new_taker_online(&mut self, msg: NewTakerOnline) -> Result<()> {
-        self.cfd_maker_actor_address
+        self.cfd_actor
             .do_send_async(maker_cfd_actor::NewTakerOnline { id: msg.taker_id })
             .await?;
 
