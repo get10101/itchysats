@@ -8,7 +8,7 @@ use bdk::SignOptions;
 use bit_vec::BitVec;
 use bitcoin::util::psbt::PartiallySignedTransaction;
 use cfd_protocol::{
-    attest, commit_descriptor, compute_adaptor_point, create_cfd_transactions,
+    attest, close_transaction, commit_descriptor, compute_adaptor_point, create_cfd_transactions,
     finalize_spend_transaction, interval, lock_descriptor, nonce, punish_transaction,
     renew_cfd_transactions, spending_tx_sighash, CfdTransactions, Payout, PunishParams,
     TransactionExt, WalletExt,
@@ -260,6 +260,74 @@ fn renew_cfd() {
         (lock_desc, lock_amount),
         (commit_desc, commit_amount),
     )
+}
+
+#[test]
+fn collaboratively_close_cfd() {
+    let mut rng = thread_rng();
+
+    let maker_lock_amount = Amount::ONE_BTC;
+    let taker_lock_amount = Amount::ONE_BTC;
+
+    let maker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+    let taker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+
+    let oracle = Oracle::new(&mut rng);
+    let (_, announcement) = announce(&mut rng);
+
+    let payouts = vec![Payout::new(
+        0..=10_000,
+        Amount::from_btc(1.5).unwrap(),
+        Amount::from_btc(0.5).unwrap(),
+    )
+    .unwrap()]
+    .concat();
+
+    let refund_timelock = 0;
+
+    let (maker_cfd_txs, _, maker, taker, maker_addr, taker_addr) = create_cfd_txs(
+        &mut rng,
+        (&maker_wallet, maker_lock_amount),
+        (&taker_wallet, taker_lock_amount),
+        (oracle.public_key(), &announcement.nonce_pks()),
+        payouts,
+        refund_timelock,
+    );
+
+    let lock_tx = maker_cfd_txs.lock.extract_tx();
+    let lock_desc = lock_descriptor(maker.pk, taker.pk);
+    let (lock_outpoint, lock_amount) = {
+        let outpoint = lock_tx
+            .outpoint(&lock_desc.script_pubkey())
+            .expect("lock script to be in lock tx");
+        let amount = Amount::from_sat(lock_tx.output[outpoint.vout as usize].value);
+
+        (outpoint, amount)
+    };
+
+    let maker_amount = Amount::ONE_BTC;
+    let taker_amount = Amount::ONE_BTC;
+
+    let (close_tx, close_sighash) = close_transaction(
+        &lock_desc,
+        lock_outpoint,
+        lock_amount,
+        (&maker_addr, maker_amount),
+        (&taker_addr, taker_amount),
+    )
+    .expect("to build close tx");
+
+    let sig_maker = SECP256K1.sign(&close_sighash, &maker.sk);
+    let sig_taker = SECP256K1.sign(&close_sighash, &taker.sk);
+    let signed_close_tx = finalize_spend_transaction(
+        close_tx,
+        &lock_desc,
+        (maker.pk, sig_maker),
+        (taker.pk, sig_taker),
+    )
+    .expect("to sign close tx");
+
+    check_tx(&lock_tx, &signed_close_tx, &lock_desc).expect("valid close tx");
 }
 
 fn create_cfd_txs(
