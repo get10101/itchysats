@@ -2,7 +2,6 @@ import { Button, Container, Flex, Grid, GridItem, HStack, Stack, Text, useToast,
 import React, { useState } from "react";
 import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
-import "./App.css";
 import CfdTile from "./components/CfdTile";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
