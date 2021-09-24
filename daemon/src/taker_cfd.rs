@@ -32,7 +32,7 @@ pub struct CfdSetupCompleted {
     pub dlc: Dlc,
 }
 
-pub struct TakerCfdActor {
+pub struct Actor {
     db: sqlx::SqlitePool,
     wallet: Wallet,
     oracle_pk: schnorrsig::PublicKey,
@@ -45,7 +45,7 @@ pub struct TakerCfdActor {
     contract_setup_message_buffer: Vec<SetupMsg>,
 }
 
-impl TakerCfdActor {
+impl Actor {
     pub async fn new(
         db: sqlx::SqlitePool,
         wallet: Wallet,
@@ -240,42 +240,42 @@ impl TakerCfdActor {
 }
 
 #[async_trait]
-impl Handler<TakeOffer> for TakerCfdActor {
+impl Handler<TakeOffer> for Actor {
     async fn handle(&mut self, msg: TakeOffer, _ctx: &mut Context<Self>) {
         log_error!(self.handle_take_offer(msg.order_id, msg.quantity));
     }
 }
 
 #[async_trait]
-impl Handler<NewOrder> for TakerCfdActor {
+impl Handler<NewOrder> for Actor {
     async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
         log_error!(self.handle_new_order(msg.0));
     }
 }
 
 #[async_trait]
-impl Handler<OrderAccepted> for TakerCfdActor {
+impl Handler<OrderAccepted> for Actor {
     async fn handle(&mut self, msg: OrderAccepted, ctx: &mut Context<Self>) {
         log_error!(self.handle_order_accepted(msg.0, ctx));
     }
 }
 
 #[async_trait]
-impl Handler<OrderRejected> for TakerCfdActor {
+impl Handler<OrderRejected> for Actor {
     async fn handle(&mut self, msg: OrderRejected, _ctx: &mut Context<Self>) {
         log_error!(self.handle_order_rejected(msg.0));
     }
 }
 
 #[async_trait]
-impl Handler<IncProtocolMsg> for TakerCfdActor {
+impl Handler<IncProtocolMsg> for Actor {
     async fn handle(&mut self, msg: IncProtocolMsg, _ctx: &mut Context<Self>) {
         log_error!(self.handle_inc_protocol_msg(msg.0));
     }
 }
 
 #[async_trait]
-impl Handler<CfdSetupCompleted> for TakerCfdActor {
+impl Handler<CfdSetupCompleted> for Actor {
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_setup_completed(msg.order_id, msg.dlc));
     }
@@ -305,4 +305,4 @@ impl Message for CfdSetupCompleted {
     type Result = ();
 }
 
-impl xtra::Actor for TakerCfdActor {}
+impl xtra::Actor for Actor {}

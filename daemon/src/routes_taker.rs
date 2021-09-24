@@ -1,7 +1,7 @@
 use crate::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId};
 use crate::model::{Leverage, Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
-use crate::taker_cfd_actor::{self, TakerCfdActor};
+use crate::taker_cfd;
 use crate::to_sse_event::ToSseEvent;
 use bdk::bitcoin::Amount;
 use rocket::http::{ContentType, Status};
@@ -65,10 +65,10 @@ pub struct CfdOrderRequest {
 #[rocket::post("/cfd", data = "<cfd_order_request>")]
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
-    cfd_actor_inbox: &State<Address<TakerCfdActor>>,
+    cfd_actor_inbox: &State<Address<taker_cfd::Actor>>,
 ) {
     cfd_actor_inbox
-        .do_send_async(taker_cfd_actor::TakeOffer {
+        .do_send_async(taker_cfd::TakeOffer {
             order_id: cfd_order_request.order_id,
             quantity: cfd_order_request.quantity,
         })
