@@ -263,7 +263,7 @@ pub async fn load_cfd_by_order_id(
             cfds.quantity_usd as quantity_usd,
             cfd_states.state as state
         from cfds as cfds
-        inner join orders as orders on cfds.order_uuid = ?
+        inner join orders as orders on cfds.order_id = orders.id
         inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id
         where cfd_states.state in (
             select
@@ -273,6 +273,7 @@ pub async fn load_cfd_by_order_id(
             order by id desc
             limit 1
         )
+        and orders.uuid = ?
         "#,
         order_uuid
     )
