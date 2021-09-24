@@ -1,5 +1,4 @@
 use crate::model::WalletInfo;
-use crate::taker_cfd_actor::Command;
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
@@ -15,7 +14,10 @@ use std::thread::sleep;
 use std::time::Duration;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
+use xtra::spawn::TokioGlobalSpawnExt;
+use xtra::Actor;
 
+mod actors;
 mod bitmex_price_feed;
 mod db;
 mod keypair;
@@ -156,15 +158,21 @@ async fn main() -> Result<()> {
 
                 let (out_maker_messages_actor, out_maker_actor_inbox) =
                     send_wire_message_actor::new(write);
-                let (cfd_actor, cfd_actor_inbox) = taker_cfd_actor::new(
+
+                let cfd_actor_inbox = taker_cfd_actor::TakerCfdActor::new(
                     db,
                     wallet,
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     cfd_feed_sender,
                     order_feed_sender,
-                    out_maker_actor_inbox,
                     wallet_feed_sender,
-                );
+                    out_maker_actor_inbox,
+                )
+                .await
+                .unwrap()
+                .create(None)
+                .spawn_global();
+
                 let inc_maker_messages_actor =
                     taker_inc_message_actor::new(read, cfd_actor_inbox.clone());
 
@@ -174,13 +182,16 @@ async fn main() -> Result<()> {
                     let cfd_actor_inbox = cfd_actor_inbox.clone();
                     async move {
                         loop {
-                            cfd_actor_inbox.send(Command::SyncWallet).unwrap();
+                            cfd_actor_inbox
+                                .do_send_async(taker_cfd_actor::SyncWallet)
+                                .await
+                                .unwrap();
+
                             tokio::time::sleep(wallet_sync_interval).await;
                         }
                     }
                 });
 
-                tokio::spawn(cfd_actor);
                 tokio::spawn(inc_maker_messages_actor);
                 tokio::spawn(out_maker_messages_actor);
 

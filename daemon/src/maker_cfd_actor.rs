@@ -1,3 +1,4 @@
+use crate::actors::log_error;
 use crate::db::{
     insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
     load_cfd_by_order_id, load_order_by_id,
@@ -69,15 +70,13 @@ impl MakerCfdActor {
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_sender: watch::Sender<Option<Order>>,
         wallet_feed_sender: watch::Sender<WalletInfo>,
-    ) -> Self {
-        let mut conn = db.acquire().await.unwrap();
+    ) -> Result<Self> {
+        let mut conn = db.acquire().await?;
 
         // populate the CFD feed with existing CFDs
-        cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await.unwrap())
-            .unwrap();
+        cfd_feed_actor_inbox.send(load_all_cfds(&mut conn).await?)?;
 
-        Self {
+        Ok(Self {
             db,
             wallet,
             oracle_pk,
@@ -88,7 +87,7 @@ impl MakerCfdActor {
             current_order_id: None,
             current_contract_setup: None,
             contract_setup_message_buffer: vec![],
-        }
+        })
     }
 
     async fn handle_new_order(&mut self, msg: NewOrder) -> Result<()> {
@@ -411,14 +410,6 @@ impl Handler<Initialized> for MakerCfdActor {
     async fn handle(&mut self, msg: Initialized, _ctx: &mut Context<Self>) {
         self.takers.replace(msg.0);
     }
-}
-
-macro_rules! log_error {
-    ($future:expr) => {
-        if let Err(e) = $future.await {
-            tracing::error!(%e);
-        }
-    };
 }
 
 #[async_trait]
