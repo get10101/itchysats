@@ -266,21 +266,12 @@ impl Actor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        // 3. Remove current order
-        self.current_order_id = None;
-        self.takers
-            .do_send_async(maker_inc_connections::BroadcastOrder(None))
-            .await?;
-        self.current_order_id = None;
-        self.order_feed_sender.send(None)?;
-
-        // 4. Start contract setup
+        // Start contract setup
         tracing::info!("Starting contract setup");
 
         // Kick-off the CFD protocol
         let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
 
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         let margin = cfd.margin()?;
 
         let maker_params = self.wallet.build_party_params(margin, pk).await?;
