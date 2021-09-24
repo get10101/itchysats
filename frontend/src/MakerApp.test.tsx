@@ -1,8 +1,7 @@
 import { ChakraProvider } from "@chakra-ui/react";
 import React from "react";
 import ReactDOM from "react-dom";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
-import Maker from "./Maker";
+import Maker from "./MakerApp";
 import theme from "./theme";
 
 it("renders without crashing", () => {
@@ -10,11 +9,7 @@ it("renders without crashing", () => {
     ReactDOM.render(
         <React.StrictMode>
             <ChakraProvider theme={theme}>
-                <BrowserRouter>
-                    <Routes>
-                        <Route path="/maker/*" element={<Maker />} />
-                    </Routes>
-                </BrowserRouter>
+                <Maker />
             </ChakraProvider>
         </React.StrictMode>,
         div,

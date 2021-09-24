@@ -5,11 +5,11 @@ export default function dynamicApp(app: string): Plugin {
         name: "dynamicApp", // required, will show up in warnings and errors
         resolveId: (id) => {
             // For some reason these are different?
-            const productionBuildId = "./__app__.tsx";
-            const devBuildId = "/__app__.tsx";
+            const productionBuildId = "src/__app__.tsx";
+            const devBuildId = "/src/__app__.tsx";
 
             if (id === productionBuildId || id === devBuildId) {
-                return `${__dirname}/${app}.tsx`;
+                return `${__dirname}/src/${app}.tsx`;
             }
 
             return null;
