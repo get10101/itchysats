@@ -1,5 +1,5 @@
 use crate::auth::MAKER_USERNAME;
-use crate::maker_inc_connections_actor::in_taker_messages;
+use crate::maker_inc_connections::in_taker_messages;
 use crate::model::TakerId;
 use crate::seed::Seed;
 use crate::wallet::Wallet;
@@ -12,7 +12,6 @@ use model::WalletInfo;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use std::path::PathBuf;
-use std::time::Duration;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
@@ -24,8 +23,8 @@ mod bitmex_price_feed;
 mod db;
 mod keypair;
 mod logger;
-mod maker_cfd_actor;
-mod maker_inc_connections_actor;
+mod maker_cfd;
+mod maker_inc_connections;
 mod model;
 mod routes;
 mod routes_maker;
@@ -34,6 +33,7 @@ mod send_wire_message_actor;
 mod setup_contract_actor;
 mod to_sse_event;
 mod wallet;
+mod wallet_sync;
 mod wire;
 
 #[derive(Database)]
@@ -157,25 +157,27 @@ async fn main() -> Result<()> {
                     None => return Err(rocket),
                 };
 
-                let cfd_maker_actor_inbox = maker_cfd_actor::MakerCfdActor::new(
+                let (maker_inc_connections_address, maker_inc_connections_context) =
+                    xtra::Context::new(None);
+
+                let cfd_maker_actor_inbox = maker_cfd::Actor::new(
                     db,
-                    wallet,
+                    wallet.clone(),
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     cfd_feed_sender,
                     order_feed_sender,
-                    wallet_feed_sender,
+                    maker_inc_connections_address.clone(),
                 )
                 .await
                 .unwrap()
                 .create(None)
                 .spawn_global();
 
-                let maker_inc_connections_address =
-                    maker_inc_connections_actor::MakerIncConnectionsActor::new(
+                tokio::spawn(
+                    maker_inc_connections_context.run(maker_inc_connections::Actor::new(
                         cfd_maker_actor_inbox.clone(),
-                    )
-                    .create(None)
-                    .spawn_global();
+                    )),
+                );
 
                 tokio::spawn({
                     let cfd_maker_actor_inbox = cfd_maker_actor_inbox.clone();
@@ -199,7 +201,7 @@ async fn main() -> Result<()> {
                                 tokio::spawn(out_msg_actor);
 
                                 maker_inc_connections_address
-                                    .do_send_async(maker_inc_connections_actor::NewTakerOnline {
+                                    .do_send_async(maker_inc_connections::NewTakerOnline {
                                         taker_id,
                                         out_msg_actor_inbox,
                                     })
@@ -210,27 +212,7 @@ async fn main() -> Result<()> {
                     }
                 });
 
-                // consecutive wallet syncs handled by task that triggers sync
-                let wallet_sync_interval = Duration::from_secs(10);
-                tokio::spawn({
-                    let cfd_actor_inbox = cfd_maker_actor_inbox.clone();
-                    async move {
-                        loop {
-                            cfd_actor_inbox
-                                .do_send_async(maker_cfd_actor::SyncWallet)
-                                .await
-                                .unwrap();
-                            tokio::time::sleep(wallet_sync_interval).await;
-                        }
-                    }
-                });
-
-                cfd_maker_actor_inbox
-                    .do_send_async(maker_cfd_actor::Initialized(
-                        maker_inc_connections_address.clone(),
-                    ))
-                    .await
-                    .expect("not to fail after actors were initialized");
+                tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
 
                 Ok(rocket.manage(cfd_maker_actor_inbox))
             },

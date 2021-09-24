@@ -1,5 +1,5 @@
 use crate::auth::Authenticated;
-use crate::maker_cfd_actor::{self, MakerCfdActor};
+use crate::maker_cfd;
 use crate::model::cfd::{Cfd, Order, OrderId, Origin};
 use crate::model::{Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
@@ -72,7 +72,7 @@ pub struct CfdNewOrderRequest {
 #[rocket::post("/order/sell", data = "<order>")]
 pub async fn post_sell_order(
     order: Json<CfdNewOrderRequest>,
-    cfd_actor_address: &State<Address<MakerCfdActor>>,
+    cfd_actor_address: &State<Address<maker_cfd::Actor>>,
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
     let order = Order::from_default_with_price(order.price, Origin::Ours)
@@ -81,7 +81,7 @@ pub async fn post_sell_order(
         .with_max_quantity(order.max_quantity);
 
     cfd_actor_address
-        .do_send_async(maker_cfd_actor::NewOrder(order))
+        .do_send_async(maker_cfd::NewOrder(order))
         .await
         .expect("actor to always be available");
 
@@ -131,11 +131,11 @@ pub struct AcceptOrRejectOrderRequest {
 #[rocket::post("/order/accept", data = "<cfd_accept_order_request>")]
 pub async fn post_accept_order(
     cfd_accept_order_request: Json<AcceptOrRejectOrderRequest>,
-    cfd_actor_address: &State<Address<MakerCfdActor>>,
+    cfd_actor_address: &State<Address<maker_cfd::Actor>>,
     _auth: Authenticated,
 ) -> status::Accepted<()> {
     cfd_actor_address
-        .do_send_async(maker_cfd_actor::AcceptOrder {
+        .do_send_async(maker_cfd::AcceptOrder {
             order_id: cfd_accept_order_request.order_id,
         })
         .await
@@ -146,11 +146,11 @@ pub async fn post_accept_order(
 #[rocket::post("/order/reject", data = "<cfd_reject_order_request>")]
 pub async fn post_reject_order(
     cfd_reject_order_request: Json<AcceptOrRejectOrderRequest>,
-    cfd_actor_address: &State<Address<MakerCfdActor>>,
+    cfd_actor_address: &State<Address<maker_cfd::Actor>>,
     _auth: Authenticated,
 ) -> status::Accepted<()> {
     cfd_actor_address
-        .do_send_async(maker_cfd_actor::RejectOrder {
+        .do_send_async(maker_cfd::RejectOrder {
             order_id: cfd_reject_order_request.order_id,
         })
         .await

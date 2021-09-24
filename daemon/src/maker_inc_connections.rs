@@ -1,17 +1,15 @@
 use crate::actors::log_error;
-use crate::maker_cfd_actor::MakerCfdActor;
 use crate::model::cfd::{Order, OrderId};
 use crate::model::TakerId;
 use crate::wire::SetupMsg;
-use crate::{maker_cfd_actor, wire};
+use crate::{maker_cfd, wire};
 use anyhow::{Context as AnyhowContext, Result};
+use async_trait::async_trait;
 use futures::{Future, StreamExt};
 use std::collections::HashMap;
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
-
-use async_trait::async_trait;
 use xtra::prelude::*;
 
 type MakerToTakerSender = mpsc::UnboundedSender<wire::MakerToTaker>;
@@ -49,18 +47,18 @@ impl Message for NewTakerOnline {
     type Result = Result<()>;
 }
 
-pub struct MakerIncConnectionsActor {
+pub struct Actor {
     write_connections: HashMap<TakerId, MakerToTakerSender>,
-    cfd_maker_actor_address: Address<MakerCfdActor>,
+    cfd_actor: Address<maker_cfd::Actor>,
 }
 
-impl Actor for MakerIncConnectionsActor {}
+impl xtra::Actor for Actor {}
 
-impl MakerIncConnectionsActor {
-    pub fn new(cfd_maker_actor_address: Address<MakerCfdActor>) -> Self {
+impl Actor {
+    pub fn new(cfd_actor: Address<maker_cfd::Actor>) -> Self {
         Self {
             write_connections: HashMap::<TakerId, MakerToTakerSender>::new(),
-            cfd_maker_actor_address,
+            cfd_actor,
         }
     }
 
@@ -103,8 +101,8 @@ impl MakerIncConnectionsActor {
     }
 
     async fn handle_new_taker_online(&mut self, msg: NewTakerOnline) -> Result<()> {
-        self.cfd_maker_actor_address
-            .do_send_async(maker_cfd_actor::NewTakerOnline { id: msg.taker_id })
+        self.cfd_actor
+            .do_send_async(maker_cfd::NewTakerOnline { id: msg.taker_id })
             .await?;
 
         self.write_connections
@@ -122,7 +120,7 @@ macro_rules! log_error {
 }
 
 #[async_trait]
-impl Handler<BroadcastOrder> for MakerIncConnectionsActor {
+impl Handler<BroadcastOrder> for Actor {
     async fn handle(&mut self, msg: BroadcastOrder, _ctx: &mut Context<Self>) -> Result<()> {
         log_error!(self.handle_broadcast_order(msg));
         Ok(())
@@ -130,7 +128,7 @@ impl Handler<BroadcastOrder> for MakerIncConnectionsActor {
 }
 
 #[async_trait]
-impl Handler<TakerMessage> for MakerIncConnectionsActor {
+impl Handler<TakerMessage> for Actor {
     async fn handle(&mut self, msg: TakerMessage, _ctx: &mut Context<Self>) -> Result<()> {
         log_error!(self.handle_taker_message(msg));
         Ok(())
@@ -138,7 +136,7 @@ impl Handler<TakerMessage> for MakerIncConnectionsActor {
 }
 
 #[async_trait]
-impl Handler<NewTakerOnline> for MakerIncConnectionsActor {
+impl Handler<NewTakerOnline> for Actor {
     async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) -> Result<()> {
         log_error!(self.handle_new_taker_online(msg));
         Ok(())
@@ -149,7 +147,7 @@ impl Handler<NewTakerOnline> for MakerIncConnectionsActor {
 
 pub fn in_taker_messages(
     read: OwnedReadHalf,
-    cfd_actor_inbox: Address<MakerCfdActor>,
+    cfd_actor_inbox: Address<maker_cfd::Actor>,
     taker_id: TakerId,
 ) -> impl Future<Output = ()> {
     let mut messages = FramedRead::new(read, LengthDelimitedCodec::new()).map(|result| {
@@ -162,7 +160,7 @@ pub fn in_taker_messages(
             match message {
                 Ok(wire::TakerToMaker::TakeOrder { order_id, quantity }) => {
                     cfd_actor_inbox
-                        .do_send_async(maker_cfd_actor::TakeOrder {
+                        .do_send_async(maker_cfd::TakeOrder {
                             taker_id,
                             order_id,
                             quantity,
@@ -172,7 +170,7 @@ pub fn in_taker_messages(
                 }
                 Ok(wire::TakerToMaker::Protocol(msg)) => {
                     cfd_actor_inbox
-                        .do_send_async(maker_cfd_actor::IncProtocolMsg(msg))
+                        .do_send_async(maker_cfd::IncProtocolMsg(msg))
                         .await
                         .unwrap();
                 }
