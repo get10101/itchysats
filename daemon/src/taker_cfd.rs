@@ -228,7 +228,7 @@ impl Actor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        let txid = self.wallet.try_broadcast_transaction(dlc.lock).await?;
+        let txid = self.wallet.try_broadcast_transaction(dlc.lock.0).await?;
 
         tracing::info!("Lock transaction published with txid {}", txid);
 

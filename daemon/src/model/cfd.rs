@@ -1,7 +1,8 @@
 use crate::model::{Leverage, Position, TakerId, TradingPair, Usd};
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
-use bdk::bitcoin::{Amount, Transaction};
+use bdk::bitcoin::{Address, Amount, PublicKey, Transaction};
+use bdk::descriptor::Descriptor;
 use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -11,7 +12,7 @@ use std::ops::RangeInclusive;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct OrderId(Uuid);
 
 impl Default for OrderId {
@@ -184,31 +185,37 @@ pub enum CfdState {
         dlc: Dlc,
     },
 
-    /// Requested close the position, but we have not passed that on to the blockchain yet.
+    // TODO: At the moment we are appending to this state. The way this is handled internally is
+    //  by inserting the same state with more information in the database. We could consider
+    //  changing this to insert different states or update the stae instead of inserting again.
+    /// The CFD contract's commit transaction reached finality on chain
     ///
-    /// This state applies to taker and maker.
-    CloseRequested {
+    /// This means that the commit transaction was detected on chain and reached finality
+    /// confirmations and the contract will be forced to close.
+    OpenCommitted {
+        common: CfdStateCommon,
+        dlc: Dlc,
+        cet_status: CetStatus,
+    },
+
+    /// The CFD contract's refund transaction was published but it not final yet
+    MustRefund {
+        common: CfdStateCommon,
+        dlc: Dlc,
+    },
+
+    Refunded {
         common: CfdStateCommon,
     },
-    /// The close transaction (CET) was published on the Bitcoin blockchain but we don't have a
-    /// confirmation yet.
-    ///
-    /// This state applies to taker and maker.
-    PendingClose {
-        common: CfdStateCommon,
-    },
-    /// The close transaction is confirmed with at least one block.
-    ///
-    /// This state applies to taker and maker.
-    Closed {
-        common: CfdStateCommon,
-    },
-    /// Error state
-    ///
-    /// This state applies to taker and maker.
-    Error {
-        common: CfdStateCommon,
-    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", content = "payload")]
+pub enum CetStatus {
+    Unprepared,
+    TimelockExpired,
+    OracleSigned(u64),
+    Ready(u64),
 }
 
 impl CfdState {
@@ -221,10 +228,9 @@ impl CfdState {
             CfdState::ContractSetup { common } => common,
             CfdState::PendingOpen { common, .. } => common,
             CfdState::Open { common, .. } => common,
-            CfdState::CloseRequested { common } => common,
-            CfdState::PendingClose { common } => common,
-            CfdState::Closed { common } => common,
-            CfdState::Error { common } => common,
+            CfdState::OpenCommitted { common, .. } => common,
+            CfdState::MustRefund { common, .. } => common,
+            CfdState::Refunded { common, .. } => common,
         };
 
         *common
@@ -259,17 +265,14 @@ impl Display for CfdState {
             CfdState::Open { .. } => {
                 write!(f, "Open")
             }
-            CfdState::CloseRequested { .. } => {
-                write!(f, "Close Requested")
+            CfdState::OpenCommitted { .. } => {
+                write!(f, "Open Committed")
             }
-            CfdState::PendingClose { .. } => {
-                write!(f, "Pending Close")
+            CfdState::MustRefund { .. } => {
+                write!(f, "Must Refund")
             }
-            CfdState::Closed { .. } => {
-                write!(f, "Closed")
-            }
-            CfdState::Error { .. } => {
-                write!(f, "Error")
+            CfdState::Refunded { .. } => {
+                write!(f, "Refunded")
             }
         }
     }
@@ -357,6 +360,9 @@ impl Cfd {
     /// term to get his funds back.
     #[allow(dead_code)]
     const REFUND_THRESHOLD: f32 = 1.5;
+
+    #[allow(dead_code)]
+    pub const CET_TIMELOCK: u32 = 12;
 }
 
 fn calculate_profit(
@@ -509,12 +515,14 @@ mod tests {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Dlc {
     pub identity: SecretKey,
+    pub identity_counterparty: PublicKey,
     pub revocation: SecretKey,
     pub publish: SecretKey,
+    pub address: Address,
 
     /// The fully signed lock transaction ready to be published on chain
-    pub lock: Transaction,
-    pub commit: (Transaction, EcdsaAdaptorSignature),
+    pub lock: (Transaction, Descriptor<PublicKey>),
+    pub commit: (Transaction, EcdsaAdaptorSignature, Descriptor<PublicKey>),
     pub cets: Vec<(Transaction, EcdsaAdaptorSignature, RangeInclusive<u64>)>,
     pub refund: (Transaction, Signature),
 }

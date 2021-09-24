@@ -46,6 +46,7 @@ fn create_cfd() {
     ]
     .concat();
 
+    let cet_timelock = 0;
     let refund_timelock = 0;
 
     let (maker_cfd_txs, taker_cfd_txs, maker, taker, maker_addr, taker_addr) = create_cfd_txs(
@@ -54,7 +55,7 @@ fn create_cfd() {
         (&taker_wallet, taker_lock_amount),
         (oracle.public_key(), &announcement.nonce_pks()),
         payouts,
-        refund_timelock,
+        (cet_timelock, refund_timelock),
     );
 
     let lock_desc = lock_descriptor(maker.pk, taker.pk);
@@ -126,6 +127,7 @@ fn renew_cfd() {
     ]
     .concat();
 
+    let cet_timelock = 0;
     let refund_timelock = 0;
 
     let (maker_cfd_txs, taker_cfd_txs, maker, taker, maker_addr, taker_addr) = create_cfd_txs(
@@ -134,7 +136,7 @@ fn renew_cfd() {
         (&taker_wallet, taker_lock_amount),
         (oracle.public_key(), &announcement.nonce_pks()),
         payouts,
-        refund_timelock,
+        (cet_timelock, refund_timelock),
     );
 
     // renew cfd transactions
@@ -184,7 +186,7 @@ fn renew_cfd() {
             },
         ),
         (oracle.public_key(), &announcement.nonce_pks()),
-        refund_timelock,
+        (cet_timelock, refund_timelock),
         payouts.clone(),
         maker.sk,
     )
@@ -211,7 +213,7 @@ fn renew_cfd() {
             },
         ),
         (oracle.public_key(), &announcement.nonce_pks()),
-        refund_timelock,
+        (cet_timelock, refund_timelock),
         payouts,
         taker.sk,
     )
@@ -283,6 +285,7 @@ fn collaboratively_close_cfd() {
     .unwrap()]
     .concat();
 
+    let cet_timelock = 0;
     let refund_timelock = 0;
 
     let (maker_cfd_txs, _, maker, taker, maker_addr, taker_addr) = create_cfd_txs(
@@ -291,7 +294,7 @@ fn collaboratively_close_cfd() {
         (&taker_wallet, taker_lock_amount),
         (oracle.public_key(), &announcement.nonce_pks()),
         payouts,
-        refund_timelock,
+        (cet_timelock, refund_timelock),
     );
 
     let lock_tx = maker_cfd_txs.lock.extract_tx();
@@ -336,7 +339,7 @@ fn create_cfd_txs(
     (taker_wallet, taker_lock_amount): (&bdk::Wallet<(), bdk::database::MemoryDatabase>, Amount),
     (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
     payouts: Vec<Payout>,
-    refund_timelock: u32,
+    (cet_timelock, refund_timelock): (u32, u32),
 ) -> (
     CfdTransactions,
     CfdTransactions,
@@ -377,7 +380,7 @@ fn create_cfd_txs(
             },
         ),
         (oracle_pk, nonce_pks),
-        refund_timelock,
+        (cet_timelock, refund_timelock),
         payouts.clone(),
         maker_sk,
     )
@@ -398,7 +401,7 @@ fn create_cfd_txs(
             },
         ),
         (oracle_pk, nonce_pks),
-        refund_timelock,
+        (cet_timelock, refund_timelock),
         payouts,
         taker_sk,
     )
