@@ -88,23 +88,6 @@ pub async fn post_sell_order(
     Ok(status::Accepted(None))
 }
 
-/// Test route solely for the purposes of exercising authentication.
-/// It validates whether the posted order request was correct, but does not do
-/// anything else with it.
-#[cfg(test)]
-#[rocket::post("/order/test", data = "<order>")]
-pub async fn post_test_order(
-    order: Json<CfdNewOrderRequest>,
-    _auth: Authenticated,
-) -> Result<status::Accepted<()>, status::BadRequest<String>> {
-    let _order = Order::from_default_with_price(order.price, Origin::Ours)
-        .map_err(|e| status::BadRequest(Some(e.to_string())))?
-        .with_min_quantity(order.min_quantity)
-        .with_max_quantity(order.max_quantity);
-
-    Ok(status::Accepted(None))
-}
-
 /// A "catcher" for all 401 responses, triggers the browser's basic auth implementation.
 #[rocket::catch(401)]
 pub fn unauthorized() -> PromptAuthentication {
@@ -143,6 +126,7 @@ pub async fn post_accept_order(
 
     status::Accepted(None)
 }
+
 #[rocket::post("/order/reject", data = "<cfd_reject_order_request>")]
 pub async fn post_reject_order(
     cfd_reject_order_request: Json<AcceptOrRejectOrderRequest>,
@@ -182,75 +166,41 @@ pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 's
 mod tests {
     use super::*;
     use crate::auth::Password;
-    use bdk::bitcoin::{Address, Amount, Network, PublicKey};
     use rocket::http::{Header, Status};
     use rocket::local::blocking::Client;
     use rocket::{Build, Rocket};
-    use std::time::SystemTime;
 
     #[test]
     fn routes_are_password_protected() {
         let client = Client::tracked(rocket()).unwrap();
 
-        let feed_response = client.get("/feed").dispatch();
-        let new_sell_order_response = client
-            .post("/order/test")
-            .body(r#"{"price":"40000", "min_quantity":"100", "max_quantity":"10000"}"#)
-            .dispatch();
-        let index_response = client.get("/").header(ContentType::HTML).dispatch();
+        let response = client.get("/protected").dispatch();
 
-        assert_eq!(feed_response.status(), Status::Unauthorized);
-        assert_eq!(new_sell_order_response.status(), Status::Unauthorized);
-        assert_eq!(index_response.status(), Status::Unauthorized);
+        assert_eq!(response.status(), Status::Unauthorized);
+        assert_eq!(
+            response.headers().get_one("WWW-Authenticate"),
+            Some(r#"Basic charset="UTF-8"#)
+        );
     }
 
     #[test]
     fn correct_password_grants_access() {
         let client = Client::tracked(rocket()).unwrap();
 
-        let feed_response = client.get("/feed").header(auth_header()).dispatch();
-        let new_sell_order_response = client
-            .post("/order/test")
-            .body(r#"{"price":"40000", "min_quantity":"100", "max_quantity":"10000"}"#)
-            .header(auth_header())
-            .dispatch();
-        let index_response = client
-            .get("/")
-            .header(ContentType::HTML)
-            .header(auth_header())
-            .dispatch();
+        let response = client.get("/protected").header(auth_header()).dispatch();
 
-        assert_eq!(feed_response.status(), Status::Ok);
-        assert_eq!(new_sell_order_response.status(), Status::Accepted);
-        assert!(
-            index_response.status() == Status::NotFound || index_response.status() == Status::Ok
-        );
+        assert_eq!(response.status(), Status::Ok);
     }
+
+    #[rocket::get("/protected")]
+    async fn protected(_auth: Authenticated) {}
 
     /// Constructs a Rocket instance for testing.
     fn rocket() -> Rocket<Build> {
-        let (_, state1) = watch::channel::<Vec<Cfd>>(vec![]);
-        let (_, state2) = watch::channel::<Option<Order>>(None);
-        let (_, state3) = watch::channel::<WalletInfo>(WalletInfo {
-            balance: Amount::ZERO,
-            address: Address::p2wpkh(
-                &PublicKey::new(
-                    "0286cd889349ebc06b3165505b9c083df0a4147f554614ff207c10f16ff509578c"
-                        .parse()
-                        .unwrap(),
-                ),
-                Network::Regtest,
-            )
-            .unwrap(),
-            last_updated_at: SystemTime::now(),
-        });
-
         rocket::build()
-            .manage(state1)
-            .manage(state2)
-            .manage(state3)
             .manage(Password::from(*b"Now I'm feelin' so fly like a G6"))
-            .mount("/", rocket::routes![maker_feed, post_test_order, index])
+            .mount("/", rocket::routes![protected])
+            .register("/", rocket::catchers![unauthorized])
     }
 
     /// Creates an "Authorization" header that matches the password above,
