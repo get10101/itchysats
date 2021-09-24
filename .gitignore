@@ -15,3 +15,11 @@
 !.yarn/sdks
 !.yarn/versions
 .pnp.*
+
+# Artifacts from running the daemons
+/maker.sqlite
+/maker_wallet_db/
+/taker.sqlite
+/taker_wallet_db/
+/maker_seed
+/taker_seed
