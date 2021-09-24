@@ -28,7 +28,7 @@ mod routes_taker;
 mod seed;
 mod send_wire_message_actor;
 mod setup_contract_actor;
-mod taker_cfd_actor;
+mod taker_cfd;
 mod taker_inc_message_actor;
 mod to_sse_event;
 mod wallet;
@@ -160,7 +160,7 @@ async fn main() -> Result<()> {
                 let (out_maker_messages_actor, out_maker_actor_inbox) =
                     send_wire_message_actor::new(write);
 
-                let cfd_actor_inbox = taker_cfd_actor::TakerCfdActor::new(
+                let cfd_actor_inbox = taker_cfd::Actor::new(
                     db,
                     wallet.clone(),
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
