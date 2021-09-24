@@ -14,6 +14,7 @@ use std::thread::sleep;
 use std::time::Duration;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
+use wire::TakerToMaker;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 
@@ -26,7 +27,7 @@ mod model;
 mod routes;
 mod routes_taker;
 mod seed;
-mod send_wire_message_actor;
+mod send_to_socket;
 mod setup_contract_actor;
 mod taker_cfd;
 mod taker_inc_message_actor;
@@ -157,8 +158,9 @@ async fn main() -> Result<()> {
                     None => return Err(rocket),
                 };
 
-                let (out_maker_messages_actor, out_maker_actor_inbox) =
-                    send_wire_message_actor::new(write);
+                let send_to_maker = send_to_socket::Actor::new(write)
+                    .create(None)
+                    .spawn_global();
 
                 let cfd_actor_inbox = taker_cfd::Actor::new(
                     db,
@@ -166,7 +168,7 @@ async fn main() -> Result<()> {
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     cfd_feed_sender,
                     order_feed_sender,
-                    out_maker_actor_inbox,
+                    send_to_maker,
                 )
                 .await
                 .unwrap()
@@ -178,7 +180,6 @@ async fn main() -> Result<()> {
 
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
                 tokio::spawn(inc_maker_messages_actor);
-                tokio::spawn(out_maker_messages_actor);
 
                 Ok(rocket.manage(cfd_actor_inbox))
             },
@@ -200,4 +201,8 @@ async fn main() -> Result<()> {
         .await?;
 
     Ok(())
+}
+
+impl xtra::Message for TakerToMaker {
+    type Result = ();
 }

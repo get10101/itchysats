@@ -8,7 +8,7 @@ use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Dlc, Order, OrderId};
 use crate::model::Usd;
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
-use crate::{setup_contract_actor, wire};
+use crate::{send_to_socket, setup_contract_actor, wire};
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -38,7 +38,7 @@ pub struct Actor {
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_actor_inbox: watch::Sender<Option<Order>>,
-    out_msg_maker_inbox: mpsc::UnboundedSender<wire::TakerToMaker>,
+    send_to_maker: Address<send_to_socket::Actor>,
     current_contract_setup: Option<mpsc::UnboundedSender<SetupMsg>>,
     // TODO: Move the contract setup into a dedicated actor and send messages to that actor that
     // manages the state instead of this ugly buffer
@@ -52,7 +52,7 @@ impl Actor {
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
-        out_msg_maker_inbox: mpsc::UnboundedSender<wire::TakerToMaker>,
+        send_to_maker: Address<send_to_socket::Actor>,
     ) -> Result<Self> {
         let mut conn = db.acquire().await?;
         cfd_feed_actor_inbox.send(load_all_cfds(&mut conn).await?)?;
@@ -63,7 +63,7 @@ impl Actor {
             oracle_pk,
             cfd_feed_actor_inbox,
             order_feed_actor_inbox,
-            out_msg_maker_inbox,
+            send_to_maker,
             current_contract_setup: None,
             contract_setup_message_buffer: vec![],
         })
@@ -90,8 +90,9 @@ impl Actor {
 
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
-        self.out_msg_maker_inbox
-            .send(wire::TakerToMaker::TakeOrder { order_id, quantity })?;
+        self.send_to_maker
+            .do_send_async(wire::TakerToMaker::TakeOrder { order_id, quantity })
+            .await?;
 
         Ok(())
     }
@@ -141,8 +142,10 @@ impl Actor {
 
         let (actor, inbox) = setup_contract_actor::new(
             {
-                let inbox = self.out_msg_maker_inbox.clone();
-                move |msg| inbox.send(wire::TakerToMaker::Protocol(msg)).unwrap()
+                let inbox = self.send_to_maker.clone();
+                move |msg| {
+                    tokio::spawn(inbox.do_send_async(wire::TakerToMaker::Protocol(msg)));
+                }
             },
             setup_contract_actor::OwnParams::Taker(taker_params),
             sk,
