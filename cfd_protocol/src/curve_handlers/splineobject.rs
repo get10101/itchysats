@@ -2,13 +2,11 @@ use crate::curve_handlers::basis::BSplineBasis;
 use crate::curve_handlers::csr_tools::CSR;
 use crate::curve_handlers::Error;
 
-// use anyhow::Error as OtherError;
-use std::collections::HashMap;
-
 use itertools::Itertools;
-use ndarray::{concatenate, Order};
 use ndarray::prelude::*;
+use ndarray::{concatenate, Order};
 use ndarray_einsum_beta::{einsum, tensordot};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct SplineObject {
@@ -67,10 +65,6 @@ impl SplineObject {
         })
     }
 
-    // fn reshaper(&self, cpts: Array<f64, D>, newshape: Vec<usize>, ncomps: usize) {
-    //     todo!()
-    // }
-
     /// Check whether the given evaluation parameters are valid
     fn validate_domain(&self, t: &mut [&mut Array1<f64>]) -> Result<(), Error> {
         for (basis, params) in self.bases.iter().zip(t.iter_mut()) {
@@ -120,7 +114,8 @@ impl SplineObject {
             return Result::Err(Error::InvalidDomainError);
         }
 
-        let evals = &mut &self.bases
+        let evals = &mut &self
+            .bases
             .iter()
             .zip(t.iter_mut())
             .map(|e| {
@@ -135,23 +130,12 @@ impl SplineObject {
         Ok(out)
     }
 
-    // def evaluate(bases, cps, tensor=True):
-    //     if tensor:
-    //         idx = len(bases) - 1
-    //         for N in bases[::-1]:
-    //             cps = np.tensordot(N, cps, axes=(1, idx))
-    //     else:
-    //         cps = np.einsum('ij,j...->i...', bases[0], cps)
-    //         for N in bases[1:]:
-    //             cps = np.einsum('ij,ij...->i...', N, cps)
-    //     return cps
-
     fn tensor_evaluate(
         &self,
         eval_bases: &mut Vec<CSR>,
         tensor: bool,
     ) -> Result<ArrayD<f64>, Error> {
-        // KLUDGE!
+        // *** BEGIN KLUDGE ****
         // owing to the fact that the conventional ellipsis notation is not yet
         // implemented for einsum, we use this workaround that should cover us.
         // If not, just grow the maps as needed or address the issue:
@@ -182,22 +166,25 @@ impl SplineObject {
             eval_bases.reverse();
             let cpts = self.controlpoints.clone().to_owned();
             let idx = eval_bases.len() - 1;
-            out = eval_bases
-                .iter()
-                .fold(cpts, |e, tns| tensordot(&tns.todense(), &e, &[Axis(1)], &[Axis(idx)]));
+            out = eval_bases.iter().fold(cpts, |e, tns| {
+                tensordot(&tns.todense(), &e, &[Axis(1)], &[Axis(idx)])
+            });
         } else {
             let pos = 0;
             let mut key = self.bases.len() + 1;
             let mut val = init_map.get(&key).unwrap();
-            out = einsum(val, &[&eval_bases[pos].todense(), &self.controlpoints]).map_err(|_| Error::EinsumError)?;
+            out = einsum(val, &[&eval_bases[pos].todense(), &self.controlpoints])
+                .map_err(|_| Error::EinsumError)?;
 
             for _ in eval_bases.iter().skip(1) {
-                key +=1;
+                key += 1;
                 val = iter_map.get(&key).unwrap();
                 let temp = out.clone();
-                out = einsum(val, &[&eval_bases[pos].todense(), &temp]).map_err(|_| Error::EinsumError)?;
-            }            
+                out = einsum(val, &[&eval_bases[pos].todense(), &temp])
+                    .map_err(|_| Error::EinsumError)?;
+            }
         }
+        // *** END KLUDGE ****
 
         Ok(out)
     }

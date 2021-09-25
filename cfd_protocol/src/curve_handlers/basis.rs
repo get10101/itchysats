@@ -1,5 +1,6 @@
 use core::cmp::max;
-use ndarray::{concatenate, s, Array1, Axis};
+use ndarray::prelude::*;
+use ndarray::{concatenate, s};
 
 use crate::curve_handlers::basis_eval::{bisect_left, knot_tolerance, snap, Basis};
 use crate::curve_handlers::csr_tools::CSR;

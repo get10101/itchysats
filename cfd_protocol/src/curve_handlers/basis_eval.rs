@@ -1,6 +1,6 @@
 use crate::curve_handlers::csr_tools::CSR;
 use crate::curve_handlers::Error;
-use ndarray::Array1;
+use ndarray::prelude::*;
 use std::cmp::min;
 
 #[derive(Clone, Debug)]

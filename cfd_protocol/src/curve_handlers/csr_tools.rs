@@ -1,7 +1,7 @@
 use crate::curve_handlers::Error;
-use nalgebra::{DMatrix, DVector};
-use ndarray::prelude::*;
 
+use ndarray::prelude::*;
+use ndarray_linalg::Solve;
 use std::ops::Mul;
 
 /// NOTE:
@@ -29,11 +29,11 @@ impl CSR {
         indptr: Array1<usize>,
         shape: (usize, usize),
     ) -> Result<Self, Error> {
-        let major_dim = indptr.len() - 1;
-        let minor_dim = indices.iter().max().unwrap() + 1;
+        let major_dim: isize = (indptr.len() as isize) - 1;
+        // let minor_dim = indices.iter().max().unwrap_or(&0) + 1;
         let nnz = &data.len();
 
-        if shape.0 == major_dim && shape.1 == minor_dim {
+        if major_dim > 1 && shape.0 as isize == major_dim {
             Result::Ok(CSR {
                 data,
                 indices,
@@ -48,21 +48,16 @@ impl CSR {
 
     /// there is no rust implementation of SuperLU or other
     /// "standard" sparse solvers around, so we will simply
-    /// wrap nalgebra::linalg::LU::solve, which has a pure-rust
-    /// implementation
-    pub fn solve(&self, b_vec: Array1<f64>) -> Result<Array1<f64>, Error> {
+    /// use the LAPACK/BLAS bindings provided by ndarrray-linalg
+    pub fn solve(&self, b_vec: &Array1<f64>) -> Result<Array1<f64>, Error> {
         if self.shape.0 != self.shape.1 {
             return Err(Error::UnsolvableSystemError);
         }
-        let dense = self.todense();
+        let a = self.todense();
+        let b = b_vec.clone().to_owned();
+        let x = a.solve_into(b).map_err(|_| Error::UnsolvableSystemError)?;
 
-        // convert to nalgebra objects
-        let a = DMatrix::<f64>::from_vec(self.shape.0, self.shape.1, dense.into_raw_vec());
-        let mut b = DVector::<f64>::from_vec(b_vec.to_vec());
-        let res = a.lu().solve(&mut b).ok_or(Error::InterpolationError)?;
-
-        // convert back to an ndarray object for consistency
-        Ok(Array1::<f64>::from_vec(res.data.into()))
+        Ok(x)
     }
 
     pub fn todense(&self) -> Array2<f64> {
@@ -74,16 +69,6 @@ impl CSR {
         }
 
         out
-    }
-
-    pub fn myfun(&self) -> CSR {
-        CSR::new(
-            self.data.clone().to_owned(),
-            self.indices.clone().to_owned(),
-            self.indptr.clone().to_owned(),
-            self.shape.clone().to_owned(),
-        )
-        .unwrap()
     }
 }
 
@@ -108,23 +93,19 @@ mod tests {
 
     #[test]
     fn positive_csr_test() {
-        let data = Array1::<f64>::from_vec(vec![4., 3.]);
-        let indices = Array1::<usize>::from_vec(vec![0, 2]);
-        let indptr = Array1::<usize>::from_vec(vec![0, 1, 1, 2]);
-        let shape = (3, 3);
+        let a = CSR::new(
+            Array1::<f64>::from_vec(vec![11., 12., 22., 23., 31., 33.]),
+            Array1::<usize>::from_vec(vec![0, 1, 1, 2, 0, 2]),
+            Array1::<usize>::from_vec(vec![0, 2, 4, 6]),
+            (3, 3),
+        )
+        .unwrap();
 
-        let A = CSR::new(data, indices, indptr, shape).unwrap();
-        let x = Array1::<f64>::from_vec(vec![1., 2., 3.]);
+        let b = Array1::<f64>::from_vec(vec![47., 43., -2.]);
+        let x = &a.solve(&b).unwrap();
+        let exact = Array1::<f64>::from_vec(vec![1., 3., -1.]);
 
-        let b = A * &x;
-        let b_expected = A.solve(b).unwrap();
-
-        assert!(A.data == data);
-        assert!(A.indices == indices);
-        assert!(A.indptr == indptr);
-        assert!(A.shape == shape);
-        assert!(A.nnz == data.len());
-        assert!(b == b_expected);
+        assert!(x.abs_diff_eq(&exact, 1e-9));
     }
 
     #[test]
@@ -151,11 +132,12 @@ mod tests {
         .unwrap();
 
         let b = Array1::<f64>::ones(3);
-        let res = a.solve(b).unwrap_err();
+        let res = &a.solve(&b).unwrap_err();
 
         assert!(matches!(res, Error::UnsolvableSystemError));
     }
 
+    #[test]
     fn negative_csr_test_02() {
         let a = CSR::new(
             Array1::<f64>::from_vec(vec![11., 12., 22., 23.]),
@@ -166,7 +148,7 @@ mod tests {
         .unwrap();
 
         let b = Array1::<f64>::ones(3);
-        let res = a.solve(b).unwrap_err();
+        let res = &a.solve(&b).unwrap_err();
 
         assert!(matches!(res, Error::UnsolvableSystemError));
     }
