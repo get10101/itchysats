@@ -1,23 +1,41 @@
-use crate::curve_handlers::basis_eval::Basis;
-use crate::curve_handlers::csr_tools::CSR;
-use ndarray::{s, Array1};
+use core::cmp::max;
+use ndarray::{concatenate, s, Array1, Axis};
 
+use crate::curve_handlers::basis_eval::{bisect_left, knot_tolerance, snap, Basis};
+use crate::curve_handlers::csr_tools::CSR;
+use crate::curve_handlers::Error;
+
+#[derive(Clone, Debug)]
 pub struct BSplineBasis {
-    knots: Array1<f64>,
-    order: usize,
-    periodic: isize,
+    pub knots: Array1<f64>,
+    pub order: usize,
+    pub periodic: isize,
+    pub knot_tol: f64,
 }
 
 impl BSplineBasis {
-    pub fn new(order: usize, knots: Array1<f64>, periodic: Option<isize>) -> Self {
-        BSplineBasis {
-            order,
-            knots,
-            periodic: periodic.unwrap_or(-1),
-        }
+    pub fn new(
+        order: Option<usize>,
+        knots: Option<Array1<f64>>,
+        periodic: Option<isize>,
+    ) -> Result<Self, Error> {
+        let ord = order.unwrap_or(2);
+        let prd = periodic.unwrap_or(-1);
+        let knt = match knots {
+            Some(knots) => knots,
+            None => default_knot(ord, prd)?,
+        };
+        let ktol = knot_tolerance(None);
+
+        Ok(BSplineBasis {
+            order: ord,
+            knots: knt,
+            periodic: prd,
+            knot_tol: ktol,
+        })
     }
 
-    fn num_functions(&self) -> usize {
+    pub fn num_functions(&self) -> usize {
         let p = (self.periodic + 1) as usize;
 
         self.knots.len() - self.order - p
@@ -25,13 +43,13 @@ impl BSplineBasis {
 
     /// Start point of parametric domain. For open knot vectors, this is the
     /// first knot.
-    fn start(&self) -> f64 {
+    pub fn start(&self) -> f64 {
         self.knots[self.order - 1]
     }
 
     /// End point of parametric domain. For open knot vectors, this is the
     /// last knot.
-    fn end(&self) -> f64 {
+    pub fn end(&self) -> f64 {
         self.knots[self.knots.len() - self.order]
     }
 
@@ -52,33 +70,62 @@ impl BSplineBasis {
     }
 
     /// Evaluate all basis functions in a given set of points.
-    ///
-    /// :param t: The parametric coordinate(s) in which to evaluate
-    /// :param d: Number of derivatives to compute
-    /// :param from_right: true if evaluation should be done in the limit
-    ///     from above
-    /// :return: tuple:
-    ///      - the (possibly modified) coordinate vector t,
-    ///      - A CSR (sparse) matrix *N[i,j]* of all basis functions *j*
-    ///        evaluated in all points *i*
-    pub fn evaluate(&self, t: &Array1<f64>, d: usize, from_right: bool) -> (Array1<f64>, CSR) {
+    /// ## parameters:
+    /// * t: The parametric coordinate(s) in which to evaluate
+    /// * d: Number of derivatives to compute
+    /// * from_right: true if evaluation should be done in the limit from above
+    /// ## returns:
+    /// * CSR (sparse) matrix N\[i,j\] of all basis functions j evaluated in all points j
+    pub fn evaluate(&self, t: &mut Array1<f64>, d: usize, from_right: bool) -> Result<CSR, Error> {
         let basis = Basis::new(
             self.order,
             self.knots.clone().to_owned(),
             Some(self.periodic),
-            None,
+            Some(self.knot_tol),
         );
-        let out = basis.snap(t);
+        snap(t, &basis.knots, Some(basis.ktol));
 
         if self.order <= d {
-            let data = Array1::<f64>::zeros(0);
-            let indices = Array1::<usize>::zeros(0);
-            let indptr = Array1::<usize>::zeros(out.len() + 1);
-            let shape = (out.len(), self.num_functions());
+            let csr = CSR::new(
+                Array1::<f64>::zeros(0),
+                Array1::<usize>::zeros(0),
+                Array1::<usize>::zeros(t.len() + 1),
+                (t.len(), self.num_functions()),
+            )?;
 
-            return (out, CSR::new(data, indices, indptr, shape));
+            return Ok(csr);
         }
 
-        basis.evaluate(&out, d, Some(from_right))
+        let out = basis.evaluate(t, d, Some(from_right))?;
+
+        Ok(out)
     }
+
+    /// Snap evaluation points to knots if they are sufficiently close
+    /// as given in by knot_tolerance.
+    ///
+    /// * t: The parametric coordinate(s) in which to evaluate
+    pub fn snap(&self, t: &mut Array1<f64>) {
+        snap(t, &self.knots, Some(self.knot_tol))
+    }
+}
+
+fn default_knot(order: usize, periodic: isize) -> Result<Array1<f64>, Error> {
+    let prd = max(periodic, -1);
+    let p = (prd + 1) as usize;
+    let mut knots = concatenate(
+        Axis(0),
+        &[
+            Array1::<f64>::zeros(order).view(),
+            Array1::<f64>::ones(order).view(),
+        ],
+    )
+    .unwrap();
+
+    for i in 0..p {
+        knots[i] = -1.;
+        knots[2 * order - i - 1] = 2.;
+    }
+
+    Ok(knots)
 }
