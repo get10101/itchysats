@@ -1,8 +1,24 @@
-import { Button, Container, Flex, Grid, GridItem, HStack, Stack, Text, useToast, VStack } from "@chakra-ui/react";
+import {
+    Button,
+    Container,
+    Flex,
+    Grid,
+    GridItem,
+    HStack,
+    Stack,
+    Tab,
+    TabList,
+    TabPanel,
+    TabPanels,
+    Tabs,
+    Text,
+    useToast,
+    VStack,
+} from "@chakra-ui/react";
 import React, { useState } from "react";
 import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
-import CfdTile from "./components/CfdTile";
+import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
 import { Cfd, Order, WalletInfo } from "./components/Types";
@@ -44,7 +60,8 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
 export default function App() {
     let source = useEventSource({ source: "/api/feed" });
 
-    const cfds = useLatestEvent<Cfd[]>(source, "cfds");
+    const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds");
+    let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
     const order = useLatestEvent<Order>(source, "order");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
@@ -92,20 +109,18 @@ export default function App() {
         },
     });
 
+    const runningStates = ["Request sent", "Requested", "Contract Setup", "Pending Open"];
+    const running = cfds.filter((value) => runningStates.includes(value.state));
+    const closedStates = ["Rejected", "Closed"];
+    const closed = cfds.filter((value) => closedStates.includes(value.state));
+    // TODO: remove this. It just helps to detect immediately if we missed a state.
+    const unsorted = cfds.filter((value) =>
+        !runningStates.includes(value.state) && !closedStates.includes(value.state)
+    );
+
     return (
         <Container maxWidth="120ch" marginTop="1rem">
             <Grid templateColumns="repeat(6, 1fr)" gap={4}>
-                <GridItem colSpan={4}>
-                    <Stack>
-                        {cfds && cfds.map((cfd, index) =>
-                            <CfdTile
-                                key={"cfd_" + index}
-                                index={index}
-                                cfd={cfd}
-                            />
-                        )}
-                    </Stack>
-                </GridItem>
                 <GridItem colStart={5} colSpan={2}>
                     <Wallet walletInfo={walletInfo} />
                     <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"}>
@@ -167,6 +182,25 @@ export default function App() {
                     </VStack>
                 </GridItem>
             </Grid>
+            <Tabs>
+                <TabList>
+                    <Tab>Running [{running.length}]</Tab>
+                    <Tab>Closed [{closed.length}]</Tab>
+                    <Tab>Unsorted [{unsorted.length}] (should be empty)</Tab>
+                </TabList>
+
+                <TabPanels>
+                    <TabPanel>
+                        <CfdTable data={running} />
+                    </TabPanel>
+                    <TabPanel>
+                        <CfdTable data={closed} />
+                    </TabPanel>
+                    <TabPanel>
+                        <CfdTable data={unsorted} />
+                    </TabPanel>
+                </TabPanels>
+            </Tabs>
         </Container>
     );
 }
