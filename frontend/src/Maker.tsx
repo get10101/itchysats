@@ -127,7 +127,6 @@ export default function App() {
                             >
                                 {order ? "Update Sell Order" : "Create Sell Order"}
                             </Button>
-
                         </VStack>
                     </VStack>
                 </GridItem>

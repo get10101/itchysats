@@ -1,7 +1,9 @@
 import {
     Button,
     Container,
-    Flex, Grid, GridItem,
+    Flex,
+    Grid,
+    GridItem,
     HStack,
     Tab,
     TabList,
@@ -12,13 +14,13 @@ import {
     useToast,
     VStack,
 } from "@chakra-ui/react";
-import React, {useState} from "react";
-import {useAsync} from "react-async";
-import {useEventSource} from "react-sse-hooks";
-import {CfdTable} from "./components/cfdtables/CfdTable";
+import React, { useState } from "react";
+import { useAsync } from "react-async";
+import { useEventSource } from "react-sse-hooks";
+import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
-import {Cfd, Order, WalletInfo} from "./components/Types";
+import { Cfd, Order, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 
 interface CfdOrderRequestPayload {
@@ -37,7 +39,7 @@ interface MarginResponse {
 }
 
 async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
-    let res = await fetch(`/api/cfd`, {method: "POST", body: JSON.stringify(payload)});
+    let res = await fetch(`/api/cfd`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
         throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
@@ -45,7 +47,7 @@ async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
 }
 
 async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse> {
-    let res = await fetch(`/api/calculate/margin`, {method: "POST", body: JSON.stringify(payload)});
+    let res = await fetch(`/api/calculate/margin`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
         throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
@@ -55,7 +57,7 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
 }
 
 export default function App() {
-    let source = useEventSource({source: "/api/feed"});
+    let source = useEventSource({ source: "/api/feed" });
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds");
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
@@ -66,7 +68,7 @@ export default function App() {
     let [quantity, setQuantity] = useState("0");
     let [margin, setMargin] = useState("0");
 
-    let {run: calculateMargin} = useAsync({
+    let { run: calculateMargin } = useAsync({
         deferFn: async ([payload]: any[]) => {
             try {
                 let res = await getMargin(payload as MarginRequestPayload);
@@ -88,7 +90,7 @@ export default function App() {
     const format = (val: any) => `$` + val;
     const parse = (val: any) => val.replace(/^\$/, "");
 
-    let {run: makeNewOrderRequest, isLoading: isCreatingNewOrderRequest} = useAsync({
+    let { run: makeNewOrderRequest, isLoading: isCreatingNewOrderRequest } = useAsync({
         deferFn: async ([payload]: any[]) => {
             try {
                 await postCfdOrderRequest(payload as CfdOrderRequestPayload);
@@ -120,7 +122,7 @@ export default function App() {
             <VStack>
                 <Grid templateColumns="repeat(6, 1fr)" gap={4}>
                     <GridItem colStart={1} colSpan={2}>
-                        <Wallet walletInfo={walletInfo}/>
+                        <Wallet walletInfo={walletInfo} />
                         <VStack shadow={"md"} padding={5} align="stretch" spacing={4}>
                             <HStack>
                                 {/*TODO: Do we need this? does it make sense to only display the price from the order?*/}
@@ -176,7 +178,6 @@ export default function App() {
                                 BUY
                             </Button>}
                         </VStack>
-
                     </GridItem>
                 </Grid>
                 <Tabs>
@@ -188,13 +189,13 @@ export default function App() {
 
                     <TabPanels>
                         <TabPanel>
-                            <CfdTable data={running}/>
+                            <CfdTable data={running} />
                         </TabPanel>
                         <TabPanel>
-                            <CfdTable data={closed}/>
+                            <CfdTable data={closed} />
                         </TabPanel>
                         <TabPanel>
-                            <CfdTable data={unsorted}/>
+                            <CfdTable data={unsorted} />
                         </TabPanel>
                     </TabPanels>
                 </Tabs>
