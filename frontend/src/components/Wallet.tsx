@@ -30,7 +30,16 @@ export default function Wallet(
                 />
             </HStack>
         );
-        timestamp = <Text>{unixTimestampToDate(walletInfo.last_updated_at).toString()}</Text>;
+        timestamp = <Text>
+            Updated: {unixTimestampToDate(walletInfo.last_updated_at).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "numeric",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+            })}
+        </Text>;
     }
 
     return (
