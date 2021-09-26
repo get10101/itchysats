@@ -204,13 +204,17 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
                         <Tr {...headerGroup.getHeaderGroupProps()}>
                             {headerGroup.headers.map((column) => (
                                 <Th
+                                    // @ts-ignore
                                     {...column.getHeaderProps(column.getSortByToggleProps())}
+                                    // @ts-ignore
                                     isNumeric={column.isNumeric}
                                 >
                                     {column.render("Header")}
                                     <chakra.span pl="4">
-                                        {column.isSorted
+                                        {// @ts-ignore
+                                        column.isSorted
                                             ? (
+                                                // @ts-ignore
                                                 column.isSortedDesc
                                                     ? (
                                                         <TriangleDownIcon aria-label="sorted descending" />
@@ -231,14 +235,22 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
                         prepareRow(row);
                         return (
                             <React.Fragment key={row.id}>
-                                <Tr {...row.getRowProps()} onClick={() => row.toggleRowExpanded()}>
+                                <Tr
+                                    {...row.getRowProps()}
+                                    onClick={() =>
+                                        // @ts-ignore
+                                        row.toggleRowExpanded()}
+                                >
                                     {row.cells.map((cell) => (
+                                        // @ts-ignore
                                         <Td {...cell.getCellProps()} isNumeric={cell.column.isNumeric}>
                                             {cell.render("Cell")}
                                         </Td>
                                     ))}
                                 </Tr>
-                                {row.isExpanded
+
+                                {// @ts-ignore
+                                row.isExpanded
                                     ? (
                                         <Tr>
                                             <Td>
