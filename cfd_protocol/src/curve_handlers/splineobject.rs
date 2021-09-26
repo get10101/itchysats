@@ -173,18 +173,18 @@ impl SplineObject {
             let pos = 0;
             let mut key = self.bases.len() + 1;
             let mut val = match init_map.get(&key) {
-                Some(val) => Ok(val),
-                _ => Result::Err(Error::EinsumOperandError),
-            }?;
+                Some(val) => val,
+                _ => return Result::Err(Error::EinsumOperandError),
+            };
             out = einsum(val, &[&eval_bases[pos].todense(), &self.controlpoints])
                 .map_err(|_| Error::EinsumError)?;
 
             for _ in eval_bases.iter().skip(1) {
                 key += 1;
                 val = match iter_map.get(&key) {
-                    Some(val) => Ok(val),
-                    _ => Result::Err(Error::EinsumOperandError),
-                }?;
+                    Some(val) => val,
+                    _ => return Result::Err(Error::EinsumOperandError),
+                };
                 let temp = out.clone();
                 out = einsum(val, &[&eval_bases[pos].todense(), &temp])
                     .map_err(|_| Error::EinsumError)?;
@@ -198,6 +198,20 @@ impl SplineObject {
     pub fn derivative(&self) {
         todo!()
     }
+
+    pub fn knots(&self) {
+        todo!()
+    }
+
+    pub fn make_splines_compatible(&self) {
+        todo!()
+    }
+
+    fn order(&self) {
+        todo!()
+    }
+
+    fn raise_order(&self) {}
 }
 
 fn default_control_points(bases: &Vec<BSplineBasis>) -> Result<Array2<f64>, Error> {

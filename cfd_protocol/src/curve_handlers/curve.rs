@@ -45,4 +45,16 @@ impl Curve {
             rational: spline.rational,
         })
     }
+
+    pub fn append(&self) {
+        todo!()
+    }
+
+    pub fn length(&self) {
+        todo!()
+    }
+
+    pub fn error(&self) {
+        todo!()
+    }
 }
