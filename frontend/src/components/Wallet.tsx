@@ -22,7 +22,7 @@ export default function Wallet(
         balance = <Text>{walletInfo.balance} BTC</Text>;
         address = (
             <HStack>
-                <Text>{walletInfo.address}</Text>
+                <Text isTruncated>{walletInfo.address}</Text>
                 <IconButton
                     aria-label="Copy to clipboard"
                     icon={hasCopied ? <CheckIcon /> : <CopyIcon />}
