@@ -19,11 +19,13 @@ pub enum Error {
     InvalidDomainError,
     #[error("parameters arrays must have same length")]
     InvalidEvaluationError,
+    #[error("einsum error--array size mismatch?")]
+    EinsumError,
+    #[error("no operand string found")]
+    EinsumOperandError,
     #[error("concatonation error")]
     NdArray {
         #[from]
         source: ndarray::ShapeError,
     },
-    #[error("einsum error--array size mismatch?")]
-    EinsumError,
 }

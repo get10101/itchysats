@@ -10,10 +10,10 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct SplineObject {
-    bases: Vec<BSplineBasis>,
-    controlpoints: ArrayD<f64>,
-    dimension: usize,
-    rational: bool,
+    pub bases: Vec<BSplineBasis>,
+    pub controlpoints: ArrayD<f64>,
+    pub dimension: usize,
+    pub rational: bool,
 }
 
 impl SplineObject {
@@ -172,13 +172,19 @@ impl SplineObject {
         } else {
             let pos = 0;
             let mut key = self.bases.len() + 1;
-            let mut val = init_map.get(&key).unwrap();
+            let mut val = match init_map.get(&key) {
+                Some(val) => Ok(val),
+                _ => Result::Err(Error::EinsumOperandError),
+            }?;
             out = einsum(val, &[&eval_bases[pos].todense(), &self.controlpoints])
                 .map_err(|_| Error::EinsumError)?;
 
             for _ in eval_bases.iter().skip(1) {
                 key += 1;
-                val = iter_map.get(&key).unwrap();
+                val = match iter_map.get(&key) {
+                    Some(val) => Ok(val),
+                    _ => Result::Err(Error::EinsumOperandError),
+                }?;
                 let temp = out.clone();
                 out = einsum(val, &[&eval_bases[pos].todense(), &temp])
                     .map_err(|_| Error::EinsumError)?;
