@@ -77,7 +77,7 @@ export default function App() {
     return (
         <Container maxWidth="120ch" marginTop="1rem">
             <Grid templateColumns="repeat(6, 1fr)" gap={4}>
-                <GridItem colStart={5} colSpan={2}>
+                <GridItem colStart={1} colSpan={2}>
                     <Wallet walletInfo={walletInfo} />
                     <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"}>
                         <HStack>
@@ -127,9 +127,12 @@ export default function App() {
                             >
                                 {order ? "Update Sell Order" : "Create Sell Order"}
                             </Button>
-                            {order && <OrderTile order={order} />}
+
                         </VStack>
                     </VStack>
+                </GridItem>
+                <GridItem colStart={3} colSpan={2}>
+                    {order && <OrderTile order={order} />}
                 </GridItem>
             </Grid>
             <Tabs>
