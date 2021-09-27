@@ -31,7 +31,7 @@ mod monitor;
 mod routes;
 mod routes_maker;
 mod seed;
-mod send_wire_message_actor;
+mod send_to_socket;
 mod setup_contract_actor;
 mod to_sse_event;
 mod wallet;
@@ -206,16 +206,17 @@ async fn main() -> Result<()> {
                                     cfd_maker_actor_inbox.clone(),
                                     taker_id,
                                 );
-                                let (out_msg_actor, out_msg_actor_inbox) =
-                                    send_wire_message_actor::new::<wire::MakerToTaker>(write);
+
+                                let out_msg_actor = send_to_socket::Actor::new(write)
+                                    .create(None)
+                                    .spawn_global();
 
                                 tokio::spawn(in_taker_actor);
-                                tokio::spawn(out_msg_actor);
 
                                 maker_inc_connections_address
                                     .do_send_async(maker_inc_connections::NewTakerOnline {
                                         taker_id,
-                                        out_msg_actor_inbox,
+                                        out_msg_actor,
                                     })
                                     .await
                                     .unwrap();
@@ -249,4 +250,8 @@ async fn main() -> Result<()> {
         .await?;
 
     Ok(())
+}
+
+impl xtra::Message for wire::MakerToTaker {
+    type Result = ();
 }

@@ -7,6 +7,7 @@ use bdk::bitcoin::{Address, Amount, PublicKey};
 use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use cfd_protocol::{CfdTransactions, PartyParams, PunishParams};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::ops::RangeInclusive;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -15,6 +16,15 @@ use std::ops::RangeInclusive;
 pub enum TakerToMaker {
     TakeOrder { order_id: OrderId, quantity: Usd },
     Protocol(SetupMsg),
+}
+
+impl fmt::Display for TakerToMaker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TakerToMaker::TakeOrder { .. } => write!(f, "TakeOrder"),
+            TakerToMaker::Protocol(_) => write!(f, "Protocol"),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,6 +36,18 @@ pub enum MakerToTaker {
     RejectOrder(OrderId),
     InvalidOrderId(OrderId),
     Protocol(SetupMsg),
+}
+
+impl fmt::Display for MakerToTaker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MakerToTaker::CurrentOrder(_) => write!(f, "CurrentOrder"),
+            MakerToTaker::ConfirmOrder(_) => write!(f, "ConfirmOrder"),
+            MakerToTaker::RejectOrder(_) => write!(f, "RejectOrder"),
+            MakerToTaker::InvalidOrderId(_) => write!(f, "InvalidOrderId"),
+            MakerToTaker::Protocol(_) => write!(f, "Protocol"),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -2,17 +2,14 @@ use crate::actors::log_error;
 use crate::model::cfd::{Order, OrderId};
 use crate::model::TakerId;
 use crate::wire::SetupMsg;
-use crate::{maker_cfd, wire};
+use crate::{maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
 use futures::{Future, StreamExt};
 use std::collections::HashMap;
 use tokio::net::tcp::OwnedReadHalf;
-use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 use xtra::prelude::*;
-
-type MakerToTakerSender = mpsc::UnboundedSender<wire::MakerToTaker>;
 
 pub struct BroadcastOrder(pub Option<Order>);
 
@@ -40,7 +37,7 @@ impl Message for TakerMessage {
 
 pub struct NewTakerOnline {
     pub taker_id: TakerId,
-    pub out_msg_actor_inbox: MakerToTakerSender,
+    pub out_msg_actor: Address<send_to_socket::Actor>,
 }
 
 impl Message for NewTakerOnline {
@@ -48,7 +45,7 @@ impl Message for NewTakerOnline {
 }
 
 pub struct Actor {
-    write_connections: HashMap<TakerId, MakerToTakerSender>,
+    write_connections: HashMap<TakerId, Address<send_to_socket::Actor>>,
     cfd_actor: Address<maker_cfd::Actor>,
 }
 
@@ -57,44 +54,53 @@ impl xtra::Actor for Actor {}
 impl Actor {
     pub fn new(cfd_actor: Address<maker_cfd::Actor>) -> Self {
         Self {
-            write_connections: HashMap::<TakerId, MakerToTakerSender>::new(),
+            write_connections: HashMap::new(),
             cfd_actor,
         }
     }
 
-    fn send_to_taker(&self, taker_id: TakerId, msg: wire::MakerToTaker) -> Result<()> {
+    async fn send_to_taker(&self, taker_id: TakerId, msg: wire::MakerToTaker) -> Result<()> {
         let conn = self
             .write_connections
             .get(&taker_id)
             .context("no connection to taker_id")?;
-        conn.send(msg)?;
+        conn.do_send_async(msg).await?;
+
         Ok(())
     }
 
     async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) -> Result<()> {
         let order = msg.0;
-        self.write_connections
-            .values()
-            .try_for_each(|conn| conn.send(wire::MakerToTaker::CurrentOrder(order.clone())))?;
+
+        for conn in self.write_connections.values() {
+            conn.do_send_async(wire::MakerToTaker::CurrentOrder(order.clone()))
+                .await?;
+        }
+
         Ok(())
     }
 
     async fn handle_taker_message(&mut self, msg: TakerMessage) -> Result<()> {
         match msg.command {
             TakerCommand::SendOrder { order } => {
-                self.send_to_taker(msg.taker_id, wire::MakerToTaker::CurrentOrder(order))?;
+                self.send_to_taker(msg.taker_id, wire::MakerToTaker::CurrentOrder(order))
+                    .await?;
             }
             TakerCommand::NotifyInvalidOrderId { id } => {
-                self.send_to_taker(msg.taker_id, wire::MakerToTaker::InvalidOrderId(id))?;
+                self.send_to_taker(msg.taker_id, wire::MakerToTaker::InvalidOrderId(id))
+                    .await?;
             }
             TakerCommand::NotifyOrderAccepted { id } => {
-                self.send_to_taker(msg.taker_id, wire::MakerToTaker::ConfirmOrder(id))?;
+                self.send_to_taker(msg.taker_id, wire::MakerToTaker::ConfirmOrder(id))
+                    .await?;
             }
             TakerCommand::NotifyOrderRejected { id } => {
-                self.send_to_taker(msg.taker_id, wire::MakerToTaker::RejectOrder(id))?;
+                self.send_to_taker(msg.taker_id, wire::MakerToTaker::RejectOrder(id))
+                    .await?;
             }
             TakerCommand::OutProtocolMsg { setup_msg } => {
-                self.send_to_taker(msg.taker_id, wire::MakerToTaker::Protocol(setup_msg))?;
+                self.send_to_taker(msg.taker_id, wire::MakerToTaker::Protocol(setup_msg))
+                    .await?;
             }
         }
         Ok(())
@@ -106,7 +112,7 @@ impl Actor {
             .await?;
 
         self.write_connections
-            .insert(msg.taker_id, msg.out_msg_actor_inbox);
+            .insert(msg.taker_id, msg.out_msg_actor);
         Ok(())
     }
 }
