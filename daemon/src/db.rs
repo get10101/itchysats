@@ -263,7 +263,7 @@ pub async fn load_cfd_by_order_id(
             cfds.quantity_usd as quantity_usd,
             cfd_states.state as state
         from cfds as cfds
-        inner join orders as orders on cfds.order_uuid = ?
+        inner join orders as orders on cfds.order_id = orders.id
         inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id
         where cfd_states.state in (
             select
@@ -273,6 +273,7 @@ pub async fn load_cfd_by_order_id(
             order by id desc
             limit 1
         )
+        and orders.uuid = ?
         "#,
         order_uuid
     )
@@ -470,6 +471,52 @@ mod tests {
 
         let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
         assert_eq!(cfd, cfd_from_db)
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_load_cfd_by_order_id_multiple() {
+        let pool = setup_test_db().await;
+        let mut conn = pool.acquire().await.unwrap();
+
+        let order = Order::from_default_with_price(Usd(dec!(10000)), Origin::Theirs).unwrap();
+
+        let cfd = Cfd::new(
+            order.clone(),
+            Usd(dec!(1000)),
+            CfdState::OutgoingOrderRequest {
+                common: CfdStateCommon {
+                    transition_timestamp: SystemTime::now(),
+                },
+            },
+        );
+
+        let order_id = order.id;
+
+        insert_order(&order, &mut conn).await.unwrap();
+        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
+
+        let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
+        assert_eq!(cfd, cfd_from_db);
+
+        let order = Order::from_default_with_price(Usd(dec!(10000)), Origin::Theirs).unwrap();
+
+        let cfd = Cfd::new(
+            order.clone(),
+            Usd(dec!(1000)),
+            CfdState::OutgoingOrderRequest {
+                common: CfdStateCommon {
+                    transition_timestamp: SystemTime::now(),
+                },
+            },
+        );
+
+        let order_id = order.id;
+
+        insert_order(&order, &mut conn).await.unwrap();
+        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
+
+        let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
+        assert_eq!(cfd, cfd_from_db);
     }
 
     #[tokio::test]
