@@ -14,6 +14,7 @@ pub struct SplineObject {
     pub controlpoints: ArrayD<f64>,
     pub dimension: usize,
     pub rational: bool,
+    pub pardim: usize,
 }
 
 impl SplineObject {
@@ -26,7 +27,7 @@ impl SplineObject {
             Some(controlpoints) => controlpoints,
             None => default_control_points(&bases)?,
         };
-        let rtnl = rational.unwrap_or(false);
+        let rational = rational.unwrap_or(false);
 
         if cpts.slice(s![0, ..]).shape()[0] == 1 {
             cpts = concatenate(
@@ -40,7 +41,7 @@ impl SplineObject {
             )?;
         }
 
-        if rtnl == true {
+        if rational {
             cpts = concatenate(
                 Axis(1),
                 &[
@@ -52,16 +53,18 @@ impl SplineObject {
             )?;
         }
 
-        let dim = &cpts.shape()[1] - (rtnl as usize);
-        let shp = determine_shape(&bases)?;
-        let ncomps = dim + (rtnl as usize);
-        let cpts_shaped = reshaper(cpts, shp, ncomps)?;
+        let dim = cpts.shape()[1] - (rational as usize);
+        let bases_shape = determine_shape(&bases)?;
+        let ncomps = dim + (rational as usize);
+        let cpts_shaped = reshaper(cpts, bases_shape, ncomps)?;
+        let pardim = cpts_shaped.shape().len() - 1;
 
         Ok(SplineObject {
             bases,
             controlpoints: cpts_shaped,
             dimension: dim,
-            rational: rtnl,
+            rational,
+            pardim,
         })
     }
 
@@ -135,7 +138,7 @@ impl SplineObject {
         eval_bases: &mut Vec<CSR>,
         tensor: bool,
     ) -> Result<ArrayD<f64>, Error> {
-        // *** BEGIN KLUDGE ****
+        // KLUDGE!
         // owing to the fact that the conventional ellipsis notation is not yet
         // implemented for einsum, we use this workaround that should cover us.
         // If not, just grow the maps as needed or address the issue:
@@ -170,24 +173,28 @@ impl SplineObject {
                 tensordot(&tns.todense(), &e, &[Axis(1)], &[Axis(idx)])
             });
         } else {
-            let pos = 0;
+            for (i, elem) in eval_bases.iter().enumerate() {
+            }
+
+            let mut pos = 0;
             let mut key = self.bases.len() + 1;
             let mut val = match init_map.get(&key) {
-                Some(val) => val,
-                _ => return Result::Err(Error::EinsumOperandError),
-            };
+                Some(val) => Ok(val),
+                _ => Result::Err(Error::EinsumOperandError),
+            }?;
             out = einsum(val, &[&eval_bases[pos].todense(), &self.controlpoints])
                 .map_err(|_| Error::EinsumError)?;
 
             for _ in eval_bases.iter().skip(1) {
-                key += 1;
+                pos += 1;
                 val = match iter_map.get(&key) {
-                    Some(val) => val,
-                    _ => return Result::Err(Error::EinsumOperandError),
-                };
-                let temp = out.clone();
+                    Some(val) => Ok(val),
+                    _ => Result::Err(Error::EinsumOperandError),
+                }?;
+                let temp = out.clone().to_owned();
                 out = einsum(val, &[&eval_bases[pos].todense(), &temp])
                     .map_err(|_| Error::EinsumError)?;
+                key -= 1;
             }
         }
         // *** END KLUDGE ****
@@ -203,20 +210,121 @@ impl SplineObject {
         todo!()
     }
 
-    pub fn make_splines_compatible(&self) {
-        todo!()
+    /// This will manipulate one or both to ensure that they are both rational
+    /// or nonrational, and that they lie in the same physical space.
+    pub fn make_splines_compatible(&mut self, otherspline: &mut SplineObject) -> Result<(), Error> {
+        if self.rational {
+            otherspline.force_rational()?;
+        } else if otherspline.rational {
+            self.force_rational()?;
+        }
+
+        if self.dimension > otherspline.dimension {
+            otherspline.set_dimension(self.dimension);
+        } else {
+            self.set_dimension(otherspline.dimension);
+        }
+
+        Ok(())
+    }
+
+    /// Force a rational representation of the object.
+    pub fn force_rational(&mut self) -> Result<(), Error> {
+        if !self.rational {
+            self.controlpoints = self.insert_phys(&self.controlpoints, 1f64)?;
+        }
+
+        Ok(())
+    }
+
+    /// Sets the physical dimension of the object. If increased, the new
+    /// components are set to zero.
+    ///
+    /// ### parameters
+    /// * new_dim: New dimension
+    pub fn set_dimension(&mut self, new_dim: usize) -> Result<(), Error> {
+        let mut dim = self.dimension;
+
+        while new_dim > dim {
+            self.controlpoints = self.insert_phys(&self.controlpoints, 0f64)?;
+            dim += 1;
+        }
+
+        while new_dim < dim {
+            let axis = if self.rational { -2 } else { -1 };
+            self.controlpoints = self.delete_phys(&self.controlpoints, axis)?;
+            dim -= 1;
+        }
+
+        self.dimension = new_dim;
+
+        Ok(())
+    }
+
+    fn insert_phys(&self, arr: &ArrayD<f64>, insert_value: f64) -> Result<ArrayD<f64>, Error> {
+        let mut arr_shape = arr.shape().to_vec();
+        let n = arr_shape[arr_shape.len() - 1];
+        let arr_prod = arr_shape.iter().product();
+
+        let raveled = arr.to_shape(((arr_prod,), Order::C))?;
+        let mut new_arr = Array1::<f64>::zeros(0);
+
+        for i in (0..raveled.len()).step_by(n) {
+            let new_row = concatenate(
+                Axis(0),
+                &[
+                    raveled.slice(s![i..i + n]).view(),
+                    (insert_value * Array1::<f64>::ones(1)).view(),
+                ],
+            )?;
+            new_arr = concatenate(Axis(0), &[new_arr.view(), new_row.view()])?;
+        }
+
+        arr_shape[n] += 1;
+        let out = new_arr.to_shape((&arr_shape[..], Order::C))?.to_owned();
+
+        Ok(out)
+    }
+
+    fn delete_phys(&self, arr: &ArrayD<f64>, axis: isize) -> Result<ArrayD<f64>, Error> {
+        let mut arr_shape = arr.shape().to_vec();
+        let n = arr_shape[arr_shape.len() - 1];
+        let step = (n as isize + axis) as usize;
+        let arr_prod = arr_shape.iter().product();
+
+        let raveled = arr.to_shape(((arr_prod,), Order::C))?;
+        let mut new_arr = Array1::<f64>::zeros(0);
+
+        for i in (0..raveled.len()).step_by(n) {
+            let new_row;
+            if axis < -1 {
+                let front = raveled.slice(s![i..i + step]).clone().to_owned();
+                let tail = raveled.slice(s![i + step + 1..i + n]).clone().to_owned();
+                new_row = concatenate(Axis(0), &[front.view(), tail.view()])?;
+            } else {
+                new_row = raveled.slice(s![i..i + step]).clone().to_owned();
+            }
+            new_arr = concatenate(Axis(0), &[new_arr.view(), new_row.view()])?;
+        }
+
+        arr_shape[n - 1] -= 1;
+        let out = new_arr.to_shape((&arr_shape[..], Order::C))?.to_owned();
+
+        Ok(out)
     }
 
     fn order(&self) {
         todo!()
     }
 
-    fn raise_order(&self) {}
+    fn raise_order(&self) {
+        todo!()
+    }
 }
 
-fn default_control_points(bases: &Vec<BSplineBasis>) -> Result<Array2<f64>, Error> {
+fn default_control_points(bases: &[BSplineBasis]) -> Result<Array2<f64>, Error> {
     let mut temp = bases
-        .into_iter()
+        .iter()
         .rev()
         .map(|b| {
             let mut v = b.greville().into_raw_vec();
@@ -236,8 +344,8 @@ fn default_control_points(bases: &Vec<BSplineBasis>) -> Result<Array2<f64>, Erro
     let ncols = temp.first().map_or(0, |row| row.len());
     let mut nrows = 0;
 
-    for i in 0..temp.len() {
-        data.extend_from_slice(&temp[i]);
+    for elem in temp.iter() {
+        data.extend_from_slice(elem);
         nrows += 1;
     }
 
@@ -272,9 +380,9 @@ fn reshaper(
     Ok(out)
 }
 
-fn determine_shape(bases: &Vec<BSplineBasis>) -> Result<Vec<usize>, Error> {
+fn determine_shape(bases: &[BSplineBasis]) -> Result<Vec<usize>, Error> {
     let out = bases
-        .into_iter()
+        .iter()
         .map(|e| e.num_functions())
         .collect::<Vec<usize>>();
 

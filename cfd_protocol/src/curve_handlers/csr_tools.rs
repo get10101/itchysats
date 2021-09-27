@@ -15,11 +15,11 @@ use std::ops::Mul;
 /// solver regardless.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CSR {
-    data: Array1<f64>,
-    indices: Array1<usize>,
-    indptr: Array1<usize>,
-    shape: (usize, usize),
-    nnz: usize,
+    pub data: Array1<f64>,
+    pub indices: Array1<usize>,
+    pub indptr: Array1<usize>,
+    pub shape: (usize, usize),
+    pub nnz: usize,
 }
 
 impl CSR {
