@@ -11,7 +11,7 @@ use xtra::prelude::*;
 pub struct BroadcastOrder(pub Option<Order>);
 
 impl Message for BroadcastOrder {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -29,7 +29,7 @@ pub struct TakerMessage {
 }
 
 impl Message for TakerMessage {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 pub struct NewTakerOnline {
@@ -38,7 +38,7 @@ pub struct NewTakerOnline {
 }
 
 impl Message for NewTakerOnline {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 pub struct Actor {
@@ -124,24 +124,21 @@ macro_rules! log_error {
 
 #[async_trait]
 impl Handler<BroadcastOrder> for Actor {
-    async fn handle(&mut self, msg: BroadcastOrder, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle(&mut self, msg: BroadcastOrder, _ctx: &mut Context<Self>) {
         log_error!(self.handle_broadcast_order(msg));
-        Ok(())
     }
 }
 
 #[async_trait]
 impl Handler<TakerMessage> for Actor {
-    async fn handle(&mut self, msg: TakerMessage, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle(&mut self, msg: TakerMessage, _ctx: &mut Context<Self>) {
         log_error!(self.handle_taker_message(msg));
-        Ok(())
     }
 }
 
 #[async_trait]
 impl Handler<NewTakerOnline> for Actor {
-    async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) {
         log_error!(self.handle_new_taker_online(msg));
-        Ok(())
     }
 }
