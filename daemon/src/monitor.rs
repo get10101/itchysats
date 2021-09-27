@@ -1,5 +1,6 @@
 use crate::actors::log_error;
-use crate::model::cfd::{Cfd, OrderId};
+use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId};
+use crate::monitor::subscription::Subscription;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::{PublicKey, Script, Txid};
@@ -15,35 +16,142 @@ const FINALITY_CONFIRMATIONS: u32 = 1;
 
 #[derive(Clone)]
 pub struct MonitorParams {
-    pub lock: (Txid, Descriptor<PublicKey>),
-    pub commit: (Txid, Descriptor<PublicKey>),
-    pub cets: Vec<(Txid, Script, RangeInclusive<u64>)>,
-    pub refund: (Txid, Script, u32),
+    lock: (Txid, Descriptor<PublicKey>),
+    commit: (Txid, Descriptor<PublicKey>),
+    cets: Vec<(Txid, Script, RangeInclusive<u64>)>,
+    refund: (Txid, Script, u32),
+}
+
+impl MonitorParams {
+    pub fn from_dlc_and_timelocks(dlc: Dlc, refund_timelock_in_blocks: u32) -> Self {
+        let script_pubkey = dlc.address.script_pubkey();
+        MonitorParams {
+            lock: (dlc.lock.0.txid(), dlc.lock.1),
+            commit: (dlc.commit.0.txid(), dlc.commit.2),
+            cets: dlc
+                .cets
+                .into_iter()
+                .map(|(tx, _, range)| (tx.txid(), script_pubkey.clone(), range))
+                .collect(),
+            refund: (
+                dlc.refund.0.txid(),
+                script_pubkey,
+                refund_timelock_in_blocks,
+            ),
+        }
+    }
 }
 
 impl<T> Actor<T>
 where
     T: xtra::Actor + xtra::Handler<Event>,
 {
-    pub fn new(
+    pub async fn new(
         electrum_rpc_url: &str,
-        cfds: HashMap<OrderId, MonitorParams>,
         cfd_actor_addr: xtra::Address<T>,
+        cfds: Vec<Cfd>,
     ) -> Self {
         let monitor = Monitor::new(electrum_rpc_url, FINALITY_CONFIRMATIONS).unwrap();
 
-        Self {
+        let mut actor = Self {
             monitor,
-            cfds,
+            cfds: HashMap::new(),
             cfd_actor_addr,
+        };
+
+        for cfd in cfds {
+            match cfd.state.clone() {
+                // In PendingOpen we know the complete dlc setup and assume that the lock transaction will be published
+                CfdState::PendingOpen { dlc, .. } => {
+                    let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
+                    actor.cfds.insert(cfd.order.id, params.clone());
+                    actor.monitor_all(&params, cfd.order.id).await;
+                }
+                CfdState::Open { dlc, .. } => {
+                    let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
+                    actor.cfds.insert(cfd.order.id, params.clone());
+
+                    actor.monitor_commit_finality_and_timelocks(&params, cfd.order.id).await;
+                    actor.monitor_refund_finality( params.clone(),cfd.order.id).await;
+                }
+                CfdState::OpenCommitted { dlc, cet_status, .. } => {
+                    let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
+                    actor.cfds.insert(cfd.order.id, params.clone());
+
+                    let commit_subscription = actor
+                        .monitor
+                        .subscribe_to((params.commit.0, params.commit.1.script_pubkey()))
+                        .await;
+
+                    match cet_status {
+                        CetStatus::Unprepared
+                        | CetStatus::OracleSigned(_) => {
+                            actor.monitor_commit_cet_timelock(cfd.order.id, &commit_subscription).await;
+                            actor.monitor_commit_refund_timelock(&params, cfd.order.id, &commit_subscription).await;
+                            actor.monitor_refund_finality( params.clone(),cfd.order.id).await;
+                        }
+                        CetStatus::TimelockExpired => {
+                            actor.monitor_commit_refund_timelock(&params, cfd.order.id, &commit_subscription).await;
+                            actor.monitor_refund_finality( params.clone(),cfd.order.id).await;
+                        }
+                        CetStatus::Ready(_price) => {
+                            // TODO: monitor CET finality
+
+                            actor.monitor_commit_refund_timelock(&params, cfd.order.id, &commit_subscription).await;
+                            actor.monitor_refund_finality( params.clone(),cfd.order.id).await;
+                        }
+                    }
+                }
+                CfdState::MustRefund { dlc, .. } => {
+                    // TODO: CET monitoring (?) - note: would require to add CetStatus information to MustRefund
+
+                    let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
+                    actor.cfds.insert(cfd.order.id, params.clone());
+
+                    let commit_subscription = actor
+                        .monitor
+                        .subscribe_to((params.commit.0, params.commit.1.script_pubkey()))
+                        .await;
+
+                    actor.monitor_commit_refund_timelock(&params, cfd.order.id, &commit_subscription).await;
+                    actor.monitor_refund_finality( params.clone(),cfd.order.id).await;
+                }
+
+                // too early to monitor
+                CfdState::OutgoingOrderRequest { .. }
+                | CfdState::IncomingOrderRequest { .. }
+                | CfdState::Accepted { .. }
+                | CfdState::ContractSetup { .. }
+
+                // final states
+                | CfdState::Rejected { .. }
+                | CfdState::Refunded { .. }
+                | CfdState::SetupFailed { .. } => ()
+            }
         }
+
+        actor
     }
 
     async fn handle_start_monitoring(&mut self, msg: StartMonitoring) -> Result<()> {
         let StartMonitoring { id, params } = msg;
 
         self.cfds.insert(id, params.clone());
+        self.monitor_all(&params, id).await;
 
+        Ok(())
+    }
+
+    async fn monitor_all(&self, params: &MonitorParams, order_id: OrderId) {
+        self.monitor_lock_finality(params, order_id).await;
+
+        self.monitor_commit_finality_and_timelocks(params, order_id)
+            .await;
+
+        self.monitor_refund_finality(params.clone(), order_id).await;
+    }
+
+    async fn monitor_lock_finality(&self, params: &MonitorParams, order_id: OrderId) {
         tokio::spawn({
             let cfd_actor_addr = self.cfd_actor_addr.clone();
             let lock_subscription = self
@@ -54,17 +162,32 @@ where
                 lock_subscription.wait_until_final().await.unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(Event::LockFinality(id))
+                    .do_send_async(Event::LockFinality(order_id))
                     .await
                     .unwrap();
             }
         });
+    }
 
+    async fn monitor_commit_finality_and_timelocks(
+        &self,
+        params: &MonitorParams,
+        order_id: OrderId,
+    ) {
         let commit_subscription = self
             .monitor
             .subscribe_to((params.commit.0, params.commit.1.script_pubkey()))
             .await;
 
+        self.monitor_commit_finality(order_id, &commit_subscription)
+            .await;
+        self.monitor_commit_cet_timelock(order_id, &commit_subscription)
+            .await;
+        self.monitor_commit_refund_timelock(params, order_id, &commit_subscription)
+            .await;
+    }
+
+    async fn monitor_commit_finality(&self, order_id: OrderId, commit_subscription: &Subscription) {
         tokio::spawn({
             let cfd_actor_addr = self.cfd_actor_addr.clone();
             let commit_subscription = commit_subscription.clone();
@@ -72,12 +195,18 @@ where
                 commit_subscription.wait_until_final().await.unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(Event::CommitFinality(id))
+                    .do_send_async(Event::CommitFinality(order_id))
                     .await
                     .unwrap();
             }
         });
+    }
 
+    async fn monitor_commit_cet_timelock(
+        &self,
+        order_id: OrderId,
+        commit_subscription: &Subscription,
+    ) {
         tokio::spawn({
             let cfd_actor_addr = self.cfd_actor_addr.clone();
             let commit_subscription = commit_subscription.clone();
@@ -88,12 +217,19 @@ where
                     .unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(Event::CetTimelockExpired(id))
+                    .do_send_async(Event::CetTimelockExpired(order_id))
                     .await
                     .unwrap();
             }
         });
+    }
 
+    async fn monitor_commit_refund_timelock(
+        &self,
+        params: &MonitorParams,
+        order_id: OrderId,
+        commit_subscription: &Subscription,
+    ) {
         tokio::spawn({
             let cfd_actor_addr = self.cfd_actor_addr.clone();
             let commit_subscription = commit_subscription.clone();
@@ -105,12 +241,14 @@ where
                     .unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(Event::RefundTimelockExpired(id))
+                    .do_send_async(Event::RefundTimelockExpired(order_id))
                     .await
                     .unwrap();
             }
         });
+    }
 
+    async fn monitor_refund_finality(&self, params: MonitorParams, order_id: OrderId) {
         tokio::spawn({
             let cfd_actor_addr = self.cfd_actor_addr.clone();
             let refund_subscription = self
@@ -121,15 +259,11 @@ where
                 refund_subscription.wait_until_final().await.unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(Event::RefundFinality(id))
+                    .do_send_async(Event::RefundFinality(order_id))
                     .await
                     .unwrap();
             }
         });
-
-        // TODO: CET subscription => Requires information from Oracle
-
-        Ok(())
     }
 }
 

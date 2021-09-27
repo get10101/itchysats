@@ -1,5 +1,6 @@
 use crate::auth::MAKER_USERNAME;
 use crate::cfd_feed::CfdFeed;
+use crate::db::load_all_cfds;
 use crate::seed::Seed;
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
@@ -10,7 +11,6 @@ use model::cfd::Order;
 use model::WalletInfo;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::task::Poll;
 use tokio::sync::watch;
@@ -22,6 +22,7 @@ mod actors;
 mod auth;
 mod bitmex_price_feed;
 mod cfd_feed;
+mod cleanup;
 mod db;
 mod keypair;
 mod logger;
@@ -150,11 +151,17 @@ async fn main() -> Result<()> {
                     None => return Err(rocket),
                 };
 
+                cleanup::transition_non_continue_cfds_to_setup_failed(db.clone())
+                    .await
+                    .unwrap();
+
                 let (maker_inc_connections_address, maker_inc_connections_context) =
                     xtra::Context::new(None);
 
                 let (monitor_actor_address, monitor_actor_context) = xtra::Context::new(None);
 
+                let mut conn = db.acquire().await.unwrap();
+                let cfds = load_all_cfds(&mut conn).await.unwrap();
                 let cfd_maker_actor_inbox = maker_cfd::Actor::new(
                     db,
                     wallet.clone(),
@@ -163,6 +170,7 @@ async fn main() -> Result<()> {
                     order_feed_sender,
                     maker_inc_connections_address.clone(),
                     monitor_actor_address,
+                    cfds.clone(),
                 )
                 .await
                 .unwrap()
@@ -174,11 +182,9 @@ async fn main() -> Result<()> {
                         cfd_maker_actor_inbox.clone(),
                     )),
                 );
-                tokio::spawn(monitor_actor_context.run(monitor::Actor::new(
-                    &opts.electrum,
-                    HashMap::new(),
-                    cfd_maker_actor_inbox.clone(),
-                )));
+                tokio::spawn(monitor_actor_context.run(
+                    monitor::Actor::new(&opts.electrum, cfd_maker_actor_inbox.clone(), cfds).await,
+                ));
 
                 let listener_stream = futures::stream::poll_fn(move |ctx| {
                     let message = match futures::ready!(listener.poll_accept(ctx)) {

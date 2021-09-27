@@ -57,6 +57,7 @@ pub struct Actor {
 }
 
 impl Actor {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         db: sqlx::SqlitePool,
         wallet: Wallet,
@@ -65,11 +66,25 @@ impl Actor {
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
         send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
         monitor_actor: Address<monitor::Actor<Actor>>,
+        cfds: Vec<Cfd>,
     ) -> Result<Self> {
         let mut conn = db.acquire().await?;
 
         // populate the CFD feed with existing CFDs
         cfd_feed.update(&mut conn).await?;
+
+        for dlc in cfds.iter().filter_map(|cfd| Cfd::pending_open_dlc(cfd)) {
+            let txid = wallet.try_broadcast_transaction(dlc.lock.0.clone()).await?;
+
+            tracing::info!("Lock transaction published with txid {}", txid);
+        }
+
+        for cfd in cfds.iter().filter(|cfd| Cfd::is_must_refund(cfd)) {
+            let signed_refund_tx = cfd.refund_tx()?;
+            let txid = wallet.try_broadcast_transaction(signed_refund_tx).await?;
+
+            tracing::info!("Refund transaction published on chain: {}", txid);
+        }
 
         Ok(Self {
             db,
@@ -250,24 +265,10 @@ impl Actor {
         // refund timelock
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        let script_pubkey = dlc.address.script_pubkey();
         self.monitor_actor
             .do_send_async(monitor::StartMonitoring {
                 id: order_id,
-                params: MonitorParams {
-                    lock: (dlc.lock.0.txid(), dlc.lock.1),
-                    commit: (dlc.commit.0.txid(), dlc.commit.2),
-                    cets: dlc
-                        .cets
-                        .into_iter()
-                        .map(|(tx, _, range)| (tx.txid(), script_pubkey.clone(), range))
-                        .collect(),
-                    refund: (
-                        dlc.refund.0.txid(),
-                        script_pubkey,
-                        cfd.refund_timelock_in_blocks(),
-                    ),
-                },
+                params: MonitorParams::from_dlc_and_timelocks(dlc, cfd.refund_timelock_in_blocks()),
             })
             .await?;
 
