@@ -13,9 +13,6 @@ use crate::{maker_inc_connections, monitor, setup_contract_actor};
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::{Amount, PublicKey};
-use cfd_protocol::secp256k1_zkp::SECP256K1;
-use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash};
 use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
 use xtra::prelude::*;
@@ -421,27 +418,10 @@ impl Actor {
 
         insert_new_cfd_state_by_order_id(order_id, new_state.clone(), &mut conn).await?;
 
-        // TODO: Consider sending a message to ourselves to trigger broadcasting refund?
-        if let CfdState::MustRefund { dlc, .. } = new_state {
-            let sig_hash = spending_tx_sighash(
-                &dlc.refund.0,
-                &dlc.commit.2,
-                Amount::from_sat(dlc.commit.0.output[0].value),
-            );
-            let our_sig = SECP256K1.sign(&sig_hash, &dlc.identity);
-            let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
-                SECP256K1,
-                &dlc.identity,
-            ));
-            let counterparty_sig = dlc.refund.1;
-            let counterparty_pubkey = dlc.identity_counterparty;
-            let signed_refund_tx = finalize_spend_transaction(
-                dlc.refund.0,
-                &dlc.commit.2,
-                (our_pubkey, our_sig),
-                (counterparty_pubkey, counterparty_sig),
-            )?;
-
+        // TODO: Not sure that should be done here...
+        //  Consider sending a message to ourselves to trigger broadcasting refund?
+        if let CfdState::MustRefund { .. } = new_state {
+            let signed_refund_tx = cfd.refund_tx()?;
             let txid = self
                 .wallet
                 .try_broadcast_transaction(signed_refund_tx)

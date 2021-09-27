@@ -4,7 +4,8 @@ use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, Transaction};
 use bdk::descriptor::Descriptor;
-use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
+use cfd_protocol::secp256k1_zkp::{EcdsaAdaptorSignature, SECP256K1};
+use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
@@ -542,6 +543,35 @@ impl Cfd {
         };
 
         Ok(new_state)
+    }
+
+    pub fn refund_tx(&self) -> Result<Transaction> {
+        let dlc = if let CfdState::MustRefund { dlc, .. } = self.state.clone() {
+            dlc
+        } else {
+            bail!("Refund transaction can only be constructed when in state MustRefund, but we are currently in {}", self.state.clone())
+        };
+
+        let sig_hash = spending_tx_sighash(
+            &dlc.refund.0,
+            &dlc.commit.2,
+            Amount::from_sat(dlc.commit.0.output[0].value),
+        );
+        let our_sig = SECP256K1.sign(&sig_hash, &dlc.identity);
+        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
+            SECP256K1,
+            &dlc.identity,
+        ));
+        let counterparty_sig = dlc.refund.1;
+        let counterparty_pubkey = dlc.identity_counterparty;
+        let signed_refund_tx = finalize_spend_transaction(
+            dlc.refund.0,
+            &dlc.commit.2,
+            (our_pubkey, our_sig),
+            (counterparty_pubkey, counterparty_sig),
+        )?;
+
+        Ok(signed_refund_tx)
     }
 }
 
