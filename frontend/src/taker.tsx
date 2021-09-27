@@ -3,9 +3,9 @@ import React from "react";
 import ReactDOM from "react-dom";
 import { BrowserRouter } from "react-router-dom";
 import { EventSourceProvider } from "react-sse-hooks";
-import "./src/index.css";
-import App from "./src/Taker";
-import theme from "./src/theme";
+import "./index.css";
+import App from "./TakerApp";
+import theme from "./theme";
 
 ReactDOM.render(
     <React.StrictMode>

@@ -29,6 +29,9 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   build_frontend:
+    strategy:
+      matrix:
+        app: [ maker, taker ]
     defaults:
       run:
         working-directory: frontend
@@ -41,8 +44,8 @@ jobs:
           cache-dependency-path: frontend/yarn.lock
       - run: yarn install
       - run: yarn run eslint
-      - run: APP=maker yarn build
-      - run: APP=taker yarn build
+      - run: APP=${{ matrix.app }} yarn test
+      - run: APP=${{ matrix.app }} yarn build
 
   test_daemons:
     strategy:
