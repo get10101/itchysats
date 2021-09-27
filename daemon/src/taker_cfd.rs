@@ -1,10 +1,11 @@
+use crate::actors::log_error;
 use crate::db::{
     insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
     load_cfd_by_order_id, load_order_by_id,
 };
-
-use crate::actors::log_error;
-use crate::model::cfd::{Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId};
+use crate::model::cfd::{
+    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
+};
 use crate::model::Usd;
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
@@ -16,17 +17,16 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
 use xtra::prelude::*;
+use xtra::KeepRunning;
 
 pub struct TakeOffer {
     pub order_id: OrderId,
     pub quantity: Usd,
 }
 
-pub struct NewOrder(pub Option<Order>);
-
-pub struct OrderAccepted(pub OrderId);
-pub struct OrderRejected(pub OrderId);
-pub struct IncProtocolMsg(pub SetupMsg);
+pub struct MakerStreamMessage {
+    pub item: Result<wire::MakerToTaker>,
+}
 
 pub struct CfdSetupCompleted {
     pub order_id: OrderId,
@@ -103,7 +103,9 @@ impl Actor {
 
     async fn handle_new_order(&mut self, order: Option<Order>) -> Result<()> {
         match order {
-            Some(order) => {
+            Some(mut order) => {
+                order.origin = Origin::Theirs;
+
                 let mut conn = self.db.acquire().await?;
                 insert_order(&order, &mut conn).await?;
                 self.order_feed_actor_inbox.send(Some(order))?;
@@ -209,6 +211,7 @@ impl Actor {
             Some(inbox) => inbox,
         };
         inbox.send(msg)?;
+
         Ok(())
     }
 
@@ -305,30 +308,37 @@ impl Handler<TakeOffer> for Actor {
 }
 
 #[async_trait]
-impl Handler<NewOrder> for Actor {
-    async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_new_order(msg.0));
-    }
-}
+impl Handler<MakerStreamMessage> for Actor {
+    async fn handle(
+        &mut self,
+        message: MakerStreamMessage,
+        ctx: &mut Context<Self>,
+    ) -> KeepRunning {
+        let msg = match message.item {
+            Ok(msg) => msg,
+            Err(e) => {
+                tracing::warn!("Error while receiving message from maker: {:#}", e);
+                return KeepRunning::Yes;
+            }
+        };
 
-#[async_trait]
-impl Handler<OrderAccepted> for Actor {
-    async fn handle(&mut self, msg: OrderAccepted, ctx: &mut Context<Self>) {
-        log_error!(self.handle_order_accepted(msg.0, ctx));
-    }
-}
+        match msg {
+            wire::MakerToTaker::CurrentOrder(current_order) => {
+                log_error!(self.handle_new_order(current_order))
+            }
+            wire::MakerToTaker::ConfirmOrder(order_id) => {
+                log_error!(self.handle_order_accepted(order_id, ctx))
+            }
+            wire::MakerToTaker::RejectOrder(order_id) => {
+                log_error!(self.handle_order_rejected(order_id))
+            }
+            wire::MakerToTaker::InvalidOrderId(_) => todo!(),
+            wire::MakerToTaker::Protocol(setup_msg) => {
+                log_error!(self.handle_inc_protocol_msg(setup_msg))
+            }
+        }
 
-#[async_trait]
-impl Handler<OrderRejected> for Actor {
-    async fn handle(&mut self, msg: OrderRejected, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_order_rejected(msg.0));
-    }
-}
-
-#[async_trait]
-impl Handler<IncProtocolMsg> for Actor {
-    async fn handle(&mut self, msg: IncProtocolMsg, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_inc_protocol_msg(msg.0));
+        KeepRunning::Yes
     }
 }
 
@@ -350,20 +360,9 @@ impl Message for TakeOffer {
     type Result = ();
 }
 
-impl Message for NewOrder {
-    type Result = ();
-}
-
-impl Message for OrderAccepted {
-    type Result = ();
-}
-
-impl Message for OrderRejected {
-    type Result = ();
-}
-
-impl Message for IncProtocolMsg {
-    type Result = ();
+// this signature is a bit different because we use `Address::attach_stream`
+impl Message for MakerStreamMessage {
+    type Result = KeepRunning;
 }
 
 impl Message for CfdSetupCompleted {
