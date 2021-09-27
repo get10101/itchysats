@@ -1,4 +1,5 @@
 use crate::auth::Authenticated;
+use crate::bitmex_price_feed;
 use crate::maker_cfd;
 use crate::model::cfd::{Cfd, Order, OrderId, Origin};
 use crate::model::{Usd, WalletInfo};
@@ -23,11 +24,13 @@ pub async fn maker_feed(
     rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
     rx_order: &State<watch::Receiver<Option<Order>>>,
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
+    rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
     _auth: Authenticated,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
     let mut rx_order = rx_order.inner().clone();
     let mut rx_wallet = rx_wallet.inner().clone();
+    let mut rx_quote = rx_quote.inner().clone();
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -38,6 +41,9 @@ pub async fn maker_feed(
 
         let cfds = rx_cfds.borrow().clone();
         yield cfds.to_sse_event();
+        let quote = rx_quote.borrow().clone();
+        yield quote.to_sse_event();
+
 
         loop{
             select! {
@@ -52,6 +58,9 @@ pub async fn maker_feed(
                 Ok(()) = rx_cfds.changed() => {
                     let cfds = rx_cfds.borrow().clone();
                     yield cfds.to_sse_event();
+                Ok(()) = rx_quote.changed() => {
+                    let quote = rx_quote.borrow().clone();
+                    yield quote.to_sse_event();
                 }
             }
         }

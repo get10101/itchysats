@@ -1,3 +1,4 @@
+use crate::bitmex_price_feed;
 use crate::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId};
 use crate::model::{Leverage, Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
@@ -22,10 +23,12 @@ pub async fn feed(
     rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
     rx_order: &State<watch::Receiver<Option<Order>>>,
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
+    rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
     let mut rx_order = rx_order.inner().clone();
     let mut rx_wallet = rx_wallet.inner().clone();
+    let mut rx_quote = rx_quote.inner().clone();
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -36,6 +39,9 @@ pub async fn feed(
 
         let cfds = rx_cfds.borrow().clone();
         yield cfds.to_sse_event();
+        let quote = rx_quote.borrow().clone();
+        yield quote.to_sse_event();
+
 
         loop{
             select! {
@@ -50,6 +56,9 @@ pub async fn feed(
                 Ok(()) = rx_cfds.changed() => {
                     let cfds = rx_cfds.borrow().clone();
                     yield cfds.to_sse_event();
+                Ok(()) = rx_quote.changed() => {
+                    let quote = rx_quote.borrow().clone();
+                    yield quote.to_sse_event();
                 }
             }
         }

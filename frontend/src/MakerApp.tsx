@@ -19,9 +19,10 @@ import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import { CfdTableMaker } from "./components/cfdtables/CfdTableMaker";
 import CurrencyInputField from "./components/CurrencyInputField";
+import CurrentPrice from "./components/CurrentPrice";
 import useLatestEvent from "./components/Hooks";
 import OrderTile from "./components/OrderTile";
-import { Cfd, Order, WalletInfo } from "./components/Types";
+import { Cfd, Order, PriceInfo, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 
@@ -35,6 +36,7 @@ export default function App() {
     console.log(cfds);
 
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
+    const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 
     const toast = useToast();
     let [minQuantity, setMinQuantity] = useState<string>("100");
@@ -80,11 +82,8 @@ export default function App() {
             <HStack spacing={5}>
                 <VStack>
                     <Wallet walletInfo={walletInfo} />
+                    <CurrentPrice priceInfo={priceInfo} />
                     <VStack spacing={5} shadow={"md"} padding={5} width="100%" align={"stretch"}>
-                        <HStack>
-                            <Text width={labelWidth} align={"left"}>Current Price:</Text>
-                            <Text>{49000}</Text>
-                        </HStack>
                         <HStack>
                             <Text width={labelWidth}>Min Quantity:</Text>
                             <CurrencyInputField

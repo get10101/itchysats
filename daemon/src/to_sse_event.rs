@@ -1,10 +1,10 @@
-use crate::model;
 use crate::model::cfd::OrderId;
 use crate::model::{Leverage, Position, TradingPair, Usd};
+use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::Amount;
 use rocket::response::stream::Event;
 use serde::Serialize;
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Cfd {
@@ -127,13 +127,34 @@ impl ToSseEvent for model::WalletInfo {
         let wallet_info = WalletInfo {
             balance: self.balance,
             address: self.address.to_string(),
-            last_updated_at: self
-                .last_updated_at
-                .duration_since(UNIX_EPOCH)
-                .expect("timestamp to be convertible to duration since epoch")
-                .as_secs(),
+            last_updated_at: into_unix_secs(self.last_updated_at),
         };
 
         Event::json(&wallet_info).event("wallet")
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Quote {
+    bid: Usd,
+    ask: Usd,
+    last_updated_at: u64,
+}
+
+impl ToSseEvent for bitmex_price_feed::Quote {
+    fn to_sse_event(&self) -> Event {
+        let quote = Quote {
+            bid: self.bid,
+            ask: self.ask,
+            last_updated_at: into_unix_secs(self.timestamp),
+        };
+        Event::json(&quote).event("quote")
+    }
+}
+
+/// Convert to the format expected by the frontend
+fn into_unix_secs(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .expect("timestamp to be convertible to duration since epoch")
+        .as_secs()
 }

@@ -118,26 +118,15 @@ async fn main() -> Result<()> {
 
     tracing::info!("Listening on {}", local_addr);
 
-    let (task, mut quote_updates) = bitmex_price_feed::new().await?;
+    let (task, quote_updates) = bitmex_price_feed::new().await?;
     tokio::spawn(task);
-
-    // dummy usage of quote receiver
-    tokio::spawn(async move {
-        loop {
-            let bitmex_price_feed::Quote { bid, ask, .. } = *quote_updates.borrow();
-            tracing::info!(%bid, %ask, "BitMex quote updated");
-
-            if quote_updates.changed().await.is_err() {
-                return;
-            }
-        }
-    });
 
     rocket::custom(figment)
         .manage(cfd_feed_receiver)
         .manage(order_feed_receiver)
         .manage(wallet_feed_receiver)
         .manage(auth_password)
+        .manage(quote_updates)
         .attach(Db::init())
         .attach(AdHoc::try_on_ignite(
             "SQL migrations",
