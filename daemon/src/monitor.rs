@@ -23,7 +23,7 @@ pub struct MonitorParams {
 
 impl<T> Actor<T>
 where
-    T: xtra::Actor + xtra::Handler<CfdMonitoringEvent>,
+    T: xtra::Actor + xtra::Handler<Event>,
 {
     pub fn new(
         electrum_rpc_url: &str,
@@ -54,7 +54,7 @@ where
                 lock_subscription.wait_until_final().await.unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(CfdMonitoringEvent::LockFinality(id))
+                    .do_send_async(Event::LockFinality(id))
                     .await
                     .unwrap();
             }
@@ -72,7 +72,7 @@ where
                 commit_subscription.wait_until_final().await.unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(CfdMonitoringEvent::CommitFinality(id))
+                    .do_send_async(Event::CommitFinality(id))
                     .await
                     .unwrap();
             }
@@ -88,7 +88,7 @@ where
                     .unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(CfdMonitoringEvent::CetTimelockExpired(id))
+                    .do_send_async(Event::CetTimelockExpired(id))
                     .await
                     .unwrap();
             }
@@ -105,7 +105,7 @@ where
                     .unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(CfdMonitoringEvent::RefundTimelockExpired(id))
+                    .do_send_async(Event::RefundTimelockExpired(id))
                     .await
                     .unwrap();
             }
@@ -121,7 +121,7 @@ where
                 refund_subscription.wait_until_final().await.unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(CfdMonitoringEvent::RefundFinality(id))
+                    .do_send_async(Event::RefundFinality(id))
                     .await
                     .unwrap();
             }
@@ -143,7 +143,7 @@ impl xtra::Message for StartMonitoring {
 }
 
 #[derive(Debug, Clone)]
-pub enum CfdMonitoringEvent {
+pub enum Event {
     LockFinality(OrderId),
     CommitFinality(OrderId),
     CetTimelockExpired(OrderId),
@@ -151,21 +151,21 @@ pub enum CfdMonitoringEvent {
     RefundFinality(OrderId),
 }
 
-impl CfdMonitoringEvent {
+impl Event {
     pub fn order_id(&self) -> OrderId {
         let order_id = match self {
-            CfdMonitoringEvent::LockFinality(order_id) => order_id,
-            CfdMonitoringEvent::CommitFinality(order_id) => order_id,
-            CfdMonitoringEvent::CetTimelockExpired(order_id) => order_id,
-            CfdMonitoringEvent::RefundTimelockExpired(order_id) => order_id,
-            CfdMonitoringEvent::RefundFinality(order_id) => order_id,
+            Event::LockFinality(order_id) => order_id,
+            Event::CommitFinality(order_id) => order_id,
+            Event::CetTimelockExpired(order_id) => order_id,
+            Event::RefundTimelockExpired(order_id) => order_id,
+            Event::RefundFinality(order_id) => order_id,
         };
 
         *order_id
     }
 }
 
-impl xtra::Message for CfdMonitoringEvent {
+impl xtra::Message for Event {
     type Result = ();
 }
 
@@ -184,7 +184,7 @@ impl<T> xtra::Actor for Actor<T> where T: xtra::Actor {}
 #[async_trait]
 impl<T> xtra::Handler<StartMonitoring> for Actor<T>
 where
-    T: xtra::Actor + xtra::Handler<CfdMonitoringEvent>,
+    T: xtra::Actor + xtra::Handler<Event>,
 {
     async fn handle(&mut self, msg: StartMonitoring, _ctx: &mut xtra::Context<Self>) {
         log_error!(self.handle_start_monitoring(msg));

@@ -6,7 +6,7 @@ use crate::db::{
 use crate::actors::log_error;
 use crate::model::cfd::{Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId};
 use crate::model::Usd;
-use crate::monitor::{CfdMonitoringEvent, MonitorParams};
+use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
 use crate::{monitor, send_to_socket, setup_contract_actor, wire};
@@ -270,18 +270,19 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_monitoring_event(&mut self, event: CfdMonitoringEvent) -> Result<()> {
+    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
         let order_id = event.order_id();
 
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        let new_state = cfd.transition_to(CfdStateChangeEvent::Monitor(event))?;
+        let new_state = cfd.handle(CfdStateChangeEvent::Monitor(event))?;
 
         insert_new_cfd_state_by_order_id(order_id, new_state.clone(), &mut conn).await?;
 
         // TODO: Not sure that should be done here...
-        //  Consider sending a message to ourselves to trigger broadcasting refund?
+        //  Consider bubbling the refund availability up to the user, and let user trigger
+        //  transaction publication
         if let CfdState::MustRefund { .. } = new_state {
             let signed_refund_tx = cfd.refund_tx()?;
             let txid = self
@@ -339,8 +340,8 @@ impl Handler<CfdSetupCompleted> for Actor {
 }
 
 #[async_trait]
-impl Handler<CfdMonitoringEvent> for Actor {
-    async fn handle(&mut self, msg: CfdMonitoringEvent, _ctx: &mut Context<Self>) {
+impl Handler<monitor::Event> for Actor {
+    async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) {
         log_error!(self.handle_monitoring_event(msg))
     }
 }

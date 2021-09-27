@@ -1,5 +1,5 @@
 use crate::model::{Leverage, Position, TakerId, TradingPair, Usd};
-use crate::monitor::CfdMonitoringEvent;
+use crate::monitor;
 use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, Transaction};
@@ -366,7 +366,7 @@ impl Cfd {
     #[allow(dead_code)]
     pub const CET_TIMELOCK: u32 = 12;
 
-    pub fn transition_to(&self, event: CfdStateChangeEvent) -> Result<CfdState> {
+    pub fn handle(&self, event: CfdStateChangeEvent) -> Result<CfdState> {
         use CfdState::*;
 
         // TODO: Display impl
@@ -376,7 +376,7 @@ impl Cfd {
 
         let new_state = match event {
             CfdStateChangeEvent::Monitor(event) => match event {
-                CfdMonitoringEvent::LockFinality(_) => match self.state.clone() {
+                monitor::Event::LockFinality(_) => match self.state.clone() {
                     PendingOpen { dlc, .. } => CfdState::Open {
                         common: CfdStateCommon {
                             transition_timestamp: SystemTime::now(),
@@ -392,7 +392,7 @@ impl Cfd {
                         bail!("State already assumes lock finality: ignoring")
                     }
                 },
-                CfdMonitoringEvent::CommitFinality(_) => {
+                monitor::Event::CommitFinality(_) => {
                     let dlc = match self.state.clone() {
                         Open { dlc, .. } => dlc,
                         PendingOpen { dlc, .. } => {
@@ -419,7 +419,7 @@ impl Cfd {
                         cet_status: CetStatus::Unprepared,
                     }
                 }
-                CfdMonitoringEvent::CetTimelockExpired(_) => match self.state.clone() {
+                monitor::Event::CetTimelockExpired(_) => match self.state.clone() {
                     CfdState::OpenCommitted {
                         dlc,
                         cet_status: CetStatus::Unprepared,
@@ -481,7 +481,7 @@ impl Cfd {
                         bail!("Refund path does not care about CET timelock expiry: ignoring")
                     }
                 },
-                CfdMonitoringEvent::RefundTimelockExpired(_) => {
+                monitor::Event::RefundTimelockExpired(_) => {
                     let dlc = match self.state.clone() {
                         OpenCommitted { dlc, .. } => dlc,
                         MustRefund { .. } | Refunded { .. } => {
@@ -511,7 +511,7 @@ impl Cfd {
                         dlc,
                     }
                 }
-                CfdMonitoringEvent::RefundFinality(_) => {
+                monitor::Event::RefundFinality(_) => {
                     match self.state {
                         MustRefund { .. } => (),
                         OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
@@ -579,7 +579,7 @@ impl Cfd {
 pub enum CfdStateChangeEvent {
     // TODO: groupd other events by actors into enums and add them here so we can bundle all
     // transitions into cfd.transition_to(...)
-    Monitor(CfdMonitoringEvent),
+    Monitor(monitor::Event),
 }
 
 fn calculate_profit(
