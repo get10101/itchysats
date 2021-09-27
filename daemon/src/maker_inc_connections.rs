@@ -10,10 +10,6 @@ use xtra::prelude::*;
 
 pub struct BroadcastOrder(pub Option<Order>);
 
-impl Message for BroadcastOrder {
-    type Result = ();
-}
-
 #[allow(clippy::large_enum_variant)]
 pub enum TakerCommand {
     SendOrder { order: Option<Order> },
@@ -28,25 +24,15 @@ pub struct TakerMessage {
     pub command: TakerCommand,
 }
 
-impl Message for TakerMessage {
-    type Result = ();
-}
-
 pub struct NewTakerOnline {
     pub taker_id: TakerId,
     pub out_msg_actor: Address<send_to_socket::Actor<wire::MakerToTaker>>,
-}
-
-impl Message for NewTakerOnline {
-    type Result = ();
 }
 
 pub struct Actor {
     write_connections: HashMap<TakerId, Address<send_to_socket::Actor<wire::MakerToTaker>>>,
     cfd_actor: Address<maker_cfd::Actor>,
 }
-
-impl xtra::Actor for Actor {}
 
 impl Actor {
     pub fn new(cfd_actor: Address<maker_cfd::Actor>) -> Self {
@@ -144,3 +130,17 @@ impl Handler<NewTakerOnline> for Actor {
         log_error!(self.handle_new_taker_online(msg));
     }
 }
+
+impl Message for BroadcastOrder {
+    type Result = ();
+}
+
+impl Message for TakerMessage {
+    type Result = ();
+}
+
+impl Message for NewTakerOnline {
+    type Result = ();
+}
+
+impl xtra::Actor for Actor {}
