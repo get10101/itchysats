@@ -52,14 +52,21 @@ pub trait ToSseEvent {
     fn to_sse_event(&self) -> Event;
 }
 
-impl ToSseEvent for Vec<model::cfd::Cfd> {
+/// Intermediate struct to able to piggy-back current price along with cfds
+pub struct CfdsWithCurrentPrice {
+    pub cfds: Vec<model::cfd::Cfd>,
+    pub current_price: Usd,
+}
+
+impl ToSseEvent for CfdsWithCurrentPrice {
     // TODO: This conversion can fail, we might want to change the API
     fn to_sse_event(&self) -> Event {
+        let current_price = self.current_price;
+
         let cfds = self
+            .cfds
             .iter()
             .map(|cfd| {
-                // TODO: Get the actual current price here
-                let current_price = Usd::ZERO;
                 let (profit_btc, profit_usd) = cfd.profit(current_price).unwrap();
 
                 Cfd {
