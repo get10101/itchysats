@@ -4,11 +4,12 @@ use crate::db::{
 };
 
 use crate::actors::log_error;
-use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Dlc, Order, OrderId};
+use crate::model::cfd::{Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId};
 use crate::model::Usd;
+use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
-use crate::{send_to_socket, setup_contract_actor, wire};
+use crate::{monitor, send_to_socket, setup_contract_actor, wire};
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -43,6 +44,7 @@ pub struct Actor {
     // TODO: Move the contract setup into a dedicated actor and send messages to that actor that
     // manages the state instead of this ugly buffer
     contract_setup_message_buffer: Vec<SetupMsg>,
+    monitor_actor: Address<monitor::Actor<Actor>>,
 }
 
 impl Actor {
@@ -53,6 +55,7 @@ impl Actor {
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
         send_to_maker: Address<send_to_socket::Actor>,
+        monitor_actor: Address<monitor::Actor<Actor>>,
     ) -> Result<Self> {
         let mut conn = db.acquire().await?;
         cfd_feed_actor_inbox.send(load_all_cfds(&mut conn).await?)?;
@@ -66,6 +69,7 @@ impl Actor {
             send_to_maker,
             current_contract_setup: None,
             contract_setup_message_buffer: vec![],
+            monitor_actor,
         })
     }
 
@@ -231,12 +235,63 @@ impl Actor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        let txid = self.wallet.try_broadcast_transaction(dlc.lock.0).await?;
+        let txid = self
+            .wallet
+            .try_broadcast_transaction(dlc.lock.0.clone())
+            .await?;
 
         tracing::info!("Lock transaction published with txid {}", txid);
 
-        // TODO: tx monitoring, once confirmed with x blocks transition the Cfd to
-        // Open
+        // TODO: It's a bit suspicious to load this just to get the
+        // refund timelock
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+
+        let script_pubkey = dlc.address.script_pubkey();
+        self.monitor_actor
+            .do_send_async(monitor::StartMonitoring {
+                id: order_id,
+                params: MonitorParams {
+                    lock: (dlc.lock.0.txid(), dlc.lock.1),
+                    commit: (dlc.commit.0.txid(), dlc.commit.2),
+                    cets: dlc
+                        .cets
+                        .into_iter()
+                        .map(|(tx, _, range)| (tx.txid(), script_pubkey.clone(), range))
+                        .collect(),
+                    refund: (
+                        dlc.refund.0.txid(),
+                        script_pubkey,
+                        cfd.refund_timelock_in_blocks(),
+                    ),
+                },
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
+        let order_id = event.order_id();
+
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+
+        let new_state = cfd.handle(CfdStateChangeEvent::Monitor(event))?;
+
+        insert_new_cfd_state_by_order_id(order_id, new_state.clone(), &mut conn).await?;
+
+        // TODO: Not sure that should be done here...
+        //  Consider bubbling the refund availability up to the user, and let user trigger
+        //  transaction publication
+        if let CfdState::MustRefund { .. } = new_state {
+            let signed_refund_tx = cfd.refund_tx()?;
+            let txid = self
+                .wallet
+                .try_broadcast_transaction(signed_refund_tx)
+                .await?;
+
+            tracing::info!("Refund transaction published on chain: {}", txid);
+        }
 
         Ok(())
     }
@@ -281,6 +336,13 @@ impl Handler<IncProtocolMsg> for Actor {
 impl Handler<CfdSetupCompleted> for Actor {
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_setup_completed(msg.order_id, msg.dlc));
+    }
+}
+
+#[async_trait]
+impl Handler<monitor::Event> for Actor {
+    async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_monitoring_event(msg))
     }
 }
 

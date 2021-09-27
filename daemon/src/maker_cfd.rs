@@ -4,21 +4,15 @@ use crate::db::{
     load_cfd_by_order_id, load_order_by_id,
 };
 use crate::maker_inc_connections::TakerCommand;
-use crate::model::cfd::{CetStatus, Cfd, CfdState, CfdStateCommon, Dlc, Order, OrderId};
+use crate::model::cfd::{Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId};
 use crate::model::{TakerId, Usd};
-use crate::monitor::{
-    CetTimelockExpired, CommitFinality, LockFinality, MonitorParams, RefundFinality,
-    RefundTimelockExpired,
-};
+use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
 use crate::{maker_inc_connections, monitor, setup_contract_actor};
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::{Amount, PublicKey};
-use cfd_protocol::secp256k1_zkp::SECP256K1;
-use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash};
 use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
 use xtra::prelude::*;
@@ -414,276 +408,28 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_lock_finality(&mut self, msg: LockFinality) -> Result<()> {
-        let order_id = msg.0;
-        tracing::debug!(%order_id, "Lock transaction has reached finality");
+    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
+        let order_id = event.order_id();
 
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        use CfdState::*;
-        let dlc = match cfd.state {
-            PendingOpen { dlc, .. } => dlc,
-            OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-            IncomingOrderRequest { .. }
-            | Accepted { .. }
-            | Rejected { .. }
-            | ContractSetup { .. } => bail!("Did not expect lock finality yet: ignoring"),
-            Open { .. } | OpenCommitted { .. } | MustRefund { .. } | Refunded { .. } => {
-                bail!("State already assumes lock finality: ignoring")
-            }
-        };
+        let new_state = cfd.handle(CfdStateChangeEvent::Monitor(event))?;
 
-        insert_new_cfd_state_by_order_id(
-            msg.0,
-            CfdState::Open {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-                dlc,
-            },
-            &mut conn,
-        )
-        .await?;
+        insert_new_cfd_state_by_order_id(order_id, new_state.clone(), &mut conn).await?;
 
-        Ok(())
-    }
-
-    async fn handle_commit_finality(&mut self, msg: CommitFinality) -> Result<()> {
-        let order_id = msg.0;
-        tracing::debug!(%order_id, "Commit transaction has reached finality");
-
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-
-        use CfdState::*;
-        let dlc = match cfd.state {
-            Open { dlc, .. } => dlc,
-            PendingOpen { dlc, .. } => {
-                tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
-                dlc
-            }
-            OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-            IncomingOrderRequest { .. }
-            | Accepted { .. }
-            | Rejected { .. }
-            | ContractSetup { .. } => bail!("Did not expect commit finality yet: ignoring"),
-            OpenCommitted { .. } | MustRefund { .. } | Refunded { .. } => {
-                bail!("State already assumes commit finality: ignoring")
-            }
-        };
-
-        insert_new_cfd_state_by_order_id(
-            msg.0,
-            CfdState::OpenCommitted {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-                dlc,
-                cet_status: CetStatus::Unprepared,
-            },
-            &mut conn,
-        )
-        .await?;
-
-        Ok(())
-    }
-
-    async fn handle_cet_timelock_expired(&mut self, msg: CetTimelockExpired) -> Result<()> {
-        let order_id = msg.0;
-        tracing::debug!(%order_id, "CET timelock has expired");
-
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-
-        use CfdState::*;
-        let new_state = match cfd.state {
-            CfdState::OpenCommitted {
-                dlc,
-                cet_status: CetStatus::Unprepared,
-                ..
-            } => CfdState::OpenCommitted {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-                dlc,
-                cet_status: CetStatus::TimelockExpired,
-            },
-            CfdState::OpenCommitted {
-                dlc,
-                cet_status: CetStatus::OracleSigned(price),
-                ..
-            } => CfdState::OpenCommitted {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-                dlc,
-                cet_status: CetStatus::Ready(price),
-            },
-            PendingOpen { dlc, .. } => {
-                tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
-                CfdState::OpenCommitted {
-                    common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
-                    },
-                    dlc,
-                    cet_status: CetStatus::TimelockExpired,
-                }
-            }
-            Open { dlc, .. } => {
-                tracing::debug!(%order_id, "Was not aware of commit TX broadcast, jumping ahead");
-                CfdState::OpenCommitted {
-                    common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
-                    },
-                    dlc,
-                    cet_status: CetStatus::TimelockExpired,
-                }
-            }
-            OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-            IncomingOrderRequest { .. }
-            | Accepted { .. }
-            | Rejected { .. }
-            | ContractSetup { .. } => bail!("Did not expect CET timelock expiry yet: ignoring"),
-            OpenCommitted {
-                cet_status: CetStatus::TimelockExpired,
-                ..
-            }
-            | OpenCommitted {
-                cet_status: CetStatus::Ready(_),
-                ..
-            } => bail!("State already assumes CET timelock expiry: ignoring"),
-            MustRefund { .. } | Refunded { .. } => {
-                bail!("Refund path does not care about CET timelock expiry: ignoring")
-            }
-        };
-
-        insert_new_cfd_state_by_order_id(msg.0, new_state, &mut conn).await?;
-
-        Ok(())
-    }
-
-    async fn handle_refund_timelock_expired(&mut self, msg: RefundTimelockExpired) -> Result<()> {
-        let order_id = msg.0;
-        tracing::debug!(%order_id, "Refund timelock has expired");
-
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-
-        use CfdState::*;
-        let dlc = match cfd.state {
-            OpenCommitted { dlc, .. } => {
-                insert_new_cfd_state_by_order_id(
-                    msg.0,
-                    MustRefund {
-                        common: CfdStateCommon {
-                            transition_timestamp: SystemTime::now(),
-                        },
-                        dlc: dlc.clone(),
-                    },
-                    &mut conn,
-                )
+        // TODO: Not sure that should be done here...
+        //  Consider bubbling the refund availability up to the user, and let user trigger
+        //  transaction publication
+        if let CfdState::MustRefund { .. } = new_state {
+            let signed_refund_tx = cfd.refund_tx()?;
+            let txid = self
+                .wallet
+                .try_broadcast_transaction(signed_refund_tx)
                 .await?;
 
-                dlc
-            }
-            MustRefund { .. } | Refunded { .. } => {
-                bail!("State already assumes refund timelock expiry: ignoring")
-            }
-            OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-            IncomingOrderRequest { .. }
-            | Accepted { .. }
-            | Rejected { .. }
-            | ContractSetup { .. } => bail!("Did not expect refund timelock expiry yet: ignoring"),
-            PendingOpen { dlc, .. } => {
-                tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
-                dlc
-            }
-            Open { dlc, .. } => {
-                tracing::debug!(%order_id, "Was waiting on CET timelock expiry, jumping ahead");
-                dlc
-            }
-        };
-
-        insert_new_cfd_state_by_order_id(
-            msg.0,
-            MustRefund {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-                dlc: dlc.clone(),
-            },
-            &mut conn,
-        )
-        .await?;
-
-        let sig_hash = spending_tx_sighash(
-            &dlc.refund.0,
-            &dlc.commit.2,
-            Amount::from_sat(dlc.commit.0.output[0].value),
-        );
-        let our_sig = SECP256K1.sign(&sig_hash, &dlc.identity);
-        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
-            SECP256K1,
-            &dlc.identity,
-        ));
-        let counterparty_sig = dlc.refund.1;
-        let counterparty_pubkey = dlc.identity_counterparty;
-        let signed_refund_tx = finalize_spend_transaction(
-            dlc.refund.0,
-            &dlc.commit.2,
-            (our_pubkey, our_sig),
-            (counterparty_pubkey, counterparty_sig),
-        )?;
-
-        let txid = self
-            .wallet
-            .try_broadcast_transaction(signed_refund_tx)
-            .await?;
-
-        tracing::info!("Refund transaction published on chain: {}", txid);
-
-        Ok(())
-    }
-
-    async fn handle_refund_finality(&mut self, msg: RefundFinality) -> Result<()> {
-        let order_id = msg.0;
-        tracing::debug!(%order_id, "Refund transaction has reached finality");
-
-        let mut conn = self.db.acquire().await?;
-
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-
-        use CfdState::*;
-        match cfd.state {
-            MustRefund { .. } => (),
-            OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-            IncomingOrderRequest { .. }
-            | Accepted { .. }
-            | Rejected { .. }
-            | ContractSetup { .. } => bail!("Did not expect refund finality yet: ignoring"),
-            PendingOpen { .. } => {
-                tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
-            }
-            Open { .. } => {
-                tracing::debug!(%order_id, "Was waiting on CET timelock expiry, jumping ahead");
-            }
-            OpenCommitted { .. } => {
-                tracing::debug!(%order_id, "Was waiting on refund timelock expiry, jumping ahead");
-            }
-            Refunded { .. } => bail!("State already assumes refund finality: ignoring"),
-        };
-
-        insert_new_cfd_state_by_order_id(
-            msg.0,
-            CfdState::Refunded {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-            &mut conn,
-        )
-        .await?;
+            tracing::info!("Refund transaction published on chain: {}", txid);
+        }
 
         Ok(())
     }
@@ -739,37 +485,9 @@ impl Handler<CfdSetupCompleted> for Actor {
 }
 
 #[async_trait]
-impl Handler<LockFinality> for Actor {
-    async fn handle(&mut self, msg: LockFinality, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_lock_finality(msg))
-    }
-}
-
-#[async_trait]
-impl Handler<CommitFinality> for Actor {
-    async fn handle(&mut self, msg: CommitFinality, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_commit_finality(msg))
-    }
-}
-
-#[async_trait]
-impl Handler<CetTimelockExpired> for Actor {
-    async fn handle(&mut self, msg: CetTimelockExpired, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_cet_timelock_expired(msg))
-    }
-}
-
-#[async_trait]
-impl Handler<RefundTimelockExpired> for Actor {
-    async fn handle(&mut self, msg: RefundTimelockExpired, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_refund_timelock_expired(msg))
-    }
-}
-
-#[async_trait]
-impl Handler<RefundFinality> for Actor {
-    async fn handle(&mut self, msg: RefundFinality, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_refund_finality(msg))
+impl Handler<monitor::Event> for Actor {
+    async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_monitoring_event(msg))
     }
 }
 

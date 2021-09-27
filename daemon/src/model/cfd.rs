@@ -1,9 +1,11 @@
 use crate::model::{Leverage, Position, TakerId, TradingPair, Usd};
-use anyhow::Result;
+use crate::monitor;
+use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, Transaction};
 use bdk::descriptor::Descriptor;
-use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
+use cfd_protocol::secp256k1_zkp::{EcdsaAdaptorSignature, SECP256K1};
+use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
@@ -363,6 +365,221 @@ impl Cfd {
 
     #[allow(dead_code)]
     pub const CET_TIMELOCK: u32 = 12;
+
+    pub fn handle(&self, event: CfdStateChangeEvent) -> Result<CfdState> {
+        use CfdState::*;
+
+        // TODO: Display impl
+        tracing::info!("Cfd state change event {:?}", event);
+
+        let order_id = self.order.id;
+
+        let new_state = match event {
+            CfdStateChangeEvent::Monitor(event) => match event {
+                monitor::Event::LockFinality(_) => match self.state.clone() {
+                    PendingOpen { dlc, .. } => CfdState::Open {
+                        common: CfdStateCommon {
+                            transition_timestamp: SystemTime::now(),
+                        },
+                        dlc,
+                    },
+                    OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
+                    IncomingOrderRequest { .. }
+                    | Accepted { .. }
+                    | Rejected { .. }
+                    | ContractSetup { .. } => bail!("Did not expect lock finality yet: ignoring"),
+                    Open { .. } | OpenCommitted { .. } | MustRefund { .. } | Refunded { .. } => {
+                        bail!("State already assumes lock finality: ignoring")
+                    }
+                },
+                monitor::Event::CommitFinality(_) => {
+                    let dlc = match self.state.clone() {
+                        Open { dlc, .. } => dlc,
+                        PendingOpen { dlc, .. } => {
+                            tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
+                            dlc
+                        }
+                        OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
+                        IncomingOrderRequest { .. }
+                        | Accepted { .. }
+                        | Rejected { .. }
+                        | ContractSetup { .. } => {
+                            bail!("Did not expect commit finality yet: ignoring")
+                        }
+                        OpenCommitted { .. } | MustRefund { .. } | Refunded { .. } => {
+                            bail!("State already assumes commit finality: ignoring")
+                        }
+                    };
+
+                    OpenCommitted {
+                        common: CfdStateCommon {
+                            transition_timestamp: SystemTime::now(),
+                        },
+                        dlc,
+                        cet_status: CetStatus::Unprepared,
+                    }
+                }
+                monitor::Event::CetTimelockExpired(_) => match self.state.clone() {
+                    CfdState::OpenCommitted {
+                        dlc,
+                        cet_status: CetStatus::Unprepared,
+                        ..
+                    } => CfdState::OpenCommitted {
+                        common: CfdStateCommon {
+                            transition_timestamp: SystemTime::now(),
+                        },
+                        dlc,
+                        cet_status: CetStatus::TimelockExpired,
+                    },
+                    CfdState::OpenCommitted {
+                        dlc,
+                        cet_status: CetStatus::OracleSigned(price),
+                        ..
+                    } => CfdState::OpenCommitted {
+                        common: CfdStateCommon {
+                            transition_timestamp: SystemTime::now(),
+                        },
+                        dlc,
+                        cet_status: CetStatus::Ready(price),
+                    },
+                    PendingOpen { dlc, .. } => {
+                        tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
+                        CfdState::OpenCommitted {
+                            common: CfdStateCommon {
+                                transition_timestamp: SystemTime::now(),
+                            },
+                            dlc,
+                            cet_status: CetStatus::TimelockExpired,
+                        }
+                    }
+                    Open { dlc, .. } => {
+                        tracing::debug!(%order_id, "Was not aware of commit TX broadcast, jumping ahead");
+                        CfdState::OpenCommitted {
+                            common: CfdStateCommon {
+                                transition_timestamp: SystemTime::now(),
+                            },
+                            dlc,
+                            cet_status: CetStatus::TimelockExpired,
+                        }
+                    }
+                    OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
+                    IncomingOrderRequest { .. }
+                    | Accepted { .. }
+                    | Rejected { .. }
+                    | ContractSetup { .. } => {
+                        bail!("Did not expect CET timelock expiry yet: ignoring")
+                    }
+                    OpenCommitted {
+                        cet_status: CetStatus::TimelockExpired,
+                        ..
+                    }
+                    | OpenCommitted {
+                        cet_status: CetStatus::Ready(_),
+                        ..
+                    } => bail!("State already assumes CET timelock expiry: ignoring"),
+                    MustRefund { .. } | Refunded { .. } => {
+                        bail!("Refund path does not care about CET timelock expiry: ignoring")
+                    }
+                },
+                monitor::Event::RefundTimelockExpired(_) => {
+                    let dlc = match self.state.clone() {
+                        OpenCommitted { dlc, .. } => dlc,
+                        MustRefund { .. } | Refunded { .. } => {
+                            bail!("State already assumes refund timelock expiry: ignoring")
+                        }
+                        OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
+                        IncomingOrderRequest { .. }
+                        | Accepted { .. }
+                        | Rejected { .. }
+                        | ContractSetup { .. } => {
+                            bail!("Did not expect refund timelock expiry yet: ignoring")
+                        }
+                        PendingOpen { dlc, .. } => {
+                            tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
+                            dlc
+                        }
+                        Open { dlc, .. } => {
+                            tracing::debug!(%order_id, "Was waiting on CET timelock expiry, jumping ahead");
+                            dlc
+                        }
+                    };
+
+                    MustRefund {
+                        common: CfdStateCommon {
+                            transition_timestamp: SystemTime::now(),
+                        },
+                        dlc,
+                    }
+                }
+                monitor::Event::RefundFinality(_) => {
+                    match self.state {
+                        MustRefund { .. } => (),
+                        OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
+                        IncomingOrderRequest { .. }
+                        | Accepted { .. }
+                        | Rejected { .. }
+                        | ContractSetup { .. } => {
+                            bail!("Did not expect refund finality yet: ignoring")
+                        }
+                        PendingOpen { .. } => {
+                            tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
+                        }
+                        Open { .. } => {
+                            tracing::debug!(%order_id, "Was waiting on CET timelock expiry, jumping ahead");
+                        }
+                        OpenCommitted { .. } => {
+                            tracing::debug!(%order_id, "Was waiting on refund timelock expiry, jumping ahead");
+                        }
+                        Refunded { .. } => bail!("State already assumes refund finality: ignoring"),
+                    }
+
+                    Refunded {
+                        common: CfdStateCommon {
+                            transition_timestamp: SystemTime::now(),
+                        },
+                    }
+                }
+            },
+        };
+
+        Ok(new_state)
+    }
+
+    pub fn refund_tx(&self) -> Result<Transaction> {
+        let dlc = if let CfdState::MustRefund { dlc, .. } = self.state.clone() {
+            dlc
+        } else {
+            bail!("Refund transaction can only be constructed when in state MustRefund, but we are currently in {}", self.state.clone())
+        };
+
+        let sig_hash = spending_tx_sighash(
+            &dlc.refund.0,
+            &dlc.commit.2,
+            Amount::from_sat(dlc.commit.0.output[0].value),
+        );
+        let our_sig = SECP256K1.sign(&sig_hash, &dlc.identity);
+        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
+            SECP256K1,
+            &dlc.identity,
+        ));
+        let counterparty_sig = dlc.refund.1;
+        let counterparty_pubkey = dlc.identity_counterparty;
+        let signed_refund_tx = finalize_spend_transaction(
+            dlc.refund.0,
+            &dlc.commit.2,
+            (our_pubkey, our_sig),
+            (counterparty_pubkey, counterparty_sig),
+        )?;
+
+        Ok(signed_refund_tx)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum CfdStateChangeEvent {
+    // TODO: groupd other events by actors into enums and add them here so we can bundle all
+    // transitions into cfd.transition_to(...)
+    Monitor(monitor::Event),
 }
 
 fn calculate_profit(
