@@ -61,7 +61,9 @@ impl Actor {
             .write_connections
             .get(&taker_id)
             .context("no connection to taker_id")?;
-        conn.do_send_async(msg).await?;
+
+        // use `.send` here to ensure we only continue once the message has been sent
+        conn.send(msg).await?;
 
         Ok(())
     }

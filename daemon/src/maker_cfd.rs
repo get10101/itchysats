@@ -289,12 +289,14 @@ impl Actor {
         .await
         .unwrap();
 
+        // use `.send` here to ensure we only continue once the message has been sent
         self.takers
-            .do_send_async(maker_inc_connections::TakerMessage {
+            .send(maker_inc_connections::TakerMessage {
                 taker_id,
                 command: TakerCommand::NotifyOrderAccepted { id: msg.order_id },
             })
             .await?;
+
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
