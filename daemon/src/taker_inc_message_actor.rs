@@ -1,17 +1,13 @@
 use crate::model::cfd::Origin;
+use crate::wire::JsonCodec;
 use crate::{taker_cfd, wire};
 use futures::{Future, StreamExt};
 use tokio::net::tcp::OwnedReadHalf;
-use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
+use tokio_util::codec::FramedRead;
 use xtra::prelude::*;
 
 pub fn new(read: OwnedReadHalf, cfd_actor: Address<taker_cfd::Actor>) -> impl Future<Output = ()> {
-    let frame_read = FramedRead::new(read, LengthDelimitedCodec::new());
-
-    let mut messages = frame_read.map(|result| {
-        let message = serde_json::from_slice::<wire::MakerToTaker>(&result?)?;
-        anyhow::Result::<_>::Ok(message)
-    });
+    let mut messages = FramedRead::new(read, JsonCodec::new());
 
     async move {
         while let Some(message) = messages.next().await {

@@ -39,7 +39,7 @@ pub struct Actor {
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_actor_inbox: watch::Sender<Option<Order>>,
-    send_to_maker: Address<send_to_socket::Actor>,
+    send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
     current_contract_setup: Option<mpsc::UnboundedSender<SetupMsg>>,
     // TODO: Move the contract setup into a dedicated actor and send messages to that actor that
     // manages the state instead of this ugly buffer
@@ -54,7 +54,7 @@ impl Actor {
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
-        send_to_maker: Address<send_to_socket::Actor>,
+        send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
         monitor_actor: Address<monitor::Actor<Actor>>,
     ) -> Result<Self> {
         let mut conn = db.acquire().await?;

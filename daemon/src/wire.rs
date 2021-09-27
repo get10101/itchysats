@@ -4,11 +4,15 @@ use crate::Order;
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Amount, PublicKey};
+use bytes::BytesMut;
 use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use cfd_protocol::{CfdTransactions, PartyParams, PunishParams};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::marker::PhantomData;
 use std::ops::RangeInclusive;
+use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
@@ -47,6 +51,54 @@ impl fmt::Display for MakerToTaker {
             MakerToTaker::InvalidOrderId(_) => write!(f, "InvalidOrderId"),
             MakerToTaker::Protocol(_) => write!(f, "Protocol"),
         }
+    }
+}
+
+pub struct JsonCodec<T> {
+    _type: PhantomData<T>,
+    inner: LengthDelimitedCodec,
+}
+
+impl<T> JsonCodec<T> {
+    pub fn new() -> Self {
+        Self {
+            _type: PhantomData,
+            inner: LengthDelimitedCodec::new(),
+        }
+    }
+}
+
+impl<T> Decoder for JsonCodec<T>
+where
+    T: DeserializeOwned,
+{
+    type Item = T;
+    type Error = anyhow::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let bytes = match self.inner.decode(src)? {
+            None => return Ok(None),
+            Some(bytes) => bytes,
+        };
+
+        let item = serde_json::from_slice(&bytes)?;
+
+        Ok(Some(item))
+    }
+}
+
+impl<T> Encoder<T> for JsonCodec<T>
+where
+    T: Serialize,
+{
+    type Error = anyhow::Error;
+
+    fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let bytes = serde_json::to_vec(&item)?;
+
+        self.inner.encode(bytes.into(), dst)?;
+
+        Ok(())
     }
 }
 

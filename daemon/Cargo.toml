@@ -8,6 +8,7 @@ anyhow = "1"
 async-trait = "0.1.51"
 atty = "0.2"
 bdk = { git = "https://github.com/bitcoindevkit/bdk/" }
+bytes = "1"
 cfd_protocol = { path = "../cfd_protocol" }
 clap = "3.0.0-beta.4"
 futures = { version = "0.3", default-features = false }

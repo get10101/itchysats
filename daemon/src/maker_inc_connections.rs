@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use futures::{Future, StreamExt};
 use std::collections::HashMap;
 use tokio::net::tcp::OwnedReadHalf;
-use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
+use tokio_util::codec::FramedRead;
 use xtra::prelude::*;
 
 pub struct BroadcastOrder(pub Option<Order>);
@@ -37,7 +37,7 @@ impl Message for TakerMessage {
 
 pub struct NewTakerOnline {
     pub taker_id: TakerId,
-    pub out_msg_actor: Address<send_to_socket::Actor>,
+    pub out_msg_actor: Address<send_to_socket::Actor<wire::MakerToTaker>>,
 }
 
 impl Message for NewTakerOnline {
@@ -45,7 +45,7 @@ impl Message for NewTakerOnline {
 }
 
 pub struct Actor {
-    write_connections: HashMap<TakerId, Address<send_to_socket::Actor>>,
+    write_connections: HashMap<TakerId, Address<send_to_socket::Actor<wire::MakerToTaker>>>,
     cfd_actor: Address<maker_cfd::Actor>,
 }
 
@@ -156,10 +156,7 @@ pub fn in_taker_messages(
     cfd_actor_inbox: Address<maker_cfd::Actor>,
     taker_id: TakerId,
 ) -> impl Future<Output = ()> {
-    let mut messages = FramedRead::new(read, LengthDelimitedCodec::new()).map(|result| {
-        let message = serde_json::from_slice::<wire::TakerToMaker>(&result?)?;
-        anyhow::Result::<_>::Ok(message)
-    });
+    let mut messages = FramedRead::new(read, wire::JsonCodec::new());
 
     async move {
         while let Some(message) = messages.next().await {
