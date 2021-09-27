@@ -23,12 +23,7 @@ pub struct MonitorParams {
 
 impl<T> Actor<T>
 where
-    T: xtra::Actor
-        + xtra::Handler<LockFinality>
-        + xtra::Handler<CommitFinality>
-        + xtra::Handler<CetTimelockExpired>
-        + xtra::Handler<RefundTimelockExpired>
-        + xtra::Handler<RefundFinality>,
+    T: xtra::Actor + xtra::Handler<CfdMonitoringEvent>,
 {
     pub fn new(
         electrum_rpc_url: &str,
@@ -59,7 +54,7 @@ where
                 lock_subscription.wait_until_final().await.unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(LockFinality(id))
+                    .do_send_async(CfdMonitoringEvent::LockFinality(id))
                     .await
                     .unwrap();
             }
@@ -77,7 +72,7 @@ where
                 commit_subscription.wait_until_final().await.unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(CommitFinality(id))
+                    .do_send_async(CfdMonitoringEvent::CommitFinality(id))
                     .await
                     .unwrap();
             }
@@ -93,7 +88,7 @@ where
                     .unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(CetTimelockExpired(id))
+                    .do_send_async(CfdMonitoringEvent::CetTimelockExpired(id))
                     .await
                     .unwrap();
             }
@@ -110,7 +105,7 @@ where
                     .unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(RefundTimelockExpired(id))
+                    .do_send_async(CfdMonitoringEvent::RefundTimelockExpired(id))
                     .await
                     .unwrap();
             }
@@ -126,7 +121,7 @@ where
                 refund_subscription.wait_until_final().await.unwrap();
 
                 cfd_actor_addr
-                    .do_send_async(RefundFinality(id))
+                    .do_send_async(CfdMonitoringEvent::RefundFinality(id))
                     .await
                     .unwrap();
             }
@@ -147,33 +142,30 @@ impl xtra::Message for StartMonitoring {
     type Result = ();
 }
 
-pub struct LockFinality(pub OrderId);
-
-impl xtra::Message for LockFinality {
-    type Result = ();
+#[derive(Debug, Clone)]
+pub enum CfdMonitoringEvent {
+    LockFinality(OrderId),
+    CommitFinality(OrderId),
+    CetTimelockExpired(OrderId),
+    RefundTimelockExpired(OrderId),
+    RefundFinality(OrderId),
 }
 
-pub struct CommitFinality(pub OrderId);
+impl CfdMonitoringEvent {
+    pub fn order_id(&self) -> OrderId {
+        let order_id = match self {
+            CfdMonitoringEvent::LockFinality(order_id) => order_id,
+            CfdMonitoringEvent::CommitFinality(order_id) => order_id,
+            CfdMonitoringEvent::CetTimelockExpired(order_id) => order_id,
+            CfdMonitoringEvent::RefundTimelockExpired(order_id) => order_id,
+            CfdMonitoringEvent::RefundFinality(order_id) => order_id,
+        };
 
-impl xtra::Message for CommitFinality {
-    type Result = ();
+        *order_id
+    }
 }
 
-pub struct CetTimelockExpired(pub OrderId);
-
-impl xtra::Message for CetTimelockExpired {
-    type Result = ();
-}
-
-pub struct RefundTimelockExpired(pub OrderId);
-
-impl xtra::Message for RefundTimelockExpired {
-    type Result = ();
-}
-
-pub struct RefundFinality(pub OrderId);
-
-impl xtra::Message for RefundFinality {
+impl xtra::Message for CfdMonitoringEvent {
     type Result = ();
 }
 
@@ -192,12 +184,7 @@ impl<T> xtra::Actor for Actor<T> where T: xtra::Actor {}
 #[async_trait]
 impl<T> xtra::Handler<StartMonitoring> for Actor<T>
 where
-    T: xtra::Actor
-        + xtra::Handler<LockFinality>
-        + xtra::Handler<CommitFinality>
-        + xtra::Handler<CetTimelockExpired>
-        + xtra::Handler<RefundTimelockExpired>
-        + xtra::Handler<RefundFinality>,
+    T: xtra::Actor + xtra::Handler<CfdMonitoringEvent>,
 {
     async fn handle(&mut self, msg: StartMonitoring, _ctx: &mut xtra::Context<Self>) {
         log_error!(self.handle_start_monitoring(msg));

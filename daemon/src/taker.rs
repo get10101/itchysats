@@ -24,6 +24,7 @@ mod db;
 mod keypair;
 mod logger;
 mod model;
+mod monitor;
 mod routes;
 mod routes_taker;
 mod seed;
