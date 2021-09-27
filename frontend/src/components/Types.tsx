@@ -1,7 +1,12 @@
+export interface Position {
+    label: string;
+    colorScheme: string;
+}
+
 export interface Order {
     id: string;
     trading_pair: string;
-    position: string;
+    position: Position;
     price: number;
     min_quantity: number;
     max_quantity: number;
@@ -17,7 +22,7 @@ export interface Cfd {
 
     leverage: number;
     trading_pair: string;
-    position: string;
+    position: Position;
     liquidation_price: number;
 
     quantity_usd: number;
@@ -27,8 +32,14 @@ export interface Cfd {
     profit_btc: number;
     profit_usd: number;
 
-    state: string;
+    state: State;
     state_transition_timestamp: number;
+}
+
+export interface State {
+    label: string;
+    meta_state: string;
+    colorScheme: string;
 }
 
 export interface WalletInfo {

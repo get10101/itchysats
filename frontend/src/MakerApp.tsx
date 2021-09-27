@@ -62,16 +62,10 @@ export default function App() {
         },
     });
 
-    const runningStates = ["Accepted", "Contract Setup", "Pending Open"];
-    const running = cfds.filter((value) => runningStates.includes(value.state));
-    const openStates = ["Requested"];
-    const open = cfds.filter((value) => openStates.includes(value.state));
-    const closedStates = ["Rejected", "Closed"];
-    const closed = cfds.filter((value) => closedStates.includes(value.state));
-    // TODO: remove this. It just helps to detect immediately if we missed a state.
-    const unsorted = cfds.filter((value) =>
-        !runningStates.includes(value.state) && !closedStates.includes(value.state) && !openStates.includes(value.state)
-    );
+    const acceptOrReject = cfds.filter((value) => value.state.meta_state === "acceptreject");
+    const opening = cfds.filter((value) => value.state.meta_state === "opening");
+    const open = cfds.filter((value) => value.state.meta_state === "open");
+    const closed = cfds.filter((value) => value.state.meta_state === "closed");
 
     const labelWidth = 110;
 
@@ -138,24 +132,24 @@ export default function App() {
 
             <Tabs marginTop={5}>
                 <TabList>
-                    <Tab>Running [{running.length}]</Tab>
                     <Tab>Open [{open.length}]</Tab>
+                    <Tab>Accept/Reject [{acceptOrReject.length}]</Tab>
+                    <Tab>Opening [{opening.length}]</Tab>
                     <Tab>Closed [{closed.length}]</Tab>
-                    <Tab>Unsorted [{unsorted.length}] (should be empty)</Tab>
                 </TabList>
 
                 <TabPanels>
                     <TabPanel>
-                        <CfdTable data={running} />
+                        <CfdTable data={open} />
                     </TabPanel>
                     <TabPanel>
-                        <CfdTableMaker data={open} />
+                        <CfdTableMaker data={acceptOrReject} />
+                    </TabPanel>
+                    <TabPanel>
+                        <CfdTable data={opening} />
                     </TabPanel>
                     <TabPanel>
                         <CfdTable data={closed} />
-                    </TabPanel>
-                    <TabPanel>
-                        <CfdTable data={unsorted} />
                     </TabPanel>
                 </TabPanels>
             </Tabs>

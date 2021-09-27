@@ -107,14 +107,9 @@ export default function App() {
         },
     });
 
-    const runningStates = ["Request sent", "Requested", "Contract Setup", "Pending Open"];
-    const running = cfds.filter((value) => runningStates.includes(value.state));
-    const closedStates = ["Rejected", "Closed"];
-    const closed = cfds.filter((value) => closedStates.includes(value.state));
-    // TODO: remove this. It just helps to detect immediately if we missed a state.
-    const unsorted = cfds.filter((value) =>
-        !runningStates.includes(value.state) && !closedStates.includes(value.state)
-    );
+    const open = cfds.filter((value) => value.state.meta_state === "open");
+    const opening = cfds.filter((value) => value.state.meta_state === "opening");
+    const closed = cfds.filter((value) => value.state.meta_state === "closed");
 
     const labelWidth = 120;
 
@@ -180,20 +175,19 @@ export default function App() {
             </HStack>
             <Tabs marginTop={5}>
                 <TabList>
-                    <Tab>Running [{running.length}]</Tab>
+                    <Tab>Open [{open.length}]</Tab>
+                    <Tab>Opening [{opening.length}]</Tab>
                     <Tab>Closed [{closed.length}]</Tab>
-                    <Tab>Unsorted [{unsorted.length}] (should be empty)</Tab>
                 </TabList>
-
                 <TabPanels>
                     <TabPanel>
-                        <CfdTable data={running} />
+                        <CfdTable data={open} />
+                    </TabPanel>
+                    <TabPanel>
+                        <CfdTable data={opening} />
                     </TabPanel>
                     <TabPanel>
                         <CfdTable data={closed} />
-                    </TabPanel>
-                    <TabPanel>
-                        <CfdTable data={unsorted} />
                     </TabPanel>
                 </TabPanels>
             </Tabs>

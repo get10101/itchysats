@@ -48,12 +48,8 @@ export function CfdTable(
             {
                 Header: "Position",
                 accessor: ({ position }) => {
-                    let colorScheme = "green";
-                    if (position.toLocaleLowerCase() === "buy") {
-                        colorScheme = "purple";
-                    }
                     return (
-                        <Badge colorScheme={colorScheme}>{position}</Badge>
+                        <Badge colorScheme={position.colorScheme}>{position.label}</Badge>
                     );
                 },
                 isNumeric: true,
@@ -104,15 +100,8 @@ export function CfdTable(
             {
                 Header: "State",
                 accessor: ({ state }) => {
-                    let colorScheme = "gray";
-                    if (state.toLowerCase() === "rejected") {
-                        colorScheme = "red";
-                    }
-                    if (state.toLowerCase() === "contract setup") {
-                        colorScheme = "green";
-                    }
                     return (
-                        <Badge colorScheme={colorScheme}>{state}</Badge>
+                        <Badge colorScheme={state.colorScheme}>{state.label}</Badge>
                     );
                 },
             },
@@ -208,7 +197,6 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
                                     {...column.getHeaderProps(column.getSortByToggleProps())}
                                     // @ts-ignore
                                     isNumeric={column.isNumeric}
-                                    textAlign={"right"}
                                 >
                                     {column.render("Header")}
                                     <chakra.span>

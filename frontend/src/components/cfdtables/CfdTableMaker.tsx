@@ -95,12 +95,8 @@ export function CfdTableMaker(
             {
                 Header: "Position",
                 accessor: ({ position }) => {
-                    let colorScheme = "green";
-                    if (position.toLocaleLowerCase() === "buy") {
-                        colorScheme = "purple";
-                    }
                     return (
-                        <Badge colorScheme={colorScheme}>{position}</Badge>
+                        <Badge colorScheme={position.colorScheme}>{position.label}</Badge>
                     );
                 },
                 isNumeric: true,
@@ -151,7 +147,8 @@ export function CfdTableMaker(
             {
                 Header: "Action",
                 accessor: ({ state, order_id }) => {
-                    if (state.toLowerCase() === "requested") {
+                    // TODO: Integrate in actions, and return actions only for maker, then combine table with maker (we don't need a separate maker table then)
+                    if (state.label.toLowerCase() === "requested") {
                         return (<HStack>
                             <IconButton
                                 colorScheme="green"
@@ -170,15 +167,8 @@ export function CfdTableMaker(
                         </HStack>);
                     }
 
-                    let colorScheme = "gray";
-                    if (state.toLowerCase() === "rejected") {
-                        colorScheme = "red";
-                    }
-                    if (state.toLowerCase() === "contract setup") {
-                        colorScheme = "green";
-                    }
                     return (
-                        <Badge colorScheme={colorScheme}>{state}</Badge>
+                        <Badge colorScheme={state.colorScheme}>{state.label}</Badge>
                     );
                 },
             },

@@ -1,6 +1,6 @@
 use crate::model;
 use crate::model::cfd::OrderId;
-use crate::model::{Leverage, Position, TradingPair, Usd};
+use crate::model::{Leverage, TradingPair, Usd};
 use bdk::bitcoin::Amount;
 use rocket::response::stream::Event;
 use serde::Serialize;
@@ -25,8 +25,49 @@ pub struct Cfd {
     pub profit_btc: Amount,
     pub profit_usd: Usd,
 
-    pub state: String,
+    pub state: CfdState,
     pub state_transition_timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Position {
+    label: model::Position,
+    colorScheme: ColorScheme,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CfdState {
+    pub label: String,
+    pub meta_state: CfdMetaState,
+    pub color_scheme: ColorScheme,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CfdMetaState {
+    /// A CFD which is still being set up (not on chain yet)
+    Opening,
+    AcceptReject,
+    /// A CFD that is an ongoing open position (on chain)
+    Open,
+    /// A CFD that has been successfully or not-successfully terminated
+    Closed,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ColorScheme {
+    Gray,
+    Green,
+    Red,
+    Orange,
+    Purple,
+}
+
+impl Default for ColorScheme {
+    fn default() -> Self {
+        ColorScheme::Gray
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,12 +108,12 @@ impl ToSseEvent for Vec<model::cfd::Cfd> {
                     initial_price: cfd.order.price,
                     leverage: cfd.order.leverage,
                     trading_pair: cfd.order.trading_pair.clone(),
-                    position: cfd.position(),
+                    position: cfd.position().into(),
                     liquidation_price: cfd.order.liquidation_price,
                     quantity_usd: cfd.quantity_usd,
                     profit_btc,
                     profit_usd,
-                    state: cfd.state.to_string(),
+                    state: cfd.state.clone().into(),
                     state_transition_timestamp: cfd
                         .state
                         .get_transition_timestamp()
@@ -96,7 +137,7 @@ impl ToSseEvent for Option<model::cfd::Order> {
         let order = self.clone().map(|order| CfdOrder {
             id: order.id,
             trading_pair: order.trading_pair,
-            position: order.position,
+            position: order.position.into(),
             price: order.price,
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
@@ -135,5 +176,77 @@ impl ToSseEvent for model::WalletInfo {
         };
 
         Event::json(&wallet_info).event("wallet")
+    }
+}
+
+impl From<model::cfd::CfdState> for CfdState {
+    fn from(state: model::cfd::CfdState) -> CfdState {
+        let label = state.to_string();
+        match state {
+            model::cfd::CfdState::OutgoingOrderRequest { .. } => CfdState {
+                label,
+                meta_state: CfdMetaState::Opening,
+                color_scheme: ColorScheme::default(),
+            },
+            model::cfd::CfdState::IncomingOrderRequest { .. } => CfdState {
+                label,
+                meta_state: CfdMetaState::AcceptReject,
+                color_scheme: ColorScheme::default(),
+            },
+            model::cfd::CfdState::Accepted { .. } => CfdState {
+                label,
+                meta_state: CfdMetaState::Opening,
+                color_scheme: ColorScheme::Green,
+            },
+            model::cfd::CfdState::Rejected { .. } => CfdState {
+                label,
+                meta_state: CfdMetaState::Closed,
+                color_scheme: ColorScheme::Red,
+            },
+            model::cfd::CfdState::ContractSetup { .. } => CfdState {
+                label,
+                meta_state: CfdMetaState::Opening,
+                color_scheme: ColorScheme::Green,
+            },
+            model::cfd::CfdState::PendingOpen { .. } => CfdState {
+                label,
+                meta_state: CfdMetaState::Opening,
+                color_scheme: ColorScheme::Green,
+            },
+            model::cfd::CfdState::Open { .. } => CfdState {
+                label,
+                meta_state: CfdMetaState::Open,
+                color_scheme: ColorScheme::Green,
+            },
+            model::cfd::CfdState::OpenCommitted { .. } => CfdState {
+                label,
+                meta_state: CfdMetaState::Open,
+                color_scheme: ColorScheme::Orange,
+            },
+            model::cfd::CfdState::MustRefund { .. } => CfdState {
+                label,
+                meta_state: CfdMetaState::Open,
+                color_scheme: ColorScheme::Orange,
+            },
+            model::cfd::CfdState::Refunded { .. } => CfdState {
+                label,
+                meta_state: CfdMetaState::Closed,
+                color_scheme: ColorScheme::Red,
+            },
+        }
+    }
+}
+
+impl From<model::Position> for Position {
+    fn from(position: model::Position) -> Self {
+        let colorScheme = match position {
+            model::Position::Buy => ColorScheme::Green,
+            model::Position::Sell => ColorScheme::Red,
+        };
+
+        Position {
+            label: position,
+            colorScheme,
+        }
     }
 }
