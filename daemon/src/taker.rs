@@ -8,6 +8,7 @@ use model::cfd::{Cfd, Order};
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use seed::Seed;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::thread::sleep;
@@ -78,6 +79,7 @@ async fn main() -> Result<()> {
 
     let data_dir = opts
         .data_dir
+        .clone()
         .unwrap_or_else(|| std::env::current_dir().expect("unable to get cwd"));
 
     if !data_dir.exists() {
@@ -163,6 +165,8 @@ async fn main() -> Result<()> {
                     .create(None)
                     .spawn_global();
 
+                let (monitor_actor_address, monitor_actor_context) = xtra::Context::new(None);
+
                 let cfd_actor_inbox = taker_cfd::Actor::new(
                     db,
                     wallet.clone(),
@@ -170,6 +174,7 @@ async fn main() -> Result<()> {
                     cfd_feed_sender,
                     order_feed_sender,
                     send_to_maker,
+                    monitor_actor_address,
                 )
                 .await
                 .unwrap()
@@ -178,6 +183,12 @@ async fn main() -> Result<()> {
 
                 let inc_maker_messages_actor =
                     taker_inc_message_actor::new(read, cfd_actor_inbox.clone());
+
+                tokio::spawn(monitor_actor_context.run(monitor::Actor::new(
+                    &opts.electrum,
+                    HashMap::new(),
+                    cfd_actor_inbox.clone(),
+                )));
 
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
                 tokio::spawn(inc_maker_messages_actor);
