@@ -8,7 +8,7 @@ use crate::model::cfd::{Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc,
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
-use crate::wire::SetupMsg;
+use crate::wire::{self, SetupMsg};
 use crate::{maker_inc_connections, monitor, setup_contract_actor};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -16,12 +16,7 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, watch};
 use xtra::prelude::*;
-
-pub struct TakeOrder {
-    pub taker_id: TakerId,
-    pub order_id: OrderId,
-    pub quantity: Usd,
-}
+use xtra::KeepRunning;
 
 pub struct AcceptOrder {
     pub order_id: OrderId,
@@ -37,11 +32,14 @@ pub struct NewTakerOnline {
     pub id: TakerId,
 }
 
-pub struct IncProtocolMsg(pub SetupMsg);
-
 pub struct CfdSetupCompleted {
     pub order_id: OrderId,
     pub dlc: Dlc,
+}
+
+pub struct TakerStreamMessage {
+    pub taker_id: TakerId,
+    pub item: Result<wire::TakerToMaker>,
 }
 
 pub struct Actor {
@@ -128,8 +126,11 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_inc_protocol_msg(&mut self, msg: IncProtocolMsg) -> Result<()> {
-        let msg = msg.0;
+    async fn handle_inc_protocol_msg(
+        &mut self,
+        _taker_id: TakerId,
+        msg: wire::SetupMsg,
+    ) -> Result<()> {
         let inbox = match &self.current_contract_setup {
             None => {
                 self.contract_setup_message_buffer.push(msg);
@@ -138,6 +139,7 @@ impl Actor {
             Some(inbox) => inbox,
         };
         inbox.send(msg)?;
+
         Ok(())
     }
 
@@ -198,13 +200,12 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_take_order(&mut self, msg: TakeOrder) -> Result<()> {
-        let TakeOrder {
-            taker_id,
-            order_id,
-            quantity,
-        } = msg;
-
+    async fn handle_take_order(
+        &mut self,
+        taker_id: TakerId,
+        order_id: OrderId,
+        quantity: Usd,
+    ) -> Result<()> {
         tracing::debug!(%taker_id, %quantity, %order_id, "Taker wants to take an order");
 
         let mut conn = self.db.acquire().await?;
@@ -229,7 +230,7 @@ impl Actor {
         // 2. Insert CFD in DB
         let cfd = Cfd::new(
             current_order.clone(),
-            msg.quantity,
+            quantity,
             CfdState::IncomingOrderRequest {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
@@ -436,13 +437,6 @@ impl Actor {
 }
 
 #[async_trait]
-impl Handler<TakeOrder> for Actor {
-    async fn handle(&mut self, msg: TakeOrder, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_take_order(msg))
-    }
-}
-
-#[async_trait]
 impl Handler<AcceptOrder> for Actor {
     async fn handle(&mut self, msg: AcceptOrder, ctx: &mut Context<Self>) {
         log_error!(self.handle_accept_order(msg, ctx))
@@ -471,13 +465,6 @@ impl Handler<NewTakerOnline> for Actor {
 }
 
 #[async_trait]
-impl Handler<IncProtocolMsg> for Actor {
-    async fn handle(&mut self, msg: IncProtocolMsg, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_inc_protocol_msg(msg));
-    }
-}
-
-#[async_trait]
 impl Handler<CfdSetupCompleted> for Actor {
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_setup_completed(msg));
@@ -491,8 +478,36 @@ impl Handler<monitor::Event> for Actor {
     }
 }
 
-impl Message for TakeOrder {
-    type Result = ();
+#[async_trait]
+impl Handler<TakerStreamMessage> for Actor {
+    async fn handle(&mut self, msg: TakerStreamMessage, _ctx: &mut Context<Self>) -> KeepRunning {
+        let TakerStreamMessage {
+            taker_id: taker,
+            item,
+        } = msg;
+        let msg = match item {
+            Ok(msg) => msg,
+            Err(e) => {
+                tracing::warn!(
+                    "Error while receiving message from taker {}: {:#}",
+                    taker,
+                    e
+                );
+                return KeepRunning::Yes;
+            }
+        };
+
+        match msg {
+            wire::TakerToMaker::TakeOrder { order_id, quantity } => {
+                log_error!(self.handle_take_order(taker, order_id, quantity))
+            }
+            wire::TakerToMaker::Protocol(msg) => {
+                log_error!(self.handle_inc_protocol_msg(taker, msg))
+            }
+        }
+
+        KeepRunning::Yes
+    }
 }
 
 impl Message for NewOrder {
@@ -500,10 +515,6 @@ impl Message for NewOrder {
 }
 
 impl Message for NewTakerOnline {
-    type Result = ();
-}
-
-impl Message for IncProtocolMsg {
     type Result = ();
 }
 
@@ -517,6 +528,11 @@ impl Message for AcceptOrder {
 
 impl Message for RejectOrder {
     type Result = ();
+}
+
+// this signature is a bit different because we use `Address::attach_stream`
+impl Message for TakerStreamMessage {
+    type Result = KeepRunning;
 }
 
 impl xtra::Actor for Actor {}

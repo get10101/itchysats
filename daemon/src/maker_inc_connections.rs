@@ -5,10 +5,7 @@ use crate::wire::SetupMsg;
 use crate::{maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
-use futures::{Future, StreamExt};
 use std::collections::HashMap;
-use tokio::net::tcp::OwnedReadHalf;
-use tokio_util::codec::FramedRead;
 use xtra::prelude::*;
 
 pub struct BroadcastOrder(pub Option<Order>);
@@ -146,41 +143,5 @@ impl Handler<NewTakerOnline> for Actor {
     async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) -> Result<()> {
         log_error!(self.handle_new_taker_online(msg));
         Ok(())
-    }
-}
-
-//
-
-pub fn in_taker_messages(
-    read: OwnedReadHalf,
-    cfd_actor_inbox: Address<maker_cfd::Actor>,
-    taker_id: TakerId,
-) -> impl Future<Output = ()> {
-    let mut messages = FramedRead::new(read, wire::JsonCodec::new());
-
-    async move {
-        while let Some(message) = messages.next().await {
-            match message {
-                Ok(wire::TakerToMaker::TakeOrder { order_id, quantity }) => {
-                    cfd_actor_inbox
-                        .do_send_async(maker_cfd::TakeOrder {
-                            taker_id,
-                            order_id,
-                            quantity,
-                        })
-                        .await
-                        .unwrap();
-                }
-                Ok(wire::TakerToMaker::Protocol(msg)) => {
-                    cfd_actor_inbox
-                        .do_send_async(maker_cfd::IncProtocolMsg(msg))
-                        .await
-                        .unwrap();
-                }
-                Err(error) => {
-                    tracing::error!(%error, "Error in reading message");
-                }
-            }
-        }
     }
 }

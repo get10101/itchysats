@@ -1,5 +1,4 @@
 use crate::auth::MAKER_USERNAME;
-use crate::maker_inc_connections::in_taker_messages;
 use crate::model::TakerId;
 use crate::seed::Seed;
 use crate::wallet::Wallet;
@@ -7,6 +6,7 @@ use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::Network;
 use clap::Clap;
+use futures::StreamExt;
 use model::cfd::{Cfd, Order};
 use model::WalletInfo;
 use rocket::fairing::AdHoc;
@@ -14,6 +14,7 @@ use rocket_db_pools::Database;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::sync::watch;
+use tokio_util::codec::FramedRead;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -201,17 +202,15 @@ async fn main() -> Result<()> {
                                 let taker_id = TakerId::default();
                                 let (read, write) = socket.into_split();
 
-                                let in_taker_actor = in_taker_messages(
-                                    read,
-                                    cfd_maker_actor_inbox.clone(),
-                                    taker_id,
+                                let read = FramedRead::new(read, wire::JsonCodec::new()).map(
+                                    move |item| maker_cfd::TakerStreamMessage { taker_id, item },
                                 );
+
+                                tokio::spawn(cfd_maker_actor_inbox.clone().attach_stream(read));
 
                                 let out_msg_actor = send_to_socket::Actor::new(write)
                                     .create(None)
                                     .spawn_global();
-
-                                tokio::spawn(in_taker_actor);
 
                                 maker_inc_connections_address
                                     .do_send_async(maker_inc_connections::NewTakerOnline {
