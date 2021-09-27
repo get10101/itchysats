@@ -1,0 +1,54 @@
+@startuml
+
+participant CfdActor as CA
+participant BlockchainMonitoringActor as BMA
+
+CA -> CA: broadcast [lock-tx]
+CA -> BMA: Here's a CFD where I published lock
+
+BMA -> BMA: monitor [lock-tx]
+BMA -> BMA: monitor [commit-tx]
+
+BMA -> CA: finality confirmation for [lock-tx] @ cfd-id
+CA -> CA: load cfd by cfd-id
+CA -> CA: transition Cfd to Open
+'CA -> BMA: Unsubscribe [lock-tx]
+BMA -> BMA: stop monitor [lock-tx]
+
+BMA -> CA: finality confirmation for [commit-tx] @ cfd-id
+BMA -> BMA: [commit-tx]
+CA -> CA: load cfd by cfd-id
+CA -> CA: transition Cfd to OpenCommitted
+
+group >t1
+BMA -> CA: t1 confirmation for [commit-tx] @ cfd-id
+CA -> CA: load cfd by txid
+CA -> CA: check if timelock is reached  => t1 reached
+OracleActor -> CA: Attested price
+OracleActor -> BMA: Attested price
+CA -> CA: Attest decides CET
+CA -> CA: publish [CET]
+CA -> CA: transition Cfd to PendingClose
+BMA -> BMA: decide which [CET] based on price
+BMA -> BMA: monitor [CET]
+BMA -> CA: finality confirmation for [CET] @ cfd-id
+CA -> CA: transition Cfd to Closed
+BMA -> BMA: stop monitor [commit-tx]
+BMA -> BMA: stop monitor [CET]
+end group
+
+group >t2
+BMA -> BMA: monitor [refund-tx]
+BMA -> CA: t2 confirmation for [commit-tx] @ cfd-id
+CA -> CA: load cfd by txid
+CA -> CA: check if timelock is reached => t2 reached
+CA -> CA: publish [refund-tx]
+BMA -> CA: finality confirmation for [refund-tx]
+CA -> CA: transition Cfd to Refunded
+BMA -> BMA: stop monitor [commit-tx]
+BMA -> BMA: stop monitor [refund-tx]
+end group
+
+
+
+@enduml

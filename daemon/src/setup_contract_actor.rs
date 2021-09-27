@@ -1,3 +1,4 @@
+use crate::model;
 use crate::model::cfd::{Cfd, Dlc};
 use crate::wallet::Wallet;
 use crate::wire::{Msg0, Msg1, Msg2, SetupMsg};
@@ -61,7 +62,10 @@ pub fn new(
             (params.maker().clone(), *params.maker_punish()),
             (params.taker().clone(), *params.taker_punish()),
             (oracle_pk, &[]),
-            cfd.refund_timelock_in_blocks(),
+            (
+                model::cfd::Cfd::CET_TIMELOCK,
+                cfd.refund_timelock_in_blocks(),
+            ),
             vec![],
             sk,
         )
@@ -142,10 +146,12 @@ pub fn new(
 
         Dlc {
             identity: sk,
+            identity_counterparty: params.other.identity_pk,
             revocation: rev_sk,
             publish: publish_sk,
-            lock: signed_lock_tx.extract_tx(),
-            commit: (commit_tx, msg1.commit),
+            address: params.own.address,
+            lock: (signed_lock_tx.extract_tx(), lock_desc),
+            commit: (commit_tx, msg1.commit, commit_desc),
             cets: msg1
                 .cets
                 .into_iter()

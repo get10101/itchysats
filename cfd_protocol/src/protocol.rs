@@ -82,7 +82,7 @@ pub fn create_cfd_transactions(
     (maker, maker_punish_params): (PartyParams, PunishParams),
     (taker, taker_punish_params): (PartyParams, PunishParams),
     (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
-    refund_timelock: u32,
+    (cet_timelock, refund_timelock): (u32, u32),
     payouts: Vec<Payout>,
     identity_sk: SecretKey,
 ) -> Result<CfdTransactions> {
@@ -109,7 +109,7 @@ pub fn create_cfd_transactions(
             taker_punish_params,
         ),
         (oracle_pk, nonce_pks),
-        refund_timelock,
+        (cet_timelock, refund_timelock),
         payouts,
         identity_sk,
     )
@@ -130,7 +130,7 @@ pub fn renew_cfd_transactions(
         PunishParams,
     ),
     (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
-    refund_timelock: u32,
+    (cet_timelock, refund_timelock): (u32, u32),
     payouts: Vec<Payout>,
     identity_sk: SecretKey,
 ) -> Result<CfdTransactions> {
@@ -149,7 +149,7 @@ pub fn renew_cfd_transactions(
             taker_punish_params,
         ),
         (oracle_pk, nonce_pks),
-        refund_timelock,
+        (cet_timelock, refund_timelock),
         payouts,
         identity_sk,
     )
@@ -170,17 +170,10 @@ fn build_cfds(
         PunishParams,
     ),
     (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
-    refund_timelock: u32,
+    (cet_timelock, refund_timelock): (u32, u32),
     payouts: Vec<Payout>,
     identity_sk: SecretKey,
 ) -> Result<CfdTransactions> {
-    /// Relative timelock used for every CET.
-    ///
-    /// This is used to allow parties to punish the publication of revoked commitment transactions.
-    ///
-    /// TODO: Should this be an argument to this function?
-    const CET_TIMELOCK: u32 = 12;
-
     let commit_tx = CommitTransaction::new(
         &lock_tx.global.unsigned_tx,
         (
@@ -230,7 +223,7 @@ fn build_cfds(
                 &maker_address,
                 &taker_address,
                 nonce_pks,
-                CET_TIMELOCK,
+                cet_timelock,
             )?;
 
             let encsig = cet.encsign(identity_sk, &oracle_pk)?;

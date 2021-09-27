@@ -11,6 +11,7 @@ use model::cfd::{Cfd, Order};
 use model::WalletInfo;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
@@ -26,6 +27,7 @@ mod logger;
 mod maker_cfd;
 mod maker_inc_connections;
 mod model;
+mod monitor;
 mod routes;
 mod routes_maker;
 mod seed;
@@ -75,6 +77,7 @@ async fn main() -> Result<()> {
 
     let data_dir = opts
         .data_dir
+        .clone()
         .unwrap_or_else(|| std::env::current_dir().expect("unable to get cwd"));
 
     if !data_dir.exists() {
@@ -160,6 +163,8 @@ async fn main() -> Result<()> {
                 let (maker_inc_connections_address, maker_inc_connections_context) =
                     xtra::Context::new(None);
 
+                let (monitor_actor_address, monitor_actor_context) = xtra::Context::new(None);
+
                 let cfd_maker_actor_inbox = maker_cfd::Actor::new(
                     db,
                     wallet.clone(),
@@ -167,6 +172,7 @@ async fn main() -> Result<()> {
                     cfd_feed_sender,
                     order_feed_sender,
                     maker_inc_connections_address.clone(),
+                    monitor_actor_address,
                 )
                 .await
                 .unwrap()
@@ -178,6 +184,12 @@ async fn main() -> Result<()> {
                         cfd_maker_actor_inbox.clone(),
                     )),
                 );
+
+                tokio::spawn(monitor_actor_context.run(monitor::Actor::new(
+                    &opts.electrum,
+                    HashMap::new(),
+                    cfd_maker_actor_inbox.clone(),
+                )));
 
                 tokio::spawn({
                     let cfd_maker_actor_inbox = cfd_maker_actor_inbox.clone();
