@@ -208,9 +208,10 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
                                     {...column.getHeaderProps(column.getSortByToggleProps())}
                                     // @ts-ignore
                                     isNumeric={column.isNumeric}
+                                    textAlign={"right"}
                                 >
                                     {column.render("Header")}
-                                    <chakra.span pl="4">
+                                    <chakra.span>
                                         {// @ts-ignore
                                         column.isSorted
                                             ? (
