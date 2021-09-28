@@ -1,9 +1,8 @@
 import {
+    Box,
     Button,
     Container,
-    Flex,
-    Grid,
-    GridItem,
+    Divider,
     HStack,
     Tab,
     TabList,
@@ -117,89 +116,87 @@ export default function App() {
         !runningStates.includes(value.state) && !closedStates.includes(value.state)
     );
 
+    const labelWidth = 120;
+
     return (
         <Container maxWidth="120ch" marginTop="1rem">
-            <VStack>
-                <Grid templateColumns="repeat(6, 1fr)" gap={4}>
-                    <GridItem colStart={1} colSpan={2}>
-                        <Wallet walletInfo={walletInfo} />
-                        <VStack shadow={"md"} padding={5} align="stretch" spacing={4}>
-                            <HStack>
-                                {/*TODO: Do we need this? does it make sense to only display the price from the order?*/}
-                                <Text align={"left"}>Current Price (Kraken):</Text>
-                                <Text>tbd</Text>
-                            </HStack>
-                            <HStack>
-                                <Text align={"left"}>Order Price:</Text>
-                                <Text>{order?.price}</Text>
-                            </HStack>
-                            <HStack>
-                                <Text>Quantity:</Text>
-                                <CurrencyInputField
-                                    onChange={(valueString: string) => {
-                                        setQuantity(parse(valueString));
-                                        if (!order) {
-                                            return;
-                                        }
-                                        let quantity = valueString ? Number.parseFloat(valueString) : 0;
-                                        let payload: MarginRequestPayload = {
-                                            leverage: order.leverage,
-                                            price: order.price,
-                                            quantity,
-                                        };
-                                        calculateMargin(payload);
-                                    }}
-                                    value={format(quantity)}
-                                />
-                            </HStack>
-                            <HStack>
-                                <Text>Margin in BTC:</Text>
-                                <Text>{margin}</Text>
-                            </HStack>
-                            <Text>Leverage:</Text>
-                            {/* TODO: consider button group */}
-                            <Flex justifyContent={"space-between"}>
+            <HStack spacing={5}>
+                <VStack>
+                    <Wallet walletInfo={walletInfo} />
+                    <VStack shadow={"md"} padding={5} align="stretch" spacing={5} width="100%">
+                        <HStack>
+                            <Text align={"left"} width={labelWidth}>Order Price:</Text>
+                            <Text>{order?.price}</Text>
+                        </HStack>
+                        <HStack>
+                            <Text width={labelWidth}>Quantity:</Text>
+                            <CurrencyInputField
+                                onChange={(valueString: string) => {
+                                    setQuantity(parse(valueString));
+                                    if (!order) {
+                                        return;
+                                    }
+                                    let quantity = valueString ? Number.parseFloat(valueString) : 0;
+                                    let payload: MarginRequestPayload = {
+                                        leverage: order.leverage,
+                                        price: order.price,
+                                        quantity,
+                                    };
+                                    calculateMargin(payload);
+                                }}
+                                value={format(quantity)}
+                            />
+                        </HStack>
+                        <HStack>
+                            <Text width={labelWidth}>Margin in BTC:</Text>
+                            <Text>{margin}</Text>
+                        </HStack>
+                        <HStack>
+                            <Text width={labelWidth}>Leverage:</Text>
+                            <HStack spacing={5}>
                                 <Button disabled={true}>x1</Button>
                                 <Button disabled={true}>x2</Button>
                                 <Button colorScheme="blue" variant="solid">x{order?.leverage}</Button>
-                            </Flex>
-                            {<Button
-                                disabled={isCreatingNewOrderRequest || !order}
-                                variant={"solid"}
-                                colorScheme={"blue"}
-                                onClick={() => {
-                                    let payload: CfdOrderRequestPayload = {
-                                        order_id: order!.id,
-                                        quantity: Number.parseFloat(quantity),
-                                    };
-                                    makeNewOrderRequest(payload);
-                                }}
-                            >
-                                BUY
-                            </Button>}
-                        </VStack>
-                    </GridItem>
-                </Grid>
-                <Tabs>
-                    <TabList>
-                        <Tab>Running [{running.length}]</Tab>
-                        <Tab>Closed [{closed.length}]</Tab>
-                        <Tab>Unsorted [{unsorted.length}] (should be empty)</Tab>
-                    </TabList>
+                            </HStack>
+                        </HStack>
+                        <Divider />
+                        <Button
+                            disabled={isCreatingNewOrderRequest || !order}
+                            variant={"solid"}
+                            colorScheme={"blue"}
+                            onClick={() => {
+                                let payload: CfdOrderRequestPayload = {
+                                    order_id: order!.id,
+                                    quantity: Number.parseFloat(quantity),
+                                };
+                                makeNewOrderRequest(payload);
+                            }}
+                        >
+                            BUY
+                        </Button>
+                    </VStack>
+                </VStack>
+                <Box width="100%" />
+            </HStack>
+            <Tabs marginTop={5}>
+                <TabList>
+                    <Tab>Running [{running.length}]</Tab>
+                    <Tab>Closed [{closed.length}]</Tab>
+                    <Tab>Unsorted [{unsorted.length}] (should be empty)</Tab>
+                </TabList>
 
-                    <TabPanels>
-                        <TabPanel>
-                            <CfdTable data={running} />
-                        </TabPanel>
-                        <TabPanel>
-                            <CfdTable data={closed} />
-                        </TabPanel>
-                        <TabPanel>
-                            <CfdTable data={unsorted} />
-                        </TabPanel>
-                    </TabPanels>
-                </Tabs>
-            </VStack>
+                <TabPanels>
+                    <TabPanel>
+                        <CfdTable data={running} />
+                    </TabPanel>
+                    <TabPanel>
+                        <CfdTable data={closed} />
+                    </TabPanel>
+                    <TabPanel>
+                        <CfdTable data={unsorted} />
+                    </TabPanel>
+                </TabPanels>
+            </Tabs>
         </Container>
     );
 }
