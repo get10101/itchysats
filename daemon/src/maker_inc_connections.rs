@@ -4,8 +4,15 @@ use crate::model::TakerId;
 use crate::{maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
+use futures::StreamExt;
 use std::collections::HashMap;
+use std::io;
+use std::net::SocketAddr;
+use tokio::net::TcpStream;
+use tokio_util::codec::FramedRead;
 use xtra::prelude::*;
+use xtra::spawn::TokioGlobalSpawnExt;
+use xtra::{Actor as _, KeepRunning};
 
 pub struct BroadcastOrder(pub Option<Order>);
 
@@ -23,9 +30,14 @@ pub struct TakerMessage {
     pub command: TakerCommand,
 }
 
-pub struct NewTakerOnline {
-    pub taker_id: TakerId,
-    pub out_msg_actor: Address<send_to_socket::Actor<wire::MakerToTaker>>,
+pub enum ListenerMessage {
+    NewConnection {
+        stream: TcpStream,
+        address: SocketAddr,
+    },
+    Error {
+        source: io::Error,
+    },
 }
 
 pub struct Actor {
@@ -90,14 +102,22 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_new_taker_online(&mut self, msg: NewTakerOnline) -> Result<()> {
-        self.cfd_actor
-            .do_send_async(maker_cfd::NewTakerOnline { id: msg.taker_id })
-            .await?;
+    async fn handle_new_connection(&mut self, stream: TcpStream, address: SocketAddr) {
+        let taker_id = TakerId::default();
 
-        self.write_connections
-            .insert(msg.taker_id, msg.out_msg_actor);
-        Ok(())
+        tracing::info!("New taker {} connected on {}", taker_id, address);
+
+        let (read, write) = stream.into_split();
+        let read = FramedRead::new(read, wire::JsonCodec::new())
+            .map(move |item| maker_cfd::TakerStreamMessage { taker_id, item });
+
+        tokio::spawn(self.cfd_actor.clone().attach_stream(read));
+
+        let out_msg_actor = send_to_socket::Actor::new(write)
+            .create(None)
+            .spawn_global();
+
+        self.write_connections.insert(taker_id, out_msg_actor);
     }
 }
 
@@ -124,9 +144,22 @@ impl Handler<TakerMessage> for Actor {
 }
 
 #[async_trait]
-impl Handler<NewTakerOnline> for Actor {
-    async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_new_taker_online(msg));
+impl Handler<ListenerMessage> for Actor {
+    async fn handle(&mut self, msg: ListenerMessage, _ctx: &mut Context<Self>) -> KeepRunning {
+        match msg {
+            ListenerMessage::NewConnection { stream, address } => {
+                self.handle_new_connection(stream, address).await;
+
+                KeepRunning::Yes
+            }
+            ListenerMessage::Error { source } => {
+                tracing::warn!("TCP listener produced an error: {}", source);
+
+                // Maybe we should move the actual listening on the socket into here and restart the
+                // actor upon an error?
+                KeepRunning::Yes
+            }
+        }
     }
 }
 
@@ -138,8 +171,8 @@ impl Message for TakerMessage {
     type Result = ();
 }
 
-impl Message for NewTakerOnline {
-    type Result = ();
+impl Message for ListenerMessage {
+    type Result = KeepRunning;
 }
 
 impl xtra::Actor for Actor {}

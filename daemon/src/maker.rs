@@ -1,20 +1,18 @@
 use crate::auth::MAKER_USERNAME;
-use crate::model::TakerId;
 use crate::seed::Seed;
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::Network;
 use clap::Clap;
-use futures::StreamExt;
 use model::cfd::{Cfd, Order};
 use model::WalletInfo;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::task::Poll;
 use tokio::sync::watch;
-use tokio_util::codec::FramedRead;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -190,38 +188,22 @@ async fn main() -> Result<()> {
                     HashMap::new(),
                     cfd_maker_actor_inbox.clone(),
                 )));
-                tokio::spawn({
-                    let cfd_maker_actor_inbox = cfd_maker_actor_inbox.clone();
-                    let maker_inc_connections_address = maker_inc_connections_address.clone();
-                    async move {
-                        loop {
-                            if let Ok((socket, remote_addr)) = listener.accept().await {
-                                tracing::info!("Connected to {}", remote_addr);
-                                let taker_id = TakerId::default();
-                                let (read, write) = socket.into_split();
 
-                                let read = FramedRead::new(read, wire::JsonCodec::new()).map(
-                                    move |item| maker_cfd::TakerStreamMessage { taker_id, item },
-                                );
-
-                                tokio::spawn(cfd_maker_actor_inbox.clone().attach_stream(read));
-
-                                let out_msg_actor = send_to_socket::Actor::new(write)
-                                    .create(None)
-                                    .spawn_global();
-
-                                maker_inc_connections_address
-                                    .do_send_async(maker_inc_connections::NewTakerOnline {
-                                        taker_id,
-                                        out_msg_actor,
-                                    })
-                                    .await
-                                    .unwrap();
-                            };
+                let listener_stream = futures::stream::poll_fn(move |ctx| {
+                    let message = match futures::ready!(listener.poll_accept(ctx)) {
+                        Ok((stream, address)) => {
+                            maker_inc_connections::ListenerMessage::NewConnection {
+                                stream,
+                                address,
+                            }
                         }
-                    }
+                        Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
+                    };
+
+                    Poll::Ready(Some(message))
                 });
 
+                tokio::spawn(maker_inc_connections_address.attach_stream(listener_stream));
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
 
                 Ok(rocket.manage(cfd_maker_actor_inbox))
