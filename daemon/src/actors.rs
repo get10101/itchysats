@@ -2,7 +2,7 @@
 macro_rules! log_error {
     ($future:expr) => {
         if let Err(e) = $future.await {
-            tracing::error!(%e);
+            tracing::error!("Message handler failed: {:#}", e);
         }
     };
 }

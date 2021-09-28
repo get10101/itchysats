@@ -1,35 +1,36 @@
+use crate::wire::JsonCodec;
 use futures::SinkExt;
 use serde::Serialize;
 use std::fmt;
 use tokio::net::tcp::OwnedWriteHalf;
-use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
+use tokio_util::codec::FramedWrite;
 use xtra::{Handler, Message};
 
-pub struct Actor {
-    write: FramedWrite<OwnedWriteHalf, LengthDelimitedCodec>,
+pub struct Actor<T> {
+    write: FramedWrite<OwnedWriteHalf, JsonCodec<T>>,
 }
 
-impl Actor {
+impl<T> Actor<T> {
     pub fn new(write: OwnedWriteHalf) -> Self {
         Self {
-            write: FramedWrite::new(write, LengthDelimitedCodec::new()),
+            write: FramedWrite::new(write, JsonCodec::new()),
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<T> Handler<T> for Actor
+impl<T> Handler<T> for Actor<T>
 where
-    T: Message<Result = ()> + Serialize + fmt::Display,
+    T: Message<Result = ()> + Serialize + fmt::Display + Sync,
 {
     async fn handle(&mut self, message: T, ctx: &mut xtra::Context<Self>) {
-        let bytes = serde_json::to_vec(&message).expect("serialization should never fail");
+        let message_name = message.to_string(); // send consumes the message, avoid a clone just in case it errors by getting the name here
 
-        if let Err(e) = self.write.send(bytes.into()).await {
-            tracing::error!("Failed to write message {} to socket: {}", message, e);
+        if let Err(e) = self.write.send(message).await {
+            tracing::error!("Failed to write message {} to socket: {}", message_name, e);
             ctx.stop();
         }
     }
 }
 
-impl xtra::Actor for Actor {}
+impl<T: 'static + Send> xtra::Actor for Actor<T> {}

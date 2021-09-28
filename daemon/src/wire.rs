@@ -1,14 +1,19 @@
 use crate::model::cfd::OrderId;
 use crate::model::Usd;
 use crate::Order;
+use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Amount, PublicKey};
+use bytes::BytesMut;
 use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use cfd_protocol::{CfdTransactions, PartyParams, PunishParams};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::marker::PhantomData;
 use std::ops::RangeInclusive;
+use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
@@ -50,6 +55,54 @@ impl fmt::Display for MakerToTaker {
     }
 }
 
+pub struct JsonCodec<T> {
+    _type: PhantomData<T>,
+    inner: LengthDelimitedCodec,
+}
+
+impl<T> JsonCodec<T> {
+    pub fn new() -> Self {
+        Self {
+            _type: PhantomData,
+            inner: LengthDelimitedCodec::new(),
+        }
+    }
+}
+
+impl<T> Decoder for JsonCodec<T>
+where
+    T: DeserializeOwned,
+{
+    type Item = T;
+    type Error = anyhow::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let bytes = match self.inner.decode(src)? {
+            None => return Ok(None),
+            Some(bytes) => bytes,
+        };
+
+        let item = serde_json::from_slice(&bytes)?;
+
+        Ok(Some(item))
+    }
+}
+
+impl<T> Encoder<T> for JsonCodec<T>
+where
+    T: Serialize,
+{
+    type Error = anyhow::Error;
+
+    fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let bytes = serde_json::to_vec(&item)?;
+
+        self.inner.encode(bytes.into(), dst)?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum SetupMsg {
@@ -73,27 +126,27 @@ pub enum SetupMsg {
 }
 
 impl SetupMsg {
-    pub fn try_into_msg0(self) -> Result<Msg0, Self> {
+    pub fn try_into_msg0(self) -> Result<Msg0> {
         if let Self::Msg0(v) = self {
             Ok(v)
         } else {
-            Err(self)
+            bail!("Not Msg0")
         }
     }
 
-    pub fn try_into_msg1(self) -> Result<Msg1, Self> {
+    pub fn try_into_msg1(self) -> Result<Msg1> {
         if let Self::Msg1(v) = self {
             Ok(v)
         } else {
-            Err(self)
+            bail!("Not Msg1")
         }
     }
 
-    pub fn try_into_msg2(self) -> Result<Msg2, Self> {
+    pub fn try_into_msg2(self) -> Result<Msg2> {
         if let Self::Msg2(v) = self {
             Ok(v)
         } else {
-            Err(self)
+            bail!("Not Msg2")
         }
     }
 }

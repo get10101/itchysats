@@ -492,6 +492,7 @@ dependencies = [
  "async-trait",
  "atty",
  "bdk",
+ "bytes",
  "cfd_protocol",
  "clap",
  "futures",

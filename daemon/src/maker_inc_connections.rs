@@ -1,21 +1,13 @@
 use crate::actors::log_error;
 use crate::model::cfd::{Order, OrderId};
 use crate::model::TakerId;
-use crate::wire::SetupMsg;
 use crate::{maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
-use futures::{Future, StreamExt};
 use std::collections::HashMap;
-use tokio::net::tcp::OwnedReadHalf;
-use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 use xtra::prelude::*;
 
 pub struct BroadcastOrder(pub Option<Order>);
-
-impl Message for BroadcastOrder {
-    type Result = Result<()>;
-}
 
 #[allow(clippy::large_enum_variant)]
 pub enum TakerCommand {
@@ -23,7 +15,7 @@ pub enum TakerCommand {
     NotifyInvalidOrderId { id: OrderId },
     NotifyOrderAccepted { id: OrderId },
     NotifyOrderRejected { id: OrderId },
-    OutProtocolMsg { setup_msg: SetupMsg },
+    Protocol(wire::SetupMsg),
 }
 
 pub struct TakerMessage {
@@ -31,25 +23,15 @@ pub struct TakerMessage {
     pub command: TakerCommand,
 }
 
-impl Message for TakerMessage {
-    type Result = Result<()>;
-}
-
 pub struct NewTakerOnline {
     pub taker_id: TakerId,
-    pub out_msg_actor: Address<send_to_socket::Actor>,
-}
-
-impl Message for NewTakerOnline {
-    type Result = Result<()>;
+    pub out_msg_actor: Address<send_to_socket::Actor<wire::MakerToTaker>>,
 }
 
 pub struct Actor {
-    write_connections: HashMap<TakerId, Address<send_to_socket::Actor>>,
+    write_connections: HashMap<TakerId, Address<send_to_socket::Actor<wire::MakerToTaker>>>,
     cfd_actor: Address<maker_cfd::Actor>,
 }
-
-impl xtra::Actor for Actor {}
 
 impl Actor {
     pub fn new(cfd_actor: Address<maker_cfd::Actor>) -> Self {
@@ -64,7 +46,9 @@ impl Actor {
             .write_connections
             .get(&taker_id)
             .context("no connection to taker_id")?;
-        conn.do_send_async(msg).await?;
+
+        // use `.send` here to ensure we only continue once the message has been sent
+        conn.send(msg).await?;
 
         Ok(())
     }
@@ -98,7 +82,7 @@ impl Actor {
                 self.send_to_taker(msg.taker_id, wire::MakerToTaker::RejectOrder(id))
                     .await?;
             }
-            TakerCommand::OutProtocolMsg { setup_msg } => {
+            TakerCommand::Protocol(setup_msg) => {
                 self.send_to_taker(msg.taker_id, wire::MakerToTaker::Protocol(setup_msg))
                     .await?;
             }
@@ -127,63 +111,35 @@ macro_rules! log_error {
 
 #[async_trait]
 impl Handler<BroadcastOrder> for Actor {
-    async fn handle(&mut self, msg: BroadcastOrder, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle(&mut self, msg: BroadcastOrder, _ctx: &mut Context<Self>) {
         log_error!(self.handle_broadcast_order(msg));
-        Ok(())
     }
 }
 
 #[async_trait]
 impl Handler<TakerMessage> for Actor {
-    async fn handle(&mut self, msg: TakerMessage, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle(&mut self, msg: TakerMessage, _ctx: &mut Context<Self>) {
         log_error!(self.handle_taker_message(msg));
-        Ok(())
     }
 }
 
 #[async_trait]
 impl Handler<NewTakerOnline> for Actor {
-    async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) {
         log_error!(self.handle_new_taker_online(msg));
-        Ok(())
     }
 }
 
-//
-
-pub fn in_taker_messages(
-    read: OwnedReadHalf,
-    cfd_actor_inbox: Address<maker_cfd::Actor>,
-    taker_id: TakerId,
-) -> impl Future<Output = ()> {
-    let mut messages = FramedRead::new(read, LengthDelimitedCodec::new()).map(|result| {
-        let message = serde_json::from_slice::<wire::TakerToMaker>(&result?)?;
-        anyhow::Result::<_>::Ok(message)
-    });
-
-    async move {
-        while let Some(message) = messages.next().await {
-            match message {
-                Ok(wire::TakerToMaker::TakeOrder { order_id, quantity }) => {
-                    cfd_actor_inbox
-                        .do_send_async(maker_cfd::TakeOrder {
-                            taker_id,
-                            order_id,
-                            quantity,
-                        })
-                        .await
-                        .unwrap();
-                }
-                Ok(wire::TakerToMaker::Protocol(msg)) => {
-                    cfd_actor_inbox
-                        .do_send_async(maker_cfd::IncProtocolMsg(msg))
-                        .await
-                        .unwrap();
-                }
-                Err(error) => {
-                    tracing::error!(%error, "Error in reading message");
-                }
-            }
-        }
-    }
+impl Message for BroadcastOrder {
+    type Result = ();
 }
+
+impl Message for TakerMessage {
+    type Result = ();
+}
+
+impl Message for NewTakerOnline {
+    type Result = ();
+}
+
+impl xtra::Actor for Actor {}

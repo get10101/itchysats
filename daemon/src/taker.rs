@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::Network;
 use clap::Clap;
+use futures::StreamExt;
 use model::cfd::{Cfd, Order};
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
@@ -14,6 +15,7 @@ use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
 use tokio::sync::watch;
+use tokio_util::codec::FramedRead;
 use tracing_subscriber::filter::LevelFilter;
 use wire::TakerToMaker;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -30,9 +32,8 @@ mod routes;
 mod routes_taker;
 mod seed;
 mod send_to_socket;
-mod setup_contract_actor;
+mod setup_contract;
 mod taker_cfd;
-mod taker_inc_message_actor;
 mod to_sse_event;
 mod wallet;
 mod wallet_sync;
@@ -181,17 +182,16 @@ async fn main() -> Result<()> {
                 .create(None)
                 .spawn_global();
 
-                let inc_maker_messages_actor =
-                    taker_inc_message_actor::new(read, cfd_actor_inbox.clone());
+                let read = FramedRead::new(read, wire::JsonCodec::new())
+                    .map(move |item| taker_cfd::MakerStreamMessage { item });
 
+                tokio::spawn(cfd_actor_inbox.clone().attach_stream(read));
                 tokio::spawn(monitor_actor_context.run(monitor::Actor::new(
                     &opts.electrum,
                     HashMap::new(),
                     cfd_actor_inbox.clone(),
                 )));
-
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
-                tokio::spawn(inc_maker_messages_actor);
 
                 Ok(rocket.manage(cfd_actor_inbox))
             },
