@@ -21,6 +21,7 @@ use bdk::FeeRate;
 use itertools::Itertools;
 use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
+use std::hash::Hasher;
 use std::iter::FromIterator;
 use std::num::NonZeroU8;
 use std::ops::RangeInclusive;
@@ -72,19 +73,19 @@ where
 /// * `taker` - The initial parameters of the taker.
 /// * `taker_punish_params` - The punish parameters of the taker.
 /// * `oracle_pk` - The public key of the oracle.
-/// * `nonce_pks` - One R-value per price digit signed by the oracle. Their order matches a big
-///   endian encoding of the price.
+/// * `cet_timelock` - Relative timelock of the CET transaction with respect to the commit
+///   transaction.
 /// * `refund_timelock` - Relative timelock of the refund transaction with respect to the commit
 ///   transaction.
-/// * `payouts` - All the possible ways in which the contract can be settled, according to the
-///   conditions of the bet.
+/// * `payouts_per_event` - All the possible ways in which the contract can be settled, according to
+///   the conditions of the bet. The key is the event at which the oracle will attest the price.
 /// * `identity_sk` - The secret key of the caller, used to sign and encsign different transactions.
 pub fn create_cfd_transactions(
     (maker, maker_punish_params): (PartyParams, PunishParams),
     (taker, taker_punish_params): (PartyParams, PunishParams),
-    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
+    oracle_pk: schnorrsig::PublicKey,
     (cet_timelock, refund_timelock): (u32, u32),
-    payouts: Vec<Payout>,
+    payouts_per_event: HashMap<Announcement, Vec<Payout>>,
     identity_sk: SecretKey,
 ) -> Result<CfdTransactions> {
     let lock_tx = lock_transaction(
@@ -109,9 +110,9 @@ pub fn create_cfd_transactions(
             taker.address,
             taker_punish_params,
         ),
-        (oracle_pk, nonce_pks),
+        oracle_pk,
         (cet_timelock, refund_timelock),
-        payouts,
+        payouts_per_event,
         identity_sk,
     )
 }
@@ -130,9 +131,9 @@ pub fn renew_cfd_transactions(
         Address,
         PunishParams,
     ),
-    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
+    oracle_pk: schnorrsig::PublicKey,
     (cet_timelock, refund_timelock): (u32, u32),
-    payouts: Vec<Payout>,
+    payouts_per_event: HashMap<Announcement, Vec<Payout>>,
     identity_sk: SecretKey,
 ) -> Result<CfdTransactions> {
     build_cfds(
@@ -149,9 +150,9 @@ pub fn renew_cfd_transactions(
             taker_address,
             taker_punish_params,
         ),
-        (oracle_pk, nonce_pks),
+        oracle_pk,
         (cet_timelock, refund_timelock),
-        payouts,
+        payouts_per_event,
         identity_sk,
     )
 }
@@ -170,9 +171,9 @@ fn build_cfds(
         Address,
         PunishParams,
     ),
-    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
+    oracle_pk: schnorrsig::PublicKey,
     (cet_timelock, refund_timelock): (u32, u32),
-    payouts: Vec<Payout>,
+    payouts_per_event: HashMap<Announcement, Vec<Payout>>,
     identity_sk: SecretKey,
 ) -> Result<CfdTransactions> {
     let commit_tx = CommitTransaction::new(
@@ -215,24 +216,31 @@ fn build_cfds(
         (tx.into_inner(), sig)
     };
 
-    let cets = payouts
-        .into_iter()
-        .map(|payout| {
-            let cet = ContractExecutionTx::new(
-                &commit_tx,
-                payout.clone(),
-                &maker_address,
-                &taker_address,
-                nonce_pks,
-                cet_timelock,
-            )?;
+    let mut cets = vec![];
+    for (event, payouts) in payouts_per_event.iter() {
+        let cets_tmp = payouts
+            .iter()
+            .map(|payout| {
+                let cet = ContractExecutionTx::new(
+                    &commit_tx,
+                    payout.clone(),
+                    &maker_address,
+                    &taker_address,
+                    event.nonce_pks.as_slice(),
+                    cet_timelock,
+                )?;
 
-            let encsig = cet.encsign(identity_sk, &oracle_pk)?;
+                let encsig = cet.encsign(identity_sk, &oracle_pk)?;
 
-            Ok((cet.into_inner(), encsig, payout.digits))
-        })
-        .collect::<Result<Vec<_>>>()
-        .context("cannot build and sign all cets")?;
+                Ok((cet.into_inner(), encsig, payout.digits.clone()))
+            })
+            .collect::<Result<Vec<_>>>()
+            .context("cannot build and sign all cets")?;
+        cets.push(Cets {
+            event: event.clone(),
+            cets: cets_tmp,
+        });
+    }
 
     Ok(CfdTransactions {
         lock: lock_tx,
@@ -341,8 +349,40 @@ pub struct PunishParams {
 pub struct CfdTransactions {
     pub lock: PartiallySignedTransaction,
     pub commit: (Transaction, EcdsaAdaptorSignature),
-    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
+    pub cets: Vec<Cets>,
     pub refund: (Transaction, Signature),
+}
+
+/// Group of CETs associated with a particular oracle announcement.
+///
+/// All of the adaptor signatures included will be _possibly_ unlocked
+/// by the attestation corresponding to the announcement. In practice,
+/// only one of the adaptor signatures should be unlocked if the
+/// payout intervals are constructed correctly. To check if an adaptor
+/// signature can be unlocked by a price attestation, verify whether
+/// the price attested to lies within its interval.
+#[derive(Debug, Clone)]
+pub struct Cets {
+    pub event: Announcement,
+    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
+}
+
+#[derive(Debug, Clone, Eq)]
+pub struct Announcement {
+    pub id: String,
+    pub nonce_pks: Vec<schnorrsig::PublicKey>,
+}
+
+impl std::hash::Hash for Announcement {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state)
+    }
+}
+
+impl PartialEq for Announcement {
+    fn eq(&self, other: &Self) -> bool {
+        self.id.eq(&other.id)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -352,23 +392,23 @@ pub struct Payout {
     taker_amount: Amount,
 }
 
-impl Payout {
-    pub fn new(
-        range: RangeInclusive<u64>,
-        maker_amount: Amount,
-        taker_amount: Amount,
-    ) -> Result<Vec<Self>> {
-        let digits = interval::Digits::new(range).context("invalid interval")?;
-        Ok(digits
-            .into_iter()
-            .map(|digits| Self {
-                digits,
-                maker_amount,
-                taker_amount,
-            })
-            .collect())
-    }
+pub fn generate_payouts(
+    range: RangeInclusive<u64>,
+    maker_amount: Amount,
+    taker_amount: Amount,
+) -> Result<Vec<Payout>> {
+    let digits = interval::Digits::new(range).context("invalid interval")?;
+    Ok(digits
+        .into_iter()
+        .map(|digits| Payout {
+            digits,
+            maker_amount,
+            taker_amount,
+        })
+        .collect())
+}
 
+impl Payout {
     fn into_txouts(self, maker_address: &Address, taker_address: &Address) -> Vec<TxOut> {
         let txouts = [
             (self.maker_amount, maker_address),
@@ -464,7 +504,7 @@ mod tests {
 
         let orig_maker_amount = 1000;
         let orig_taker_amount = 1000;
-        let payouts = Payout::new(
+        let payouts = generate_payouts(
             0..=10_000,
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),
@@ -498,7 +538,7 @@ mod tests {
 
         let orig_maker_amount = dummy_dust_limit.as_sat() - 1;
         let orig_taker_amount = 1000;
-        let payouts = Payout::new(
+        let payouts = generate_payouts(
             0..=10_000,
             Amount::from_sat(orig_maker_amount),
             Amount::from_sat(orig_taker_amount),

@@ -11,6 +11,7 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Neg, RangeInclusive};
 use std::time::{Duration, SystemTime};
@@ -1060,6 +1061,6 @@ pub struct Dlc {
     /// The fully signed lock transaction ready to be published on chain
     pub lock: (Transaction, Descriptor<PublicKey>),
     pub commit: (Transaction, EcdsaAdaptorSignature, Descriptor<PublicKey>),
-    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, RangeInclusive<u64>)>,
+    pub cets: HashMap<String, Vec<(Transaction, EcdsaAdaptorSignature, RangeInclusive<u64>)>>,
     pub refund: (Transaction, Signature),
 }
