@@ -3,6 +3,8 @@ import {
     Button,
     Container,
     Divider,
+    Grid,
+    GridItem,
     HStack,
     Tab,
     TabList,
@@ -118,66 +120,74 @@ export default function App() {
         !runningStates.includes(value.state) && !closedStates.includes(value.state)
     );
 
-    const labelWidth = 120;
-
     return (
         <Container maxWidth="120ch" marginTop="1rem">
             <HStack spacing={5}>
                 <VStack>
                     <Wallet walletInfo={walletInfo} />
                     <CurrentPrice priceInfo={priceInfo} />
-                    <VStack shadow={"md"} padding={5} align="stretch" spacing={5} width="100%">
-                        <HStack>
-                            <Text align={"left"} width={labelWidth}>Order Price:</Text>
-                            <Text>{order?.price}</Text>
-                        </HStack>
-                        <HStack>
-                            <Text width={labelWidth}>Quantity:</Text>
-                            <CurrencyInputField
-                                onChange={(valueString: string) => {
-                                    setQuantity(parse(valueString));
-                                    if (!order) {
-                                        return;
-                                    }
-                                    let quantity = valueString ? Number.parseFloat(valueString) : 0;
-                                    let payload: MarginRequestPayload = {
-                                        leverage: order.leverage,
-                                        price: order.price,
-                                        quantity,
-                                    };
-                                    calculateMargin(payload);
-                                }}
-                                value={format(quantity)}
-                            />
-                        </HStack>
-                        <HStack>
-                            <Text width={labelWidth}>Margin in BTC:</Text>
-                            <Text>{margin}</Text>
-                        </HStack>
-                        <HStack>
-                            <Text width={labelWidth}>Leverage:</Text>
-                            <HStack spacing={5}>
-                                <Button disabled={true}>x1</Button>
-                                <Button disabled={true}>x2</Button>
-                                <Button colorScheme="blue" variant="solid">x{order?.leverage}</Button>
-                            </HStack>
-                        </HStack>
-                        <Divider />
-                        <Button
-                            disabled={isCreatingNewOrderRequest || !order}
-                            variant={"solid"}
-                            colorScheme={"blue"}
-                            onClick={() => {
-                                let payload: CfdOrderRequestPayload = {
-                                    order_id: order!.id,
-                                    quantity: Number.parseFloat(quantity),
+                    <Grid
+                        gridTemplateColumns="max-content auto"
+                        shadow="md"
+                        padding={5}
+                        rowGap={5}
+                        columnGap={5}
+                        width="100%"
+                        alignItems="center"
+                    >
+                        <Text align={"left"}>Order Price:</Text>
+                        <Text>{order?.price}</Text>
+
+                        <Text>Quantity:</Text>
+                        <CurrencyInputField
+                            onChange={(valueString: string) => {
+                                setQuantity(parse(valueString));
+                                if (!order) {
+                                    return;
+                                }
+                                let quantity = valueString ? Number.parseFloat(valueString) : 0;
+                                let payload: MarginRequestPayload = {
+                                    leverage: order.leverage,
+                                    price: order.price,
+                                    quantity,
                                 };
-                                makeNewOrderRequest(payload);
+                                calculateMargin(payload);
                             }}
-                        >
-                            BUY
-                        </Button>
-                    </VStack>
+                            value={format(quantity)}
+                        />
+
+                        <Text>Margin in BTC:</Text>
+                        <Text>{margin}</Text>
+
+                        <Text>Leverage:</Text>
+                        <HStack spacing={5}>
+                            <Button disabled={true}>x1</Button>
+                            <Button disabled={true}>x2</Button>
+                            <Button colorScheme="blue" variant="solid">x{order?.leverage}</Button>
+                        </HStack>
+
+                        <GridItem colSpan={2}>
+                            <Divider />
+                        </GridItem>
+
+                        <GridItem colSpan={2} textAlign="center">
+                            <Button
+                                disabled={isCreatingNewOrderRequest || !order}
+                                variant={"solid"}
+                                colorScheme={"blue"}
+                                width="100%"
+                                onClick={() => {
+                                    let payload: CfdOrderRequestPayload = {
+                                        order_id: order!.id,
+                                        quantity: Number.parseFloat(quantity),
+                                    };
+                                    makeNewOrderRequest(payload);
+                                }}
+                            >
+                                BUY
+                            </Button>
+                        </GridItem>
+                    </Grid>
                 </VStack>
                 <Box width="100%" />
             </HStack>
