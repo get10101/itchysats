@@ -1,5 +1,7 @@
 use crate::curve_handlers::csr_tools::CSR;
+use crate::curve_handlers::utils::*;
 use crate::curve_handlers::Error;
+
 use ndarray::prelude::*;
 use std::cmp::min;
 
@@ -155,34 +157,6 @@ impl Basis {
 
 pub fn knot_tolerance(tol: Option<f64>) -> f64 {
     tol.unwrap_or(1e-10)
-}
-
-pub fn bisect_left(arr: &Array1<f64>, val: &f64, mut hi: usize) -> usize {
-    let mut lo: usize = 0;
-    while lo < hi {
-        let mid = (lo + hi) / 2;
-        if arr[mid] < *val {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-
-    lo
-}
-
-pub fn bisect_right(arr: &Array1<f64>, val: &f64, mut hi: usize) -> usize {
-    let mut lo: usize = 0;
-    while lo < hi {
-        let mid = (lo + hi) / 2;
-        if *val < arr[mid] {
-            hi = mid;
-        } else {
-            lo = mid + 1;
-        }
-    }
-
-    lo
 }
 
 /// Snap evaluation points to knots if they are sufficiently close

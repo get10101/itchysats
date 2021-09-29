@@ -1,11 +1,13 @@
 use crate::curve_handlers::basis::BSplineBasis;
 use crate::curve_handlers::csr_tools::CSR;
+use crate::curve_handlers::utils::*;
 use crate::curve_handlers::Error;
 
 use itertools::Itertools;
 use ndarray::prelude::*;
 use ndarray::{concatenate, Order};
 use ndarray_einsum_beta::{einsum, tensordot};
+use ndarray_linalg::*;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
@@ -169,19 +171,18 @@ impl SplineObject {
             eval_bases.reverse();
             let cpts = self.controlpoints.clone().to_owned();
             let idx = eval_bases.len() - 1;
+
             out = eval_bases.iter().fold(cpts, |e, tns| {
                 tensordot(&tns.todense(), &e, &[Axis(1)], &[Axis(idx)])
             });
         } else {
-            for (i, elem) in eval_bases.iter().enumerate() {
-            }
-
             let mut pos = 0;
             let mut key = self.bases.len() + 1;
             let mut val = match init_map.get(&key) {
                 Some(val) => Ok(val),
                 _ => Result::Err(Error::EinsumOperandError),
             }?;
+
             out = einsum(val, &[&eval_bases[pos].todense(), &self.controlpoints])
                 .map_err(|_| Error::EinsumError)?;
 
@@ -192,8 +193,10 @@ impl SplineObject {
                     _ => Result::Err(Error::EinsumOperandError),
                 }?;
                 let temp = out.clone().to_owned();
+
                 out = einsum(val, &[&eval_bases[pos].todense(), &temp])
                     .map_err(|_| Error::EinsumError)?;
+
                 key -= 1;
             }
         }
@@ -203,11 +206,53 @@ impl SplineObject {
     }
 
     pub fn derivative(&self) {
+        // need this if we want to allow the user to explore the payout curve,
+        // but not to get things moving.
         todo!()
     }
 
-    pub fn knots(&self) {
-        todo!()
+    /// Return knots vector
+    ///
+    /// If `direction` is given, returns the knots in that direction only.
+    /// Otherwise, specifying direction as a negative value  returns the
+    /// knots of all directions.
+    ///
+    /// ### parameters
+    /// * direction: Direction number (axis) in which to get the knots.
+    /// * with_multiplicities: If true, return knots with multiplicities \
+    /// (i.e. repeated).
+    pub fn knots(
+        &self,
+        direction: isize,
+        with_multiplicities: Option<bool>,
+    ) -> Result<Vec<Array1<f64>>, Error> {
+        let with_multiplicities = with_multiplicities.unwrap_or(false);
+        let out;
+
+        if direction < 0 {
+            if with_multiplicities {
+                out = self
+                    .bases
+                    .iter()
+                    .map(|e| e.knots.clone().to_owned())
+                    .collect::<Vec<_>>();
+            } else {
+                out = self
+                    .bases
+                    .iter()
+                    .map(|e| e.knot_spans(false).to_owned())
+                    .collect::<Vec<_>>();
+            }
+        } else {
+            let p = direction as usize;
+            if with_multiplicities {
+                out = (&[self.bases[p].knots.clone().to_owned()]).to_vec();
+            } else {
+                out = (&[self.bases[p].knot_spans(false).to_owned()]).to_vec();
+            }
+        }
+
+        Ok(out)
     }
 
     /// This will manipulate one or both to ensure that they are both rational
@@ -220,9 +265,9 @@ impl SplineObject {
         }
 
         if self.dimension > otherspline.dimension {
-            otherspline.set_dimension(self.dimension);
+            otherspline.set_dimension(self.dimension)?;
         } else {
-            self.set_dimension(otherspline.dimension);
+            self.set_dimension(otherspline.dimension)?;
         }
 
         Ok(())
@@ -313,12 +358,188 @@ impl SplineObject {
         Ok(out)
     }
 
-    fn order(&self) {
-        todo!()
+    /// Return polynomial order (degree + 1).
+    ///
+    /// If `direction` is given, returns the order in that direction only.
+    /// Otherwise, specifying direction as a negative value  returns the
+    /// order of all directions.
+    ///
+    /// ### parameters
+    ///  * direction: Direction in which to get the order.
+    fn order(&self, direction: isize) -> Result<Vec<usize>, Error> {
+        let out;
+        if direction < 0 {
+            out = self.bases.iter().map(|e| e.order).collect::<Vec<_>>();
+        } else {
+            let p = direction as usize;
+            out = (&[self.bases[p].order]).to_vec();
+        }
+
+        Ok(out)
     }
 
-    fn raise_order(&self) {
-        todo!()
+    /// Raise the polynomial order of the object. If only one argument is
+    /// given in `raises`, the order is raised equally over all directions.
+    /// The explicit version is only implemented on open knot vectors. The
+    /// function `raise_order_implicit` is used otherwise.
+    ///
+    /// ### parameters
+    /// * raises: Number of times to raise the order in a given direction.
+    pub fn raise_order(&mut self, raises: Vec<usize>) -> Result<(), Error> {
+        let raises_used;
+        if raises.len() == 1 {
+            raises_used = vec![raises[0]; self.pardim];
+        } else {
+            raises_used = raises.clone();
+        }
+
+        if raises_used.len() != self.pardim {
+            return Result::Err(Error::InvalidRaisesValueError);
+        }
+
+        if raises_used.iter().sum::<usize>() == 0 {
+            return Ok(());
+        }
+
+        // I don't know how to not use the .unwrap() here, but it is technically
+        // fine in this case as there is no way for `.continuity()` to error
+        // in the following construct
+        let test = self
+            .bases
+            .iter()
+            .any(|x| x.continuity(x.knots[0]).unwrap() < x.order as isize || x.periodic > -1);
+        if test {
+            self.raise_order_implicit(raises_used)?;
+            return Ok(());
+        }
+
+        let mut controlpoints = self.controlpoints.clone();
+        for i in 0..self.pardim {
+            let dimensions = &controlpoints.shape().to_vec();
+            let mut indices = Array1::<usize>::from_vec((0..self.pardim + 1).into_iter().collect());
+            indices[i] = self.pardim;
+            indices[self.pardim] = i;
+
+            let slice = &indices.to_vec()[..indices.len() - 1];
+            let newshape_0 = &slice
+                .iter()
+                .map(|e| dimensions[*e])
+                .collect::<Vec<_>>()
+                .iter()
+                .product::<usize>();
+            let newshape_1 = &dimensions[0];
+
+            let cpoints_permuted = controlpoints.view().permuted_axes(&indices.to_vec()[..]);
+            let cpoints_reshaped = cpoints_permuted
+                .to_shape(((*newshape_0, *newshape_1), Order::C))?
+                .to_owned();
+
+            controlpoints = raise_order_1d(
+                cpoints_reshaped.shape()[1] - 1,
+                self.order(i as isize)?[0],
+                self.bases[i].knots.clone().to_owned(),
+                cpoints_reshaped.clone().into_dyn().to_owned(),
+                raises[i],
+                self.bases[i].periodic,
+            )?;
+        }
+        self.controlpoints = controlpoints;
+
+        let new_bases = &self.bases.clone()
+            .into_iter()
+            .zip(raises_used.into_iter())
+            .map(|(b, r)| {
+                let mut new_basis = b;
+                new_basis.raise_order(r);
+                new_basis
+            })
+            .collect::<Vec<_>>();
+
+        self.bases = new_bases.to_vec();
+
+        Ok(())
+    }
+
+    /// Raise the polynomial order of the object. If only one argument is
+    /// given, the order is raised equally over all directions.
+    ///
+    /// ### parameters
+    /// * raises: Number of times to raise the order in a given direction.
+    fn raise_order_implicit(&mut self, raises: Vec<usize>) -> Result<(), Error> {
+        let raises_used;
+        if raises.len() == 1 {
+            raises_used = vec![raises[0]; self.pardim];
+        } else {
+            raises_used = raises;
+        }
+
+        if raises_used.len() != self.pardim {
+            return Result::Err(Error::InvalidRaisesValueError);
+        }
+
+        if raises_used.iter().sum::<usize>() == 0 {
+            return Ok(());
+        }
+
+        let new_bases = &self.bases.clone()
+            .into_iter()
+            .zip(raises_used.into_iter())
+            .map(|(b, r)| {
+                let mut new_basis = b;
+                new_basis.raise_order(r);
+                new_basis
+            })
+            .collect::<Vec<_>>();
+
+        // Set up an interpolation problem. This works in projective space,
+        // so no special handling for rational objects
+        let interpolation_pts = &new_bases
+            .iter()
+            .map(|b| b.greville())
+            .collect::<Vec<_>>();
+
+        let n_old = &mut self.bases
+            .clone()
+            .iter()
+            .zip(&interpolation_pts.to_vec()[..])
+            .map(|(b, pts)| {
+                let mut t = pts.clone().to_owned();
+                let res = b.evaluate(&mut t, 0, true)?;
+                Ok(res.todense())
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        let n_new = &mut new_bases
+            .iter()
+            .zip(&interpolation_pts.to_vec()[..])
+            .map(|(b, pts)| {
+                let mut t = pts.clone().to_owned();
+                let res = b.evaluate(&mut t, 0, true)?;
+                Ok(res.todense())
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        // Calculate the projective interpolation points
+        let mut res = self.controlpoints.clone();
+        n_old.reverse();
+        for elem in n_old.iter() {
+            res = tensordot(elem, &res, &[Axis(1)], &[Axis(self.pardim - 1)]);
+        }
+
+        // Solve the interpolation problem
+        n_new.reverse();
+        for elem in n_new.iter() {
+            // TODO:
+            // having trouble catching the errors here, hence the unwrap and the finger-crossing
+            // on the tensordot() call itself.
+            let inv = elem.clone().inv_into().unwrap();
+            res = tensordot(&inv, &res, &[Axis(1)], &[Axis(self.pardim - 1)]);
+        }
+
+        self.controlpoints = res;
+        self.bases = new_bases.to_vec();
+
+        Ok(())
     }
 }
 

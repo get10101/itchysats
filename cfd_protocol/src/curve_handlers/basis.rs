@@ -2,8 +2,9 @@ use core::cmp::max;
 use ndarray::prelude::*;
 use ndarray::{concatenate, s};
 
-use crate::curve_handlers::basis_eval::{bisect_left, knot_tolerance, snap, Basis};
+use crate::curve_handlers::basis_eval::*;
 use crate::curve_handlers::csr_tools::CSR;
+use crate::curve_handlers::utils::*;
 use crate::curve_handlers::Error;
 
 #[derive(Clone, Debug)]
@@ -20,18 +21,18 @@ impl BSplineBasis {
         knots: Option<Array1<f64>>,
         periodic: Option<isize>,
     ) -> Result<Self, Error> {
-        let ord = order.unwrap_or(2);
-        let prd = periodic.unwrap_or(-1);
-        let knt = match knots {
+        let order = order.unwrap_or(2);
+        let periodic = periodic.unwrap_or(-1);
+        let knots = match knots {
             Some(knots) => knots,
-            None => default_knot(ord, prd)?,
+            None => default_knot(order, periodic)?,
         };
         let ktol = knot_tolerance(None);
 
         Ok(BSplineBasis {
-            order: ord,
-            knots: knt,
-            periodic: prd,
+            order,
+            knots,
+            periodic,
             knot_tol: ktol,
         })
     }
@@ -110,18 +111,6 @@ impl BSplineBasis {
         snap(t, &self.knots, Some(self.knot_tol))
     }
 
-    // def raise_order(self, amount):
-
-    //     """
-    //     if type(amount) is not int:
-    //         raise TypeError('amount needs to be a non-negative integer')
-    //     if amount < 0:
-    //         raise ValueError('amount needs to be a non-negative integer')
-    //     if amount == 0:
-    //         return self.clone()
-    //     knot_spans = list(self.knot_spans(True))  # list of unique knots
-    //
-
     /// Create a knot vector with higher order.
     ///
     /// The continuity at the knots are kept unchanged by increasing their
@@ -129,24 +118,40 @@ impl BSplineBasis {
     ///
     /// ### parameters
     /// * amount: relative (polynomial) degree to raise the basis function by
-    pub fn raise_order(&mut self, amount: usize) -> Result<(), Error> {
+    pub fn raise_order(&mut self, amount: usize) {
         if amount > 0 {
-            let knot_spans = get_unique_f64(&self.knots.clone().into_dyn().to_owned())?;
-            // knot_spans = list(self.knot_spans(True))  # list of unique knots
-            // # For every degree we raise, we need to increase the multiplicity by one
-            // knots = list(self.knots) + knot_spans * amount
-            // # make it a proper knot vector by ensuring that it is non-decreasing
-            // knots.sort()
-            // if self.periodic > -1:
-            //     # remove excessive ghost knots which appear at both ends of the knot vector
-            //     n0 =                   bisect_left(knot_spans, self.start())
-            //     n1 = len(knot_spans) - bisect_left(knot_spans, self.end())   - 1
-            //     knots = knots[n0*amount : -n1*amount]
+            let knot_spans_arr = self.knot_spans(true);
+            let knot_spans = knot_spans_arr.iter().collect::<Vec<_>>();
+            let temp = self.knots.clone();
+            let mut knots = temp.iter().collect::<Vec<_>>();
 
-            // return BSplineBasis(self.order + amount, knots, self.periodic)
-        };
+            for _ in 0..amount {
+                knots.append(&mut knot_spans.clone());
+            }
 
-        Ok(())
+            knots.to_vec().sort_by(cmp_f64);
+            let knots_arr = Array1::<f64>::from_vec(knots.iter().map(|e| **e).collect::<Vec<_>>());
+
+            let new_knot;
+            if self.periodic > -1 {
+                let n_0 = bisect_left(&knots_arr, &self.start(), knots_arr.len());
+                let n_1 = 
+                    knot_spans.len() -
+                    bisect_left(&knots_arr, &self.end(), knots_arr.len()) -
+                    1;
+                new_knot = Array1::<f64>::from_vec(
+                    knots[n_0 * amount..n_1 * amount]
+                        .iter()
+                        .map(|e| **e)
+                        .collect::<Vec<_>>(),
+                );
+            } else {
+                new_knot = knots_arr.clone();
+            }
+
+            self.order += amount;
+            self.knots = new_knot;
+        }
     }
 
     /// Return the set of unique knots in the knot vector.
@@ -180,6 +185,36 @@ impl BSplineBasis {
 
         Array1::<f64>::from_vec(res)
     }
+
+    /// Get the continuity of the basis functions at a given point.
+    ///
+    /// Returns *order* - *m* - 1 at a knot with multiplicity *m*, or `999`
+    /// if evaluation is not at a knot as the basis is at least *C∞* at
+    /// intermediate values.
+    ///
+    /// ### parameters
+    /// * knot: knot vector
+    pub fn continuity(&self, mut knot: f64) -> Result<isize, Error> {
+        if self.periodic >= 0 {
+            if knot < self.start() || knot > self.end() {
+                knot = (knot - self.start()) % (self.end() - self.start()) + self.start();
+            }
+        } else if knot < self.start() || self.end() < knot {
+            return Result::Err(Error::OutOfRangeError);
+        }
+
+        let hi = bisect_left(&self.knots, &(knot + self.knot_tol), self.knots.len()) as isize;
+        let lo = bisect_left(&self.knots, &(knot - self.knot_tol), self.knots.len()) as isize;
+
+        let out;
+        if hi == lo {
+            out = 999;
+        } else {
+            out = (self.order as isize) - (hi - lo) - 1;
+        }
+
+        Ok(out)
+    }
 }
 
 fn default_knot(order: usize, periodic: isize) -> Result<Array1<f64>, Error> {
@@ -200,14 +235,4 @@ fn default_knot(order: usize, periodic: isize) -> Result<Array1<f64>, Error> {
     }
 
     Ok(knots)
-}
-
-fn get_unique_f64(arr: &ArrayD<f64>) -> Result<Array1<f64>, Error> {
-    let mut tmp = arr.iter().copied().collect::<Vec<f64>>();
-    tmp.sort_by(|a, b| a.partial_cmp(b).expect("No NaNs"));
-    tmp.dedup();
-
-    let out = Array1::<f64>::from_vec(tmp);
-
-    Ok(out)
 }

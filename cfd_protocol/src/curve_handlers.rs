@@ -6,6 +6,7 @@ mod csr_tools;
 mod curve;
 mod curve_factory;
 mod splineobject;
+mod utils;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -28,4 +29,14 @@ pub enum Error {
         #[from]
         source: ndarray::ShapeError,
     },
+    #[error("cannot connect periodic curves")]
+    IncompatibleCurvesError,
+    #[error("analogue of np.insert not available yet; define spline as rational")]
+    FeatureNotImplementedError,
+    #[error("Ambiguous specification of `raises` vector")]
+    InvalidRaisesValueError,
+    #[error("attempting to evaluate spline outside of support")]
+    OutOfRangeError,
+    #[error("a `periodic` value < -1 makes no sense")]
+    IvalidPeriodicValueError,
 }
