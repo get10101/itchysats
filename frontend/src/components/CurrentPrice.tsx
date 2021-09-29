@@ -35,7 +35,10 @@ export default function CurrentPrice(
                 {ask}
             </HStack>
             <Divider marginTop={2} marginBottom={2} />
-            {timestamp}
+            <HStack>
+                <Text align={"left"}>Updated:</Text>
+                {timestamp}
+            </HStack>
         </Box>
     );
 }
