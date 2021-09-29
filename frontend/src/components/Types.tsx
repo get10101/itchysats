@@ -37,6 +37,12 @@ export interface WalletInfo {
     last_updated_at: number;
 }
 
+export interface PriceInfo {
+    bid: number;
+    ask: number;
+    last_updated_at: number;
+}
+
 export function unixTimestampToDate(unixTimestamp: number): Date {
     return new Date(unixTimestamp * 1000);
 }

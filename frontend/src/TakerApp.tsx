@@ -18,8 +18,9 @@ import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
+import CurrentPrice from "./components/CurrentPrice";
 import useLatestEvent from "./components/Hooks";
-import { Cfd, Order, WalletInfo } from "./components/Types";
+import { Cfd, Order, PriceInfo, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 
 interface CfdOrderRequestPayload {
@@ -62,6 +63,7 @@ export default function App() {
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
     const order = useLatestEvent<Order>(source, "order");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
+    const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 
     const toast = useToast();
     let [quantity, setQuantity] = useState("0");
@@ -123,6 +125,7 @@ export default function App() {
             <HStack spacing={5}>
                 <VStack>
                     <Wallet walletInfo={walletInfo} />
+                    <CurrentPrice priceInfo={priceInfo} />
                     <VStack shadow={"md"} padding={5} align="stretch" spacing={5} width="100%">
                         <HStack>
                             <Text align={"left"} width={labelWidth}>Order Price:</Text>

@@ -1,8 +1,8 @@
-use crate::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId};
+use crate::model::cfd::{calculate_buy_margin, Order, OrderId};
 use crate::model::{Leverage, Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
-use crate::taker_cfd;
 use crate::to_sse_event::ToSseEvent;
+use crate::{bitmex_price_feed, cfd_feed, taker_cfd};
 use bdk::bitcoin::Amount;
 use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
@@ -19,13 +19,15 @@ use xtra::Address;
 
 #[rocket::get("/feed")]
 pub async fn feed(
-    rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
+    rx_cfds: &State<watch::Receiver<Vec<cfd_feed::Cfd>>>,
     rx_order: &State<watch::Receiver<Option<Order>>>,
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
+    rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
     let mut rx_order = rx_order.inner().clone();
     let mut rx_wallet = rx_wallet.inner().clone();
+    let mut rx_quote = rx_quote.inner().clone();
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -33,6 +35,9 @@ pub async fn feed(
 
         let order = rx_order.borrow().clone();
         yield order.to_sse_event();
+
+        let quote = rx_quote.borrow().clone();
+        yield quote.to_sse_event();
 
         let cfds = rx_cfds.borrow().clone();
         yield cfds.to_sse_event();
@@ -50,6 +55,10 @@ pub async fn feed(
                 Ok(()) = rx_cfds.changed() => {
                     let cfds = rx_cfds.borrow().clone();
                     yield cfds.to_sse_event();
+                }
+                Ok(()) = rx_quote.changed() => {
+                    let quote = rx_quote.borrow().clone();
+                    yield quote.to_sse_event();
                 }
             }
         }

@@ -1,7 +1,8 @@
 import { CheckIcon, CopyIcon } from "@chakra-ui/icons";
 import { Box, Center, Divider, HStack, IconButton, Skeleton, Text, useClipboard } from "@chakra-ui/react";
 import React from "react";
-import { unixTimestampToDate, WalletInfo } from "./Types";
+import Timestamp from "./Timestamp";
+import { WalletInfo } from "./Types";
 
 interface WalletProps {
     walletInfo: WalletInfo | null;
@@ -30,16 +31,7 @@ export default function Wallet(
                 />
             </HStack>
         );
-        timestamp = <Text>
-            Updated: {unixTimestampToDate(walletInfo.last_updated_at).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "numeric",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-            })}
-        </Text>;
+        timestamp = <Timestamp timestamp={walletInfo.last_updated_at} />;
     }
 
     return (
