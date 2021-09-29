@@ -13,7 +13,7 @@ export default function Timestamp(
 ) {
     return (
         <Text>
-            Updated: {unixTimestampToDate(timestamp).toLocaleDateString("en-US", {
+            {unixTimestampToDate(timestamp).toLocaleDateString("en-US", {
                 year: "numeric",
                 month: "numeric",
                 day: "numeric",

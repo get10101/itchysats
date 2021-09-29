@@ -14,37 +14,35 @@ export default function Wallet(
     }: WalletProps,
 ) {
     const { hasCopied, onCopy } = useClipboard(walletInfo ? walletInfo.address : "");
-
-    let balance = <Skeleton height="20px" />;
-    let address = <Skeleton height="20px" />;
-    let timestamp = <Skeleton height="20px" />;
-
-    if (walletInfo) {
-        balance = <Text>{walletInfo.balance} BTC</Text>;
-        address = (
-            <HStack>
-                <Text isTruncated>{walletInfo.address}</Text>
-                <IconButton
-                    aria-label="Copy to clipboard"
-                    icon={hasCopied ? <CheckIcon /> : <CopyIcon />}
-                    onClick={onCopy}
-                />
-            </HStack>
-        );
-        timestamp = <Timestamp timestamp={walletInfo.last_updated_at} />;
-    }
+    const { balance, address, last_updated_at } = walletInfo || {};
 
     return (
         <Box shadow={"md"} marginBottom={5} padding={5}>
             <Center><Text fontWeight={"bold"}>Your wallet</Text></Center>
             <HStack>
                 <Text align={"left"}>Balance:</Text>
-                {balance}
+                <Skeleton isLoaded={balance != null}>
+                    <Text>{balance} BTC</Text>
+                </Skeleton>
             </HStack>
             <Divider marginTop={2} marginBottom={2} />
-            {address}
+            <Skeleton isLoaded={address != null}>
+                <HStack>
+                    <Text isTruncated>{address}</Text>
+                    <IconButton
+                        aria-label="Copy to clipboard"
+                        icon={hasCopied ? <CheckIcon /> : <CopyIcon />}
+                        onClick={onCopy}
+                    />
+                </HStack>
+            </Skeleton>
             <Divider marginTop={2} marginBottom={2} />
-            {timestamp}
+            <HStack>
+                <Text align={"left"}>Updated:</Text>
+                <Skeleton isLoaded={last_updated_at != null}>
+                    <Timestamp timestamp={last_updated_at!} />
+                </Skeleton>
+            </HStack>
         </Box>
     );
 }
