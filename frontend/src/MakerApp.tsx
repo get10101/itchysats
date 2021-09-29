@@ -1,9 +1,8 @@
 import {
+    Box,
     Button,
     Container,
-    Flex,
-    Grid,
-    GridItem,
+    Divider,
     HStack,
     Tab,
     TabList,
@@ -74,67 +73,70 @@ export default function App() {
         !runningStates.includes(value.state) && !closedStates.includes(value.state) && !openStates.includes(value.state)
     );
 
+    const labelWidth = 110;
+
     return (
         <Container maxWidth="120ch" marginTop="1rem">
-            <Grid templateColumns="repeat(6, 1fr)" gap={4}>
-                <GridItem colStart={1} colSpan={2}>
+            <HStack spacing={5}>
+                <VStack>
                     <Wallet walletInfo={walletInfo} />
-                    <VStack spacing={5} shadow={"md"} padding={5} align={"stretch"}>
+                    <VStack spacing={5} shadow={"md"} padding={5} width="100%" align={"stretch"}>
                         <HStack>
-                            <Text align={"left"}>Current Price:</Text>
+                            <Text width={labelWidth} align={"left"}>Current Price:</Text>
                             <Text>{49000}</Text>
                         </HStack>
                         <HStack>
-                            <Text>Min Quantity:</Text>
+                            <Text width={labelWidth}>Min Quantity:</Text>
                             <CurrencyInputField
                                 onChange={(valueString: string) => setMinQuantity(parse(valueString))}
                                 value={format(minQuantity)}
                             />
                         </HStack>
                         <HStack>
-                            <Text>Min Quantity:</Text>
+                            <Text width={labelWidth}>Min Quantity:</Text>
                             <CurrencyInputField
                                 onChange={(valueString: string) => setMaxQuantity(parse(valueString))}
                                 value={format(maxQuantity)}
                             />
                         </HStack>
                         <HStack>
-                            <Text>Order Price:</Text>
+                            <Text width={labelWidth}>Order Price:</Text>
+                            <CurrencyInputField
+                                onChange={(valueString: string) => setOrderPrice(parse(valueString))}
+                                value={format(orderPrice)}
+                            />
                         </HStack>
-                        <CurrencyInputField
-                            onChange={(valueString: string) => setOrderPrice(parse(valueString))}
-                            value={format(orderPrice)}
-                        />
-                        <Text>Leverage:</Text>
-                        <Flex justifyContent={"space-between"}>
-                            <Button disabled={true}>x1</Button>
-                            <Button disabled={true}>x2</Button>
-                            <Button colorScheme="blue" variant="solid">x{5}</Button>
-                        </Flex>
-                        <VStack>
-                            <Button
-                                disabled={isCreatingNewCfdOrder}
-                                variant={"solid"}
-                                colorScheme={"blue"}
-                                onClick={() => {
-                                    let payload: CfdSellOrderPayload = {
-                                        price: Number.parseFloat(orderPrice),
-                                        min_quantity: Number.parseFloat(minQuantity),
-                                        max_quantity: Number.parseFloat(maxQuantity),
-                                    };
-                                    makeNewCfdSellOrder(payload);
-                                }}
-                            >
-                                {order ? "Update Sell Order" : "Create Sell Order"}
-                            </Button>
-                        </VStack>
+                        <HStack>
+                            <Text width={labelWidth}>Leverage:</Text>
+                            <HStack spacing={5}>
+                                <Button disabled={true}>x1</Button>
+                                <Button disabled={true}>x2</Button>
+                                <Button colorScheme="blue" variant="solid">x{5}</Button>
+                            </HStack>
+                        </HStack>
+                        <Divider />
+                        <Button
+                            disabled={isCreatingNewCfdOrder}
+                            variant={"solid"}
+                            colorScheme={"blue"}
+                            onClick={() => {
+                                let payload: CfdSellOrderPayload = {
+                                    price: Number.parseFloat(orderPrice),
+                                    min_quantity: Number.parseFloat(minQuantity),
+                                    max_quantity: Number.parseFloat(maxQuantity),
+                                };
+                                makeNewCfdSellOrder(payload);
+                            }}
+                        >
+                            {order ? "Update Sell Order" : "Create Sell Order"}
+                        </Button>
                     </VStack>
-                </GridItem>
-                <GridItem colStart={3} colSpan={2}>
-                    {order && <OrderTile order={order} />}
-                </GridItem>
-            </Grid>
-            <Tabs>
+                </VStack>
+                {order && <OrderTile order={order} />}
+                <Box width="40%" />
+            </HStack>
+
+            <Tabs marginTop={5}>
                 <TabList>
                     <Tab>Running [{running.length}]</Tab>
                     <Tab>Open [{open.length}]</Tab>
