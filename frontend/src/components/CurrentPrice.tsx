@@ -12,32 +12,30 @@ export default function CurrentPrice(
         priceInfo,
     }: Props,
 ) {
-    let bid = <Skeleton height="20px" />;
-    let ask = <Skeleton height="20px" />;
-    let timestamp = <Skeleton height="20px" />;
-
-    if (priceInfo) {
-        bid = <Text>{priceInfo.bid} USD</Text>;
-        ask = <Text>{priceInfo.ask} USD</Text>;
-        timestamp = <Timestamp timestamp={priceInfo.last_updated_at} />;
-    }
+    const { ask, bid, last_updated_at } = priceInfo || {};
 
     return (
         <Box shadow={"md"} marginBottom={5} padding={5}>
             <Center><Text fontWeight={"bold"}>Current Price</Text></Center>
             <HStack>
                 <Text align={"left"}>Bid:</Text>
-                {bid}
+                <Skeleton isLoaded={bid != null}>
+                    <Text>{bid} USD</Text>
+                </Skeleton>
             </HStack>
             <Divider marginTop={2} marginBottom={2} />
             <HStack>
                 <Text align={"left"}>Ask:</Text>
-                {ask}
+                <Skeleton isLoaded={ask != null}>
+                    <Text>{ask} USD</Text>
+                </Skeleton>
             </HStack>
             <Divider marginTop={2} marginBottom={2} />
             <HStack>
                 <Text align={"left"}>Updated:</Text>
-                {timestamp}
+                <Skeleton isLoaded={last_updated_at != null}>
+                    <Timestamp timestamp={last_updated_at!} />
+                </Skeleton>
             </HStack>
         </Box>
     );
