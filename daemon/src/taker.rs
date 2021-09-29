@@ -1,4 +1,5 @@
 use crate::cfd_feed::CfdFeed;
+use crate::db::load_all_cfds;
 use crate::model::WalletInfo;
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
@@ -10,7 +11,6 @@ use model::cfd::Order;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use seed::Seed;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::thread::sleep;
@@ -25,6 +25,7 @@ use xtra::Actor;
 mod actors;
 mod bitmex_price_feed;
 mod cfd_feed;
+mod cleanup;
 mod db;
 mod keypair;
 mod logger;
@@ -153,20 +154,27 @@ async fn main() -> Result<()> {
                     None => return Err(rocket),
                 };
 
+                cleanup::transition_non_continue_cfds_to_setup_failed(db.clone())
+                    .await
+                    .unwrap();
+
                 let send_to_maker = send_to_socket::Actor::new(write)
                     .create(None)
                     .spawn_global();
 
                 let (monitor_actor_address, monitor_actor_context) = xtra::Context::new(None);
 
+                let mut conn = db.acquire().await.unwrap();
+                let cfds = load_all_cfds(&mut conn).await.unwrap();
                 let cfd_actor_inbox = taker_cfd::Actor::new(
-                    db,
+                    db.clone(),
                     wallet.clone(),
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     cfd_feed_updater,
                     order_feed_sender,
                     send_to_maker,
                     monitor_actor_address,
+                    cfds.clone(),
                 )
                 .await
                 .unwrap()
@@ -177,11 +185,11 @@ async fn main() -> Result<()> {
                     .map(move |item| taker_cfd::MakerStreamMessage { item });
 
                 tokio::spawn(cfd_actor_inbox.clone().attach_stream(read));
-                tokio::spawn(monitor_actor_context.run(monitor::Actor::new(
-                    &opts.electrum,
-                    HashMap::new(),
-                    cfd_actor_inbox.clone(),
-                )));
+                tokio::spawn(
+                    monitor_actor_context.run(
+                        monitor::Actor::new(&opts.electrum, cfd_actor_inbox.clone(), cfds).await,
+                    ),
+                );
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
                 tokio::spawn({
                     let cfd_actor_inbox = cfd_actor_inbox.clone();

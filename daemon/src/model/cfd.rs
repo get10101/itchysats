@@ -162,6 +162,7 @@ pub enum CfdState {
     /// The maker rejected the CFD order.
     ///
     /// This state applies to taker and maker.
+    /// This is a final state.
     Rejected {
         common: CfdStateCommon,
     },
@@ -206,8 +207,22 @@ pub enum CfdState {
         dlc: Dlc,
     },
 
+    /// The Cfd was refunded and the refund transaction reached finality
+    ///
+    /// This state applies to taker and maker.
+    /// This is a final state.
     Refunded {
         common: CfdStateCommon,
+    },
+
+    /// The Cfd was in a state that could not be continued after the application got interrupted
+    ///
+    /// This state applies to taker and maker.
+    /// This is a final state.
+    /// It is safe to remove Cfds in this state from the database.
+    SetupFailed {
+        common: CfdStateCommon,
+        info: String,
     },
 }
 
@@ -233,6 +248,7 @@ impl CfdState {
             CfdState::OpenCommitted { common, .. } => common,
             CfdState::MustRefund { common, .. } => common,
             CfdState::Refunded { common, .. } => common,
+            CfdState::SetupFailed { common, .. } => common,
         };
 
         *common
@@ -275,6 +291,9 @@ impl Display for CfdState {
             }
             CfdState::Refunded { .. } => {
                 write!(f, "Refunded")
+            }
+            CfdState::SetupFailed { .. } => {
+                write!(f, "Safely Aborted")
             }
         }
     }
@@ -384,12 +403,14 @@ impl Cfd {
                         dlc,
                     },
                     OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-                    IncomingOrderRequest { .. }
-                    | Accepted { .. }
-                    | Rejected { .. }
-                    | ContractSetup { .. } => bail!("Did not expect lock finality yet: ignoring"),
-                    Open { .. } | OpenCommitted { .. } | MustRefund { .. } | Refunded { .. } => {
+                    IncomingOrderRequest { .. } | Accepted { .. } | ContractSetup { .. } => {
+                        bail!("Did not expect lock finality yet: ignoring")
+                    }
+                    Open { .. } | OpenCommitted { .. } | MustRefund { .. } => {
                         bail!("State already assumes lock finality: ignoring")
+                    }
+                    Rejected { .. } | Refunded { .. } | SetupFailed { .. } => {
+                        bail!("The cfd is already in final state {}", self.state)
                     }
                 },
                 monitor::Event::CommitFinality(_) => {
@@ -400,14 +421,14 @@ impl Cfd {
                             dlc
                         }
                         OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-                        IncomingOrderRequest { .. }
-                        | Accepted { .. }
-                        | Rejected { .. }
-                        | ContractSetup { .. } => {
+                        IncomingOrderRequest { .. } | Accepted { .. } | ContractSetup { .. } => {
                             bail!("Did not expect commit finality yet: ignoring")
                         }
-                        OpenCommitted { .. } | MustRefund { .. } | Refunded { .. } => {
+                        OpenCommitted { .. } | MustRefund { .. } => {
                             bail!("State already assumes commit finality: ignoring")
+                        }
+                        Rejected { .. } | Refunded { .. } | SetupFailed { .. } => {
+                            bail!("The cfd is already in final state {}", self.state)
                         }
                     };
 
@@ -463,10 +484,7 @@ impl Cfd {
                         }
                     }
                     OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-                    IncomingOrderRequest { .. }
-                    | Accepted { .. }
-                    | Rejected { .. }
-                    | ContractSetup { .. } => {
+                    IncomingOrderRequest { .. } | Accepted { .. } | ContractSetup { .. } => {
                         bail!("Did not expect CET timelock expiry yet: ignoring")
                     }
                     OpenCommitted {
@@ -477,21 +495,21 @@ impl Cfd {
                         cet_status: CetStatus::Ready(_),
                         ..
                     } => bail!("State already assumes CET timelock expiry: ignoring"),
-                    MustRefund { .. } | Refunded { .. } => {
+                    MustRefund { .. } => {
                         bail!("Refund path does not care about CET timelock expiry: ignoring")
+                    }
+                    Rejected { .. } | Refunded { .. } | SetupFailed { .. } => {
+                        bail!("The cfd is already in final state {}", self.state)
                     }
                 },
                 monitor::Event::RefundTimelockExpired(_) => {
                     let dlc = match self.state.clone() {
                         OpenCommitted { dlc, .. } => dlc,
-                        MustRefund { .. } | Refunded { .. } => {
+                        MustRefund { .. } => {
                             bail!("State already assumes refund timelock expiry: ignoring")
                         }
                         OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-                        IncomingOrderRequest { .. }
-                        | Accepted { .. }
-                        | Rejected { .. }
-                        | ContractSetup { .. } => {
+                        IncomingOrderRequest { .. } | Accepted { .. } | ContractSetup { .. } => {
                             bail!("Did not expect refund timelock expiry yet: ignoring")
                         }
                         PendingOpen { dlc, .. } => {
@@ -501,6 +519,9 @@ impl Cfd {
                         Open { dlc, .. } => {
                             tracing::debug!(%order_id, "Was waiting on CET timelock expiry, jumping ahead");
                             dlc
+                        }
+                        Rejected { .. } | Refunded { .. } | SetupFailed { .. } => {
+                            bail!("The cfd is already in final state {}", self.state)
                         }
                     };
 
@@ -515,10 +536,7 @@ impl Cfd {
                     match self.state {
                         MustRefund { .. } => (),
                         OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-                        IncomingOrderRequest { .. }
-                        | Accepted { .. }
-                        | Rejected { .. }
-                        | ContractSetup { .. } => {
+                        IncomingOrderRequest { .. } | Accepted { .. } | ContractSetup { .. } => {
                             bail!("Did not expect refund finality yet: ignoring")
                         }
                         PendingOpen { .. } => {
@@ -530,7 +548,9 @@ impl Cfd {
                         OpenCommitted { .. } => {
                             tracing::debug!(%order_id, "Was waiting on refund timelock expiry, jumping ahead");
                         }
-                        Refunded { .. } => bail!("State already assumes refund finality: ignoring"),
+                        Rejected { .. } | Refunded { .. } | SetupFailed { .. } => {
+                            bail!("The cfd is already in final state {}", self.state)
+                        }
                     }
 
                     Refunded {
@@ -572,6 +592,28 @@ impl Cfd {
         )?;
 
         Ok(signed_refund_tx)
+    }
+
+    pub fn pending_open_dlc(&self) -> Option<Dlc> {
+        if let CfdState::PendingOpen { dlc, .. } = self.state.clone() {
+            Some(dlc)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_must_refund(&self) -> bool {
+        matches!(self.state.clone(), CfdState::MustRefund { .. })
+    }
+
+    pub fn is_cleanup(&self) -> bool {
+        matches!(
+            self.state.clone(),
+            CfdState::OutgoingOrderRequest { .. }
+                | CfdState::IncomingOrderRequest { .. }
+                | CfdState::Accepted { .. }
+                | CfdState::ContractSetup { .. }
+        )
     }
 }
 
