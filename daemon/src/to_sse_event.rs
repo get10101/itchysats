@@ -1,10 +1,33 @@
 use crate::model::cfd::OrderId;
 use crate::model::{Leverage, Position, TradingPair, Usd};
-use crate::{bitmex_price_feed, cfd_feed, model};
+use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::Amount;
 use rocket::response::stream::Event;
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Cfd {
+    pub order_id: OrderId,
+    pub initial_price: Usd,
+
+    pub leverage: Leverage,
+    pub trading_pair: TradingPair,
+    pub position: Position,
+    pub liquidation_price: Usd,
+
+    pub quantity_usd: Usd,
+
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub margin: Amount,
+
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub profit_btc: Amount,
+    pub profit_usd: Usd,
+
+    pub state: String,
+    pub state_transition_timestamp: u64,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CfdOrder {
@@ -29,9 +52,42 @@ pub trait ToSseEvent {
     fn to_sse_event(&self) -> Event;
 }
 
-impl ToSseEvent for Vec<cfd_feed::Cfd> {
+impl ToSseEvent for Vec<model::cfd::Cfd> {
+    // TODO: This conversion can fail, we might want to change the API
     fn to_sse_event(&self) -> Event {
-        Event::json(&self).event("cfds")
+        let cfds = self
+            .iter()
+            .map(|cfd| {
+                // TODO: Get the actual current price here
+                let current_price = Usd::ZERO;
+                let (profit_btc, profit_usd) = cfd.profit(current_price).unwrap();
+
+                Cfd {
+                    order_id: cfd.order.id,
+                    initial_price: cfd.order.price,
+                    leverage: cfd.order.leverage,
+                    trading_pair: cfd.order.trading_pair.clone(),
+                    position: cfd.position(),
+                    liquidation_price: cfd.order.liquidation_price,
+                    quantity_usd: cfd.quantity_usd,
+                    profit_btc,
+                    profit_usd,
+                    state: cfd.state.to_string(),
+                    state_transition_timestamp: cfd
+                        .state
+                        .get_transition_timestamp()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("timestamp to be convertable to duration since epoch")
+                        .as_secs(),
+
+                    // TODO: Depending on the state the margin might be set (i.e. in Open we save it
+                    // in the DB internally) and does not have to be calculated
+                    margin: cfd.margin().unwrap(),
+                }
+            })
+            .collect::<Vec<Cfd>>();
+
+        Event::json(&cfds).event("cfds")
     }
 }
 

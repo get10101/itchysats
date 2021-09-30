@@ -1,8 +1,7 @@
 use crate::model::Usd;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures::{StreamExt, TryStreamExt};
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use std::convert::TryFrom;
 use std::future::Future;
 use std::time::SystemTime;
@@ -41,7 +40,7 @@ pub async fn new() -> Result<(impl Future<Output = ()>, watch::Receiver<Quote>)>
     Ok((task, receiver))
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Quote {
     pub timestamp: SystemTime,
     pub bid: Usd,
@@ -67,24 +66,6 @@ impl Quote {
             bid: Usd::from(Decimal::try_from(quote.bid_price)?),
             ask: Usd::from(Decimal::try_from(quote.ask_price)?),
         }))
-    }
-
-    #[allow(dead_code)] // Not used by all binaries.
-    pub fn for_maker(&self) -> Usd {
-        self.ask
-    }
-
-    #[allow(dead_code)] // Not used by all binaries.
-    pub fn for_taker(&self) -> Usd {
-        // TODO: Verify whether this is correct
-        self.mid_range().unwrap()
-    }
-
-    fn mid_range(&self) -> Result<Usd> {
-        Ok(Usd((self.bid.checked_add(self.ask))?
-            .0
-            .checked_div(dec!(2))
-            .context("division error")?))
     }
 }
 

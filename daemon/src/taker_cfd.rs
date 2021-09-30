@@ -1,8 +1,7 @@
 use crate::actors::log_error;
-use crate::cfd_feed::CfdFeed;
 use crate::db::{
-    insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_cfd_by_order_id,
-    load_order_by_id,
+    insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
+    load_cfd_by_order_id, load_order_by_id,
 };
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
@@ -11,7 +10,7 @@ use crate::model::Usd;
 use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
-use crate::{bitmex_price_feed, send_to_socket, setup_contract, wire};
+use crate::{send_to_socket, setup_contract, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -36,8 +35,6 @@ pub struct CfdSetupCompleted {
     pub dlc: Result<Dlc>,
 }
 
-pub struct PriceUpdate(pub bitmex_price_feed::Quote);
-
 enum SetupState {
     Active {
         sender: mpsc::UnboundedSender<wire::SetupMsg>,
@@ -49,7 +46,7 @@ pub struct Actor {
     db: sqlx::SqlitePool,
     wallet: Wallet,
     oracle_pk: schnorrsig::PublicKey,
-    cfd_feed: CfdFeed,
+    cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_actor_inbox: watch::Sender<Option<Order>>,
     send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
     monitor_actor: Address<monitor::Actor<Actor>>,
@@ -62,16 +59,14 @@ impl Actor {
         db: sqlx::SqlitePool,
         wallet: Wallet,
         oracle_pk: schnorrsig::PublicKey,
-        cfd_feed: CfdFeed,
+        cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
         send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
         monitor_actor: Address<monitor::Actor<Actor>>,
         cfds: Vec<Cfd>,
     ) -> Result<Self> {
         let mut conn = db.acquire().await?;
-
-        // populate the CFD feed with existing CFDs
-        cfd_feed.update(&mut conn).await?;
+        cfd_feed_actor_inbox.send(load_all_cfds(&mut conn).await?)?;
 
         for dlc in cfds.iter().filter_map(|cfd| Cfd::pending_open_dlc(cfd)) {
             let txid = wallet.try_broadcast_transaction(dlc.lock.0.clone()).await?;
@@ -90,7 +85,7 @@ impl Actor {
             db,
             wallet,
             oracle_pk,
-            cfd_feed,
+            cfd_feed_actor_inbox,
             order_feed_actor_inbox,
             send_to_maker,
             monitor_actor,
@@ -117,7 +112,8 @@ impl Actor {
 
         insert_cfd(cfd, &mut conn).await?;
 
-        self.cfd_feed.update(&mut conn).await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
         self.send_to_maker
             .do_send_async(wire::TakerToMaker::TakeOrder { order_id, quantity })
             .await?;
@@ -166,7 +162,8 @@ impl Actor {
         )
         .await?;
 
-        self.cfd_feed.update(&mut conn).await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         let contract_future = setup_contract::new(
@@ -212,7 +209,8 @@ impl Actor {
         )
         .await?;
 
-        self.cfd_feed.update(&mut conn).await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
 
         Ok(())
     }
@@ -252,7 +250,8 @@ impl Actor {
         )
         .await?;
 
-        self.cfd_feed.update(&mut conn).await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
 
         let txid = self
             .wallet
@@ -298,14 +297,6 @@ impl Actor {
             tracing::info!("Refund transaction published on chain: {}", txid);
         }
 
-        Ok(())
-    }
-
-    async fn handle_price_update(&mut self, quote: bitmex_price_feed::Quote) -> Result<()> {
-        self.cfd_feed.set_current_price(quote);
-
-        let mut conn = self.db.acquire().await?;
-        self.cfd_feed.update(&mut conn).await?;
         Ok(())
     }
 }
@@ -366,13 +357,6 @@ impl Handler<monitor::Event> for Actor {
     }
 }
 
-#[async_trait]
-impl Handler<PriceUpdate> for Actor {
-    async fn handle(&mut self, msg: PriceUpdate, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_price_update(msg.0))
-    }
-}
-
 impl Message for TakeOffer {
     type Result = ();
 }
@@ -383,10 +367,6 @@ impl Message for MakerStreamMessage {
 }
 
 impl Message for CfdSetupCompleted {
-    type Result = ();
-}
-
-impl Message for PriceUpdate {
     type Result = ();
 }
 
