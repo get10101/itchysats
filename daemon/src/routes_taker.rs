@@ -39,7 +39,10 @@ pub async fn feed(
         let quote = rx_quote.borrow().clone();
         yield quote.to_sse_event();
 
-        let cfds_with_price = CfdsWithCurrentPrice{cfds: rx_cfds.borrow().clone(), current_price: quote.for_taker()};
+        let cfds_with_price = CfdsWithCurrentPrice {
+            cfds: rx_cfds.borrow().clone(),
+            current_price: quote.for_maker(),
+        };
         yield cfds_with_price.to_sse_event();
 
         loop{
@@ -53,13 +56,19 @@ pub async fn feed(
                     yield order.to_sse_event();
                 }
                 Ok(()) = rx_cfds.changed() => {
-                    let cfds_with_price = CfdsWithCurrentPrice{cfds: rx_cfds.borrow().clone(), current_price: quote.for_taker()};
+                    let cfds_with_price = CfdsWithCurrentPrice {
+                        cfds: rx_cfds.borrow().clone(),
+                        current_price: quote.for_maker(),
+                    };
                     yield cfds_with_price.to_sse_event();
                 }
                 Ok(()) = rx_quote.changed() => {
                     let quote = rx_quote.borrow().clone();
                     yield quote.to_sse_event();
-                    let cfds_with_price = CfdsWithCurrentPrice{cfds: rx_cfds.borrow().clone(), current_price: quote.for_taker()};
+                    let cfds_with_price = CfdsWithCurrentPrice {
+                        cfds: rx_cfds.borrow().clone(),
+                        current_price: quote.for_maker(),
+                    };
                     yield cfds_with_price.to_sse_event();
                 }
             }
