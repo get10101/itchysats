@@ -145,6 +145,12 @@ pub async fn post_cfd_action(
                 .await
                 .expect("actor to always be available");
         }
+        CfdAction::Commit => {
+            cfd_actor_address
+                .do_send_async(maker_cfd::Commit { order_id: id })
+                .await
+                .expect("actor to always be available");
+        }
     }
 
     Ok(status::Accepted(None))

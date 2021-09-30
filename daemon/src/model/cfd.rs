@@ -198,6 +198,15 @@ pub enum CfdState {
         dlc: Dlc,
     },
 
+    /// The commit transaction was published but it not final yet
+    ///
+    /// This state applies to taker and maker.
+    /// This state is needed, because otherwise the user does not get any feedback.
+    PendingCommit {
+        common: CfdStateCommon,
+        dlc: Dlc,
+    },
+
     // TODO: At the moment we are appending to this state. The way this is handled internally is
     //  by inserting the same state with more information in the database. We could consider
     //  changing this to insert different states or update the stae instead of inserting again.
@@ -259,6 +268,7 @@ impl CfdState {
             CfdState::MustRefund { common, .. } => common,
             CfdState::Refunded { common, .. } => common,
             CfdState::SetupFailed { common, .. } => common,
+            CfdState::PendingCommit { common, .. } => common,
         };
 
         *common
@@ -292,6 +302,9 @@ impl Display for CfdState {
             }
             CfdState::Open { .. } => {
                 write!(f, "Open")
+            }
+            CfdState::PendingCommit { .. } => {
+                write!(f, "Pending Committ")
             }
             CfdState::OpenCommitted { .. } => {
                 write!(f, "Open Committed")
@@ -541,6 +554,23 @@ impl Cfd {
                     todo!("Implement state transition")
                 }
             },
+            CfdStateChangeEvent::CommitTxSent => {
+                let dlc = if let Open { dlc, .. } | PendingOpen { dlc, .. } = self.state.clone() {
+                    dlc
+                } else {
+                    bail!(
+                        "Cannot transition to PendingCommit because of unexpected state {}",
+                        self.state
+                    )
+                };
+
+                PendingCommit {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
+                    dlc,
+                }
+            }
         };
 
         Ok(new_state)
@@ -575,6 +605,43 @@ impl Cfd {
         Ok(signed_refund_tx)
     }
 
+    pub fn commit_tx(&self) -> Result<Transaction> {
+        let dlc = if let CfdState::Open { dlc, .. } | CfdState::PendingOpen { dlc, .. } =
+            self.state.clone()
+        {
+            dlc
+        } else {
+            bail!(
+                "Cannot publish commit transaction in state {}",
+                self.state.clone()
+            )
+        };
+
+        let sig_hash = spending_tx_sighash(
+            &dlc.commit.0,
+            &dlc.lock.1,
+            Amount::from_sat(dlc.lock.0.output[0].value),
+        );
+        let our_sig = SECP256K1.sign(&sig_hash, &dlc.identity);
+        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
+            SECP256K1,
+            &dlc.identity,
+        ));
+
+        // TODO: verify that the dlc's `publish` sk corresponds to the decryption_sk we need here
+        let counterparty_sig = dlc.commit.1.decrypt(&dlc.publish)?;
+        let counterparty_pubkey = dlc.identity_counterparty;
+
+        let signed_commit_tx = finalize_spend_transaction(
+            dlc.commit.0,
+            &dlc.commit.2,
+            (our_pubkey, our_sig),
+            (counterparty_pubkey, counterparty_sig),
+        )?;
+
+        Ok(signed_commit_tx)
+    }
+
     pub fn pending_open_dlc(&self) -> Option<Dlc> {
         if let CfdState::PendingOpen { dlc, .. } = self.state.clone() {
             Some(dlc)
@@ -600,9 +667,10 @@ impl Cfd {
 
 #[derive(Debug, Clone)]
 pub enum CfdStateChangeEvent {
-    // TODO: groupd other events by actors into enums and add them here so we can bundle all
+    // TODO: group other events by actors into enums and add them here so we can bundle all
     // transitions into cfd.transition_to(...)
     Monitor(monitor::Event),
+    CommitTxSent,
 }
 
 fn calculate_profit(

@@ -5,6 +5,7 @@ import {
     CloseIcon,
     TriangleDownIcon,
     TriangleUpIcon,
+    WarningIcon,
 } from "@chakra-ui/icons";
 import {
     Badge,
@@ -186,6 +187,8 @@ function iconForAction(action: Action): any {
             return <CheckIcon />;
         case Action.REJECT:
             return <CloseIcon />;
+        case Action.COMMIT:
+            return <WarningIcon />;
     }
 }
 
@@ -194,6 +197,8 @@ function colorSchemaForAction(action: Action): string {
         case Action.ACCEPT:
             return "green";
         case Action.REJECT:
+            return "red";
+        case Action.COMMIT:
             return "red";
     }
 }

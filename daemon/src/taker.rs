@@ -216,6 +216,7 @@ async fn main() -> Result<()> {
                 routes_taker::post_settlement_proposal,
                 routes_taker::get_health_check,
                 routes_taker::margin_calc,
+                routes_taker::post_cfd_action,
             ],
         )
         .mount(

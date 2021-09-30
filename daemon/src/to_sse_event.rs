@@ -36,6 +36,7 @@ pub struct Cfd {
 pub enum CfdAction {
     Accept,
     Reject,
+    Commit,
 }
 
 impl<'v> FromParam<'v> for CfdAction {
@@ -56,6 +57,7 @@ pub enum CfdState {
     ContractSetup,
     PendingOpen,
     Open,
+    PendingCommit,
     OpenCommitted,
     MustRefund,
     Refunded,
@@ -189,6 +191,7 @@ impl From<model::cfd::CfdState> for CfdState {
             model::cfd::CfdState::MustRefund { .. } => CfdState::MustRefund,
             model::cfd::CfdState::Refunded { .. } => CfdState::Refunded,
             model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
+            model::cfd::CfdState::PendingCommit { .. } => CfdState::PendingCommit,
         }
     }
 }
@@ -219,10 +222,12 @@ fn into_unix_secs(time: SystemTime) -> u64 {
 }
 
 fn actions_for_state(state: model::cfd::CfdState) -> Vec<CfdAction> {
-    if let model::cfd::CfdState::IncomingOrderRequest { .. } = state {
-        vec![CfdAction::Accept, CfdAction::Reject]
-    } else {
-        vec![]
+    match state {
+        model::cfd::CfdState::IncomingOrderRequest { .. } => {
+            vec![CfdAction::Accept, CfdAction::Reject]
+        }
+        model::cfd::CfdState::Open { .. } => vec![CfdAction::Commit],
+        _ => vec![],
     }
 }
 

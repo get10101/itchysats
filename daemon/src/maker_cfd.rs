@@ -29,6 +29,10 @@ pub struct RejectOrder {
     pub order_id: OrderId,
 }
 
+pub struct Commit {
+    pub order_id: OrderId,
+}
+
 pub struct NewOrder(pub Order);
 
 pub struct NewTakerOnline {
@@ -417,6 +421,25 @@ impl Actor {
         Ok(())
     }
 
+    async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd_by_order_id(msg.order_id, &mut conn).await?;
+
+        let signed_commit_tx = cfd.commit_tx()?;
+
+        let txid = self
+            .wallet
+            .try_broadcast_transaction(signed_commit_tx)
+            .await?;
+
+        tracing::info!("Commit transaction published on chain: {}", txid);
+
+        let new_state = cfd.handle(CfdStateChangeEvent::CommitTxSent)?;
+        insert_new_cfd_state_by_order_id(cfd.order.id, new_state, &mut conn).await?;
+
+        Ok(())
+    }
+
     async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
         let order_id = event.order_id();
 
@@ -476,6 +499,13 @@ impl Handler<AcceptOrder> for Actor {
 impl Handler<RejectOrder> for Actor {
     async fn handle(&mut self, msg: RejectOrder, _ctx: &mut Context<Self>) {
         log_error!(self.handle_reject_order(msg.order_id))
+    }
+}
+
+#[async_trait]
+impl Handler<Commit> for Actor {
+    async fn handle(&mut self, msg: Commit, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_commit(msg))
     }
 }
 
@@ -583,6 +613,10 @@ impl Message for AcceptOrder {
 }
 
 impl Message for RejectOrder {
+    type Result = ();
+}
+
+impl Message for Commit {
     type Result = ();
 }
 
