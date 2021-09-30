@@ -220,7 +220,9 @@ impl Actor {
             SetupState::Active { sender } => {
                 sender.send(msg).await?;
             }
-            SetupState::None => anyhow::bail!("OrderAccepted message should arrive first"),
+            SetupState::None => {
+                anyhow::bail!("Received setup message without an active contract setup")
+            }
         }
 
         Ok(())
