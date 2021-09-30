@@ -64,34 +64,21 @@ jobs:
   test_daemons:
     strategy:
       matrix:
-        target: [ x86_64-unknown-linux-gnu, x86_64-apple-darwin ]
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: armv7-unknown-linux-gnueabihf
-            os: ubuntu-latest
+        os: [ ubuntu-latest, macos-latest ]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v1.3.0
-      - name: Install compiler for armhf arch
-        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
-        run: |
-          sudo apt-get update
-          sudo apt-get install gcc-arm-linux-gnueabihf
-      - run: cargo build --target ${{ matrix.target }}
+      - run: cargo build --bins --tests
       - run: cargo test --workspace
-      - name: Smoke test ${{ matrix.target }} binary
-        if: matrix.target != 'armv7-unknown-linux-gnueabihf'
+      - name: Smoke test ${{ matrix.os }} binary
         run: |
-          target/${{ matrix.target }}/debug/maker --data-dir=/tmp/maker --generate-seed &
+          target/debug/maker --data-dir=/tmp/maker --generate-seed &
           sleep 5s # Wait for maker to start
 
-          target/${{ matrix.target }}/debug/taker --data-dir=/tmp/taker --generate-seed &
+          target/debug/taker --data-dir=/tmp/taker --generate-seed &
           sleep 5s # Wait for taker to start
 
           curl --fail http://localhost:8000/api/alive
@@ -99,7 +86,27 @@ jobs:
       - name: Upload binaries
         uses: actions/upload-artifact@v2
         with:
-          name: maker-and-taker-binaries-${{ matrix.target }}
+          name: maker-and-taker-binaries-${{ matrix.os }}
           path: |
-            target/${{ matrix.target }}/debug/maker
-            target/${{ matrix.target }}/debug/taker
+            target/debug/maker
+            target/debug/taker
+
+  daemons_arm_build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@v1.3.0
+      - name: Install compiler for armhf arch
+        run: |
+          sudo apt-get update
+          sudo apt-get install gcc-arm-linux-gnueabihf
+      - run: cargo build --target=armv7-unknown-linux-gnueabihf --bins
+      - name: Upload binaries
+        uses: actions/upload-artifact@v2
+        with:
+          name: maker-and-taker-binaries-armv7
+          path: |
+            target/armv7-unknown-linux-gnueabihf/debug/maker
+            target/armv7-unknown-linux-gnueabihf/debug/taker
