@@ -1,8 +1,8 @@
-use crate::model::cfd::{calculate_buy_margin, Order, OrderId};
+use crate::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId};
 use crate::model::{Leverage, Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
-use crate::to_sse_event::ToSseEvent;
-use crate::{bitmex_price_feed, cfd_feed, taker_cfd};
+use crate::to_sse_event::{CfdsWithCurrentPrice, ToSseEvent};
+use crate::{bitmex_price_feed, taker_cfd};
 use bdk::bitcoin::Amount;
 use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
@@ -19,7 +19,7 @@ use xtra::Address;
 
 #[rocket::get("/feed")]
 pub async fn feed(
-    rx_cfds: &State<watch::Receiver<Vec<cfd_feed::Cfd>>>,
+    rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
     rx_order: &State<watch::Receiver<Option<Order>>>,
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
     rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
@@ -39,8 +39,11 @@ pub async fn feed(
         let quote = rx_quote.borrow().clone();
         yield quote.to_sse_event();
 
-        let cfds = rx_cfds.borrow().clone();
-        yield cfds.to_sse_event();
+        let cfds_with_price = CfdsWithCurrentPrice {
+            cfds: rx_cfds.borrow().clone(),
+            current_price: quote.for_maker(),
+        };
+        yield cfds_with_price.to_sse_event();
 
         loop{
             select! {
@@ -53,12 +56,20 @@ pub async fn feed(
                     yield order.to_sse_event();
                 }
                 Ok(()) = rx_cfds.changed() => {
-                    let cfds = rx_cfds.borrow().clone();
-                    yield cfds.to_sse_event();
+                    let cfds_with_price = CfdsWithCurrentPrice {
+                        cfds: rx_cfds.borrow().clone(),
+                        current_price: quote.for_maker(),
+                    };
+                    yield cfds_with_price.to_sse_event();
                 }
                 Ok(()) = rx_quote.changed() => {
                     let quote = rx_quote.borrow().clone();
                     yield quote.to_sse_event();
+                    let cfds_with_price = CfdsWithCurrentPrice {
+                        cfds: rx_cfds.borrow().clone(),
+                        current_price: quote.for_maker(),
+                    };
+                    yield cfds_with_price.to_sse_event();
                 }
             }
         }

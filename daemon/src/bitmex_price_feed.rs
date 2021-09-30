@@ -76,7 +76,7 @@ impl Quote {
 
     #[allow(dead_code)] // Not used by all binaries.
     pub fn for_taker(&self) -> Usd {
-        // TODO: Verify whether this is correct
+        // TODO: verify whether this is correct
         self.mid_range().unwrap()
     }
 

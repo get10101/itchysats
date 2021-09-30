@@ -1,15 +1,14 @@
 use crate::actors::log_error;
-use crate::cfd_feed::CfdFeed;
 use crate::db::{
-    insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_cfd_by_order_id,
-    load_order_by_id,
+    insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
+    load_cfd_by_order_id, load_order_by_id,
 };
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId};
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
-use crate::{bitmex_price_feed, maker_inc_connections, monitor, setup_contract, wire};
+use crate::{maker_inc_connections, monitor, setup_contract, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -44,13 +43,11 @@ pub struct TakerStreamMessage {
     pub item: Result<wire::TakerToMaker>,
 }
 
-pub struct PriceUpdate(pub bitmex_price_feed::Quote);
-
 pub struct Actor {
     db: sqlx::SqlitePool,
     wallet: Wallet,
     oracle_pk: schnorrsig::PublicKey,
-    cfd_feed: CfdFeed,
+    cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_sender: watch::Sender<Option<Order>>,
     takers: Address<maker_inc_connections::Actor>,
     current_order_id: Option<OrderId>,
@@ -72,16 +69,14 @@ impl Actor {
         db: sqlx::SqlitePool,
         wallet: Wallet,
         oracle_pk: schnorrsig::PublicKey,
-        cfd_feed: CfdFeed,
+        cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_sender: watch::Sender<Option<Order>>,
         takers: Address<maker_inc_connections::Actor>,
         monitor_actor: Address<monitor::Actor<Actor>>,
         cfds: Vec<Cfd>,
     ) -> Result<Self> {
-        let mut conn = db.acquire().await?;
-
         // populate the CFD feed with existing CFDs
-        cfd_feed.update(&mut conn).await?;
+        cfd_feed_actor_inbox.send(cfds.clone())?;
 
         for dlc in cfds.iter().filter_map(|cfd| Cfd::pending_open_dlc(cfd)) {
             let txid = wallet.try_broadcast_transaction(dlc.lock.0.clone()).await?;
@@ -100,7 +95,7 @@ impl Actor {
             db,
             wallet,
             oracle_pk,
-            cfd_feed,
+            cfd_feed_actor_inbox,
             order_feed_sender,
             takers,
             current_order_id: None,
@@ -188,7 +183,8 @@ impl Actor {
         )
         .await?;
 
-        self.cfd_feed.update(&mut conn).await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
 
         let txid = self
             .wallet
@@ -251,7 +247,8 @@ impl Actor {
         );
         insert_cfd(cfd, &mut conn).await?;
 
-        self.cfd_feed.update(&mut conn).await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
 
         // 3. Remove current order
         self.current_order_id = None;
@@ -311,7 +308,8 @@ impl Actor {
             })
             .await?;
 
-        self.cfd_feed.update(&mut conn).await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
 
         let contract_future = setup_contract::new(
             self.takers.clone().into_sink().with(move |msg| {
@@ -381,7 +379,8 @@ impl Actor {
                 command: TakerCommand::NotifyOrderRejected { id: msg.order_id },
             })
             .await?;
-        self.cfd_feed.update(&mut conn).await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
 
         // Remove order for all
         self.current_order_id = None;
@@ -416,14 +415,6 @@ impl Actor {
             tracing::info!("Refund transaction published on chain: {}", txid);
         }
 
-        Ok(())
-    }
-
-    async fn handle_price_update(&mut self, quote: bitmex_price_feed::Quote) -> Result<()> {
-        self.cfd_feed.set_current_price(quote);
-
-        let mut conn = self.db.acquire().await?;
-        self.cfd_feed.update(&mut conn).await?;
         Ok(())
     }
 }
@@ -502,13 +493,6 @@ impl Handler<TakerStreamMessage> for Actor {
     }
 }
 
-#[async_trait]
-impl Handler<PriceUpdate> for Actor {
-    async fn handle(&mut self, msg: PriceUpdate, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_price_update(msg.0))
-    }
-}
-
 impl Message for NewOrder {
     type Result = ();
 }
@@ -532,10 +516,6 @@ impl Message for RejectOrder {
 // this signature is a bit different because we use `Address::attach_stream`
 impl Message for TakerStreamMessage {
     type Result = KeepRunning;
-}
-
-impl Message for PriceUpdate {
-    type Result = ();
 }
 
 impl xtra::Actor for Actor {}

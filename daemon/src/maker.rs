@@ -1,5 +1,4 @@
 use crate::auth::MAKER_USERNAME;
-use crate::cfd_feed::CfdFeed;
 use crate::db::load_all_cfds;
 use crate::seed::Seed;
 use crate::wallet::Wallet;
@@ -7,7 +6,7 @@ use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::Network;
 use clap::Clap;
-use model::cfd::Order;
+use model::cfd::{Cfd, Order};
 use model::WalletInfo;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
@@ -21,7 +20,6 @@ use xtra::spawn::TokioGlobalSpawnExt;
 mod actors;
 mod auth;
 mod bitmex_price_feed;
-mod cfd_feed;
 mod cleanup;
 mod db;
 mod keypair;
@@ -108,7 +106,7 @@ async fn main() -> Result<()> {
 
     let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
 
-    let (cfd_feed_updater, cfd_feed_receiver) = CfdFeed::new(cfd_feed::Role::Maker);
+    let (cfd_feed_sender, cfd_feed_receiver) = watch::channel::<Vec<Cfd>>(vec![]);
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
 
@@ -121,7 +119,7 @@ async fn main() -> Result<()> {
 
     tracing::info!("Listening on {}", local_addr);
 
-    let (task, mut quote_updates) = bitmex_price_feed::new().await?;
+    let (task, quote_updates) = bitmex_price_feed::new().await?;
     tokio::spawn(task);
 
     rocket::custom(figment)
@@ -129,7 +127,7 @@ async fn main() -> Result<()> {
         .manage(order_feed_receiver)
         .manage(wallet_feed_receiver)
         .manage(auth_password)
-        .manage(quote_updates.clone())
+        .manage(quote_updates)
         .attach(Db::init())
         .attach(AdHoc::try_on_ignite(
             "SQL migrations",
@@ -166,7 +164,7 @@ async fn main() -> Result<()> {
                     db,
                     wallet.clone(),
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
-                    cfd_feed_updater,
+                    cfd_feed_sender,
                     order_feed_sender,
                     maker_inc_connections_address.clone(),
                     monitor_actor_address,
@@ -201,28 +199,6 @@ async fn main() -> Result<()> {
                 });
 
                 tokio::spawn(maker_inc_connections_address.attach_stream(listener_stream));
-                tokio::spawn({
-                    let cfd_actor_inbox = cfd_maker_actor_inbox.clone();
-
-                    async move {
-                        loop {
-                            let quote  = quote_updates.borrow().clone();
-
-                            if cfd_actor_inbox.do_send_async(maker_cfd::PriceUpdate(quote)).await.is_err() {
-                                tracing::warn!(
-                                    "Could not communicate with the message handler, stopping price feed sync"
-                                );
-                                return;
-                            }
-
-                            if quote_updates.changed().await.is_err() {
-                                tracing::warn!("BitMex price feed receiver not available, stopping price feed sync");
-                                return;
-                            }
-                        }
-                    }
-                });
-
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
 
                 Ok(rocket.manage(cfd_maker_actor_inbox))
