@@ -87,26 +87,22 @@ export class State {
         const orange = "orange";
 
         switch (this.key) {
-            case StateKey.OUTGOING_ORDER_REQUEST:
-                return default_color;
-            case StateKey.INCOMING_ORDER_REQUEST:
-                return default_color;
             case StateKey.ACCEPTED:
-                return green;
-            case StateKey.REJECTED:
-                return red;
-            case StateKey.CONTRACT_SETUP:
-                return default_color;
-            case StateKey.PENDING_OPEN:
-                return default_color;
             case StateKey.OPEN:
                 return green;
+
+            case StateKey.REJECTED:
+                return red;
+
             case StateKey.OPEN_COMMITTED:
-                return orange;
             case StateKey.MUST_REFUND:
                 return orange;
+
+            case StateKey.OUTGOING_ORDER_REQUEST:
+            case StateKey.INCOMING_ORDER_REQUEST:
+            case StateKey.CONTRACT_SETUP:
+            case StateKey.PENDING_OPEN:
             case StateKey.REFUNDED:
-                return default_color;
             case StateKey.SETUP_FAILED:
                 return default_color;
         }
@@ -114,26 +110,22 @@ export class State {
 
     public getGroup(): StateGroupKey {
         switch (this.key) {
-            case StateKey.OUTGOING_ORDER_REQUEST:
-                return StateGroupKey.OPENING;
             case StateKey.INCOMING_ORDER_REQUEST:
                 return StateGroupKey.ACCEPT_OR_REJECT;
+
+            case StateKey.OUTGOING_ORDER_REQUEST:
             case StateKey.ACCEPTED:
-                return StateGroupKey.OPENING;
-            case StateKey.REJECTED:
-                return StateGroupKey.CLOSED;
             case StateKey.CONTRACT_SETUP:
                 return StateGroupKey.OPENING;
+
             case StateKey.PENDING_OPEN:
-                return StateGroupKey.OPEN;
             case StateKey.OPEN:
-                return StateGroupKey.OPEN;
             case StateKey.OPEN_COMMITTED:
-                return StateGroupKey.OPEN;
             case StateKey.MUST_REFUND:
                 return StateGroupKey.OPEN;
+
+            case StateKey.REJECTED:
             case StateKey.REFUNDED:
-                return StateGroupKey.CLOSED;
             case StateKey.SETUP_FAILED:
                 return StateGroupKey.CLOSED;
         }
