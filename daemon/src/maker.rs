@@ -12,6 +12,7 @@ use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use std::path::PathBuf;
 use std::task::Poll;
+use std::time::Duration;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
@@ -28,6 +29,7 @@ mod maker_cfd;
 mod maker_inc_connections;
 mod model;
 mod monitor;
+mod oracle;
 mod routes;
 mod routes_maker;
 mod seed;
@@ -158,6 +160,8 @@ async fn main() -> Result<()> {
 
                 let (monitor_actor_address, monitor_actor_context) = xtra::Context::new(None);
 
+                let (oracle_actor_address, mut oracle_actor_context) = xtra::Context::new(None);
+
                 let mut conn = db.acquire().await.unwrap();
                 let cfds = load_all_cfds(&mut conn).await.unwrap();
                 let cfd_maker_actor_inbox = maker_cfd::Actor::new(
@@ -167,8 +171,9 @@ async fn main() -> Result<()> {
                     cfd_feed_sender,
                     order_feed_sender,
                     maker_inc_connections_address.clone(),
-                    monitor_actor_address,
+                    monitor_actor_address.clone(),
                     cfds.clone(),
+                    oracle_actor_address,
                 )
                 .await
                 .unwrap()
@@ -183,6 +188,16 @@ async fn main() -> Result<()> {
                 tokio::spawn(monitor_actor_context.run(
                     monitor::Actor::new(&opts.electrum, cfd_maker_actor_inbox.clone(), cfds).await,
                 ));
+
+                tokio::spawn(
+                    oracle_actor_context
+                        .notify_interval(Duration::from_secs(60), || oracle::Sync)
+                        .unwrap(),
+                );
+                tokio::spawn(oracle_actor_context.run(oracle::Actor::new(
+                    cfd_maker_actor_inbox.clone(),
+                    monitor_actor_address,
+                )));
 
                 let listener_stream = futures::stream::poll_fn(move |ctx| {
                     let message = match futures::ready!(listener.poll_accept(ctx)) {

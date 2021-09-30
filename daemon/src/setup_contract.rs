@@ -20,7 +20,7 @@ use std::ops::RangeInclusive;
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
-    oracle_pk: schnorrsig::PublicKey,
+    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),
     cfd: Cfd,
     wallet: Wallet,
     role: Role,
@@ -64,7 +64,7 @@ pub async fn new(
     let own_cfd_txs = create_cfd_transactions(
         (params.maker().clone(), *params.maker_punish()),
         (params.taker().clone(), *params.taker_punish()),
-        (oracle_pk, &[]),
+        (oracle_pk, &nonce_pks),
         (
             model::cfd::Cfd::CET_TIMELOCK,
             cfd.refund_timelock_in_blocks(),

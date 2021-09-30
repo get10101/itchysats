@@ -10,7 +10,7 @@ use crate::model::Usd;
 use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
-use crate::{send_to_socket, setup_contract, wire};
+use crate::{oracle, send_to_socket, setup_contract, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -51,6 +51,8 @@ pub struct Actor {
     send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
+    latest_announcement: Option<oracle::Announcement>,
+    oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
 }
 
 impl Actor {
@@ -64,6 +66,7 @@ impl Actor {
         send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
         monitor_actor: Address<monitor::Actor<Actor>>,
         cfds: Vec<Cfd>,
+        oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
     ) -> Result<Self> {
         // populate the CFD feed with existing CFDs
         cfd_feed_actor_inbox.send(cfds.clone())?;
@@ -90,6 +93,8 @@ impl Actor {
             send_to_maker,
             monitor_actor,
             setup_state: SetupState::None,
+            latest_announcement: None,
+            oracle_actor,
         })
     }
 
@@ -166,13 +171,25 @@ impl Actor {
             .send(load_all_cfds(&mut conn).await?)?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
+        let latest_announcement = self
+            .latest_announcement
+            .to_owned()
+            .context("Unaware of oracle's latest announcement.")?;
+        let nonce_pks = latest_announcement.nonce_pks;
+
+        self.oracle_actor
+            .do_send_async(oracle::MonitorEvent {
+                event_id: latest_announcement.id,
+            })
+            .await?;
+
         let contract_future = setup_contract::new(
             self.send_to_maker
                 .clone()
                 .into_sink()
                 .with(|msg| future::ok(wire::TakerToMaker::Protocol(msg))),
             receiver,
-            self.oracle_pk,
+            (self.oracle_pk, nonce_pks),
             cfd,
             self.wallet.clone(),
             setup_contract::Role::Taker,
@@ -301,6 +318,27 @@ impl Actor {
 
         Ok(())
     }
+
+    async fn handle_oracle_announcements(
+        &mut self,
+        announcements: oracle::Announcements,
+    ) -> Result<()> {
+        tracing::debug!("Updating latest oracle announcements");
+        self.latest_announcement = Some(announcements.0.last().unwrap().clone());
+
+        Ok(())
+    }
+
+    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
+        tracing::debug!(
+            "Learnt latest oracle attestation for event: {}",
+            attestation.id
+        );
+
+        todo!(
+            "Update all CFDs which care about this particular attestation, based on the event ID"
+        );
+    }
 }
 
 #[async_trait]
@@ -356,6 +394,20 @@ impl Handler<CfdSetupCompleted> for Actor {
 impl Handler<monitor::Event> for Actor {
     async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) {
         log_error!(self.handle_monitoring_event(msg))
+    }
+}
+
+#[async_trait]
+impl Handler<oracle::Announcements> for Actor {
+    async fn handle(&mut self, msg: oracle::Announcements, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_oracle_announcements(msg))
+    }
+}
+
+#[async_trait]
+impl Handler<oracle::Attestation> for Actor {
+    async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_oracle_attestation(msg))
     }
 }
 
