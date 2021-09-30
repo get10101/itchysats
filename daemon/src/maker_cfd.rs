@@ -154,9 +154,9 @@ impl Actor {
             SetupState::Active { taker, .. } => {
                 anyhow::bail!("Currently setting up contract with taker {}", taker)
             }
-            SetupState::None => unreachable!(
-                "`SetupState` is guaranteed to be `Active` before anyone sends a message"
-            ),
+            SetupState::None => {
+                anyhow::bail!("Received setup message without an active contract setup");
+            }
         }
 
         Ok(())
