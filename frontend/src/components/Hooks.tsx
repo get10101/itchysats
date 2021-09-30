@@ -1,7 +1,11 @@
 import React, { useState } from "react";
-import { useEventSource, useEventSourceListener } from "react-sse-hooks";
+import { useEventSourceListener } from "react-sse-hooks";
 
-export default function useLatestEvent<T>(source: EventSource, event_name: string): T | null {
+export default function useLatestEvent<T>(
+    source: EventSource,
+    event_name: string,
+    mapping: (key: string, value: any) => any = (key, value) => value,
+): T | null {
     const [state, setState] = useState<T | null>(null);
 
     useEventSourceListener<T | null>(
@@ -10,7 +14,10 @@ export default function useLatestEvent<T>(source: EventSource, event_name: strin
             startOnInit: true,
             event: {
                 name: event_name,
-                listener: ({ data }) => setState(data),
+                listener: ({ event }) => {
+                    // @ts-ignore - yes, there is a data field on event
+                    setState(JSON.parse(event.data, mapping));
+                },
             },
         },
         [source],

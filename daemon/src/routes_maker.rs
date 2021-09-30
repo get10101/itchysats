@@ -2,7 +2,7 @@ use crate::auth::Authenticated;
 use crate::model::cfd::{Cfd, Order, OrderId, Origin};
 use crate::model::{Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
-use crate::to_sse_event::{CfdsWithCurrentPrice, ToSseEvent};
+use crate::to_sse_event::{CfdAction, CfdsWithCurrentPrice, ToSseEvent};
 use crate::{bitmex_price_feed, maker_cfd};
 use anyhow::Result;
 use rocket::http::{ContentType, Header, Status};
@@ -127,40 +127,33 @@ pub struct PromptAuthentication {
 
 /// The maker POSTs this to accept an order
 #[derive(Debug, Clone, Deserialize)]
-pub struct AcceptOrRejectOrderRequest {
+pub struct AcceptOrRejectTakeRequest {
     pub order_id: OrderId,
 }
 
-#[rocket::post("/order/accept", data = "<cfd_accept_order_request>")]
-pub async fn post_accept_order(
-    cfd_accept_order_request: Json<AcceptOrRejectOrderRequest>,
+#[rocket::post("/cfd/<id>/<action>")]
+pub async fn post_cfd_action(
+    id: OrderId,
+    action: CfdAction,
     cfd_actor_address: &State<Address<maker_cfd::Actor>>,
     _auth: Authenticated,
-) -> status::Accepted<()> {
-    cfd_actor_address
-        .do_send_async(maker_cfd::AcceptOrder {
-            order_id: cfd_accept_order_request.order_id,
-        })
-        .await
-        .expect("actor to always be available");
+) -> Result<status::Accepted<()>, status::BadRequest<String>> {
+    match action {
+        CfdAction::Accept => {
+            cfd_actor_address
+                .do_send_async(maker_cfd::AcceptOrder { order_id: id })
+                .await
+                .expect("actor to always be available");
+        }
+        CfdAction::Reject => {
+            cfd_actor_address
+                .do_send_async(maker_cfd::RejectOrder { order_id: id })
+                .await
+                .expect("actor to always be available");
+        }
+    }
 
-    status::Accepted(None)
-}
-
-#[rocket::post("/order/reject", data = "<cfd_reject_order_request>")]
-pub async fn post_reject_order(
-    cfd_reject_order_request: Json<AcceptOrRejectOrderRequest>,
-    cfd_actor_address: &State<Address<maker_cfd::Actor>>,
-    _auth: Authenticated,
-) -> status::Accepted<()> {
-    cfd_actor_address
-        .do_send_async(maker_cfd::RejectOrder {
-            order_id: cfd_reject_order_request.order_id,
-        })
-        .await
-        .expect("actor to always be available");
-
-    status::Accepted(None)
+    Ok(status::Accepted(None))
 }
 
 #[rocket::get("/alive")]

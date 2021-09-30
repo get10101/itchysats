@@ -22,7 +22,7 @@ import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
 import CurrentPrice from "./components/CurrentPrice";
 import useLatestEvent from "./components/Hooks";
-import { Cfd, Order, PriceInfo, WalletInfo } from "./components/Types";
+import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 
 interface CfdOrderRequestPayload {
@@ -61,9 +61,9 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
 export default function App() {
     let source = useEventSource({ source: "/api/feed" });
 
-    const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds");
+    const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
-    const order = useLatestEvent<Order>(source, "order");
+    const order = useLatestEvent<Order>(source, "order", intoOrder);
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 
@@ -111,14 +111,9 @@ export default function App() {
         },
     });
 
-    const runningStates = ["Request sent", "Requested", "Contract Setup", "Pending Open"];
-    const running = cfds.filter((value) => runningStates.includes(value.state));
-    const closedStates = ["Rejected", "Closed"];
-    const closed = cfds.filter((value) => closedStates.includes(value.state));
-    // TODO: remove this. It just helps to detect immediately if we missed a state.
-    const unsorted = cfds.filter((value) =>
-        !runningStates.includes(value.state) && !closedStates.includes(value.state)
-    );
+    const opening = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPENING);
+    const open = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPEN);
+    const closed = cfds.filter((value) => value.state.getGroup() === StateGroupKey.CLOSED);
 
     return (
         <Container maxWidth="120ch" marginTop="1rem">
@@ -193,20 +188,20 @@ export default function App() {
             </HStack>
             <Tabs marginTop={5}>
                 <TabList>
-                    <Tab>Running [{running.length}]</Tab>
+                    <Tab>Open [{open.length}]</Tab>
+                    <Tab>Opening [{opening.length}]</Tab>
                     <Tab>Closed [{closed.length}]</Tab>
-                    <Tab>Unsorted [{unsorted.length}] (should be empty)</Tab>
                 </TabList>
 
                 <TabPanels>
                     <TabPanel>
-                        <CfdTable data={running} />
+                        <CfdTable data={open} />
+                    </TabPanel>
+                    <TabPanel>
+                        <CfdTable data={opening} />
                     </TabPanel>
                     <TabPanel>
                         <CfdTable data={closed} />
-                    </TabPanel>
-                    <TabPanel>
-                        <CfdTable data={unsorted} />
                     </TabPanel>
                 </TabPanels>
             </Tabs>
