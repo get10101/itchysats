@@ -366,7 +366,7 @@ impl SplineObject {
     ///
     /// ### parameters
     ///  * direction: Direction in which to get the order.
-    fn order(&self, direction: isize) -> Result<Vec<usize>, Error> {
+    pub fn order(&self, direction: isize) -> Result<Vec<usize>, Error> {
         let out;
         if direction < 0 {
             out = self.bases.iter().map(|e| e.order).collect::<Vec<_>>();
@@ -445,7 +445,9 @@ impl SplineObject {
         }
         self.controlpoints = controlpoints;
 
-        let new_bases = &self.bases.clone()
+        let new_bases = &self
+            .bases
+            .clone()
             .into_iter()
             .zip(raises_used.into_iter())
             .map(|(b, r)| {
@@ -481,7 +483,9 @@ impl SplineObject {
             return Ok(());
         }
 
-        let new_bases = &self.bases.clone()
+        let new_bases = &self
+            .bases
+            .clone()
             .into_iter()
             .zip(raises_used.into_iter())
             .map(|(b, r)| {
@@ -493,12 +497,10 @@ impl SplineObject {
 
         // Set up an interpolation problem. This works in projective space,
         // so no special handling for rational objects
-        let interpolation_pts = &new_bases
-            .iter()
-            .map(|b| b.greville())
-            .collect::<Vec<_>>();
+        let interpolation_pts = &new_bases.iter().map(|b| b.greville()).collect::<Vec<_>>();
 
-        let n_old = &mut self.bases
+        let n_old = &mut self
+            .bases
             .clone()
             .iter()
             .zip(&interpolation_pts.to_vec()[..])
