@@ -1,11 +1,11 @@
 use crate::model::WalletInfo;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result};
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Amount, PublicKey, Transaction, Txid};
 use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
 use bdk::wallet::AddressIndex;
-use bdk::{electrum_client, Error, KeychainKind, SignOptions};
+use bdk::{electrum_client, KeychainKind, SignOptions};
 use cfd_protocol::{PartyParams, WalletExt};
 use rocket::serde::json::Value;
 use std::path::Path;
@@ -98,53 +98,43 @@ impl Wallet {
         let wallet = self.wallet.lock().await;
         // TODO: Optimize this match to be a map_err / more readable in general
         let txid = tx.txid();
-        match wallet.broadcast(tx) {
-            Ok(txid) => Ok(txid),
-            Err(e) => {
-                if let Error::Electrum(electrum_client::Error::Protocol(ref value)) = e {
-                    let error_code = match parse_rpc_protocol_error_code(value) {
-                        Ok(error_code) => error_code,
-                        Err(inner) => {
-                            tracing::error!(
-                                "Failed to parse error code from RPC message: {}",
-                                inner
-                            );
-                            return Err(anyhow!(e));
-                        }
-                    };
 
-                    if error_code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
-                        return Ok(txid);
-                    }
-                }
+        let result = wallet.broadcast(tx);
 
-                Err(anyhow!(e))
+        if let Err(&bdk::Error::Electrum(electrum_client::Error::Protocol(ref value))) =
+            result.as_ref()
+        {
+            let error_code = parse_rpc_protocol_error_code(value).with_context(|| {
+                format!("Failed to parse electrum error response '{:?}'", value)
+            })?;
+
+            if error_code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
+                return Ok(txid);
             }
         }
+
+        let txid = result?;
+
+        Ok(txid)
     }
 }
 
-fn parse_rpc_protocol_error_code(error_value: &Value) -> anyhow::Result<i64> {
-    let json_map = match error_value {
-        serde_json::Value::Object(map) => map,
-        _ => bail!("Json error is not json object "),
-    };
+fn parse_rpc_protocol_error_code(error_value: &Value) -> Result<i64> {
+    let json = error_value
+        .as_str()
+        .context("Not a string")?
+        .split_terminator("RPC error: ")
+        .nth(1)
+        .context("Unknown error code format")?;
 
-    let error_code_value = match json_map.get("code") {
-        Some(val) => val,
-        None => bail!("No error code field"),
-    };
+    let error = serde_json::from_str::<RpcError>(json).context("Error has unexpected format")?;
 
-    let error_code_number = match error_code_value {
-        serde_json::Value::Number(num) => num,
-        _ => bail!("Error code is not a number"),
-    };
+    Ok(error.code)
+}
 
-    if let Some(int) = error_code_number.as_i64() {
-        Ok(int)
-    } else {
-        bail!("Error code is not an unsigned integer")
-    }
+#[derive(serde::Deserialize)]
+struct RpcError {
+    code: i64,
 }
 
 /// Bitcoin error codes: https://github.com/bitcoin/bitcoin/blob/97d3500601c1d28642347d014a6de1e38f53ae4e/src/rpc/protocol.h#L23
@@ -158,5 +148,19 @@ impl From<RpcErrorCode> for i64 {
         match code {
             RpcErrorCode::RpcVerifyAlreadyInChain => -27,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_error_response() {
+        let response = serde_json::Value::String(r#"sendrawtransaction RPC error: {"code":-27,"message":"Transaction already in block chain"}"#.to_owned());
+
+        let code = parse_rpc_protocol_error_code(&response).unwrap();
+
+        assert_eq!(code, -27);
     }
 }
