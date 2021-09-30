@@ -154,7 +154,7 @@ impl Curve {
         // so we need to interate through the columns of B in AX=B instead
         let n_new_dense = n_new.todense().to_owned();
         let ncols = interpolation_pts_x.shape()[1];
-        let mut temp = (0..ncols)
+        let mut temp = (0..ncols).rev()
             .map(|e| {
                 let b = interpolation_pts_x.slice(s![.., e]).to_owned();
                 let sol = n_new_dense
