@@ -152,10 +152,12 @@ async fn main() -> Result<()> {
                     Some(db) => (**db).clone(),
                     None => return Err(rocket),
                 };
+                let mut conn = db.acquire().await.unwrap();
 
-                cleanup::transition_non_continue_cfds_to_setup_failed(db.clone())
+                cleanup::transition_non_continue_cfds_to_setup_failed(&mut conn)
                     .await
                     .unwrap();
+                let cfds = load_all_cfds(&mut conn).await.unwrap();
 
                 let send_to_maker = send_to_socket::Actor::new(write)
                     .create(None)
