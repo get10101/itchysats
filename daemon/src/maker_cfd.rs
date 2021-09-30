@@ -97,6 +97,13 @@ impl Actor {
             tracing::info!("Refund transaction published on chain: {}", txid);
         }
 
+        for cfd in cfds.iter().filter(|cfd| Cfd::is_pending_commit(cfd)) {
+            let signed_commit_tx = cfd.commit_tx()?;
+            let txid = wallet.try_broadcast_transaction(signed_commit_tx).await?;
+
+            tracing::info!("Commit transaction published on chain: {}", txid);
+        }
+
         Ok(Self {
             db,
             wallet,

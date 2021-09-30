@@ -654,6 +654,10 @@ impl Cfd {
         matches!(self.state.clone(), CfdState::MustRefund { .. })
     }
 
+    pub fn is_pending_commit(&self) -> bool {
+        matches!(self.state.clone(), CfdState::PendingCommit { .. })
+    }
+
     pub fn is_cleanup(&self) -> bool {
         matches!(
             self.state.clone(),
