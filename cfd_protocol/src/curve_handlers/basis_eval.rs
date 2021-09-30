@@ -79,7 +79,7 @@ impl Basis {
             Array1::<usize>::from_vec((0..m * self.order + 1).step_by(self.order).collect());
 
         for i in 0..m {
-            right = from_right.unwrap_or(true).clone();
+            right = from_right.unwrap_or(true);
             // Special-case the endpoint, so the user doesn't need to
             if (t[i] - self.end).abs() < self.ktol {
                 right = false;
@@ -110,8 +110,7 @@ impl Basis {
             for q in 1..self.order - d {
                 j = self.order - q - 1;
                 k = mu - q - 1;
-                store[j] = store[j]
-                    + store[j + 1] * (self.knots[k + q + 1] - t[i])
+                store[j] += store[j + 1] * (self.knots[k + q + 1] - t[i])
                         / (self.knots[k + q + 1] - self.knots[k + 1]);
 
                 for j in self.order - q..self.order - 1 {
@@ -119,8 +118,7 @@ impl Basis {
                     let k = mu - self.order + j;
                     store[j] =
                         store[j] * (t[i] - self.knots[k]) / (self.knots[k + q] - self.knots[k]);
-                    store[j] = store[j]
-                        + store[j + 1] * (self.knots[k + q + 1] - t[i])
+                    store[j] += store[j + 1] * (self.knots[k + q + 1] - t[i])
                             / (self.knots[k + q + 1] - self.knots[k + 1]);
                 }
                 j = self.order - 1;
@@ -136,8 +134,7 @@ impl Basis {
                         store[j] = store[j] * (q as f64) / (self.knots[k + q] - self.knots[k]);
                     }
                     if j != self.order - 1 {
-                        store[j] = store[j]
-                            - store[j + 1] * (q as f64)
+                        store[j] -= store[j + 1] * (q as f64)
                                 / (self.knots[k + q + 1] - self.knots[k + 1]);
                     }
                 }
@@ -169,7 +166,7 @@ pub fn snap(t: &mut Array1<f64>, knots: &Array1<f64>, knot_tol: Option<f64>) {
     let ktol = knot_tolerance(knot_tol);
 
     for j in 0..t.len() {
-        let i = bisect_left(&knots, &t[j], knots.len());
+        let i = bisect_left(knots, &t[j], knots.len());
         if i < knots.len() && (knots[i] - t[j]).abs() < ktol {
             t[j] = knots[i];
         } else if i > 0 && (knots[i - 1] - t[j]).abs() < ktol {

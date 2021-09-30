@@ -30,7 +30,6 @@ impl CSR {
         shape: (usize, usize),
     ) -> Result<Self, Error> {
         let major_dim: isize = (indptr.len() as isize) - 1;
-        // let minor_dim = indices.iter().max().unwrap_or(&0) + 1;
         let nnz = &data.len();
 
         if major_dim > 1 && shape.0 as isize == major_dim {

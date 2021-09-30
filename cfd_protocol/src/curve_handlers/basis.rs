@@ -129,20 +129,22 @@ impl BSplineBasis {
                 knots.append(&mut knot_spans.clone());
             }
 
-            knots.to_vec().sort_by(cmp_f64);
-            let knots_arr = Array1::<f64>::from_vec(knots.iter().map(|e| **e).collect::<Vec<_>>());
+            let mut knots_vec = knots.iter().map(|e| **e).collect::<Vec<_>>();
+            knots_vec.sort_by(cmp_f64);
+
+            let knots_arr = Array1::<f64>::from_vec(knots_vec);
 
             let new_knot;
             if self.periodic > -1 {
                 let n_0 = bisect_left(&knots_arr, &self.start(), knots_arr.len());
                 let n_1 =
                     knot_spans.len() - bisect_left(&knots_arr, &self.end(), knots_arr.len()) - 1;
-                new_knot = Array1::<f64>::from_vec(
-                    knots[n_0 * amount..n_1 * amount]
+                let mut new_knot_vec = knots[n_0 * amount..n_1 * amount]
                         .iter()
                         .map(|e| **e)
-                        .collect::<Vec<_>>(),
-                );
+                        .collect::<Vec<_>>();
+                new_knot_vec.sort_by(cmp_f64);
+                new_knot = Array1::<f64>::from_vec(new_knot_vec);
             } else {
                 new_knot = knots_arr;
             }
@@ -224,8 +226,7 @@ fn default_knot(order: usize, periodic: isize) -> Result<Array1<f64>, Error> {
             Array1::<f64>::zeros(order).view(),
             Array1::<f64>::ones(order).view(),
         ],
-    )
-    .unwrap();
+    )?;
 
     for i in 0..p {
         knots[i] = -1.;

@@ -45,13 +45,13 @@ pub fn get_unique_f64(arr: &ArrayD<f64>) -> Result<Array1<f64>, Error> {
     Ok(out)
 }
 
-pub fn cmp_f64<'r, 's>(a: &'r &f64, b: &'s &f64) -> Ordering {
+pub fn cmp_f64(a: &f64, b: &f64) -> Ordering {
     if a < b {
         return Ordering::Less;
     } else if a > b {
         return Ordering::Greater;
     }
-    return Ordering::Equal;
+    Ordering::Equal
 }
 
 /// Implementation of method in "Efficient Degree Elevation and Knot Insertion

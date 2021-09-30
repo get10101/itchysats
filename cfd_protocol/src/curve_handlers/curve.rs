@@ -1,10 +1,10 @@
 use crate::curve_handlers::basis::BSplineBasis;
 use crate::curve_handlers::splineobject::SplineObject;
-// use crate::curve_handlers::csr_tools::CSR;
 use crate::curve_handlers::Error;
 
 use ndarray::prelude::*;
 use ndarray::s;
+use ndarray_linalg::Solve;
 use std::cmp::max;
 
 fn default_basis() -> Result<Vec<BSplineBasis>, Error> {
@@ -15,10 +15,6 @@ fn default_basis() -> Result<Vec<BSplineBasis>, Error> {
 #[derive(Clone, Debug)]
 pub struct Curve {
     spline: SplineObject,
-    // bases: Vec<BSplineBasis>,
-    // controlpoints: ArrayD<f64>,
-    // dimension: usize,
-    // rational: bool,
 }
 
 impl Curve {
@@ -38,21 +34,10 @@ impl Curve {
         controlpoints: Option<Array2<f64>>,
         rational: Option<bool>,
     ) -> Result<Self, Error> {
-        let mut bases = bases.unwrap_or(default_basis()?);
+        let bases = bases.unwrap_or(default_basis()?);
         let spline = SplineObject::new(bases, controlpoints, rational)?;
-        // bases = spline.bases.clone();
 
-        // let controlpoints = spline.controlpoints.clone().to_owned();
-        // let dimension = spline.dimension.clone();
-        // let rational = spline.rational.clone();
-
-        Ok(Curve {
-            spline,
-            // bases,
-            // controlpoints: spline.controlpoints.clone(),
-            // dimension: spline.dimension.clone(),
-            // rational: spline.rational.clone(),
-        })
+        Ok(Curve { spline })
     }
 
     /// Extend the curve by merging another curve to the end of it.
@@ -69,13 +54,12 @@ impl Curve {
     ///
     /// ### returns
     /// * self.spline.bases and self.spline.controlpoints are updated inplace
-    pub fn append(&mut self, mut othercurve: Curve) -> Result<(), Error> {
+    pub fn append(&mut self, othercurve: Curve) -> Result<(), Error> {
         if self.spline.bases[0].periodic > -1 || othercurve.spline.bases[0].periodic > -1 {
             return Result::Err(Error::IncompatibleCurvesError);
         };
 
-        // copy input curve so we don't change that one directly
-        let mut extending_curve = othercurve.clone();
+        let mut extending_curve = othercurve;
 
         // make sure both are in the same space, and (if needed) have rational weights
         self.spline
@@ -91,7 +75,7 @@ impl Curve {
 
         let p = max(p1, p2);
 
-        let mut old_knot = self.spline.knots(0, Some(true))?[0].clone();
+        let old_knot = self.spline.knots(0, Some(true))?[0].clone();
         let mut add_knot = extending_curve.spline.knots(0, Some(true))?[0].clone();
         add_knot -= add_knot[0];
         add_knot += old_knot[old_knot.len() - 1];
@@ -130,16 +114,73 @@ impl Curve {
         Ok(())
     }
 
-    pub fn knots(&self, direction: usize, with_multiplicities: bool) -> Result<Array1<f64>, Error> {
-        todo!()
-    }
+    //     # solve the interpolation problem
+    //     self.controlpoints = np.array(splinalg.spsolve(N_new, interpolation_pts_x))
+    //     self.bases = [newBasis]
 
-    fn order(&self, direction: usize) {
-        todo!()
-    }
+    //     return self
 
-    fn raise_order(&self, amount: usize, direction: usize) -> Result<(), Error> {
-        todo!()
+    /// Raise the polynomial order of the curve.
+    ///
+    /// ### parameters
+    /// * amount: Number of times to raise the order
+    pub fn raise_order(&mut self, amount: usize) -> Result<(), Error> {
+        if amount == 0 {
+            return Ok(());
+        }
+
+        // work outside of self, copy back in at the end
+        let mut new_basis = self.spline.bases[0].clone();
+        new_basis.raise_order(amount);
+
+        // set up an interpolation problem. This is in projective space,
+        // so no problems for rational cases
+        // let old_controlpoints = self.spline.controlpoints.clone().into_dyn().to_owned();
+        let mut interpolation_pts_t = new_basis.greville();
+        let n_old = self.spline.bases[0].evaluate(&mut interpolation_pts_t, 0, true)?;
+        let n_new = new_basis.evaluate(&mut interpolation_pts_t, 0, true)?;
+
+        // Some kludge required to enable .dot(), which doesn't work on dynamic
+        // arrays. Surely a better way to do this, but this is quick and dirty
+        // and valid since we're in curve land
+        let raveled = self.spline.controlpoints.clone().into_raw_vec();
+        let n0 = self.spline.controlpoints.shape()[0];
+        let n1 = self.spline.controlpoints.shape()[1];
+        let arr = Array2::<f64>::from_shape_vec((n0, n1), raveled)?;
+        let interpolation_pts_x = n_old.todense().dot(&arr);
+
+        // solve the interpolation problem:
+        // more kludge; solve_into() only handles systems of the form Ax=b,
+        // so we need to interate through the columns of B in AX=B instead
+        let n_new_dense = n_new.todense().to_owned();
+        let ncols = interpolation_pts_x.shape()[1];
+        let mut temp = (0..ncols)
+            .map(|e| {
+                let b = interpolation_pts_x.slice(s![.., e]).to_owned();
+                let sol = n_new_dense
+                    .solve_into(b)
+                    .map_err(|_| Error::UnsolvableSystemError)?;
+                Ok(sol.to_vec())
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        let nrows = temp[0].len();
+        let mut flattened = Vec::with_capacity(nrows * temp.len());
+
+        for _ in 0..nrows {
+            for vec in &mut temp {
+                flattened.push(vec.pop().unwrap());
+            }
+        }
+
+        flattened.reverse();
+
+        let res = Array2::<f64>::from_shape_vec((nrows, ncols), flattened)?;
+
+        self.spline.controlpoints = res.into_dyn().to_owned();
+        self.spline.bases = vec![new_basis];
+
+        Ok(())
     }
 
     pub fn length(&self) {
