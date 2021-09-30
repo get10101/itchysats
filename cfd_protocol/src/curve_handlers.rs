@@ -39,4 +39,6 @@ pub enum Error {
     OutOfRangeError,
     #[error("a `periodic` value < -1 makes no sense")]
     IvalidPeriodicValueError,
+    #[error("cannot invert matrix")]
+    CannotInvertMatrix(#[source] LinalgError),
 }

@@ -529,10 +529,7 @@ impl SplineObject {
         // Solve the interpolation problem
         n_new.reverse();
         for elem in n_new.iter() {
-            // TODO:
-            // having trouble catching the errors here, hence the unwrap and the finger-crossing
-            // on the tensordot() call itself.
-            let inv = elem.clone().inv_into().unwrap();
+            let inv = elem.clone().inv_into().map_err(Error::CannotInvertMatrix)?;
             res = tensordot(&inv, &res, &[Axis(1)], &[Axis(self.pardim - 1)]);
         }
 
