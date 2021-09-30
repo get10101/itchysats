@@ -68,11 +68,8 @@ impl Curve {
     /// * curve: Another curve
     ///
     /// ### returns
-    /// * self.bases and self.controlpoints are updated inplace
+    /// * self.spline.bases and self.spline.controlpoints are updated inplace
     pub fn append(&mut self, mut othercurve: Curve) -> Result<(), Error> {
-        // //     # error test input
-        // //     if self.bases[0].periodic > -1 or curve.bases[0].periodic > -1:
-        // //         raise RuntimeError('Cannot append with periodic curves')
         if self.spline.bases[0].periodic > -1 || othercurve.spline.bases[0].periodic > -1 {
             return Result::Err(Error::IncompatibleCurvesError);
         };
