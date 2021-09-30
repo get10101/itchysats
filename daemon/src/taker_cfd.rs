@@ -65,9 +65,6 @@ impl Actor {
         monitor_actor: Address<monitor::Actor<Actor>>,
         cfds: Vec<Cfd>,
     ) -> Result<Self> {
-        let mut conn = db.acquire().await?;
-        cfd_feed_actor_inbox.send(load_all_cfds(&mut conn).await?)?;
-
         for dlc in cfds.iter().filter_map(|cfd| Cfd::pending_open_dlc(cfd)) {
             let txid = wallet.try_broadcast_transaction(dlc.lock.0.clone()).await?;
 
