@@ -104,9 +104,7 @@ impl Actor {
         })
     }
 
-    async fn handle_new_order(&mut self, msg: NewOrder) -> Result<()> {
-        let order = msg.0;
-
+    async fn handle_new_order(&mut self, order: Order) -> Result<()> {
         // 1. Save to DB
         let mut conn = self.db.acquire().await?;
         insert_order(&order, &mut conn).await?;
@@ -124,7 +122,7 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_new_taker_online(&mut self, msg: NewTakerOnline) -> Result<()> {
+    async fn handle_new_taker_online(&mut self, taker_id: TakerId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
 
         let current_order = match self.current_order_id {
@@ -134,7 +132,7 @@ impl Actor {
 
         self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
-                taker_id: msg.id,
+                taker_id,
                 command: TakerCommand::SendOrder {
                     order: current_order,
                 },
@@ -164,15 +162,19 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_cfd_setup_completed(&mut self, msg: CfdSetupCompleted) -> Result<()> {
+    async fn handle_cfd_setup_completed(
+        &mut self,
+        order_id: OrderId,
+        dlc: Result<Dlc>,
+    ) -> Result<()> {
         self.setup_state = SetupState::None;
 
-        let dlc = msg.dlc.context("Failed to setup contract with taker")?;
+        let dlc = dlc.context("Failed to setup contract with taker")?;
 
         let mut conn = self.db.acquire().await?;
 
         insert_new_cfd_state_by_order_id(
-            msg.order_id,
+            order_id,
             CfdState::PendingOpen {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
@@ -195,11 +197,11 @@ impl Actor {
 
         // TODO: It's a bit suspicious to load this just to get the
         // refund timelock
-        let cfd = load_cfd_by_order_id(msg.order_id, &mut conn).await?;
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         self.monitor_actor
             .do_send_async(monitor::StartMonitoring {
-                id: msg.order_id,
+                id: order_id,
                 params: MonitorParams::from_dlc_and_timelocks(dlc, cfd.refund_timelock_in_blocks()),
             })
             .await?;
@@ -262,21 +264,19 @@ impl Actor {
 
     async fn handle_accept_order(
         &mut self,
-        msg: AcceptOrder,
+        order_id: OrderId,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
         if let SetupState::Active { .. } = self.setup_state {
             anyhow::bail!("Already setting up a contract!")
         }
 
-        let AcceptOrder { order_id } = msg;
-
         tracing::debug!(%order_id, "Maker accepts an order" );
 
         let mut conn = self.db.acquire().await?;
 
         // Validate if order is still valid
-        let cfd = load_cfd_by_order_id(msg.order_id, &mut conn).await?;
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         let taker_id = match cfd {
             Cfd {
                 state: CfdState::IncomingOrderRequest { taker_id, .. },
@@ -290,7 +290,7 @@ impl Actor {
         let (sender, receiver) = mpsc::unbounded();
 
         insert_new_cfd_state_by_order_id(
-            msg.order_id,
+            order_id,
             CfdState::ContractSetup {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
@@ -304,7 +304,7 @@ impl Actor {
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                command: TakerCommand::NotifyOrderAccepted { id: msg.order_id },
+                command: TakerCommand::NotifyOrderAccepted { id: order_id },
             })
             .await?;
 
@@ -344,11 +344,11 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_reject_order(&mut self, msg: RejectOrder) -> Result<()> {
-        tracing::debug!(%msg.order_id, "Maker rejects an order" );
+    async fn handle_reject_order(&mut self, order_id: OrderId) -> Result<()> {
+        tracing::debug!(%order_id, "Maker rejects an order" );
 
         let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(msg.order_id, &mut conn).await?;
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         let taker_id = match cfd {
             Cfd {
@@ -362,7 +362,7 @@ impl Actor {
 
         // Update order in db
         insert_new_cfd_state_by_order_id(
-            msg.order_id,
+            order_id,
             CfdState::Rejected {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
@@ -376,7 +376,7 @@ impl Actor {
         self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id,
-                command: TakerCommand::NotifyOrderRejected { id: msg.order_id },
+                command: TakerCommand::NotifyOrderRejected { id: order_id },
             })
             .await?;
         self.cfd_feed_actor_inbox
@@ -422,35 +422,35 @@ impl Actor {
 #[async_trait]
 impl Handler<AcceptOrder> for Actor {
     async fn handle(&mut self, msg: AcceptOrder, ctx: &mut Context<Self>) {
-        log_error!(self.handle_accept_order(msg, ctx))
+        log_error!(self.handle_accept_order(msg.order_id, ctx))
     }
 }
 
 #[async_trait]
 impl Handler<RejectOrder> for Actor {
     async fn handle(&mut self, msg: RejectOrder, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_reject_order(msg))
+        log_error!(self.handle_reject_order(msg.order_id))
     }
 }
 
 #[async_trait]
 impl Handler<NewOrder> for Actor {
     async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_new_order(msg));
+        log_error!(self.handle_new_order(msg.0));
     }
 }
 
 #[async_trait]
 impl Handler<NewTakerOnline> for Actor {
     async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_new_taker_online(msg));
+        log_error!(self.handle_new_taker_online(msg.id));
     }
 }
 
 #[async_trait]
 impl Handler<CfdSetupCompleted> for Actor {
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_cfd_setup_completed(msg));
+        log_error!(self.handle_cfd_setup_completed(msg.order_id, msg.dlc));
     }
 }
 
