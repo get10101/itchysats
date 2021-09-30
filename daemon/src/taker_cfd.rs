@@ -10,7 +10,7 @@ use crate::model::Usd;
 use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
-use crate::{send_to_socket, setup_contract, wire};
+use crate::{bitmex_price_feed, send_to_socket, setup_contract, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -24,6 +24,11 @@ use xtra::KeepRunning;
 pub struct TakeOffer {
     pub order_id: OrderId,
     pub quantity: Usd,
+}
+
+pub struct ProposeSettlement {
+    pub order_id: OrderId,
+    pub quote: bitmex_price_feed::Quote,
 }
 
 pub struct MakerStreamMessage {
@@ -118,6 +123,22 @@ impl Actor {
             .do_send_async(wire::TakerToMaker::TakeOrder { order_id, quantity })
             .await?;
 
+        Ok(())
+    }
+
+    async fn handle_propose_settlement(
+        &mut self,
+        order_id: OrderId,
+        quote: bitmex_price_feed::Quote,
+    ) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+
+        self.send_to_maker
+            .do_send_async(wire::TakerToMaker::ProposeSettlement(
+                cfd.calculate_settlement(quote.for_taker())?,
+            ))
+            .await?;
         Ok(())
     }
 
@@ -309,6 +330,13 @@ impl Handler<TakeOffer> for Actor {
 }
 
 #[async_trait]
+impl Handler<ProposeSettlement> for Actor {
+    async fn handle(&mut self, msg: ProposeSettlement, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_propose_settlement(msg.order_id, msg.quote));
+    }
+}
+
+#[async_trait]
 impl Handler<MakerStreamMessage> for Actor {
     async fn handle(
         &mut self,
@@ -358,6 +386,10 @@ impl Handler<monitor::Event> for Actor {
 }
 
 impl Message for TakeOffer {
+    type Result = ();
+}
+
+impl Message for ProposeSettlement {
     type Result = ();
 }
 

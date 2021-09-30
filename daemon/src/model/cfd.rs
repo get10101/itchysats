@@ -6,6 +6,7 @@ use bdk::bitcoin::{Address, Amount, PublicKey, Transaction};
 use bdk::descriptor::Descriptor;
 use cfd_protocol::secp256k1_zkp::{EcdsaAdaptorSignature, SECP256K1};
 use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash};
+use rocket::request::FromParam;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,15 @@ impl Default for OrderId {
 impl Display for OrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl<'v> FromParam<'v> for OrderId {
+    type Error = uuid::Error;
+
+    fn from_param(param: &'v str) -> Result<Self, Self::Error> {
+        let uuid = param.parse::<Uuid>()?;
+        Ok(OrderId(uuid))
     }
 }
 
@@ -299,6 +309,18 @@ impl Display for CfdState {
     }
 }
 
+/// Proposed collaborative settlement
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettlementProposal {
+    pub order_id: OrderId,
+    pub timestamp: SystemTime,
+
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub taker: Amount,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub maker: Amount,
+}
+
 /// Represents a cfd (including state)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Cfd {
@@ -344,6 +366,20 @@ impl Cfd {
         let profit =
             calculate_profit(self.order.price, current_price, dec!(0.005), Usd(dec!(0.1)))?;
         Ok(profit)
+    }
+
+    #[allow(dead_code)] // Not used by all binaries.
+    pub fn calculate_settlement(&self, _current_price: Usd) -> Result<SettlementProposal> {
+        // TODO: Calculate values for taker and maker
+        // For the time being, assume that everybody loses :)
+        let settlement = SettlementProposal {
+            order_id: self.order.id,
+            timestamp: SystemTime::now(),
+            taker: Amount::ZERO,
+            maker: Amount::ZERO,
+        };
+
+        Ok(settlement)
     }
 
     pub fn position(&self) -> Position {

@@ -1,4 +1,4 @@
-use crate::model::cfd::OrderId;
+use crate::model::cfd::{OrderId, SettlementProposal};
 use crate::model::Usd;
 use crate::Order;
 use anyhow::{bail, Result};
@@ -20,6 +20,7 @@ use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 #[allow(clippy::large_enum_variant)]
 pub enum TakerToMaker {
     TakeOrder { order_id: OrderId, quantity: Usd },
+    ProposeSettlement(SettlementProposal),
     Protocol(SetupMsg),
 }
 
@@ -27,6 +28,7 @@ impl fmt::Display for TakerToMaker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TakerToMaker::TakeOrder { .. } => write!(f, "TakeOrder"),
+            TakerToMaker::ProposeSettlement { .. } => write!(f, "ProposeSettlement"),
             TakerToMaker::Protocol(_) => write!(f, "Protocol"),
         }
     }

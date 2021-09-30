@@ -82,7 +82,7 @@ pub struct CfdOrderRequest {
     pub quantity: Usd,
 }
 
-#[rocket::post("/cfd", data = "<cfd_order_request>")]
+#[rocket::post("/cfd/order", data = "<cfd_order_request>")]
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
     cfd_actor_inbox: &State<Address<taker_cfd::Actor>>,
@@ -91,6 +91,22 @@ pub async fn post_order_request(
         .do_send_async(taker_cfd::TakeOffer {
             order_id: cfd_order_request.order_id,
             quantity: cfd_order_request.quantity,
+        })
+        .await
+        .expect("actor to always be available");
+}
+
+#[rocket::post("/cfd/<id>/settle")]
+pub async fn post_settlement_proposal(
+    id: OrderId,
+    cfd_actor_inbox: &State<Address<taker_cfd::Actor>>,
+    quote_updates: &State<watch::Receiver<bitmex_price_feed::Quote>>,
+) {
+    let quote = quote_updates.borrow().clone();
+    cfd_actor_inbox
+        .do_send_async(taker_cfd::ProposeSettlement {
+            order_id: id,
+            quote,
         })
         .await
         .expect("actor to always be available");
