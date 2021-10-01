@@ -1,6 +1,7 @@
 use crate::actors::log_error;
 use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId};
 use crate::monitor::subscription::Subscription;
+use crate::oracle;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::{PublicKey, Script, Txid};
@@ -265,6 +266,38 @@ where
             }
         });
     }
+
+    pub async fn handle_oracle_attestation(&self, attestation: oracle::Attestation) -> Result<()> {
+        for (order_id, MonitorParams { cets, .. }) in self.cfds.clone().into_iter() {
+            let (txid, script_pubkey) =
+                match cets.iter().find_map(|(txid, script_pubkey, range)| {
+                    range
+                        .contains(&attestation.price)
+                        .then(|| (txid, script_pubkey))
+                }) {
+                    Some(cet) => cet,
+                    None => continue,
+                };
+
+            tokio::spawn({
+                let cfd_actor_addr = self.cfd_actor_addr.clone();
+                let cet_subscription = self
+                    .monitor
+                    .subscribe_to((*txid, script_pubkey.clone()))
+                    .await;
+                async move {
+                    cet_subscription.wait_until_final().await.unwrap();
+
+                    cfd_actor_addr
+                        .do_send_async(Event::CetFinality(order_id))
+                        .await
+                        .unwrap();
+                }
+            });
+        }
+
+        Ok(())
+    }
 }
 
 pub struct StartMonitoring {
@@ -281,6 +314,7 @@ pub enum Event {
     LockFinality(OrderId),
     CommitFinality(OrderId),
     CetTimelockExpired(OrderId),
+    CetFinality(OrderId),
     RefundTimelockExpired(OrderId),
     RefundFinality(OrderId),
 }
@@ -293,6 +327,7 @@ impl Event {
             Event::CetTimelockExpired(order_id) => order_id,
             Event::RefundTimelockExpired(order_id) => order_id,
             Event::RefundFinality(order_id) => order_id,
+            Event::CetFinality(order_id) => order_id,
         };
 
         *order_id
@@ -314,7 +349,6 @@ where
 
 impl<T> xtra::Actor for Actor<T> where T: xtra::Actor {}
 
-// TODO: The traitbound for LockFinality should not be needed here, but we could not work around it
 #[async_trait]
 impl<T> xtra::Handler<StartMonitoring> for Actor<T>
 where
@@ -322,5 +356,15 @@ where
 {
     async fn handle(&mut self, msg: StartMonitoring, _ctx: &mut xtra::Context<Self>) {
         log_error!(self.handle_start_monitoring(msg));
+    }
+}
+
+#[async_trait]
+impl<T> xtra::Handler<oracle::Attestation> for Actor<T>
+where
+    T: xtra::Actor + xtra::Handler<Event>,
+{
+    async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut xtra::Context<Self>) {
+        log_error!(self.handle_oracle_attestation(msg));
     }
 }

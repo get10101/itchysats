@@ -15,6 +15,7 @@ futures = { version = "0.3", default-features = false }
 hex = "0.4"
 hkdf = "0.11"
 rand = "0.6"
+reqwest = { version = "0.11", default-features = false, features = ["json"] }
 rocket = { version = "0.5.0-rc.1", features = ["json"] }
 rocket-basicauth = { version = "2", default-features = false }
 rocket_db_pools = { git = "https://github.com/SergioBenitez/Rocket", features = ["sqlx_sqlite"] }
@@ -28,6 +29,7 @@ serde_with = { version = "1", features = ["macros"] }
 sha2 = "0.9"
 sqlx = { version = "0.5", features = ["offline"] }
 thiserror = "1"
+time = { version = "0.3", features = ["serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 tokio-util = { version = "0.6", features = ["codec"] }
@@ -46,3 +48,4 @@ path = "src/maker.rs"
 
 [dev-dependencies]
 tempfile = "3"
+time = { version = "0.3", features = ["std"] }

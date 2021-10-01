@@ -592,6 +592,9 @@ impl Cfd {
                         },
                     }
                 }
+                monitor::Event::CetFinality(_) => {
+                    todo!("Implement state transition")
+                }
             },
         };
 

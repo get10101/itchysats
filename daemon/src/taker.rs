@@ -29,6 +29,7 @@ mod keypair;
 mod logger;
 mod model;
 mod monitor;
+mod oracle;
 mod routes;
 mod routes_taker;
 mod seed;
@@ -162,6 +163,8 @@ async fn main() -> Result<()> {
 
                 let (monitor_actor_address, monitor_actor_context) = xtra::Context::new(None);
 
+                let (oracle_actor_address, mut oracle_actor_context) = xtra::Context::new(None);
+
                 let mut conn = db.acquire().await.unwrap();
                 let cfds = load_all_cfds(&mut conn).await.unwrap();
                 let cfd_actor_inbox = taker_cfd::Actor::new(
@@ -171,8 +174,9 @@ async fn main() -> Result<()> {
                     cfd_feed_sender,
                     order_feed_sender,
                     send_to_maker,
-                    monitor_actor_address,
+                    monitor_actor_address.clone(),
                     cfds.clone(),
+                    oracle_actor_address,
                 )
                 .await
                 .unwrap()
@@ -189,6 +193,16 @@ async fn main() -> Result<()> {
                     ),
                 );
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
+
+                tokio::spawn(
+                    oracle_actor_context
+                        .notify_interval(Duration::from_secs(60), || oracle::Sync)
+                        .unwrap(),
+                );
+                tokio::spawn(oracle_actor_context.run(oracle::Actor::new(
+                    cfd_actor_inbox.clone(),
+                    monitor_actor_address,
+                )));
 
                 Ok(rocket.manage(cfd_actor_inbox))
             },
