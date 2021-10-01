@@ -178,7 +178,7 @@ fn event_url(datetime: OffsetDateTime) -> String {
         .format(&formatter)
         .expect("valid formatter for datetime");
 
-    format!("{}/BitMEX/BXBT/{}/price", OLIVIA_URL, datetime)
+    format!("{}/x/BitMEX/BXBT/{}.price[n:20]", OLIVIA_URL, datetime)
 }
 
 #[derive(Debug, Clone, serde::Deserialize, PartialEq)]
