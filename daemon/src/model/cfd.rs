@@ -322,7 +322,7 @@ impl fmt::Display for CfdState {
                 write!(f, "Open")
             }
             CfdState::PendingCommit { .. } => {
-                write!(f, "Pending Committ")
+                write!(f, "Pending Commit")
             }
             CfdState::OpenCommitted { .. } => {
                 write!(f, "Open Committed")
@@ -475,9 +475,9 @@ impl Cfd {
                     }
                 }
                 monitor::Event::CommitFinality(_) => {
-                    let dlc = if let Open { dlc, .. } = self.state.clone() {
+                    let dlc = if let PendingCommit { dlc, .. } = self.state.clone() {
                         dlc
-                    } else if let PendingOpen { dlc, .. } = self.state.clone() {
+                    } else if let PendingOpen { dlc, .. } | Open { dlc, .. } = self.state.clone() {
                         tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
                         dlc
                     } else {
@@ -624,8 +624,9 @@ impl Cfd {
     }
 
     pub fn commit_tx(&self) -> Result<Transaction> {
-        let dlc = if let CfdState::Open { dlc, .. } | CfdState::PendingOpen { dlc, .. } =
-            self.state.clone()
+        let dlc = if let CfdState::Open { dlc, .. }
+        | CfdState::PendingOpen { dlc, .. }
+        | CfdState::PendingCommit { dlc, .. } = self.state.clone()
         {
             dlc
         } else {
@@ -652,7 +653,7 @@ impl Cfd {
 
         let signed_commit_tx = finalize_spend_transaction(
             dlc.commit.0,
-            &dlc.commit.2,
+            &dlc.lock.1,
             (our_pubkey, our_sig),
             (counterparty_pubkey, counterparty_sig),
         )?;
