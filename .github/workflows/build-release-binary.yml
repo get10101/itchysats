@@ -54,6 +54,8 @@ jobs:
         run: rustup show
 
       - uses: Swatinem/rust-cache@v1.3.0
+        with:
+          key: ${{ matrix.target }}
 
       - name: Install compiler for armhf arch
         if: matrix.target == 'armv7-unknown-linux-gnueabihf'
