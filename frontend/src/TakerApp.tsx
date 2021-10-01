@@ -41,7 +41,7 @@ interface MarginResponse {
 }
 
 async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
-    let res = await fetch(`/api/cfd`, { method: "POST", body: JSON.stringify(payload) });
+    let res = await fetch(`/api/cfd/order`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
         throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
