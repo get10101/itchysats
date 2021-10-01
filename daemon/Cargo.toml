@@ -23,6 +23,7 @@ rust_decimal = { version = "1.16", features = ["serde-float", "serde-arbitrary-p
 rust_decimal_macros = "1.16"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_plain = "1"
 serde_with = { version = "1", features = ["macros"] }
 sha2 = "0.9"
 sqlx = { version = "0.5", features = ["offline"] }

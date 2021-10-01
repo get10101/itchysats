@@ -1,8 +1,29 @@
-import { ChevronRightIcon, ChevronUpIcon, TriangleDownIcon, TriangleUpIcon } from "@chakra-ui/icons";
-import { Badge, Box, chakra, HStack, IconButton, Table as CUITable, Tbody, Td, Th, Thead, Tr } from "@chakra-ui/react";
+import {
+    CheckIcon,
+    ChevronRightIcon,
+    ChevronUpIcon,
+    CloseIcon,
+    TriangleDownIcon,
+    TriangleUpIcon,
+} from "@chakra-ui/icons";
+import {
+    Badge,
+    Box,
+    chakra,
+    HStack,
+    IconButton,
+    Table as CUITable,
+    Tbody,
+    Td,
+    Th,
+    Thead,
+    Tr,
+    useToast,
+} from "@chakra-ui/react";
 import React from "react";
+import { useAsync } from "react-async";
 import { Column, Row, useExpanded, useSortBy, useTable } from "react-table";
-import { Cfd } from "../Types";
+import { Action, Cfd } from "../Types";
 
 interface CfdTableProps {
     data: Cfd[];
@@ -11,6 +32,26 @@ interface CfdTableProps {
 export function CfdTable(
     { data }: CfdTableProps,
 ) {
+    const toast = useToast();
+
+    let { run: postAction, isLoading: isActioning } = useAsync({
+        deferFn: async ([orderId, action]: any[]) => {
+            try {
+                await doPostAction(orderId, action);
+            } catch (e) {
+                const description = typeof e === "string" ? e : JSON.stringify(e);
+
+                toast({
+                    title: "Error",
+                    description,
+                    status: "error",
+                    duration: 9000,
+                    isClosable: true,
+                });
+            }
+        },
+    });
+
     const tableData = React.useMemo(
         () => data,
         [data],
@@ -48,12 +89,8 @@ export function CfdTable(
             {
                 Header: "Position",
                 accessor: ({ position }) => {
-                    let colorScheme = "green";
-                    if (position.toLocaleLowerCase() === "buy") {
-                        colorScheme = "purple";
-                    }
                     return (
-                        <Badge colorScheme={colorScheme}>{position}</Badge>
+                        <Badge colorScheme={position.getColorScheme()}>{position.key}</Badge>
                     );
                 },
                 isNumeric: true,
@@ -104,20 +141,30 @@ export function CfdTable(
             {
                 Header: "State",
                 accessor: ({ state }) => {
-                    let colorScheme = "gray";
-                    if (state.toLowerCase() === "rejected") {
-                        colorScheme = "red";
-                    }
-                    if (state.toLowerCase() === "contract setup") {
-                        colorScheme = "green";
-                    }
                     return (
-                        <Badge colorScheme={colorScheme}>{state}</Badge>
+                        <Badge colorScheme={state.getColorScheme()}>{state.getLabel()}</Badge>
                     );
                 },
             },
+            {
+                Header: "Action",
+                accessor: ({ actions, order_id }) => {
+                    const actionIcons = actions.map((action) => {
+                        return (<IconButton
+                            key={action}
+                            colorScheme={colorSchemaForAction(action)}
+                            aria-label={action}
+                            icon={iconForAction(action)}
+                            onClick={() => postAction(order_id, action)}
+                            isLoading={isActioning}
+                        />);
+                    });
+
+                    return <HStack>{actionIcons}</HStack>;
+                },
+            },
         ],
-        [],
+        [isActioning, postAction],
     );
 
     // if we mark certain columns only as hidden, they are still around and we can render them in the sub-row
@@ -131,6 +178,24 @@ export function CfdTable(
             renderDetails={renderRowSubComponent}
         />
     );
+}
+
+function iconForAction(action: Action): any {
+    switch (action) {
+        case Action.ACCEPT:
+            return <CheckIcon />;
+        case Action.REJECT:
+            return <CloseIcon />;
+    }
+}
+
+function colorSchemaForAction(action: Action): string {
+    switch (action) {
+        case Action.ACCEPT:
+            return "green";
+        case Action.REJECT:
+            return "red";
+    }
 }
 
 function renderRowSubComponent(row: Row<Cfd>) {
@@ -268,5 +333,12 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
                 </Tbody>
             </CUITable>
         </>
+    );
+}
+
+async function doPostAction(id: string, action: string) {
+    await fetch(
+        `/api/cfd/${id}/${action}`,
+        { method: "POST", credentials: "include" },
     );
 }

@@ -19,24 +19,20 @@ import React, { useState } from "react";
 import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
-import { CfdTableMaker } from "./components/cfdtables/CfdTableMaker";
 import CurrencyInputField from "./components/CurrencyInputField";
 import CurrentPrice from "./components/CurrentPrice";
 import useLatestEvent from "./components/Hooks";
 import OrderTile from "./components/OrderTile";
-import { Cfd, Order, PriceInfo, WalletInfo } from "./components/Types";
+import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 
 export default function App() {
     let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });
 
-    const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds");
+    const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
-    const order = useLatestEvent<Order>(source, "order");
-
-    console.log(cfds);
-
+    const order = useLatestEvent<Order>(source, "order", intoOrder);
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 
@@ -66,16 +62,10 @@ export default function App() {
         },
     });
 
-    const runningStates = ["Accepted", "Contract Setup", "Pending Open"];
-    const running = cfds.filter((value) => runningStates.includes(value.state));
-    const openStates = ["Requested"];
-    const open = cfds.filter((value) => openStates.includes(value.state));
-    const closedStates = ["Rejected", "Closed"];
-    const closed = cfds.filter((value) => closedStates.includes(value.state));
-    // TODO: remove this. It just helps to detect immediately if we missed a state.
-    const unsorted = cfds.filter((value) =>
-        !runningStates.includes(value.state) && !closedStates.includes(value.state) && !openStates.includes(value.state)
-    );
+    const acceptOrReject = cfds.filter((value) => value.state.getGroup() === StateGroupKey.ACCEPT_OR_REJECT);
+    const opening = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPENING);
+    const open = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPEN);
+    const closed = cfds.filter((value) => value.state.getGroup() === StateGroupKey.CLOSED);
 
     return (
         <Container maxWidth="120ch" marginTop="1rem">
@@ -149,24 +139,24 @@ export default function App() {
 
             <Tabs marginTop={5}>
                 <TabList>
-                    <Tab>Running [{running.length}]</Tab>
                     <Tab>Open [{open.length}]</Tab>
+                    <Tab>Accept / Reject [{acceptOrReject.length}]</Tab>
+                    <Tab>Opening [{opening.length}]</Tab>
                     <Tab>Closed [{closed.length}]</Tab>
-                    <Tab>Unsorted [{unsorted.length}] (should be empty)</Tab>
                 </TabList>
 
                 <TabPanels>
                     <TabPanel>
-                        <CfdTable data={running} />
+                        <CfdTable data={open} />
                     </TabPanel>
                     <TabPanel>
-                        <CfdTableMaker data={open} />
+                        <CfdTable data={acceptOrReject} />
+                    </TabPanel>
+                    <TabPanel>
+                        <CfdTable data={opening} />
                     </TabPanel>
                     <TabPanel>
                         <CfdTable data={closed} />
-                    </TabPanel>
-                    <TabPanel>
-                        <CfdTable data={unsorted} />
                     </TabPanel>
                 </TabPanels>
             </Tabs>

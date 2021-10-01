@@ -2,8 +2,9 @@ use crate::model::cfd::OrderId;
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::Amount;
+use rocket::request::FromParam;
 use rocket::response::stream::Event;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize)]
@@ -25,8 +26,40 @@ pub struct Cfd {
     pub profit_btc: Amount,
     pub profit_usd: Usd,
 
-    pub state: String,
+    pub state: CfdState,
+    pub actions: Vec<CfdAction>,
     pub state_transition_timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum CfdAction {
+    Accept,
+    Reject,
+}
+
+impl<'v> FromParam<'v> for CfdAction {
+    type Error = serde_plain::Error;
+
+    fn from_param(param: &'v str) -> Result<Self, Self::Error> {
+        let action = serde_plain::from_str(param)?;
+        Ok(action)
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum CfdState {
+    OutgoingOrderRequest,
+    IncomingOrderRequest,
+    Accepted,
+    Rejected,
+    ContractSetup,
+    PendingOpen,
+    Open,
+    OpenCommitted,
+    MustRefund,
+    Refunded,
+    SetupFailed,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -79,7 +112,8 @@ impl ToSseEvent for CfdsWithCurrentPrice {
                     quantity_usd: cfd.quantity_usd,
                     profit_btc,
                     profit_usd,
-                    state: cfd.state.to_string(),
+                    state: cfd.state.clone().into(),
+                    actions: actions_for_state(cfd.state.clone()),
                     state_transition_timestamp: cfd
                         .state
                         .get_transition_timestamp()
@@ -141,6 +175,24 @@ impl ToSseEvent for model::WalletInfo {
     }
 }
 
+impl From<model::cfd::CfdState> for CfdState {
+    fn from(cfd_state: model::cfd::CfdState) -> Self {
+        match cfd_state {
+            model::cfd::CfdState::OutgoingOrderRequest { .. } => CfdState::OutgoingOrderRequest,
+            model::cfd::CfdState::IncomingOrderRequest { .. } => CfdState::IncomingOrderRequest,
+            model::cfd::CfdState::Accepted { .. } => CfdState::Accepted,
+            model::cfd::CfdState::Rejected { .. } => CfdState::Rejected,
+            model::cfd::CfdState::ContractSetup { .. } => CfdState::ContractSetup,
+            model::cfd::CfdState::PendingOpen { .. } => CfdState::PendingOpen,
+            model::cfd::CfdState::Open { .. } => CfdState::Open,
+            model::cfd::CfdState::OpenCommitted { .. } => CfdState::OpenCommitted,
+            model::cfd::CfdState::MustRefund { .. } => CfdState::MustRefund,
+            model::cfd::CfdState::Refunded { .. } => CfdState::Refunded,
+            model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Quote {
     bid: Usd,
@@ -164,4 +216,45 @@ fn into_unix_secs(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH)
         .expect("timestamp to be convertible to duration since epoch")
         .as_secs()
+}
+
+fn actions_for_state(state: model::cfd::CfdState) -> Vec<CfdAction> {
+    if let model::cfd::CfdState::IncomingOrderRequest { .. } = state {
+        vec![CfdAction::Accept, CfdAction::Reject]
+    } else {
+        vec![]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_snapshot_test() {
+        // Make sure to update the UI after changing this test!
+
+        let json = serde_json::to_string(&CfdState::OutgoingOrderRequest).unwrap();
+        assert_eq!(json, "\"OutgoingOrderRequest\"");
+        let json = serde_json::to_string(&CfdState::IncomingOrderRequest).unwrap();
+        assert_eq!(json, "\"IncomingOrderRequest\"");
+        let json = serde_json::to_string(&CfdState::Accepted).unwrap();
+        assert_eq!(json, "\"Accepted\"");
+        let json = serde_json::to_string(&CfdState::Rejected).unwrap();
+        assert_eq!(json, "\"Rejected\"");
+        let json = serde_json::to_string(&CfdState::ContractSetup).unwrap();
+        assert_eq!(json, "\"ContractSetup\"");
+        let json = serde_json::to_string(&CfdState::PendingOpen).unwrap();
+        assert_eq!(json, "\"PendingOpen\"");
+        let json = serde_json::to_string(&CfdState::Open).unwrap();
+        assert_eq!(json, "\"Open\"");
+        let json = serde_json::to_string(&CfdState::OpenCommitted).unwrap();
+        assert_eq!(json, "\"OpenCommitted\"");
+        let json = serde_json::to_string(&CfdState::MustRefund).unwrap();
+        assert_eq!(json, "\"MustRefund\"");
+        let json = serde_json::to_string(&CfdState::Refunded).unwrap();
+        assert_eq!(json, "\"Refunded\"");
+        let json = serde_json::to_string(&CfdState::SetupFailed).unwrap();
+        assert_eq!(json, "\"SetupFailed\"");
+    }
 }

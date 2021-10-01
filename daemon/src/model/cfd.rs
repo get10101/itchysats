@@ -6,6 +6,7 @@ use bdk::bitcoin::{Address, Amount, PublicKey, Transaction};
 use bdk::descriptor::Descriptor;
 use cfd_protocol::secp256k1_zkp::{EcdsaAdaptorSignature, SECP256K1};
 use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash};
+use rocket::request::FromParam;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,15 @@ impl Default for OrderId {
 impl Display for OrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl<'v> FromParam<'v> for OrderId {
+    type Error = uuid::Error;
+
+    fn from_param(param: &'v str) -> Result<Self, Self::Error> {
+        let uuid = param.parse::<Uuid>()?;
+        Ok(OrderId(uuid))
     }
 }
 
@@ -293,7 +303,7 @@ impl Display for CfdState {
                 write!(f, "Refunded")
             }
             CfdState::SetupFailed { .. } => {
-                write!(f, "Safely Aborted")
+                write!(f, "Setup Failed")
             }
         }
     }
