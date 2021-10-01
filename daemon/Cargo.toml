@@ -7,7 +7,7 @@ edition = "2018"
 anyhow = "1"
 async-trait = "0.1.51"
 atty = "0.2"
-bdk = { git = "https://github.com/bitcoindevkit/bdk/" }
+bdk = { version = "0.12", default-features = false, features = ["sqlite", "electrum"] }
 bytes = "1"
 cfd_protocol = { path = "../cfd_protocol" }
 clap = "3.0.0-beta.4"

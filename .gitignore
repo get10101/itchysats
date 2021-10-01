@@ -17,9 +17,6 @@
 .pnp.*
 
 # Artifacts from running the daemons
-/maker.sqlite
-/maker_wallet_db/
-/taker.sqlite
-/taker_wallet_db/
+/*.sqlite*
 /maker_seed
 /taker_seed

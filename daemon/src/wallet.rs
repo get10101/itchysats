@@ -13,11 +13,9 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::Mutex;
 
-const SLED_TREE_NAME: &str = "wallet";
-
 #[derive(Clone)]
 pub struct Wallet {
-    wallet: Arc<Mutex<bdk::Wallet<ElectrumBlockchain, bdk::sled::Tree>>>,
+    wallet: Arc<Mutex<bdk::Wallet<ElectrumBlockchain, bdk::database::SqliteDatabase>>>,
 }
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
@@ -33,8 +31,7 @@ impl Wallet {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
-        // TODO: Replace with sqlite once https://github.com/bitcoindevkit/bdk/pull/376 is merged.
-        let db = bdk::sled::open(wallet_dir)?.open_tree(SLED_TREE_NAME)?;
+        let db = bdk::database::SqliteDatabase::new(wallet_dir.display().to_string());
 
         let wallet = bdk::Wallet::new(
             bdk::template::Bip84(ext_priv_key, KeychainKind::External),
