@@ -120,13 +120,14 @@ pub async fn post_cfd_action(
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
     match action {
         CfdAction::Accept | CfdAction::Reject => {
-            unreachable!("The taker does not accept and reject");
+            return Err(status::BadRequest(None));
         }
+
         CfdAction::Commit => {
             cfd_actor_address
                 .do_send_async(taker_cfd::Commit { order_id: id })
                 .await
-                .expect("actor to always be available");
+                .map_err(|e| status::BadRequest(Some(e.to_string())))?;
         }
     }
 
