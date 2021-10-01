@@ -428,9 +428,9 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
+    async fn handle_commit(&mut self, order_id: OrderId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(msg.order_id, &mut conn).await?;
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         let signed_commit_tx = cfd.commit_tx()?;
 
@@ -512,7 +512,7 @@ impl Handler<RejectOrder> for Actor {
 #[async_trait]
 impl Handler<Commit> for Actor {
     async fn handle(&mut self, msg: Commit, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_commit(msg))
+        log_error!(self.handle_commit(msg.order_id))
     }
 }
 
