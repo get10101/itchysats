@@ -1,4 +1,5 @@
 use crate::db::load_all_cfds;
+use crate::model::cfd::SettlementProposals;
 use crate::model::WalletInfo;
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
@@ -10,6 +11,7 @@ use model::cfd::Order;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use seed::Seed;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::thread::sleep;
@@ -106,6 +108,8 @@ async fn main() -> Result<()> {
 
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
+    let (settlement_feed_sender, settlement_feed_receiver) =
+        watch::channel::<SettlementProposals>(SettlementProposals::Outgoing(HashMap::new()));
 
     let (read, write) = loop {
         let socket = tokio::net::TcpSocket::new_v4()?;
@@ -130,6 +134,7 @@ async fn main() -> Result<()> {
     rocket::custom(figment)
         .manage(order_feed_receiver)
         .manage(wallet_feed_receiver)
+        .manage(settlement_feed_receiver)
         .manage(quote_updates)
         .attach(Db::init())
         .attach(AdHoc::try_on_ignite(
@@ -177,6 +182,7 @@ async fn main() -> Result<()> {
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     cfd_feed_sender,
                     order_feed_sender,
+                    settlement_feed_sender,
                     send_to_maker,
                     monitor_actor_address.clone(),
                     oracle_actor_address,

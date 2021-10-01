@@ -5,6 +5,7 @@ use crate::db::{
 };
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
+    SettlementProposal, SettlementProposals,
 };
 use crate::model::Usd;
 use crate::monitor::{self, MonitorParams};
@@ -16,6 +17,7 @@ use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
+use std::collections::HashMap;
 use std::time::SystemTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
@@ -57,11 +59,13 @@ pub struct Actor {
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_actor_inbox: watch::Sender<Option<Order>>,
+    settlements_feed_sender: watch::Sender<SettlementProposals>,
     send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
     latest_announcement: Option<oracle::Announcement>,
     _oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
+    current_settlement_proposals: HashMap<OrderId, SettlementProposal>,
 }
 
 impl Actor {
@@ -72,6 +76,7 @@ impl Actor {
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
+        settlements_feed_sender: watch::Sender<SettlementProposals>,
         send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
         monitor_actor: Address<monitor::Actor<Actor>>,
         oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
@@ -82,12 +87,22 @@ impl Actor {
             oracle_pk,
             cfd_feed_actor_inbox,
             order_feed_actor_inbox,
+            settlements_feed_sender,
             send_to_maker,
             monitor_actor,
             setup_state: SetupState::None,
             latest_announcement: None,
             _oracle_actor: oracle_actor,
+            current_settlement_proposals: HashMap::new(),
         }
+    }
+
+    fn send_current_settlement_proposals(&self) -> Result<()> {
+        Ok(self
+            .settlements_feed_sender
+            .send(SettlementProposals::Outgoing(
+                self.current_settlement_proposals.clone(),
+            ))?)
     }
 
     async fn handle_take_offer(&mut self, order_id: OrderId, quantity: Usd) -> Result<()> {
@@ -126,14 +141,28 @@ impl Actor {
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        let settlement = cfd.calculate_settlement(current_price)?;
+        let proposal = cfd.calculate_settlement(current_price)?;
+
+        if self
+            .current_settlement_proposals
+            .contains_key(&proposal.order_id)
+        {
+            anyhow::bail!(
+                "Settlement proposal for order id {} already present",
+                order_id
+            )
+        }
+
+        self.current_settlement_proposals
+            .insert(proposal.order_id, proposal.clone());
+        self.send_current_settlement_proposals()?;
 
         self.send_to_maker
             .do_send_async(wire::TakerToMaker::ProposeSettlement {
-                order_id: settlement.order_id,
-                timestamp: settlement.timestamp,
-                taker: settlement.taker,
-                maker: settlement.maker,
+                order_id: proposal.order_id,
+                timestamp: proposal.timestamp,
+                taker: proposal.taker,
+                maker: proposal.maker,
             })
             .await?;
         Ok(())

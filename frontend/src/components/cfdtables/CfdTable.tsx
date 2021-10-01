@@ -187,9 +187,9 @@ export function CfdTable(
 
 function iconForAction(action: Action): any {
     switch (action) {
-        case Action.ACCEPT:
+        case Action.ACCEPT_ORDER:
             return <CheckIcon />;
-        case Action.REJECT:
+        case Action.REJECT_ORDER:
             return <CloseIcon />;
         case Action.COMMIT:
             return <WarningIcon />;
@@ -200,9 +200,9 @@ function iconForAction(action: Action): any {
 
 function colorSchemaForAction(action: Action): string {
     switch (action) {
-        case Action.ACCEPT:
+        case Action.ACCEPT_ORDER:
             return "green";
-        case Action.REJECT:
+        case Action.REJECT_ORDER:
             return "red";
         case Action.COMMIT:
             return "red";

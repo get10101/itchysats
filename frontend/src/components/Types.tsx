@@ -137,8 +137,8 @@ export class State {
 }
 
 export enum Action {
-    ACCEPT = "accept",
-    REJECT = "reject",
+    ACCEPT_ORDER = "acceptOrder",
+    REJECT_ORDER = "rejectOrder",
     COMMIT = "commit",
     SETTLE = "settle",
 }

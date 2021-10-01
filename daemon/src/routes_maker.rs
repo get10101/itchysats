@@ -1,8 +1,8 @@
 use crate::auth::Authenticated;
-use crate::model::cfd::{Cfd, Order, OrderId, Origin};
+use crate::model::cfd::{Cfd, Order, OrderId, Origin, Role, SettlementProposals};
 use crate::model::{Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
-use crate::to_sse_event::{CfdAction, CfdsWithCurrentPrice, ToSseEvent};
+use crate::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
 use crate::{bitmex_price_feed, maker_cfd};
 use anyhow::Result;
 use rocket::http::{ContentType, Header, Status};
@@ -24,12 +24,14 @@ pub async fn maker_feed(
     rx_order: &State<watch::Receiver<Option<Order>>>,
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
     rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
+    rx_settlements: &State<watch::Receiver<SettlementProposals>>,
     _auth: Authenticated,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
     let mut rx_order = rx_order.inner().clone();
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_quote = rx_quote.inner().clone();
+    let mut rx_settlements = rx_settlements.inner().clone();
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -41,11 +43,7 @@ pub async fn maker_feed(
         let quote = rx_quote.borrow().clone();
         yield quote.to_sse_event();
 
-        let cfds_with_price = CfdsWithCurrentPrice {
-            cfds: rx_cfds.borrow().clone(),
-            current_price: quote.for_maker(),
-        };
-        yield cfds_with_price.to_sse_event();
+        yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Maker).to_sse_event();
 
         loop{
             select! {
@@ -58,20 +56,15 @@ pub async fn maker_feed(
                     yield order.to_sse_event();
                 }
                 Ok(()) = rx_cfds.changed() => {
-                    let cfds_with_price = CfdsWithCurrentPrice {
-                        cfds: rx_cfds.borrow().clone(),
-                        current_price: quote.for_maker(),
-                    };
-                    yield cfds_with_price.to_sse_event();
+                    yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Maker).to_sse_event();
+                }
+                Ok(()) = rx_settlements.changed() => {
+                    yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Maker).to_sse_event();
                 }
                 Ok(()) = rx_quote.changed() => {
                     let quote = rx_quote.borrow().clone();
                     yield quote.to_sse_event();
-                    let cfds_with_price = CfdsWithCurrentPrice {
-                        cfds: rx_cfds.borrow().clone(),
-                        current_price: quote.for_maker(),
-                    };
-                    yield cfds_with_price.to_sse_event();
+                    yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Maker).to_sse_event();
                 }
             }
         }
@@ -133,15 +126,27 @@ pub async fn post_cfd_action(
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
     match action {
-        CfdAction::Accept => {
+        CfdAction::AcceptOrder => {
             cfd_actor_address
                 .do_send_async(maker_cfd::AcceptOrder { order_id: id })
                 .await
                 .expect("actor to always be available");
         }
-        CfdAction::Reject => {
+        CfdAction::RejectOrder => {
             cfd_actor_address
                 .do_send_async(maker_cfd::RejectOrder { order_id: id })
+                .await
+                .expect("actor to always be available");
+        }
+        CfdAction::AcceptSettlement => {
+            cfd_actor_address
+                .do_send_async(maker_cfd::AcceptSettlement { order_id: id })
+                .await
+                .expect("actor to always be available");
+        }
+        CfdAction::RejectSettlement => {
+            cfd_actor_address
+                .do_send_async(maker_cfd::RejectSettlement { order_id: id })
                 .await
                 .expect("actor to always be available");
         }
