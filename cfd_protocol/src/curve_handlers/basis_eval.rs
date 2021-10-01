@@ -111,7 +111,7 @@ impl Basis {
                 j = self.order - q - 1;
                 k = mu - q - 1;
                 store[j] += store[j + 1] * (self.knots[k + q + 1] - t[i])
-                        / (self.knots[k + q + 1] - self.knots[k + 1]);
+                    / (self.knots[k + q + 1] - self.knots[k + 1]);
 
                 for j in self.order - q..self.order - 1 {
                     // 'i'-index in global knot vector (ref Hughes book pg.21)
@@ -119,7 +119,7 @@ impl Basis {
                     store[j] =
                         store[j] * (t[i] - self.knots[k]) / (self.knots[k + q] - self.knots[k]);
                     store[j] += store[j + 1] * (self.knots[k + q + 1] - t[i])
-                            / (self.knots[k + q + 1] - self.knots[k + 1]);
+                        / (self.knots[k + q + 1] - self.knots[k + 1]);
                 }
                 j = self.order - 1;
                 k = mu - 1;
@@ -134,8 +134,8 @@ impl Basis {
                         store[j] = store[j] * (q as f64) / (self.knots[k + q] - self.knots[k]);
                     }
                     if j != self.order - 1 {
-                        store[j] -= store[j + 1] * (q as f64)
-                                / (self.knots[k + q + 1] - self.knots[k + 1]);
+                        store[j] -=
+                            store[j + 1] * (q as f64) / (self.knots[k + q + 1] - self.knots[k + 1]);
                     }
                 }
             }

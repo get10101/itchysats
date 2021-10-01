@@ -140,9 +140,9 @@ impl BSplineBasis {
                 let n_1 =
                     knot_spans.len() - bisect_left(&knots_arr, &self.end(), knots_arr.len()) - 1;
                 let mut new_knot_vec = knots[n_0 * amount..n_1 * amount]
-                        .iter()
-                        .map(|e| **e)
-                        .collect::<Vec<_>>();
+                    .iter()
+                    .map(|e| **e)
+                    .collect::<Vec<_>>();
                 new_knot_vec.sort_by(cmp_f64);
                 new_knot = Array1::<f64>::from_vec(new_knot_vec);
             } else {

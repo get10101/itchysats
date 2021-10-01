@@ -25,11 +25,6 @@ pub enum Error {
     EinsumError,
     #[error("no operand string found")]
     EinsumOperandError,
-    #[error("concatonation error")]
-    NdArray {
-        #[from]
-        source: ndarray::ShapeError,
-    },
     #[error("cannot connect periodic curves")]
     IncompatibleCurvesError,
     #[error("analogue of np.insert not available yet; define spline as rational")]
@@ -40,6 +35,13 @@ pub enum Error {
     OutOfRangeError,
     #[error("a `periodic` value < -1 makes no sense")]
     IvalidPeriodicValueError,
+    #[error("degree must be strictly positive")]
+    InvalidDegreeError,
     #[error("cannot invert matrix")]
     CannotInvertMatrix(#[source] LinalgError),
+    #[error("concatonation error")]
+    NdArray {
+        #[from]
+        source: ndarray::ShapeError,
+    },
 }
