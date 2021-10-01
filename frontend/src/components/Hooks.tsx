@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useEventSourceListener } from "react-sse-hooks";
 
 export default function useLatestEvent<T>(

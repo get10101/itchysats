@@ -23,17 +23,7 @@ import CurrencyInputField from "./components/CurrencyInputField";
 import CurrentPrice from "./components/CurrentPrice";
 import useLatestEvent from "./components/Hooks";
 import OrderTile from "./components/OrderTile";
-import {
-    Cfd,
-    intoCfd,
-    intoOrder,
-    Order,
-    Position,
-    PriceInfo,
-    State,
-    StateGroupKey,
-    WalletInfo,
-} from "./components/Types";
+import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 

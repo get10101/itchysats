@@ -155,7 +155,7 @@ export function CfdTable(
                             colorScheme={colorSchemaForAction(action)}
                             aria-label={action}
                             icon={iconForAction(action)}
-                            onClick={async () => postAction(order_id, action)}
+                            onClick={() => postAction(order_id, action)}
                             isLoading={isActioning}
                         />);
                     });
@@ -164,7 +164,7 @@ export function CfdTable(
                 },
             },
         ],
-        [],
+        [isActioning, postAction],
     );
 
     // if we mark certain columns only as hidden, they are still around and we can render them in the sub-row
@@ -337,7 +337,7 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
 }
 
 async function doPostAction(id: string, action: string) {
-    let res = await fetch(
+    await fetch(
         `/api/cfd/${id}/${action}`,
         { method: "POST", credentials: "include" },
     );

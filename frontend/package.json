@@ -5,7 +5,9 @@
     "dev": "vite",
     "build": "vite build",
     "serve": "vite preview",
-    "test": "vite-jest"
+    "test": "vite-jest",
+    "eslint": "eslint src/**/*.{ts,tsx}",
+    "tsc": "tsc"
   },
   "dependencies": {
     "@chakra-ui/icons": "^1.0.15",
@@ -58,9 +60,25 @@
     "vite": "^2.5.2"
   },
   "eslintConfig": {
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+      "@typescript-eslint"
+    ],
+    "parserOptions": {
+      "project": "./tsconfig.json"
+    },
     "extends": [
       "react-app",
       "react-app/jest"
-    ]
+    ],
+    "rules": {
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/promise-function-async": "error",
+      "require-await": "off",
+      "@typescript-eslint/require-await": "error",
+      "@typescript-eslint/no-use-before-define": "off",
+      "@typescript-eslint/no-unused-vars": "error",
+      "react-hooks/exhaustive-deps": "error"
+    }
   }
 }
