@@ -69,6 +69,8 @@ export class State {
                 return "Pending Open";
             case StateKey.OPEN:
                 return "Open";
+            case StateKey.PENDING_COMMIT:
+                return "Pending Commit";
             case StateKey.OPEN_COMMITTED:
                 return "Open (commit-tx published)";
             case StateKey.MUST_REFUND:
@@ -94,6 +96,7 @@ export class State {
             case StateKey.REJECTED:
                 return red;
 
+            case StateKey.PENDING_COMMIT:
             case StateKey.OPEN_COMMITTED:
             case StateKey.MUST_REFUND:
                 return orange;
@@ -120,6 +123,7 @@ export class State {
 
             case StateKey.PENDING_OPEN:
             case StateKey.OPEN:
+            case StateKey.PENDING_COMMIT:
             case StateKey.OPEN_COMMITTED:
             case StateKey.MUST_REFUND:
                 return StateGroupKey.OPEN;
@@ -135,6 +139,8 @@ export class State {
 export enum Action {
     ACCEPT = "accept",
     REJECT = "reject",
+    COMMIT = "commit",
+    SETTLE = "settle",
 }
 
 const enum StateKey {
@@ -145,6 +151,7 @@ const enum StateKey {
     CONTRACT_SETUP = "ContractSetup",
     PENDING_OPEN = "PendingOpen",
     OPEN = "Open",
+    PENDING_COMMIT = "PendingCommit",
     OPEN_COMMITTED = "OpenCommitted",
     MUST_REFUND = "MustRefund",
     REFUNDED = "Refunded",

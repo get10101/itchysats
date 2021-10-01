@@ -39,10 +39,28 @@ impl<'v> FromParam<'v> for OrderId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+// TODO: Could potentially remove this and use the Role in the Order instead
+/// Origin of the order
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Origin {
     Ours,
     Theirs,
+}
+
+/// Role in the Cfd
+#[derive(Debug, Copy, Clone)]
+pub enum Role {
+    Maker,
+    Taker,
+}
+
+impl From<Origin> for Role {
+    fn from(origin: Origin) -> Self {
+        match origin {
+            Origin::Ours => Role::Maker,
+            Origin::Theirs => Role::Taker,
+        }
+    }
 }
 
 /// A concrete order created by a maker for a taker
@@ -198,6 +216,15 @@ pub enum CfdState {
         dlc: Dlc,
     },
 
+    /// The commit transaction was published but it not final yet
+    ///
+    /// This state applies to taker and maker.
+    /// This state is needed, because otherwise the user does not get any feedback.
+    PendingCommit {
+        common: CfdStateCommon,
+        dlc: Dlc,
+    },
+
     // TODO: At the moment we are appending to this state. The way this is handled internally is
     //  by inserting the same state with more information in the database. We could consider
     //  changing this to insert different states or update the stae instead of inserting again.
@@ -259,6 +286,7 @@ impl CfdState {
             CfdState::MustRefund { common, .. } => common,
             CfdState::Refunded { common, .. } => common,
             CfdState::SetupFailed { common, .. } => common,
+            CfdState::PendingCommit { common, .. } => common,
         };
 
         *common
@@ -292,6 +320,9 @@ impl Display for CfdState {
             }
             CfdState::Open { .. } => {
                 write!(f, "Open")
+            }
+            CfdState::PendingCommit { .. } => {
+                write!(f, "Pending Committ")
             }
             CfdState::OpenCommitted { .. } => {
                 write!(f, "Open Committed")
@@ -428,41 +459,32 @@ impl Cfd {
 
         let new_state = match event {
             CfdStateChangeEvent::Monitor(event) => match event {
-                monitor::Event::LockFinality(_) => match self.state.clone() {
-                    PendingOpen { dlc, .. } => CfdState::Open {
-                        common: CfdStateCommon {
-                            transition_timestamp: SystemTime::now(),
-                        },
-                        dlc,
-                    },
-                    OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-                    IncomingOrderRequest { .. } | Accepted { .. } | ContractSetup { .. } => {
-                        bail!("Did not expect lock finality yet: ignoring")
+                monitor::Event::LockFinality(_) => {
+                    if let PendingOpen { dlc, .. } = self.state.clone() {
+                        CfdState::Open {
+                            common: CfdStateCommon {
+                                transition_timestamp: SystemTime::now(),
+                            },
+                            dlc,
+                        }
+                    } else {
+                        bail!(
+                            "Cannot transition to Open because of unexpected state {}",
+                            self.state
+                        )
                     }
-                    Open { .. } | OpenCommitted { .. } | MustRefund { .. } => {
-                        bail!("State already assumes lock finality: ignoring")
-                    }
-                    Rejected { .. } | Refunded { .. } | SetupFailed { .. } => {
-                        bail!("The cfd is already in final state {}", self.state)
-                    }
-                },
+                }
                 monitor::Event::CommitFinality(_) => {
-                    let dlc = match self.state.clone() {
-                        Open { dlc, .. } => dlc,
-                        PendingOpen { dlc, .. } => {
-                            tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
-                            dlc
-                        }
-                        OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-                        IncomingOrderRequest { .. } | Accepted { .. } | ContractSetup { .. } => {
-                            bail!("Did not expect commit finality yet: ignoring")
-                        }
-                        OpenCommitted { .. } | MustRefund { .. } => {
-                            bail!("State already assumes commit finality: ignoring")
-                        }
-                        Rejected { .. } | Refunded { .. } | SetupFailed { .. } => {
-                            bail!("The cfd is already in final state {}", self.state)
-                        }
+                    let dlc = if let Open { dlc, .. } = self.state.clone() {
+                        dlc
+                    } else if let PendingOpen { dlc, .. } = self.state.clone() {
+                        tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
+                        dlc
+                    } else {
+                        bail!(
+                            "Cannot transition to OpenCommitted because of unexpected state {}",
+                            self.state
+                        )
                     };
 
                     OpenCommitted {
@@ -496,8 +518,8 @@ impl Cfd {
                         dlc,
                         cet_status: CetStatus::Ready(price),
                     },
-                    PendingOpen { dlc, .. } => {
-                        tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
+                    PendingOpen { dlc, .. } | Open { dlc, .. } => {
+                        tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to MustRefund", self.state);
                         CfdState::OpenCommitted {
                             common: CfdStateCommon {
                                 transition_timestamp: SystemTime::now(),
@@ -506,56 +528,22 @@ impl Cfd {
                             cet_status: CetStatus::TimelockExpired,
                         }
                     }
-                    Open { dlc, .. } => {
-                        tracing::debug!(%order_id, "Was not aware of commit TX broadcast, jumping ahead");
-                        CfdState::OpenCommitted {
-                            common: CfdStateCommon {
-                                transition_timestamp: SystemTime::now(),
-                            },
-                            dlc,
-                            cet_status: CetStatus::TimelockExpired,
-                        }
-                    }
-                    OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-                    IncomingOrderRequest { .. } | Accepted { .. } | ContractSetup { .. } => {
-                        bail!("Did not expect CET timelock expiry yet: ignoring")
-                    }
-                    OpenCommitted {
-                        cet_status: CetStatus::TimelockExpired,
-                        ..
-                    }
-                    | OpenCommitted {
-                        cet_status: CetStatus::Ready(_),
-                        ..
-                    } => bail!("State already assumes CET timelock expiry: ignoring"),
-                    MustRefund { .. } => {
-                        bail!("Refund path does not care about CET timelock expiry: ignoring")
-                    }
-                    Rejected { .. } | Refunded { .. } | SetupFailed { .. } => {
-                        bail!("The cfd is already in final state {}", self.state)
-                    }
+                    _ => bail!(
+                        "Cannot transition to OpenCommitted because of unexpected state {}",
+                        self.state
+                    ),
                 },
                 monitor::Event::RefundTimelockExpired(_) => {
-                    let dlc = match self.state.clone() {
-                        OpenCommitted { dlc, .. } => dlc,
-                        MustRefund { .. } => {
-                            bail!("State already assumes refund timelock expiry: ignoring")
-                        }
-                        OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-                        IncomingOrderRequest { .. } | Accepted { .. } | ContractSetup { .. } => {
-                            bail!("Did not expect refund timelock expiry yet: ignoring")
-                        }
-                        PendingOpen { dlc, .. } => {
-                            tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
-                            dlc
-                        }
-                        Open { dlc, .. } => {
-                            tracing::debug!(%order_id, "Was waiting on CET timelock expiry, jumping ahead");
-                            dlc
-                        }
-                        Rejected { .. } | Refunded { .. } | SetupFailed { .. } => {
-                            bail!("The cfd is already in final state {}", self.state)
-                        }
+                    let dlc = if let OpenCommitted { dlc, .. } = self.state.clone() {
+                        dlc
+                    } else if let Open { dlc, .. } | PendingOpen { dlc, .. } = self.state.clone() {
+                        tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to MustRefund", self.state);
+                        dlc
+                    } else {
+                        bail!(
+                            "Cannot transition to OpenCommitted because of unexpected state {}",
+                            self.state
+                        )
                     };
 
                     MustRefund {
@@ -566,24 +554,12 @@ impl Cfd {
                     }
                 }
                 monitor::Event::RefundFinality(_) => {
-                    match self.state {
-                        MustRefund { .. } => (),
-                        OutgoingOrderRequest { .. } => unreachable!("taker-only state"),
-                        IncomingOrderRequest { .. } | Accepted { .. } | ContractSetup { .. } => {
-                            bail!("Did not expect refund finality yet: ignoring")
-                        }
-                        PendingOpen { .. } => {
-                            tracing::debug!(%order_id, "Was waiting on lock finality, jumping ahead");
-                        }
-                        Open { .. } => {
-                            tracing::debug!(%order_id, "Was waiting on CET timelock expiry, jumping ahead");
-                        }
-                        OpenCommitted { .. } => {
-                            tracing::debug!(%order_id, "Was waiting on refund timelock expiry, jumping ahead");
-                        }
-                        Rejected { .. } | Refunded { .. } | SetupFailed { .. } => {
-                            bail!("The cfd is already in final state {}", self.state)
-                        }
+                    if let MustRefund { .. } = self.state.clone() {
+                    } else {
+                        tracing::debug!(
+                            "Was in unexpected state {}, jumping ahead to Refunded",
+                            self.state
+                        );
                     }
 
                     Refunded {
@@ -596,6 +572,23 @@ impl Cfd {
                     todo!("Implement state transition")
                 }
             },
+            CfdStateChangeEvent::CommitTxSent => {
+                let dlc = if let Open { dlc, .. } | PendingOpen { dlc, .. } = self.state.clone() {
+                    dlc
+                } else {
+                    bail!(
+                        "Cannot transition to PendingCommit because of unexpected state {}",
+                        self.state
+                    )
+                };
+
+                PendingCommit {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
+                    dlc,
+                }
+            }
         };
 
         Ok(new_state)
@@ -630,6 +623,43 @@ impl Cfd {
         Ok(signed_refund_tx)
     }
 
+    pub fn commit_tx(&self) -> Result<Transaction> {
+        let dlc = if let CfdState::Open { dlc, .. } | CfdState::PendingOpen { dlc, .. } =
+            self.state.clone()
+        {
+            dlc
+        } else {
+            bail!(
+                "Cannot publish commit transaction in state {}",
+                self.state.clone()
+            )
+        };
+
+        let sig_hash = spending_tx_sighash(
+            &dlc.commit.0,
+            &dlc.lock.1,
+            Amount::from_sat(dlc.lock.0.output[0].value),
+        );
+        let our_sig = SECP256K1.sign(&sig_hash, &dlc.identity);
+        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
+            SECP256K1,
+            &dlc.identity,
+        ));
+
+        // TODO: verify that the dlc's `publish` sk corresponds to the decryption_sk we need here
+        let counterparty_sig = dlc.commit.1.decrypt(&dlc.publish)?;
+        let counterparty_pubkey = dlc.identity_counterparty;
+
+        let signed_commit_tx = finalize_spend_transaction(
+            dlc.commit.0,
+            &dlc.commit.2,
+            (our_pubkey, our_sig),
+            (counterparty_pubkey, counterparty_sig),
+        )?;
+
+        Ok(signed_commit_tx)
+    }
+
     pub fn pending_open_dlc(&self) -> Option<Dlc> {
         if let CfdState::PendingOpen { dlc, .. } = self.state.clone() {
             Some(dlc)
@@ -642,6 +672,10 @@ impl Cfd {
         matches!(self.state.clone(), CfdState::MustRefund { .. })
     }
 
+    pub fn is_pending_commit(&self) -> bool {
+        matches!(self.state.clone(), CfdState::PendingCommit { .. })
+    }
+
     pub fn is_cleanup(&self) -> bool {
         matches!(
             self.state.clone(),
@@ -651,13 +685,18 @@ impl Cfd {
                 | CfdState::ContractSetup { .. }
         )
     }
+
+    pub fn role(&self) -> Role {
+        self.order.origin.into()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum CfdStateChangeEvent {
-    // TODO: groupd other events by actors into enums and add them here so we can bundle all
+    // TODO: group other events by actors into enums and add them here so we can bundle all
     // transitions into cfd.transition_to(...)
     Monitor(monitor::Event),
+    CommitTxSent,
 }
 
 fn calculate_profit(

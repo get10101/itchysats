@@ -68,7 +68,7 @@ where
                     actor.cfds.insert(cfd.order.id, params.clone());
                     actor.monitor_all(&params, cfd.order.id).await;
                 }
-                CfdState::Open { dlc, .. } => {
+                CfdState::Open { dlc, .. } | CfdState::PendingCommit { dlc, .. } => {
                     let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
                     actor.cfds.insert(cfd.order.id, params.clone());
 

@@ -1,4 +1,4 @@
-use crate::model::cfd::OrderId;
+use crate::model::cfd::{OrderId, Role};
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::Amount;
@@ -36,6 +36,8 @@ pub struct Cfd {
 pub enum CfdAction {
     Accept,
     Reject,
+    Commit,
+    Settle,
 }
 
 impl<'v> FromParam<'v> for CfdAction {
@@ -56,6 +58,7 @@ pub enum CfdState {
     ContractSetup,
     PendingOpen,
     Open,
+    PendingCommit,
     OpenCommitted,
     MustRefund,
     Refunded,
@@ -113,7 +116,7 @@ impl ToSseEvent for CfdsWithCurrentPrice {
                     profit_btc,
                     profit_usd,
                     state: cfd.state.clone().into(),
-                    actions: actions_for_state(cfd.state.clone()),
+                    actions: actions_for_state(cfd.state.clone(), cfd.role()),
                     state_transition_timestamp: cfd
                         .state
                         .get_transition_timestamp()
@@ -189,6 +192,7 @@ impl From<model::cfd::CfdState> for CfdState {
             model::cfd::CfdState::MustRefund { .. } => CfdState::MustRefund,
             model::cfd::CfdState::Refunded { .. } => CfdState::Refunded,
             model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
+            model::cfd::CfdState::PendingCommit { .. } => CfdState::PendingCommit,
         }
     }
 }
@@ -218,11 +222,16 @@ fn into_unix_secs(time: SystemTime) -> u64 {
         .as_secs()
 }
 
-fn actions_for_state(state: model::cfd::CfdState) -> Vec<CfdAction> {
-    if let model::cfd::CfdState::IncomingOrderRequest { .. } = state {
-        vec![CfdAction::Accept, CfdAction::Reject]
-    } else {
-        vec![]
+fn actions_for_state(state: model::cfd::CfdState, role: Role) -> Vec<CfdAction> {
+    match (state, role) {
+        (model::cfd::CfdState::IncomingOrderRequest { .. }, Role::Maker) => {
+            vec![CfdAction::Accept, CfdAction::Reject]
+        }
+        (model::cfd::CfdState::Open { .. }, Role::Taker) => {
+            vec![CfdAction::Commit, CfdAction::Settle]
+        }
+        (model::cfd::CfdState::Open { .. }, Role::Maker) => vec![CfdAction::Commit],
+        _ => vec![],
     }
 }
 

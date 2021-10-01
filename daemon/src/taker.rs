@@ -213,9 +213,9 @@ async fn main() -> Result<()> {
             rocket::routes![
                 routes_taker::feed,
                 routes_taker::post_order_request,
-                routes_taker::post_settlement_proposal,
                 routes_taker::get_health_check,
                 routes_taker::margin_calc,
+                routes_taker::post_cfd_action,
             ],
         )
         .mount(

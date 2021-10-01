@@ -4,7 +4,7 @@ use crate::db::{
     load_cfd_by_order_id, load_order_by_id,
 };
 use crate::model::cfd::{
-    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
+    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
 };
 use crate::model::Usd;
 use crate::monitor::{self, MonitorParams};
@@ -38,6 +38,10 @@ pub struct MakerStreamMessage {
 pub struct CfdSetupCompleted {
     pub order_id: OrderId,
     pub dlc: Result<Dlc>,
+}
+
+pub struct Commit {
+    pub order_id: OrderId,
 }
 
 enum SetupState {
@@ -84,6 +88,13 @@ impl Actor {
             let txid = wallet.try_broadcast_transaction(signed_refund_tx).await?;
 
             tracing::info!("Refund transaction published on chain: {}", txid);
+        }
+
+        for cfd in cfds.iter().filter(|cfd| Cfd::is_pending_commit(cfd)) {
+            let signed_commit_tx = cfd.commit_tx()?;
+            let txid = wallet.try_broadcast_transaction(signed_commit_tx).await?;
+
+            tracing::info!("Commit transaction published on chain: {}", txid);
         }
 
         Ok(Self {
@@ -215,7 +226,7 @@ impl Actor {
             (self.oracle_pk, nonce_pks),
             cfd,
             self.wallet.clone(),
-            setup_contract::Role::Taker,
+            Role::Taker,
         );
 
         let this = ctx
@@ -342,6 +353,26 @@ impl Actor {
         Ok(())
     }
 
+    // TODO: Duplicated with maker
+    async fn handle_commit(&mut self, order_id: OrderId) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+
+        let signed_commit_tx = cfd.commit_tx()?;
+
+        let txid = self
+            .wallet
+            .try_broadcast_transaction(signed_commit_tx)
+            .await?;
+
+        tracing::info!("Commit transaction published on chain: {}", txid);
+
+        let new_state = cfd.handle(CfdStateChangeEvent::CommitTxSent)?;
+        insert_new_cfd_state_by_order_id(cfd.order.id, new_state, &mut conn).await?;
+
+        Ok(())
+    }
+
     async fn handle_oracle_announcements(
         &mut self,
         announcements: oracle::Announcements,
@@ -441,6 +472,13 @@ impl Handler<oracle::Attestation> for Actor {
     }
 }
 
+#[async_trait]
+impl Handler<Commit> for Actor {
+    async fn handle(&mut self, msg: Commit, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_commit(msg.order_id))
+    }
+}
+
 impl Message for TakeOffer {
     type Result = ();
 }
@@ -455,6 +493,10 @@ impl Message for MakerStreamMessage {
 }
 
 impl Message for CfdSetupCompleted {
+    type Result = ();
+}
+
+impl Message for Commit {
     type Result = ();
 }
 

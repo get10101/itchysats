@@ -1,10 +1,12 @@
 import {
+    CheckCircleIcon,
     CheckIcon,
     ChevronRightIcon,
     ChevronUpIcon,
     CloseIcon,
     TriangleDownIcon,
     TriangleUpIcon,
+    WarningIcon,
 } from "@chakra-ui/icons";
 import {
     Badge,
@@ -186,6 +188,10 @@ function iconForAction(action: Action): any {
             return <CheckIcon />;
         case Action.REJECT:
             return <CloseIcon />;
+        case Action.COMMIT:
+            return <WarningIcon />;
+        case Action.SETTLE:
+            return <CheckCircleIcon />;
     }
 }
 
@@ -195,6 +201,10 @@ function colorSchemaForAction(action: Action): string {
             return "green";
         case Action.REJECT:
             return "red";
+        case Action.COMMIT:
+            return "red";
+        case Action.SETTLE:
+            return "green";
     }
 }
 
