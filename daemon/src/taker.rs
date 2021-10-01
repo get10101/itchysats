@@ -6,7 +6,7 @@ use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::Network;
 use clap::Clap;
 use futures::StreamExt;
-use model::cfd::{Cfd, Order};
+use model::cfd::Order;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use seed::Seed;
@@ -103,7 +103,6 @@ async fn main() -> Result<()> {
 
     let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
 
-    let (cfd_feed_sender, cfd_feed_receiver) = watch::channel::<Vec<Cfd>>(vec![]);
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
 
@@ -128,7 +127,6 @@ async fn main() -> Result<()> {
         .merge(("port", opts.http_port));
 
     rocket::custom(figment)
-        .manage(cfd_feed_receiver)
         .manage(order_feed_receiver)
         .manage(wallet_feed_receiver)
         .manage(quote_updates)
@@ -152,11 +150,14 @@ async fn main() -> Result<()> {
                     Some(db) => (**db).clone(),
                     None => return Err(rocket),
                 };
+                let mut conn = db.acquire().await.unwrap();
 
-                cleanup::transition_non_continue_cfds_to_setup_failed(db.clone())
+                cleanup::transition_non_continue_cfds_to_setup_failed(&mut conn)
                     .await
                     .unwrap();
+                let cfds = load_all_cfds(&mut conn).await.unwrap();
 
+                let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
                 let send_to_maker = send_to_socket::Actor::new(write)
                     .create(None)
                     .spawn_global();
@@ -193,7 +194,6 @@ async fn main() -> Result<()> {
                     ),
                 );
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
-
                 tokio::spawn(
                     oracle_actor_context
                         .notify_interval(Duration::from_secs(60), || oracle::Sync)
@@ -204,7 +204,7 @@ async fn main() -> Result<()> {
                     monitor_actor_address,
                 )));
 
-                Ok(rocket.manage(cfd_actor_inbox))
+                Ok(rocket.manage(cfd_actor_inbox).manage(cfd_feed_receiver))
             },
         ))
         .mount(

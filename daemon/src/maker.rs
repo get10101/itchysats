@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
 use bdk::bitcoin::Network;
 use clap::Clap;
-use model::cfd::{Cfd, Order};
+use model::cfd::Order;
 use model::WalletInfo;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
@@ -108,7 +108,6 @@ async fn main() -> Result<()> {
 
     let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
 
-    let (cfd_feed_sender, cfd_feed_receiver) = watch::channel::<Vec<Cfd>>(vec![]);
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
 
@@ -125,7 +124,6 @@ async fn main() -> Result<()> {
     tokio::spawn(task);
 
     rocket::custom(figment)
-        .manage(cfd_feed_receiver)
         .manage(order_feed_receiver)
         .manage(wallet_feed_receiver)
         .manage(auth_password)
@@ -150,11 +148,14 @@ async fn main() -> Result<()> {
                     Some(db) => (**db).clone(),
                     None => return Err(rocket),
                 };
+                let mut conn = db.acquire().await.unwrap();
 
-                cleanup::transition_non_continue_cfds_to_setup_failed(db.clone())
+                cleanup::transition_non_continue_cfds_to_setup_failed(&mut conn)
                     .await
                     .unwrap();
+                let cfds = load_all_cfds(&mut conn).await.unwrap();
 
+                let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
                 let (maker_inc_connections_address, maker_inc_connections_context) =
                     xtra::Context::new(None);
 
@@ -216,7 +217,9 @@ async fn main() -> Result<()> {
                 tokio::spawn(maker_inc_connections_address.attach_stream(listener_stream));
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
 
-                Ok(rocket.manage(cfd_maker_actor_inbox))
+                Ok(rocket
+                    .manage(cfd_maker_actor_inbox)
+                    .manage(cfd_feed_receiver))
             },
         ))
         .mount(

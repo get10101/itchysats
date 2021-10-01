@@ -80,9 +80,6 @@ impl Actor {
         cfds: Vec<Cfd>,
         oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
     ) -> Result<Self> {
-        // populate the CFD feed with existing CFDs
-        cfd_feed_actor_inbox.send(cfds.clone())?;
-
         for dlc in cfds.iter().filter_map(|cfd| Cfd::pending_open_dlc(cfd)) {
             let txid = wallet.try_broadcast_transaction(dlc.lock.0.clone()).await?;
 
