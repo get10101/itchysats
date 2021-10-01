@@ -125,12 +125,6 @@ pub struct PromptAuthentication {
     www_authenticate: Header<'static>,
 }
 
-/// The maker POSTs this to accept an order
-#[derive(Debug, Clone, Deserialize)]
-pub struct AcceptOrRejectTakeRequest {
-    pub order_id: OrderId,
-}
-
 #[rocket::post("/cfd/<id>/<action>")]
 pub async fn post_cfd_action(
     id: OrderId,
