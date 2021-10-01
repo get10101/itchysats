@@ -4,7 +4,9 @@ use crate::db::{
     load_cfd_by_order_id, load_order_by_id,
 };
 use crate::maker_inc_connections::TakerCommand;
-use crate::model::cfd::{Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId};
+use crate::model::cfd::{
+    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, SettlementProposal,
+};
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
@@ -139,6 +141,15 @@ impl Actor {
             })
             .await?;
 
+        Ok(())
+    }
+
+    async fn handle_propose_settlement(&mut self, proposal: SettlementProposal) -> Result<()> {
+        tracing::info!(
+            "Received settlement proposal from the taker: {:?}",
+            proposal
+        );
+        // TODO: Handle the proposal
         Ok(())
     }
 
@@ -483,6 +494,19 @@ impl Handler<TakerStreamMessage> for Actor {
         match msg {
             wire::TakerToMaker::TakeOrder { order_id, quantity } => {
                 log_error!(self.handle_take_order(taker, order_id, quantity))
+            }
+            wire::TakerToMaker::ProposeSettlement {
+                order_id,
+                timestamp,
+                taker,
+                maker,
+            } => {
+                log_error!(self.handle_propose_settlement(SettlementProposal {
+                    order_id,
+                    timestamp,
+                    taker,
+                    maker
+                }))
             }
             wire::TakerToMaker::Protocol(msg) => {
                 log_error!(self.handle_inc_protocol_msg(taker, msg))

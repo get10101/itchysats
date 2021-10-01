@@ -309,6 +309,15 @@ impl Display for CfdState {
     }
 }
 
+/// Proposed collaborative settlement
+#[derive(Debug, Clone)]
+pub struct SettlementProposal {
+    pub order_id: OrderId,
+    pub timestamp: SystemTime,
+    pub taker: Amount,
+    pub maker: Amount,
+}
+
 /// Represents a cfd (including state)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Cfd {
@@ -354,6 +363,20 @@ impl Cfd {
         let profit =
             calculate_profit(self.order.price, current_price, dec!(0.005), Usd(dec!(0.1)))?;
         Ok(profit)
+    }
+
+    #[allow(dead_code)] // Not used by all binaries.
+    pub fn calculate_settlement(&self, _current_price: Usd) -> Result<SettlementProposal> {
+        // TODO: Calculate values for taker and maker
+        // For the time being, assume that everybody loses :)
+        let settlement = SettlementProposal {
+            order_id: self.order.id,
+            timestamp: SystemTime::now(),
+            taker: Amount::ZERO,
+            maker: Amount::ZERO,
+        };
+
+        Ok(settlement)
     }
 
     pub fn position(&self) -> Position {

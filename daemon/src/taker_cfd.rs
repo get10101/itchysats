@@ -26,6 +26,11 @@ pub struct TakeOffer {
     pub quantity: Usd,
 }
 
+pub struct ProposeSettlement {
+    pub order_id: OrderId,
+    pub current_price: Usd,
+}
+
 pub struct MakerStreamMessage {
     pub item: Result<wire::MakerToTaker>,
 }
@@ -118,6 +123,27 @@ impl Actor {
             .do_send_async(wire::TakerToMaker::TakeOrder { order_id, quantity })
             .await?;
 
+        Ok(())
+    }
+
+    async fn handle_propose_settlement(
+        &mut self,
+        order_id: OrderId,
+        current_price: Usd,
+    ) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+
+        let settlement = cfd.calculate_settlement(current_price)?;
+
+        self.send_to_maker
+            .do_send_async(wire::TakerToMaker::ProposeSettlement {
+                order_id: settlement.order_id,
+                timestamp: settlement.timestamp,
+                taker: settlement.taker,
+                maker: settlement.maker,
+            })
+            .await?;
         Ok(())
     }
 
@@ -311,6 +337,13 @@ impl Handler<TakeOffer> for Actor {
 }
 
 #[async_trait]
+impl Handler<ProposeSettlement> for Actor {
+    async fn handle(&mut self, msg: ProposeSettlement, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_propose_settlement(msg.order_id, msg.current_price));
+    }
+}
+
+#[async_trait]
 impl Handler<MakerStreamMessage> for Actor {
     async fn handle(
         &mut self,
@@ -360,6 +393,10 @@ impl Handler<monitor::Event> for Actor {
 }
 
 impl Message for TakeOffer {
+    type Result = ();
+}
+
+impl Message for ProposeSettlement {
     type Result = ();
 }
 

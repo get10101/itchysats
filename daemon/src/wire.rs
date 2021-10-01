@@ -13,13 +13,25 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
+use std::time::SystemTime;
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum TakerToMaker {
-    TakeOrder { order_id: OrderId, quantity: Usd },
+    TakeOrder {
+        order_id: OrderId,
+        quantity: Usd,
+    },
+    ProposeSettlement {
+        order_id: OrderId,
+        timestamp: SystemTime,
+        #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+        taker: Amount,
+        #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+        maker: Amount,
+    },
     Protocol(SetupMsg),
 }
 
@@ -27,6 +39,7 @@ impl fmt::Display for TakerToMaker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TakerToMaker::TakeOrder { .. } => write!(f, "TakeOrder"),
+            TakerToMaker::ProposeSettlement { .. } => write!(f, "ProposeSettlement"),
             TakerToMaker::Protocol(_) => write!(f, "Protocol"),
         }
     }
