@@ -310,14 +310,11 @@ impl Display for CfdState {
 }
 
 /// Proposed collaborative settlement
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SettlementProposal {
     pub order_id: OrderId,
     pub timestamp: SystemTime,
-
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub taker: Amount,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub maker: Amount,
 }
 

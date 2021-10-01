@@ -495,8 +495,18 @@ impl Handler<TakerStreamMessage> for Actor {
             wire::TakerToMaker::TakeOrder { order_id, quantity } => {
                 log_error!(self.handle_take_order(taker, order_id, quantity))
             }
-            wire::TakerToMaker::ProposeSettlement(proposal) => {
-                log_error!(self.handle_propose_settlement(proposal))
+            wire::TakerToMaker::ProposeSettlement {
+                order_id,
+                timestamp,
+                taker,
+                maker,
+            } => {
+                log_error!(self.handle_propose_settlement(SettlementProposal {
+                    order_id,
+                    timestamp,
+                    taker,
+                    maker
+                }))
             }
             wire::TakerToMaker::Protocol(msg) => {
                 log_error!(self.handle_inc_protocol_msg(taker, msg))

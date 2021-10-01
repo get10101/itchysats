@@ -102,11 +102,11 @@ pub async fn post_settlement_proposal(
     cfd_actor_inbox: &State<Address<taker_cfd::Actor>>,
     quote_updates: &State<watch::Receiver<bitmex_price_feed::Quote>>,
 ) {
-    let quote = quote_updates.borrow().clone();
+    let current_price = quote_updates.borrow().for_taker();
     cfd_actor_inbox
         .do_send_async(taker_cfd::ProposeSettlement {
             order_id: id,
-            quote,
+            current_price,
         })
         .await
         .expect("actor to always be available");

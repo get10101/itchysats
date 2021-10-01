@@ -1,4 +1,4 @@
-use crate::model::cfd::{OrderId, SettlementProposal};
+use crate::model::cfd::OrderId;
 use crate::model::Usd;
 use crate::Order;
 use anyhow::{bail, Result};
@@ -13,14 +13,25 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
+use std::time::SystemTime;
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum TakerToMaker {
-    TakeOrder { order_id: OrderId, quantity: Usd },
-    ProposeSettlement(SettlementProposal),
+    TakeOrder {
+        order_id: OrderId,
+        quantity: Usd,
+    },
+    ProposeSettlement {
+        order_id: OrderId,
+        timestamp: SystemTime,
+        #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+        taker: Amount,
+        #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+        maker: Amount,
+    },
     Protocol(SetupMsg),
 }
 
