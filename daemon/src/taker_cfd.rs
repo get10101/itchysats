@@ -337,6 +337,9 @@ impl Actor {
 
         insert_new_cfd_state_by_order_id(order_id, new_state.clone(), &mut conn).await?;
 
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
+
         // TODO: Not sure that should be done here...
         //  Consider bubbling the refund availability up to the user, and let user trigger
         //  transaction publication
