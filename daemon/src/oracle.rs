@@ -1,17 +1,20 @@
 use crate::actors::log_error;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
 use futures::stream::FuturesOrdered;
 use futures::TryStreamExt;
-use rocket::time::{format_description, Duration, OffsetDateTime, Time};
+use rocket::time::format_description::FormatItem;
+use rocket::time::macros::format_description;
+use rocket::time::{Duration, OffsetDateTime, Time};
 use std::collections::HashSet;
 use std::convert::TryFrom;
 
 /// Where `olivia` is located.
 const OLIVIA_URL: &str = "https://h00.ooo/";
 
-const OLIVIA_EVENT_TIME_FORMAT: &str = "[year]-[month]-[day]T[hour]:[minute]:[second]";
+const OLIVIA_EVENT_TIME_FORMAT: &[FormatItem] =
+    format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
 
 pub struct Actor<CFD, M>
 where
@@ -42,8 +45,12 @@ where
     }
 
     async fn update_state(&mut self) -> Result<()> {
-        self.update_latest_announcements().await?;
-        self.update_pending_attestations().await?;
+        self.update_latest_announcements()
+            .await
+            .context("failed to update announcements")?;
+        self.update_pending_attestations()
+            .await
+            .context("failed to update pending attestations")?;
 
         Ok(())
     }
@@ -51,11 +58,19 @@ where
     async fn update_latest_announcements(&mut self) -> Result<()> {
         let new_announcements = next_urls()
             .into_iter()
-            .map(|event_url| async {
-                let announcement = reqwest::get(event_url)
-                    .await?
+            .map(|event_url| async move {
+                let response = reqwest::get(event_url.clone())
+                    .await
+                    .with_context(|| format!("Failed to GET {}", event_url))?;
+
+                if !response.status().is_success() {
+                    anyhow::bail!("GET {} responded with {}", event_url, response.status());
+                }
+
+                let announcement = response
                     .json::<Announcement>()
-                    .await?;
+                    .await
+                    .context("Failed to deserialize as Announcement")?;
                 Result::<_, anyhow::Error>::Ok(announcement)
             })
             .collect::<FuturesOrdered<_>>()
@@ -173,12 +188,11 @@ fn next_24_hours(datetime: OffsetDateTime) -> Vec<OffsetDateTime> {
 /// Construct the URL of `olivia`'s `BitMEX/BXBT` event to be attested
 /// for at the time indicated by the argument `datetime`.
 fn event_url(datetime: OffsetDateTime) -> String {
-    let formatter = format_description::parse(OLIVIA_EVENT_TIME_FORMAT).expect("valid formatter");
-    datetime
-        .format(&formatter)
+    let datetime = datetime
+        .format(&OLIVIA_EVENT_TIME_FORMAT)
         .expect("valid formatter for datetime");
 
-    format!("{}/BitMEX/BXBT/{}/price", OLIVIA_URL, datetime)
+    format!("{}x/BitMEX/BXBT/{}.price", OLIVIA_URL, datetime)
 }
 
 #[derive(Debug, Clone, serde::Deserialize, PartialEq)]
@@ -250,16 +264,15 @@ mod olivia_api {
         use crate::oracle::OLIVIA_EVENT_TIME_FORMAT;
         use serde::de::Error as _;
         use serde::{Deserialize, Deserializer};
-        use time::{format_description, OffsetDateTime, PrimitiveDateTime};
+        use time::{OffsetDateTime, PrimitiveDateTime};
 
         pub fn deserialize<'a, D>(deserializer: D) -> Result<OffsetDateTime, D::Error>
         where
             D: Deserializer<'a>,
         {
             let string = String::deserialize(deserializer)?;
-            let format = format_description::parse(OLIVIA_EVENT_TIME_FORMAT).expect("valid format");
-
-            let date_time = PrimitiveDateTime::parse(&string, &format).map_err(D::Error::custom)?;
+            let date_time = PrimitiveDateTime::parse(&string, &OLIVIA_EVENT_TIME_FORMAT)
+                .map_err(D::Error::custom)?;
 
             Ok(date_time.assume_utc())
         }
@@ -315,18 +328,16 @@ mod olivia_api {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use time::format_description;
     use time::macros::datetime;
 
     #[test]
     fn next_event_url_is_correct() {
-        let datetime = datetime!(2021-09-23 10:43:00);
-        let format = format_description::parse(OLIVIA_EVENT_TIME_FORMAT).unwrap();
+        let url = event_url(datetime!(2021-09-23 10:00:00).assume_utc());
 
-        let date_time_formatted = datetime.format(&format).unwrap();
-        let expected = "2021-09-23T10:43:00";
-
-        assert_eq!(date_time_formatted, expected);
+        assert_eq!(
+            url,
+            "https://h00.ooo/x/BitMEX/BXBT/2021-09-23T10:00:00.price"
+        );
     }
 
     #[test]
