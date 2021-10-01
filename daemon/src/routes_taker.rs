@@ -96,27 +96,12 @@ pub async fn post_order_request(
         .expect("actor to always be available");
 }
 
-#[rocket::post("/cfd/<id>/settle")]
-pub async fn post_settlement_proposal(
-    id: OrderId,
-    cfd_actor_inbox: &State<Address<taker_cfd::Actor>>,
-    quote_updates: &State<watch::Receiver<bitmex_price_feed::Quote>>,
-) {
-    let current_price = quote_updates.borrow().for_taker();
-    cfd_actor_inbox
-        .do_send_async(taker_cfd::ProposeSettlement {
-            order_id: id,
-            current_price,
-        })
-        .await
-        .expect("actor to always be available");
-}
-
 #[rocket::post("/cfd/<id>/<action>")]
 pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
     cfd_actor_address: &State<Address<taker_cfd::Actor>>,
+    quote_updates: &State<watch::Receiver<bitmex_price_feed::Quote>>,
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
     match action {
         CfdAction::Accept | CfdAction::Reject => {
@@ -128,6 +113,16 @@ pub async fn post_cfd_action(
                 .do_send_async(taker_cfd::Commit { order_id: id })
                 .await
                 .map_err(|e| status::BadRequest(Some(e.to_string())))?;
+        }
+        CfdAction::Settle => {
+            let current_price = quote_updates.borrow().for_taker();
+            cfd_actor_address
+                .do_send_async(taker_cfd::ProposeSettlement {
+                    order_id: id,
+                    current_price,
+                })
+                .await
+                .expect("actor to always be available");
         }
     }
 

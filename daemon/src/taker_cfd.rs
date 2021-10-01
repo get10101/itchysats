@@ -4,7 +4,7 @@ use crate::db::{
     load_cfd_by_order_id, load_order_by_id,
 };
 use crate::model::cfd::{
-    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
+    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
 };
 use crate::model::Usd;
 use crate::monitor::{self, MonitorParams};
@@ -226,7 +226,7 @@ impl Actor {
             (self.oracle_pk, nonce_pks),
             cfd,
             self.wallet.clone(),
-            setup_contract::Role::Taker,
+            Role::Taker,
         );
 
         let this = ctx

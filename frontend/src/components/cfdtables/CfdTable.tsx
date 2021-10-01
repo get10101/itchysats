@@ -1,4 +1,5 @@
 import {
+    CheckCircleIcon,
     CheckIcon,
     ChevronRightIcon,
     ChevronUpIcon,
@@ -189,6 +190,8 @@ function iconForAction(action: Action): any {
             return <CloseIcon />;
         case Action.COMMIT:
             return <WarningIcon />;
+        case Action.SETTLE:
+            return <CheckCircleIcon />;
     }
 }
 
@@ -200,6 +203,8 @@ function colorSchemaForAction(action: Action): string {
             return "red";
         case Action.COMMIT:
             return "red";
+        case Action.SETTLE:
+            return "green";
     }
 }
 

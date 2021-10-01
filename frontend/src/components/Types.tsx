@@ -140,6 +140,7 @@ export enum Action {
     ACCEPT = "accept",
     REJECT = "reject",
     COMMIT = "commit",
+    SETTLE = "settle",
 }
 
 const enum StateKey {

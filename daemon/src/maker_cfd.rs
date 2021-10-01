@@ -5,7 +5,8 @@ use crate::db::{
 };
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
-    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, SettlementProposal,
+    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Role,
+    SettlementProposal,
 };
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
@@ -358,7 +359,7 @@ impl Actor {
             (self.oracle_pk, nonce_pks),
             cfd,
             self.wallet.clone(),
-            setup_contract::Role::Maker,
+            Role::Maker,
         );
 
         let this = ctx

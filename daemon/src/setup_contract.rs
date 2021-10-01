@@ -1,4 +1,4 @@
-use crate::model::cfd::{Cfd, Dlc};
+use crate::model::cfd::{Cfd, Dlc, Role};
 use crate::wallet::Wallet;
 use crate::wire::{Msg0, Msg1, Msg2, SetupMsg};
 use crate::{model, payout_curve};
@@ -188,13 +188,6 @@ pub async fn new(
             .context("Failed to re-map CETs")?,
         refund: (refund_tx, msg1.refund),
     })
-}
-
-#[allow(dead_code)]
-/// Role of the actor's owner in the upcoming contract
-pub enum Role {
-    Maker,
-    Taker,
 }
 
 /// A convenience struct for storing PartyParams and PunishParams of both

@@ -151,6 +151,11 @@ pub async fn post_cfd_action(
                 .await
                 .expect("actor to always be available");
         }
+        CfdAction::Settle => {
+            return Err(status::BadRequest(Some(
+                "Collaborative settlement can only be triggered by taker".to_string(),
+            )));
+        }
     }
 
     Ok(status::Accepted(None))

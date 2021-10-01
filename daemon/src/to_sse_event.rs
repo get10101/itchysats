@@ -1,4 +1,4 @@
-use crate::model::cfd::OrderId;
+use crate::model::cfd::{OrderId, Role};
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::Amount;
@@ -37,6 +37,7 @@ pub enum CfdAction {
     Accept,
     Reject,
     Commit,
+    Settle,
 }
 
 impl<'v> FromParam<'v> for CfdAction {
@@ -115,7 +116,7 @@ impl ToSseEvent for CfdsWithCurrentPrice {
                     profit_btc,
                     profit_usd,
                     state: cfd.state.clone().into(),
-                    actions: actions_for_state(cfd.state.clone()),
+                    actions: actions_for_state(cfd.state.clone(), cfd.role()),
                     state_transition_timestamp: cfd
                         .state
                         .get_transition_timestamp()
@@ -221,12 +222,15 @@ fn into_unix_secs(time: SystemTime) -> u64 {
         .as_secs()
 }
 
-fn actions_for_state(state: model::cfd::CfdState) -> Vec<CfdAction> {
-    match state {
-        model::cfd::CfdState::IncomingOrderRequest { .. } => {
+fn actions_for_state(state: model::cfd::CfdState, role: Role) -> Vec<CfdAction> {
+    match (state, role) {
+        (model::cfd::CfdState::IncomingOrderRequest { .. }, Role::Maker) => {
             vec![CfdAction::Accept, CfdAction::Reject]
         }
-        model::cfd::CfdState::Open { .. } => vec![CfdAction::Commit],
+        (model::cfd::CfdState::Open { .. }, Role::Taker) => {
+            vec![CfdAction::Commit, CfdAction::Settle]
+        }
+        (model::cfd::CfdState::Open { .. }, Role::Maker) => vec![CfdAction::Commit],
         _ => vec![],
     }
 }

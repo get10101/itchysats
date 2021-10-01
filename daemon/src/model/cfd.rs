@@ -39,10 +39,28 @@ impl<'v> FromParam<'v> for OrderId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+// TODO: Could potentially remove this and use the Role in the Order instead
+/// Origin of the order
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Origin {
     Ours,
     Theirs,
+}
+
+/// Role in the Cfd
+#[derive(Debug, Copy, Clone)]
+pub enum Role {
+    Maker,
+    Taker,
+}
+
+impl From<Origin> for Role {
+    fn from(origin: Origin) -> Self {
+        match origin {
+            Origin::Ours => Role::Maker,
+            Origin::Theirs => Role::Taker,
+        }
+    }
 }
 
 /// A concrete order created by a maker for a taker
@@ -666,6 +684,10 @@ impl Cfd {
                 | CfdState::Accepted { .. }
                 | CfdState::ContractSetup { .. }
         )
+    }
+
+    pub fn role(&self) -> Role {
+        self.order.origin.into()
     }
 }
 
