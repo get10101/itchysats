@@ -163,7 +163,7 @@ async fn main() -> Result<()> {
                     .create(None)
                     .spawn_global();
 
-                let (monitor_actor_address, monitor_actor_context) = xtra::Context::new(None);
+                let (monitor_actor_address, mut monitor_actor_context) = xtra::Context::new(None);
 
                 let (oracle_actor_address, mut oracle_actor_context) = xtra::Context::new(None);
 
@@ -190,8 +190,15 @@ async fn main() -> Result<()> {
 
                 tokio::spawn(cfd_actor_inbox.clone().attach_stream(read));
                 tokio::spawn(
+                    monitor_actor_context
+                        .notify_interval(Duration::from_secs(20), || monitor::Sync)
+                        .unwrap(),
+                );
+                tokio::spawn(
                     monitor_actor_context.run(
-                        monitor::Actor::new(&opts.electrum, cfd_actor_inbox.clone(), cfds).await,
+                        monitor::Actor::new(&opts.electrum, cfd_actor_inbox.clone(), cfds)
+                            .await
+                            .unwrap(),
                     ),
                 );
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));

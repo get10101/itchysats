@@ -160,7 +160,7 @@ async fn main() -> Result<()> {
                 let (maker_inc_connections_address, maker_inc_connections_context) =
                     xtra::Context::new(None);
 
-                let (monitor_actor_address, monitor_actor_context) = xtra::Context::new(None);
+                let (monitor_actor_address, mut monitor_actor_context) = xtra::Context::new(None);
 
                 let (oracle_actor_address, mut oracle_actor_context) = xtra::Context::new(None);
 
@@ -187,9 +187,18 @@ async fn main() -> Result<()> {
                         cfd_maker_actor_inbox.clone(),
                     )),
                 );
-                tokio::spawn(monitor_actor_context.run(
-                    monitor::Actor::new(&opts.electrum, cfd_maker_actor_inbox.clone(), cfds).await,
-                ));
+                tokio::spawn(
+                    monitor_actor_context
+                        .notify_interval(Duration::from_secs(20), || monitor::Sync)
+                        .unwrap(),
+                );
+                tokio::spawn(
+                    monitor_actor_context.run(
+                        monitor::Actor::new(&opts.electrum, cfd_maker_actor_inbox.clone(), cfds)
+                            .await
+                            .unwrap(),
+                    ),
+                );
 
                 tokio::spawn(
                     oracle_actor_context
