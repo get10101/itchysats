@@ -30,6 +30,7 @@ mod logger;
 mod model;
 mod monitor;
 mod oracle;
+mod payout_curve;
 mod routes;
 mod routes_taker;
 mod seed;

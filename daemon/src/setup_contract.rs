@@ -1,7 +1,7 @@
-use crate::model;
 use crate::model::cfd::{Cfd, Dlc};
 use crate::wallet::Wallet;
 use crate::wire::{Msg0, Msg1, Msg2, SetupMsg};
+use crate::{model, payout_curve};
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, Signature, SECP256K1};
 use bdk::bitcoin::{Amount, PublicKey, Transaction};
@@ -61,6 +61,13 @@ pub async fn new(
         )
     }
 
+    let payouts = payout_curve::calculate(
+        cfd.order.price,
+        cfd.quantity_usd,
+        params.maker().lock_amount,
+        (params.taker().lock_amount, cfd.order.leverage),
+    )?;
+
     let own_cfd_txs = create_cfd_transactions(
         (params.maker().clone(), *params.maker_punish()),
         (params.taker().clone(), *params.taker_punish()),
@@ -69,7 +76,7 @@ pub async fn new(
             model::cfd::Cfd::CET_TIMELOCK,
             cfd.refund_timelock_in_blocks(),
         ),
-        vec![],
+        payouts,
         sk,
     )
     .context("Failed to create CFD transactions")?;

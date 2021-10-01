@@ -30,6 +30,7 @@ mod maker_inc_connections;
 mod model;
 mod monitor;
 mod oracle;
+mod payout_curve;
 mod routes;
 mod routes_maker;
 mod seed;
