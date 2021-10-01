@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
 
     let wallet = Wallet::new(
         &opts.electrum,
-        &data_dir.join("taker_wallet_db"),
+        &data_dir.join("taker_wallet.sqlite"),
         ext_priv_key,
     )
     .await?;
