@@ -19,6 +19,9 @@ pub struct SplineObject {
     pub pardim: usize,
 }
 
+/// Master struct for spline objects with arbitrary dimensions.
+///
+/// This class should be composed instead of used directly.
 impl SplineObject {
     pub fn new(
         bases: Vec<BSplineBasis>,
@@ -71,7 +74,7 @@ impl SplineObject {
     }
 
     /// Check whether the given evaluation parameters are valid
-    fn validate_domain(&self, t: &mut [&mut Array1<f64>]) -> Result<(), Error> {
+    pub fn validate_domain(&self, t: &mut [&mut Array1<f64>]) -> Result<(), Error> {
         for (basis, params) in self.bases.iter().zip(t.iter_mut()) {
             if basis.periodic < 0 {
                 basis.snap(*params);
@@ -96,10 +99,12 @@ impl SplineObject {
     /// If *tensor* is false, there must be an equal number *n* of evaluation
     /// points in all directions, and the return value will be an *n* × *dim*
     /// array.
-    /// ## parameters
+    ///
+    /// ### parameters
     /// * t: collection of parametric coordinates in which to evaluate
     /// * tensor: whether to evaluate on a tensor product grid
-    /// ## returns
+    ///
+    /// ### returns
     /// * Array (shape as describe above)
     pub fn evaluate(
         &self,
@@ -107,7 +112,7 @@ impl SplineObject {
         tensor: Option<bool>,
     ) -> Result<ArrayD<f64>, Error> {
         self.validate_domain(t)?;
-        let tnsr = tensor.unwrap_or(true);
+        let tensor = tensor.unwrap_or(true);
 
         let all_equal_length = match &t[..] {
             [] => true,
@@ -115,7 +120,7 @@ impl SplineObject {
             [first, remaining @ ..] => remaining.iter().all(|v| v.len() == first.len()),
         };
 
-        if !tnsr && !all_equal_length {
+        if !tensor && !all_equal_length {
             return Result::Err(Error::InvalidDomainError);
         }
 
@@ -130,7 +135,7 @@ impl SplineObject {
             .collect::<Result<Vec<_>, Error>>()?;
 
         let evals = &mut evals.clone();
-        let out = self.tensor_evaluate(evals, tnsr).unwrap();
+        let out = self.tensor_evaluate(evals, tensor).unwrap();
 
         Ok(out)
     }
