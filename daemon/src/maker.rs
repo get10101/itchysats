@@ -21,8 +21,8 @@ use xtra::spawn::TokioGlobalSpawnExt;
 mod actors;
 mod auth;
 mod bitmex_price_feed;
-mod cleanup;
 mod db;
+mod housekeeping;
 mod keypair;
 mod logger;
 mod maker_cfd;
@@ -151,7 +151,10 @@ async fn main() -> Result<()> {
                 };
                 let mut conn = db.acquire().await.unwrap();
 
-                cleanup::transition_non_continue_cfds_to_setup_failed(&mut conn)
+                housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn)
+                    .await
+                    .unwrap();
+                housekeeping::rebroadcast_transactions(&mut conn, &wallet)
                     .await
                     .unwrap();
                 let cfds = load_all_cfds(&mut conn).await.unwrap();
@@ -174,11 +177,8 @@ async fn main() -> Result<()> {
                     order_feed_sender,
                     maker_inc_connections_address.clone(),
                     monitor_actor_address.clone(),
-                    cfds.clone(),
                     oracle_actor_address,
                 )
-                .await
-                .unwrap()
                 .create(None)
                 .spawn_global();
 

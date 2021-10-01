@@ -23,8 +23,8 @@ use xtra::Actor;
 
 mod actors;
 mod bitmex_price_feed;
-mod cleanup;
 mod db;
+mod housekeeping;
 mod keypair;
 mod logger;
 mod model;
@@ -153,7 +153,10 @@ async fn main() -> Result<()> {
                 };
                 let mut conn = db.acquire().await.unwrap();
 
-                cleanup::transition_non_continue_cfds_to_setup_failed(&mut conn)
+                housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn)
+                    .await
+                    .unwrap();
+                housekeeping::rebroadcast_transactions(&mut conn, &wallet)
                     .await
                     .unwrap();
                 let cfds = load_all_cfds(&mut conn).await.unwrap();
@@ -164,7 +167,6 @@ async fn main() -> Result<()> {
                     .spawn_global();
 
                 let (monitor_actor_address, mut monitor_actor_context) = xtra::Context::new(None);
-
                 let (oracle_actor_address, mut oracle_actor_context) = xtra::Context::new(None);
 
                 let mut conn = db.acquire().await.unwrap();
@@ -177,11 +179,8 @@ async fn main() -> Result<()> {
                     order_feed_sender,
                     send_to_maker,
                     monitor_actor_address.clone(),
-                    cfds.clone(),
                     oracle_actor_address,
                 )
-                .await
-                .unwrap()
                 .create(None)
                 .spawn_global();
 
