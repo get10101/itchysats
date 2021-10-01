@@ -154,6 +154,9 @@ async fn main() -> Result<()> {
                 housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn)
                     .await
                     .unwrap();
+                housekeeping::rebroadcast_transactions(&mut conn, &wallet)
+                    .await
+                    .unwrap();
                 let cfds = load_all_cfds(&mut conn).await.unwrap();
 
                 let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
@@ -174,11 +177,8 @@ async fn main() -> Result<()> {
                     order_feed_sender,
                     maker_inc_connections_address.clone(),
                     monitor_actor_address.clone(),
-                    cfds.clone(),
                     oracle_actor_address,
                 )
-                .await
-                .unwrap()
                 .create(None)
                 .spawn_global();
 

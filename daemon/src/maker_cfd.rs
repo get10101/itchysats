@@ -74,7 +74,7 @@ enum SetupState {
 
 impl Actor {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new(
+    pub fn new(
         db: sqlx::SqlitePool,
         wallet: Wallet,
         oracle_pk: schnorrsig::PublicKey,
@@ -82,30 +82,9 @@ impl Actor {
         order_feed_sender: watch::Sender<Option<Order>>,
         takers: Address<maker_inc_connections::Actor>,
         monitor_actor: Address<monitor::Actor<Actor>>,
-        cfds: Vec<Cfd>,
         oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
-    ) -> Result<Self> {
-        for dlc in cfds.iter().filter_map(|cfd| Cfd::pending_open_dlc(cfd)) {
-            let txid = wallet.try_broadcast_transaction(dlc.lock.0.clone()).await?;
-
-            tracing::info!("Lock transaction published with txid {}", txid);
-        }
-
-        for cfd in cfds.iter().filter(|cfd| Cfd::is_must_refund(cfd)) {
-            let signed_refund_tx = cfd.refund_tx()?;
-            let txid = wallet.try_broadcast_transaction(signed_refund_tx).await?;
-
-            tracing::info!("Refund transaction published on chain: {}", txid);
-        }
-
-        for cfd in cfds.iter().filter(|cfd| Cfd::is_pending_commit(cfd)) {
-            let signed_commit_tx = cfd.commit_tx()?;
-            let txid = wallet.try_broadcast_transaction(signed_commit_tx).await?;
-
-            tracing::info!("Commit transaction published on chain: {}", txid);
-        }
-
-        Ok(Self {
+    ) -> Self {
+        Self {
             db,
             wallet,
             oracle_pk,
@@ -117,7 +96,7 @@ impl Actor {
             setup_state: SetupState::None,
             latest_announcement: None,
             _oracle_actor: oracle_actor,
-        })
+        }
     }
 
     async fn handle_new_order(&mut self, order: Order) -> Result<()> {
