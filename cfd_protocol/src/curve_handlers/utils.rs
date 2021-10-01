@@ -243,12 +243,6 @@ where
     Ok(cumprod.to_vec())
 }
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("degree must be strictly positive")]
-    InvalidDegreeError,
-}
-
 /// Gauss-Legendre_Quadrature
 ///
 /// Could not find a rust implementation of this, so have created one from
