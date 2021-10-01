@@ -61,7 +61,7 @@ pub struct Actor {
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
     latest_announcement: Option<oracle::Announcement>,
-    oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
+    _oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
 }
 
 impl Actor {
@@ -107,7 +107,7 @@ impl Actor {
             monitor_actor,
             setup_state: SetupState::None,
             latest_announcement: None,
-            oracle_actor,
+            _oracle_actor: oracle_actor,
         })
     }
 
@@ -205,17 +205,18 @@ impl Actor {
             .send(load_all_cfds(&mut conn).await?)?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        let latest_announcement = self
-            .latest_announcement
-            .to_owned()
-            .context("Unaware of oracle's latest announcement.")?;
-        let nonce_pks = latest_announcement.nonce_pks;
+        // let latest_announcement = self
+        //     .latest_announcement
+        //     .to_owned()
+        //     .context("Unaware of oracle's latest announcement.")?;
 
-        self.oracle_actor
-            .do_send_async(oracle::MonitorEvent {
-                event_id: latest_announcement.id,
-            })
-            .await?;
+        // self.oracle_actor
+        //     .do_send_async(oracle::MonitorEvent {
+        //         event_id: latest_announcement.id,
+        //     })
+        //     .await?;
+
+        let nonce_pks = Vec::new();
 
         let contract_future = setup_contract::new(
             self.send_to_maker
