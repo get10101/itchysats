@@ -475,9 +475,9 @@ impl Cfd {
                     }
                 }
                 monitor::Event::CommitFinality(_) => {
-                    let dlc = if let Open { dlc, .. } = self.state.clone() {
+                    let dlc = if let PendingCommit { dlc, .. } = self.state.clone() {
                         dlc
-                    } else if let PendingOpen { dlc, .. } = self.state.clone() {
+                    } else if let PendingOpen { dlc, .. } | Open { dlc, .. } = self.state.clone() {
                         tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
                         dlc
                     } else {
