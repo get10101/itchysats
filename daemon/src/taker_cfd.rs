@@ -370,6 +370,9 @@ impl Actor {
         let new_state = cfd.handle(CfdStateChangeEvent::CommitTxSent)?;
         insert_new_cfd_state_by_order_id(cfd.order.id, new_state, &mut conn).await?;
 
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
+
         Ok(())
     }
 
