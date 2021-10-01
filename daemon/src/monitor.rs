@@ -11,6 +11,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
+use std::marker::Send;
 use std::ops::{Add, RangeInclusive};
 
 const FINALITY_CONFIRMATIONS: u32 = 1;
@@ -30,20 +31,20 @@ pub struct MonitorParams {
 
 pub struct Sync;
 
-pub struct Actor<T>
+pub struct Actor<T, C = bdk::electrum_client::Client>
 where
     T: xtra::Actor,
 {
     cfds: HashMap<OrderId, MonitorParams>,
     cfd_actor_addr: xtra::Address<T>,
 
-    client: bdk::electrum_client::Client,
+    client: C,
     latest_block_height: BlockHeight,
     current_status: BTreeMap<(Txid, Script), ScriptStatus>,
     awaiting_status: HashMap<(Txid, Script), Vec<(ScriptStatus, Event)>>,
 }
 
-impl<T> Actor<T>
+impl<T> Actor<T, bdk::electrum_client::Client>
 where
     T: xtra::Actor + xtra::Handler<Event>,
 {
@@ -135,7 +136,13 @@ where
 
         Ok(actor)
     }
+}
 
+impl<T, C> Actor<T, C>
+where
+    T: xtra::Actor + xtra::Handler<Event>,
+    C: bdk::electrum_client::ElectrumApi,
+{
     fn monitor_all(&mut self, params: &MonitorParams, order_id: OrderId) {
         self.monitor_lock_finality(params, order_id);
         self.monitor_commit_finality(params, order_id);
@@ -477,12 +484,19 @@ impl xtra::Message for Sync {
     type Result = ();
 }
 
-impl<T> xtra::Actor for Actor<T> where T: xtra::Actor {}
+impl<T, C> xtra::Actor for Actor<T, C>
+where
+    T: xtra::Actor,
+    C: Send,
+    C: 'static,
+{
+}
 
 #[async_trait]
-impl<T> xtra::Handler<StartMonitoring> for Actor<T>
+impl<T, C> xtra::Handler<StartMonitoring> for Actor<T, C>
 where
     T: xtra::Actor + xtra::Handler<Event>,
+    C: bdk::electrum_client::ElectrumApi + Send + 'static,
 {
     async fn handle(&mut self, msg: StartMonitoring, _ctx: &mut xtra::Context<Self>) {
         let StartMonitoring { id, params } = msg;
@@ -492,9 +506,10 @@ where
     }
 }
 #[async_trait]
-impl<T> xtra::Handler<Sync> for Actor<T>
+impl<T, C> xtra::Handler<Sync> for Actor<T, C>
 where
     T: xtra::Actor + xtra::Handler<Event>,
+    C: bdk::electrum_client::ElectrumApi + Send + 'static,
 {
     async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
         log_error!(self.sync());
