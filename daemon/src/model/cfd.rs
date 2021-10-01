@@ -10,7 +10,7 @@ use rocket::request::FromParam;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter};
+use std::fmt;
 use std::ops::RangeInclusive;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
@@ -24,8 +24,8 @@ impl Default for OrderId {
     }
 }
 
-impl Display for OrderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for OrderId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -297,8 +297,8 @@ impl CfdState {
     }
 }
 
-impl Display for CfdState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for CfdState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CfdState::OutgoingOrderRequest { .. } => {
                 write!(f, "Request sent")
