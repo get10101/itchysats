@@ -21,8 +21,8 @@ use xtra::spawn::TokioGlobalSpawnExt;
 mod actors;
 mod auth;
 mod bitmex_price_feed;
-mod cleanup;
 mod db;
+mod housekeeping;
 mod keypair;
 mod logger;
 mod maker_cfd;
@@ -151,7 +151,7 @@ async fn main() -> Result<()> {
                 };
                 let mut conn = db.acquire().await.unwrap();
 
-                cleanup::transition_non_continue_cfds_to_setup_failed(&mut conn)
+                housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn)
                     .await
                     .unwrap();
                 let cfds = load_all_cfds(&mut conn).await.unwrap();
