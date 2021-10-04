@@ -28,18 +28,18 @@ impl SplineObject {
         controlpoints: Option<Array2<f64>>,
         rational: Option<bool>,
     ) -> Result<Self, Error> {
-        let mut cpts = match controlpoints {
+        let mut controlpoints = match controlpoints {
             Some(controlpoints) => controlpoints,
             None => default_control_points(&bases)?,
         };
         let rational = rational.unwrap_or(false);
 
-        if cpts.slice(s![0, ..]).shape()[0] == 1 {
-            cpts = concatenate(
+        if controlpoints.slice(s![0, ..]).shape()[0] == 1 {
+            controlpoints = concatenate(
                 Axis(1),
                 &[
-                    cpts.view(),
-                    Array1::<f64>::zeros(cpts.shape()[0])
+                    controlpoints.view(),
+                    Array1::<f64>::zeros(controlpoints.shape()[0])
                         .insert_axis(Axis(1))
                         .view(),
                 ],
@@ -47,21 +47,21 @@ impl SplineObject {
         }
 
         if rational {
-            cpts = concatenate(
+            controlpoints = concatenate(
                 Axis(1),
                 &[
-                    cpts.view(),
-                    Array1::<f64>::ones(cpts.shape()[0])
+                    controlpoints.view(),
+                    Array1::<f64>::ones(controlpoints.shape()[0])
                         .insert_axis(Axis(1))
                         .view(),
                 ],
             )?;
         }
 
-        let dim = cpts.shape()[1] - (rational as usize);
+        let dim = controlpoints.shape()[1] - (rational as usize);
         let bases_shape = determine_shape(&bases)?;
         let ncomps = dim + (rational as usize);
-        let cpts_shaped = reshaper(cpts, bases_shape, ncomps)?;
+        let cpts_shaped = reshaper(controlpoints, bases_shape, ncomps)?;
         let pardim = cpts_shaped.shape().len() - 1;
 
         Ok(SplineObject {
@@ -74,10 +74,10 @@ impl SplineObject {
     }
 
     /// Check whether the given evaluation parameters are valid
-    pub fn validate_domain(&self, t: &mut [&mut Array1<f64>]) -> Result<(), Error> {
-        for (basis, params) in self.bases.iter().zip(t.iter_mut()) {
+    pub fn validate_domain(&self, t: &[Array1<f64>]) -> Result<(), Error> {
+        for (basis, params) in self.bases.iter().zip(t.to_owned().iter_mut()) {
             if basis.periodic < 0 {
-                basis.snap(*params);
+                basis.snap(&mut *params);
                 let p_max = &params.iter().copied().fold(f64::NEG_INFINITY, f64::max);
                 let p_min = &params.iter().copied().fold(f64::INFINITY, f64::min);
                 if *p_min < basis.start() || basis.end() < *p_max {
@@ -106,14 +106,7 @@ impl SplineObject {
     ///
     /// ### returns
     /// * Array (shape as describe above)
-    pub fn evaluate(
-        &self,
-        t: &mut Vec<&mut Array1<f64>>,
-        tensor: Option<bool>,
-    ) -> Result<ArrayD<f64>, Error> {
-        self.validate_domain(t)?;
-        let tensor = tensor.unwrap_or(true);
-
+    pub fn evaluate(&self, t: &mut &[Array1<f64>], tensor: bool) -> Result<ArrayD<f64>, Error> {
         let all_equal_length = match &t[..] {
             [] => true,
             [_one] => true,
@@ -124,10 +117,12 @@ impl SplineObject {
             return Result::Err(Error::InvalidDomainError);
         }
 
+        self.validate_domain(t)?;
+
         let evals = &mut &self
             .bases
             .iter()
-            .zip(t.iter_mut())
+            .zip(t.to_owned().iter_mut())
             .map(|e| {
                 let res = e.0.evaluate(e.1, 0, true)?;
                 Ok(res)
@@ -135,16 +130,33 @@ impl SplineObject {
             .collect::<Result<Vec<_>, Error>>()?;
 
         let evals = &mut evals.clone();
-        let out = self.tensor_evaluate(evals, tensor).unwrap();
+        let mut result = self.tensor_evaluate(evals, tensor).unwrap();
 
-        Ok(out)
+        // # For rational objects, we divide out the weights, which are stored in the
+        // # last coordinate
+        // if self.rational:
+        //     for i in range(self.dimension):
+        //         result[..., i] /= result[..., -1]
+        //     result = np.delete(result, self.dimension, -1)
+
+        if self.rational {
+            let axis_r = result.shape().len() - 1;
+            let idx_r = result.shape()[axis_r] - 1;
+            for i in 0..self.dimension {
+                {
+                    let update = &(result.index_axis(Axis(axis_r), i).to_owned()
+                        / result.index_axis(Axis(axis_r), idx_r).to_owned());
+                    let mut slice = result.index_axis_mut(Axis(axis_r), i);
+                    slice.assign(&update);
+                }
+            }
+            result = self.delete_phys(&result, -1)?;
+        }
+
+        Ok(result)
     }
 
-    fn tensor_evaluate(
-        &self,
-        eval_bases: &mut Vec<CSR>,
-        tensor: bool,
-    ) -> Result<ArrayD<f64>, Error> {
+    fn tensor_evaluate(&self, eval_bases: &mut [CSR], tensor: bool) -> Result<ArrayD<f64>, Error> {
         // KLUDGE!
         // owing to the fact that the conventional ellipsis notation is not yet
         // implemented for einsum, we use this workaround that should cover us.
@@ -210,10 +222,112 @@ impl SplineObject {
         Ok(out)
     }
 
-    pub fn derivative(&self) {
-        // need this if we want to allow the user to explore the payout curve,
-        // but not to get things moving.
-        todo!()
+    /// Evaluate the derivative of the object at the given parametric values.
+    ///
+    /// If *tensor* is true, evaluation will take place on a tensor product
+    /// grid, i.e. it will return an *n1* × *n2* × ... × *dim* array, where
+    /// *ni* is the number of evaluation points in direction *i*, and *dim* is
+    /// the physical dimension of the object.
+    ///
+    /// If *tensor* is false, there must be an equal number *n* of evaluation
+    /// points in all directions, and the return value will be an *n* × *dim*
+    /// array.
+    ///
+    /// ### parameters
+    /// * t = [u,v,...]: Parametric coordinates in which to evaluate
+    /// * d: Order of derivative to compute, index corresponds to bases index
+    /// * from_right: Evaluation in the limit from above; index orresponds to bases index
+    /// * tensor: Whether to evaluate on a tensor product grid
+    pub fn derivative(
+        &self,
+        t: &mut &[Array1<f64>],
+        d: &[usize],
+        from_right: &[bool],
+        tensor: bool,
+    ) -> Result<ArrayD<f64>, Error> {
+        // check
+        let testlen = t.len();
+        let ops = [t.len(), d.len(), from_right.len()]
+            .iter()
+            .all(|e| *e == testlen);
+        if !tensor && !ops {
+            return Result::Err(Error::InvalidDerivativeError);
+        }
+
+        self.validate_domain(t)?;
+
+        // Evaluate the derivatives of the corresponding bases at the corresponding points
+        // and build the result array
+        // dNs = [b.evaluate(p, d, from_right) for b, p, d, from_right in zip(self.bases, params, derivs, above)]
+        // result = evaluate(dNs, self.controlpoints, tensor)
+
+        let mut evals = self
+            .bases
+            .iter()
+            .zip(t.iter().zip(d.iter().zip(from_right.iter())))
+            .map(|(b, (t, (d, r)))| {
+                let mut tx = t.clone();
+                let eval = b.evaluate(&mut tx, *d, *r)?;
+                Ok(eval)
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        let mut result = self.tensor_evaluate(&mut evals, tensor)?;
+
+        // For rational curves, we need to use the quotient rule
+        // (n/W)' = (n' W - n W') / W^2 = n'/W - nW'/W^2
+        //   n'(i) = result[..., i]
+        //   W'(i) = result[..., -1]
+        if self.rational {
+            if d.iter().sum::<usize>() > 1 {
+                return Result::Err(Error::DerivativeNotImplementedError);
+            }
+
+            let mut ns = self
+                .bases
+                .iter()
+                .zip(t.iter())
+                .map(|(b, t)| {
+                    let mut tx = t.clone();
+                    let eval = b.evaluate(&mut tx, 0, true)?;
+                    Ok(eval)
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            let non_derivative = self.tensor_evaluate(&mut ns, tensor)?;
+
+            let axis_w = non_derivative.shape().len() - 1;
+            let idx_w = non_derivative.shape()[axis_w] - 1;
+            let w = &non_derivative.index_axis(Axis(axis_w), idx_w).to_owned();
+            let w_square = &w.mapv(|e| e.powi(2)).to_owned();
+
+            let axis_r = result.shape().len() - 1;
+            let idx_r = result.shape()[axis_r] - 1;
+            let wd = &result.index_axis(Axis(axis_r), idx_r).to_owned();
+
+            for i in 0..self.dimension {
+                {
+                    let update = &(result.index_axis(Axis(axis_r), i).to_owned() / w
+                        - non_derivative.index_axis(Axis(axis_w), i).to_owned() * wd / w_square);
+                    let mut slice = result.index_axis_mut(Axis(axis_r), i);
+                    slice.assign(&update);
+                }
+            }
+
+            // delete the last column; some faffing about required to maintain
+            // C-contiguous ordering. Probably a much better way to do this...
+            let res_shape = &result.shape().iter().map(|e| *e).collect::<Vec<_>>();
+            let mut n_res: usize = res_shape[..axis_r].iter().product();
+            n_res *= idx_r;
+            let idx = (0..axis_r).collect::<Vec<_>>();
+
+            // this ends up being F-contiguous, every time
+            let res_slice = result.select(Axis(axis_r), &idx[..]).to_owned();
+            let raveled = res_slice.to_shape(((n_res,), Order::C)).unwrap();
+            let fixed = raveled.to_shape((res_slice.shape(), Order::C))?.to_owned();
+
+            result = fixed;
+        }
+
+        Ok(result)
     }
 
     /// Return knots vector
@@ -282,6 +396,7 @@ impl SplineObject {
     pub fn force_rational(&mut self) -> Result<(), Error> {
         if !self.rational {
             self.controlpoints = self.insert_phys(&self.controlpoints, 1f64)?;
+            self.rational = true;
         }
 
         Ok(())

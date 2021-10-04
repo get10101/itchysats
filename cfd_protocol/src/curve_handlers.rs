@@ -39,6 +39,10 @@ pub enum Error {
     InvalidDegreeError,
     #[error("cannot invert matrix")]
     CannotInvertMatrix(#[source] LinalgError),
+    #[error("all parameter arrays must have the same length if not using a tensor grid")]
+    InvalidDerivativeError,
+    #[error("Rational derivative not implemented for order sum(d) > 1")]
+    DerivativeNotImplementedError,
     #[error("concatonation error")]
     NdArray {
         #[from]

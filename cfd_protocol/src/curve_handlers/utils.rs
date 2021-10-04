@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 use std::f64::consts::PI;
 use std::ops::{AddAssign, MulAssign};
 
+
 pub fn bisect_left(arr: &Array1<f64>, val: &f64, mut hi: usize) -> usize {
     let mut lo: usize = 0;
     while lo < hi {
@@ -339,7 +340,8 @@ fn legendre_roots(coeff_arr: &Array2<f64>) -> (Array1<f64>, Array1<f64>) {
         weights_arr[i - 1] = 2. / ((1. - x * x) * x1 * x1);
     }
 
-    // truncate the dummy value off the end + reverse sample points
+    // truncate the dummy value off the end + reverse sample points +
+    // use symmetry to stable things up a bit.
     let mut samples = sample_points_arr.slice(s![..n; -1]).to_owned();
     samples = symmetric_samples(&samples);
 

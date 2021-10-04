@@ -1,11 +1,12 @@
-use core::cmp::max;
-use ndarray::prelude::*;
-use ndarray::{concatenate, s};
-
 use crate::curve_handlers::basis_eval::*;
 use crate::curve_handlers::csr_tools::CSR;
 use crate::curve_handlers::utils::*;
 use crate::curve_handlers::Error;
+
+use core::cmp::max;
+use ndarray::prelude::*;
+use ndarray::{concatenate, s};
+
 
 #[derive(Clone, Debug)]
 pub struct BSplineBasis {
