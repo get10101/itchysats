@@ -147,7 +147,7 @@ impl SplineObject {
                     let update = &(result.index_axis(Axis(axis_r), i).to_owned()
                         / result.index_axis(Axis(axis_r), idx_r).to_owned());
                     let mut slice = result.index_axis_mut(Axis(axis_r), i);
-                    slice.assign(&update);
+                    slice.assign(update);
                 }
             }
             result = self.delete_phys(&result, -1)?;
@@ -258,9 +258,6 @@ impl SplineObject {
 
         // Evaluate the derivatives of the corresponding bases at the corresponding points
         // and build the result array
-        // dNs = [b.evaluate(p, d, from_right) for b, p, d, from_right in zip(self.bases, params, derivs, above)]
-        // result = evaluate(dNs, self.controlpoints, tensor)
-
         let mut evals = self
             .bases
             .iter()
@@ -308,13 +305,13 @@ impl SplineObject {
                     let update = &(result.index_axis(Axis(axis_r), i).to_owned() / w
                         - non_derivative.index_axis(Axis(axis_w), i).to_owned() * wd / w_square);
                     let mut slice = result.index_axis_mut(Axis(axis_r), i);
-                    slice.assign(&update);
+                    slice.assign(update);
                 }
             }
 
             // delete the last column; some faffing about required to maintain
             // C-contiguous ordering. Probably a much better way to do this...
-            let res_shape = &result.shape().iter().map(|e| *e).collect::<Vec<_>>();
+            let res_shape = &result.shape().iter().copied().collect::<Vec<_>>();
             let mut n_res: usize = res_shape[..axis_r].iter().product();
             n_res *= idx_r;
             let idx = (0..axis_r).collect::<Vec<_>>();

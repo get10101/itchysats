@@ -256,7 +256,7 @@ impl Curve {
                 }
                 Array1::<f64>::from_vec(vec)
             })
-            .unwrap_or(knots.to_owned());
+            .unwrap_or_else(|| knots.to_owned());
         knots = &new_knots_0;
 
         let new_knots_1 = t1
@@ -269,7 +269,7 @@ impl Curve {
                 vec.push(t1);
                 Array1::<f64>::from_vec(vec)
             })
-            .unwrap_or(knots.to_owned());
+            .unwrap_or_else(|| knots.to_owned());
         knots = &new_knots_1;
 
         let klen = knots.len();
@@ -296,7 +296,7 @@ impl Curve {
                 .sum_axis(Axis(1))
                 .mapv(f64::sqrt)
                 .iter()
-                .map(|e| *e)
+                .copied()
                 .collect::<Vec<_>>(),
         );
         let out = det_j.dot(&w_flat);
@@ -319,7 +319,7 @@ impl Curve {
     /// left here as a private method as it assumes C-contiguous ordering,
     /// which is fine for where we use it here.
     fn ravel(&self, arr: &ArrayD<f64>) -> Array1<f64> {
-        let alloc = arr.shape().iter().fold(1, |a, b| a * b);
+        let alloc = arr.shape().iter().product();
         let mut vec = Vec::<f64>::with_capacity(alloc);
         for e in arr.iter() {
             vec.push(*e)
@@ -394,7 +394,7 @@ impl Curve {
                         / w0_cube);
 
                     let mut slice = res.slice_mut(s![.., i]);
-                    slice.assign(&update);
+                    slice.assign(update);
                 }
             }
         }

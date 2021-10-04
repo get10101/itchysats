@@ -277,9 +277,7 @@ impl GaussLegendreQuadrature {
 
 fn legendre_wrapper(order: &usize) -> (Array1<f64>, Array1<f64>) {
     let arr = legendre_coefficients(order);
-    let result = legendre_roots(&arr);
-
-    result
+    legendre_roots(&arr)
 }
 
 fn legendre_coefficients(order: &usize) -> Array2<f64> {
@@ -297,6 +295,7 @@ fn legendre_coefficients(order: &usize) -> Array2<f64> {
                 / n_64;
         }
     }
+
     lcoef_arr
 }
 
@@ -311,9 +310,8 @@ fn legendre_eval(coeff_arr: &Array2<f64>, n: &usize, x: &f64) -> f64 {
 
 fn legendre_diff(coeff_arr: &Array2<f64>, n: &usize, x: &f64) -> f64 {
     let n_64 = *n as f64;
-    let res = n_64 * (x * legendre_eval(coeff_arr, n, x) - legendre_eval(coeff_arr, &(n - 1), x))
-        / (x * x - 1.);
-    res
+    n_64 * (x * legendre_eval(coeff_arr, n, x) - legendre_eval(coeff_arr, &(n - 1), x))
+        / (x * x - 1.)
 }
 
 fn legendre_roots(coeff_arr: &Array2<f64>) -> (Array1<f64>, Array1<f64>) {
@@ -326,11 +324,11 @@ fn legendre_roots(coeff_arr: &Array2<f64>) -> (Array1<f64>, Array1<f64>) {
     for i in 1..n + 1 {
         let i_64 = i as f64;
         let mut x = (PI * (i_64 - 0.25) / (n_64 + 0.5)).cos();
-        let mut x1 = x.clone();
+        let mut x1 = x;
         x -= legendre_eval(coeff_arr, &n, &x) / legendre_diff(coeff_arr, &n, &x);
 
         while fdim(&x, &x1) > 2e-16 {
-            x1 = x.clone();
+            x1 = x;
             x -= legendre_eval(coeff_arr, &n, &x) / legendre_diff(coeff_arr, &n, &x);
         }
 
@@ -352,15 +350,13 @@ fn legendre_roots(coeff_arr: &Array2<f64>) -> (Array1<f64>, Array1<f64>) {
 
 fn symmetric_samples(arr: &Array1<f64>) -> Array1<f64> {
     let arr_rev = arr.slice(s![..; -1]).to_owned();
-    let out = (arr - &arr_rev) / 2.;
-    out
+    (arr - &arr_rev) / 2.
 }
 
 fn symmetric_weights(arr: &Array1<f64>) -> Array1<f64> {
     let s = &arr.sum_axis(Axis(0));
     let arr_rev = arr.slice(s![..; -1]).to_owned();
-    let out = (arr + &arr_rev) / s;
-    out
+    (arr + &arr_rev) / s
 }
 
 fn fdim(a: &f64, b: &f64) -> f64 {
@@ -370,6 +366,5 @@ fn fdim(a: &f64, b: &f64) -> f64 {
     } else {
         res = 0f64;
     }
-
     res
 }

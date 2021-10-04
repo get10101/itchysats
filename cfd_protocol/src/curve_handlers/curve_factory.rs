@@ -20,7 +20,7 @@ pub fn interpolate(
     basis: &BSplineBasis,
     t: Option<Array1<f64>>,
 ) -> Result<Curve, Error> {
-    let mut t = t.unwrap_or(basis.greville());
+    let mut t = t.unwrap_or_else(|| basis.greville());
     let evals = basis.evaluate(&mut t, 0, true)?;
 
     // solve the interpolation problem:
