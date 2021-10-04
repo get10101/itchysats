@@ -9,8 +9,6 @@ use ndarray_linalg::Solve;
 use std::cmp::max;
 
 
-// use super::utils::GaussLegendreQuadrature;
-
 fn default_basis() -> Result<Vec<BSplineBasis>, Error> {
     let out = vec![BSplineBasis::new(None, None, None)?];
     Ok(out)
