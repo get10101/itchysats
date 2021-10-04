@@ -7,7 +7,6 @@ use core::cmp::max;
 use ndarray::prelude::*;
 use ndarray::{concatenate, s};
 
-
 #[derive(Clone, Debug)]
 pub struct BSplineBasis {
     pub knots: Array1<f64>,

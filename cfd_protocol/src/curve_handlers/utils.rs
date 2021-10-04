@@ -8,7 +8,6 @@ use std::cmp::Ordering;
 use std::f64::consts::PI;
 use std::ops::{AddAssign, MulAssign};
 
-
 pub fn bisect_left(arr: &Array1<f64>, val: &f64, mut hi: usize) -> usize {
     let mut lo: usize = 0;
     while lo < hi {

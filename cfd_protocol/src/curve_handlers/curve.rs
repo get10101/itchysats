@@ -8,7 +8,6 @@ use ndarray::s;
 use ndarray_linalg::Solve;
 use std::cmp::max;
 
-
 fn default_basis() -> Result<Vec<BSplineBasis>, Error> {
     let out = vec![BSplineBasis::new(None, None, None)?];
     Ok(out)
@@ -313,8 +312,6 @@ impl Curve {
                 vec_out.push(*e);
             }
         }
-
-        // self.spline.bases[0].evaluate(t, d, from_right)
 
         Array1::<f64>::from_vec(vec_out)
     }
