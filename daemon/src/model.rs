@@ -15,8 +15,6 @@ pub mod cfd;
 pub struct Usd(pub Decimal);
 
 impl Usd {
-    pub const ZERO: Self = Self(Decimal::ZERO);
-
     pub fn checked_add(&self, other: Usd) -> Result<Usd> {
         let result = self.0.checked_add(other.0).context("addition error")?;
         Ok(Usd(result))
@@ -54,6 +52,21 @@ impl Display for Usd {
 impl From<Decimal> for Usd {
     fn from(decimal: Decimal) -> Self {
         Usd(decimal)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Percent(pub Decimal);
+
+impl Display for Percent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.round_dp(2).fmt(f)
+    }
+}
+
+impl From<Decimal> for Percent {
+    fn from(decimal: Decimal) -> Self {
+        Percent(decimal)
     }
 }
 

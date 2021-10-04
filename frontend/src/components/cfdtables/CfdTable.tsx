@@ -131,9 +131,12 @@ export function CfdTable(
             },
             {
                 Header: "Unrealized P/L",
-                accessor: ({ profit_usd }) => {
-                    return (<Dollars amount={profit_usd} />);
-                },
+                accessor: "profit_btc",
+                isNumeric: true,
+            },
+            {
+                Header: "Unrealized P/L %",
+                accessor: "profit_in_percent",
                 isNumeric: true,
             },
             {
