@@ -449,7 +449,7 @@ impl Cfd {
     #[allow(dead_code)]
     pub const CET_TIMELOCK: u32 = 12;
 
-    pub fn handle(&self, event: CfdStateChangeEvent) -> Result<CfdState> {
+    pub fn handle(&mut self, event: CfdStateChangeEvent) -> Result<CfdState> {
         use CfdState::*;
 
         // TODO: Display impl
@@ -590,6 +590,8 @@ impl Cfd {
                 }
             }
         };
+
+        self.state = new_state.clone();
 
         Ok(new_state)
     }

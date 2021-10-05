@@ -411,7 +411,7 @@ impl Actor {
 
     async fn handle_commit(&mut self, order_id: OrderId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         let signed_commit_tx = cfd.commit_tx()?;
 
@@ -435,12 +435,10 @@ impl Actor {
         let order_id = event.order_id();
 
         let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         let new_state = cfd.handle(CfdStateChangeEvent::Monitor(event))?;
-
         insert_new_cfd_state_by_order_id(order_id, new_state.clone(), &mut conn).await?;
-
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
