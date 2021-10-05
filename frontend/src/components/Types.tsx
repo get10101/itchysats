@@ -43,7 +43,7 @@ export interface Cfd {
     margin: number;
 
     profit_btc: number;
-    profit_usd: number;
+    profit_in_percent: number;
 
     state: State;
     actions: Action[];

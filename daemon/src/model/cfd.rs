@@ -1,17 +1,18 @@
-use crate::model::{Leverage, Position, TakerId, TradingPair, Usd};
+use crate::model::{Leverage, Percent, Position, TakerId, TradingPair, Usd};
 use crate::monitor;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
-use bdk::bitcoin::{Address, Amount, PublicKey, Transaction};
+use bdk::bitcoin::{Address, Amount, PublicKey, SignedAmount, Transaction};
 use bdk::descriptor::Descriptor;
 use cfd_protocol::secp256k1_zkp::{EcdsaAdaptorSignature, SECP256K1};
 use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash};
 use rocket::request::FromParam;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::ops::RangeInclusive;
+use std::ops::{Neg, RangeInclusive};
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
@@ -390,10 +391,16 @@ impl Cfd {
         Ok(margin)
     }
 
-    pub fn profit(&self, current_price: Usd) -> Result<(Amount, Usd)> {
-        let profit =
-            calculate_profit(self.order.price, current_price, dec!(0.005), Usd(dec!(0.1)))?;
-        Ok(profit)
+    pub fn profit(&self, current_price: Usd) -> Result<(SignedAmount, Percent)> {
+        let (p_n_l, p_n_l_percent) = calculate_profit(
+            self.order.price,
+            current_price,
+            self.quantity_usd,
+            self.margin()?,
+            self.position(),
+        )?;
+
+        Ok((p_n_l, p_n_l_percent))
     }
 
     #[allow(dead_code)] // Not used by all binaries.
@@ -702,14 +709,90 @@ pub enum CfdStateChangeEvent {
     CommitTxSent,
 }
 
+/// Returns the Profit/Loss (P/L) as Bitcoin. Losses are capped by the provided margin
 fn calculate_profit(
-    _intial_price: Usd,
-    _current_price: Usd,
-    _interest_per_day: Decimal,
-    _fee: Usd,
-) -> Result<(Amount, Usd)> {
-    // TODO: profit calculation
-    Ok((Amount::ZERO, Usd::ZERO))
+    initial_price: Usd,
+    current_price: Usd,
+    quantity: Usd,
+    margin: Amount,
+    position: Position,
+) -> Result<(SignedAmount, Percent)> {
+    let margin_as_sat =
+        Decimal::from_u64(margin.as_sat()).context("Expect to be a valid decimal")?;
+
+    let initial_price_inverse = dec!(1)
+        .checked_div(initial_price.0)
+        .context("Calculating inverse of initial_price resulted in overflow")?;
+    let current_price_inverse = dec!(1)
+        .checked_div(current_price.0)
+        .context("Calculating inverse of current_price resulted in overflow")?;
+
+    // calculate profit/loss (P and L) in BTC
+    let profit_btc = match position {
+        Position::Buy => {
+            // for long: profit_btc = quantity_usd * ((1/initial_price)-(1/current_price))
+            quantity
+                .0
+                .checked_mul(
+                    initial_price_inverse
+                        .checked_sub(current_price_inverse)
+                        .context("Subtracting current_price_inverse from initial_price_inverse resulted in an overflow")?,
+                )
+        }
+        Position::Sell => {
+            // for short: profit_btc = quantity_usd * ((1/current_price)-(1/initial_price))
+            quantity
+                .0
+                .checked_mul(
+                    current_price_inverse
+                        .checked_sub(initial_price_inverse)
+                        .context("Subtracting initial_price_inverse from current_price_inverse resulted in an overflow")?,
+                )
+        }
+    }
+        .context("Calculating profit/loss resulted in an overflow")?;
+
+    let sat_adjust = Decimal::from(Amount::ONE_BTC.as_sat());
+    let profit_btc_as_sat = profit_btc
+        .checked_mul(sat_adjust)
+        .context("Could not adjust profit to satoshi")?;
+
+    // loss cannot be more than provided margin
+    let margin_plus_profit_btc = margin_as_sat
+        .checked_add(profit_btc_as_sat)
+        .context("Adding up margin and profit_btc resulted in an overflow")?;
+
+    let in_percent = if profit_btc_as_sat.is_zero() {
+        Decimal::ZERO
+    } else {
+        profit_btc_as_sat
+            .checked_div(margin_as_sat)
+            .context("Profit divided by margin resulted in overflow")?
+    };
+
+    if margin_plus_profit_btc < Decimal::ZERO {
+        return Ok((
+            SignedAmount::from_sat(
+                margin_as_sat
+                    .neg()
+                    .to_i64()
+                    .context("Could not convert margin to i64")?,
+            ),
+            dec!(-100).into(),
+        ));
+    }
+
+    Ok((
+        SignedAmount::from_sat(
+            profit_btc_as_sat
+                .to_i64()
+                .context("Could not convert profit to i64")?,
+        ),
+        in_percent
+            .checked_mul(dec!(100.0))
+            .context("Converting to percent resulted in an overflow")?
+            .into(),
+    ))
 }
 
 pub trait AsBlocks {
@@ -842,6 +925,123 @@ mod tests {
         let duration = Duration::from_secs(60);
         let blocks = duration.as_blocks();
         assert!(blocks - error_margin < 0.1 && blocks + error_margin > 0.1);
+    }
+
+    #[test]
+    fn calculate_profit_and_loss() {
+        assert_profit_loss_values(
+            Usd::from(dec!(10_000)),
+            Usd::from(dec!(10_000)),
+            Usd::from(dec!(10_000)),
+            Amount::ONE_BTC,
+            Position::Buy,
+            SignedAmount::ZERO,
+            Decimal::ZERO.into(),
+            "No price increase means no profit",
+        );
+
+        assert_profit_loss_values(
+            Usd::from(dec!(10_000)),
+            Usd::from(dec!(20_000)),
+            Usd::from(dec!(10_000)),
+            Amount::ONE_BTC,
+            Position::Buy,
+            SignedAmount::from_sat(50_000_000),
+            dec!(50).into(),
+            "A 100% price increase should be 50% profit",
+        );
+
+        assert_profit_loss_values(
+            Usd::from(dec!(10_000)),
+            Usd::from(dec!(5_000)),
+            Usd::from(dec!(10_000)),
+            Amount::ONE_BTC,
+            Position::Buy,
+            SignedAmount::from_sat(-100_000_000),
+            dec!(-100).into(),
+            "A 50% drop should result in 100% loss",
+        );
+
+        assert_profit_loss_values(
+            Usd::from(dec!(10_000)),
+            Usd::from(dec!(2_500)),
+            Usd::from(dec!(10_000)),
+            Amount::ONE_BTC,
+            Position::Buy,
+            SignedAmount::from_sat(-100_000_000),
+            dec!(-100).into(),
+            "A loss should be capped by 100%",
+        );
+
+        assert_profit_loss_values(
+            Usd::from(dec!(50_400)),
+            Usd::from(dec!(60_000)),
+            Usd::from(dec!(10_000)),
+            Amount::from_btc(0.01984).unwrap(),
+            Position::Buy,
+            SignedAmount::from_sat(3_174_603),
+            dec!(160.01024065540194572452620968).into(),
+            "buy position should make a profit when price goes up",
+        );
+
+        assert_profit_loss_values(
+            Usd::from(dec!(10_000)),
+            Usd::from(dec!(16_000)),
+            Usd::from(dec!(10_000)),
+            Amount::ONE_BTC,
+            Position::Sell,
+            SignedAmount::from_sat(-37_500_000),
+            dec!(-37.5).into(),
+            "sell position should make a loss when price goes up",
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assert_profit_loss_values(
+        initial_price: Usd,
+        current_price: Usd,
+        quantity: Usd,
+        margin: Amount,
+        position: Position,
+        should_profit: SignedAmount,
+        should_profit_in_percent: Percent,
+        msg: &str,
+    ) {
+        let (profit, in_percent) =
+            calculate_profit(initial_price, current_price, quantity, margin, position).unwrap();
+
+        assert_eq!(profit, should_profit, "{}", msg);
+        assert_eq!(in_percent, should_profit_in_percent, "{}", msg);
+    }
+
+    #[test]
+    fn test_profit_calculation_loss_plus_profit_should_be_zero() {
+        let initial_price = Usd::from(dec!(10_000));
+        let closing_price = Usd::from(dec!(16_000));
+        let quantity = Usd::from(dec!(10_000));
+        let margin = Amount::ONE_BTC;
+        let (profit, profit_in_percent) = calculate_profit(
+            initial_price,
+            closing_price,
+            quantity,
+            margin,
+            Position::Buy,
+        )
+        .unwrap();
+        let (loss, loss_in_percent) = calculate_profit(
+            initial_price,
+            closing_price,
+            quantity,
+            margin,
+            Position::Sell,
+        )
+        .unwrap();
+
+        assert_eq!(profit.checked_add(loss).unwrap(), SignedAmount::ZERO);
+        assert_eq!(
+            profit_in_percent.0.checked_add(loss_in_percent.0).unwrap(),
+            Decimal::ZERO
+        );
     }
 }
 

@@ -1,9 +1,10 @@
 use crate::model::cfd::{OrderId, Role};
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
-use bdk::bitcoin::Amount;
+use bdk::bitcoin::{Amount, SignedAmount};
 use rocket::request::FromParam;
 use rocket::response::stream::Event;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,8 +24,8 @@ pub struct Cfd {
     pub margin: Amount,
 
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub profit_btc: Amount,
-    pub profit_usd: Usd,
+    pub profit_btc: SignedAmount,
+    pub profit_in_percent: String,
 
     pub state: CfdState,
     pub actions: Vec<CfdAction>,
@@ -103,7 +104,14 @@ impl ToSseEvent for CfdsWithCurrentPrice {
             .cfds
             .iter()
             .map(|cfd| {
-                let (profit_btc, profit_usd) = cfd.profit(current_price).unwrap();
+                let (profit_btc, profit_in_percent) =
+                    cfd.profit(current_price).unwrap_or_else(|error| {
+                        tracing::warn!(
+                            "Calculating profit/loss failed. Falling back to 0. {:#}",
+                            error
+                        );
+                        (SignedAmount::ZERO, Decimal::ZERO.into())
+                    });
 
                 Cfd {
                     order_id: cfd.order.id,
@@ -114,7 +122,7 @@ impl ToSseEvent for CfdsWithCurrentPrice {
                     liquidation_price: cfd.order.liquidation_price,
                     quantity_usd: cfd.quantity_usd,
                     profit_btc,
-                    profit_usd,
+                    profit_in_percent: profit_in_percent.to_string(),
                     state: cfd.state.clone().into(),
                     actions: actions_for_state(cfd.state.clone(), cfd.role()),
                     state_transition_timestamp: cfd
