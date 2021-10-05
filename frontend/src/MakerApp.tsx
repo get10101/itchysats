@@ -29,6 +29,8 @@ import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } 
 import Wallet from "./components/Wallet";
 import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 
+const SPREAD = 1.03;
+
 export default function App() {
     let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });
 
@@ -42,14 +44,7 @@ export default function App() {
     let [minQuantity, setMinQuantity] = useState<string>("10");
     let [maxQuantity, setMaxQuantity] = useState<string>("100");
     let [orderPrice, setOrderPrice] = useState<string>("0");
-
-    const spread = 1.03;
-    if (priceInfo && orderPrice === "0") {
-        setOrderPrice((priceInfo.bid * spread).toString());
-    }
-
-    const format = (val: any) => `$` + val;
-    const parse = (val: any) => val.replace(/^\$/, "");
+    let [hasEnteredPrice, setHasEnteredPrice] = useState(false);
 
     let { run: makeNewCfdSellOrder, isLoading: isCreatingNewCfdOrder } = useAsync({
         deferFn: async ([payload]: any[]) => {
@@ -107,15 +102,18 @@ export default function App() {
                         <Text>Order Price:</Text>
                         <HStack>
                             <CurrencyInputField
-                                onChange={(valueString: string) => setOrderPrice(parse(valueString))}
-                                value={format(orderPrice)}
+                                onChange={(valueString: string) => {
+                                    setOrderPrice(parse(valueString));
+                                    setHasEnteredPrice(true);
+                                }}
+                                value={priceToDisplay(hasEnteredPrice, orderPrice, priceInfo)}
                             />
                             <IconButton
                                 aria-label="Reduce"
                                 icon={<RepeatIcon />}
                                 onClick={() => {
                                     if (priceInfo) {
-                                        setOrderPrice((priceInfo.bid * spread).toString());
+                                        setOrderPrice((priceInfo.bid * SPREAD).toString());
                                     }
                                 }}
                             />
@@ -180,4 +178,24 @@ export default function App() {
             </Tabs>
         </Container>
     );
+}
+
+function priceToDisplay(hasEnteredPrice: boolean, orderPrice: string, priceInfo: PriceInfo | null) {
+    if (!priceInfo) {
+        return format("0");
+    }
+
+    if (!hasEnteredPrice) {
+        return format((priceInfo.bid * SPREAD).toString());
+    }
+
+    return format(orderPrice);
+}
+
+function format(val: any) {
+    return `$` + val;
+}
+
+function parse(val: any) {
+    return val.replace(/^\$/, "");
 }
