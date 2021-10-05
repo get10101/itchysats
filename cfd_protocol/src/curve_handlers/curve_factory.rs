@@ -4,7 +4,6 @@ use crate::curve_handlers::Error;
 
 use ndarray::prelude::*;
 
-
 /// Perform general spline interpolation on a provided basis.
 ///
 /// ### parameters
@@ -47,7 +46,13 @@ pub fn interpolate(
 ///
 /// ### returns
 /// Curve (NURBS)
-pub fn fit(x: impl Fn(&Array1<f64>) -> Array2<f64>, t0: f64, t1: f64, rtol: Option<f64>, atol: Option<f64>) -> Result<Curve, Error> {
+pub fn fit(
+    x: impl Fn(&Array1<f64>) -> Array2<f64>,
+    t0: f64,
+    t1: f64,
+    rtol: Option<f64>,
+    atol: Option<f64>,
+) -> Result<Curve, Error> {
     let rtol = rtol.unwrap_or(1e-4);
     let atol = atol.unwrap_or(0.0);
 
@@ -70,7 +75,7 @@ pub fn fit(x: impl Fn(&Array1<f64>) -> Array2<f64>, t0: f64, t1: f64, rtol: Opti
         knot_vec.push(t0)
     }
     for i in 0..4 {
-        let i_64 = (i+1) as f64;
+        let i_64 = (i + 1) as f64;
         let val = i_64 / 5. * (t1 - t0) + t0;
         knot_vec.push(val);
     }
@@ -103,12 +108,14 @@ pub fn fit(x: impl Fn(&Array1<f64>) -> Array2<f64>, t0: f64, t1: f64, rtol: Opti
             // figure out how many new knots we require in this knot interval:
             // if we converge with *scale* and want an error of *target_error*
             // |e|^2 * (1/n)^scale = target_error^2
-             let n = ((err_l2[i].ln() - target_error.ln()) / scale_64).exp().ceil() as usize;
+            let n = ((err_l2[i].ln() - target_error.ln()) / scale_64)
+                .exp()
+                .ceil() as usize;
 
             // add *n* new interior knots to this knot span
             // new_knots = np.linspace(knot_span[i], knot_span[i+1], n+1)
             // knot_vector = knot_vector + list(new_knots[1:-1])
-            let new_knots = Array1::<f64>::linspace(knot_span[i], knot_span[i+1], n+1);
+            let new_knots = Array1::<f64>::linspace(knot_span[i], knot_span[i + 1], n + 1);
             for e in new_knots.slice(s![1..new_knots.len() - 1]).iter() {
                 knot_vec.push(*e);
             }
@@ -126,7 +133,6 @@ pub fn fit(x: impl Fn(&Array1<f64>) -> Array2<f64>, t0: f64, t1: f64, rtol: Opti
 
         err_max = crv.max_error(&err_l2);
         target = (err_l2.sum() / length).sqrt();
-
     }
 
     Ok(crv)

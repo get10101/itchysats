@@ -414,7 +414,10 @@ impl Curve {
     ///
     /// ### returns
     /// * L2 error per knot-span
-    pub fn error(&self, target: impl Fn(&Array1<f64>) -> Array2<f64>) -> Result<Array1<f64>, Error> {
+    pub fn error(
+        &self,
+        target: impl Fn(&Array1<f64>) -> Array2<f64>,
+    ) -> Result<Array1<f64>, Error> {
         let knots = &self.spline.knots(0, Some(false))?[0];
         let n = self.spline.order(0)?[0];
         let gleg = GaussLegendreQuadrature::new(n + 1)?;
