@@ -144,8 +144,7 @@ pub fn fit(
 pub fn line(a: (f64, f64), b: (f64, f64), relative: bool) -> Result<Curve, Error> {
     let vec;
     if relative {
-        let b_rel = (a.0 + b.0, a.1 + b.1);
-        vec = vec![[a.0, a.1], [b_rel.0, b_rel.1]];
+        vec = vec![[a.0, a.1], [a.0 + b.0, a.1 + b.1]];
     } else {
         vec = vec![[a.0, a.1], [b.0, b.1]];
     }
