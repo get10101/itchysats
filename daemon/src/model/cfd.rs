@@ -11,6 +11,7 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Neg, RangeInclusive};
 use std::time::{Duration, SystemTime};
@@ -49,7 +50,7 @@ pub enum Origin {
 }
 
 /// Role in the Cfd
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Role {
     Maker,
     Taker,
@@ -348,6 +349,13 @@ pub struct SettlementProposal {
     pub timestamp: SystemTime,
     pub taker: Amount,
     pub maker: Amount,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // Variants used by different binaries
+pub enum SettlementProposals {
+    Incoming(HashMap<OrderId, SettlementProposal>),
+    Outgoing(HashMap<OrderId, SettlementProposal>),
 }
 
 /// Represents a cfd (including state)

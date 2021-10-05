@@ -187,27 +187,35 @@ export function CfdTable(
 
 function iconForAction(action: Action): any {
     switch (action) {
-        case Action.ACCEPT:
+        case Action.ACCEPT_ORDER:
             return <CheckIcon />;
-        case Action.REJECT:
+        case Action.REJECT_ORDER:
             return <CloseIcon />;
         case Action.COMMIT:
             return <WarningIcon />;
         case Action.SETTLE:
             return <CheckCircleIcon />;
+        case Action.ACCEPT_SETTLEMENT:
+            return <CheckIcon />;
+        case Action.REJECT_SETTLEMENT:
+            return <CloseIcon />;
     }
 }
 
 function colorSchemaForAction(action: Action): string {
     switch (action) {
-        case Action.ACCEPT:
+        case Action.ACCEPT_ORDER:
             return "green";
-        case Action.REJECT:
+        case Action.REJECT_ORDER:
             return "red";
         case Action.COMMIT:
             return "red";
         case Action.SETTLE:
             return "green";
+        case Action.ACCEPT_SETTLEMENT:
+            return "green";
+        case Action.REJECT_SETTLEMENT:
+            return "red";
     }
 }
 

@@ -64,7 +64,10 @@ export default function App() {
         },
     });
 
-    const acceptOrReject = cfds.filter((value) => value.state.getGroup() === StateGroupKey.ACCEPT_OR_REJECT);
+    const acceptOrRejectOrder = cfds.filter((value) => value.state.getGroup() === StateGroupKey.ACCEPT_OR_REJECT_ORDER);
+    const acceptOrRejectSettlement = cfds.filter((value) =>
+        value.state.getGroup() === StateGroupKey.ACCEPT_OR_REJECT_SETTLEMENT
+    );
     const opening = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPENING);
     const open = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPEN);
     const closed = cfds.filter((value) => value.state.getGroup() === StateGroupKey.CLOSED);
@@ -156,7 +159,8 @@ export default function App() {
             <Tabs marginTop={5}>
                 <TabList>
                     <Tab>Open [{open.length}]</Tab>
-                    <Tab>Accept / Reject [{acceptOrReject.length}]</Tab>
+                    <Tab>Accept / Reject Order [{acceptOrRejectOrder.length}]</Tab>
+                    <Tab>Accept / Reject Settlement [{acceptOrRejectSettlement.length}]</Tab>
                     <Tab>Opening [{opening.length}]</Tab>
                     <Tab>Closed [{closed.length}]</Tab>
                 </TabList>
@@ -166,7 +170,10 @@ export default function App() {
                         <CfdTable data={open} />
                     </TabPanel>
                     <TabPanel>
-                        <CfdTable data={acceptOrReject} />
+                        <CfdTable data={acceptOrRejectOrder} />
+                    </TabPanel>
+                    <TabPanel>
+                        <CfdTable data={acceptOrRejectSettlement} />
                     </TabPanel>
                     <TabPanel>
                         <CfdTable data={opening} />

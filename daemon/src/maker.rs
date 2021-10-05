@@ -1,5 +1,6 @@
 use crate::auth::MAKER_USERNAME;
 use crate::db::load_all_cfds;
+use crate::model::cfd::SettlementProposals;
 use crate::seed::Seed;
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
@@ -10,6 +11,7 @@ use model::cfd::Order;
 use model::WalletInfo;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::task::Poll;
 use std::time::Duration;
@@ -111,6 +113,8 @@ async fn main() -> Result<()> {
 
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
+    let (settlement_feed_sender, settlement_feed_receiver) =
+        watch::channel::<SettlementProposals>(SettlementProposals::Incoming(HashMap::new()));
 
     let figment = rocket::Config::figment()
         .merge(("databases.maker.url", data_dir.join("maker.sqlite")))
@@ -127,6 +131,7 @@ async fn main() -> Result<()> {
     rocket::custom(figment)
         .manage(order_feed_receiver)
         .manage(wallet_feed_receiver)
+        .manage(settlement_feed_receiver)
         .manage(auth_password)
         .manage(quote_updates)
         .attach(Db::init())
@@ -175,6 +180,7 @@ async fn main() -> Result<()> {
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     cfd_feed_sender,
                     order_feed_sender,
+                    settlement_feed_sender,
                     maker_inc_connections_address.clone(),
                     monitor_actor_address.clone(),
                     oracle_actor_address,

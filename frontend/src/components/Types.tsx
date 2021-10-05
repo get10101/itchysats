@@ -56,9 +56,9 @@ export class State {
     public getLabel(): string {
         switch (this.key) {
             case StateKey.INCOMING_ORDER_REQUEST:
-                return "Take Requested";
+                return "Order Requested";
             case StateKey.OUTGOING_ORDER_REQUEST:
-                return "Take Requested";
+                return "Order Requested";
             case StateKey.ACCEPTED:
                 return "Accepted";
             case StateKey.REJECTED:
@@ -73,6 +73,10 @@ export class State {
                 return "Pending Commit";
             case StateKey.OPEN_COMMITTED:
                 return "Open (commit-tx published)";
+            case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
+                return "Settlement Proposed";
+            case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
+                return "Settlement Proposed";
             case StateKey.MUST_REFUND:
                 return "Refunding";
             case StateKey.REFUNDED:
@@ -103,6 +107,8 @@ export class State {
 
             case StateKey.OUTGOING_ORDER_REQUEST:
             case StateKey.INCOMING_ORDER_REQUEST:
+            case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
+            case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
             case StateKey.CONTRACT_SETUP:
             case StateKey.PENDING_OPEN:
             case StateKey.REFUNDED:
@@ -114,7 +120,7 @@ export class State {
     public getGroup(): StateGroupKey {
         switch (this.key) {
             case StateKey.INCOMING_ORDER_REQUEST:
-                return StateGroupKey.ACCEPT_OR_REJECT;
+                return StateGroupKey.ACCEPT_OR_REJECT_ORDER;
 
             case StateKey.OUTGOING_ORDER_REQUEST:
             case StateKey.ACCEPTED:
@@ -126,7 +132,11 @@ export class State {
             case StateKey.PENDING_COMMIT:
             case StateKey.OPEN_COMMITTED:
             case StateKey.MUST_REFUND:
+            case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
                 return StateGroupKey.OPEN;
+
+            case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
+                return StateGroupKey.ACCEPT_OR_REJECT_SETTLEMENT;
 
             case StateKey.REJECTED:
             case StateKey.REFUNDED:
@@ -137,10 +147,12 @@ export class State {
 }
 
 export enum Action {
-    ACCEPT = "accept",
-    REJECT = "reject",
+    ACCEPT_ORDER = "acceptOrder",
+    REJECT_ORDER = "rejectOrder",
     COMMIT = "commit",
     SETTLE = "settle",
+    ACCEPT_SETTLEMENT = "acceptSettlement",
+    REJECT_SETTLEMENT = "rejectSettlement",
 }
 
 const enum StateKey {
@@ -153,6 +165,8 @@ const enum StateKey {
     OPEN = "Open",
     PENDING_COMMIT = "PendingCommit",
     OPEN_COMMITTED = "OpenCommitted",
+    OUTGOING_SETTLEMENT_PROPOSAL = "OutgoingSettlementProposal",
+    INCOMING_SETTLEMENT_PROPOSAL = "IncomingSettlementProposal",
     MUST_REFUND = "MustRefund",
     REFUNDED = "Refunded",
     SETUP_FAILED = "SetupFailed",
@@ -161,9 +175,10 @@ const enum StateKey {
 export enum StateGroupKey {
     /// A CFD which is still being set up (not on chain yet)
     OPENING = "Opening",
-    ACCEPT_OR_REJECT = "Accept / Reject",
+    ACCEPT_OR_REJECT_ORDER = "Accept / Reject Order",
     /// A CFD that is an ongoing open position (on chain)
     OPEN = "Open",
+    ACCEPT_OR_REJECT_SETTLEMENT = "Accept / Reject Settlement",
     /// A CFD that has been successfully or not-successfully terminated
     CLOSED = "Closed",
 }

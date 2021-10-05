@@ -1,4 +1,4 @@
-use crate::model::cfd::{OrderId, Role};
+use crate::model::cfd::{OrderId, Role, SettlementProposals};
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::{Amount, SignedAmount};
@@ -7,6 +7,7 @@ use rocket::response::stream::Event;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::watch;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Cfd {
@@ -33,12 +34,14 @@ pub struct Cfd {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum CfdAction {
-    Accept,
-    Reject,
+    AcceptOrder,
+    RejectOrder,
     Commit,
     Settle,
+    AcceptSettlement,
+    RejectSettlement,
 }
 
 impl<'v> FromParam<'v> for CfdAction {
@@ -61,6 +64,8 @@ pub enum CfdState {
     Open,
     PendingCommit,
     OpenCommitted,
+    IncomingSettlementProposal,
+    OutgoingSettlementProposal,
     MustRefund,
     Refunded,
     SetupFailed,
@@ -89,13 +94,76 @@ pub trait ToSseEvent {
     fn to_sse_event(&self) -> Event;
 }
 
-/// Intermediate struct to able to piggy-back current price along with cfds
-pub struct CfdsWithCurrentPrice {
+/// Intermediate struct to able to piggy-back additional information along with
+/// cfds, so we can avoid a 1:1 mapping between the states in the model and seen
+/// by UI
+pub struct CfdsWithAuxData {
     pub cfds: Vec<model::cfd::Cfd>,
     pub current_price: Usd,
+    pub settlement_proposals: SettlementProposals,
 }
 
-impl ToSseEvent for CfdsWithCurrentPrice {
+enum SettlementProposalStatus {
+    Incoming,
+    Outgoing,
+    None,
+}
+
+impl CfdsWithAuxData {
+    pub fn new(
+        rx_cfds: &watch::Receiver<Vec<model::cfd::Cfd>>,
+        rx_quote: &watch::Receiver<bitmex_price_feed::Quote>,
+        rx_settlement: &watch::Receiver<SettlementProposals>,
+        role: Role,
+    ) -> Self {
+        let quote = rx_quote.borrow().clone();
+        let current_price = match role {
+            Role::Maker => quote.for_maker(),
+            Role::Taker => quote.for_taker(),
+        };
+
+        let settlement_proposals = rx_settlement.borrow().clone();
+
+        // Test whether the correct settlement proposals were sent
+        match settlement_proposals {
+            SettlementProposals::Incoming(_) => {
+                if role == Role::Taker {
+                    panic!("Taker should never receive incoming settlement proposals");
+                }
+            }
+            SettlementProposals::Outgoing(_) => {
+                if role == Role::Maker {
+                    panic!("Maker should never receive outgoing settlement proposals");
+                }
+            }
+        }
+
+        CfdsWithAuxData {
+            cfds: rx_cfds.borrow().clone(),
+            current_price,
+            settlement_proposals,
+        }
+    }
+
+    /// Check whether given CFD has any active settlement proposals
+    fn settlement_proposal_status(&self, cfd: &model::cfd::Cfd) -> SettlementProposalStatus {
+        match &self.settlement_proposals {
+            SettlementProposals::Incoming(proposals) => {
+                if proposals.contains_key(&cfd.order.id) {
+                    return SettlementProposalStatus::Incoming;
+                }
+            }
+            SettlementProposals::Outgoing(proposals) => {
+                if proposals.contains_key(&cfd.order.id) {
+                    return SettlementProposalStatus::Outgoing;
+                }
+            }
+        }
+        SettlementProposalStatus::None
+    }
+}
+
+impl ToSseEvent for CfdsWithAuxData {
     // TODO: This conversion can fail, we might want to change the API
     fn to_sse_event(&self) -> Event {
         let current_price = self.current_price;
@@ -113,6 +181,8 @@ impl ToSseEvent for CfdsWithCurrentPrice {
                         (SignedAmount::ZERO, Decimal::ZERO.into())
                     });
 
+                let state = to_cfd_state(&cfd.state, self.settlement_proposal_status(cfd));
+
                 Cfd {
                     order_id: cfd.order.id,
                     initial_price: cfd.order.price,
@@ -123,8 +193,8 @@ impl ToSseEvent for CfdsWithCurrentPrice {
                     quantity_usd: cfd.quantity_usd,
                     profit_btc,
                     profit_in_percent: profit_in_percent.to_string(),
-                    state: cfd.state.clone().into(),
-                    actions: actions_for_state(cfd.state.clone(), cfd.role()),
+                    state: state.clone(),
+                    actions: available_actions(state, cfd.role()),
                     state_transition_timestamp: cfd
                         .state
                         .get_transition_timestamp()
@@ -186,9 +256,14 @@ impl ToSseEvent for model::WalletInfo {
     }
 }
 
-impl From<model::cfd::CfdState> for CfdState {
-    fn from(cfd_state: model::cfd::CfdState) -> Self {
-        match cfd_state {
+fn to_cfd_state(
+    cfd_state: &model::cfd::CfdState,
+    proposal_status: SettlementProposalStatus,
+) -> CfdState {
+    match proposal_status {
+        SettlementProposalStatus::Incoming => CfdState::IncomingSettlementProposal,
+        SettlementProposalStatus::Outgoing => CfdState::OutgoingSettlementProposal,
+        SettlementProposalStatus::None => match cfd_state {
             model::cfd::CfdState::OutgoingOrderRequest { .. } => CfdState::OutgoingOrderRequest,
             model::cfd::CfdState::IncomingOrderRequest { .. } => CfdState::IncomingOrderRequest,
             model::cfd::CfdState::Accepted { .. } => CfdState::Accepted,
@@ -201,7 +276,7 @@ impl From<model::cfd::CfdState> for CfdState {
             model::cfd::CfdState::Refunded { .. } => CfdState::Refunded,
             model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
             model::cfd::CfdState::PendingCommit { .. } => CfdState::PendingCommit,
-        }
+        },
     }
 }
 
@@ -230,15 +305,23 @@ fn into_unix_secs(time: SystemTime) -> u64 {
         .as_secs()
 }
 
-fn actions_for_state(state: model::cfd::CfdState, role: Role) -> Vec<CfdAction> {
+fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
     match (state, role) {
-        (model::cfd::CfdState::IncomingOrderRequest { .. }, Role::Maker) => {
-            vec![CfdAction::Accept, CfdAction::Reject]
+        (CfdState::IncomingOrderRequest { .. }, Role::Maker) => {
+            vec![CfdAction::AcceptOrder, CfdAction::RejectOrder]
         }
-        (model::cfd::CfdState::Open { .. }, Role::Taker) => {
+        (CfdState::IncomingSettlementProposal { .. }, Role::Maker) => {
+            vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement]
+        }
+        // If there is an outgoing settlement proposal already, user can't
+        // initiate new one
+        (CfdState::OutgoingSettlementProposal { .. }, Role::Maker) => {
+            vec![CfdAction::Commit]
+        }
+        (CfdState::Open { .. }, Role::Taker) => {
             vec![CfdAction::Commit, CfdAction::Settle]
         }
-        (model::cfd::CfdState::Open { .. }, Role::Maker) => vec![CfdAction::Commit],
+        (CfdState::Open { .. }, Role::Maker) => vec![CfdAction::Commit],
         _ => vec![],
     }
 }

@@ -6,7 +6,7 @@ use crate::db::{
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Role,
-    SettlementProposal,
+    SettlementProposal, SettlementProposals,
 };
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
@@ -17,6 +17,7 @@ use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
+use std::collections::HashMap;
 use std::time::SystemTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
@@ -31,6 +32,14 @@ pub struct RejectOrder {
 }
 
 pub struct Commit {
+    pub order_id: OrderId,
+}
+
+pub struct AcceptSettlement {
+    pub order_id: OrderId,
+}
+
+pub struct RejectSettlement {
     pub order_id: OrderId,
 }
 
@@ -56,12 +65,14 @@ pub struct Actor {
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_sender: watch::Sender<Option<Order>>,
+    settlements_feed_sender: watch::Sender<SettlementProposals>,
     takers: Address<maker_inc_connections::Actor>,
     current_order_id: Option<OrderId>,
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
     latest_announcement: Option<oracle::Announcement>,
     _oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
+    current_settlement_proposals: HashMap<OrderId, SettlementProposal>,
 }
 
 enum SetupState {
@@ -80,6 +91,7 @@ impl Actor {
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_sender: watch::Sender<Option<Order>>,
+        settlements_feed_sender: watch::Sender<SettlementProposals>,
         takers: Address<maker_inc_connections::Actor>,
         monitor_actor: Address<monitor::Actor<Actor>>,
         oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
@@ -90,13 +102,23 @@ impl Actor {
             oracle_pk,
             cfd_feed_actor_inbox,
             order_feed_sender,
+            settlements_feed_sender,
             takers,
             current_order_id: None,
             monitor_actor,
             setup_state: SetupState::None,
             latest_announcement: None,
             _oracle_actor: oracle_actor,
+            current_settlement_proposals: HashMap::new(),
         }
+    }
+
+    fn send_current_settlement_proposals(&self) -> Result<()> {
+        Ok(self
+            .settlements_feed_sender
+            .send(SettlementProposals::Incoming(
+                self.current_settlement_proposals.clone(),
+            ))?)
     }
 
     async fn handle_new_order(&mut self, order: Order) -> Result<()> {
@@ -142,7 +164,10 @@ impl Actor {
             "Received settlement proposal from the taker: {:?}",
             proposal
         );
-        // TODO: Handle the proposal
+        self.current_settlement_proposals
+            .insert(proposal.order_id, proposal);
+        self.send_current_settlement_proposals()?;
+
         Ok(())
     }
 
@@ -427,7 +452,29 @@ impl Actor {
 
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
+        Ok(())
+    }
 
+    async fn handle_accept_settlement(&mut self, order_id: OrderId) -> Result<()> {
+        tracing::debug!(%order_id, "Maker accepts a settlement proposal" );
+        // TODO: Initiate the settlement
+
+        self.current_settlement_proposals
+            .remove(&order_id)
+            .context("Could not find proposal for given order id")?;
+        self.send_current_settlement_proposals()?;
+        Ok(())
+    }
+
+    async fn handle_reject_settlement(&mut self, order_id: OrderId) -> Result<()> {
+        tracing::debug!(%order_id, "Maker rejects a settlement proposal" );
+        // TODO: Handle rejection offer:
+        // - notify the taker that the settlement was rejected
+
+        self.current_settlement_proposals
+            .remove(&order_id)
+            .context("Could not find proposal for given order id")?;
+        self.send_current_settlement_proposals()?;
         Ok(())
     }
 
@@ -491,6 +538,20 @@ impl Handler<AcceptOrder> for Actor {
 impl Handler<RejectOrder> for Actor {
     async fn handle(&mut self, msg: RejectOrder, _ctx: &mut Context<Self>) {
         log_error!(self.handle_reject_order(msg.order_id))
+    }
+}
+
+#[async_trait]
+impl Handler<AcceptSettlement> for Actor {
+    async fn handle(&mut self, msg: AcceptSettlement, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_accept_settlement(msg.order_id))
+    }
+}
+
+#[async_trait]
+impl Handler<RejectSettlement> for Actor {
+    async fn handle(&mut self, msg: RejectSettlement, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_reject_settlement(msg.order_id))
     }
 }
 
@@ -609,6 +670,14 @@ impl Message for RejectOrder {
 }
 
 impl Message for Commit {
+    type Result = ();
+}
+
+impl Message for AcceptSettlement {
+    type Result = ();
+}
+
+impl Message for RejectSettlement {
     type Result = ();
 }
 
