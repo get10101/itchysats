@@ -208,6 +208,7 @@ pub struct Announcement {
     pub nonce_pks: Vec<schnorrsig::PublicKey>,
 }
 
+#[derive(Debug, Clone)]
 pub struct Announcements(pub [Announcement; 24]);
 
 // TODO: Implement real deserialization once price attestation is

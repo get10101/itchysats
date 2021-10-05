@@ -12,7 +12,7 @@ use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
 use crate::{maker_inc_connections, monitor, oracle, setup_contract, wire};
-use anyhow::{Context as _, Result};
+use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
