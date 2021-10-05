@@ -59,6 +59,38 @@ impl CSR {
         Ok(x)
     }
 
+    // matrix version of `solve()`; useful for solving AX = B. Implementation
+    // is horrible.
+    pub fn matrix_solve(&self, b_arr: &Array2<f64>) -> Result<Array2<f64>, Error> {
+        let a_arr = self.todense();
+        let ncols = b_arr.shape()[1];
+        let mut temp = (0..ncols)
+            .rev()
+            .map(|e| {
+                let b = b_arr.slice(s![.., e]).to_owned();
+                let sol = a_arr
+                    .solve_into(b)
+                    .map_err(|_| Error::UnsolvableSystemError)?;
+                Ok(sol.to_vec())
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        let nrows = temp[0].len();
+        let mut raveled = Vec::with_capacity(nrows * temp.len());
+
+        for _ in 0..nrows {
+            for vec in &mut temp {
+                raveled.push(vec.pop().unwrap());
+            }
+        }
+
+        raveled.reverse();
+
+        let result = Array2::<f64>::from_shape_vec((nrows, ncols), raveled)?.to_owned();
+
+        Ok(result)
+    }
+
     pub fn todense(&self) -> Array2<f64> {
         let mut out = Array2::<f64>::zeros(self.shape);
         for i in 0..self.shape.0 {
