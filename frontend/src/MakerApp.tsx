@@ -1,3 +1,4 @@
+import { RepeatIcon } from "@chakra-ui/icons";
 import {
     Box,
     Button,
@@ -6,6 +7,7 @@ import {
     Grid,
     GridItem,
     HStack,
+    IconButton,
     Tab,
     TabList,
     TabPanel,
@@ -27,6 +29,8 @@ import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } 
 import Wallet from "./components/Wallet";
 import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 
+const SPREAD = 1.03;
+
 export default function App() {
     let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });
 
@@ -37,12 +41,10 @@ export default function App() {
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 
     const toast = useToast();
-    let [minQuantity, setMinQuantity] = useState<string>("100");
-    let [maxQuantity, setMaxQuantity] = useState<string>("1000");
-    let [orderPrice, setOrderPrice] = useState<string>("10000");
-
-    const format = (val: any) => `$` + val;
-    const parse = (val: any) => val.replace(/^\$/, "");
+    let [minQuantity, setMinQuantity] = useState<string>("10");
+    let [maxQuantity, setMaxQuantity] = useState<string>("100");
+    let [orderPrice, setOrderPrice] = useState<string>("0");
+    let [hasEnteredPrice, setHasEnteredPrice] = useState(false);
 
     let { run: makeNewCfdSellOrder, isLoading: isCreatingNewCfdOrder } = useAsync({
         deferFn: async ([payload]: any[]) => {
@@ -98,10 +100,24 @@ export default function App() {
                         />
 
                         <Text>Order Price:</Text>
-                        <CurrencyInputField
-                            onChange={(valueString: string) => setOrderPrice(parse(valueString))}
-                            value={format(orderPrice)}
-                        />
+                        <HStack>
+                            <CurrencyInputField
+                                onChange={(valueString: string) => {
+                                    setOrderPrice(parse(valueString));
+                                    setHasEnteredPrice(true);
+                                }}
+                                value={priceToDisplay(hasEnteredPrice, orderPrice, priceInfo)}
+                            />
+                            <IconButton
+                                aria-label="Reduce"
+                                icon={<RepeatIcon />}
+                                onClick={() => {
+                                    if (priceInfo) {
+                                        setOrderPrice((priceInfo.ask * SPREAD).toString());
+                                    }
+                                }}
+                            />
+                        </HStack>
 
                         <Text>Leverage:</Text>
                         <HStack spacing={5}>
@@ -162,4 +178,24 @@ export default function App() {
             </Tabs>
         </Container>
     );
+}
+
+function priceToDisplay(hasEnteredPrice: boolean, orderPrice: string, priceInfo: PriceInfo | null) {
+    if (!priceInfo) {
+        return format("0");
+    }
+
+    if (!hasEnteredPrice) {
+        return format((priceInfo.ask * SPREAD).toString());
+    }
+
+    return format(orderPrice);
+}
+
+function format(val: any) {
+    return `$` + val;
+}
+
+function parse(val: any) {
+    return val.replace(/^\$/, "");
 }
