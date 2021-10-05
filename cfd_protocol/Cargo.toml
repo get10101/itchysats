@@ -8,7 +8,7 @@ anyhow = "1"
 bdk = { git = "https://github.com/bitcoindevkit/bdk/", rev = "acf157a99a305226203d2b55a567291a93c64720" }
 itertools = "0.10"
 ndarray = "0.15.3"
-ndarray-linalg = {version = "0.14.1", features = ["openblas"]}
+ndarray-linalg = { version = "0.14.1", features = ["openblas"] }
 ndarray_einsum_beta = "0.7.0"
 num = "0.4.0"
 rand = "0.6"
