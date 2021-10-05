@@ -195,6 +195,10 @@ function iconForAction(action: Action): any {
             return <WarningIcon />;
         case Action.SETTLE:
             return <CheckCircleIcon />;
+        case Action.ACCEPT_SETTLEMENT:
+            return <CheckIcon />;
+        case Action.REJECT_SETTLEMENT:
+            return <CloseIcon />;
     }
 }
 
@@ -208,6 +212,10 @@ function colorSchemaForAction(action: Action): string {
             return "red";
         case Action.SETTLE:
             return "green";
+        case Action.ACCEPT_SETTLEMENT:
+            return "green";
+        case Action.REJECT_SETTLEMENT:
+            return "red";
     }
 }
 
