@@ -113,7 +113,7 @@ export default function App() {
                                 icon={<RepeatIcon />}
                                 onClick={() => {
                                     if (priceInfo) {
-                                        setOrderPrice((priceInfo.bid * SPREAD).toString());
+                                        setOrderPrice((priceInfo.ask * SPREAD).toString());
                                     }
                                 }}
                             />
@@ -186,7 +186,7 @@ function priceToDisplay(hasEnteredPrice: boolean, orderPrice: string, priceInfo:
     }
 
     if (!hasEnteredPrice) {
-        return format((priceInfo.bid * SPREAD).toString());
+        return format((priceInfo.ask * SPREAD).toString());
     }
 
     return format(orderPrice);
