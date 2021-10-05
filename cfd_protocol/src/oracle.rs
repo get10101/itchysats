@@ -1,75 +1,40 @@
 pub use secp256k1_zkp::*;
 
-use bdk::bitcoin::hashes::Hash;
-use bip340_hash::Bip340Hash;
-use rand::{CryptoRng, RngCore};
-use secp256k1_zkp::bitcoin_hashes::sha256;
-use secp256k1_zkp::{schnorrsig, SecretKey};
+use anyhow::Result;
+use secp256k1_zkp::schnorrsig;
+use std::num::NonZeroU8;
 
-mod bip340_hash;
-mod secp_utils;
-
-/// Sign `msg` with the oracle's `key_pair` and a pre-computed `nonce`
-/// whose corresponding public key was included in a previous
-/// announcement.
-pub fn attest(
-    key_pair: &schnorrsig::KeyPair,
-    nonce: &SecretKey,
-    msg: &[u8],
-) -> schnorrsig::Signature {
-    let msg = secp256k1_zkp::Message::from_hashed_data::<sha256::Hash>(msg);
-    secp_utils::schnorr_sign_with_nonce(&msg, key_pair, nonce)
-}
-
-pub fn nonce(rng: &mut (impl RngCore + CryptoRng)) -> (SecretKey, schnorrsig::PublicKey) {
-    let nonce = SecretKey::new(rng);
-
-    let key_pair = schnorrsig::KeyPair::from_secret_key(SECP256K1, nonce);
-    let nonce_pk = schnorrsig::PublicKey::from_keypair(SECP256K1, &key_pair);
-
-    (nonce, nonce_pk)
-}
-
-pub fn msg_hash(
-    pk: &schnorrsig::PublicKey,
+/// Compute an attestation public key for the given oracle public key,
+/// announcement nonce public key and outcome index.
+pub fn attestation_pk(
+    oracle_pk: &schnorrsig::PublicKey,
     nonce_pk: &schnorrsig::PublicKey,
-    msg: &[u8],
-) -> Vec<u8> {
-    let mut buf = Vec::<u8>::new();
-    buf.extend(&nonce_pk.serialize());
-    buf.extend(&pk.serialize());
-    buf.extend(
-        secp256k1_zkp::Message::from_hashed_data::<sha256::Hash>(msg)
-            .as_ref()
-            .to_vec(),
-    );
+    index: NonZeroU8,
+) -> Result<secp256k1_zkp::PublicKey> {
+    let nonce_pk = schnorr_pubkey_to_pubkey(nonce_pk);
 
-    Bip340Hash::hash(&buf).into_inner().to_vec()
+    let mut nonce_pk_sum = nonce_pk;
+    nonce_pk_sum.mul_assign(SECP256K1, &index_to_bytes(index))?;
+
+    let oracle_pk = schnorr_pubkey_to_pubkey(oracle_pk);
+    let attestation_pk = oracle_pk.combine(&nonce_pk_sum)?;
+
+    Ok(attestation_pk)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rand::thread_rng;
+fn schnorr_pubkey_to_pubkey(pk: &schnorrsig::PublicKey) -> secp256k1_zkp::PublicKey {
+    let mut buf = Vec::<u8>::with_capacity(33);
 
-    fn verify(sig: &schnorrsig::Signature, msg: &[u8], pk: &schnorrsig::PublicKey) -> bool {
-        let msg = secp256k1_zkp::Message::from_hashed_data::<sha256::Hash>(msg);
-        SECP256K1.schnorrsig_verify(sig, &msg, pk).is_ok()
-    }
+    buf.push(0x02); // append even byte
+    buf.extend(&pk.serialize());
 
-    #[test]
-    fn attest_and_verify() {
-        let mut rng = thread_rng();
+    secp256k1_zkp::PublicKey::from_slice(&buf).expect("valid key")
+}
 
-        let key_pair = schnorrsig::KeyPair::new(SECP256K1, &mut rng);
-        let pk = schnorrsig::PublicKey::from_keypair(SECP256K1, &key_pair);
+fn index_to_bytes(index: NonZeroU8) -> [u8; 32] {
+    let mut bytes = [0u8; 32];
 
-        let (nonce, _nonce_pk) = nonce(&mut rng);
+    bytes[31] = index.get();
 
-        let msg = b"hello world";
-
-        let sig = attest(&key_pair, &nonce, msg);
-
-        assert!(verify(&sig, msg, &pk));
-    }
+    bytes
 }
