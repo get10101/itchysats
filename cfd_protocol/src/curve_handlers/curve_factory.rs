@@ -113,8 +113,6 @@ pub fn fit(
                 .ceil() as usize;
 
             // add *n* new interior knots to this knot span
-            // new_knots = np.linspace(knot_span[i], knot_span[i+1], n+1)
-            // knot_vector = knot_vector + list(new_knots[1:-1])
             let new_knots = Array1::<f64>::linspace(knot_span[i], knot_span[i + 1], n + 1);
             for e in new_knots.slice(s![1..new_knots.len() - 1]).iter() {
                 knot_vec.push(*e);
@@ -136,4 +134,22 @@ pub fn fit(
     }
 
     Ok(crv)
+}
+
+/// Create a line between two points.
+///
+/// ### parameters
+/// * a, b: start and end points (resp.)
+/// * relative: whether `b` is relative to `a` or absolute
+pub fn line(a: (f64, f64), b: (f64, f64), relative: bool) -> Result<Curve, Error> {
+    let vec;
+    if relative {
+        let b_rel = (a.0 + b.0, a.1 + b.1);
+        vec = vec![[a.0, a.1], [b_rel.0, b_rel.1]];
+    } else {
+        vec = vec![[a.0, a.1], [b.0, b.1]];
+    }
+    let controlpoints = Array2::<f64>::from(vec);
+
+    Ok(Curve::new(None, Some(controlpoints), None)?)
 }
