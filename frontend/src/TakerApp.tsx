@@ -20,7 +20,6 @@ import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
-import CurrentPrice from "./components/CurrentPrice";
 import useLatestEvent from "./components/Hooks";
 import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
@@ -120,7 +119,6 @@ export default function App() {
             <HStack spacing={5}>
                 <VStack>
                     <Wallet walletInfo={walletInfo} />
-                    <CurrentPrice priceInfo={priceInfo} />
                     <Grid
                         gridTemplateColumns="max-content auto"
                         shadow="md"

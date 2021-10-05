@@ -77,7 +77,7 @@ export default function App() {
             <HStack spacing={5}>
                 <VStack>
                     <Wallet walletInfo={walletInfo} />
-                    <CurrentPrice priceInfo={priceInfo} />
+
                     <Grid
                         gridTemplateColumns="max-content auto"
                         padding={5}
@@ -87,8 +87,8 @@ export default function App() {
                         width="100%"
                         alignItems="center"
                     >
-                        <Text align={"left"}>Current Price:</Text>
-                        <Text>{49000}</Text>
+                        <Text align={"left"}>Reference Price:</Text>
+                        <CurrentPrice priceInfo={priceInfo} />
 
                         <Text>Min Quantity:</Text>
                         <CurrencyInputField
