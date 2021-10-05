@@ -277,6 +277,9 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
             initialState: {
                 hiddenColumns,
             },
+            // @ts-ignore: this field exists and it works as expected.
+            autoResetExpanded: false,
+            autoResetSortBy: false,
         },
         useSortBy,
         useExpanded,
