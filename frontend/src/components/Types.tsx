@@ -19,7 +19,7 @@ export class Position {
             case PositionKey.BUY:
                 return "green";
             case PositionKey.SELL:
-                return "red";
+                return "blue";
         }
     }
 }
