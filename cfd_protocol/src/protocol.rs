@@ -216,31 +216,31 @@ fn build_cfds(
         (tx.into_inner(), sig)
     };
 
-    let mut cets = vec![];
-    for (event, payouts) in payouts_per_event.iter() {
-        let cets_tmp = payouts
-            .iter()
-            .map(|payout| {
-                let cet = ContractExecutionTx::new(
-                    &commit_tx,
-                    payout.clone(),
-                    &maker_address,
-                    &taker_address,
-                    event.nonce_pks.as_slice(),
-                    cet_timelock,
-                )?;
+    let cets = payouts_per_event
+        .into_iter()
+        .map(|(event, payouts)| {
+            let cets = payouts
+                .iter()
+                .map(|payout| {
+                    let cet = ContractExecutionTx::new(
+                        &commit_tx,
+                        payout.clone(),
+                        &maker_address,
+                        &taker_address,
+                        event.nonce_pks.as_slice(),
+                        cet_timelock,
+                    )?;
 
-                let encsig = cet.encsign(identity_sk, &oracle_pk)?;
+                    let encsig = cet.encsign(identity_sk, &oracle_pk)?;
 
-                Ok((cet.into_inner(), encsig, payout.digits.clone()))
-            })
-            .collect::<Result<Vec<_>>>()
-            .context("cannot build and sign all cets")?;
-        cets.push(Cets {
-            event: event.clone(),
-            cets: cets_tmp,
-        });
-    }
+                    Ok((cet.into_inner(), encsig, payout.digits.clone()))
+                })
+                .collect::<Result<Vec<_>>>()
+                .context("cannot build and sign all cets")?;
+
+            Ok(Cets { event, cets })
+        })
+        .collect::<Result<_>>()?;
 
     Ok(CfdTransactions {
         lock: lock_tx,
