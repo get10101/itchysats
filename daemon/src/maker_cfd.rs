@@ -74,8 +74,8 @@ pub struct Actor {
     current_order_id: Option<OrderId>,
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
-    latest_announcement: Option<oracle::Announcement>,
-    _oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
+    latest_announcements: Option<oracle::Announcements>,
+    oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
     current_settlement_proposals: HashMap<OrderId, SettlementProposal>,
 }
 
@@ -111,8 +111,8 @@ impl Actor {
             current_order_id: None,
             monitor_actor,
             setup_state: SetupState::None,
-            latest_announcement: None,
-            _oracle_actor: oracle_actor,
+            latest_announcements: None,
+            oracle_actor,
             current_settlement_proposals: HashMap::new(),
         }
     }
@@ -131,11 +131,16 @@ impl Actor {
         min_quantity: Usd,
         max_quantity: Usd,
     ) -> Result<()> {
-        let oracle_event_id = if let Some(latest_announcement) = self.latest_announcement.clone() {
-            latest_announcement.id
-        } else {
-            bail!("Cannot create order because no announcement from oracle")
-        };
+        let oracle_event_id = self
+            .latest_announcements
+            .clone()
+            .context("Cannot create order because no announcement from oracle")?
+            .0
+            .iter()
+            .last()
+            .context("Empty list of announcements")?
+            .clone()
+            .id;
 
         let order = Order::new(
             price,
@@ -363,18 +368,23 @@ impl Actor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        // let latest_announcement = self
-        //     .latest_announcement
-        //     .to_owned()
-        //     .context("Unaware of oracle's latest announcement.")?;
+        let offer_announcements = self
+            .latest_announcements
+            .clone()
+            .context("No oracle announcements available")?;
+        let offer_announcement = offer_announcements
+            .0
+            .iter()
+            .find(|announcement| announcement.id == cfd.order.oracle_event_id)
+            .context("Order's announcement not found in list of current oracle announcements")?;
 
-        // self.oracle_actor
-        //     .do_send_async(oracle::MonitorEvent {
-        //         event_id: latest_announcement.id,
-        //     })
-        //     .await?;
+        self.oracle_actor
+            .do_send_async(oracle::MonitorEvent {
+                event_id: offer_announcement.id.clone(),
+            })
+            .await?;
 
-        let nonce_pks = Vec::new();
+        let nonce_pks = offer_announcement.nonce_pks.clone();
 
         let contract_future = setup_contract::new(
             self.takers.clone().into_sink().with(move |msg| {
@@ -533,7 +543,7 @@ impl Actor {
         announcements: oracle::Announcements,
     ) -> Result<()> {
         tracing::debug!("Updating latest oracle announcements");
-        self.latest_announcement = Some(announcements.0.last().unwrap().clone());
+        self.latest_announcements = Some(announcements);
 
         Ok(())
     }
