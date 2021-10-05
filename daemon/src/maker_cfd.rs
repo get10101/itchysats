@@ -5,7 +5,7 @@ use crate::db::{
 };
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
-    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Role,
+    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
     SettlementProposal, SettlementProposals,
 };
 use crate::model::{TakerId, Usd};
@@ -43,7 +43,11 @@ pub struct RejectSettlement {
     pub order_id: OrderId,
 }
 
-pub struct NewOrder(pub Order);
+pub struct NewOrder {
+    pub price: Usd,
+    pub min_quantity: Usd,
+    pub max_quantity: Usd,
+}
 
 pub struct NewTakerOnline {
     pub id: TakerId,
@@ -121,7 +125,26 @@ impl Actor {
             ))?)
     }
 
-    async fn handle_new_order(&mut self, order: Order) -> Result<()> {
+    async fn handle_new_order(
+        &mut self,
+        price: Usd,
+        min_quantity: Usd,
+        max_quantity: Usd,
+    ) -> Result<()> {
+        let oracle_event_id = if let Some(latest_announcement) = self.latest_announcement.clone() {
+            latest_announcement.id
+        } else {
+            bail!("Cannot create order because no announcement from oracle")
+        };
+
+        let order = Order::new(
+            price,
+            min_quantity,
+            max_quantity,
+            Origin::Ours,
+            oracle_event_id,
+        )?;
+
         // 1. Save to DB
         let mut conn = self.db.acquire().await?;
         insert_order(&order, &mut conn).await?;
@@ -565,7 +588,7 @@ impl Handler<Commit> for Actor {
 #[async_trait]
 impl Handler<NewOrder> for Actor {
     async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_new_order(msg.0));
+        log_error!(self.handle_new_order(msg.price, msg.min_quantity, msg.max_quantity));
     }
 }
 

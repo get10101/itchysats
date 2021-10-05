@@ -12,7 +12,8 @@ create table if not exists orders
     liquidation_price  text        not null,
     creation_timestamp text        not null,
     term               text        not null,
-    origin             text        not null
+    origin             text        not null,
+    oracle_event_id    text        not null
 );
 
 create unique index if not exists orders_uuid

@@ -1,5 +1,5 @@
 use crate::model::cfd::{Cfd, CfdState, Order, OrderId, Origin};
-use crate::model::{Leverage, Position};
+use crate::model::{Leverage, OracleEventId, Position};
 use anyhow::{Context, Result};
 use rocket_db_pools::sqlx;
 use sqlx::pool::PoolConnection;
@@ -24,6 +24,7 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
     let creation_timestamp = serde_json::to_string(&order.creation_timestamp).unwrap();
     let term = serde_json::to_string(&order.term).unwrap();
     let origin = serde_json::to_string(&order.origin).unwrap();
+    let oracle_event_id = order.oracle_event_id.0.clone();
 
     sqlx::query!(
         r#"
@@ -38,8 +39,9 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
                 liquidation_price,
                 creation_timestamp,
                 term,
-                origin
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                origin,
+                oracle_event_id
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#,
         uuid,
         trading_pair,
@@ -51,7 +53,8 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
         liquidation_price,
         creation_timestamp,
         term,
-        origin
+        origin,
+        oracle_event_id
     )
     .execute(conn)
     .await?;
@@ -85,6 +88,7 @@ pub async fn load_order_by_id(
     let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
     let term = serde_json::from_str(row.term.as_str()).unwrap();
     let origin = serde_json::from_str(row.origin.as_str()).unwrap();
+    let oracle_event_id = OracleEventId(row.oracle_event_id);
 
     Ok(Order {
         id: uuid,
@@ -98,6 +102,7 @@ pub async fn load_order_by_id(
         creation_timestamp,
         term,
         origin,
+        oracle_event_id,
     })
 }
 
@@ -264,6 +269,7 @@ pub async fn load_cfd_by_order_id(
             orders.liquidation_price as liquidation_price,
             orders.creation_timestamp as creation_timestamp,
             orders.term as term,
+            orders.oracle_event_id,
             cfds.quantity_usd as quantity_usd,
             cfd_states.state as state
         from cfds as cfds
@@ -295,6 +301,7 @@ pub async fn load_cfd_by_order_id(
     let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
     let term = serde_json::from_str(row.term.as_str()).unwrap();
     let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
+    let oracle_event_id = OracleEventId(row.oracle_event_id.clone());
 
     let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
     let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
@@ -311,6 +318,7 @@ pub async fn load_cfd_by_order_id(
         creation_timestamp,
         term,
         origin,
+        oracle_event_id,
     };
 
     Ok(Cfd {
@@ -339,6 +347,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             orders.liquidation_price as liquidation_price,
             orders.creation_timestamp as creation_timestamp,
             orders.term as term,
+            orders.oracle_event_id,
             cfds.quantity_usd as quantity_usd,
             cfd_states.state as state
         from cfds as cfds
@@ -371,6 +380,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
             let term = serde_json::from_str(row.term.as_str()).unwrap();
             let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
+            let oracle_event_id = OracleEventId(row.oracle_event_id.clone());
 
             let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
             let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
@@ -387,6 +397,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 creation_timestamp,
                 term,
                 origin,
+                oracle_event_id,
             };
 
             Cfd {
@@ -420,7 +431,7 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let order = Order::from_default_with_price(Usd(dec!(10000)), Origin::Theirs).unwrap();
+        let order = Order::default();
         insert_order(&order, &mut conn).await.unwrap();
 
         let order_loaded = load_order_by_id(order.id, &mut conn).await.unwrap();
@@ -433,7 +444,7 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let order = Order::from_default_with_price(Usd(dec!(10000)), Origin::Theirs).unwrap();
+        let order = Order::default();
         let cfd = Cfd::new(
             order.clone(),
             Usd(dec!(1000)),
@@ -457,7 +468,7 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let order = Order::from_default_with_price(Usd(dec!(10000)), Origin::Theirs).unwrap();
+        let order = Order::default();
         let cfd = Cfd::new(
             order.clone(),
             Usd(dec!(1000)),
@@ -482,8 +493,7 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let order = Order::from_default_with_price(Usd(dec!(10000)), Origin::Theirs).unwrap();
-
+        let order = Order::default();
         let cfd = Cfd::new(
             order.clone(),
             Usd(dec!(1000)),
@@ -502,8 +512,7 @@ mod tests {
         let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
         assert_eq!(cfd, cfd_from_db);
 
-        let order = Order::from_default_with_price(Usd(dec!(10000)), Origin::Theirs).unwrap();
-
+        let order = Order::default();
         let cfd = Cfd::new(
             order.clone(),
             Usd(dec!(1000)),
@@ -528,7 +537,7 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let order = Order::from_default_with_price(Usd(dec!(10000)), Origin::Theirs).unwrap();
+        let order = Order::default();
         let mut cfd = Cfd::new(
             order.clone(),
             Usd(dec!(1000)),
@@ -571,5 +580,18 @@ mod tests {
         run_migrations(&pool).await.unwrap();
 
         pool
+    }
+
+    impl Default for Order {
+        fn default() -> Self {
+            Order::new(
+                Usd(dec!(1000)),
+                Usd(dec!(100)),
+                Usd(dec!(1000)),
+                Origin::Theirs,
+                OracleEventId("Dummy".to_string()),
+            )
+            .unwrap()
+        }
     }
 }
