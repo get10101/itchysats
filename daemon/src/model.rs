@@ -106,5 +106,5 @@ pub struct WalletInfo {
     pub last_updated_at: SystemTime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OracleEventId(pub String);

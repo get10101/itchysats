@@ -8,16 +8,16 @@ use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
     SettlementProposal, SettlementProposals,
 };
-use crate::model::{TakerId, Usd};
+use crate::model::{OracleEventId, TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
 use crate::{maker_inc_connections, monitor, oracle, setup_contract, wire};
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::SystemTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
@@ -74,7 +74,7 @@ pub struct Actor {
     current_order_id: Option<OrderId>,
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
-    latest_announcements: Option<oracle::Announcements>,
+    latest_announcements: Option<BTreeMap<OracleEventId, oracle::Announcement>>,
     oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
     current_settlement_proposals: HashMap<OrderId, SettlementProposal>,
 }
@@ -135,12 +135,11 @@ impl Actor {
             .latest_announcements
             .clone()
             .context("Cannot create order because no announcement from oracle")?
-            .0
             .iter()
-            .last()
+            .next_back()
             .context("Empty list of announcements")?
-            .clone()
-            .id;
+            .0
+            .clone();
 
         let order = Order::new(
             price,
@@ -373,10 +372,8 @@ impl Actor {
             .clone()
             .context("No oracle announcements available")?;
         let offer_announcement = offer_announcements
-            .0
-            .iter()
-            .find(|announcement| announcement.id == cfd.order.oracle_event_id)
-            .context("Order's announcement not found in list of current oracle announcements")?;
+            .get(&cfd.order.oracle_event_id)
+            .context("Order's announcement not found in current oracle announcements")?;
 
         self.oracle_actor
             .do_send_async(oracle::MonitorEvent {
@@ -543,7 +540,14 @@ impl Actor {
         announcements: oracle::Announcements,
     ) -> Result<()> {
         tracing::debug!("Updating latest oracle announcements");
-        self.latest_announcements = Some(announcements);
+
+        self.latest_announcements.replace(
+            announcements
+                .0
+                .iter()
+                .map(|announcement| (announcement.id.clone(), announcement.clone()))
+                .collect(),
+        );
 
         Ok(())
     }

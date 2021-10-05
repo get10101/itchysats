@@ -7,7 +7,7 @@ use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
     SettlementProposal, SettlementProposals,
 };
-use crate::model::Usd;
+use crate::model::{OracleEventId, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
 use crate::wire::SetupMsg;
@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::SystemTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
@@ -63,7 +63,7 @@ pub struct Actor {
     send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
-    latest_announcements: Option<oracle::Announcements>,
+    latest_announcements: Option<BTreeMap<OracleEventId, oracle::Announcement>>,
     oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
     current_settlement_proposals: HashMap<OrderId, SettlementProposal>,
 }
@@ -218,10 +218,8 @@ impl Actor {
             .clone()
             .context("No oracle announcements available")?;
         let offer_announcement = offer_announcements
-            .0
-            .iter()
-            .find(|announcement| announcement.id == cfd.order.oracle_event_id)
-            .context("Order's announcement not found in list of current oracle announcements")?;
+            .get(&cfd.order.oracle_event_id)
+            .context("Order's announcement not found in current oracle announcements")?;
 
         self.oracle_actor
             .do_send_async(oracle::MonitorEvent {
@@ -397,7 +395,13 @@ impl Actor {
         &mut self,
         announcements: oracle::Announcements,
     ) -> Result<()> {
-        self.latest_announcements = Some(announcements);
+        self.latest_announcements.replace(
+            announcements
+                .0
+                .iter()
+                .map(|announcement| (announcement.id.clone(), announcement.clone()))
+                .collect(),
+        );
 
         Ok(())
     }
