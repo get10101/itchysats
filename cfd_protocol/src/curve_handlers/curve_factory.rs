@@ -3,7 +3,7 @@ use crate::curve_handlers::curve::Curve;
 use crate::curve_handlers::Error;
 
 use ndarray::prelude::*;
-use ndarray_linalg::Solve;
+
 
 /// Perform general spline interpolation on a provided basis.
 ///
