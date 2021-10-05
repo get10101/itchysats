@@ -6,7 +6,7 @@ use crate::db::{
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
-    SettlementProposal, SettlementProposals,
+    SettlementKind, SettlementProposal, SettlementProposals,
 };
 use crate::model::{OracleEventId, TakerId, Usd};
 use crate::monitor::MonitorParams;
@@ -76,7 +76,7 @@ pub struct Actor {
     setup_state: SetupState,
     latest_announcements: Option<BTreeMap<OracleEventId, oracle::Announcement>>,
     oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
-    current_settlement_proposals: HashMap<OrderId, SettlementProposal>,
+    current_settlement_proposals: SettlementProposals,
 }
 
 enum SetupState {
@@ -120,9 +120,7 @@ impl Actor {
     fn send_current_settlement_proposals(&self) -> Result<()> {
         Ok(self
             .settlements_feed_sender
-            .send(SettlementProposals::Incoming(
-                self.current_settlement_proposals.clone(),
-            ))?)
+            .send(self.current_settlement_proposals.clone())?)
     }
 
     async fn handle_new_order(
@@ -192,7 +190,7 @@ impl Actor {
             proposal
         );
         self.current_settlement_proposals
-            .insert(proposal.order_id, proposal);
+            .insert(proposal.order_id, (proposal, SettlementKind::Incoming));
         self.send_current_settlement_proposals()?;
 
         Ok(())
