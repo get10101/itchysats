@@ -539,8 +539,6 @@ impl Actor {
         &mut self,
         announcements: oracle::Announcements,
     ) -> Result<()> {
-        tracing::debug!("Updating latest oracle announcements");
-
         self.latest_announcements.replace(
             announcements
                 .0
