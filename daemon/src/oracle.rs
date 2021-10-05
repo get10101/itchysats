@@ -1,4 +1,5 @@
 use crate::actors::log_error;
+use crate::model::OracleEventId;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
@@ -153,7 +154,7 @@ where
 }
 
 pub struct MonitorEvent {
-    pub event_id: String,
+    pub event_id: OracleEventId,
 }
 
 impl xtra::Message for MonitorEvent {
@@ -167,7 +168,7 @@ where
     M: xtra::Handler<Attestation>,
 {
     async fn handle(&mut self, msg: MonitorEvent, _ctx: &mut xtra::Context<Self>) {
-        self.monitor_event(msg.event_id)
+        self.monitor_event(msg.event_id.0)
     }
 }
 
@@ -202,7 +203,7 @@ pub struct Announcement {
     ///
     /// Doubles up as the path of the URL for this event i.e.
     /// https://h00.ooo/{id}.
-    pub id: String,
+    pub id: OracleEventId,
     pub expected_outcome_time: OffsetDateTime,
     pub nonce_pks: Vec<schnorrsig::PublicKey>,
 }
@@ -228,6 +229,7 @@ impl xtra::Message for Attestation {
 }
 
 mod olivia_api {
+    use crate::model::OracleEventId;
     use anyhow::Context;
     use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
     use std::convert::TryFrom;
@@ -249,7 +251,7 @@ mod olivia_api {
                 serde_json::from_str::<AnnouncementData>(&response.announcement.oracle_event.data)?;
 
             Ok(Self {
-                id: data.id,
+                id: OracleEventId(data.id),
                 expected_outcome_time: data.expected_outcome_time,
                 nonce_pks: data.schemes.olivia_v1.nonces,
             })
@@ -338,6 +340,7 @@ mod olivia_api {
     mod tests {
         use std::vec;
 
+        use crate::model::OracleEventId;
         use crate::oracle;
         use time::macros::datetime;
 
@@ -347,7 +350,7 @@ mod olivia_api {
 
             let deserialized = serde_json::from_str::<oracle::Announcement>(json).unwrap();
             let expected = oracle::Announcement {
-                id: "/x/BitMEX/BXBT/2021-10-04T22:00:00.price[n:20]".to_string(),
+                id: OracleEventId("/x/BitMEX/BXBT/2021-10-04T22:00:00.price[n:20]".to_string()),
                 expected_outcome_time: datetime!(2021-10-04 22:00:00).assume_utc(),
                 nonce_pks: vec![
                     "8d72028eeaf4b85aec0f750f05a4a320cac193f5d8494bfe05cd4b29f3df4239"

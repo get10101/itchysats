@@ -105,3 +105,6 @@ pub struct WalletInfo {
     pub address: Address,
     pub last_updated_at: SystemTime,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct OracleEventId(pub String);
