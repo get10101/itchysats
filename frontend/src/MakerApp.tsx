@@ -1,3 +1,4 @@
+import { RepeatIcon } from "@chakra-ui/icons";
 import {
     Box,
     Button,
@@ -6,6 +7,7 @@ import {
     Grid,
     GridItem,
     HStack,
+    IconButton,
     Tab,
     TabList,
     TabPanel,
@@ -37,9 +39,14 @@ export default function App() {
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 
     const toast = useToast();
-    let [minQuantity, setMinQuantity] = useState<string>("100");
-    let [maxQuantity, setMaxQuantity] = useState<string>("1000");
-    let [orderPrice, setOrderPrice] = useState<string>("10000");
+    let [minQuantity, setMinQuantity] = useState<string>("10");
+    let [maxQuantity, setMaxQuantity] = useState<string>("100");
+    let [orderPrice, setOrderPrice] = useState<string>("0");
+
+    const spread = 1.03;
+    if (priceInfo && orderPrice === "0") {
+        setOrderPrice((priceInfo.bid * spread).toString());
+    }
 
     const format = (val: any) => `$` + val;
     const parse = (val: any) => val.replace(/^\$/, "");
@@ -98,10 +105,21 @@ export default function App() {
                         />
 
                         <Text>Order Price:</Text>
-                        <CurrencyInputField
-                            onChange={(valueString: string) => setOrderPrice(parse(valueString))}
-                            value={format(orderPrice)}
-                        />
+                        <HStack>
+                            <CurrencyInputField
+                                onChange={(valueString: string) => setOrderPrice(parse(valueString))}
+                                value={format(orderPrice)}
+                            />
+                            <IconButton
+                                aria-label="Reduce"
+                                icon={<RepeatIcon />}
+                                onClick={() => {
+                                    if (priceInfo) {
+                                        setOrderPrice((priceInfo.bid * spread).toString());
+                                    }
+                                }}
+                            />
+                        </HStack>
 
                         <Text>Leverage:</Text>
                         <HStack spacing={5}>
