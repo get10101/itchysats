@@ -8,7 +8,7 @@ use bdk::bitcoin::{Amount, PublicKey, Transaction};
 use bdk::descriptor::Descriptor;
 use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use cfd_protocol::{
-    commit_descriptor, compute_adaptor_point, create_cfd_transactions, interval, lock_descriptor,
+    commit_descriptor, compute_adaptor_pk, create_cfd_transactions, interval, lock_descriptor,
     spending_tx_sighash, PartyParams, PunishParams,
 };
 use futures::stream::FusedStream;
@@ -309,19 +309,19 @@ fn verify_cet_encsig(
     spent_descriptor: &Descriptor<PublicKey>,
     spent_amount: Amount,
 ) -> Result<()> {
-    let msg_nonce_pairs = &digits
-        .to_bytes()
+    let index_nonce_pairs = &digits
+        .to_indices()
         .into_iter()
         .zip(nonce_pks.iter().cloned())
         .collect::<Vec<_>>();
-    let sig_point = compute_adaptor_point(oracle_pk, msg_nonce_pairs)
-        .context("could not calculate signature point")?;
+    let adaptor_point = compute_adaptor_pk(oracle_pk, index_nonce_pairs)
+        .context("could not calculate adaptor point")?;
     verify_adaptor_signature(
         tx,
         spent_descriptor,
         spent_amount,
         encsig,
-        &PublicKey::new(sig_point),
+        &PublicKey::new(adaptor_point),
         pk,
     )
 }

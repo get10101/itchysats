@@ -5,17 +5,16 @@ use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use bdk::wallet::AddressIndex;
 use bdk::SignOptions;
-use bit_vec::BitVec;
 use bitcoin::util::psbt::PartiallySignedTransaction;
 use cfd_protocol::{
-    attest, close_transaction, commit_descriptor, compute_adaptor_point, create_cfd_transactions,
-    finalize_spend_transaction, interval, lock_descriptor, nonce, punish_transaction,
+    close_transaction, commit_descriptor, compute_adaptor_pk, create_cfd_transactions,
+    finalize_spend_transaction, interval, lock_descriptor, punish_transaction,
     renew_cfd_transactions, spending_tx_sighash, CfdTransactions, Payout, PunishParams,
     TransactionExt, WalletExt,
 };
-use rand::{thread_rng, CryptoRng, Rng, RngCore};
+use rand::{thread_rng, CryptoRng, RngCore};
 use secp256k1_zkp::{schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
-use std::convert::TryInto;
+use std::str::FromStr;
 
 #[test]
 fn create_cfd() {
@@ -27,18 +26,19 @@ fn create_cfd() {
     let maker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
     let taker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
 
-    let oracle = Oracle::new(&mut rng);
-    let (event, announcement) = announce(&mut rng);
+    let oracle_data = OliviaData::example();
+    let oracle_pk = oracle_data.pk;
+    let nonce_pks = oracle_data.nonce_pks.clone();
 
     let payouts = vec![
         Payout::new(
-            0..=10_000,
+            0..=40_000,
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
         )
         .unwrap(),
         Payout::new(
-            10_001..=20_000,
+            40_001..=70_000,
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
         )
@@ -53,7 +53,7 @@ fn create_cfd() {
         &mut rng,
         (&maker_wallet, maker_lock_amount),
         (&taker_wallet, taker_lock_amount),
-        (oracle.public_key(), &announcement.nonce_pks()),
+        (oracle_pk, &nonce_pks),
         payouts,
         (cet_timelock, refund_timelock),
     );
@@ -70,13 +70,12 @@ fn create_cfd() {
     verify_cfd_sigs(
         (&maker_cfd_txs, maker.pk, maker.pub_pk),
         (&taker_cfd_txs, taker.pk, taker.pub_pk),
-        (oracle.public_key(), &announcement.nonce_pks()),
+        (oracle_pk, &nonce_pks),
         (&lock_desc, lock_amount),
         (&commit_desc, commit_amount),
     );
 
     check_cfd_txs(
-        &mut rng,
         (
             maker_wallet,
             maker_cfd_txs,
@@ -97,7 +96,7 @@ fn create_cfd() {
             taker.rev_sk,
             taker_addr,
         ),
-        (oracle, event),
+        oracle_data,
         (lock_desc, lock_amount),
         (commit_desc, commit_amount),
     );
@@ -113,13 +112,14 @@ fn renew_cfd() {
     let maker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
     let taker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
 
-    let oracle = Oracle::new(&mut rng);
-    let (_event, announcement) = announce(&mut rng);
+    let oracle_data = OliviaData::example();
+    let oracle_pk = oracle_data.pk;
+    let nonce_pks = oracle_data.nonce_pks.clone();
 
     let payouts = vec![
         Payout::new(0..=10_000, Amount::from_btc(2.0).unwrap(), Amount::ZERO).unwrap(),
         Payout::new(
-            10_001..=20_000,
+            10_001..=50_000,
             Amount::ZERO,
             Amount::from_btc(2.0).unwrap(),
         )
@@ -134,7 +134,7 @@ fn renew_cfd() {
         &mut rng,
         (&maker_wallet, maker_lock_amount),
         (&taker_wallet, taker_lock_amount),
-        (oracle.public_key(), &announcement.nonce_pks()),
+        (oracle_pk, &nonce_pks),
         payouts,
         (cet_timelock, refund_timelock),
     );
@@ -147,17 +147,15 @@ fn renew_cfd() {
     let (taker_rev_sk, taker_rev_pk) = make_keypair(&mut rng);
     let (taker_pub_sk, taker_pub_pk) = make_keypair(&mut rng);
 
-    let (event, announcement) = announce(&mut rng);
-
     let payouts = vec![
         Payout::new(
-            0..=10_000,
+            0..=50_000,
             Amount::from_btc(1.5).unwrap(),
             Amount::from_btc(0.5).unwrap(),
         )
         .unwrap(),
         Payout::new(
-            10_001..=20_000,
+            50_001..=70_000,
             Amount::from_btc(0.5).unwrap(),
             Amount::from_btc(1.5).unwrap(),
         )
@@ -185,7 +183,7 @@ fn renew_cfd() {
                 publish_pk: taker_pub_pk,
             },
         ),
-        (oracle.public_key(), &announcement.nonce_pks()),
+        (oracle_pk, &nonce_pks),
         (cet_timelock, refund_timelock),
         payouts.clone(),
         maker.sk,
@@ -212,7 +210,7 @@ fn renew_cfd() {
                 publish_pk: taker_pub_pk,
             },
         ),
-        (oracle.public_key(), &announcement.nonce_pks()),
+        (oracle_pk, &nonce_pks),
         (cet_timelock, refund_timelock),
         payouts,
         taker.sk,
@@ -231,13 +229,12 @@ fn renew_cfd() {
     verify_cfd_sigs(
         (&maker_cfd_txs, maker.pk, maker_pub_pk),
         (&taker_cfd_txs, taker.pk, taker_pub_pk),
-        (oracle.public_key(), &announcement.nonce_pks()),
+        (oracle_pk, &nonce_pks),
         (&lock_desc, lock_amount),
         (&commit_desc, commit_amount),
     );
 
     check_cfd_txs(
-        &mut rng,
         (
             maker_wallet,
             maker_cfd_txs,
@@ -258,7 +255,7 @@ fn renew_cfd() {
             taker_rev_sk,
             taker_addr,
         ),
-        (oracle, event),
+        oracle_data,
         (lock_desc, lock_amount),
         (commit_desc, commit_amount),
     )
@@ -274,11 +271,12 @@ fn collaboratively_close_cfd() {
     let maker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
     let taker_wallet = build_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
 
-    let oracle = Oracle::new(&mut rng);
-    let (_, announcement) = announce(&mut rng);
+    let oracle_data = OliviaData::example();
+    let oracle_pk = oracle_data.pk;
+    let nonce_pks = oracle_data.nonce_pks;
 
     let payouts = vec![Payout::new(
-        0..=10_000,
+        0..=100_000,
         Amount::from_btc(1.5).unwrap(),
         Amount::from_btc(0.5).unwrap(),
     )
@@ -292,7 +290,7 @@ fn collaboratively_close_cfd() {
         &mut rng,
         (&maker_wallet, maker_lock_amount),
         (&taker_wallet, taker_lock_amount),
-        (oracle.public_key(), &announcement.nonce_pks()),
+        (oracle_pk, &nonce_pks),
         payouts,
         (cet_timelock, refund_timelock),
     );
@@ -521,7 +519,6 @@ fn verify_cfd_sigs(
 }
 
 fn check_cfd_txs(
-    rng: &mut (impl RngCore + CryptoRng),
     (
         maker_wallet,
         maker_cfd_txs,
@@ -560,19 +557,19 @@ fn check_cfd_txs(
         SecretKey,
         Address,
     ),
-    (oracle, event): (Oracle, Event),
+    oracle_data: OliviaData,
     (lock_desc, lock_amount): (Descriptor<PublicKey>, Amount),
     (commit_desc, commit_amount): (Descriptor<PublicKey>, Amount),
 ) {
     // Lock transaction (either party can do this):
 
-    let signed_lock_tx = sign_lock_tx(maker_cfd_txs.lock, maker_wallet, taker_wallet)
+    let signed_lock_tx = sign_lock_tx(maker_cfd_txs.lock.clone(), maker_wallet, taker_wallet)
         .expect("to build signed lock tx");
 
     // Commit transactions:
 
     let signed_commit_tx_maker = decrypt_and_sign(
-        maker_cfd_txs.commit.0,
+        maker_cfd_txs.commit.0.clone(),
         (&maker_sk, &maker_pk),
         &maker_pub_sk,
         &taker_pk,
@@ -583,7 +580,7 @@ fn check_cfd_txs(
     .expect("maker to build signed commit tx");
     check_tx(&signed_lock_tx, &signed_commit_tx_maker, &lock_desc).expect("valid maker commit tx");
     let signed_commit_tx_taker = decrypt_and_sign(
-        taker_cfd_txs.commit.0,
+        taker_cfd_txs.commit.0.clone(),
         (&taker_sk, &taker_pk),
         &taker_pub_sk,
         &maker_pk,
@@ -597,7 +594,7 @@ fn check_cfd_txs(
     // Refund transaction (both parties would produce the same one):
 
     let signed_refund_tx = finalize_spend_transaction(
-        maker_cfd_txs.refund.0,
+        maker_cfd_txs.refund.0.clone(),
         &commit_desc,
         (maker_pk, maker_cfd_txs.refund.1),
         (taker_pk, taker_cfd_txs.refund.1),
@@ -607,34 +604,51 @@ fn check_cfd_txs(
 
     // CETs:
 
-    for (tx, _, digits) in maker_cfd_txs.cets.clone().into_iter() {
-        let price = gen_price(rng, &digits);
-        let oracle_sigs = oracle.attest_price(price, &event.nonces);
+    let unlocked_cets = maker_cfd_txs.cets.clone().into_iter().filter_map({
+        |(tx, _, digits)| {
+            let price = oracle_data.price;
+            if !digits.range().contains(&price) {
+                return None;
+            }
 
-        build_and_check_cet(
-            tx,
-            &taker_cfd_txs.cets,
-            (&maker_sk, &maker_pk),
-            &taker_pk,
-            (price, &oracle_sigs),
-            (&signed_commit_tx_maker, &commit_desc, commit_amount),
-        )
-        .expect("valid maker cet");
-    }
-    for (tx, _, digits) in taker_cfd_txs.cets.into_iter() {
-        let price = gen_price(rng, &digits);
-        let oracle_sigs = oracle.attest_price(price, &event.nonces);
+            let oracle_attestations = oracle_data.attestations.clone();
+            build_and_check_cet(
+                tx,
+                &taker_cfd_txs.cets,
+                (&maker_sk, &maker_pk),
+                &taker_pk,
+                (price, &oracle_attestations),
+                (&signed_commit_tx_maker, &commit_desc, commit_amount),
+            )
+            .expect("valid maker cet");
 
-        build_and_check_cet(
-            tx,
-            &maker_cfd_txs.cets,
-            (&taker_sk, &taker_pk),
-            &maker_pk,
-            (price, &oracle_sigs),
-            (&signed_commit_tx_maker, &commit_desc, commit_amount),
-        )
-        .expect("valid taker cet");
-    }
+            Some(())
+        }
+    });
+    assert_eq!(unlocked_cets.count(), 1, "Expected to unlock only 1 CET");
+
+    let unlocked_cets = taker_cfd_txs
+        .cets
+        .into_iter()
+        .filter_map(|(tx, _, digits)| {
+            let price = oracle_data.price;
+            if !digits.range().contains(&price) {
+                return None;
+            }
+
+            build_and_check_cet(
+                tx,
+                &maker_cfd_txs.cets,
+                (&taker_sk, &taker_pk),
+                &maker_pk,
+                (price, &oracle_data.attestations),
+                (&signed_commit_tx_maker, &commit_desc, commit_amount),
+            )
+            .expect("valid taker cet");
+
+            Some(())
+        });
+    assert_eq!(unlocked_cets.count(), 1, "Expected to unlock only 1 CET");
 
     // Punish transactions:
 
@@ -669,7 +683,7 @@ fn build_and_check_cet(
     cets_other: &[(Transaction, EcdsaAdaptorSignature, interval::Digits)],
     (sk, pk): (&SecretKey, &PublicKey),
     pk_other: &PublicKey,
-    (price, oracle_sigs): (u64, &[schnorrsig::Signature]),
+    (price, oracle_attestations): (u64, &[SecretKey]),
     (commit_tx, commit_desc, commit_amount): (&Transaction, &Descriptor<PublicKey>, Amount),
 ) -> Result<()> {
     let (encsig_other, n_bits) = cets_other
@@ -679,14 +693,11 @@ fn build_and_check_cet(
         })
         .expect("one encsig per cet, per party");
 
-    let (oracle_sigs, _) = oracle_sigs.split_at(n_bits);
+    let (oracle_attestations, _) = oracle_attestations.split_at(n_bits);
 
-    let (_nonce_pk, signature_scalar) = schnorrsig_decompose(&oracle_sigs[0]);
-    let mut decryption_sk = signature_scalar;
-
-    for oracle_sig in oracle_sigs[1..].iter() {
-        let (_nonce_pk, signature_scalar) = schnorrsig_decompose(oracle_sig);
-        decryption_sk.add_assign(signature_scalar.as_ref())?;
+    let mut decryption_sk = oracle_attestations[0];
+    for oracle_attestation in oracle_attestations[1..].iter() {
+        decryption_sk.add_assign(oracle_attestation.as_ref())?;
     }
 
     let signed_cet = decrypt_and_sign(
@@ -737,6 +748,15 @@ fn decrypt_and_sign(
     let sighash = spending_tx_sighash(&spend_tx, spent_descriptor, spent_amount);
 
     let sig_self = SECP256K1.sign(&sighash, sk);
+
+    encsig_other
+        .verify(
+            SECP256K1,
+            &sighash,
+            &pk_other.key,
+            &secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, decryption_sk),
+        )
+        .expect("wrong decryption key");
     let sig_other = encsig_other.decrypt(decryption_sk)?;
 
     let signed_commit_tx = finalize_spend_transaction(
@@ -798,15 +818,22 @@ fn verify_cet_encsig(
     spent_descriptor: &Descriptor<PublicKey>,
     spent_amount: Amount,
 ) -> Result<()> {
-    let msg_nonce_pairs = &digits
-        .to_bytes()
+    let index_nonce_pairs = &digits
+        .to_indices()
         .into_iter()
         .zip(nonce_pks.iter().cloned())
         .collect::<Vec<_>>();
 
-    let sig_point = compute_adaptor_point(&oracle_pk, msg_nonce_pairs)
-        .context("could not calculate signature point")?;
-    encverify_spend(tx, encsig, spent_descriptor, spent_amount, &sig_point, pk)
+    let adaptor_point = compute_adaptor_pk(&oracle_pk, index_nonce_pairs)
+        .context("could not calculate adaptor point")?;
+    encverify_spend(
+        tx,
+        encsig,
+        spent_descriptor,
+        spent_amount,
+        &adaptor_point,
+        pk,
+    )
 }
 
 fn encverify_spend(
@@ -888,86 +915,6 @@ fn build_wallet(
     Ok(wallet)
 }
 
-struct Oracle {
-    key_pair: schnorrsig::KeyPair,
-}
-
-impl Oracle {
-    /// Maximum number of binary digits for BTC price in whole USD.
-    const MAX_DIGITS: usize = 20;
-
-    fn new(rng: &mut (impl RngCore + CryptoRng)) -> Self {
-        let key_pair = schnorrsig::KeyPair::new(SECP256K1, rng);
-
-        Self { key_pair }
-    }
-
-    fn public_key(&self) -> schnorrsig::PublicKey {
-        schnorrsig::PublicKey::from_keypair(SECP256K1, &self.key_pair)
-    }
-
-    fn attest_price(
-        &self,
-        price: u64,
-        nonces: &[SecretKey; Self::MAX_DIGITS],
-    ) -> Vec<schnorrsig::Signature> {
-        let mut bits = BitVec::from_bytes(&price.to_be_bytes());
-        let bits = bits.split_off(bits.len() - Self::MAX_DIGITS);
-
-        bits.iter()
-            .zip(nonces)
-            .map(|(msg, nonce)| attest(&self.key_pair, nonce, &[msg as u8]))
-            .collect()
-    }
-}
-
-fn announce(rng: &mut (impl RngCore + CryptoRng)) -> (Event, Announcement) {
-    let event = Event::new(rng);
-    let announcement = event.announcement();
-
-    (event, announcement)
-}
-
-/// Represents the oracle's commitment to a set of nonces that will be used to
-/// sign each digit of the price of BTC in USD at a specific time in the future.
-struct Event {
-    /// Nonces.
-    ///
-    /// Must remain secret.
-    nonces: [SecretKey; Oracle::MAX_DIGITS],
-    nonce_pks: Vec<schnorrsig::PublicKey>,
-}
-
-impl Event {
-    fn new(rng: &mut (impl RngCore + CryptoRng)) -> Self {
-        let (nonces, nonce_pks) = (0..Oracle::MAX_DIGITS)
-            .map(|_| nonce(rng))
-            .unzip::<_, _, Vec<_>, _>();
-        let nonces = nonces
-            .try_into()
-            .unwrap_or_else(|_| panic!("{} nonces", Oracle::MAX_DIGITS));
-
-        Self { nonces, nonce_pks }
-    }
-
-    fn announcement(&self) -> Announcement {
-        Announcement {
-            nonce_pks: self.nonce_pks.clone(),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct Announcement {
-    nonce_pks: Vec<schnorrsig::PublicKey>,
-}
-
-impl Announcement {
-    fn nonce_pks(&self) -> Vec<schnorrsig::PublicKey> {
-        self.nonce_pks.clone()
-    }
-}
-
 fn make_keypair(rng: &mut (impl RngCore + CryptoRng)) -> (SecretKey, PublicKey) {
     let sk = SecretKey::new(rng);
     let pk = PublicKey::from_private_key(
@@ -982,21 +929,82 @@ fn make_keypair(rng: &mut (impl RngCore + CryptoRng)) -> (SecretKey, PublicKey) 
     (sk, pk)
 }
 
-/// Decompose a BIP340 signature into R and s.
-fn schnorrsig_decompose(signature: &schnorrsig::Signature) -> (schnorrsig::PublicKey, SecretKey) {
-    let bytes = signature.as_ref();
-
-    let nonce_pk = schnorrsig::PublicKey::from_slice(&bytes[0..32]).expect("R value in sig");
-    let s = SecretKey::from_slice(&bytes[32..64]).expect("s value in sig");
-
-    (nonce_pk, s)
+struct OliviaData {
+    pk: schnorrsig::PublicKey,
+    nonce_pks: Vec<schnorrsig::PublicKey>,
+    price: u64,
+    attestations: Vec<SecretKey>,
 }
 
-fn gen_price(rng: &mut impl RngCore, digits: &interval::Digits) -> u64 {
-    let (start, end) = digits.range().into_inner();
-    if start == end {
-        start
-    } else {
-        rng.gen_range(start, end)
+impl OliviaData {
+    /// An example of all the data necessary from `olivia` to test the
+    /// CFD protocol.
+    ///
+    /// Data comes from this event:
+    /// https://outcome.observer/h00.ooo/x/BitMEX/BXBT/2021-10-05T02:00:00.price[n:20].
+    pub fn example() -> Self {
+        let pk = schnorrsig::PublicKey::from_str(
+            "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
+        )
+        .unwrap();
+
+        let nonce_pks = [
+            "d02d163cf9623f567c4e3faf851a9266ac1ede13da4ca4141f3a7717fba9a739",
+            "bc310f26aa5addbc382f653d8530aaead7c25e3546abc24639f490e36d4bdb88",
+            "2661375f570dcc32300d442e85b6d72dfa3232dccda45e8fb4a2d1e758d1d374",
+            "fcc68fbf071d391b14c0867cb4defb5a8abc12418dff3dfc2f84fd4025cb2716",
+            "cf5c2b7fe3851c64a7ff9635a9bfc50cdd301401d002f2da049f4c6a20e8457b",
+            "14f1005d8c2832a2c4666dd732dd9bb3af9c8f70ebcdaec96869b1ca0c8e0de6",
+            "299ee1c9c20fab8b067adf452a7d7661b5e7f5dd6bc707562805002e7cb8443e",
+            "bcb4e5a594346de298993a7a31762f598b5224b977e23182369e9ed3e5127f78",
+            "25e09a16ee5d469069abfb62cd5e1f20af50cf15241f571e64fa28b127304574",
+            "3ed5a1422f43299caf281123aba88bd4bc61ec863f4afb79c7ce7663ad44db5d",
+            "a7e0f61212735c192c4bf16e0a3e925e65f9f3feb6f1e5e8d6f5c18cf2dbb5a8",
+            "a36a631015d9036d0c321fea7cf12f589aa196e7279b4a290de5112c2940e540",
+            "b5bdd931f81970139e7301ac654b378077c3ed993ca7893ed93fee5fc6f7a782",
+            "00090816e256b41e042dce38bde99ab3cf9482f9b066836988d3ed54833638e8",
+            "3530408e93c251f5f488d3b1c608157177c459d6fab1966abebf765bcc9338d2",
+            "603269ce88d112ff7fcfcaab82f228be97deca37f8190084d509c71b51a30432",
+            "f0587414fcc6c56aef11d4a1d287ad6b55b237c5b8a5d5d93eb9ca06f6466ccf",
+            "763009afb0ffd99c7b835488cb3b0302f3b78f59bbfd5292bedab8ef9da8c1b7",
+            "3867af9048309a05004a164bdea09899f23ff1d83b6491b2b53a1b7b92e0eb2e",
+            "688118e6b59e27944c277513db2711a520f4283c7c53a11f58d9f6a46d82c964",
+        ]
+        .iter()
+        .map(|pk| schnorrsig::PublicKey::from_str(pk).unwrap())
+        .collect();
+
+        let attestations = [
+            "5bc7663195971daaa1e3e6a81b4bca65882791644bc446fc060cbc118a3ace0f",
+            "721d0cb56a0778a1ca7907f81a0787f34385b13f854c845c4c5539f7f6267958",
+            "044aeef0d525c8ff48758c80939e95807bc640990cc03f53ab6fc0b262045221",
+            "79f5175423ec6ee69c8d0e55251db85f3015c2edfa5a03095443fbbf35eb2282",
+            "233b9ec549e9cc7c702109d29636db85a3ec63a66f3b53444bcc7586d36ca439",
+            "2961a00320b7c9a70220060019a6ca88e18c205fadd2f873c174e5ccbbed527e",
+            "bdb76e8f81c39ade4205ead9b68118757fc49ec22769605f26ef904b235283d6",
+            "6e75dafedf4ed685513ec1f5c93508de4fad2be05b46001ac00c03474f4690e1",
+            "cfcfc27eb9273b343b3042f0386e77efe329066be079788bb00ab47d72f26780",
+            "2d931ffd2963e74566365674583abc427bdb6ae571c4887d81f1920f0850665d",
+            "33b6f1112fa046cbc04be44c615e70519702662c1f72d8d49b3c4613614a8a46",
+            "19e569b15410fa9a758c1a6c211eae8c1547efbe0ac6a7709902be93415f2f09",
+            "d859dd5c9a58e1836d1eea3ebe7f48198a681d29e5a5cd6922532d2e94a53a1d",
+            "3387eb2ad5e64cd102167766bb72b447f4a2e5129d161e422f9d41cd7d1cc281",
+            "db35a9778a1e3abc8d8ab2f4a79346ae2154c9e0b4932d859d1f3e244f67ae76",
+            "c3be969e8b889cfb2ece71123e6be5538a2d3a1229637b18bccc179073c38059",
+            "6f73263f430e10b82d0fd06c4ddd3b8a6b58c3e756745bd0d9e71a399e517921",
+            "0818c9c245d7d2162cd393c562a121f80405a27d22ae465e95030c31ebb4bd24",
+            "b7c03f0bd6d63bd78ad4ea0f3452ff9717ba65ca42038e6e90a1aa558b7942dc",
+            "90c4d8ec9f408ccb62a62daa993c20f2f86799e1fdea520c6d060418e55fd216",
+        ]
+        .iter()
+        .map(|pk| SecretKey::from_str(pk).unwrap())
+        .collect();
+
+        Self {
+            pk,
+            nonce_pks,
+            attestations,
+            price: 49262,
+        }
     }
 }

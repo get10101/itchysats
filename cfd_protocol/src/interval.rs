@@ -1,5 +1,6 @@
 use bit_vec::BitVec;
 use std::fmt::Display;
+use std::num::NonZeroU8;
 use std::ops::RangeInclusive;
 
 mod digit_decomposition;
@@ -61,13 +62,11 @@ impl Digits {
         start..=end
     }
 
-    /// Convert underlying bit representation into bytes.
-    ///
-    /// Useful for signing each digit.
-    pub fn to_bytes(&self) -> Vec<Vec<u8>> {
+    /// Map each bit to its index in the set {0, 1}, starting at 1.
+    pub fn to_indices(&self) -> Vec<NonZeroU8> {
         self.0
             .iter()
-            .map(|bit| vec![if bit { 1u8 } else { 0u8 }])
+            .map(|bit| NonZeroU8::new(if bit { 2u8 } else { 1u8 }).expect("1 and 2 are non-zero"))
             .collect()
     }
 

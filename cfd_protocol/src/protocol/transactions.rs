@@ -2,7 +2,7 @@ use crate::protocol::sighash_ext::SigHashExt;
 use crate::protocol::transaction_ext::TransactionExt;
 use crate::protocol::txin_ext::TxInExt;
 use crate::protocol::{
-    commit_descriptor, compute_adaptor_point, lock_descriptor, Payout, DUMMY_2OF2_MULTISIG,
+    commit_descriptor, compute_adaptor_pk, lock_descriptor, Payout, DUMMY_2OF2_MULTISIG,
 };
 use anyhow::{Context, Result};
 use bdk::bitcoin::util::bip143::SigHashCache;
@@ -16,6 +16,7 @@ use itertools::Itertools;
 use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, SECP256K1};
 use std::collections::HashMap;
 use std::iter::FromIterator;
+use std::num::NonZeroU8;
 
 /// In satoshi per vbyte.
 const SATS_PER_VBYTE: f64 = 1.0;
@@ -191,7 +192,7 @@ impl CommitTransaction {
 #[derive(Debug, Clone)]
 pub(crate) struct ContractExecutionTransaction {
     inner: Transaction,
-    msg_nonce_pairs: Vec<(Vec<u8>, schnorrsig::PublicKey)>,
+    index_nonce_pairs: Vec<(NonZeroU8, schnorrsig::PublicKey)>,
     sighash: SigHash,
     commit_descriptor: Descriptor<PublicKey>,
 }
@@ -209,12 +210,13 @@ impl ContractExecutionTransaction {
         nonce_pks: &[schnorrsig::PublicKey],
         relative_timelock_in_blocks: u32,
     ) -> Result<Self> {
-        let msg_nonce_pairs = payout
+        let index_nonce_pairs: Vec<_> = payout
             .digits
-            .to_bytes()
+            .to_indices()
             .into_iter()
             .zip(nonce_pks.iter().cloned())
             .collect();
+
         let commit_input = TxIn {
             previous_output: commit_tx.outpoint(),
             sequence: relative_timelock_in_blocks,
@@ -247,7 +249,7 @@ impl ContractExecutionTransaction {
 
         Ok(Self {
             inner: tx,
-            msg_nonce_pairs,
+            index_nonce_pairs,
             sighash,
             commit_descriptor: commit_tx.descriptor(),
         })
@@ -258,7 +260,7 @@ impl ContractExecutionTransaction {
         sk: SecretKey,
         oracle_pk: &schnorrsig::PublicKey,
     ) -> Result<EcdsaAdaptorSignature> {
-        let adaptor_point = compute_adaptor_point(oracle_pk, &self.msg_nonce_pairs)?;
+        let adaptor_point = compute_adaptor_pk(oracle_pk, &self.index_nonce_pairs)?;
 
         Ok(EcdsaAdaptorSignature::encrypt(
             SECP256K1,

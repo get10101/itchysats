@@ -1,12 +1,12 @@
 pub use transaction_ext::TransactionExt;
 pub use transactions::{close_transaction, punish_transaction};
 
-use crate::interval;
 use crate::protocol::sighash_ext::SigHashExt;
 use crate::protocol::transactions::{
     lock_transaction, CommitTransaction, ContractExecutionTransaction as ContractExecutionTx,
     RefundTransaction,
 };
+use crate::{interval, oracle};
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::hashes::hex::ToHex;
 use bdk::bitcoin::util::bip143::SigHashCache;
@@ -22,6 +22,7 @@ use itertools::Itertools;
 use secp256k1_zkp::{self, schnorrsig, EcdsaAdaptorSignature, SecretKey, Signature, SECP256K1};
 use std::collections::HashMap;
 use std::iter::FromIterator;
+use std::num::NonZeroU8;
 use std::ops::RangeInclusive;
 
 mod sighash_ext;
@@ -430,39 +431,19 @@ impl Payout {
     }
 }
 
-/// Compute a signature point for the given oracle public key, announcement nonce public key and
-/// message.
-fn compute_signature_point(
+pub fn compute_adaptor_pk(
     oracle_pk: &schnorrsig::PublicKey,
-    nonce_pk: &schnorrsig::PublicKey,
-    msg: &[u8],
+    index_nonce_pairs: &[(NonZeroU8, schnorrsig::PublicKey)],
 ) -> Result<secp256k1_zkp::PublicKey> {
-    fn schnorr_pubkey_to_pubkey(pk: &schnorrsig::PublicKey) -> Result<secp256k1_zkp::PublicKey> {
-        let mut buf = Vec::<u8>::with_capacity(33);
-        buf.push(0x02);
-        buf.extend(&pk.serialize());
-        Ok(secp256k1_zkp::PublicKey::from_slice(&buf)?)
-    }
-
-    let hash = crate::oracle::msg_hash(oracle_pk, nonce_pk, msg);
-    let mut oracle_pk = schnorr_pubkey_to_pubkey(oracle_pk)?;
-    oracle_pk.mul_assign(SECP256K1, &hash)?;
-    let nonce_pk = schnorr_pubkey_to_pubkey(nonce_pk)?;
-    Ok(nonce_pk.combine(&oracle_pk)?)
-}
-
-pub fn compute_adaptor_point(
-    oracle_pk: &schnorrsig::PublicKey,
-    msg_nonce_pairs: &[(Vec<u8>, schnorrsig::PublicKey)],
-) -> Result<secp256k1_zkp::PublicKey> {
-    let sig_points = msg_nonce_pairs
+    let attestation_pks = index_nonce_pairs
         .iter()
-        .map(|(msg, nonce_pk)| compute_signature_point(oracle_pk, nonce_pk, msg))
+        .map(|(index, nonce_pk)| oracle::attestation_pk(oracle_pk, nonce_pk, *index))
         .collect::<Result<Vec<_>>>()?;
-    let adaptor_point =
-        secp256k1_zkp::PublicKey::combine_keys(sig_points.iter().collect::<Vec<_>>().as_slice())?;
+    let adaptor_pk = secp256k1_zkp::PublicKey::combine_keys(
+        attestation_pks.iter().collect::<Vec<_>>().as_slice(),
+    )?;
 
-    Ok(adaptor_point)
+    Ok(adaptor_pk)
 }
 
 #[cfg(test)]
