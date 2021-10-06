@@ -2,7 +2,7 @@ use crate::model::{Leverage, Usd};
 use anyhow::Result;
 use bdk::bitcoin;
 use cfd_protocol::interval::MAX_PRICE_DEC;
-use cfd_protocol::Payout;
+use cfd_protocol::{generate_payouts, Payout};
 
 pub fn calculate(
     price: Usd,
@@ -12,14 +12,14 @@ pub fn calculate(
 ) -> Result<Vec<Payout>> {
     let dollars = price.try_into_u64()?;
     let payouts = vec![
-        Payout::new(
+        generate_payouts(
             0..=(dollars - 10),
             maker_payin + taker_payin,
             bitcoin::Amount::ZERO,
         )?,
-        Payout::new((dollars - 10)..=(dollars + 10), maker_payin, taker_payin)?,
-        Payout::new(
-            (dollars + 10)..=MAX_PRICE_DEC,
+        generate_payouts((dollars - 9)..=(dollars + 10), maker_payin, taker_payin)?,
+        generate_payouts(
+            (dollars + 11)..=MAX_PRICE_DEC,
             bitcoin::Amount::ZERO,
             maker_payin + taker_payin,
         )?,
