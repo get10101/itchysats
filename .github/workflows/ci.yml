@@ -89,8 +89,8 @@ jobs:
         with:
           name: maker-and-taker-binaries-${{ matrix.os }}
           path: |
-            target/debug/maker
-            target/debug/taker
+            target/debug/maker(.exe)?
+            target/debug/taker(.exe)?
 
   daemons_arm_build:
     runs-on: ubuntu-latest
