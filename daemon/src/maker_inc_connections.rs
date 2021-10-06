@@ -22,6 +22,8 @@ pub enum TakerCommand {
     NotifyInvalidOrderId { id: OrderId },
     NotifyOrderAccepted { id: OrderId },
     NotifyOrderRejected { id: OrderId },
+    NotifySettlementAccepted { id: OrderId },
+    NotifySettlementRejected { id: OrderId },
     Protocol(wire::SetupMsg),
 }
 
@@ -92,6 +94,14 @@ impl Actor {
             }
             TakerCommand::NotifyOrderRejected { id } => {
                 self.send_to_taker(msg.taker_id, wire::MakerToTaker::RejectOrder(id))
+                    .await?;
+            }
+            TakerCommand::NotifySettlementAccepted { id } => {
+                self.send_to_taker(msg.taker_id, wire::MakerToTaker::ConfirmSettlement(id))
+                    .await?;
+            }
+            TakerCommand::NotifySettlementRejected { id } => {
+                self.send_to_taker(msg.taker_id, wire::MakerToTaker::RejectSettlement(id))
                     .await?;
             }
             TakerCommand::Protocol(setup_msg) => {
