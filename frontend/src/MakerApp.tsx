@@ -1,4 +1,3 @@
-import { RepeatIcon } from "@chakra-ui/icons";
 import {
     Box,
     Button,
@@ -7,7 +6,7 @@ import {
     Grid,
     GridItem,
     HStack,
-    IconButton,
+    Switch,
     Tab,
     TabList,
     TabPanel,
@@ -17,7 +16,7 @@ import {
     useToast,
     VStack,
 } from "@chakra-ui/react";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
@@ -44,7 +43,13 @@ export default function App() {
     let [minQuantity, setMinQuantity] = useState<string>("10");
     let [maxQuantity, setMaxQuantity] = useState<string>("100");
     let [orderPrice, setOrderPrice] = useState<string>("0");
-    let [hasEnteredPrice, setHasEnteredPrice] = useState(false);
+    let [autoRefresh, setAutoRefresh] = useState(true);
+
+    useEffect(() => {
+        if (autoRefresh && priceInfo) {
+            setOrderPrice((priceInfo.ask * SPREAD).toFixed(2).toString());
+        }
+    }, [priceInfo, autoRefresh]);
 
     let { run: makeNewCfdSellOrder, isLoading: isCreatingNewCfdOrder } = useAsync({
         deferFn: async ([payload]: any[]) => {
@@ -107,19 +112,18 @@ export default function App() {
                             <CurrencyInputField
                                 onChange={(valueString: string) => {
                                     setOrderPrice(parse(valueString));
-                                    setHasEnteredPrice(true);
+                                    setAutoRefresh(false);
                                 }}
-                                value={priceToDisplay(hasEnteredPrice, orderPrice, priceInfo)}
+                                value={format(orderPrice)}
                             />
-                            <IconButton
-                                aria-label="Reduce"
-                                icon={<RepeatIcon />}
-                                onClick={() => {
-                                    if (priceInfo) {
-                                        setOrderPrice((priceInfo.ask * SPREAD).toString());
-                                    }
-                                }}
-                            />
+                            <HStack>
+                                <Switch
+                                    id="auto-refresh"
+                                    isChecked={autoRefresh}
+                                    onChange={() => setAutoRefresh(!autoRefresh)}
+                                />
+                                <Text>Auto-refresh</Text>
+                            </HStack>
                         </HStack>
 
                         <Text>Leverage:</Text>
@@ -185,18 +189,6 @@ export default function App() {
             </Tabs>
         </Container>
     );
-}
-
-function priceToDisplay(hasEnteredPrice: boolean, orderPrice: string, priceInfo: PriceInfo | null) {
-    if (!priceInfo) {
-        return format("0");
-    }
-
-    if (!hasEnteredPrice) {
-        return format((priceInfo.ask * SPREAD).toString());
-    }
-
-    return format(orderPrice);
 }
 
 function format(val: any) {
