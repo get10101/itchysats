@@ -1,6 +1,8 @@
 use crate::actors::log_error;
 use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId};
-use crate::oracle;
+use crate::model::OracleEventId;
+use crate::oracle::Attestation;
+use crate::{model, oracle};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::{PublicKey, Script, Txid};
@@ -22,10 +24,18 @@ pub struct StartMonitoring {
 }
 
 #[derive(Clone)]
+pub struct Cet {
+    txid: Txid,
+    script: Script,
+    range: RangeInclusive<u64>,
+    n_bits: usize,
+}
+
+#[derive(Clone)]
 pub struct MonitorParams {
     lock: (Txid, Descriptor<PublicKey>),
     commit: (Txid, Descriptor<PublicKey>),
-    cets: HashMap<String, Vec<(Txid, Script, RangeInclusive<u64>)>>,
+    cets: HashMap<OracleEventId, Vec<Cet>>,
     refund: (Txid, Script, u32),
 }
 
@@ -88,13 +98,19 @@ where
                     actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                     actor.monitor_refund_finality(&params,cfd.order.id);
                 }
-                CfdState::OpenCommitted { dlc, cet_status, .. } => {
+                CfdState::OpenCommitted { dlc, cet_status, .. }
+                | CfdState::PendingCet { dlc, cet_status, .. } => {
                     let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
                     actor.cfds.insert(cfd.order.id, params.clone());
 
                     match cet_status {
-                        CetStatus::Unprepared
-                        | CetStatus::OracleSigned(_) => {
+                        CetStatus::Unprepared => {
+                            actor.monitor_commit_cet_timelock(&params, cfd.order.id);
+                            actor.monitor_commit_refund_timelock(&params, cfd.order.id);
+                            actor.monitor_refund_finality(&params,cfd.order.id);
+                        }
+                        CetStatus::OracleSigned(attestation) => {
+                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.address.script_pubkey()), attestation, cfd.order.id)?;
                             actor.monitor_commit_cet_timelock(&params, cfd.order.id);
                             actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                             actor.monitor_refund_finality(&params,cfd.order.id);
@@ -103,17 +119,14 @@ where
                             actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
-                        CetStatus::Ready(_price) => {
-                            // TODO: monitor CET finality
-
+                        CetStatus::Ready(attestation) => {
+                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.address.script_pubkey()), attestation, cfd.order.id)?;
                             actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
                     }
                 }
                 CfdState::MustRefund { dlc, .. } => {
-                    // TODO: CET monitoring (?) - note: would require to add CetStatus information to MustRefund
-
                     let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
                     actor.cfds.insert(cfd.order.id, params.clone());
 
@@ -128,6 +141,7 @@ where
                 | CfdState::ContractSetup { .. }
 
                 // final states
+                | CfdState::Closed { .. }
                 | CfdState::Rejected { .. }
                 | CfdState::Refunded { .. }
                 | CfdState::SetupFailed { .. } => ()
@@ -192,6 +206,36 @@ where
             .push((ScriptStatus::finality(), Event::RefundFinality(order_id)));
     }
 
+    fn monitor_cet_finality(
+        &mut self,
+        cets: HashMap<OracleEventId, Vec<Cet>>,
+        attestation: Attestation,
+        order_id: OrderId,
+    ) -> Result<()> {
+        let cets = cets
+            .get(&attestation.id)
+            .context("No CET for oracle event found")?;
+
+        let (txid, script_pubkey) = cets
+            .iter()
+            .find_map(
+                |Cet {
+                     txid,
+                     script,
+                     range,
+                     ..
+                 }| { range.contains(&attestation.price).then(|| (txid, script)) },
+            )
+            .context("No price range match for oracle attestation")?;
+
+        self.awaiting_status
+            .entry((*txid, script_pubkey.clone()))
+            .or_default()
+            .push((ScriptStatus::finality(), Event::CetFinality(order_id)));
+
+        Ok(())
+    }
+
     async fn sync(&mut self) -> Result<()> {
         // Fetch the latest block for storing the height.
         // We do not act on this subscription after this call, as we cannot rely on
@@ -221,23 +265,7 @@ where
 
     async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
         for (order_id, MonitorParams { cets, .. }) in self.cfds.clone().into_iter() {
-            let cets = cets
-                .get(&attestation.id.0)
-                .context("No CET for oracle event found")?;
-            let (txid, script_pubkey) =
-                match cets.iter().find_map(|(txid, script_pubkey, range)| {
-                    range
-                        .contains(&attestation.price)
-                        .then(|| (txid, script_pubkey))
-                }) {
-                    Some(cet) => cet,
-                    None => continue,
-                };
-
-            self.awaiting_status
-                .entry((*txid, script_pubkey.clone()))
-                .or_default()
-                .push((ScriptStatus::finality(), Event::CetFinality(order_id)));
+            self.monitor_cet_finality(cets, attestation.clone(), order_id)?;
         }
 
         Ok(())
@@ -469,18 +497,7 @@ impl MonitorParams {
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
             commit: (dlc.commit.0.txid(), dlc.commit.2),
-            cets: dlc
-                .cets
-                .iter()
-                .map(|(event_id, cets)| {
-                    (
-                        event_id.clone(),
-                        cets.iter()
-                            .map(|(tx, _, range)| (tx.txid(), script_pubkey.clone(), range.clone()))
-                            .collect::<Vec<_>>(),
-                    )
-                })
-                .collect::<HashMap<_, _>>(),
+            cets: map_cets(dlc.cets, script_pubkey.clone()),
             refund: (
                 dlc.refund.0.txid(),
                 script_pubkey,
@@ -488,6 +505,31 @@ impl MonitorParams {
             ),
         }
     }
+}
+
+fn map_cets(
+    cets: HashMap<OracleEventId, Vec<model::cfd::Cet>>,
+    script_pubkey: Script,
+) -> HashMap<OracleEventId, Vec<Cet>> {
+    cets.iter()
+        .map(|(event_id, cets)| {
+            (
+                event_id.clone(),
+                cets.iter()
+                    .map(
+                        |model::cfd::Cet {
+                             tx, range, n_bits, ..
+                         }| Cet {
+                            txid: tx.txid(),
+                            script: script_pubkey.clone(),
+                            range: range.clone(),
+                            n_bits: *n_bits,
+                        },
+                    )
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect()
 }
 
 impl xtra::Message for Event {

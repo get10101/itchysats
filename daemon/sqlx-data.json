@@ -1,82 +1,95 @@
 {
   "db": "SQLite",
-  "41fb3bea22bde82a79aee6096d579a16494a20cfcfb2e8cfffe0a56073460bbf": {
-    "query": "\n        select\n            cfds.id as cfd_id,\n            orders.uuid as order_id,\n            orders.initial_price as price,\n            orders.min_quantity as min_quantity,\n            orders.max_quantity as max_quantity,\n            orders.leverage as leverage,\n            orders.trading_pair as trading_pair,\n            orders.position as position,\n            orders.origin as origin,\n            orders.liquidation_price as liquidation_price,\n            orders.creation_timestamp as creation_timestamp,\n            orders.term as term,\n            orders.oracle_event_id,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join orders as orders on cfds.order_id = orders.id\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        ",
+  "50abbb297394739ec9d85917f8c32aa8bcfa0bfe140b24e9eeda4ce8d30d4f8d": {
+    "query": "\n        select\n            state\n        from cfd_states\n        where cfd_id = ?\n        order by id desc\n        limit 1;\n        ",
     "describe": {
       "columns": [
         {
-          "name": "cfd_id",
+          "name": "state",
           "ordinal": 0,
-          "type_info": "Int64"
-        },
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false
+      ]
+    }
+  },
+  "63c8fd1a1512b55c19feea463dbb6a0fdf98a325801ba8677e2a33fd3ee1ebb9": {
+    "query": "\n        select\n            orders.uuid as order_id,\n            orders.initial_price as price,\n            orders.min_quantity as min_quantity,\n            orders.max_quantity as max_quantity,\n            orders.leverage as leverage,\n            orders.trading_pair as trading_pair,\n            orders.position as position,\n            orders.origin as origin,\n            orders.liquidation_price as liquidation_price,\n            orders.creation_timestamp as creation_timestamp,\n            orders.term as term,\n            orders.oracle_event_id,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join orders as orders on cfds.order_id = orders.id\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        ",
+    "describe": {
+      "columns": [
         {
           "name": "order_id",
-          "ordinal": 1,
+          "ordinal": 0,
           "type_info": "Text"
         },
         {
           "name": "price",
-          "ordinal": 2,
+          "ordinal": 1,
           "type_info": "Text"
         },
         {
           "name": "min_quantity",
-          "ordinal": 3,
+          "ordinal": 2,
           "type_info": "Text"
         },
         {
           "name": "max_quantity",
-          "ordinal": 4,
+          "ordinal": 3,
           "type_info": "Text"
         },
         {
           "name": "leverage",
-          "ordinal": 5,
+          "ordinal": 4,
           "type_info": "Int64"
         },
         {
           "name": "trading_pair",
-          "ordinal": 6,
+          "ordinal": 5,
           "type_info": "Text"
         },
         {
           "name": "position",
-          "ordinal": 7,
+          "ordinal": 6,
           "type_info": "Text"
         },
         {
           "name": "origin",
-          "ordinal": 8,
+          "ordinal": 7,
           "type_info": "Text"
         },
         {
           "name": "liquidation_price",
-          "ordinal": 9,
+          "ordinal": 8,
           "type_info": "Text"
         },
         {
           "name": "creation_timestamp",
-          "ordinal": 10,
+          "ordinal": 9,
           "type_info": "Text"
         },
         {
           "name": "term",
-          "ordinal": 11,
+          "ordinal": 10,
           "type_info": "Text"
         },
         {
           "name": "oracle_event_id",
-          "ordinal": 12,
+          "ordinal": 11,
           "type_info": "Text"
         },
         {
           "name": "quantity_usd",
-          "ordinal": 13,
+          "ordinal": 12,
           "type_info": "Text"
         },
         {
           "name": "state",
-          "ordinal": 14,
+          "ordinal": 13,
           "type_info": "Text"
         }
       ],
@@ -97,25 +110,6 @@
         false,
         false,
         false,
-        false,
-        false
-      ]
-    }
-  },
-  "50abbb297394739ec9d85917f8c32aa8bcfa0bfe140b24e9eeda4ce8d30d4f8d": {
-    "query": "\n        select\n            state\n        from cfd_states\n        where cfd_id = ?\n        order by id desc\n        limit 1;\n        ",
-    "describe": {
-      "columns": [
-        {
-          "name": "state",
-          "ordinal": 0,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
         false
       ]
     }
@@ -158,83 +152,78 @@
       "nullable": []
     }
   },
-  "c404a4eebb7118fd4e716fe4155e011a52e12a3594b698ca4f0662674cd067f8": {
-    "query": "\n        select\n            cfds.id as cfd_id,\n            orders.uuid as order_id,\n            orders.initial_price as price,\n            orders.min_quantity as min_quantity,\n            orders.max_quantity as max_quantity,\n            orders.leverage as leverage,\n            orders.trading_pair as trading_pair,\n            orders.position as position,\n            orders.origin as origin,\n            orders.liquidation_price as liquidation_price,\n            orders.creation_timestamp as creation_timestamp,\n            orders.term as term,\n            orders.oracle_event_id,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join orders as orders on cfds.order_id = orders.id\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        and orders.uuid = ?\n        ",
+  "e0d3fe192c419be4fa65199d1e024ce8794e19a847be53038b7a8a33afb36bd2": {
+    "query": "\n        select\n            orders.uuid as order_id,\n            orders.initial_price as price,\n            orders.min_quantity as min_quantity,\n            orders.max_quantity as max_quantity,\n            orders.leverage as leverage,\n            orders.trading_pair as trading_pair,\n            orders.position as position,\n            orders.origin as origin,\n            orders.liquidation_price as liquidation_price,\n            orders.creation_timestamp as creation_timestamp,\n            orders.term as term,\n            orders.oracle_event_id,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join orders as orders on cfds.order_id = orders.id\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        and orders.uuid = ?\n        ",
     "describe": {
       "columns": [
         {
-          "name": "cfd_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
           "name": "order_id",
-          "ordinal": 1,
+          "ordinal": 0,
           "type_info": "Text"
         },
         {
           "name": "price",
-          "ordinal": 2,
+          "ordinal": 1,
           "type_info": "Text"
         },
         {
           "name": "min_quantity",
-          "ordinal": 3,
+          "ordinal": 2,
           "type_info": "Text"
         },
         {
           "name": "max_quantity",
-          "ordinal": 4,
+          "ordinal": 3,
           "type_info": "Text"
         },
         {
           "name": "leverage",
-          "ordinal": 5,
+          "ordinal": 4,
           "type_info": "Int64"
         },
         {
           "name": "trading_pair",
-          "ordinal": 6,
+          "ordinal": 5,
           "type_info": "Text"
         },
         {
           "name": "position",
-          "ordinal": 7,
+          "ordinal": 6,
           "type_info": "Text"
         },
         {
           "name": "origin",
-          "ordinal": 8,
+          "ordinal": 7,
           "type_info": "Text"
         },
         {
           "name": "liquidation_price",
-          "ordinal": 9,
+          "ordinal": 8,
           "type_info": "Text"
         },
         {
           "name": "creation_timestamp",
-          "ordinal": 10,
+          "ordinal": 9,
           "type_info": "Text"
         },
         {
           "name": "term",
-          "ordinal": 11,
+          "ordinal": 10,
           "type_info": "Text"
         },
         {
           "name": "oracle_event_id",
-          "ordinal": 12,
+          "ordinal": 11,
           "type_info": "Text"
         },
         {
           "name": "quantity_usd",
-          "ordinal": 13,
+          "ordinal": 12,
           "type_info": "Text"
         },
         {
           "name": "state",
-          "ordinal": 14,
+          "ordinal": 13,
           "type_info": "Text"
         }
       ],
@@ -242,7 +231,102 @@
         "Right": 1
       },
       "nullable": [
-        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "e45a49eb1fb4cbddc046712d9e2df2db0c18c618f0fae2133e51d82eda6bec36": {
+    "query": "\n        select\n            orders.uuid as order_id,\n            orders.initial_price as price,\n            orders.min_quantity as min_quantity,\n            orders.max_quantity as max_quantity,\n            orders.leverage as leverage,\n            orders.trading_pair as trading_pair,\n            orders.position as position,\n            orders.origin as origin,\n            orders.liquidation_price as liquidation_price,\n            orders.creation_timestamp as creation_timestamp,\n            orders.term as term,\n            orders.oracle_event_id,\n            cfds.quantity_usd as quantity_usd,\n            cfd_states.state as state\n        from cfds as cfds\n        inner join orders as orders on cfds.order_id = orders.id\n        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id\n        where cfd_states.state in (\n            select\n              state\n              from cfd_states\n            where cfd_id = cfds.id\n            order by id desc\n            limit 1\n        )\n        and orders.oracle_event_id = ?\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "order_id",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "price",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "min_quantity",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "max_quantity",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "leverage",
+          "ordinal": 4,
+          "type_info": "Int64"
+        },
+        {
+          "name": "trading_pair",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "position",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "origin",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "liquidation_price",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "creation_timestamp",
+          "ordinal": 9,
+          "type_info": "Text"
+        },
+        {
+          "name": "term",
+          "ordinal": 10,
+          "type_info": "Text"
+        },
+        {
+          "name": "oracle_event_id",
+          "ordinal": 11,
+          "type_info": "Text"
+        },
+        {
+          "name": "quantity_usd",
+          "ordinal": 12,
+          "type_info": "Text"
+        },
+        {
+          "name": "state",
+          "ordinal": 13,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
         false,
         false,
         false,

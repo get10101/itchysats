@@ -1,7 +1,7 @@
 use crate::actors::log_error;
 use crate::db::{
     insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
-    load_cfd_by_order_id, load_order_by_id,
+    load_cfd_by_order_id, load_cfds_by_oracle_event_id, load_order_by_id,
 };
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
@@ -266,6 +266,7 @@ impl Actor {
                     transition_timestamp: SystemTime::now(),
                 },
                 dlc: dlc.clone(),
+                attestation: None,
             },
             &mut conn,
         )
@@ -411,8 +412,6 @@ impl Actor {
             })
             .await?;
 
-        let nonce_pks = offer_announcement.nonce_pks.clone();
-
         let contract_future = setup_contract::new(
             self.takers.clone().into_sink().with(move |msg| {
                 future::ok(maker_inc_connections::TakerMessage {
@@ -421,7 +420,7 @@ impl Actor {
                 })
             }),
             receiver,
-            (self.oracle_pk, nonce_pks),
+            (self.oracle_pk, offer_announcement.clone().into()),
             cfd,
             self.wallet.clone(),
             Role::Maker,
@@ -572,10 +571,10 @@ impl Actor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        // TODO: Not sure that should be done here...
-        //  Consider bubbling the refund availability up to the user, and let user trigger
-        //  transaction publication
-        if let CfdState::MustRefund { .. } = new_state {
+        // TODO: code duplication maker/taker
+        if let CfdState::OpenCommitted { .. } = new_state {
+            self.try_cet_publication(cfd).await?;
+        } else if let CfdState::MustRefund { .. } = new_state {
             let signed_refund_tx = cfd.refund_tx()?;
             let txid = self
                 .wallet
@@ -606,12 +605,44 @@ impl Actor {
     async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
         tracing::debug!(
             "Learnt latest oracle attestation for event: {}",
-            attestation.id.0
+            attestation.id
         );
 
-        todo!(
-            "Update all CFDs which care about this particular attestation, based on the event ID"
-        );
+        let mut conn = self.db.acquire().await?;
+        let cfds = load_cfds_by_oracle_event_id(attestation.id.clone(), &mut conn).await?;
+
+        for mut cfd in cfds {
+            cfd.handle(CfdStateChangeEvent::OracleAttestation(attestation.clone()))?;
+            insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn).await?;
+
+            self.try_cet_publication(cfd).await?;
+        }
+
+        Ok(())
+    }
+
+    // TODO: code duplication maker/taker
+    async fn try_cet_publication(&mut self, mut cfd: Cfd) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+
+        match cfd.cet()? {
+            Ok(cet) => {
+                let txid = self.wallet.try_broadcast_transaction(cet).await?;
+                tracing::info!("CET published with txid {}", txid);
+
+                cfd.handle(CfdStateChangeEvent::CetSent)?;
+                insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state, &mut conn).await?;
+            }
+            Err(not_ready_yet) => {
+                tracing::debug!(
+                    "Attestation received but we are not ready to publish it yet: {:#}",
+                    not_ready_yet
+                );
+                return Ok(());
+            }
+        };
+
+        Ok(())
     }
 }
 

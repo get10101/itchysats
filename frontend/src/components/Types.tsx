@@ -87,6 +87,10 @@ export class State {
                 return "Refunded";
             case StateKey.SETUP_FAILED:
                 return "Setup Failed";
+            case StateKey.PENDING_CET:
+                return "Pending CET";
+            case StateKey.CLOSED:
+                return "Closed";
         }
     }
 
@@ -107,6 +111,7 @@ export class State {
             case StateKey.PENDING_COMMIT:
             case StateKey.OPEN_COMMITTED:
             case StateKey.MUST_REFUND:
+            case StateKey.PENDING_CET:
                 return orange;
 
             case StateKey.OUTGOING_ORDER_REQUEST:
@@ -119,6 +124,7 @@ export class State {
             case StateKey.PENDING_OPEN:
             case StateKey.REFUNDED:
             case StateKey.SETUP_FAILED:
+            case StateKey.CLOSED:
                 return default_color;
         }
     }
@@ -140,6 +146,7 @@ export class State {
             case StateKey.MUST_REFUND:
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
             case StateKey.OUTGOING_ROLL_OVER_PROPOSAL:
+            case StateKey.PENDING_CET:
                 return StateGroupKey.OPEN;
 
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
@@ -151,6 +158,7 @@ export class State {
             case StateKey.REJECTED:
             case StateKey.REFUNDED:
             case StateKey.SETUP_FAILED:
+            case StateKey.CLOSED:
                 return StateGroupKey.CLOSED;
         }
     }
@@ -176,6 +184,7 @@ const enum StateKey {
     PENDING_OPEN = "PendingOpen",
     OPEN = "Open",
     PENDING_COMMIT = "PendingCommit",
+    PENDING_CET = "PendingCet",
     OPEN_COMMITTED = "OpenCommitted",
     OUTGOING_SETTLEMENT_PROPOSAL = "OutgoingSettlementProposal",
     INCOMING_SETTLEMENT_PROPOSAL = "IncomingSettlementProposal",
@@ -184,6 +193,7 @@ const enum StateKey {
     MUST_REFUND = "MustRefund",
     REFUNDED = "Refunded",
     SETUP_FAILED = "SetupFailed",
+    CLOSED = "Closed",
 }
 
 export enum StateGroupKey {

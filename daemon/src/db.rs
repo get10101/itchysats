@@ -257,7 +257,6 @@ pub async fn load_cfd_by_order_id(
     let row = sqlx::query!(
         r#"
         select
-            cfds.id as cfd_id,
             orders.uuid as order_id,
             orders.initial_price as price,
             orders.min_quantity as min_quantity,
@@ -335,7 +334,6 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
     let rows = sqlx::query!(
         r#"
         select
-            cfds.id as cfd_id,
             orders.uuid as order_id,
             orders.initial_price as price,
             orders.min_quantity as min_quantity,
@@ -362,6 +360,91 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             limit 1
         )
         "#
+    )
+    .fetch_all(conn)
+    .await?;
+
+    let cfds = rows
+        .iter()
+        .map(|row| {
+            let order_id = serde_json::from_str(row.order_id.as_str()).unwrap();
+            let trading_pair = serde_json::from_str(row.trading_pair.as_str()).unwrap();
+            let position: Position = serde_json::from_str(row.position.as_str()).unwrap();
+            let price = serde_json::from_str(row.price.as_str()).unwrap();
+            let min_quantity = serde_json::from_str(row.min_quantity.as_str()).unwrap();
+            let max_quantity = serde_json::from_str(row.max_quantity.as_str()).unwrap();
+            let leverage = Leverage(row.leverage.try_into().unwrap());
+            let liquidation_price = serde_json::from_str(row.liquidation_price.as_str()).unwrap();
+            let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
+            let term = serde_json::from_str(row.term.as_str()).unwrap();
+            let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
+            let oracle_event_id = OracleEventId(row.oracle_event_id.clone());
+
+            let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
+            let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
+
+            let order = Order {
+                id: order_id,
+                trading_pair,
+                position,
+                price,
+                min_quantity,
+                max_quantity,
+                leverage,
+                liquidation_price,
+                creation_timestamp,
+                term,
+                origin,
+                oracle_event_id,
+            };
+
+            Cfd {
+                order,
+                quantity_usd: quantity,
+                state: latest_state,
+            }
+        })
+        .collect();
+
+    Ok(cfds)
+}
+
+/// Loads all CFDs with the latest state as the CFD state
+pub async fn load_cfds_by_oracle_event_id(
+    oracle_event_id: OracleEventId,
+    conn: &mut PoolConnection<Sqlite>,
+) -> anyhow::Result<Vec<Cfd>> {
+    let rows = sqlx::query!(
+        r#"
+        select
+            orders.uuid as order_id,
+            orders.initial_price as price,
+            orders.min_quantity as min_quantity,
+            orders.max_quantity as max_quantity,
+            orders.leverage as leverage,
+            orders.trading_pair as trading_pair,
+            orders.position as position,
+            orders.origin as origin,
+            orders.liquidation_price as liquidation_price,
+            orders.creation_timestamp as creation_timestamp,
+            orders.term as term,
+            orders.oracle_event_id,
+            cfds.quantity_usd as quantity_usd,
+            cfd_states.state as state
+        from cfds as cfds
+        inner join orders as orders on cfds.order_id = orders.id
+        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id
+        where cfd_states.state in (
+            select
+              state
+              from cfd_states
+            where cfd_id = cfds.id
+            order by id desc
+            limit 1
+        )
+        and orders.oracle_event_id = ?
+        "#,
+        oracle_event_id.0
     )
     .fetch_all(conn)
     .await?;
@@ -444,18 +527,9 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let order = Order::default();
-        let cfd = Cfd::new(
-            order.clone(),
-            Usd(dec!(1000)),
-            CfdState::OutgoingOrderRequest {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-        );
+        let cfd = Cfd::default();
 
-        insert_order(&order, &mut conn).await.unwrap();
+        insert_order(&cfd.order, &mut conn).await.unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
@@ -468,20 +542,10 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let order = Order::default();
-        let cfd = Cfd::new(
-            order.clone(),
-            Usd(dec!(1000)),
-            CfdState::OutgoingOrderRequest {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-        );
+        let cfd = Cfd::default();
+        let order_id = cfd.order.id;
 
-        let order_id = order.id;
-
-        insert_order(&order, &mut conn).await.unwrap();
+        insert_order(&cfd.order, &mut conn).await.unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
         let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
@@ -493,39 +557,19 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let order = Order::default();
-        let cfd = Cfd::new(
-            order.clone(),
-            Usd(dec!(1000)),
-            CfdState::OutgoingOrderRequest {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-        );
+        let cfd = Cfd::default();
+        let order_id = cfd.order.id;
 
-        let order_id = order.id;
-
-        insert_order(&order, &mut conn).await.unwrap();
+        insert_order(&cfd.order, &mut conn).await.unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
         let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
         assert_eq!(cfd, cfd_from_db);
 
-        let order = Order::default();
-        let cfd = Cfd::new(
-            order.clone(),
-            Usd(dec!(1000)),
-            CfdState::OutgoingOrderRequest {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-        );
+        let cfd = Cfd::default();
+        let order_id = cfd.order.id;
 
-        let order_id = order.id;
-
-        insert_order(&order, &mut conn).await.unwrap();
+        insert_order(&cfd.order, &mut conn).await.unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
         let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
@@ -533,22 +577,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_insert_and_load_cfd_by_oracle_event_id() {
+        let pool = setup_test_db().await;
+        let mut conn = pool.acquire().await.unwrap();
+
+        let oracle_event_id_1 = OracleEventId("dummy_1".to_string());
+        let oracle_event_id_2 = OracleEventId("dummy_2".to_string());
+
+        let cfd_1 = Cfd::default()
+            .with_order(Order::default().with_oracle_event_id(oracle_event_id_1.clone()));
+
+        insert_order(&cfd_1.order, &mut conn).await.unwrap();
+        insert_cfd(cfd_1.clone(), &mut conn).await.unwrap();
+
+        let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_1.clone(), &mut conn)
+            .await
+            .unwrap();
+        assert_eq!(vec![cfd_1.clone()], cfd_from_db);
+
+        let cfd_2 = Cfd::default()
+            .with_order(Order::default().with_oracle_event_id(oracle_event_id_1.clone()));
+
+        insert_order(&cfd_2.order, &mut conn).await.unwrap();
+        insert_cfd(cfd_2.clone(), &mut conn).await.unwrap();
+
+        let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_1, &mut conn)
+            .await
+            .unwrap();
+        assert_eq!(vec![cfd_1, cfd_2], cfd_from_db);
+
+        let cfd_3 = Cfd::default()
+            .with_order(Order::default().with_oracle_event_id(oracle_event_id_2.clone()));
+
+        insert_order(&cfd_3.order, &mut conn).await.unwrap();
+        insert_cfd(cfd_3.clone(), &mut conn).await.unwrap();
+
+        let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_2, &mut conn)
+            .await
+            .unwrap();
+        assert_eq!(vec![cfd_3], cfd_from_db);
+    }
+
+    #[tokio::test]
     async fn test_insert_new_cfd_state() {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let order = Order::default();
-        let mut cfd = Cfd::new(
-            order.clone(),
-            Usd(dec!(1000)),
-            CfdState::OutgoingOrderRequest {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-        );
+        let mut cfd = Cfd::default();
 
-        insert_order(&order, &mut conn).await.unwrap();
+        insert_order(&cfd.order, &mut conn).await.unwrap();
         insert_cfd(cfd.clone(), &mut conn).await.unwrap();
 
         cfd.state = CfdState::Accepted {
@@ -582,6 +659,27 @@ mod tests {
         pool
     }
 
+    impl Default for Cfd {
+        fn default() -> Self {
+            Cfd::new(
+                Order::default(),
+                Usd(dec!(1000)),
+                CfdState::OutgoingOrderRequest {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
+                },
+            )
+        }
+    }
+
+    impl Cfd {
+        pub fn with_order(mut self, order: Order) -> Self {
+            self.order = order;
+            self
+        }
+    }
+
     impl Default for Order {
         fn default() -> Self {
             Order::new(
@@ -592,6 +690,13 @@ mod tests {
                 OracleEventId("Dummy".to_string()),
             )
             .unwrap()
+        }
+    }
+
+    impl Order {
+        pub fn with_oracle_event_id(mut self, oracle_event_id: OracleEventId) -> Self {
+            self.oracle_event_id = oracle_event_id;
+            self
         }
     }
 }

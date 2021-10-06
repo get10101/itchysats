@@ -1,5 +1,6 @@
 use crate::model::{Leverage, OracleEventId, Percent, Position, TakerId, TradingPair, Usd};
 use crate::monitor;
+use crate::oracle::Attestation;
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, SignedAmount, Transaction};
@@ -173,9 +174,7 @@ pub enum CfdState {
     /// The taker sent an order to the maker to open the CFD but doesn't have a response yet.
     ///
     /// This state applies to taker only.
-    OutgoingOrderRequest {
-        common: CfdStateCommon,
-    },
+    OutgoingOrderRequest { common: CfdStateCommon },
 
     /// The maker received an order from the taker to open the CFD but doesn't have a response yet.
     ///
@@ -188,29 +187,24 @@ pub enum CfdState {
     /// The maker has accepted the CFD take request, but the contract is not set up on chain yet.
     ///
     /// This state applies to taker and maker.
-    Accepted {
-        common: CfdStateCommon,
-    },
+    Accepted { common: CfdStateCommon },
 
     /// The maker rejected the CFD order.
     ///
     /// This state applies to taker and maker.
     /// This is a final state.
-    Rejected {
-        common: CfdStateCommon,
-    },
+    Rejected { common: CfdStateCommon },
 
     /// State used during contract setup.
     ///
     /// This state applies to taker and maker.
     /// All contract setup messages between taker and maker are expected to be sent in on scope.
-    ContractSetup {
-        common: CfdStateCommon,
-    },
+    ContractSetup { common: CfdStateCommon },
 
     PendingOpen {
         common: CfdStateCommon,
         dlc: Dlc,
+        attestation: Option<Attestation>,
     },
 
     /// The CFD contract is set up on chain.
@@ -219,6 +213,7 @@ pub enum CfdState {
     Open {
         common: CfdStateCommon,
         dlc: Dlc,
+        attestation: Option<Attestation>,
     },
 
     /// The commit transaction was published but it not final yet
@@ -228,6 +223,7 @@ pub enum CfdState {
     PendingCommit {
         common: CfdStateCommon,
         dlc: Dlc,
+        attestation: Option<Attestation>,
     },
 
     // TODO: At the moment we are appending to this state. The way this is handled internally is
@@ -243,19 +239,34 @@ pub enum CfdState {
         cet_status: CetStatus,
     },
 
-    /// The CFD contract's refund transaction was published but it not final yet
-    MustRefund {
+    /// The CET was published on chain but is not final yet
+    ///
+    /// This state applies to taker and maker.
+    /// This state is needed, because otherwise the user does not get any feedback.
+    PendingCet {
         common: CfdStateCommon,
         dlc: Dlc,
+        cet_status: CetStatus,
     },
+
+    /// The position was closed collaboratively or non-collaboratively
+    ///
+    /// This state applies to taker and maker.
+    /// This is a final state.
+    /// This is the final state for all happy-path scenarios where we had an open position and then
+    /// "settled" it. Settlement can be collaboratively or non-collaboratively (by publishing
+    /// commit + cet).
+    Closed { common: CfdStateCommon },
+
+    // TODO: Can be extended with CetStatus
+    /// The CFD contract's refund transaction was published but it not final yet
+    MustRefund { common: CfdStateCommon, dlc: Dlc },
 
     /// The Cfd was refunded and the refund transaction reached finality
     ///
     /// This state applies to taker and maker.
     /// This is a final state.
-    Refunded {
-        common: CfdStateCommon,
-    },
+    Refunded { common: CfdStateCommon },
 
     /// The Cfd was in a state that could not be continued after the application got interrupted
     ///
@@ -273,8 +284,8 @@ pub enum CfdState {
 pub enum CetStatus {
     Unprepared,
     TimelockExpired,
-    OracleSigned(u64),
-    Ready(u64),
+    OracleSigned(Attestation),
+    Ready(Attestation),
 }
 
 impl CfdState {
@@ -292,6 +303,8 @@ impl CfdState {
             CfdState::Refunded { common, .. } => common,
             CfdState::SetupFailed { common, .. } => common,
             CfdState::PendingCommit { common, .. } => common,
+            CfdState::PendingCet { common, .. } => common,
+            CfdState::Closed { common, .. } => common,
         };
 
         *common
@@ -340,6 +353,12 @@ impl fmt::Display for CfdState {
             }
             CfdState::SetupFailed { .. } => {
                 write!(f, "Setup Failed")
+            }
+            CfdState::PendingCet { .. } => {
+                write!(f, "Pending CET")
+            }
+            CfdState::Closed { .. } => {
+                write!(f, "Closed")
             }
         }
     }
@@ -506,6 +525,7 @@ impl Cfd {
                                 transition_timestamp: SystemTime::now(),
                             },
                             dlc,
+                            attestation: None,
                         }
                     } else {
                         bail!(
@@ -549,23 +569,34 @@ impl Cfd {
                     },
                     CfdState::OpenCommitted {
                         dlc,
-                        cet_status: CetStatus::OracleSigned(price),
+                        cet_status: CetStatus::OracleSigned(attestation),
                         ..
                     } => CfdState::OpenCommitted {
                         common: CfdStateCommon {
                             transition_timestamp: SystemTime::now(),
                         },
                         dlc,
-                        cet_status: CetStatus::Ready(price),
+                        cet_status: CetStatus::Ready(attestation),
                     },
-                    PendingOpen { dlc, .. } | Open { dlc, .. } => {
-                        tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to MustRefund", self.state);
+                    PendingOpen {
+                        dlc, attestation, ..
+                    }
+                    | Open {
+                        dlc, attestation, ..
+                    }
+                    | PendingCommit {
+                        dlc, attestation, ..
+                    } => {
+                        tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
                         CfdState::OpenCommitted {
                             common: CfdStateCommon {
                                 transition_timestamp: SystemTime::now(),
                             },
                             dlc,
-                            cet_status: CetStatus::TimelockExpired,
+                            cet_status: match attestation {
+                                None => CetStatus::TimelockExpired,
+                                Some(attestation) => CetStatus::Ready(attestation),
+                            },
                         }
                     }
                     _ => bail!(
@@ -608,13 +639,21 @@ impl Cfd {
                         },
                     }
                 }
-                monitor::Event::CetFinality(_) => {
-                    todo!("Implement state transition")
-                }
+                monitor::Event::CetFinality(_) => Closed {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
+                },
             },
             CfdStateChangeEvent::CommitTxSent => {
-                let dlc = if let Open { dlc, .. } | PendingOpen { dlc, .. } = self.state.clone() {
-                    dlc
+                let (dlc, attestation) = if let PendingOpen {
+                    dlc, attestation, ..
+                }
+                | Open {
+                    dlc, attestation, ..
+                } = self.state.clone()
+                {
+                    (dlc, attestation)
                 } else {
                     bail!(
                         "Cannot transition to PendingCommit because of unexpected state {}",
@@ -627,8 +666,66 @@ impl Cfd {
                         transition_timestamp: SystemTime::now(),
                     },
                     dlc,
+                    attestation,
                 }
             }
+            CfdStateChangeEvent::OracleAttestation(attestation) => match self.state.clone() {
+                CfdState::Open { dlc, .. } => CfdState::Open {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
+                    dlc,
+                    attestation: Some(attestation),
+                },
+                CfdState::PendingCommit { dlc, .. } => CfdState::PendingCommit {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
+                    dlc,
+                    attestation: Some(attestation),
+                },
+                CfdState::OpenCommitted {
+                    dlc,
+                    cet_status: CetStatus::Unprepared,
+                    ..
+                } => CfdState::OpenCommitted {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
+                    dlc,
+                    cet_status: CetStatus::OracleSigned(attestation),
+                },
+                CfdState::OpenCommitted {
+                    dlc,
+                    cet_status: CetStatus::TimelockExpired,
+                    ..
+                } => CfdState::OpenCommitted {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
+                    dlc,
+                    cet_status: CetStatus::Ready(attestation),
+                },
+                _ => bail!(
+                    "Cannot transition to OpenCommitted because of unexpected state {}",
+                    self.state
+                ),
+            },
+            CfdStateChangeEvent::CetSent => match self.state.clone() {
+                CfdState::OpenCommitted {
+                    common,
+                    dlc,
+                    cet_status,
+                } => CfdState::PendingCet {
+                    common,
+                    dlc,
+                    cet_status,
+                },
+                _ => bail!(
+                    "Cannot transition to PendingCet because of unexpected state {}",
+                    self.state
+                ),
+            },
         };
 
         self.state = new_state.clone();
@@ -689,7 +786,6 @@ impl Cfd {
             &dlc.identity,
         ));
 
-        // TODO: verify that the dlc's `publish` sk corresponds to the decryption_sk we need here
         let counterparty_sig = dlc.commit.1.decrypt(&dlc.publish)?;
         let counterparty_pubkey = dlc.identity_counterparty;
 
@@ -701,6 +797,72 @@ impl Cfd {
         )?;
 
         Ok(signed_commit_tx)
+    }
+
+    pub fn cet(&self) -> Result<Result<Transaction, NotReadyYet>> {
+        let (dlc, attestation) = match self.state.clone() {
+            CfdState::OpenCommitted {
+                dlc,
+                cet_status: CetStatus::Ready(attestation),
+                ..
+            }
+            | CfdState::PendingCet {
+                dlc,
+                cet_status: CetStatus::Ready(attestation),
+                ..
+            } => (dlc, attestation),
+            CfdState::OpenCommitted { .. }
+            | CfdState::Open { .. }
+            | CfdState::PendingCommit { .. } => {
+                return Ok(Err(NotReadyYet));
+            }
+            _ => bail!("Cannot publish CET in state {}", self.state.clone()),
+        };
+
+        let cets = dlc
+            .cets
+            .get(&attestation.id)
+            .context("Unable to find oracle event id within the cets of the dlc")?;
+
+        let Cet {
+            tx: cet,
+            adaptor_sig: encsig,
+            n_bits,
+            ..
+        } = cets
+            .iter()
+            .find(|Cet { range, .. }| range.contains(&attestation.price))
+            .context("Price out of range of cets")?;
+
+        let oracle_attestations = attestation.scalars;
+
+        let mut decryption_sk = oracle_attestations[0];
+        for oracle_attestation in oracle_attestations[1..*n_bits].iter() {
+            decryption_sk.add_assign(oracle_attestation.as_ref())?;
+        }
+
+        let sig_hash = spending_tx_sighash(
+            cet,
+            &dlc.commit.2,
+            Amount::from_sat(dlc.commit.0.output[0].value),
+        );
+        let our_sig = SECP256K1.sign(&sig_hash, &dlc.identity);
+        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
+            SECP256K1,
+            &dlc.identity,
+        ));
+
+        let counterparty_sig = encsig.decrypt(&decryption_sk)?;
+        let counterparty_pubkey = dlc.identity_counterparty;
+
+        let signed_cet = finalize_spend_transaction(
+            cet.clone(),
+            &dlc.commit.2,
+            (our_pubkey, our_sig),
+            (counterparty_pubkey, counterparty_sig),
+        )?;
+
+        Ok(Ok(signed_cet))
     }
 
     pub fn pending_open_dlc(&self) -> Option<Dlc> {
@@ -719,6 +881,10 @@ impl Cfd {
         matches!(self.state.clone(), CfdState::PendingCommit { .. })
     }
 
+    pub fn is_pending_cet(&self) -> bool {
+        matches!(self.state.clone(), CfdState::PendingCet { .. })
+    }
+
     pub fn is_cleanup(&self) -> bool {
         matches!(
             self.state.clone(),
@@ -734,12 +900,18 @@ impl Cfd {
     }
 }
 
+#[derive(thiserror::Error, Debug, Clone, Copy)]
+#[error("The cfd is not committed yet")]
+pub struct NotReadyYet;
+
 #[derive(Debug, Clone)]
 pub enum CfdStateChangeEvent {
     // TODO: group other events by actors into enums and add them here so we can bundle all
     // transitions into cfd.transition_to(...)
     Monitor(monitor::Event),
     CommitTxSent,
+    OracleAttestation(Attestation),
+    CetSent,
 }
 
 /// Returns the Profit/Loss (P/L) as Bitcoin. Losses are capped by the provided margin
@@ -1078,6 +1250,17 @@ mod tests {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Cet {
+    pub tx: Transaction,
+    pub adaptor_sig: EcdsaAdaptorSignature,
+
+    // TODO: Range + number of digits (usize) could be represented as Digits similar to what we do
+    // in the protocol lib
+    pub range: RangeInclusive<u64>,
+    pub n_bits: usize,
+}
+
 /// Contains all data we've assembled about the CFD through the setup protocol.
 ///
 /// All contained signatures are the signatures of THE OTHER PARTY.
@@ -1093,6 +1276,6 @@ pub struct Dlc {
     /// The fully signed lock transaction ready to be published on chain
     pub lock: (Transaction, Descriptor<PublicKey>),
     pub commit: (Transaction, EcdsaAdaptorSignature, Descriptor<PublicKey>),
-    pub cets: HashMap<String, Vec<(Transaction, EcdsaAdaptorSignature, RangeInclusive<u64>)>>,
+    pub cets: HashMap<OracleEventId, Vec<Cet>>,
     pub refund: (Transaction, Signature),
 }

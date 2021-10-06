@@ -54,5 +54,13 @@ pub async fn rebroadcast_transactions(
         tracing::info!("Commit transaction published on chain: {}", txid);
     }
 
+    for cfd in cfds.iter().filter(|cfd| Cfd::is_pending_cet(cfd)) {
+        // Double question-mark OK because if we are in PendingCet we must have been Ready before
+        let signed_cet = cfd.cet()??;
+        let txid = wallet.try_broadcast_transaction(signed_cet).await?;
+
+        tracing::info!("CET published on chain: {}", txid);
+    }
+
     Ok(())
 }

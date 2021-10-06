@@ -1,4 +1,5 @@
-use crate::model::cfd::{Cfd, Dlc, Role};
+use crate::model::cfd::{Cet, Cfd, Dlc, Role};
+use crate::model::OracleEventId;
 use crate::wallet::Wallet;
 use crate::wire::{Msg0, Msg1, Msg2, SetupMsg};
 use crate::{model, payout_curve};
@@ -26,7 +27,7 @@ use std::ops::RangeInclusive;
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
-    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),
+    (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
     cfd: Cfd,
     wallet: Wallet,
     role: Role,
@@ -68,10 +69,7 @@ pub async fn new(
     }
 
     let payouts = HashMap::from_iter([(
-        Announcement {
-            id: "dummy_id_to_be_replaced".to_string(),
-            nonce_pks: nonce_pks.clone(),
-        },
+        announcement.clone(),
         payout_curve::calculate(
             cfd.order.price,
             cfd.quantity_usd,
@@ -142,7 +140,7 @@ pub async fn new(
             .context("Expect event to exist in msg")?;
 
         verify_cets(
-            (&oracle_pk, &nonce_pks),
+            (&oracle_pk, &announcement.nonce_pks),
             &params.other,
             own_grouped_cets.cets.as_slice(),
             other_cets.as_slice(),
@@ -207,10 +205,15 @@ pub async fn new(
                                 digits.range()
                             )
                         })?;
-                    Ok((tx, *other_encsig, digits.range()))
+                    Ok(Cet {
+                        tx,
+                        adaptor_sig: *other_encsig,
+                        range: digits.range(),
+                        n_bits: digits.len(),
+                    })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok((event_id, cets))
+            Ok((OracleEventId(event_id), cets))
         })
         .collect::<Result<HashMap<_, _>>>()?;
 
