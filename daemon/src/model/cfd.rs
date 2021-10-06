@@ -355,11 +355,13 @@ pub struct SettlementProposal {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Variants used by different binaries
-pub enum SettlementProposals {
-    Incoming(HashMap<OrderId, SettlementProposal>),
-    Outgoing(HashMap<OrderId, SettlementProposal>),
+#[allow(dead_code)] // Variants (for now) used by different binaries.
+pub enum SettlementKind {
+    Incoming,
+    Outgoing,
 }
+
+pub type SettlementProposals = HashMap<OrderId, (SettlementProposal, SettlementKind)>;
 
 /// Represents a cfd (including state)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

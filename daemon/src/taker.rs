@@ -109,7 +109,7 @@ async fn main() -> Result<()> {
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
     let (settlement_feed_sender, settlement_feed_receiver) =
-        watch::channel::<SettlementProposals>(SettlementProposals::Outgoing(HashMap::new()));
+        watch::channel::<SettlementProposals>(HashMap::new());
 
     let (read, write) = loop {
         let socket = tokio::net::TcpSocket::new_v4()?;

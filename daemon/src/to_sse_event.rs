@@ -1,4 +1,4 @@
-use crate::model::cfd::{OrderId, Role, SettlementProposals};
+use crate::model::cfd::{OrderId, Role, SettlementKind, SettlementProposals};
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::{Amount, SignedAmount};
@@ -103,12 +103,6 @@ pub struct CfdsWithAuxData {
     pub settlement_proposals: SettlementProposals,
 }
 
-enum SettlementProposalStatus {
-    Incoming,
-    Outgoing,
-    None,
-}
-
 impl CfdsWithAuxData {
     pub fn new(
         rx_cfds: &watch::Receiver<Vec<model::cfd::Cfd>>,
@@ -124,20 +118,6 @@ impl CfdsWithAuxData {
 
         let settlement_proposals = rx_settlement.borrow().clone();
 
-        // Test whether the correct settlement proposals were sent
-        match settlement_proposals {
-            SettlementProposals::Incoming(_) => {
-                if role == Role::Taker {
-                    panic!("Taker should never receive incoming settlement proposals");
-                }
-            }
-            SettlementProposals::Outgoing(_) => {
-                if role == Role::Maker {
-                    panic!("Maker should never receive outgoing settlement proposals");
-                }
-            }
-        }
-
         CfdsWithAuxData {
             cfds: rx_cfds.borrow().clone(),
             current_price,
@@ -146,20 +126,10 @@ impl CfdsWithAuxData {
     }
 
     /// Check whether given CFD has any active settlement proposals
-    fn settlement_proposal_status(&self, cfd: &model::cfd::Cfd) -> SettlementProposalStatus {
-        match &self.settlement_proposals {
-            SettlementProposals::Incoming(proposals) => {
-                if proposals.contains_key(&cfd.order.id) {
-                    return SettlementProposalStatus::Incoming;
-                }
-            }
-            SettlementProposals::Outgoing(proposals) => {
-                if proposals.contains_key(&cfd.order.id) {
-                    return SettlementProposalStatus::Outgoing;
-                }
-            }
-        }
-        SettlementProposalStatus::None
+    fn settlement_proposal_status(&self, cfd: &model::cfd::Cfd) -> Option<SettlementKind> {
+        self.settlement_proposals
+            .get(&cfd.order.id)
+            .map(|(_, kind)| kind.clone())
     }
 }
 
@@ -258,12 +228,12 @@ impl ToSseEvent for model::WalletInfo {
 
 fn to_cfd_state(
     cfd_state: &model::cfd::CfdState,
-    proposal_status: SettlementProposalStatus,
+    proposal_status: Option<SettlementKind>,
 ) -> CfdState {
     match proposal_status {
-        SettlementProposalStatus::Incoming => CfdState::IncomingSettlementProposal,
-        SettlementProposalStatus::Outgoing => CfdState::OutgoingSettlementProposal,
-        SettlementProposalStatus::None => match cfd_state {
+        Some(SettlementKind::Incoming) => CfdState::IncomingSettlementProposal,
+        Some(SettlementKind::Outgoing) => CfdState::OutgoingSettlementProposal,
+        None => match cfd_state {
             model::cfd::CfdState::OutgoingOrderRequest { .. } => CfdState::OutgoingOrderRequest,
             model::cfd::CfdState::IncomingOrderRequest { .. } => CfdState::IncomingOrderRequest,
             model::cfd::CfdState::Accepted { .. } => CfdState::Accepted,

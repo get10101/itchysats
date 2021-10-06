@@ -5,7 +5,7 @@ use crate::db::{
 };
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
-    SettlementProposal, SettlementProposals,
+    SettlementKind, SettlementProposals,
 };
 use crate::model::{OracleEventId, Usd};
 use crate::monitor::{self, MonitorParams};
@@ -65,7 +65,7 @@ pub struct Actor {
     setup_state: SetupState,
     latest_announcements: Option<BTreeMap<OracleEventId, oracle::Announcement>>,
     oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
-    current_settlement_proposals: HashMap<OrderId, SettlementProposal>,
+    current_settlement_proposals: SettlementProposals,
 }
 
 impl Actor {
@@ -100,9 +100,7 @@ impl Actor {
     fn send_current_settlement_proposals(&self) -> Result<()> {
         Ok(self
             .settlements_feed_sender
-            .send(SettlementProposals::Outgoing(
-                self.current_settlement_proposals.clone(),
-            ))?)
+            .send(self.current_settlement_proposals.clone())?)
     }
 
     async fn handle_take_offer(&mut self, order_id: OrderId, quantity: Usd) -> Result<()> {
@@ -153,8 +151,10 @@ impl Actor {
             )
         }
 
-        self.current_settlement_proposals
-            .insert(proposal.order_id, proposal.clone());
+        self.current_settlement_proposals.insert(
+            proposal.order_id,
+            (proposal.clone(), SettlementKind::Outgoing),
+        );
         self.send_current_settlement_proposals()?;
 
         self.send_to_maker
