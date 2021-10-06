@@ -65,7 +65,7 @@ export function CfdTable(
                 id: "expander",
                 Header: () => null,
                 Cell: ({ row }: any) => (
-                    <span {...row.getToggleRowExpandedProps()}>
+                    <span>
                         {row.isExpanded
                             ? <IconButton
                                 aria-label="Reduce"
@@ -327,9 +327,6 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
                             <React.Fragment key={row.id}>
                                 <Tr
                                     {...row.getRowProps()}
-                                    onClick={() =>
-                                        // @ts-ignore
-                                        row.toggleRowExpanded()}
                                 >
                                     {row.cells.map((cell) => (
                                         // @ts-ignore
