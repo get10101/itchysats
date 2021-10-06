@@ -1,5 +1,5 @@
 use crate::db::load_all_cfds;
-use crate::model::cfd::SettlementProposals;
+use crate::model::cfd::UpdateCfdProposals;
 use crate::model::WalletInfo;
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
@@ -108,8 +108,8 @@ async fn main() -> Result<()> {
 
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
-    let (settlement_feed_sender, settlement_feed_receiver) =
-        watch::channel::<SettlementProposals>(HashMap::new());
+    let (update_cfd_feed_sender, update_feed_receiver) =
+        watch::channel::<UpdateCfdProposals>(HashMap::new());
 
     let (read, write) = loop {
         let socket = tokio::net::TcpSocket::new_v4()?;
@@ -134,7 +134,7 @@ async fn main() -> Result<()> {
     rocket::custom(figment)
         .manage(order_feed_receiver)
         .manage(wallet_feed_receiver)
-        .manage(settlement_feed_receiver)
+        .manage(update_feed_receiver)
         .manage(quote_updates)
         .attach(Db::init())
         .attach(AdHoc::try_on_ignite(
@@ -182,7 +182,7 @@ async fn main() -> Result<()> {
                     schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
                     cfd_feed_sender,
                     order_feed_sender,
-                    settlement_feed_sender,
+                    update_cfd_feed_sender,
                     send_to_maker,
                     monitor_actor_address.clone(),
                     oracle_actor_address,

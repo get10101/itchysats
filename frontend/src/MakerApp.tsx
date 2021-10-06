@@ -68,6 +68,9 @@ export default function App() {
     const acceptOrRejectSettlement = cfds.filter((value) =>
         value.state.getGroup() === StateGroupKey.ACCEPT_OR_REJECT_SETTLEMENT
     );
+    const acceptOrRejectRollOvers = cfds.filter((value) =>
+        value.state.getGroup() === StateGroupKey.ACCEPT_OR_REJECT_ROLL_OVER
+    );
     const opening = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPENING);
     const open = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPEN);
     const closed = cfds.filter((value) => value.state.getGroup() === StateGroupKey.CLOSED);
@@ -161,6 +164,7 @@ export default function App() {
                     <Tab>Open [{open.length}]</Tab>
                     <Tab>Accept / Reject Order [{acceptOrRejectOrder.length}]</Tab>
                     <Tab>Accept / Reject Settlement [{acceptOrRejectSettlement.length}]</Tab>
+                    <Tab>Accept / Reject Roll Overs [{acceptOrRejectRollOvers.length}]</Tab>
                     <Tab>Opening [{opening.length}]</Tab>
                     <Tab>Closed [{closed.length}]</Tab>
                 </TabList>
@@ -174,6 +178,9 @@ export default function App() {
                     </TabPanel>
                     <TabPanel>
                         <CfdTable data={acceptOrRejectSettlement} />
+                    </TabPanel>
+                    <TabPanel>
+                        <CfdTable data={acceptOrRejectRollOvers} />
                     </TabPanel>
                     <TabPanel>
                         <CfdTable data={opening} />

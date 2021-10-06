@@ -6,11 +6,12 @@ use crate::db::{
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
-    SettlementKind, SettlementProposal, SettlementProposals,
+    RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{OracleEventId, TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
+use crate::wire::TakerToMaker;
 use crate::{maker_inc_connections, monitor, oracle, setup_contract, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
@@ -43,6 +44,14 @@ pub struct RejectSettlement {
     pub order_id: OrderId,
 }
 
+pub struct AcceptRollOver {
+    pub order_id: OrderId,
+}
+
+pub struct RejectRollOver {
+    pub order_id: OrderId,
+}
+
 pub struct NewOrder {
     pub price: Usd,
     pub min_quantity: Usd,
@@ -69,14 +78,14 @@ pub struct Actor {
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_sender: watch::Sender<Option<Order>>,
-    settlements_feed_sender: watch::Sender<SettlementProposals>,
+    update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
     takers: Address<maker_inc_connections::Actor>,
     current_order_id: Option<OrderId>,
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
     latest_announcements: Option<BTreeMap<OracleEventId, oracle::Announcement>>,
     oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
-    current_settlement_proposals: SettlementProposals,
+    current_pending_proposals: UpdateCfdProposals,
 }
 
 enum SetupState {
@@ -95,7 +104,7 @@ impl Actor {
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_sender: watch::Sender<Option<Order>>,
-        settlements_feed_sender: watch::Sender<SettlementProposals>,
+        update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
         takers: Address<maker_inc_connections::Actor>,
         monitor_actor: Address<monitor::Actor<Actor>>,
         oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
@@ -106,21 +115,21 @@ impl Actor {
             oracle_pk,
             cfd_feed_actor_inbox,
             order_feed_sender,
-            settlements_feed_sender,
+            update_cfd_feed_sender,
             takers,
             current_order_id: None,
             monitor_actor,
             setup_state: SetupState::None,
             latest_announcements: None,
             oracle_actor,
-            current_settlement_proposals: HashMap::new(),
+            current_pending_proposals: HashMap::new(),
         }
     }
 
-    fn send_current_settlement_proposals(&self) -> Result<()> {
+    fn send_pending_proposals(&self) -> Result<()> {
         Ok(self
-            .settlements_feed_sender
-            .send(self.current_settlement_proposals.clone())?)
+            .update_cfd_feed_sender
+            .send(self.current_pending_proposals.clone())?)
     }
 
     async fn handle_new_order(
@@ -189,9 +198,32 @@ impl Actor {
             "Received settlement proposal from the taker: {:?}",
             proposal
         );
-        self.current_settlement_proposals
-            .insert(proposal.order_id, (proposal, SettlementKind::Incoming));
-        self.send_current_settlement_proposals()?;
+        self.current_pending_proposals.insert(
+            proposal.order_id,
+            UpdateCfdProposal::Settlement {
+                proposal,
+                direction: SettlementKind::Incoming,
+            },
+        );
+        self.send_pending_proposals()?;
+
+        Ok(())
+    }
+
+    async fn handle_propose_roll_over(&mut self, proposal: RollOverProposal) -> Result<()> {
+        tracing::info!(
+            "Received proposal from the taker: {:?} to roll over order {}",
+            proposal,
+            proposal.order_id
+        );
+        self.current_pending_proposals.insert(
+            proposal.order_id,
+            UpdateCfdProposal::RollOverProposal {
+                proposal,
+                direction: SettlementKind::Incoming,
+            },
+        );
+        self.send_pending_proposals()?;
 
         Ok(())
     }
@@ -487,10 +519,10 @@ impl Actor {
         tracing::debug!(%order_id, "Maker accepts a settlement proposal" );
         // TODO: Initiate the settlement
 
-        self.current_settlement_proposals
+        self.current_pending_proposals
             .remove(&order_id)
             .context("Could not find proposal for given order id")?;
-        self.send_current_settlement_proposals()?;
+        self.send_pending_proposals()?;
         Ok(())
     }
 
@@ -499,10 +531,33 @@ impl Actor {
         // TODO: Handle rejection offer:
         // - notify the taker that the settlement was rejected
 
-        self.current_settlement_proposals
+        self.current_pending_proposals
             .remove(&order_id)
             .context("Could not find proposal for given order id")?;
-        self.send_current_settlement_proposals()?;
+        self.send_pending_proposals()?;
+        Ok(())
+    }
+
+    async fn handle_accept_roll_over(&mut self, order_id: OrderId) -> Result<()> {
+        tracing::debug!(%order_id, "Maker accepts a roll over proposal" );
+
+        // TODO: Initiate the roll over logic
+
+        self.current_pending_proposals
+            .remove(&order_id)
+            .context("Could not find roll over proposal for given order id")?;
+        self.send_pending_proposals()?;
+        Ok(())
+    }
+
+    async fn handle_reject_roll_over(&mut self, order_id: OrderId) -> Result<()> {
+        tracing::debug!(%order_id, "Maker rejects a roll over proposal" );
+        // TODO: Handle rejection and notify the taker that the roll over was rejected
+
+        self.current_pending_proposals
+            .remove(&order_id)
+            .context("Could not find roll over proposal for given order id")?;
+        self.send_pending_proposals()?;
         Ok(())
     }
 
@@ -589,6 +644,20 @@ impl Handler<RejectSettlement> for Actor {
 }
 
 #[async_trait]
+impl Handler<AcceptRollOver> for Actor {
+    async fn handle(&mut self, msg: AcceptRollOver, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_accept_roll_over(msg.order_id))
+    }
+}
+
+#[async_trait]
+impl Handler<RejectRollOver> for Actor {
+    async fn handle(&mut self, msg: RejectRollOver, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_reject_roll_over(msg.order_id))
+    }
+}
+
+#[async_trait]
 impl Handler<Commit> for Actor {
     async fn handle(&mut self, msg: Commit, _ctx: &mut Context<Self>) {
         log_error!(self.handle_commit(msg.order_id))
@@ -662,6 +731,15 @@ impl Handler<TakerStreamMessage> for Actor {
             wire::TakerToMaker::Protocol(msg) => {
                 log_error!(self.handle_inc_protocol_msg(taker, msg))
             }
+            TakerToMaker::ProposeRollOver {
+                order_id,
+                timestamp,
+            } => {
+                log_error!(self.handle_propose_roll_over(RollOverProposal {
+                    order_id,
+                    timestamp,
+                }))
+            }
         }
 
         KeepRunning::Yes
@@ -711,6 +789,14 @@ impl Message for AcceptSettlement {
 }
 
 impl Message for RejectSettlement {
+    type Result = ();
+}
+
+impl Message for AcceptRollOver {
+    type Result = ();
+}
+
+impl Message for RejectRollOver {
     type Result = ();
 }
 
