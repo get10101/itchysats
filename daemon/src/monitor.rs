@@ -25,7 +25,7 @@ pub struct StartMonitoring {
 pub struct MonitorParams {
     lock: (Txid, Descriptor<PublicKey>),
     commit: (Txid, Descriptor<PublicKey>),
-    cets: Vec<(Txid, Script, RangeInclusive<u64>)>,
+    cets: HashMap<String, Vec<(Txid, Script, RangeInclusive<u64>)>>,
     refund: (Txid, Script, u32),
 }
 
@@ -221,6 +221,9 @@ where
 
     async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
         for (order_id, MonitorParams { cets, .. }) in self.cfds.clone().into_iter() {
+            let cets = cets
+                .get(&attestation.id)
+                .context("No CET for oracle event found")?;
             let (txid, script_pubkey) =
                 match cets.iter().find_map(|(txid, script_pubkey, range)| {
                     range
@@ -468,9 +471,16 @@ impl MonitorParams {
             commit: (dlc.commit.0.txid(), dlc.commit.2),
             cets: dlc
                 .cets
-                .into_iter()
-                .map(|(tx, _, range)| (tx.txid(), script_pubkey.clone(), range))
-                .collect(),
+                .iter()
+                .map(|(event_id, cets)| {
+                    (
+                        event_id.clone(),
+                        cets.iter()
+                            .map(|(tx, _, range)| (tx.txid(), script_pubkey.clone(), range.clone()))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<HashMap<_, _>>(),
             refund: (
                 dlc.refund.0.txid(),
                 script_pubkey,

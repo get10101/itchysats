@@ -10,6 +10,7 @@ use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use cfd_protocol::{CfdTransactions, PartyParams, PunishParams};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
@@ -228,19 +229,29 @@ impl From<Msg0> for (PartyParams, PunishParams) {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Msg1 {
     pub commit: EcdsaAdaptorSignature,
-    pub cets: Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>,
+    pub cets: HashMap<String, Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>>,
     pub refund: Signature,
 }
 
 impl From<CfdTransactions> for Msg1 {
     fn from(txs: CfdTransactions) -> Self {
+        let cets = txs
+            .cets
+            .into_iter()
+            .map(|grouped_cets| {
+                (
+                    grouped_cets.event.id,
+                    grouped_cets
+                        .cets
+                        .into_iter()
+                        .map(|(_, encsig, digits)| (digits.range(), encsig))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<HashMap<_, _>>();
         Self {
             commit: txs.commit.1,
-            cets: txs
-                .cets
-                .into_iter()
-                .map(|(_, sig, digits)| (digits.range(), sig))
-                .collect(),
+            cets,
             refund: txs.refund.1,
         }
     }

@@ -1068,6 +1068,6 @@ pub struct Dlc {
     /// The fully signed lock transaction ready to be published on chain
     pub lock: (Transaction, Descriptor<PublicKey>),
     pub commit: (Transaction, EcdsaAdaptorSignature, Descriptor<PublicKey>),
-    pub cets: Vec<(Transaction, EcdsaAdaptorSignature, RangeInclusive<u64>)>,
+    pub cets: HashMap<String, Vec<(Transaction, EcdsaAdaptorSignature, RangeInclusive<u64>)>>,
     pub refund: (Transaction, Signature),
 }

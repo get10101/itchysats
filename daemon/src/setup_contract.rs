@@ -9,14 +9,20 @@ use bdk::descriptor::Descriptor;
 use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
 use cfd_protocol::{
     commit_descriptor, compute_adaptor_pk, create_cfd_transactions, interval, lock_descriptor,
-    spending_tx_sighash, PartyParams, PunishParams,
+    spending_tx_sighash, Announcement, PartyParams, PunishParams,
 };
 use futures::stream::FusedStream;
 use futures::{Sink, SinkExt, StreamExt};
 use std::collections::HashMap;
+use std::iter::FromIterator;
 use std::ops::RangeInclusive;
 
-/// Given an initial set of parameters, sets up the CFD contract with the other party.
+/// Given an initial set of parameters, sets up the CFD contract with
+/// the other party.
+///
+/// TODO: Replace `nonce_pks` argument with set of
+/// `daemon::oracle::Announcement`, which can be mapped into
+/// `cfd_protocol::Announcement`.
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
@@ -61,17 +67,23 @@ pub async fn new(
         )
     }
 
-    let payouts = payout_curve::calculate(
-        cfd.order.price,
-        cfd.quantity_usd,
-        params.maker().lock_amount,
-        (params.taker().lock_amount, cfd.order.leverage),
-    )?;
+    let payouts = HashMap::from_iter([(
+        Announcement {
+            id: "dummy_id_to_be_replaced".to_string(),
+            nonce_pks: nonce_pks.clone(),
+        },
+        payout_curve::calculate(
+            cfd.order.price,
+            cfd.quantity_usd,
+            params.maker().lock_amount,
+            (params.taker().lock_amount, cfd.order.leverage),
+        )?,
+    )]);
 
     let own_cfd_txs = create_cfd_transactions(
         (params.maker().clone(), *params.maker_punish()),
         (params.taker().clone(), *params.taker_punish()),
-        (oracle_pk, &nonce_pks),
+        oracle_pk,
         (
             model::cfd::Cfd::CET_TIMELOCK,
             cfd.refund_timelock_in_blocks(),
@@ -84,6 +96,7 @@ pub async fn new(
     sink.send(SetupMsg::Msg1(Msg1::from(own_cfd_txs.clone())))
         .await
         .context("Failed to send Msg1")?;
+
     let msg1 = stream
         .select_next_some()
         .await
@@ -122,15 +135,22 @@ pub async fn new(
     )
     .context("Punish adaptor signature does not verify")?;
 
-    verify_cets(
-        (&oracle_pk, &[]),
-        &params.other,
-        &own_cets,
-        &msg1.cets,
-        &commit_desc,
-        commit_amount,
-    )
-    .context("CET signatures don't verify")?;
+    for own_grouped_cets in &own_cets {
+        let other_cets = msg1
+            .cets
+            .get(&own_grouped_cets.event.id)
+            .context("Expect event to exist in msg")?;
+
+        verify_cets(
+            (&oracle_pk, &nonce_pks),
+            &params.other,
+            own_grouped_cets.cets.as_slice(),
+            other_cets.as_slice(),
+            &commit_desc,
+            commit_amount,
+        )
+        .context("CET signatures don't verify")?;
+    }
 
     let lock_tx = own_cfd_txs.lock;
     let refund_tx = own_cfd_txs.refund.0;
@@ -143,11 +163,6 @@ pub async fn new(
         &params.other.identity_pk,
     )
     .context("Refund signature does not verify")?;
-
-    let mut cet_by_digits = own_cets
-        .into_iter()
-        .map(|(tx, _, digits)| (digits.range(), (tx, digits)))
-        .collect::<HashMap<_, _>>();
 
     let mut signed_lock_tx = wallet.sign(lock_tx).await?;
     sink.send(SetupMsg::Msg2(Msg2 {
@@ -168,6 +183,37 @@ pub async fn new(
     // need some fallback handling (after x time) to spend the outputs in a different way so the
     // other party cannot hold us hostage
 
+    let cets = own_cets
+        .into_iter()
+        .map(|grouped_cets| {
+            let event_id = grouped_cets.event.id;
+            let other_cets = msg1
+                .cets
+                .get(&event_id)
+                .with_context(|| format!("Counterparty CETs for event {} missing", event_id))?;
+            let cets = grouped_cets
+                .cets
+                .into_iter()
+                .map(|(tx, _, digits)| {
+                    let other_encsig = other_cets
+                        .iter()
+                        .find_map(|(other_range, other_encsig)| {
+                            (other_range == &digits.range()).then(|| other_encsig)
+                        })
+                        .with_context(|| {
+                            format!(
+                                "Missing counterparty adaptor signature for CET corresponding to
+                                 price range {:?}",
+                                digits.range()
+                            )
+                        })?;
+                    Ok((tx, *other_encsig, digits.range()))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok((event_id, cets))
+        })
+        .collect::<Result<HashMap<_, _>>>()?;
+
     Ok(Dlc {
         identity: sk,
         identity_counterparty: params.other.identity_pk,
@@ -176,16 +222,7 @@ pub async fn new(
         address: params.own.address,
         lock: (signed_lock_tx.extract_tx(), lock_desc),
         commit: (commit_tx, msg1.commit, commit_desc),
-        cets: msg1
-            .cets
-            .into_iter()
-            .map(|(range, sig)| {
-                let (cet, digits) = cet_by_digits.remove(&range).context("unknown CET")?;
-
-                Ok((cet, sig, digits.range()))
-            })
-            .collect::<Result<Vec<_>>>()
-            .context("Failed to re-map CETs")?,
+        cets,
         refund: (refund_tx, msg1.refund),
     })
 }
