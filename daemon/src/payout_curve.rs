@@ -17,9 +17,9 @@ pub fn calculate(
             maker_payin + taker_payin,
             bitcoin::Amount::ZERO,
         )?,
-        generate_payouts((dollars - 10)..=(dollars + 10), maker_payin, taker_payin)?,
+        generate_payouts((dollars - 9)..=(dollars + 10), maker_payin, taker_payin)?,
         generate_payouts(
-            (dollars + 10)..=MAX_PRICE_DEC,
+            (dollars + 11)..=MAX_PRICE_DEC,
             bitcoin::Amount::ZERO,
             maker_payin + taker_payin,
         )?,
