@@ -4,6 +4,21 @@ CFD trading on Bitcoin.
 
 Details coming soon.
 
+## Quickstart
+
+All the components can be started at once by running the following script:
+
+```bash
+./start_all.sh
+```
+
+The script combines the logs from all binaries inside a single terminal so it
+might not be ideal for all cases, but it is convenient for quick regression testing.
+
+Pressing `Ctrl + c` once stops all the processes.
+
+The script also enables backtraces by setting `RUST_BACKTRACE=1` env variable.
+
 ## Starting the maker and taker daemon
 
 The maker and taker frontend depend on the respective daemon running.
