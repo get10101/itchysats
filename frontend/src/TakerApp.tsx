@@ -20,9 +20,8 @@ import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
-import CurrentPrice from "./components/CurrentPrice";
 import useLatestEvent from "./components/Hooks";
-import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
+import { Cfd, intoCfd, intoOrder, Order, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 
 interface CfdOrderRequestPayload {
@@ -65,7 +64,6 @@ export default function App() {
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
     const order = useLatestEvent<Order>(source, "order", intoOrder);
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
-    const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 
     const toast = useToast();
     let [quantity, setQuantity] = useState("0");
@@ -120,7 +118,6 @@ export default function App() {
             <HStack spacing={5}>
                 <VStack>
                     <Wallet walletInfo={walletInfo} />
-                    <CurrentPrice priceInfo={priceInfo} />
                     <Grid
                         gridTemplateColumns="max-content auto"
                         shadow="md"
