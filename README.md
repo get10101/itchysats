@@ -1,5 +1,7 @@
 # Project Hermes
 
+[![Bors enabled](https://bors.tech/images/badge_small.svg)](https://app.bors.tech/repositories/38091)
+
 CFD trading on Bitcoin.
 
 Details coming soon.
