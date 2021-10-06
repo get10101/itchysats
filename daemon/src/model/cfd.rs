@@ -1,4 +1,4 @@
-use crate::model::{Leverage, Percent, Position, TakerId, TradingPair, Usd};
+use crate::model::{Leverage, OracleEventId, Percent, Position, TakerId, TradingPair, Usd};
 use crate::monitor;
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
@@ -91,11 +91,22 @@ pub struct Order {
     pub term: Duration,
 
     pub origin: Origin,
+
+    /// The id of the event to be used for price attestation
+    ///
+    /// The maker includes this into the Order based on the Oracle announcement to be used.
+    pub oracle_event_id: OracleEventId,
 }
 
 #[allow(dead_code)] // Only one binary and the tests use this.
 impl Order {
-    pub fn from_default_with_price(price: Usd, origin: Origin) -> Result<Self> {
+    pub fn new(
+        price: Usd,
+        min_quantity: Usd,
+        max_quantity: Usd,
+        origin: Origin,
+        oracle_event_id: OracleEventId,
+    ) -> Result<Self> {
         let leverage = Leverage(5);
         let maintenance_margin_rate = dec!(0.005);
         let liquidation_price =
@@ -104,8 +115,8 @@ impl Order {
         Ok(Order {
             id: OrderId::default(),
             price,
-            min_quantity: Usd(dec!(1000)),
-            max_quantity: Usd(dec!(10000)),
+            min_quantity,
+            max_quantity,
             leverage,
             trading_pair: TradingPair::BtcUsd,
             liquidation_price,
@@ -113,16 +124,8 @@ impl Order {
             creation_timestamp: SystemTime::now(),
             term: Duration::from_secs(60 * 60 * 8), // 8 hours
             origin,
+            oracle_event_id,
         })
-    }
-    pub fn with_min_quantity(mut self, min_quantity: Usd) -> Order {
-        self.min_quantity = min_quantity;
-        self
-    }
-
-    pub fn with_max_quantity(mut self, max_quantity: Usd) -> Order {
-        self.max_quantity = max_quantity;
-        self
     }
 }
 

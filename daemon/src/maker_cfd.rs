@@ -5,10 +5,10 @@ use crate::db::{
 };
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
-    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Role,
+    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
     SettlementProposal, SettlementProposals,
 };
-use crate::model::{TakerId, Usd};
+use crate::model::{OracleEventId, TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
 use crate::{maker_inc_connections, monitor, oracle, setup_contract, wire};
@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::SystemTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
@@ -43,7 +43,11 @@ pub struct RejectSettlement {
     pub order_id: OrderId,
 }
 
-pub struct NewOrder(pub Order);
+pub struct NewOrder {
+    pub price: Usd,
+    pub min_quantity: Usd,
+    pub max_quantity: Usd,
+}
 
 pub struct NewTakerOnline {
     pub id: TakerId,
@@ -70,8 +74,8 @@ pub struct Actor {
     current_order_id: Option<OrderId>,
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
-    latest_announcement: Option<oracle::Announcement>,
-    _oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
+    latest_announcements: Option<BTreeMap<OracleEventId, oracle::Announcement>>,
+    oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
     current_settlement_proposals: HashMap<OrderId, SettlementProposal>,
 }
 
@@ -107,8 +111,8 @@ impl Actor {
             current_order_id: None,
             monitor_actor,
             setup_state: SetupState::None,
-            latest_announcement: None,
-            _oracle_actor: oracle_actor,
+            latest_announcements: None,
+            oracle_actor,
             current_settlement_proposals: HashMap::new(),
         }
     }
@@ -121,7 +125,30 @@ impl Actor {
             ))?)
     }
 
-    async fn handle_new_order(&mut self, order: Order) -> Result<()> {
+    async fn handle_new_order(
+        &mut self,
+        price: Usd,
+        min_quantity: Usd,
+        max_quantity: Usd,
+    ) -> Result<()> {
+        let oracle_event_id = self
+            .latest_announcements
+            .clone()
+            .context("Cannot create order because no announcement from oracle")?
+            .iter()
+            .next_back()
+            .context("Empty list of announcements")?
+            .0
+            .clone();
+
+        let order = Order::new(
+            price,
+            min_quantity,
+            max_quantity,
+            Origin::Ours,
+            oracle_event_id,
+        )?;
+
         // 1. Save to DB
         let mut conn = self.db.acquire().await?;
         insert_order(&order, &mut conn).await?;
@@ -340,18 +367,21 @@ impl Actor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        // let latest_announcement = self
-        //     .latest_announcement
-        //     .to_owned()
-        //     .context("Unaware of oracle's latest announcement.")?;
+        let offer_announcements = self
+            .latest_announcements
+            .clone()
+            .context("No oracle announcements available")?;
+        let offer_announcement = offer_announcements
+            .get(&cfd.order.oracle_event_id)
+            .context("Order's announcement not found in current oracle announcements")?;
 
-        // self.oracle_actor
-        //     .do_send_async(oracle::MonitorEvent {
-        //         event_id: latest_announcement.id,
-        //     })
-        //     .await?;
+        self.oracle_actor
+            .do_send_async(oracle::MonitorEvent {
+                event_id: offer_announcement.id.clone(),
+            })
+            .await?;
 
-        let nonce_pks = Vec::new();
+        let nonce_pks = offer_announcement.nonce_pks.clone();
 
         let contract_future = setup_contract::new(
             self.takers.clone().into_sink().with(move |msg| {
@@ -509,8 +539,13 @@ impl Actor {
         &mut self,
         announcements: oracle::Announcements,
     ) -> Result<()> {
-        tracing::debug!("Updating latest oracle announcements");
-        self.latest_announcement = Some(announcements.0.last().unwrap().clone());
+        self.latest_announcements.replace(
+            announcements
+                .0
+                .iter()
+                .map(|announcement| (announcement.id.clone(), announcement.clone()))
+                .collect(),
+        );
 
         Ok(())
     }
@@ -565,7 +600,7 @@ impl Handler<Commit> for Actor {
 #[async_trait]
 impl Handler<NewOrder> for Actor {
     async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_new_order(msg.0));
+        log_error!(self.handle_new_order(msg.price, msg.min_quantity, msg.max_quantity));
     }
 }
 

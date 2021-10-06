@@ -1,5 +1,5 @@
 use crate::auth::Authenticated;
-use crate::model::cfd::{Cfd, Order, OrderId, Origin, Role, SettlementProposals};
+use crate::model::cfd::{Cfd, Order, OrderId, Role, SettlementProposals};
 use crate::model::{Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
 use crate::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
@@ -87,16 +87,15 @@ pub async fn post_sell_order(
     order: Json<CfdNewOrderRequest>,
     cfd_actor_address: &State<Address<maker_cfd::Actor>>,
     _auth: Authenticated,
-) -> Result<status::Accepted<()>, status::BadRequest<String>> {
-    let order = Order::from_default_with_price(order.price, Origin::Ours)
-        .map_err(|e| status::BadRequest(Some(e.to_string())))?
-        .with_min_quantity(order.min_quantity)
-        .with_max_quantity(order.max_quantity);
-
+) -> Result<status::Accepted<()>, Status> {
     cfd_actor_address
-        .do_send_async(maker_cfd::NewOrder(order))
+        .do_send_async(maker_cfd::NewOrder {
+            price: order.price,
+            min_quantity: order.min_quantity,
+            max_quantity: order.max_quantity,
+        })
         .await
-        .expect("actor to always be available");
+        .map_err(|_| Status::new(500))?;
 
     Ok(status::Accepted(None))
 }
