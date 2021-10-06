@@ -76,10 +76,10 @@ jobs:
       - name: Smoke test ${{ matrix.os }} binary
         shell: bash
         run: |
-          target/debug/maker --data-dir=/tmp/maker --generate-seed &
+          target/debug/maker --data-dir=/tmp/maker --generate-seed testnet &
           sleep 10s # Wait for maker to start
 
-          target/debug/taker --data-dir=/tmp/taker --generate-seed &
+          target/debug/taker --data-dir=/tmp/taker --generate-seed testnet &
           sleep 10s # Wait for taker to start
 
           curl --fail http://localhost:8000/api/alive

@@ -3,8 +3,8 @@ use crate::model::cfd::UpdateCfdProposals;
 use crate::model::WalletInfo;
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
+use bdk::bitcoin;
 use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
-use bdk::bitcoin::Network;
 use clap::Clap;
 use futures::StreamExt;
 use model::cfd::Order;
@@ -60,10 +60,6 @@ struct Opts {
     #[clap(long, default_value = "8000")]
     http_port: u16,
 
-    /// URL to the electrum backend to use for the wallet.
-    #[clap(long, default_value = "ssl://electrum.blockstream.info:60002")]
-    electrum: String,
-
     /// Where to permanently store data, defaults to the current working directory.
     #[clap(long)]
     data_dir: Option<PathBuf>,
@@ -75,6 +71,46 @@ struct Opts {
     /// If enabled logs will be in json format
     #[clap(short, long)]
     json: bool,
+
+    #[clap(subcommand)]
+    network: Network,
+}
+
+#[derive(Clap)]
+enum Network {
+    Mainnet {
+        /// URL to the electrum backend to use for the wallet.
+        #[clap(long, default_value = "ssl://electrum.blockstream.info:50002")]
+        electrum: String,
+    },
+    Testnet {
+        /// URL to the electrum backend to use for the wallet.
+        #[clap(long, default_value = "ssl://electrum.blockstream.info:60002")]
+        electrum: String,
+    },
+}
+
+impl Network {
+    fn electrum(&self) -> &str {
+        match self {
+            Network::Mainnet { electrum } => electrum,
+            Network::Testnet { electrum } => electrum,
+        }
+    }
+
+    fn bitcoin_network(&self) -> bitcoin::Network {
+        match self {
+            Network::Mainnet { .. } => bitcoin::Network::Bitcoin,
+            Network::Testnet { .. } => bitcoin::Network::Testnet,
+        }
+    }
+
+    fn data_dir(&self, base: PathBuf) -> PathBuf {
+        match self {
+            Network::Mainnet { .. } => base.join("mainnet"),
+            Network::Testnet { .. } => base.join("testnet"),
+        }
+    }
 }
 
 #[rocket::main]
@@ -88,16 +124,18 @@ async fn main() -> Result<()> {
         .clone()
         .unwrap_or_else(|| std::env::current_dir().expect("unable to get cwd"));
 
+    let data_dir = opts.network.data_dir(data_dir);
+
     if !data_dir.exists() {
         tokio::fs::create_dir_all(&data_dir).await?;
     }
 
     let seed = Seed::initialize(&data_dir.join("taker_seed"), opts.generate_seed).await?;
 
-    let ext_priv_key = seed.derive_extended_priv_key(Network::Testnet)?;
+    let ext_priv_key = seed.derive_extended_priv_key(opts.network.bitcoin_network())?;
 
     let wallet = Wallet::new(
-        &opts.electrum,
+        opts.network.electrum(),
         &data_dir.join("taker_wallet.sqlite"),
         ext_priv_key,
     )
@@ -201,7 +239,7 @@ async fn main() -> Result<()> {
                 );
                 tokio::spawn(
                     monitor_actor_context.run(
-                        monitor::Actor::new(&opts.electrum, cfd_actor_inbox.clone(), cfds)
+                        monitor::Actor::new(opts.network.electrum(), cfd_actor_inbox.clone(), cfds)
                             .await
                             .unwrap(),
                     ),
