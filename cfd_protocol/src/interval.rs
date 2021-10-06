@@ -6,7 +6,7 @@ use std::ops::RangeInclusive;
 mod digit_decomposition;
 
 /// Maximum supported BTC price in whole USD.
-const MAX_PRICE_DEC: u64 = (BASE as u64).pow(MAX_DIGITS as u32) - 1;
+pub const MAX_PRICE_DEC: u64 = (BASE as u64).pow(MAX_DIGITS as u32) - 1;
 
 /// Maximum number of binary digits for BTC price in whole USD.
 const MAX_DIGITS: usize = 20;
