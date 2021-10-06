@@ -345,6 +345,18 @@ impl fmt::Display for CfdState {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum UpdateCfdProposal {
+    Settlement {
+        proposal: SettlementProposal,
+        direction: SettlementKind,
+    },
+    RollOverProposal {
+        proposal: RollOverProposal,
+        direction: SettlementKind,
+    },
+}
+
 /// Proposed collaborative settlement
 #[derive(Debug, Clone)]
 pub struct SettlementProposal {
@@ -354,6 +366,14 @@ pub struct SettlementProposal {
     pub maker: Amount,
 }
 
+/// Proposal to roll over over a fixed length.
+/// The length of the roll over is defined by the maker.
+#[derive(Debug, Clone)]
+pub struct RollOverProposal {
+    pub order_id: OrderId,
+    pub timestamp: SystemTime,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // Variants (for now) used by different binaries.
 pub enum SettlementKind {
@@ -361,7 +381,7 @@ pub enum SettlementKind {
     Outgoing,
 }
 
-pub type SettlementProposals = HashMap<OrderId, (SettlementProposal, SettlementKind)>;
+pub type UpdateCfdProposals = HashMap<OrderId, UpdateCfdProposal>;
 
 /// Represents a cfd (including state)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

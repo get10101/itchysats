@@ -1,4 +1,4 @@
-use crate::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId, Role, SettlementProposals};
+use crate::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId, Role, UpdateCfdProposals};
 use crate::model::{Leverage, Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
 use crate::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
@@ -23,7 +23,7 @@ pub async fn feed(
     rx_order: &State<watch::Receiver<Option<Order>>>,
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
     rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
-    rx_settlements: &State<watch::Receiver<SettlementProposals>>,
+    rx_settlements: &State<watch::Receiver<UpdateCfdProposals>>,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
     let mut rx_order = rx_order.inner().clone();
@@ -100,7 +100,9 @@ pub async fn post_cfd_action(
         CfdAction::AcceptOrder
         | CfdAction::RejectOrder
         | CfdAction::AcceptSettlement
-        | CfdAction::RejectSettlement => {
+        | CfdAction::RejectSettlement
+        | CfdAction::AcceptRollOver
+        | CfdAction::RejectRollOver => {
             return Err(status::BadRequest(None));
         }
         CfdAction::Commit => {
@@ -116,6 +118,12 @@ pub async fn post_cfd_action(
                     order_id: id,
                     current_price,
                 })
+                .await
+                .expect("actor to always be available");
+        }
+        CfdAction::RollOver => {
+            cfd_actor_address
+                .do_send_async(taker_cfd::ProposeRollOver { order_id: id })
                 .await
                 .expect("actor to always be available");
         }

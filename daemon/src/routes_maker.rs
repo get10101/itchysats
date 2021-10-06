@@ -1,5 +1,5 @@
 use crate::auth::Authenticated;
-use crate::model::cfd::{Cfd, Order, OrderId, Role, SettlementProposals};
+use crate::model::cfd::{Cfd, Order, OrderId, Role, UpdateCfdProposals};
 use crate::model::{Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
 use crate::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
@@ -24,7 +24,7 @@ pub async fn maker_feed(
     rx_order: &State<watch::Receiver<Option<Order>>>,
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
     rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
-    rx_settlements: &State<watch::Receiver<SettlementProposals>>,
+    rx_settlements: &State<watch::Receiver<UpdateCfdProposals>>,
     _auth: Authenticated,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
@@ -149,6 +149,19 @@ pub async fn post_cfd_action(
                 .await
                 .expect("actor to always be available");
         }
+
+        CfdAction::AcceptRollOver => {
+            cfd_actor_address
+                .do_send_async(maker_cfd::AcceptRollOver { order_id: id })
+                .await
+                .expect("actor to always be available");
+        }
+        CfdAction::RejectRollOver => {
+            cfd_actor_address
+                .do_send_async(maker_cfd::RejectRollOver { order_id: id })
+                .await
+                .expect("actor to always be available");
+        }
         CfdAction::Commit => {
             cfd_actor_address
                 .do_send_async(maker_cfd::Commit { order_id: id })
@@ -158,6 +171,11 @@ pub async fn post_cfd_action(
         CfdAction::Settle => {
             return Err(status::BadRequest(Some(
                 "Collaborative settlement can only be triggered by taker".to_string(),
+            )));
+        }
+        CfdAction::RollOver => {
+            return Err(status::BadRequest(Some(
+                "RollOver proposal can only be triggered by taker".to_string(),
             )));
         }
     }

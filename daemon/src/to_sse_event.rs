@@ -1,4 +1,4 @@
-use crate::model::cfd::{OrderId, Role, SettlementKind, SettlementProposals};
+use crate::model::cfd::{OrderId, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals};
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::{Amount, SignedAmount};
@@ -42,6 +42,9 @@ pub enum CfdAction {
     Settle,
     AcceptSettlement,
     RejectSettlement,
+    RollOver,
+    AcceptRollOver,
+    RejectRollOver,
 }
 
 impl<'v> FromParam<'v> for CfdAction {
@@ -66,6 +69,8 @@ pub enum CfdState {
     OpenCommitted,
     IncomingSettlementProposal,
     OutgoingSettlementProposal,
+    IncomingRollOverProposal,
+    OutgoingRollOverProposal,
     MustRefund,
     Refunded,
     SetupFailed,
@@ -100,14 +105,14 @@ pub trait ToSseEvent {
 pub struct CfdsWithAuxData {
     pub cfds: Vec<model::cfd::Cfd>,
     pub current_price: Usd,
-    pub settlement_proposals: SettlementProposals,
+    pub pending_proposals: UpdateCfdProposals,
 }
 
 impl CfdsWithAuxData {
     pub fn new(
         rx_cfds: &watch::Receiver<Vec<model::cfd::Cfd>>,
         rx_quote: &watch::Receiver<bitmex_price_feed::Quote>,
-        rx_settlement: &watch::Receiver<SettlementProposals>,
+        rx_updates: &watch::Receiver<UpdateCfdProposals>,
         role: Role,
     ) -> Self {
         let quote = rx_quote.borrow().clone();
@@ -116,20 +121,13 @@ impl CfdsWithAuxData {
             Role::Taker => quote.for_taker(),
         };
 
-        let settlement_proposals = rx_settlement.borrow().clone();
+        let pending_proposals = rx_updates.borrow().clone();
 
         CfdsWithAuxData {
             cfds: rx_cfds.borrow().clone(),
             current_price,
-            settlement_proposals,
+            pending_proposals,
         }
-    }
-
-    /// Check whether given CFD has any active settlement proposals
-    fn settlement_proposal_status(&self, cfd: &model::cfd::Cfd) -> Option<SettlementKind> {
-        self.settlement_proposals
-            .get(&cfd.order.id)
-            .map(|(_, kind)| kind.clone())
     }
 }
 
@@ -151,7 +149,8 @@ impl ToSseEvent for CfdsWithAuxData {
                         (SignedAmount::ZERO, Decimal::ZERO.into())
                     });
 
-                let state = to_cfd_state(&cfd.state, self.settlement_proposal_status(cfd));
+                let pending_proposal = self.pending_proposals.get(&cfd.order.id);
+                let state = to_cfd_state(&cfd.state, pending_proposal);
 
                 Cfd {
                     order_id: cfd.order.id,
@@ -228,11 +227,17 @@ impl ToSseEvent for model::WalletInfo {
 
 fn to_cfd_state(
     cfd_state: &model::cfd::CfdState,
-    proposal_status: Option<SettlementKind>,
+    proposal_status: Option<&UpdateCfdProposal>,
 ) -> CfdState {
     match proposal_status {
-        Some(SettlementKind::Incoming) => CfdState::IncomingSettlementProposal,
-        Some(SettlementKind::Outgoing) => CfdState::OutgoingSettlementProposal,
+        Some(UpdateCfdProposal::Settlement {
+            direction: SettlementKind::Outgoing,
+            ..
+        }) => CfdState::OutgoingSettlementProposal,
+        Some(UpdateCfdProposal::Settlement {
+            direction: SettlementKind::Incoming,
+            ..
+        }) => CfdState::IncomingSettlementProposal,
         None => match cfd_state {
             model::cfd::CfdState::OutgoingOrderRequest { .. } => CfdState::OutgoingOrderRequest,
             model::cfd::CfdState::IncomingOrderRequest { .. } => CfdState::IncomingOrderRequest,
@@ -247,6 +252,14 @@ fn to_cfd_state(
             model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
             model::cfd::CfdState::PendingCommit { .. } => CfdState::PendingCommit,
         },
+        Some(UpdateCfdProposal::RollOverProposal {
+            direction: SettlementKind::Outgoing,
+            ..
+        }) => CfdState::OutgoingRollOverProposal,
+        Some(UpdateCfdProposal::RollOverProposal {
+            direction: SettlementKind::Incoming,
+            ..
+        }) => CfdState::IncomingRollOverProposal,
     }
 }
 

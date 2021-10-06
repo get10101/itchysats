@@ -216,6 +216,10 @@ function colorSchemaForAction(action: Action): string {
             return "green";
         case Action.REJECT_SETTLEMENT:
             return "red";
+        case Action.ACCEPT_ROLL_OVER:
+            return "green";
+        case Action.REJECT_ROLL_OVER:
+            return "red";
     }
 }
 

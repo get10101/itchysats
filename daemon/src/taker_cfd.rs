@@ -5,7 +5,7 @@ use crate::db::{
 };
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
-    SettlementKind, SettlementProposals,
+    RollOverProposal, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{OracleEventId, Usd};
 use crate::monitor::{self, MonitorParams};
@@ -31,6 +31,10 @@ pub struct TakeOffer {
 pub struct ProposeSettlement {
     pub order_id: OrderId,
     pub current_price: Usd,
+}
+
+pub struct ProposeRollOver {
+    pub order_id: OrderId,
 }
 
 pub struct MakerStreamMessage {
@@ -59,13 +63,13 @@ pub struct Actor {
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_actor_inbox: watch::Sender<Option<Order>>,
-    settlements_feed_sender: watch::Sender<SettlementProposals>,
+    update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
     send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
     latest_announcements: Option<BTreeMap<OracleEventId, oracle::Announcement>>,
     oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
-    current_settlement_proposals: SettlementProposals,
+    current_pending_proposals: UpdateCfdProposals,
 }
 
 impl Actor {
@@ -76,7 +80,7 @@ impl Actor {
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
-        settlements_feed_sender: watch::Sender<SettlementProposals>,
+        update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
         send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
         monitor_actor: Address<monitor::Actor<Actor>>,
         oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
@@ -87,20 +91,20 @@ impl Actor {
             oracle_pk,
             cfd_feed_actor_inbox,
             order_feed_actor_inbox,
-            settlements_feed_sender,
+            update_cfd_feed_sender,
             send_to_maker,
             monitor_actor,
             setup_state: SetupState::None,
             oracle_actor,
             latest_announcements: None,
-            current_settlement_proposals: HashMap::new(),
+            current_pending_proposals: HashMap::new(),
         }
     }
 
-    fn send_current_settlement_proposals(&self) -> Result<()> {
+    fn send_pending_update_proposals(&self) -> Result<()> {
         Ok(self
-            .settlements_feed_sender
-            .send(self.current_settlement_proposals.clone())?)
+            .update_cfd_feed_sender
+            .send(self.current_pending_proposals.clone())?)
     }
 
     async fn handle_take_offer(&mut self, order_id: OrderId, quantity: Usd) -> Result<()> {
@@ -142,7 +146,7 @@ impl Actor {
         let proposal = cfd.calculate_settlement(current_price)?;
 
         if self
-            .current_settlement_proposals
+            .current_pending_proposals
             .contains_key(&proposal.order_id)
         {
             anyhow::bail!(
@@ -151,11 +155,14 @@ impl Actor {
             )
         }
 
-        self.current_settlement_proposals.insert(
+        self.current_pending_proposals.insert(
             proposal.order_id,
-            (proposal.clone(), SettlementKind::Outgoing),
+            UpdateCfdProposal::Settlement {
+                proposal: proposal.clone(),
+                direction: SettlementKind::Outgoing,
+            },
         );
-        self.send_current_settlement_proposals()?;
+        self.send_pending_update_proposals()?;
 
         self.send_to_maker
             .do_send_async(wire::TakerToMaker::ProposeSettlement {
@@ -163,6 +170,34 @@ impl Actor {
                 timestamp: proposal.timestamp,
                 taker: proposal.taker,
                 maker: proposal.maker,
+            })
+            .await?;
+        Ok(())
+    }
+
+    async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
+        if self.current_pending_proposals.contains_key(&order_id) {
+            anyhow::bail!("An update for order id {} is already in progress", order_id)
+        }
+
+        let proposal = RollOverProposal {
+            order_id,
+            timestamp: SystemTime::now(),
+        };
+
+        self.current_pending_proposals.insert(
+            proposal.order_id,
+            UpdateCfdProposal::RollOverProposal {
+                proposal: proposal.clone(),
+                direction: SettlementKind::Outgoing,
+            },
+        );
+        self.send_pending_update_proposals()?;
+
+        self.send_to_maker
+            .do_send_async(wire::TakerToMaker::ProposeRollOver {
+                order_id: proposal.order_id,
+                timestamp: proposal.timestamp,
             })
             .await?;
         Ok(())
@@ -433,6 +468,13 @@ impl Handler<ProposeSettlement> for Actor {
 }
 
 #[async_trait]
+impl Handler<ProposeRollOver> for Actor {
+    async fn handle(&mut self, msg: ProposeRollOver, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_propose_roll_over(msg.order_id));
+    }
+}
+
+#[async_trait]
 impl Handler<MakerStreamMessage> for Actor {
     async fn handle(
         &mut self,
@@ -507,6 +549,10 @@ impl Message for TakeOffer {
 }
 
 impl Message for ProposeSettlement {
+    type Result = ();
+}
+
+impl Message for ProposeRollOver {
     type Result = ();
 }
 
