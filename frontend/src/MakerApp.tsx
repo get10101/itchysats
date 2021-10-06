@@ -139,7 +139,7 @@ export default function App() {
 
                         <GridItem colSpan={2} textAlign="center">
                             <Button
-                                disabled={isCreatingNewCfdOrder}
+                                disabled={isCreatingNewCfdOrder || orderPrice === "0"}
                                 variant={"solid"}
                                 colorScheme={"blue"}
                                 onClick={() => {
