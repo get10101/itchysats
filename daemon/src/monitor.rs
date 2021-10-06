@@ -222,7 +222,7 @@ where
     async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
         for (order_id, MonitorParams { cets, .. }) in self.cfds.clone().into_iter() {
             let cets = cets
-                .get(&attestation.id)
+                .get(&attestation.id.0)
                 .context("No CET for oracle event found")?;
             let (txid, script_pubkey) =
                 match cets.iter().find_map(|(txid, script_pubkey, range)| {

@@ -216,7 +216,7 @@ pub struct Announcements(pub [Announcement; 24]);
 #[derive(Debug, Clone, serde::Deserialize, PartialEq)]
 #[serde(try_from = "olivia_api::Response")]
 pub struct Attestation {
-    pub id: String,
+    pub id: OracleEventId,
     pub price: u64,
     pub scalars: Vec<SecretKey>,
 }
@@ -270,7 +270,7 @@ mod olivia_api {
             let attestation = response.attestation.context("Missing attestation")?;
 
             Ok(Self {
-                id: data.id,
+                id: OracleEventId(data.id),
                 price: attestation.outcome.parse()?,
                 scalars: attestation.schemes.olivia_v1.scalars,
             })

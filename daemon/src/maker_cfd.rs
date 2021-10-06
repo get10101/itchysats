@@ -606,7 +606,7 @@ impl Actor {
     async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
         tracing::debug!(
             "Learnt latest oracle attestation for event: {}",
-            attestation.id
+            attestation.id.0
         );
 
         todo!(
