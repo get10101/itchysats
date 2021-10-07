@@ -247,7 +247,7 @@ async fn main() -> Result<()> {
                         monitor::Actor::new(
                             opts.network.electrum(),
                             cfd_maker_actor_inbox.clone(),
-                            cfds,
+                            cfds.clone(),
                         )
                         .await
                         .unwrap(),
@@ -262,6 +262,7 @@ async fn main() -> Result<()> {
                 tokio::spawn(oracle_actor_context.run(oracle::Actor::new(
                     cfd_maker_actor_inbox.clone(),
                     monitor_actor_address,
+                    cfds,
                 )));
 
                 let listener_stream = futures::stream::poll_fn(move |ctx| {

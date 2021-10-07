@@ -1,4 +1,5 @@
 use crate::actors::log_error;
+use crate::model::cfd::{Cfd, CfdState};
 use crate::model::OracleEventId;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -37,10 +38,38 @@ where
     pub fn new(
         cfd_actor_address: xtra::Address<CFD>,
         monitor_actor_address: xtra::Address<M>,
+        cfds: Vec<Cfd>,
     ) -> Self {
+        let mut pending_attestations = HashSet::new();
+
+        for cfd in cfds {
+            match cfd.state.clone() {
+                CfdState::PendingOpen { .. }
+                | CfdState::Open { .. }
+                | CfdState::PendingCommit { .. }
+                | CfdState::OpenCommitted { .. }
+                | CfdState::PendingCet { .. } => {
+                    pending_attestations.insert(cfd.order.oracle_event_id);
+                }
+
+                // Irrelevant for restart
+                CfdState::OutgoingOrderRequest { .. }
+                | CfdState::IncomingOrderRequest { .. }
+                | CfdState::Accepted { .. }
+                | CfdState::Rejected { .. }
+                | CfdState::ContractSetup { .. }
+
+                // Final states
+                | CfdState::Closed { .. }
+                | CfdState::MustRefund { .. }
+                | CfdState::Refunded { .. }
+                | CfdState::SetupFailed { .. } => ()
+            }
+        }
+
         Self {
             latest_announcements: None,
-            pending_attestations: HashSet::new(),
+            pending_attestations,
             cfd_actor_address,
             monitor_actor_address,
         }
