@@ -1,4 +1,3 @@
-use crate::actors::log_error;
 use crate::db::{
     insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
     load_cfd_by_order_id, load_cfds_by_oracle_event_id, load_order_by_id,
@@ -12,7 +11,7 @@ use crate::model::cfd::{
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
-use crate::{maker_inc_connections, monitor, oracle, setup_contract, wire};
+use crate::{log_error, maker_inc_connections, monitor, oracle, setup_contract, wire};
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;

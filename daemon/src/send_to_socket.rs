@@ -1,4 +1,4 @@
-use crate::wire::JsonCodec;
+use crate::wire::{self, JsonCodec};
 use futures::SinkExt;
 use serde::Serialize;
 use std::fmt;
@@ -13,7 +13,7 @@ pub struct Actor<T> {
 impl<T> Actor<T> {
     pub fn new(write: OwnedWriteHalf) -> Self {
         Self {
-            write: FramedWrite::new(write, JsonCodec::new()),
+            write: FramedWrite::new(write, JsonCodec::default()),
         }
     }
 }
@@ -34,3 +34,11 @@ where
 }
 
 impl<T: 'static + Send> xtra::Actor for Actor<T> {}
+
+impl xtra::Message for wire::MakerToTaker {
+    type Result = ();
+}
+
+impl xtra::Message for wire::TakerToMaker {
+    type Result = ();
+}

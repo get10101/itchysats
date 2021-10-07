@@ -1,7 +1,6 @@
-use crate::actors::log_error;
 use crate::model::cfd::{Cfd, CfdState};
 use crate::model::BitMexPriceEventId;
-use crate::tokio_ext;
+use crate::{log_error, tokio_ext};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};

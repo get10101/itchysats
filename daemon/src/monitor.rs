@@ -1,8 +1,7 @@
-use crate::actors::log_error;
 use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId};
 use crate::model::BitMexPriceEventId;
 use crate::oracle::Attestation;
-use crate::{model, oracle};
+use crate::{log_error, model, oracle};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::{PublicKey, Script, Txid};
