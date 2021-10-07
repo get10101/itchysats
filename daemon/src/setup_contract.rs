@@ -140,7 +140,7 @@ pub async fn new(
             .context("Expect event to exist in msg")?;
 
         verify_cets(
-            (&oracle_pk, &announcement.nonce_pks),
+            (&oracle_pk, &own_grouped_cets.event.nonce_pks),
             &params.other,
             own_grouped_cets.cets.as_slice(),
             other_cets.as_slice(),
