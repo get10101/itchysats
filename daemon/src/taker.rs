@@ -227,7 +227,7 @@ async fn main() -> Result<()> {
                     update_cfd_feed_sender,
                     send_to_maker,
                     monitor_actor_address.clone(),
-                    oracle_actor_address,
+                    oracle_actor_address.clone(),
                 )
                 .create(None)
                 .spawn_global();
@@ -243,9 +243,13 @@ async fn main() -> Result<()> {
                 );
                 tokio::spawn(
                     monitor_actor_context.run(
-                        monitor::Actor::new(opts.network.electrum(), cfd_actor_inbox.clone(), cfds)
-                            .await
-                            .unwrap(),
+                        monitor::Actor::new(
+                            opts.network.electrum(),
+                            cfd_actor_inbox.clone(),
+                            cfds.clone(),
+                        )
+                        .await
+                        .unwrap(),
                     ),
                 );
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
@@ -257,7 +261,11 @@ async fn main() -> Result<()> {
                 tokio::spawn(oracle_actor_context.run(oracle::Actor::new(
                     cfd_actor_inbox.clone(),
                     monitor_actor_address,
+                    cfds,
                 )));
+
+                // use `.send` here to ensure we only continue once the update was processed
+                oracle_actor_address.send(oracle::Sync).await.unwrap();
 
                 Ok(rocket.manage(cfd_actor_inbox).manage(cfd_feed_receiver))
             },

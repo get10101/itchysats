@@ -227,7 +227,7 @@ async fn main() -> Result<()> {
                     update_cfd_feed_sender,
                     maker_inc_connections_address.clone(),
                     monitor_actor_address.clone(),
-                    oracle_actor_address,
+                    oracle_actor_address.clone(),
                 )
                 .create(None)
                 .spawn_global();
@@ -247,7 +247,7 @@ async fn main() -> Result<()> {
                         monitor::Actor::new(
                             opts.network.electrum(),
                             cfd_maker_actor_inbox.clone(),
-                            cfds,
+                            cfds.clone(),
                         )
                         .await
                         .unwrap(),
@@ -262,7 +262,11 @@ async fn main() -> Result<()> {
                 tokio::spawn(oracle_actor_context.run(oracle::Actor::new(
                     cfd_maker_actor_inbox.clone(),
                     monitor_actor_address,
+                    cfds,
                 )));
+
+                // use `.send` here to ensure we only continue once the update was processed
+                oracle_actor_address.send(oracle::Sync).await.unwrap();
 
                 let listener_stream = futures::stream::poll_fn(move |ctx| {
                     let message = match futures::ready!(listener.poll_accept(ctx)) {

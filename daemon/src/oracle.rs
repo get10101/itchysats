@@ -1,10 +1,12 @@
 use crate::actors::log_error;
+use crate::model::cfd::{Cfd, CfdState};
 use crate::model::OracleEventId;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
 use futures::stream::FuturesOrdered;
 use futures::TryStreamExt;
+use reqwest::StatusCode;
 use rocket::time::format_description::FormatItem;
 use rocket::time::macros::format_description;
 use rocket::time::{Duration, OffsetDateTime, Time};
@@ -24,7 +26,7 @@ where
     M: xtra::Handler<Attestation>,
 {
     latest_announcements: Option<[Announcement; 24]>,
-    pending_attestations: HashSet<String>,
+    pending_attestations: HashSet<OracleEventId>,
     cfd_actor_address: xtra::Address<CFD>,
     monitor_actor_address: xtra::Address<M>,
 }
@@ -37,10 +39,38 @@ where
     pub fn new(
         cfd_actor_address: xtra::Address<CFD>,
         monitor_actor_address: xtra::Address<M>,
+        cfds: Vec<Cfd>,
     ) -> Self {
+        let mut pending_attestations = HashSet::new();
+
+        for cfd in cfds {
+            match cfd.state.clone() {
+                CfdState::PendingOpen { .. }
+                | CfdState::Open { .. }
+                | CfdState::PendingCommit { .. }
+                | CfdState::OpenCommitted { .. }
+                | CfdState::PendingCet { .. } => {
+                    pending_attestations.insert(cfd.order.oracle_event_id);
+                }
+
+                // Irrelevant for restart
+                CfdState::OutgoingOrderRequest { .. }
+                | CfdState::IncomingOrderRequest { .. }
+                | CfdState::Accepted { .. }
+                | CfdState::Rejected { .. }
+                | CfdState::ContractSetup { .. }
+
+                // Final states
+                | CfdState::Closed { .. }
+                | CfdState::MustRefund { .. }
+                | CfdState::Refunded { .. }
+                | CfdState::SetupFailed { .. } => ()
+            }
+        }
+
         Self {
             latest_announcements: None,
-            pending_attestations: HashSet::new(),
+            pending_attestations,
             cfd_actor_address,
             monitor_actor_address,
         }
@@ -97,15 +127,22 @@ where
         for event_id in pending_attestations.into_iter() {
             {
                 let res = match reqwest::get(format!("{}{}", OLIVIA_URL, event_id)).await {
-                    Ok(res) => res,
+                    Ok(res) if res.status().is_success() => res,
+                    Ok(res) if res.status() == StatusCode::NOT_FOUND => {
+                        tracing::trace!("Attestation not ready yet");
+                        continue;
+                    }
+                    Ok(res) => {
+                        tracing::warn!("Unexpected response, status {}", res.status());
+                        continue;
+                    }
                     Err(e) => {
-                        // TODO: Can we differentiate between errors?
-                        tracing::warn!(%event_id, "Attestation not available: {}", e);
+                        tracing::warn!(%event_id, "Failed to fetch attestation: {}", e);
                         continue;
                     }
                 };
 
-                let attestation = res.json::<Attestation>().await?;
+                let attestation = dbg!(res).json::<Attestation>().await?;
 
                 self.cfd_actor_address
                     .clone()
@@ -123,7 +160,7 @@ where
         Ok(())
     }
 
-    fn monitor_event(&mut self, event_id: String) {
+    fn monitor_event(&mut self, event_id: OracleEventId) {
         if !self.pending_attestations.insert(event_id.clone()) {
             tracing::trace!("Event {} already being monitored", event_id);
         }
@@ -169,7 +206,7 @@ where
     M: xtra::Handler<Attestation>,
 {
     async fn handle(&mut self, msg: MonitorEvent, _ctx: &mut xtra::Context<Self>) {
-        self.monitor_event(msg.event_id.0)
+        self.monitor_event(msg.event_id)
     }
 }
 
