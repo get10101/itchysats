@@ -176,15 +176,8 @@ impl Actor {
         min_quantity: Usd,
         max_quantity: Usd,
     ) -> Result<()> {
-        let oracle_event_id = self
-            .latest_announcements
-            .clone()
-            .context("Cannot create order because no announcement from oracle")?
-            .iter()
-            .next_back()
-            .context("Empty list of announcements")?
-            .0
-            .clone();
+        let oracle_event_id =
+            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM);
 
         let order = Order::new(
             price,

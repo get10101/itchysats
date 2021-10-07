@@ -224,6 +224,16 @@ fn next_24_hours(datetime: OffsetDateTime) -> Vec<OffsetDateTime> {
     (1..=24).map(|i| adjusted + Duration::hours(i)).collect()
 }
 
+#[allow(dead_code)]
+pub fn next_announcement_after(timestamp: OffsetDateTime) -> OracleEventId {
+    // always ceil to next hour
+    let adjusted =
+        timestamp.replace_time(Time::from_hms(timestamp.hour() + 1, 0, 0).expect("in_range"));
+    let event_id = event_url(adjusted);
+
+    OracleEventId(event_id)
+}
+
 /// Construct the URL of `olivia`'s `BitMEX/BXBT` event to be attested
 /// for at the time indicated by the argument `datetime`.
 fn event_url(datetime: OffsetDateTime) -> String {
@@ -556,6 +566,16 @@ mod tests {
         assert_eq!(
             url,
             "https://h00.ooo/x/BitMEX/BXBT/2021-09-23T10:00:00.price[n:20]"
+        );
+    }
+
+    #[test]
+    fn next_event_url_after_timestamp() {
+        let url = next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc());
+
+        assert_eq!(
+            url.0,
+            "https://h00.ooo/x/BitMEX/BXBT/2021-09-23T11:00:00.price[n:20]"
         );
     }
 
