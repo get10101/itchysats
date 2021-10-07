@@ -3,7 +3,7 @@ use crate::monitor;
 use crate::oracle::Attestation;
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
-use bdk::bitcoin::{Address, Amount, PublicKey, SignedAmount, Transaction};
+use bdk::bitcoin::{Address, Amount, PublicKey, Script, SignedAmount, Transaction, Txid};
 use bdk::descriptor::Descriptor;
 use cfd_protocol::secp256k1_zkp::{EcdsaAdaptorSignature, SECP256K1};
 use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash};
@@ -385,8 +385,7 @@ pub struct SettlementProposal {
     pub maker: Amount,
 }
 
-/// Proposal to roll over over a fixed length.
-/// The length of the roll over is defined by the maker.
+/// Proposed collaborative settlement
 #[derive(Debug, Clone)]
 pub struct RollOverProposal {
     pub order_id: OrderId,
@@ -644,6 +643,9 @@ impl Cfd {
                         transition_timestamp: SystemTime::now(),
                     },
                 },
+                monitor::Event::RevokedTransactionFound(_) => {
+                    todo!("Punish bad counterparty")
+                }
             },
             CfdStateChangeEvent::CommitTxSent => {
                 let (dlc, attestation) = if let PendingOpen {
@@ -867,6 +869,14 @@ impl Cfd {
 
     pub fn pending_open_dlc(&self) -> Option<Dlc> {
         if let CfdState::PendingOpen { dlc, .. } = self.state.clone() {
+            Some(dlc)
+        } else {
+            None
+        }
+    }
+
+    pub fn open_dlc(&self) -> Option<Dlc> {
+        if let CfdState::Open { dlc, .. } = self.state.clone() {
             Some(dlc)
         } else {
             None
@@ -1270,12 +1280,39 @@ pub struct Dlc {
     pub identity: SecretKey,
     pub identity_counterparty: PublicKey,
     pub revocation: SecretKey,
+    pub revocation_pk_counterparty: PublicKey,
     pub publish: SecretKey,
-    pub address: Address,
+    pub publish_pk_counterparty: PublicKey,
+    pub maker_address: Address,
+    pub taker_address: Address,
 
     /// The fully signed lock transaction ready to be published on chain
     pub lock: (Transaction, Descriptor<PublicKey>),
     pub commit: (Transaction, EcdsaAdaptorSignature, Descriptor<PublicKey>),
     pub cets: HashMap<OracleEventId, Vec<Cet>>,
     pub refund: (Transaction, Signature),
+
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub maker_lock_amount: Amount,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub taker_lock_amount: Amount,
+
+    pub revoked_commit: Vec<RevokedCommit>,
+}
+
+/// Information which we need to remember in order to construct a
+/// punishment transaction in case the counterparty publishes a
+/// revoked commit transaction.
+///
+/// It also includes the information needed to monitor for the
+/// publication of the revoked commit transaction.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RevokedCommit {
+    // To build punish transaction
+    pub encsig_ours: EcdsaAdaptorSignature,
+    pub revocation_sk_theirs: SecretKey,
+    pub publication_pk_theirs: PublicKey,
+    // To monitor revoked commit transaction
+    pub txid: Txid,
+    pub script_pubkey: Script,
 }

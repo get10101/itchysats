@@ -1,6 +1,6 @@
 use crate::actors::log_error;
 use crate::model::cfd::{Order, OrderId};
-use crate::model::TakerId;
+use crate::model::{OracleEventId, TakerId};
 use crate::{maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
@@ -18,13 +18,33 @@ pub struct BroadcastOrder(pub Option<Order>);
 
 #[allow(clippy::large_enum_variant)]
 pub enum TakerCommand {
-    SendOrder { order: Option<Order> },
-    NotifyInvalidOrderId { id: OrderId },
-    NotifyOrderAccepted { id: OrderId },
-    NotifyOrderRejected { id: OrderId },
-    NotifySettlementAccepted { id: OrderId },
-    NotifySettlementRejected { id: OrderId },
+    SendOrder {
+        order: Option<Order>,
+    },
+    NotifyInvalidOrderId {
+        id: OrderId,
+    },
+    NotifyOrderAccepted {
+        id: OrderId,
+    },
+    NotifyOrderRejected {
+        id: OrderId,
+    },
+    NotifySettlementAccepted {
+        id: OrderId,
+    },
+    NotifySettlementRejected {
+        id: OrderId,
+    },
+    NotifyRollOverAccepted {
+        id: OrderId,
+        oracle_event_id: OracleEventId,
+    },
+    NotifyRollOverRejected {
+        id: OrderId,
+    },
     Protocol(wire::SetupMsg),
+    RollOverProtocol(wire::RollOverMsg),
 }
 
 pub struct TakerMessage {
@@ -107,6 +127,30 @@ impl Actor {
             TakerCommand::Protocol(setup_msg) => {
                 self.send_to_taker(msg.taker_id, wire::MakerToTaker::Protocol(setup_msg))
                     .await?;
+            }
+            TakerCommand::NotifyRollOverAccepted {
+                id,
+                oracle_event_id,
+            } => {
+                self.send_to_taker(
+                    msg.taker_id,
+                    wire::MakerToTaker::ConfirmRollOver {
+                        order_id: id,
+                        oracle_event_id,
+                    },
+                )
+                .await?;
+            }
+            TakerCommand::NotifyRollOverRejected { id } => {
+                self.send_to_taker(msg.taker_id, wire::MakerToTaker::RejectRollOver(id))
+                    .await?;
+            }
+            TakerCommand::RollOverProtocol(roll_over_msg) => {
+                self.send_to_taker(
+                    msg.taker_id,
+                    wire::MakerToTaker::RollOverProtocol(roll_over_msg),
+                )
+                .await?;
             }
         }
         Ok(())
