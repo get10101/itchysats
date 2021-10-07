@@ -328,6 +328,7 @@ pub struct RollOverMsg1 {
     pub cets: HashMap<String, Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>>,
     pub refund: Signature,
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RollOverMsg2 {
     pub revocation_sk: SecretKey,

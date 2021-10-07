@@ -678,7 +678,7 @@ impl Actor {
         order_id: OrderId,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
-tracing::debug!(%order_id, "Maker accepts a roll_over proposal" );
+        tracing::debug!(%order_id, "Maker accepts a roll_over proposal" );
 
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
@@ -757,12 +757,12 @@ tracing::debug!(%order_id, "Maker accepts a roll_over proposal" );
         });
 
         self.remove_pending_proposal(&order_id)
-.context("accepted roll_over")?;
+            .context("accepted roll_over")?;
         Ok(())
     }
 
     async fn handle_reject_roll_over(&mut self, order_id: OrderId) -> Result<()> {
-tracing::debug!(%order_id, "Maker rejects a roll_over proposal" );
+        tracing::debug!(%order_id, "Maker rejects a roll_over proposal" );
 
         // Validate if order is actually being requested to be extended
         let (_, taker_id) = match self.current_pending_proposals.get(&order_id) {
@@ -786,7 +786,7 @@ tracing::debug!(%order_id, "Maker rejects a roll_over proposal" );
             .await?;
 
         self.remove_pending_proposal(&order_id)
-.context("rejected roll_over")?;
+            .context("rejected roll_over")?;
         Ok(())
     }
 

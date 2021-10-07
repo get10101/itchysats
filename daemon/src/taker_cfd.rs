@@ -447,7 +447,7 @@ impl Actor {
                 sender.send(msg).await?;
             }
             RollOverState::None => {
-anyhow::bail!("Received message without an active roll_over setup")
+                anyhow::bail!("Received message without an active roll_over setup")
             }
         }
 

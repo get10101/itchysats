@@ -8,7 +8,7 @@ use crate::{model, oracle, payout_curve};
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, Signature, SECP256K1};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::{Amount, PublicKey, Transaction, TxIn};
+use bdk::bitcoin::{Amount, PublicKey, Transaction};
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
@@ -289,23 +289,11 @@ pub async fn roll_over(
     )]);
 
     // unsign lock tx because PartiallySignedTransaction needs an unsigned tx
-    let unsigned_lock_tx = Transaction {
-        version: 0,
-        lock_time: dlc.lock.0.lock_time,
-        input: dlc
-            .lock
-            .0
-            .input
-            .iter()
-            .map(|txin| TxIn {
-                previous_output: txin.previous_output,
-                script_sig: txin.script_sig.clone(),
-                sequence: txin.sequence,
-                witness: vec![],
-            })
-            .collect(),
-        output: dlc.lock.0.output.clone(),
-    };
+    let mut unsigned_lock_tx = dlc.lock.0.clone();
+    unsigned_lock_tx
+        .input
+        .iter_mut()
+        .for_each(|input| input.witness.clear());
 
     let lock_tx = PartiallySignedTransaction::from_unsigned_tx(unsigned_lock_tx)?;
     let other_punish_params = PunishParams {
