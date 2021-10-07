@@ -314,13 +314,13 @@ pub async fn roll_over(
     let own_cfd_txs = renew_cfd_transactions(
         lock_tx.clone(),
         (
-            pk,
+            maker_identity,
             maker_lock_amount,
             dlc.maker_address.clone(),
             maker_punish_params,
         ),
         (
-            dlc.identity_counterparty,
+            taker_identity,
             taker_lock_amount,
             dlc.taker_address.clone(),
             taker_punish_params,

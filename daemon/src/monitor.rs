@@ -244,7 +244,7 @@ where
                 .entry((revoked_commit_tx.0, revoked_commit_tx.1.clone()))
                 .or_default()
                 .push((
-                    ScriptStatus::with_confirmations(0),
+                    ScriptStatus::InMempool,
                     Event::RevokedTransactionFound(order_id),
                 ));
         }

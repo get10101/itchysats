@@ -407,6 +407,8 @@ impl Actor {
                 .await
         });
 
+        self.remove_pending_proposal(&order_id)
+            .context("Could not remove accepted roll over")?;
         Ok(())
     }
 
