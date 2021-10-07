@@ -28,7 +28,7 @@ import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } 
 import Wallet from "./components/Wallet";
 import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 
-const SPREAD = 1.003;
+const SPREAD = 1.01;
 
 export default function App() {
     let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });
