@@ -227,7 +227,7 @@ async fn main() -> Result<()> {
                     update_cfd_feed_sender,
                     send_to_maker,
                     monitor_actor_address.clone(),
-                    oracle_actor_address,
+                    oracle_actor_address.clone(),
                 )
                 .create(None)
                 .spawn_global();
@@ -263,6 +263,9 @@ async fn main() -> Result<()> {
                     monitor_actor_address,
                     cfds,
                 )));
+
+                // use `.send` here to ensure we only continue once the update was processed
+                oracle_actor_address.send(oracle::Sync).await.unwrap();
 
                 Ok(rocket.manage(cfd_actor_inbox).manage(cfd_feed_receiver))
             },
