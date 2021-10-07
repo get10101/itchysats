@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
 use futures::stream::FuturesOrdered;
 use futures::TryStreamExt;
+use reqwest::StatusCode;
 use rocket::time::format_description::FormatItem;
 use rocket::time::macros::format_description;
 use rocket::time::{Duration, OffsetDateTime, Time};
@@ -126,15 +127,22 @@ where
         for event_id in pending_attestations.into_iter() {
             {
                 let res = match reqwest::get(format!("{}{}", OLIVIA_URL, event_id)).await {
-                    Ok(res) => res,
+                    Ok(res) if res.status().is_success() => res,
+                    Ok(res) if res.status() == StatusCode::NOT_FOUND => {
+                        tracing::trace!("Attestation not ready yet");
+                        continue;
+                    }
+                    Ok(res) => {
+                        tracing::warn!("Unexpected response, status {}", res.status());
+                        continue;
+                    }
                     Err(e) => {
-                        // TODO: Can we differentiate between errors?
-                        tracing::warn!(%event_id, "Attestation not available: {}", e);
+                        tracing::warn!(%event_id, "Failed to fetch attestation: {}", e);
                         continue;
                     }
                 };
 
-                let attestation = res.json::<Attestation>().await?;
+                let attestation = dbg!(res).json::<Attestation>().await?;
 
                 self.cfd_actor_address
                     .clone()
