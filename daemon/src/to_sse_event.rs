@@ -300,13 +300,16 @@ fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
         (CfdState::IncomingSettlementProposal { .. }, Role::Maker) => {
             vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement]
         }
+        (CfdState::IncomingRollOverProposal { .. }, Role::Maker) => {
+            vec![CfdAction::AcceptRollOver, CfdAction::RejectRollOver]
+        }
         // If there is an outgoing settlement proposal already, user can't
         // initiate new one
         (CfdState::OutgoingSettlementProposal { .. }, Role::Maker) => {
             vec![CfdAction::Commit]
         }
         (CfdState::Open { .. }, Role::Taker) => {
-            vec![CfdAction::Commit, CfdAction::Settle]
+            vec![CfdAction::RollOver, CfdAction::Commit, CfdAction::Settle]
         }
         (CfdState::Open { .. }, Role::Maker) => vec![CfdAction::Commit],
         _ => vec![],
