@@ -6,6 +6,7 @@ use rocket::request::FromParam;
 use rocket::response::stream::Event;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 
@@ -200,7 +201,11 @@ impl ToSseEvent for Option<model::cfd::Order> {
                 .duration_since(UNIX_EPOCH)
                 .expect("timestamp to be convertible to duration since epoch")
                 .as_secs(),
-            term_in_secs: order.term.as_secs(),
+            term_in_secs: order
+                .term
+                .whole_seconds()
+                .try_into()
+                .expect("term is always positive number"),
         });
 
         Event::json(&order).event("order")
