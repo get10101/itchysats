@@ -24,7 +24,7 @@ where
     M: xtra::Handler<Attestation>,
 {
     latest_announcements: Option<[Announcement; 24]>,
-    pending_attestations: HashSet<String>,
+    pending_attestations: HashSet<OracleEventId>,
     cfd_actor_address: xtra::Address<CFD>,
     monitor_actor_address: xtra::Address<M>,
 }
@@ -123,7 +123,7 @@ where
         Ok(())
     }
 
-    fn monitor_event(&mut self, event_id: String) {
+    fn monitor_event(&mut self, event_id: OracleEventId) {
         if !self.pending_attestations.insert(event_id.clone()) {
             tracing::trace!("Event {} already being monitored", event_id);
         }
@@ -169,7 +169,7 @@ where
     M: xtra::Handler<Attestation>,
 {
     async fn handle(&mut self, msg: MonitorEvent, _ctx: &mut xtra::Context<Self>) {
-        self.monitor_event(msg.event_id.0)
+        self.monitor_event(msg.event_id)
     }
 }
 
