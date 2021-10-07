@@ -108,7 +108,7 @@ impl Order {
         origin: Origin,
         oracle_event_id: OracleEventId,
     ) -> Result<Self> {
-        let leverage = Leverage(5);
+        let leverage = Leverage(2);
         let maintenance_margin_rate = dec!(0.005);
         let liquidation_price =
             calculate_liquidation_price(&leverage, &price, &maintenance_margin_rate)?;

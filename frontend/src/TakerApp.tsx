@@ -154,8 +154,8 @@ export default function App() {
                         <Text>Leverage:</Text>
                         <HStack spacing={5}>
                             <Button disabled={true}>x1</Button>
-                            <Button disabled={true}>x2</Button>
-                            <Button colorScheme="blue" variant="solid">x{order?.leverage}</Button>
+                            <Button colorScheme="blue" variant="solid">x{order ? order.leverage : 2}</Button>
+                            <Button disabled={true}>x5</Button>
                         </HStack>
 
                         <GridItem colSpan={2}>
