@@ -58,6 +58,8 @@ pub enum MakerToTaker {
     CurrentOrder(Option<Order>),
     ConfirmOrder(OrderId), // TODO: Include payout curve in "accept" message from maker
     RejectOrder(OrderId),
+    ConfirmSettlement(OrderId),
+    RejectSettlement(OrderId),
     InvalidOrderId(OrderId),
     Protocol(SetupMsg),
 }
@@ -68,6 +70,8 @@ impl fmt::Display for MakerToTaker {
             MakerToTaker::CurrentOrder(_) => write!(f, "CurrentOrder"),
             MakerToTaker::ConfirmOrder(_) => write!(f, "ConfirmOrder"),
             MakerToTaker::RejectOrder(_) => write!(f, "RejectOrder"),
+            MakerToTaker::ConfirmSettlement(_) => write!(f, "ConfirmSettlement"),
+            MakerToTaker::RejectSettlement(_) => write!(f, "RejectSettlement"),
             MakerToTaker::InvalidOrderId(_) => write!(f, "InvalidOrderId"),
             MakerToTaker::Protocol(_) => write!(f, "Protocol"),
         }

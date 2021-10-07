@@ -107,6 +107,15 @@ impl Actor {
             .send(self.current_pending_proposals.clone())?)
     }
 
+    /// Removes a proposal and updates the update cfd proposals' feed
+    fn remove_pending_proposal(&mut self, order_id: &OrderId) -> Result<()> {
+        if self.current_pending_proposals.remove(order_id).is_none() {
+            anyhow::bail!("Could not find proposal with order id: {}", &order_id)
+        }
+        self.send_pending_update_proposals()?;
+        Ok(())
+    }
+
     async fn handle_take_offer(&mut self, order_id: OrderId, quantity: Usd) -> Result<()> {
         let mut conn = self.db.acquire().await?;
 
@@ -307,6 +316,28 @@ impl Actor {
 
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
+
+        Ok(())
+    }
+
+    async fn handle_settlement_accepted(
+        &mut self,
+        order_id: OrderId,
+        _ctx: &mut Context<Self>,
+    ) -> Result<()> {
+        tracing::info!(%order_id, "Settlement proposal got accepted");
+
+        // TODO: Initiate collaborative settlement
+
+        self.remove_pending_proposal(&order_id)?;
+
+        Ok(())
+    }
+
+    async fn handle_settlement_rejected(&mut self, order_id: OrderId) -> Result<()> {
+        tracing::info!(%order_id, "Settlement proposal got rejected");
+
+        self.remove_pending_proposal(&order_id)?;
 
         Ok(())
     }
@@ -529,6 +560,12 @@ impl Handler<MakerStreamMessage> for Actor {
             }
             wire::MakerToTaker::RejectOrder(order_id) => {
                 log_error!(self.handle_order_rejected(order_id))
+            }
+            wire::MakerToTaker::ConfirmSettlement(order_id) => {
+                log_error!(self.handle_settlement_accepted(order_id, ctx))
+            }
+            wire::MakerToTaker::RejectSettlement(order_id) => {
+                log_error!(self.handle_settlement_rejected(order_id))
             }
             wire::MakerToTaker::InvalidOrderId(_) => todo!(),
             wire::MakerToTaker::Protocol(setup_msg) => {
