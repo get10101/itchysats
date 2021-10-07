@@ -526,6 +526,17 @@ impl Cfd {
                             dlc,
                             attestation: None,
                         }
+                    } else if let Open {
+                        dlc, attestation, ..
+                    } = self.state.clone()
+                    {
+                        CfdState::Open {
+                            common: CfdStateCommon {
+                                transition_timestamp: SystemTime::now(),
+                            },
+                            dlc,
+                            attestation,
+                        }
                     } else {
                         bail!(
                             "Cannot transition to Open because of unexpected state {}",
