@@ -4,7 +4,7 @@ use crate::model::WalletInfo;
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use bdk::bitcoin;
-use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
+use bdk::bitcoin::secp256k1::schnorrsig;
 use clap::Clap;
 use futures::StreamExt;
 use model::cfd::Order;
@@ -14,6 +14,7 @@ use seed::Seed;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
 use tokio::sync::watch;
@@ -142,7 +143,10 @@ async fn main() -> Result<()> {
     .await?;
     let wallet_info = wallet.sync().await.unwrap();
 
-    let oracle = schnorrsig::KeyPair::new(SECP256K1, &mut rand::thread_rng()); // TODO: Fetch oracle public key from oracle.
+    // TODO: Actually fetch it from Olivia
+    let oracle = schnorrsig::PublicKey::from_str(
+        "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
+    )?;
 
     let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
@@ -217,7 +221,7 @@ async fn main() -> Result<()> {
                 let cfd_actor_inbox = taker_cfd::Actor::new(
                     db.clone(),
                     wallet.clone(),
-                    schnorrsig::PublicKey::from_keypair(SECP256K1, &oracle),
+                    oracle,
                     cfd_feed_sender,
                     order_feed_sender,
                     update_cfd_feed_sender,
