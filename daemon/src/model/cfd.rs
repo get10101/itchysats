@@ -901,7 +901,7 @@ impl Cfd {
 }
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
-#[error("The cfd is not committed yet")]
+#[error("The cfd is not ready for CET publication yet")]
 pub struct NotReadyYet;
 
 #[derive(Debug, Clone)]
