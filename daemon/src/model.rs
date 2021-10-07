@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use bdk::bitcoin::{Address, Amount};
+use std::fmt;
 use std::time::SystemTime;
 use uuid::Uuid;
 
@@ -108,3 +109,9 @@ pub struct WalletInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OracleEventId(pub String);
+
+impl Display for OracleEventId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}

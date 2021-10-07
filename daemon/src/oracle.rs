@@ -8,6 +8,7 @@ use futures::TryStreamExt;
 use rocket::time::format_description::FormatItem;
 use rocket::time::macros::format_description;
 use rocket::time::{Duration, OffsetDateTime, Time};
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::convert::TryFrom;
 
@@ -208,15 +209,24 @@ pub struct Announcement {
     pub nonce_pks: Vec<schnorrsig::PublicKey>,
 }
 
+impl From<Announcement> for cfd_protocol::Announcement {
+    fn from(announcement: Announcement) -> Self {
+        cfd_protocol::Announcement {
+            id: announcement.id.0,
+            nonce_pks: announcement.nonce_pks,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Announcements(pub [Announcement; 24]);
 
 // TODO: Implement real deserialization once price attestation is
 // implemented in `olivia`
-#[derive(Debug, Clone, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(try_from = "olivia_api::Response")]
 pub struct Attestation {
-    pub id: String,
+    pub id: OracleEventId,
     pub price: u64,
     pub scalars: Vec<SecretKey>,
 }
@@ -270,7 +280,7 @@ mod olivia_api {
             let attestation = response.attestation.context("Missing attestation")?;
 
             Ok(Self {
-                id: data.id,
+                id: OracleEventId(data.id),
                 price: attestation.outcome.parse()?,
                 scalars: attestation.schemes.olivia_v1.scalars,
             })
@@ -426,7 +436,7 @@ mod olivia_api {
 
             let deserialized = serde_json::from_str::<oracle::Attestation>(json).unwrap();
             let expected = oracle::Attestation {
-                id: "/x/BitMEX/BXBT/2021-10-04T22:00:00.price[n:20]".to_string(),
+                id: OracleEventId("/x/BitMEX/BXBT/2021-10-04T22:00:00.price[n:20]".to_string()),
                 price: 48935,
                 scalars: vec![
                     "1327b3bd0f1faf45d6fed6c96d0c158da22a2033a6fed98bed036df0a4eef484"
