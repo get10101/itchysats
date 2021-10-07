@@ -128,6 +128,11 @@ impl Actor {
             .spawn_global();
 
         self.write_connections.insert(taker_id, out_msg_actor);
+
+        let _ = self
+            .cfd_actor
+            .send(maker_cfd::NewTakerOnline { id: taker_id })
+            .await;
     }
 }
 
