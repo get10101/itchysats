@@ -10,7 +10,7 @@ use crate::model::cfd::{
 use crate::model::{OracleEventId, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
-use crate::wire::SetupMsg;
+use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
 use crate::{oracle, send_to_socket, setup_contract, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
@@ -46,13 +46,25 @@ pub struct CfdSetupCompleted {
     pub dlc: Result<Dlc>,
 }
 
+pub struct CfdRollOverCompleted {
+    pub order_id: OrderId,
+    pub dlc: Result<Dlc>,
+}
+
 pub struct Commit {
     pub order_id: OrderId,
 }
 
 enum SetupState {
     Active {
-        sender: mpsc::UnboundedSender<wire::SetupMsg>,
+        sender: mpsc::UnboundedSender<SetupMsg>,
+    },
+    None,
+}
+
+enum RollOverState {
+    Active {
+        sender: mpsc::UnboundedSender<RollOverMsg>,
     },
     None,
 }
@@ -67,6 +79,7 @@ pub struct Actor {
     send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
+    roll_over_state: RollOverState,
     latest_announcements: Option<BTreeMap<OracleEventId, oracle::Announcement>>,
     oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
     current_pending_proposals: UpdateCfdProposals,
@@ -95,6 +108,7 @@ impl Actor {
             send_to_maker,
             monitor_actor,
             setup_state: SetupState::None,
+            roll_over_state: RollOverState::None,
             oracle_actor,
             latest_announcements: None,
             current_pending_proposals: HashMap::new(),
@@ -334,10 +348,82 @@ impl Actor {
         Ok(())
     }
 
+    async fn handle_roll_over_accepted(
+        &mut self,
+        order_id: OrderId,
+        oracle_event_id: OracleEventId,
+        ctx: &mut Context<Self>,
+    ) -> Result<()> {
+        tracing::info!(%order_id, "Roll over request got accepted");
+
+        let (sender, receiver) = mpsc::unbounded();
+
+        if let RollOverState::Active { .. } = self.roll_over_state {
+            anyhow::bail!("Already rolling over a contract!")
+        }
+
+        let mut conn = self.db.acquire().await?;
+
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
+
+        // TODO: we need to get multiple announcements for the next 24h
+        let announcement = self
+            .latest_announcements
+            .clone()
+            .context("Cannot roll over because no announcement from oracle was found")?
+            .get(&oracle_event_id)
+            .context("Empty list of announcements")?
+            .clone();
+
+        self.oracle_actor
+            .do_send_async(oracle::MonitorEvent {
+                event_id: announcement.id.clone(),
+            })
+            .await?;
+
+        let contract_future = setup_contract::roll_over(
+            self.send_to_maker
+                .clone()
+                .into_sink()
+                .with(|msg| future::ok(wire::TakerToMaker::RollOverProtocol(msg))),
+            receiver,
+            (self.oracle_pk, announcement),
+            cfd,
+            Role::Taker,
+            dlc,
+        );
+
+        let this = ctx
+            .address()
+            .expect("actor to be able to give address to itself");
+
+        self.roll_over_state = RollOverState::Active { sender };
+
+        tokio::spawn(async move {
+            let dlc = contract_future.await;
+
+            this.do_send_async(CfdRollOverCompleted { order_id, dlc })
+                .await
+        });
+
+        Ok(())
+    }
+
     async fn handle_settlement_rejected(&mut self, order_id: OrderId) -> Result<()> {
         tracing::info!(%order_id, "Settlement proposal got rejected");
 
         self.remove_pending_proposal(&order_id)?;
+
+        Ok(())
+    }
+
+    async fn handle_roll_over_rejected(&mut self, order_id: OrderId) -> Result<()> {
+        tracing::debug!(%order_id, "Roll over request rejected");
+        // TODO: tell UI that roll over was rejected
+
+        // this is not too bad as we are still monitoring for the CFD to expiry
+        // the taker can just try to ask again :)
 
         Ok(())
     }
@@ -349,6 +435,19 @@ impl Actor {
             }
             SetupState::None => {
                 anyhow::bail!("Received setup message without an active contract setup")
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_inc_roll_over_msg(&mut self, msg: RollOverMsg) -> Result<()> {
+        match &mut self.roll_over_state {
+            RollOverState::Active { sender } => {
+                sender.send(msg).await?;
+            }
+            RollOverState::None => {
+anyhow::bail!("Received message without an active roll_over setup")
             }
         }
 
@@ -392,6 +491,43 @@ impl Actor {
 
         // TODO: It's a bit suspicious to load this just to get the
         // refund timelock
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+
+        self.monitor_actor
+            .do_send_async(monitor::StartMonitoring {
+                id: order_id,
+                params: MonitorParams::from_dlc_and_timelocks(dlc, cfd.refund_timelock_in_blocks()),
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    async fn handle_cfd_roll_over_completed(
+        &mut self,
+        order_id: OrderId,
+        dlc: Result<Dlc>,
+    ) -> Result<()> {
+        let dlc = dlc.context("Failed to roll over contract with maker")?;
+        self.roll_over_state = RollOverState::None;
+
+        let mut conn = self.db.acquire().await?;
+        insert_new_cfd_state_by_order_id(
+            order_id,
+            CfdState::Open {
+                common: CfdStateCommon {
+                    transition_timestamp: SystemTime::now(),
+                },
+                dlc: dlc.clone(),
+                attestation: None,
+            },
+            &mut conn,
+        )
+        .await?;
+
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
+
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         self.monitor_actor
@@ -571,6 +707,18 @@ impl Handler<MakerStreamMessage> for Actor {
             wire::MakerToTaker::Protocol(setup_msg) => {
                 log_error!(self.handle_inc_protocol_msg(setup_msg))
             }
+            wire::MakerToTaker::ConfirmRollOver {
+                order_id,
+                oracle_event_id,
+            } => {
+                log_error!(self.handle_roll_over_accepted(order_id, oracle_event_id, ctx))
+            }
+            wire::MakerToTaker::RejectRollOver(order_id) => {
+                log_error!(self.handle_roll_over_rejected(order_id))
+            }
+            MakerToTaker::RollOverProtocol(roll_over_msg) => {
+                log_error!(self.handle_inc_roll_over_msg(roll_over_msg))
+            }
         }
 
         KeepRunning::Yes
@@ -581,6 +729,13 @@ impl Handler<MakerStreamMessage> for Actor {
 impl Handler<CfdSetupCompleted> for Actor {
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_setup_completed(msg.order_id, msg.dlc));
+    }
+}
+
+#[async_trait]
+impl Handler<CfdRollOverCompleted> for Actor {
+    async fn handle(&mut self, msg: CfdRollOverCompleted, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_cfd_roll_over_completed(msg.order_id, msg.dlc));
     }
 }
 
@@ -630,6 +785,10 @@ impl Message for MakerStreamMessage {
 }
 
 impl Message for CfdSetupCompleted {
+    type Result = ();
+}
+
+impl Message for CfdRollOverCompleted {
     type Result = ();
 }
 

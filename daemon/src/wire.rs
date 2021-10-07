@@ -1,12 +1,12 @@
 use crate::model::cfd::OrderId;
-use crate::model::Usd;
+use crate::model::{OracleEventId, Usd};
 use crate::Order;
 use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Amount, PublicKey};
 use bytes::BytesMut;
-use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
+use cfd_protocol::secp256k1_zkp::{EcdsaAdaptorSignature, SecretKey};
 use cfd_protocol::{CfdTransactions, PartyParams, PunishParams};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -38,6 +38,7 @@ pub enum TakerToMaker {
         timestamp: SystemTime,
     },
     Protocol(SetupMsg),
+    RollOverProtocol(RollOverMsg),
 }
 
 impl fmt::Display for TakerToMaker {
@@ -47,6 +48,7 @@ impl fmt::Display for TakerToMaker {
             TakerToMaker::ProposeSettlement { .. } => write!(f, "ProposeSettlement"),
             TakerToMaker::Protocol(_) => write!(f, "Protocol"),
             TakerToMaker::ProposeRollOver { .. } => write!(f, "ProposeRollOver"),
+            TakerToMaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
         }
     }
 }
@@ -62,6 +64,12 @@ pub enum MakerToTaker {
     RejectSettlement(OrderId),
     InvalidOrderId(OrderId),
     Protocol(SetupMsg),
+    RollOverProtocol(RollOverMsg),
+    ConfirmRollOver {
+        order_id: OrderId,
+        oracle_event_id: OracleEventId,
+    },
+    RejectRollOver(OrderId),
 }
 
 impl fmt::Display for MakerToTaker {
@@ -74,6 +82,9 @@ impl fmt::Display for MakerToTaker {
             MakerToTaker::RejectSettlement(_) => write!(f, "RejectSettlement"),
             MakerToTaker::InvalidOrderId(_) => write!(f, "InvalidOrderId"),
             MakerToTaker::Protocol(_) => write!(f, "Protocol"),
+            MakerToTaker::ConfirmRollOver { .. } => write!(f, "ConfirmRollOver"),
+            MakerToTaker::RejectRollOver(_) => write!(f, "RejectRollOver"),
+            MakerToTaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
         }
     }
 }
@@ -269,4 +280,79 @@ impl From<CfdTransactions> for Msg1 {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Msg2 {
     pub signed_lock: PartiallySignedTransaction, // TODO: Use binary representation
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "payload")]
+pub enum RollOverMsg {
+    Msg0(RollOverMsg0),
+    Msg1(RollOverMsg1),
+    Msg2(RollOverMsg2),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RollOverMsg0 {
+    pub revocation_pk: PublicKey,
+    pub publish_pk: PublicKey,
+}
+
+impl RollOverMsg {
+    pub fn try_into_msg0(self) -> Result<RollOverMsg0> {
+        if let Self::Msg0(v) = self {
+            Ok(v)
+        } else {
+            bail!("Not Msg0")
+        }
+    }
+
+    pub fn try_into_msg1(self) -> Result<RollOverMsg1> {
+        if let Self::Msg1(v) = self {
+            Ok(v)
+        } else {
+            bail!("Not Msg1")
+        }
+    }
+
+    pub fn try_into_msg2(self) -> Result<RollOverMsg2> {
+        if let Self::Msg2(v) = self {
+            Ok(v)
+        } else {
+            bail!("Not Msg2")
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RollOverMsg1 {
+    pub commit: EcdsaAdaptorSignature,
+    pub cets: HashMap<String, Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>>,
+    pub refund: Signature,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RollOverMsg2 {
+    pub revocation_sk: SecretKey,
+}
+
+impl From<CfdTransactions> for RollOverMsg1 {
+    fn from(txs: CfdTransactions) -> Self {
+        let cets = txs
+            .cets
+            .into_iter()
+            .map(|grouped_cets| {
+                (
+                    grouped_cets.event.id,
+                    grouped_cets
+                        .cets
+                        .into_iter()
+                        .map(|(_, encsig, digits)| (digits.range(), encsig))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        Self {
+            commit: txs.commit.1,
+            cets,
+            refund: txs.refund.1,
+        }
+    }
 }

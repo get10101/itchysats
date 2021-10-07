@@ -37,6 +37,7 @@ pub struct MonitorParams {
     commit: (Txid, Descriptor<PublicKey>),
     cets: HashMap<OracleEventId, Vec<Cet>>,
     refund: (Txid, Script, u32),
+    revoked_commits: Vec<(Txid, Script)>,
 }
 
 pub struct Sync;
@@ -110,7 +111,7 @@ where
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
                         CetStatus::OracleSigned(attestation) => {
-                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.address.script_pubkey()), attestation, cfd.order.id)?;
+                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.maker_address.script_pubkey()), attestation, cfd.order.id)?;
                             actor.monitor_commit_cet_timelock(&params, cfd.order.id);
                             actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                             actor.monitor_refund_finality(&params,cfd.order.id);
@@ -120,7 +121,7 @@ where
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
                         CetStatus::Ready(attestation) => {
-                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.address.script_pubkey()), attestation, cfd.order.id)?;
+                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.maker_address.script_pubkey()), attestation, cfd.order.id)?;
                             actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
@@ -163,6 +164,7 @@ where
         self.monitor_commit_cet_timelock(params, order_id);
         self.monitor_commit_refund_timelock(params, order_id);
         self.monitor_refund_finality(params, order_id);
+        self.monitor_revoked_commit_transactions(params, order_id);
     }
 
     fn monitor_lock_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
@@ -234,6 +236,18 @@ where
             .push((ScriptStatus::finality(), Event::CetFinality(order_id)));
 
         Ok(())
+    }
+
+    fn monitor_revoked_commit_transactions(&mut self, params: &MonitorParams, order_id: OrderId) {
+        for revoked_commit_tx in params.revoked_commits.iter() {
+            self.awaiting_status
+                .entry((revoked_commit_tx.0, revoked_commit_tx.1.clone()))
+                .or_default()
+                .push((
+                    ScriptStatus::with_confirmations(0),
+                    Event::RevokedTransactionFound(order_id),
+                ));
+        }
     }
 
     async fn sync(&mut self) -> Result<()> {
@@ -474,6 +488,7 @@ pub enum Event {
     CetFinality(OrderId),
     RefundTimelockExpired(OrderId),
     RefundFinality(OrderId),
+    RevokedTransactionFound(OrderId),
 }
 
 impl Event {
@@ -485,6 +500,7 @@ impl Event {
             Event::RefundTimelockExpired(order_id) => order_id,
             Event::RefundFinality(order_id) => order_id,
             Event::CetFinality(order_id) => order_id,
+            Event::RevokedTransactionFound(order_id) => order_id,
         };
 
         *order_id
@@ -493,7 +509,7 @@ impl Event {
 
 impl MonitorParams {
     pub fn from_dlc_and_timelocks(dlc: Dlc, refund_timelock_in_blocks: u32) -> Self {
-        let script_pubkey = dlc.address.script_pubkey();
+        let script_pubkey = dlc.maker_address.script_pubkey();
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
             commit: (dlc.commit.0.txid(), dlc.commit.2),
@@ -503,6 +519,11 @@ impl MonitorParams {
                 script_pubkey,
                 refund_timelock_in_blocks,
             ),
+            revoked_commits: dlc
+                .revoked_commit
+                .iter()
+                .map(|rev_commit| (rev_commit.txid, rev_commit.script_pubkey.clone()))
+                .collect(),
         }
     }
 }
