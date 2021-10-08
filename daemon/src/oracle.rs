@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use std::convert::TryFrom;
 
 /// Where `olivia` is located.
-const OLIVIA_URL: &str = "https://h00.ooo/";
+const OLIVIA_URL: &str = "https://h00.ooo";
 
 const OLIVIA_EVENT_TIME_FORMAT: &[FormatItem] =
     format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
@@ -231,7 +231,7 @@ fn event_url(datetime: OffsetDateTime) -> String {
         .format(&OLIVIA_EVENT_TIME_FORMAT)
         .expect("valid formatter for datetime");
 
-    format!("{}x/BitMEX/BXBT/{}.price[n:20]", OLIVIA_URL, datetime)
+    format!("{}/x/BitMEX/BXBT/{}.price[n:20]", OLIVIA_URL, datetime)
 }
 
 #[derive(Debug, Clone, serde::Deserialize, PartialEq)]
