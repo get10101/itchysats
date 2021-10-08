@@ -69,13 +69,9 @@ export default function App() {
         },
     });
 
-    const acceptOrRejectOrder = cfds.filter((value) => value.state.getGroup() === StateGroupKey.ACCEPT_OR_REJECT_ORDER);
-    const acceptOrRejectSettlement = cfds.filter((value) =>
-        value.state.getGroup() === StateGroupKey.ACCEPT_OR_REJECT_SETTLEMENT
-    );
-    const acceptOrRejectRollOvers = cfds.filter((value) =>
-        value.state.getGroup() === StateGroupKey.ACCEPT_OR_REJECT_ROLL_OVER
-    );
+    const pendingOrders = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_ORDER);
+    const pendingSettlements = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_SETTLEMENT);
+    const pendingRollOvers = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_ROLL_OVER);
     const opening = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPENING);
     const open = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPEN);
     const closed = cfds.filter((value) => value.state.getGroup() === StateGroupKey.CLOSED);
@@ -166,9 +162,9 @@ export default function App() {
             <Tabs marginTop={5}>
                 <TabList>
                     <Tab>Open [{open.length}]</Tab>
-                    <Tab>Accept / Reject Order [{acceptOrRejectOrder.length}]</Tab>
-                    <Tab>Accept / Reject Settlement [{acceptOrRejectSettlement.length}]</Tab>
-                    <Tab>Accept / Reject Roll Overs [{acceptOrRejectRollOvers.length}]</Tab>
+                    <Tab>Pending Orders [{pendingOrders.length}]</Tab>
+                    <Tab>Pending Settlements [{pendingSettlements.length}]</Tab>
+                    <Tab>Pending Roll Overs [{pendingRollOvers.length}]</Tab>
                     <Tab>Opening [{opening.length}]</Tab>
                     <Tab>Closed [{closed.length}]</Tab>
                 </TabList>
@@ -178,13 +174,13 @@ export default function App() {
                         <CfdTable data={open} />
                     </TabPanel>
                     <TabPanel>
-                        <CfdTable data={acceptOrRejectOrder} />
+                        <CfdTable data={pendingOrders} />
                     </TabPanel>
                     <TabPanel>
-                        <CfdTable data={acceptOrRejectSettlement} />
+                        <CfdTable data={pendingSettlements} />
                     </TabPanel>
                     <TabPanel>
-                        <CfdTable data={acceptOrRejectRollOvers} />
+                        <CfdTable data={pendingRollOvers} />
                     </TabPanel>
                     <TabPanel>
                         <CfdTable data={opening} />

@@ -132,7 +132,7 @@ export class State {
     public getGroup(): StateGroupKey {
         switch (this.key) {
             case StateKey.INCOMING_ORDER_REQUEST:
-                return StateGroupKey.ACCEPT_OR_REJECT_ORDER;
+                return StateGroupKey.PENDING_ORDER;
 
             case StateKey.OUTGOING_ORDER_REQUEST:
             case StateKey.ACCEPTED:
@@ -150,10 +150,10 @@ export class State {
                 return StateGroupKey.OPEN;
 
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
-                return StateGroupKey.ACCEPT_OR_REJECT_SETTLEMENT;
+                return StateGroupKey.PENDING_SETTLEMENT;
 
             case StateKey.INCOMING_ROLL_OVER_PROPOSAL:
-                return StateGroupKey.ACCEPT_OR_REJECT_ROLL_OVER;
+                return StateGroupKey.PENDING_ROLL_OVER;
 
             case StateKey.REJECTED:
             case StateKey.REFUNDED:
@@ -200,11 +200,11 @@ const enum StateKey {
 export enum StateGroupKey {
     /// A CFD which is still being set up (not on chain yet)
     OPENING = "Opening",
-    ACCEPT_OR_REJECT_ORDER = "Accept / Reject Order",
+    PENDING_ORDER = "Pending Order",
     /// A CFD that is an ongoing open position (on chain)
     OPEN = "Open",
-    ACCEPT_OR_REJECT_SETTLEMENT = "Accept / Reject Settlement",
-    ACCEPT_OR_REJECT_ROLL_OVER = "Accept / Reject Roll Over",
+    PENDING_SETTLEMENT = "Pending Settlement",
+    PENDING_ROLL_OVER = "Pending Roll Over",
     /// A CFD that has been successfully or not-successfully terminated
     CLOSED = "Closed",
 }
