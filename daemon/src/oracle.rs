@@ -137,7 +137,7 @@ where
                     }
                 };
 
-                let attestation = dbg!(res).json::<Attestation>().await?;
+                let attestation = res.json::<Attestation>().await?;
 
                 self.cfd_actor_address
                     .clone()
