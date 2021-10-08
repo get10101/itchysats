@@ -88,6 +88,12 @@ enum Network {
         #[clap(long, default_value = "ssl://electrum.blockstream.info:60002")]
         electrum: String,
     },
+    /// Run on signet
+    Signet {
+        /// URL to the electrum backend to use for the wallet.
+        #[clap(long)]
+        electrum: String,
+    },
 }
 
 impl Network {
@@ -95,6 +101,7 @@ impl Network {
         match self {
             Network::Mainnet { electrum } => electrum,
             Network::Testnet { electrum } => electrum,
+            Network::Signet { electrum } => electrum,
         }
     }
 
@@ -102,6 +109,7 @@ impl Network {
         match self {
             Network::Mainnet { .. } => bitcoin::Network::Bitcoin,
             Network::Testnet { .. } => bitcoin::Network::Testnet,
+            Network::Signet { .. } => bitcoin::Network::Signet,
         }
     }
 
@@ -109,6 +117,7 @@ impl Network {
         match self {
             Network::Mainnet { .. } => base.join("mainnet"),
             Network::Testnet { .. } => base.join("testnet"),
+            Network::Signet { .. } => base.join("signet"),
         }
     }
 }
