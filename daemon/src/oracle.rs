@@ -16,22 +16,14 @@ use std::collections::{HashMap, HashSet};
 const OLIVIA_EVENT_TIME_FORMAT: &[FormatItem] =
     format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
 
-pub struct Actor<CFD, M>
-where
-    CFD: xtra::Handler<Attestation>,
-    M: xtra::Handler<Attestation>,
-{
+pub struct Actor<CFD, M> {
     latest_announcements: HashMap<OracleEventId, Announcement>,
     pending_attestations: HashSet<OracleEventId>,
     cfd_actor_address: xtra::Address<CFD>,
     monitor_actor_address: xtra::Address<M>,
 }
 
-impl<CFD, M> Actor<CFD, M>
-where
-    CFD: xtra::Handler<Attestation>,
-    M: xtra::Handler<Attestation>,
-{
+impl<CFD, M> Actor<CFD, M> {
     pub fn new(
         cfd_actor_address: xtra::Address<CFD>,
         monitor_actor_address: xtra::Address<M>,
@@ -72,6 +64,22 @@ where
         }
     }
 
+    fn monitor_event(&mut self, event_id: OracleEventId) {
+        if !self.pending_attestations.insert(event_id.clone()) {
+            tracing::trace!("Event {} already being monitored", event_id);
+        }
+    }
+
+    fn handle_get_announcement(&self, event_id: OracleEventId) -> Option<Announcement> {
+        self.latest_announcements.get(&event_id).cloned()
+    }
+}
+
+impl<CFD, M> Actor<CFD, M>
+where
+    CFD: xtra::Handler<Attestation>,
+    M: xtra::Handler<Attestation>,
+{
     async fn update_state(&mut self) -> Result<()> {
         self.update_latest_announcements()
             .await
@@ -148,24 +156,9 @@ where
 
         Ok(())
     }
-
-    fn monitor_event(&mut self, event_id: OracleEventId) {
-        if !self.pending_attestations.insert(event_id.clone()) {
-            tracing::trace!("Event {} already being monitored", event_id);
-        }
-    }
-
-    pub fn handle_get_announcement(&self, event_id: OracleEventId) -> Option<Announcement> {
-        self.latest_announcements.get(&event_id).cloned()
-    }
 }
 
-impl<CFD, M> xtra::Actor for Actor<CFD, M>
-where
-    CFD: xtra::Handler<Attestation>,
-    M: xtra::Handler<Attestation>,
-{
-}
+impl<CFD: 'static, M: 'static> xtra::Actor for Actor<CFD, M> {}
 
 pub struct Sync;
 
@@ -193,11 +186,7 @@ impl xtra::Message for MonitorEvent {
 }
 
 #[async_trait]
-impl<CFD, M> xtra::Handler<MonitorEvent> for Actor<CFD, M>
-where
-    CFD: xtra::Handler<Attestation>,
-    M: xtra::Handler<Attestation>,
-{
+impl<CFD: 'static, M: 'static> xtra::Handler<MonitorEvent> for Actor<CFD, M> {
     async fn handle(&mut self, msg: MonitorEvent, _ctx: &mut xtra::Context<Self>) {
         self.monitor_event(msg.event_id)
     }
@@ -207,11 +196,7 @@ where
 pub struct GetAnnouncement(pub OracleEventId);
 
 #[async_trait]
-impl<CFD, M> xtra::Handler<GetAnnouncement> for Actor<CFD, M>
-where
-    CFD: xtra::Handler<Attestation>,
-    M: xtra::Handler<Attestation>,
-{
+impl<CFD: 'static, M: 'static> xtra::Handler<GetAnnouncement> for Actor<CFD, M> {
     async fn handle(
         &mut self,
         msg: GetAnnouncement,
