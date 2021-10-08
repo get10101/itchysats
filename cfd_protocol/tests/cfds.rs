@@ -1047,7 +1047,10 @@ impl OliviaData {
     /// CFD protocol.
     ///
     /// Data comes from this event:
-    /// https://outcome.observer/h00.ooo/x/BitMEX/BXBT/2021-10-05T02:00:00.price[n:20].
+    /// https://outcome.observer/h00.ooo/x/BitMEX/BXBT/2021-10-05T02:00:00.price?n=20.
+    ///
+    /// Note: Due to removal of historic data these events cannot actually be retrieved from the
+    /// Oracle anymore.
     fn example(id: &str, price: u64, nonce_pks: &[&str], attestations: &[&str]) -> Self {
         let oracle_pk = schnorrsig::PublicKey::from_str(Self::OLIVIA_PK).unwrap();
 
@@ -1082,7 +1085,7 @@ impl OliviaData {
     const OLIVIA_PK: &'static str =
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7";
 
-    const EVENT_ID_0: &'static str = "/x/BitMEX/BXBT/2021-10-05T02:00:00.price[n:20]";
+    const EVENT_ID_0: &'static str = "/x/BitMEX/BXBT/2021-10-05T02:00:00.price?n=20";
     const NONCE_PKS_0: [&'static str; 20] = [
         "d02d163cf9623f567c4e3faf851a9266ac1ede13da4ca4141f3a7717fba9a739",
         "bc310f26aa5addbc382f653d8530aaead7c25e3546abc24639f490e36d4bdb88",
@@ -1129,7 +1132,7 @@ impl OliviaData {
         "90c4d8ec9f408ccb62a62daa993c20f2f86799e1fdea520c6d060418e55fd216",
     ];
 
-    const EVENT_ID_1: &'static str = "/x/BitMEX/BXBT/2021-10-05T08:00:00.price[n:20]";
+    const EVENT_ID_1: &'static str = "/x/BitMEX/BXBT/2021-10-05T08:00:00.price?n=20";
     const NONCE_PKS_1: [&'static str; 20] = [
         "150df2e64f39706e726eaa1fe081af3edf376d9644723e135a99328fd194caca",
         "b90629cedc7cb8430b4d15c84bbe1fe173e70e626d40c465e64de29d4879e20f",

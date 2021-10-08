@@ -133,12 +133,12 @@ mod tests {
 
     #[test]
     fn to_olivia_url() {
-        let url = OracleEventId("/x/BitMEX/BXBT/2021-09-23T10:00:00.price[n:20]".to_string())
+        let url = OracleEventId("/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20".to_string())
             .to_olivia_url();
 
         assert_eq!(
             url,
-            Url::from_str("https://h00.ooo/x/BitMEX/BXBT/2021-09-23T10:00:00.price[n:20]").unwrap()
+            Url::from_str("https://h00.ooo/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20").unwrap()
         );
     }
 }
