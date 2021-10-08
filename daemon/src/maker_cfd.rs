@@ -15,6 +15,7 @@ use crate::{maker_inc_connections, monitor, oracle, setup_contract, wire};
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
+use cfd_protocol::secp256k1_zkp::Signature;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
 use std::collections::HashMap;
@@ -91,6 +92,10 @@ pub struct Actor {
     oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
     // Maker needs to also store TakerId to be able to send a reply back
     current_pending_proposals: HashMap<OrderId, (UpdateCfdProposal, TakerId)>,
+    // TODO: Persist instead of using an in-memory hashmap for resiliency?
+    // (not a huge deal, as in the worst case taker will fall back to
+    // noncollaborative settlement)
+    current_agreed_proposals: HashMap<OrderId, (SettlementProposal, TakerId)>,
 }
 
 enum SetupState {
@@ -136,6 +141,7 @@ impl Actor {
             roll_over_state: RollOverState::None,
             oracle_actor,
             current_pending_proposals: HashMap::new(),
+            current_agreed_proposals: HashMap::new(),
         }
     }
 
@@ -166,6 +172,21 @@ impl Actor {
         }
         self.send_pending_proposals()?;
         Ok(())
+    }
+
+    fn get_settlement_proposal(&self, order_id: OrderId) -> Result<(SettlementProposal, TakerId)> {
+        let (update_proposal, taker_id) = self
+            .current_pending_proposals
+            .get(&order_id)
+            .context("have a proposal that is about to be accepted")?;
+
+        let proposal = match update_proposal {
+            UpdateCfdProposal::Settlement { proposal, .. } => proposal,
+            UpdateCfdProposal::RollOverProposal { .. } => {
+                anyhow::bail!("did not expect a rollover proposal");
+            }
+        };
+        Ok((proposal.clone(), *taker_id))
     }
 
     async fn handle_new_order(
@@ -242,6 +263,53 @@ impl Actor {
             ),
         );
         self.send_pending_proposals()?;
+
+        Ok(())
+    }
+
+    async fn handle_initiate_settlement(
+        &mut self,
+        taker_id: TakerId,
+        order_id: OrderId,
+        sig_taker: Signature,
+    ) -> Result<()> {
+        tracing::info!(
+            "Taker {} initiated collab settlement for order { } by sending their signature",
+            taker_id,
+            order_id,
+        );
+
+        let (proposal, agreed_taker_id) = self
+            .current_agreed_proposals
+            .get(&order_id)
+            .context("maker should have data matching the agreed settlement")?;
+
+        if taker_id != *agreed_taker_id {
+            anyhow::bail!(
+                "taker Id mismatch. Expected: {}, received: {}",
+                agreed_taker_id,
+                taker_id
+            );
+        }
+
+        let mut conn = self.db.acquire().await?;
+
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
+
+        let (tx, sig_maker) = dlc.close_transaction(proposal)?;
+        let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
+
+        self.wallet
+            .try_broadcast_transaction(spend_tx)
+            .await
+            .context("Broadcasting spend transaction")?;
+
+        self.current_agreed_proposals
+            .remove(&order_id)
+            .context("remove accepted proposal after signing")?;
+
+        // TODO: Monitor for the transaction
 
         Ok(())
     }
@@ -631,9 +699,6 @@ impl Actor {
 
         let taker_id = self.get_taker_id_of_proposal(&order_id)?;
 
-        // TODO: Initiate the settlement - should we start calculating the
-        // signature here?
-
         self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id,
@@ -641,6 +706,8 @@ impl Actor {
             })
             .await?;
 
+        self.current_agreed_proposals
+            .insert(order_id, self.get_settlement_proposal(order_id)?);
         self.remove_pending_proposal(&order_id)
             .context("accepted settlement")?;
         Ok(())
@@ -996,6 +1063,12 @@ impl Handler<TakerStreamMessage> for Actor {
                         maker
                     }
                 ))
+            }
+            wire::TakerToMaker::InitiateSettlement {
+                order_id,
+                sig_taker,
+            } => {
+                log_error!(self.handle_initiate_settlement(taker_id, order_id, sig_taker))
             }
             wire::TakerToMaker::Protocol(msg) => {
                 log_error!(self.handle_inc_protocol_msg(taker_id, msg))

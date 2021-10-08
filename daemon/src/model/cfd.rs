@@ -4,8 +4,9 @@ use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, Script, SignedAmount, Transaction, Txid};
 use bdk::descriptor::Descriptor;
-use cfd_protocol::secp256k1_zkp::{EcdsaAdaptorSignature, SECP256K1};
-use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash};
+use bdk::miniscript::DescriptorTrait;
+use cfd_protocol::secp256k1_zkp::{self, EcdsaAdaptorSignature, SECP256K1};
+use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash, TransactionExt};
 use rocket::request::FromParam;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
@@ -1372,6 +1373,58 @@ pub struct Dlc {
     pub taker_lock_amount: Amount,
 
     pub revoked_commit: Vec<RevokedCommit>,
+}
+
+impl Dlc {
+    /// Create a close transaction based on the current contract and a settlement proposals
+    pub fn close_transaction(
+        &self,
+        proposal: &crate::model::cfd::SettlementProposal,
+    ) -> Result<(Transaction, Signature)> {
+        let (lock_tx, lock_desc) = &self.lock;
+        let (lock_outpoint, lock_amount) = {
+            let outpoint = lock_tx
+                .outpoint(&lock_desc.script_pubkey())
+                .expect("lock script to be in lock tx");
+            let amount = Amount::from_sat(lock_tx.output[outpoint.vout as usize].value);
+
+            (outpoint, amount)
+        };
+        let (tx, sighash) = cfd_protocol::close_transaction(
+            lock_desc,
+            lock_outpoint,
+            lock_amount,
+            (&self.maker_address, proposal.maker),
+            (&self.taker_address, proposal.taker),
+        )
+        .context("Unable to collaborative close transaction")?;
+
+        let sig = SECP256K1.sign(&sighash, &self.identity);
+
+        Ok((tx, sig))
+    }
+
+    #[allow(dead_code)] // Used only by the maker.
+    pub fn finalize_spend_transaction(
+        &self,
+        (close_tx, own_sig): (Transaction, Signature),
+        counterparty_sig: Signature,
+    ) -> Result<Transaction> {
+        let own_pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
+            SECP256K1,
+            &self.identity,
+        ));
+
+        let (_, lock_desc) = &self.lock;
+        let spend_tx = cfd_protocol::finalize_spend_transaction(
+            close_tx,
+            lock_desc,
+            (own_pk, own_sig),
+            (self.identity_counterparty, counterparty_sig),
+        )?;
+
+        Ok(spend_tx)
+    }
 }
 
 /// Information which we need to remember in order to construct a

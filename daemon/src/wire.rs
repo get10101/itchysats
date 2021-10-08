@@ -33,6 +33,10 @@ pub enum TakerToMaker {
         #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
         maker: Amount,
     },
+    InitiateSettlement {
+        order_id: OrderId,
+        sig_taker: Signature,
+    },
     ProposeRollOver {
         order_id: OrderId,
         timestamp: SystemTime,
@@ -46,6 +50,7 @@ impl fmt::Display for TakerToMaker {
         match self {
             TakerToMaker::TakeOrder { .. } => write!(f, "TakeOrder"),
             TakerToMaker::ProposeSettlement { .. } => write!(f, "ProposeSettlement"),
+            TakerToMaker::InitiateSettlement { .. } => write!(f, "InitiateSettlement"),
             TakerToMaker::Protocol(_) => write!(f, "Protocol"),
             TakerToMaker::ProposeRollOver { .. } => write!(f, "ProposeRollOver"),
             TakerToMaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
