@@ -172,10 +172,9 @@ pub async fn insert_new_cfd_state_by_order_id(
         .await
         .context("loading latest state failed")?;
 
-    // make sure that the new state is different than the current one to avoid that we save the same
-    // state twice
     if mem::discriminant(&latest_cfd_state_in_db) == mem::discriminant(&new_state) {
-        tracing::warn!(
+        // Since we have states where we add information this happens quite frequently
+        tracing::trace!(
             "Same state transition for cfd with order_id {}: {}",
             order_id,
             latest_cfd_state_in_db
