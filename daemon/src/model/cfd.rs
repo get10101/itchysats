@@ -102,7 +102,7 @@ pub struct Order {
 
 #[allow(dead_code)] // Only one binary and the tests use this.
 impl Order {
-    pub const TERM: Duration = Duration::hours(8);
+    pub const TERM: Duration = Duration::hours(24);
 
     pub fn new(
         price: Usd,
