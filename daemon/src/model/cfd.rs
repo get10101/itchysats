@@ -154,8 +154,7 @@ fn calculate_liquidation_price(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Error {
-    // TODO
-    ConnectionLost,
+    Connect,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
