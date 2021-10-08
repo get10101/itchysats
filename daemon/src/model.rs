@@ -6,7 +6,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use bdk::bitcoin::{Address, Amount};
+use reqwest::Url;
 use std::fmt;
+use std::str::FromStr;
 use std::time::SystemTime;
 use uuid::Uuid;
 
@@ -110,8 +112,33 @@ pub struct WalletInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OracleEventId(pub String);
 
+impl OracleEventId {
+    pub fn to_olivia_url(&self) -> Url {
+        Url::from_str("https://h00.ooo")
+            .expect("valid URL from constant")
+            .join(self.0.as_str())
+            .expect("Event id can be joined")
+    }
+}
+
 impl Display for OracleEventId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_olivia_url() {
+        let url = OracleEventId("/x/BitMEX/BXBT/2021-09-23T10:00:00.price[n:20]".to_string())
+            .to_olivia_url();
+
+        assert_eq!(
+            url,
+            Url::from_str("https://h00.ooo/x/BitMEX/BXBT/2021-09-23T10:00:00.price[n:20]").unwrap()
+        );
     }
 }

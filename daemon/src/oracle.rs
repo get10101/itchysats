@@ -13,9 +13,6 @@ use rocket::time::{Duration, OffsetDateTime, Time};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-/// Where `olivia` is located.
-const OLIVIA_URL: &str = "https://h00.ooo";
-
 const OLIVIA_EVENT_TIME_FORMAT: &[FormatItem] =
     format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
 
@@ -87,22 +84,23 @@ where
     }
 
     async fn update_latest_announcements(&mut self) -> Result<()> {
-        let new_announcements = next_urls()
+        let new_announcements = next_ids()
             .into_iter()
-            .map(|event_url| async move {
-                let response = reqwest::get(event_url.clone())
+            .map(|event_id| async move {
+                let url = event_id.to_olivia_url();
+                let response = reqwest::get(url.clone())
                     .await
-                    .with_context(|| format!("Failed to GET {}", event_url))?;
+                    .with_context(|| format!("Failed to GET {}", url))?;
 
                 if !response.status().is_success() {
-                    anyhow::bail!("GET {} responded with {}", event_url, response.status());
+                    anyhow::bail!("GET {} responded with {}", url, response.status());
                 }
 
                 let announcement = response
                     .json::<Announcement>()
                     .await
                     .context("Failed to deserialize as Announcement")?;
-                Result::<_, anyhow::Error>::Ok((OracleEventId(event_url), announcement))
+                Result::<_, anyhow::Error>::Ok((event_id, announcement))
             })
             .collect::<FuturesOrdered<_>>()
             .try_collect::<HashMap<OracleEventId, Announcement>>()
@@ -117,7 +115,7 @@ where
         let pending_attestations = self.pending_attestations.clone();
         for event_id in pending_attestations.into_iter() {
             {
-                let res = match reqwest::get(format!("{}{}", OLIVIA_URL, event_id)).await {
+                let res = match reqwest::get(event_id.to_olivia_url()).await {
                     Ok(res) if res.status().is_success() => res,
                     Ok(res) if res.status() == StatusCode::NOT_FOUND => {
                         tracing::trace!("Attestation not ready yet");
@@ -225,10 +223,10 @@ where
 
 /// Construct the URL of the next 24 `BitMEX/BXBT` hourly events
 /// `olivia` will attest to.
-fn next_urls() -> Vec<String> {
+fn next_ids() -> Vec<OracleEventId> {
     next_24_hours(OffsetDateTime::now_utc())
         .into_iter()
-        .map(event_url)
+        .map(event_id)
         .collect()
 }
 
@@ -242,19 +240,18 @@ pub fn next_announcement_after(timestamp: OffsetDateTime) -> OracleEventId {
     // always ceil to next hour
     let adjusted =
         timestamp.replace_time(Time::from_hms(timestamp.hour() + 1, 0, 0).expect("in_range"));
-    let event_id = event_url(adjusted);
 
-    OracleEventId(event_id)
+    event_id(adjusted)
 }
 
 /// Construct the URL of `olivia`'s `BitMEX/BXBT` event to be attested
 /// for at the time indicated by the argument `datetime`.
-fn event_url(datetime: OffsetDateTime) -> String {
+fn event_id(datetime: OffsetDateTime) -> OracleEventId {
     let datetime = datetime
         .format(&OLIVIA_EVENT_TIME_FORMAT)
         .expect("valid formatter for datetime");
 
-    format!("{}/x/BitMEX/BXBT/{}.price[n:20]", OLIVIA_URL, datetime)
+    OracleEventId(format!("/x/BitMEX/BXBT/{}.price[n:20]", datetime))
 }
 
 #[derive(Debug, Clone, serde::Deserialize, PartialEq)]
@@ -570,23 +567,17 @@ mod tests {
     use time::macros::datetime;
 
     #[test]
-    fn next_event_url_is_correct() {
-        let url = event_url(datetime!(2021-09-23 10:00:00).assume_utc());
+    fn next_event_id_is_correct() {
+        let event_id = event_id(datetime!(2021-09-23 10:00:00).assume_utc());
 
-        assert_eq!(
-            url,
-            "https://h00.ooo/x/BitMEX/BXBT/2021-09-23T10:00:00.price[n:20]"
-        );
+        assert_eq!(event_id.0, "/x/BitMEX/BXBT/2021-09-23T10:00:00.price[n:20]");
     }
 
     #[test]
-    fn next_event_url_after_timestamp() {
-        let url = next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc());
+    fn next_event_id_after_timestamp() {
+        let event_id = next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc());
 
-        assert_eq!(
-            url.0,
-            "https://h00.ooo/x/BitMEX/BXBT/2021-09-23T11:00:00.price[n:20]"
-        );
+        assert_eq!(event_id.0, "/x/BitMEX/BXBT/2021-09-23T11:00:00.price[n:20]");
     }
 
     #[test]
