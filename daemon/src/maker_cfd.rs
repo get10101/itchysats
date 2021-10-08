@@ -175,7 +175,7 @@ impl Actor {
         max_quantity: Usd,
     ) -> Result<()> {
         let oracle_event_id =
-            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM);
+            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM)?;
 
         let order = Order::new(
             price,
@@ -691,7 +691,7 @@ impl Actor {
         // TODO: do we want to store in the db that we rolled over?
 
         let oracle_event_id =
-            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM);
+            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM)?;
         let announcement = self
             .oracle_actor
             .send(oracle::GetAnnouncement(oracle_event_id.clone()))

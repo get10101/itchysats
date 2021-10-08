@@ -12,6 +12,8 @@ use rocket::time::macros::format_description;
 use rocket::time::{Duration, OffsetDateTime, Time};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::ops::Add;
+use time::ext::NumericalDuration;
 
 const OLIVIA_EVENT_TIME_FORMAT: &[FormatItem] =
     format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
@@ -236,12 +238,17 @@ fn next_24_hours(datetime: OffsetDateTime) -> Vec<OffsetDateTime> {
 }
 
 #[allow(dead_code)]
-pub fn next_announcement_after(timestamp: OffsetDateTime) -> OracleEventId {
-    // always ceil to next hour
-    let adjusted =
-        timestamp.replace_time(Time::from_hms(timestamp.hour() + 1, 0, 0).expect("in_range"));
+pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<OracleEventId> {
+    // always ceil to next hour and roll over to next day automatically
 
-    event_id(adjusted)
+    let timestamp = timestamp.add(1.hours());
+
+    let adjusted = timestamp.replace_time(
+        Time::from_hms(timestamp.hour(), 0, 0)
+            .context("Could not adjust time for next announcement")?,
+    );
+
+    Ok(event_id(adjusted))
 }
 
 /// Construct the URL of `olivia`'s `BitMEX/BXBT` event to be attested
@@ -575,9 +582,18 @@ mod tests {
 
     #[test]
     fn next_event_id_after_timestamp() {
-        let event_id = next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc());
+        let event_id =
+            next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc()).unwrap();
 
         assert_eq!(event_id.0, "/x/BitMEX/BXBT/2021-09-23T11:00:00.price?n=20");
+    }
+
+    #[test]
+    fn next_event_id_is_midnight_next_day() {
+        let event_id =
+            next_announcement_after(datetime!(2021-09-23 23:40:00).assume_utc()).unwrap();
+
+        assert_eq!(event_id.0, "/x/BitMEX/BXBT/2021-09-24T00:00:00.price?n=20");
     }
 
     #[test]
