@@ -1043,14 +1043,8 @@ impl OliviaData {
         )
     }
 
-    /// An example of all the data necessary from `olivia` to test the
-    /// CFD protocol.
-    ///
-    /// Data comes from this event:
-    /// https://outcome.observer/h00.ooo/x/BitMEX/BXBT/2021-10-05T02:00:00.price?n=20.
-    ///
-    /// Note: Due to removal of historic data these events cannot actually be retrieved from the
-    /// Oracle anymore.
+    /// Generate an example of all the data from `olivia` needed to test the
+    /// CFD protocol end-to-end.
     fn example(id: &str, price: u64, nonce_pks: &[&str], attestations: &[&str]) -> Self {
         let oracle_pk = schnorrsig::PublicKey::from_str(Self::OLIVIA_PK).unwrap();
 

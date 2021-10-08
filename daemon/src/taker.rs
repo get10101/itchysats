@@ -53,9 +53,9 @@ pub struct Db(sqlx::SqlitePool);
 
 #[derive(Clap)]
 struct Opts {
-    /// The IP address of the taker to connect to.
+    /// The IP address of the other party (i.e. the maker).
     #[clap(long, default_value = "127.0.0.1:9999")]
-    taker: SocketAddr,
+    maker: SocketAddr,
 
     /// The port to listen on for the HTTP API.
     #[clap(long, default_value = "8000")]
@@ -155,7 +155,7 @@ async fn main() -> Result<()> {
 
     let (read, write) = loop {
         let socket = tokio::net::TcpSocket::new_v4()?;
-        if let Ok(connection) = socket.connect(opts.taker).await {
+        if let Ok(connection) = socket.connect(opts.maker).await {
             break connection.into_split();
         } else {
             tracing::warn!(
