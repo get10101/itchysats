@@ -385,7 +385,7 @@ impl PartialEq for Announcement {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Payout {
     digits: interval::Digits,
     maker_amount: Amount,
