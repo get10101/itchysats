@@ -1,4 +1,4 @@
-use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId};
+use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId, TimestampedTransaction};
 use crate::model::BitMexPriceEventId;
 use crate::oracle::Attestation;
 use crate::{log_error, model, oracle};
@@ -89,6 +89,13 @@ where
                     actor.monitor_commit_cet_timelock(&params, cfd.order.id);
                     actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                     actor.monitor_refund_finality(&params,cfd.order.id);
+
+                    if let Some(TimestampedTransaction { tx, ..}
+                    ) = cfd.state.get_collaborative_close()  {
+                        let close_params = (tx.txid(),
+                            tx.output.first().expect("have output").script_pubkey.clone());
+                        actor.monitor_close_finality(close_params,cfd.order.id);
+                    }
                 }
                 CfdState::OpenCommitted { dlc, cet_status, .. } => {
                     let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
@@ -124,6 +131,12 @@ where
                     actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.order.id)?;
                     actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                     actor.monitor_refund_finality(&params,cfd.order.id);
+	        }
+                CfdState::PendingClose { collaborative_close, .. } => {
+                    let transaction  = collaborative_close.tx;
+                    let close_params = (transaction.txid(),
+                                        transaction.output.first().expect("have output").script_pubkey.clone());
+                    actor.monitor_close_finality(close_params,cfd.order.id);
                 }
                 CfdState::MustRefund { dlc, .. } => {
                     let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
@@ -177,6 +190,13 @@ where
             .entry((params.commit.0, params.commit.1.script_pubkey()))
             .or_default()
             .push((ScriptStatus::finality(), Event::CommitFinality(order_id)));
+    }
+
+    fn monitor_close_finality(&mut self, close_params: (Txid, Script), order_id: OrderId) {
+        self.awaiting_status
+            .entry(close_params)
+            .or_default()
+            .push((ScriptStatus::finality(), Event::CloseFinality(order_id)));
     }
 
     fn monitor_commit_cet_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
@@ -516,6 +536,7 @@ impl xtra::Message for StartMonitoring {
 pub enum Event {
     LockFinality(OrderId),
     CommitFinality(OrderId),
+    CloseFinality(OrderId),
     CetTimelockExpired(OrderId),
     CetFinality(OrderId),
     RefundTimelockExpired(OrderId),
@@ -528,6 +549,7 @@ impl Event {
         let order_id = match self {
             Event::LockFinality(order_id) => order_id,
             Event::CommitFinality(order_id) => order_id,
+            Event::CloseFinality(order_id) => order_id,
             Event::CetTimelockExpired(order_id) => order_id,
             Event::RefundTimelockExpired(order_id) => order_id,
             Event::RefundFinality(order_id) => order_id,

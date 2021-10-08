@@ -216,6 +216,7 @@ pub enum CfdState {
         common: CfdStateCommon,
         dlc: Dlc,
         attestation: Option<Attestation>,
+        collaborative_close: Option<TimestampedTransaction>,
     },
 
     /// The commit transaction was published but it not final yet
@@ -251,6 +252,17 @@ pub enum CfdState {
         attestation: Attestation,
     },
 
+    /// The collaborative close transaction was published but is not final yet.
+    ///
+    /// This state applies to taker and maker.
+    /// This state is needed, because otherwise the user does not get any feedback.
+    PendingClose {
+        common: CfdStateCommon,
+        dlc: Dlc,
+        attestation: Option<Attestation>,
+        collaborative_close: TimestampedTransaction,
+    },
+
     /// The position was closed collaboratively or non-collaboratively
     ///
     /// This state applies to taker and maker.
@@ -260,7 +272,8 @@ pub enum CfdState {
     /// commit + cet).
     Closed {
         common: CfdStateCommon,
-        attestation: Attestation,
+        // TODO: Use an enum of either Attestation or CollaborativeSettlement
+        attestation: Option<Attestation>,
     },
 
     // TODO: Can be extended with CetStatus
@@ -391,6 +404,7 @@ impl CfdState {
             CfdState::SetupFailed { common, .. } => common,
             CfdState::PendingCommit { common, .. } => common,
             CfdState::PendingCet { common, .. } => common,
+            CfdState::PendingClose { common, .. } => common,
             CfdState::Closed { common, .. } => common,
         };
 
@@ -399,6 +413,20 @@ impl CfdState {
 
     pub fn get_transition_timestamp(&self) -> SystemTime {
         self.get_common().transition_timestamp
+    }
+
+    pub fn get_collaborative_close(&self) -> Option<TimestampedTransaction> {
+        match self {
+            CfdState::Open {
+                collaborative_close,
+                ..
+            } => collaborative_close.clone(),
+            CfdState::PendingClose {
+                collaborative_close,
+                ..
+            } => Some(collaborative_close.clone()),
+            _ => None,
+        }
     }
 }
 
@@ -443,6 +471,9 @@ impl fmt::Display for CfdState {
             }
             CfdState::PendingCet { .. } => {
                 write!(f, "Pending CET")
+            }
+            CfdState::PendingClose { .. } => {
+                write!(f, "Pending Close")
             }
             CfdState::Closed { .. } => {
                 write!(f, "Closed")
@@ -531,7 +562,7 @@ impl Cfd {
 
     pub fn profit(&self, current_price: Usd) -> Result<(SignedAmount, Percent)> {
         // TODO: We should use the payout curve here and not just the current price!
-
+        // TODO: Use the collab settlement if there was one
         let current_price = if let Some(attestation) = self.attestation() {
             attestation.price()
         } else {
@@ -626,9 +657,13 @@ impl Cfd {
                             },
                             dlc,
                             attestation: None,
+                            collaborative_close: None,
                         }
                     } else if let Open {
-                        dlc, attestation, ..
+                        dlc,
+                        attestation,
+                        collaborative_close,
+                        ..
                     } = self.state.clone()
                     {
                         CfdState::Open {
@@ -637,6 +672,7 @@ impl Cfd {
                             },
                             dlc,
                             attestation,
+                            collaborative_close,
                         }
                     } else {
                         bail!(
@@ -679,6 +715,12 @@ impl Cfd {
                         },
                     }
                 }
+                monitor::Event::CloseFinality(_) => CfdState::Closed {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
+                    attestation: None
+                },
                 monitor::Event::CetTimelockExpired(_) => match self.state.clone() {
                     CfdState::OpenCommitted {
                         dlc,
@@ -769,7 +811,7 @@ impl Cfd {
                         common: CfdStateCommon {
                             transition_timestamp: SystemTime::now(),
                         },
-                        attestation,
+                        attestation: Some(attestation),
                     }
                 }
                 monitor::Event::RevokedTransactionFound(_) => {
@@ -777,19 +819,21 @@ impl Cfd {
                 }
             },
             CfdStateChangeEvent::CommitTxSent => {
-                let (dlc, attestation) = if let PendingOpen {
-                    dlc, attestation, ..
-                }
-                | Open {
-                    dlc, attestation, ..
-                } = self.state.clone()
-                {
-                    (dlc, attestation)
-                } else {
-                    bail!(
-                        "Cannot transition to PendingCommit because of unexpected state {}",
-                        self.state
-                    )
+                let (dlc, attestation ) = match self.state.clone() {
+                    PendingOpen {
+                        dlc, attestation, ..
+                    } => (dlc, attestation),
+                    Open {
+                        dlc,
+                        attestation,
+                        ..
+                    } => (dlc, attestation),
+                    _ => {
+                        bail!(
+                            "Cannot transition to PendingCommit because of unexpected state {}",
+                            self.state
+                        )
+                    }
                 };
 
                 PendingCommit {
@@ -814,8 +858,12 @@ impl Cfd {
                     },
                     dlc,
                     attestation: Some(attestation),
+                    collaborative_close: None,
                 },
-                CfdState::PendingCommit { dlc, .. } => CfdState::PendingCommit {
+                CfdState::PendingCommit {
+                    dlc,
+                    ..
+                } => CfdState::PendingCommit {
                     common: CfdStateCommon {
                         transition_timestamp: SystemTime::now(),
                     },
@@ -862,6 +910,43 @@ impl Cfd {
                     dlc,
                     attestation,
                 }
+               
+            },
+            CfdStateChangeEvent::ProposalSigned(collaborative_close) => match self.state.clone() {
+                CfdState::Open {
+                    common,
+                    dlc,
+                    attestation,
+                    ..
+                } => CfdState::Open {
+                    common,
+                    dlc,
+                    attestation,
+                    collaborative_close: Some(collaborative_close),
+                },
+                _ => bail!(
+                    "Cannot add proposed settlement details to state because of unexpected state {}",
+                    self.state
+                ),
+            },
+            CfdStateChangeEvent::CloseSent(collaborative_close) => match self.state.clone() {
+                CfdState::Open {
+                    common,
+                    dlc,
+                    attestation,
+                    collaborative_close : Some(_),
+                } => CfdState::PendingClose {
+                    common,
+                    dlc,
+                    attestation,
+                    collaborative_close,
+                },
+                CfdState::Open {
+                    collaborative_close : None,
+                    ..
+                } => bail!("Cannot transition to PendingClose because Open state did not record a settlement proposal beforehand"),
+                _ => bail!(
+                    "Cannot transition to PendingClose because of unexpected state {}",
             }
         };
 
@@ -1058,6 +1143,7 @@ impl Cfd {
             | CfdState::Accepted { .. }
             | CfdState::Rejected { .. }
             | CfdState::ContractSetup { .. }
+            | CfdState::PendingClose { .. }
             | CfdState::Closed { .. }
             | CfdState::MustRefund { .. }
             | CfdState::Refunded { .. }
@@ -1084,7 +1170,10 @@ impl Cfd {
                 ..
             }
             | CfdState::PendingCet { attestation, .. }
-            | CfdState::Closed { attestation, .. } => Some(attestation),
+            | CfdState::Closed {
+                attestation: Some(attestation),
+                ..
+            } => Some(attestation),
 
             CfdState::OutgoingOrderRequest { .. }
             | CfdState::IncomingOrderRequest { .. }
@@ -1094,6 +1183,8 @@ impl Cfd {
             | CfdState::PendingOpen { .. }
             | CfdState::Open { .. }
             | CfdState::PendingCommit { .. }
+            | CfdState::PendingClose { .. }
+            | CfdState::Closed { .. }
             | CfdState::OpenCommitted { .. }
             | CfdState::MustRefund { .. }
             | CfdState::Refunded { .. }
@@ -1109,6 +1200,7 @@ pub struct NotReadyYet {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Not all variants are used by all binaries.
 pub enum CfdStateChangeEvent {
     // TODO: group other events by actors into enums and add them here so we can bundle all
     // transitions into cfd.transition_to(...)
@@ -1116,6 +1208,10 @@ pub enum CfdStateChangeEvent {
     CommitTxSent,
     OracleAttestation(Attestation),
     CetSent,
+    /// Settlement proposal was signed by the taker and sent to the maker
+    ProposalSigned(TimestampedTransaction),
+    /// Maker signed and finalized the close transaction with both signatures
+    CloseSent(TimestampedTransaction),
 }
 
 /// Returns the Profit/Loss (P/L) as Bitcoin. Losses are capped by the provided margin
@@ -1576,4 +1672,23 @@ pub struct RevokedCommit {
     // To monitor revoked commit transaction
     pub txid: Txid,
     pub script_pubkey: Script,
+}
+
+/// Used when transactions (e.g. collaborative close) are recorded as a part of
+/// CfdState in the cases when we can't solely rely on state transition
+/// timestamp as it could have occured for different reasons (like a new
+/// attestation in Open state)
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TimestampedTransaction {
+    pub tx: Transaction,
+    pub timestamp: SystemTime,
+}
+
+impl TimestampedTransaction {
+    pub fn new(tx: Transaction) -> Self {
+        Self {
+            tx,
+            timestamp: SystemTime::now(),
+        }
+    }
 }

@@ -133,6 +133,7 @@ pub enum CfdState {
     Open,
     PendingCommit,
     PendingCet,
+    PendingClose,
     OpenCommitted,
     IncomingSettlementProposal,
     OutgoingSettlementProposal,
@@ -329,6 +330,7 @@ fn to_cfd_state(
             model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
             model::cfd::CfdState::PendingCommit { .. } => CfdState::PendingCommit,
             model::cfd::CfdState::PendingCet { .. } => CfdState::PendingCet,
+            model::cfd::CfdState::PendingClose { .. } => CfdState::PendingClose,
             model::cfd::CfdState::Closed { .. } => CfdState::Closed,
         },
         Some(UpdateCfdProposal::RollOverProposal {
@@ -386,10 +388,19 @@ fn to_cfd_details(state: model::cfd::CfdState, role: Role, network: Network) -> 
             ],
             Some(attestation.payout()),
         ),
-        Closed { attestation, .. } => (
+        Closed {
+            attestation: Some(attestation),
+            ..
+        } => (
             vec![tx_ub.cet(attestation.txid())],
             Some(attestation.payout()),
         ),
+        Closed {
+            attestation: None, ..
+        } => {
+            // TODO: Provide CfdDetails about collaborative settlement
+            (vec![], None)
+        }
         MustRefund { dlc, .. } => (
             vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc), tx_ub.refund(&dlc)],
             Some(dlc.refund_amount(role)),
@@ -397,6 +408,7 @@ fn to_cfd_details(state: model::cfd::CfdState, role: Role, network: Network) -> 
         Refunded { dlc, .. } => (vec![tx_ub.refund(&dlc)], Some(dlc.refund_amount(role))),
         OutgoingOrderRequest { .. }
         | IncomingOrderRequest { .. }
+        | PendingClose { .. }
         | Accepted { .. }
         | Rejected { .. }
         | ContractSetup { .. }
