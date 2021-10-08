@@ -92,7 +92,7 @@ where
     }
 
     async fn update_latest_announcements(&mut self) -> Result<()> {
-        let new_announcements = next_ids()
+        self.latest_announcements = next_ids()
             .into_iter()
             .map(|event_id| async move {
                 let url = event_id.to_olivia_url();
@@ -111,10 +111,8 @@ where
                 Result::<_, anyhow::Error>::Ok((event_id, announcement))
             })
             .collect::<FuturesOrdered<_>>()
-            .try_collect::<HashMap<OracleEventId, Announcement>>()
+            .try_collect()
             .await?;
-
-        self.latest_announcements = new_announcements;
 
         Ok(())
     }
