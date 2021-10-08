@@ -58,6 +58,8 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
 }
 
 export default function App() {
+    document.title = "Hermes Taker";
+
     let source = useEventSource({ source: "/api/feed" });
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
