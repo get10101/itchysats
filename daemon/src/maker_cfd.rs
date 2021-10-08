@@ -8,7 +8,7 @@ use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
     RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal, UpdateCfdProposals,
 };
-use crate::model::{OracleEventId, TakerId, Usd};
+use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::wallet::Wallet;
 use crate::{maker_inc_connections, monitor, oracle, setup_contract, wire};
@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::time::SystemTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
@@ -88,7 +88,6 @@ pub struct Actor {
     monitor_actor: Address<monitor::Actor<Actor>>,
     setup_state: SetupState,
     roll_over_state: RollOverState,
-    latest_announcements: Option<BTreeMap<OracleEventId, oracle::Announcement>>,
     oracle_actor: Address<oracle::Actor<Actor, monitor::Actor<Actor>>>,
     // Maker needs to also store TakerId to be able to send a reply back
     current_pending_proposals: HashMap<OrderId, (UpdateCfdProposal, TakerId)>,
@@ -135,7 +134,6 @@ impl Actor {
             monitor_actor,
             setup_state: SetupState::None,
             roll_over_state: RollOverState::None,
-            latest_announcements: None,
             oracle_actor,
             current_pending_proposals: HashMap::new(),
         }
@@ -513,13 +511,11 @@ impl Actor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        let offer_announcements = self
-            .latest_announcements
-            .clone()
-            .context("No oracle announcements available")?;
-        let offer_announcement = offer_announcements
-            .get(&cfd.order.oracle_event_id)
-            .context("Order's announcement not found in current oracle announcements")?;
+        let offer_announcement = self
+            .oracle_actor
+            .send(oracle::GetAnnouncement(cfd.order.oracle_event_id.clone()))
+            .await?
+            .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
 
         self.oracle_actor
             .do_send_async(oracle::MonitorEvent {
@@ -694,13 +690,13 @@ impl Actor {
 
         // TODO: do we want to store in the db that we rolled over?
 
-        let (oracle_event_id, announcement) = self
-            .latest_announcements
-            .clone()
-            .context("Cannot roll over because no announcement from oracle was found")?
-            .into_iter()
-            .next_back()
-            .context("Empty list of announcements")?;
+        let oracle_event_id =
+            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM);
+        let announcement = self
+            .oracle_actor
+            .send(oracle::GetAnnouncement(oracle_event_id.clone()))
+            .await?
+            .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
 
         self.takers
             .send(maker_inc_connections::TakerMessage {
@@ -806,21 +802,6 @@ impl Actor {
 
             tracing::info!("Refund transaction published on chain: {}", txid);
         }
-
-        Ok(())
-    }
-
-    async fn handle_oracle_announcements(
-        &mut self,
-        announcements: oracle::Announcements,
-    ) -> Result<()> {
-        self.latest_announcements.replace(
-            announcements
-                .0
-                .iter()
-                .map(|announcement| (announcement.id.clone(), announcement.clone()))
-                .collect(),
-        );
 
         Ok(())
     }
@@ -1011,13 +992,6 @@ impl Handler<TakerStreamMessage> for Actor {
         }
 
         KeepRunning::Yes
-    }
-}
-
-#[async_trait]
-impl Handler<oracle::Announcements> for Actor {
-    async fn handle(&mut self, msg: oracle::Announcements, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_oracle_announcements(msg))
     }
 }
 

@@ -11,8 +11,7 @@ use rocket::time::format_description::FormatItem;
 use rocket::time::macros::format_description;
 use rocket::time::{Duration, OffsetDateTime, Time};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::convert::TryFrom;
+use std::collections::{HashMap, HashSet};
 
 /// Where `olivia` is located.
 const OLIVIA_URL: &str = "https://h00.ooo";
@@ -22,10 +21,10 @@ const OLIVIA_EVENT_TIME_FORMAT: &[FormatItem] =
 
 pub struct Actor<CFD, M>
 where
-    CFD: xtra::Handler<Announcements> + xtra::Handler<Attestation>,
+    CFD: xtra::Handler<Attestation>,
     M: xtra::Handler<Attestation>,
 {
-    latest_announcements: Option<[Announcement; 24]>,
+    latest_announcements: HashMap<OracleEventId, Announcement>,
     pending_attestations: HashSet<OracleEventId>,
     cfd_actor_address: xtra::Address<CFD>,
     monitor_actor_address: xtra::Address<M>,
@@ -33,7 +32,7 @@ where
 
 impl<CFD, M> Actor<CFD, M>
 where
-    CFD: xtra::Handler<Announcements> + xtra::Handler<Attestation>,
+    CFD: xtra::Handler<Attestation>,
     M: xtra::Handler<Attestation>,
 {
     pub fn new(
@@ -69,7 +68,7 @@ where
         }
 
         Self {
-            latest_announcements: None,
+            latest_announcements: HashMap::new(),
             pending_attestations,
             cfd_actor_address,
             monitor_actor_address,
@@ -103,21 +102,13 @@ where
                     .json::<Announcement>()
                     .await
                     .context("Failed to deserialize as Announcement")?;
-                Result::<_, anyhow::Error>::Ok(announcement)
+                Result::<_, anyhow::Error>::Ok((OracleEventId(event_url), announcement))
             })
             .collect::<FuturesOrdered<_>>()
-            .try_collect::<Vec<_>>()
+            .try_collect::<HashMap<OracleEventId, Announcement>>()
             .await?;
 
-        let new_announcements = <[Announcement; 24]>::try_from(new_announcements)
-            .map_err(|vec| anyhow::anyhow!("wrong number of announcements: {}", vec.len()))?;
-
-        if self.latest_announcements.as_ref() != Some(&new_announcements) {
-            self.latest_announcements = Some(new_announcements.clone());
-            self.cfd_actor_address
-                .do_send_async(Announcements(new_announcements))
-                .await?;
-        }
+        self.latest_announcements = new_announcements;
 
         Ok(())
     }
@@ -165,11 +156,15 @@ where
             tracing::trace!("Event {} already being monitored", event_id);
         }
     }
+
+    pub fn handle_get_announcement(&self, event_id: OracleEventId) -> Option<Announcement> {
+        self.latest_announcements.get(&event_id).cloned()
+    }
 }
 
 impl<CFD, M> xtra::Actor for Actor<CFD, M>
 where
-    CFD: xtra::Handler<Announcements> + xtra::Handler<Attestation>,
+    CFD: xtra::Handler<Attestation>,
     M: xtra::Handler<Attestation>,
 {
 }
@@ -183,7 +178,7 @@ impl xtra::Message for Sync {
 #[async_trait]
 impl<CFD, M> xtra::Handler<Sync> for Actor<CFD, M>
 where
-    CFD: xtra::Handler<Announcements> + xtra::Handler<Attestation>,
+    CFD: xtra::Handler<Attestation>,
     M: xtra::Handler<Attestation>,
 {
     async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
@@ -202,11 +197,29 @@ impl xtra::Message for MonitorEvent {
 #[async_trait]
 impl<CFD, M> xtra::Handler<MonitorEvent> for Actor<CFD, M>
 where
-    CFD: xtra::Handler<Announcements> + xtra::Handler<Attestation>,
+    CFD: xtra::Handler<Attestation>,
     M: xtra::Handler<Attestation>,
 {
     async fn handle(&mut self, msg: MonitorEvent, _ctx: &mut xtra::Context<Self>) {
         self.monitor_event(msg.event_id)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GetAnnouncement(pub OracleEventId);
+
+#[async_trait]
+impl<CFD, M> xtra::Handler<GetAnnouncement> for Actor<CFD, M>
+where
+    CFD: xtra::Handler<Attestation>,
+    M: xtra::Handler<Attestation>,
+{
+    async fn handle(
+        &mut self,
+        msg: GetAnnouncement,
+        _ctx: &mut xtra::Context<Self>,
+    ) -> Option<Announcement> {
+        self.handle_get_announcement(msg.0)
     }
 }
 
@@ -265,9 +278,6 @@ impl From<Announcement> for cfd_protocol::Announcement {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Announcements(pub [Announcement; 24]);
-
 // TODO: Implement real deserialization once price attestation is
 // implemented in `olivia`
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -278,8 +288,8 @@ pub struct Attestation {
     pub scalars: Vec<SecretKey>,
 }
 
-impl xtra::Message for Announcements {
-    type Result = ();
+impl xtra::Message for GetAnnouncement {
+    type Result = Option<Announcement>;
 }
 
 impl xtra::Message for Attestation {
