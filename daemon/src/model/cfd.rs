@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Neg, RangeInclusive};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
+use time::Duration;
 use uuid::Uuid;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -101,6 +102,8 @@ pub struct Order {
 
 #[allow(dead_code)] // Only one binary and the tests use this.
 impl Order {
+    pub const TERM: Duration = Duration::hours(24);
+
     pub fn new(
         price: Usd,
         min_quantity: Usd,
@@ -123,7 +126,7 @@ impl Order {
             liquidation_price,
             position: Position::Sell,
             creation_timestamp: SystemTime::now(),
-            term: Duration::from_secs(60 * 60 * 8), // 8 hours
+            term: Self::TERM,
             origin,
             oracle_event_id,
         })
@@ -482,11 +485,7 @@ impl Cfd {
 
     #[allow(dead_code)]
     pub fn refund_timelock_in_blocks(&self) -> u32 {
-        self.order
-            .term
-            .mul_f32(Cfd::REFUND_THRESHOLD)
-            .as_blocks()
-            .ceil() as u32
+        (self.order.term * Cfd::REFUND_THRESHOLD).as_blocks().ceil() as u32
     }
 
     /// A factor to be added to the CFD order term for calculating the refund timelock.
@@ -1031,7 +1030,7 @@ pub trait AsBlocks {
 
 impl AsBlocks for Duration {
     fn as_blocks(&self) -> f32 {
-        self.as_secs_f32() / 60.0 / 10.0
+        self.as_seconds_f32() / 60.0 / 10.0
     }
 }
 
@@ -1140,15 +1139,15 @@ mod tests {
     fn test_secs_into_blocks() {
         let error_margin = f32::EPSILON;
 
-        let duration = Duration::from_secs(600);
+        let duration = Duration::seconds(600);
         let blocks = duration.as_blocks();
         assert!(blocks - error_margin < 1.0 && blocks + error_margin > 1.0);
 
-        let duration = Duration::from_secs(0);
+        let duration = Duration::seconds(0);
         let blocks = duration.as_blocks();
         assert!(blocks - error_margin < 0.0 && blocks + error_margin > 0.0);
 
-        let duration = Duration::from_secs(60);
+        let duration = Duration::seconds(60);
         let blocks = duration.as_blocks();
         assert!(blocks - error_margin < 0.1 && blocks + error_margin > 0.1);
     }
