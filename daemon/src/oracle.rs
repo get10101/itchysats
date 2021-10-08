@@ -63,16 +63,6 @@ impl<CFD, M> Actor<CFD, M> {
             monitor_actor_address,
         }
     }
-
-    fn monitor_event(&mut self, event_id: OracleEventId) {
-        if !self.pending_attestations.insert(event_id.clone()) {
-            tracing::trace!("Event {} already being monitored", event_id);
-        }
-    }
-
-    fn handle_get_announcement(&self, event_id: OracleEventId) -> Option<Announcement> {
-        self.latest_announcements.get(&event_id).cloned()
-    }
 }
 
 impl<CFD, M> Actor<CFD, M>
@@ -186,7 +176,9 @@ impl xtra::Message for MonitorEvent {
 #[async_trait]
 impl<CFD: 'static, M: 'static> xtra::Handler<MonitorEvent> for Actor<CFD, M> {
     async fn handle(&mut self, msg: MonitorEvent, _ctx: &mut xtra::Context<Self>) {
-        self.monitor_event(msg.event_id)
+        if !self.pending_attestations.insert(msg.event_id.clone()) {
+            tracing::trace!("Event {} already being monitored", msg.event_id);
+        }
     }
 }
 
@@ -200,7 +192,7 @@ impl<CFD: 'static, M: 'static> xtra::Handler<GetAnnouncement> for Actor<CFD, M> 
         msg: GetAnnouncement,
         _ctx: &mut xtra::Context<Self>,
     ) -> Option<Announcement> {
-        self.handle_get_announcement(msg.0)
+        self.latest_announcements.get(&msg.0).cloned()
     }
 }
 
