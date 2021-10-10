@@ -836,6 +836,8 @@ impl Actor {
             }
 
             insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn).await?;
+            self.cfd_feed_actor_inbox
+                .send(load_all_cfds(&mut conn).await?)?;
 
             if let Err(e) = self.try_cet_publication(cfd).await {
                 tracing::error!("Error when trying to publish CET: {:#}", e);
@@ -861,6 +863,9 @@ impl Actor {
 
                 insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn)
                     .await?;
+
+                self.cfd_feed_actor_inbox
+                    .send(load_all_cfds(&mut conn).await?)?;
             }
             Err(not_ready_yet) => {
                 tracing::debug!("{:#}", not_ready_yet);
