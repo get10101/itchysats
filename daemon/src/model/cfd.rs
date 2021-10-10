@@ -671,7 +671,7 @@ impl Cfd {
                         dlc
                     } else {
                         bail!(
-                            "Cannot transition to OpenCommitted because of unexpected state {}",
+                            "Cannot transition to MustRefund because of unexpected state {}",
                             self.state
                         )
                     };
