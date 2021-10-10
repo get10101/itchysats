@@ -12,7 +12,7 @@ use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
 use crate::{oracle, send_to_socket, setup_contract, wire};
-use anyhow::{Context as _, Result};
+use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
@@ -541,17 +541,21 @@ impl Actor {
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        let new_state = cfd.handle(CfdStateChangeEvent::Monitor(event))?;
+        if cfd.handle(CfdStateChangeEvent::Monitor(event))?.is_none() {
+            // early exit if there was not state change
+            // this is for cases where we are already in a final state
+            return Ok(());
+        }
 
-        insert_new_cfd_state_by_order_id(order_id, new_state.clone(), &mut conn).await?;
+        insert_new_cfd_state_by_order_id(order_id, cfd.state.clone(), &mut conn).await?;
 
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
         // TODO: code duplicateion maker/taker
-        if let CfdState::OpenCommitted { .. } = new_state {
+        if let CfdState::OpenCommitted { .. } = cfd.state {
             self.try_cet_publication(cfd).await?;
-        } else if let CfdState::MustRefund { .. } = new_state {
+        } else if let CfdState::MustRefund { .. } = cfd.state {
             let signed_refund_tx = cfd.refund_tx()?;
             let txid = self
                 .wallet
@@ -576,13 +580,15 @@ impl Actor {
             .try_broadcast_transaction(signed_commit_tx)
             .await?;
 
-        tracing::info!("Commit transaction published on chain: {}", txid);
+        if cfd.handle(CfdStateChangeEvent::CommitTxSent)?.is_none() {
+            bail!("If we can get the commit tx we should be able to transition")
+        }
 
-        let new_state = cfd.handle(CfdStateChangeEvent::CommitTxSent)?;
-        insert_new_cfd_state_by_order_id(cfd.order.id, new_state, &mut conn).await?;
-
+        insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn).await?;
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
+
+        tracing::info!("Commit transaction published on chain: {}", txid);
 
         Ok(())
     }
@@ -597,9 +603,18 @@ impl Actor {
         let cfds = load_cfds_by_oracle_event_id(attestation.id.clone(), &mut conn).await?;
 
         for mut cfd in cfds {
-            cfd.handle(CfdStateChangeEvent::OracleAttestation(
-                attestation.clone().into(),
-            ))?;
+            if cfd
+                .handle(CfdStateChangeEvent::OracleAttestation(
+                    attestation.clone().into(),
+                ))?
+                .is_none()
+            {
+                // if we don't transition to a new state after oracle attestation we ignore the cfd
+                // this is for cases where we cannot handle the attestation which should be in a
+                // final state
+                continue;
+            }
+
             insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn).await?;
 
             self.try_cet_publication(cfd).await?;
@@ -617,8 +632,12 @@ impl Actor {
                 let txid = self.wallet.try_broadcast_transaction(cet).await?;
                 tracing::info!("CET published with txid {}", txid);
 
-                cfd.handle(CfdStateChangeEvent::CetSent)?;
-                insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state, &mut conn).await?;
+                if cfd.handle(CfdStateChangeEvent::CetSent)?.is_none() {
+                    bail!("If we can get the CET we should be able to transition")
+                }
+
+                insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn)
+                    .await?;
             }
             Err(not_ready_yet) => {
                 tracing::debug!("{:#}", not_ready_yet);

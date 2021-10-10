@@ -543,13 +543,23 @@ impl Cfd {
     #[allow(dead_code)]
     pub const CET_TIMELOCK: u32 = 12;
 
-    pub fn handle(&mut self, event: CfdStateChangeEvent) -> Result<CfdState> {
+    pub fn handle(&mut self, event: CfdStateChangeEvent) -> Result<Option<CfdState>> {
         use CfdState::*;
 
         // TODO: Display impl
         tracing::info!("Cfd state change event {:?}", event);
 
         let order_id = self.order.id;
+
+        // early exit if already final
+        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
+            tracing::trace!(
+                "Ignoring event {:?} because cfd already in state {}",
+                event,
+                self.state
+            );
+            return Ok(None);
+        }
 
         let new_state = match event {
             CfdStateChangeEvent::Monitor(event) => match event {
@@ -792,7 +802,7 @@ impl Cfd {
 
         self.state = new_state.clone();
 
-        Ok(new_state)
+        Ok(Some(new_state))
     }
 
     pub fn refund_tx(&self) -> Result<Transaction> {
