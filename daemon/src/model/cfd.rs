@@ -581,11 +581,20 @@ impl Cfd {
                     }
                 }
                 monitor::Event::CommitFinality(_) => {
-                    let dlc = if let PendingCommit { dlc, .. } = self.state.clone() {
-                        dlc
-                    } else if let PendingOpen { dlc, .. } | Open { dlc, .. } = self.state.clone() {
+                    let (dlc, attestation) = if let PendingCommit {
+                        dlc, attestation, ..
+                    } = self.state.clone()
+                    {
+                        (dlc, attestation)
+                    } else if let PendingOpen {
+                        dlc, attestation, ..
+                    }
+                    | Open {
+                        dlc, attestation, ..
+                    } = self.state.clone()
+                    {
                         tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
-                        dlc
+                        (dlc, attestation)
                     } else {
                         bail!(
                             "Cannot transition to OpenCommitted because of unexpected state {}",
@@ -598,7 +607,11 @@ impl Cfd {
                             transition_timestamp: SystemTime::now(),
                         },
                         dlc,
-                        cet_status: CetStatus::Unprepared,
+                        cet_status: if let Some(attestation) = attestation {
+                            CetStatus::OracleSigned(attestation)
+                        } else {
+                            CetStatus::Unprepared
+                        },
                     }
                 }
                 monitor::Event::CetTimelockExpired(_) => match self.state.clone() {
