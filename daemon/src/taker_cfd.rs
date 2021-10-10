@@ -617,7 +617,10 @@ impl Actor {
 
             insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn).await?;
 
-            self.try_cet_publication(cfd).await?;
+            if let Err(e) = self.try_cet_publication(cfd).await {
+                tracing::error!("Error when trying to publish CET: {:#}", e);
+                continue;
+            }
         }
 
         Ok(())
