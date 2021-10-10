@@ -317,6 +317,17 @@ pub enum CetStatus {
     Ready(Attestation),
 }
 
+impl fmt::Display for CetStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CetStatus::Unprepared => write!(f, "Unprepared"),
+            CetStatus::TimelockExpired => write!(f, "TimelockExpired"),
+            CetStatus::OracleSigned(_) => write!(f, "OracleSigned"),
+            CetStatus::Ready(_) => write!(f, "Ready"),
+        }
+    }
+}
+
 impl CfdState {
     fn get_common(&self) -> CfdStateCommon {
         let common = match self {
@@ -849,10 +860,13 @@ impl Cfd {
                 cet_status: CetStatus::Ready(attestation),
                 ..
             } => (dlc, attestation),
-            CfdState::OpenCommitted { .. }
-            | CfdState::Open { .. }
-            | CfdState::PendingCommit { .. } => {
-                return Ok(Err(NotReadyYet));
+            CfdState::OpenCommitted { cet_status, .. } => {
+                return Ok(Err(NotReadyYet { cet_status }));
+            }
+            CfdState::Open { .. } | CfdState::PendingCommit { .. } => {
+                return Ok(Err(NotReadyYet {
+                    cet_status: CetStatus::Unprepared,
+                }));
             }
             _ => bail!("Cannot publish CET in state {}", self.state.clone()),
         };
@@ -946,9 +960,11 @@ impl Cfd {
     }
 }
 
-#[derive(thiserror::Error, Debug, Clone, Copy)]
-#[error("The cfd is not ready for CET publication yet")]
-pub struct NotReadyYet;
+#[derive(thiserror::Error, Debug, Clone)]
+#[error("The cfd is not ready for CET publication yet: {cet_status}")]
+pub struct NotReadyYet {
+    cet_status: CetStatus,
+}
 
 #[derive(Debug, Clone)]
 pub enum CfdStateChangeEvent {

@@ -621,10 +621,7 @@ impl Actor {
                 insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state, &mut conn).await?;
             }
             Err(not_ready_yet) => {
-                tracing::debug!(
-                    "Attestation received but we are not ready to publish it yet: {:#}",
-                    not_ready_yet
-                );
+                tracing::debug!("{:#}", not_ready_yet);
                 return Ok(());
             }
         };
