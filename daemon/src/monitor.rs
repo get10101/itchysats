@@ -111,7 +111,7 @@ where
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
                         CetStatus::OracleSigned(attestation) => {
-                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.maker_address.script_pubkey()), attestation, cfd.order.id)?;
+                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.maker_address.script_pubkey()), attestation.into(), cfd.order.id)?;
                             actor.monitor_commit_cet_timelock(&params, cfd.order.id);
                             actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                             actor.monitor_refund_finality(&params,cfd.order.id);
@@ -121,7 +121,7 @@ where
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
                         CetStatus::Ready(attestation) => {
-                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.maker_address.script_pubkey()), attestation, cfd.order.id)?;
+                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.maker_address.script_pubkey()), attestation.into(), cfd.order.id)?;
                             actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }

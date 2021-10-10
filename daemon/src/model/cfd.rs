@@ -1,6 +1,5 @@
 use crate::model::{Leverage, OracleEventId, Percent, Position, TakerId, TradingPair, Usd};
-use crate::monitor;
-use crate::oracle::Attestation;
+use crate::{monitor, oracle};
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, Script, SignedAmount, Transaction, Txid};
@@ -280,6 +279,33 @@ pub enum CfdState {
         common: CfdStateCommon,
         info: String,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Attestation {
+    pub id: OracleEventId,
+    pub price: u64,
+    pub scalars: Vec<SecretKey>,
+}
+
+impl From<oracle::Attestation> for Attestation {
+    fn from(attestation: oracle::Attestation) -> Self {
+        Attestation {
+            id: attestation.id,
+            price: attestation.price,
+            scalars: attestation.scalars,
+        }
+    }
+}
+
+impl From<Attestation> for oracle::Attestation {
+    fn from(attestation: Attestation) -> oracle::Attestation {
+        oracle::Attestation {
+            id: attestation.id,
+            price: attestation.price,
+            scalars: attestation.scalars,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

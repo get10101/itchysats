@@ -816,7 +816,9 @@ impl Actor {
         let cfds = load_cfds_by_oracle_event_id(attestation.id.clone(), &mut conn).await?;
 
         for mut cfd in cfds {
-            cfd.handle(CfdStateChangeEvent::OracleAttestation(attestation.clone()))?;
+            cfd.handle(CfdStateChangeEvent::OracleAttestation(
+                attestation.clone().into(),
+            ))?;
             insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn).await?;
 
             self.try_cet_publication(cfd).await?;
