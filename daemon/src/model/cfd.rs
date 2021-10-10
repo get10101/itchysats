@@ -1367,9 +1367,9 @@ pub struct Dlc {
     pub cets: HashMap<OracleEventId, Vec<Cet>>,
     pub refund: (Transaction, Signature),
 
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     pub maker_lock_amount: Amount,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     pub taker_lock_amount: Amount,
 
     pub revoked_commit: Vec<RevokedCommit>,
