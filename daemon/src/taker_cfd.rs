@@ -5,7 +5,7 @@ use crate::db::{
 };
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
-    RollOverProposal, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
+    RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{OracleEventId, Usd};
 use crate::monitor::{self, MonitorParams};
@@ -126,6 +126,19 @@ impl Actor {
         }
         self.send_pending_update_proposals()?;
         Ok(())
+    }
+
+    fn get_settlement_proposal(&self, order_id: OrderId) -> Result<&SettlementProposal> {
+        match self
+            .current_pending_proposals
+            .get(&order_id)
+            .context("have a proposal that is about to be accepted")?
+        {
+            UpdateCfdProposal::Settlement { proposal, .. } => Ok(proposal),
+            UpdateCfdProposal::RollOverProposal { .. } => {
+                anyhow::bail!("did not expect a rollover proposal");
+            }
+        }
     }
 
     async fn handle_take_offer(&mut self, order_id: OrderId, quantity: Usd) -> Result<()> {
@@ -337,7 +350,22 @@ impl Actor {
     ) -> Result<()> {
         tracing::info!(%order_id, "Settlement proposal got accepted");
 
-        // TODO: Initiate collaborative settlement
+        let mut conn = self.db.acquire().await?;
+
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
+
+        let proposal = self.get_settlement_proposal(order_id)?;
+        let (_tx, sig_taker) = dlc.close_transaction(proposal)?;
+
+        self.send_to_maker
+            .do_send_async(wire::TakerToMaker::InitiateSettlement {
+                order_id,
+                sig_taker,
+            })
+            .await?;
+
+        // TODO: Monitor for the transaction
 
         self.remove_pending_proposal(&order_id)?;
 
@@ -350,7 +378,7 @@ impl Actor {
         oracle_event_id: OracleEventId,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
-        tracing::info!(%order_id, "Roll over request got accepted");
+        tracing::info!(%order_id, "Roll; over request got accepted");
 
         let (sender, receiver) = mpsc::unbounded();
 
