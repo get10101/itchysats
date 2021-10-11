@@ -91,8 +91,7 @@ where
                     actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                     actor.monitor_refund_finality(&params,cfd.order.id);
                 }
-                CfdState::OpenCommitted { dlc, cet_status, .. }
-                | CfdState::PendingCet { dlc, cet_status, .. } => {
+                CfdState::OpenCommitted { dlc, cet_status, .. } => {
                     let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
                     actor.cfds.insert(cfd.order.id, params.clone());
 
@@ -118,6 +117,14 @@ where
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
                     }
+                }
+                CfdState::PendingCet { dlc, attestation, .. } => {
+                    let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
+                    actor.cfds.insert(cfd.order.id, params.clone());
+
+                    actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.order.id)?;
+                    actor.monitor_commit_refund_timelock(&params, cfd.order.id);
+                    actor.monitor_refund_finality(&params,cfd.order.id);
                 }
                 CfdState::MustRefund { dlc, .. } => {
                     let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());

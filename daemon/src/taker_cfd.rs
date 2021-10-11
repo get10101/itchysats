@@ -4,8 +4,9 @@ use crate::db::{
     load_cfd_by_order_id, load_cfds_by_oracle_event_id, load_order_by_id,
 };
 use crate::model::cfd::{
-    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin, Role,
-    RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal, UpdateCfdProposals,
+    Attestation, Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
+    Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
+    UpdateCfdProposals,
 };
 use crate::model::{OracleEventId, Usd};
 use crate::monitor::{self, MonitorParams};
@@ -632,9 +633,14 @@ impl Actor {
 
         for mut cfd in cfds {
             if cfd
-                .handle(CfdStateChangeEvent::OracleAttestation(
-                    attestation.clone().into(),
-                ))?
+                .handle(CfdStateChangeEvent::OracleAttestation(Attestation::new(
+                    attestation.id.clone(),
+                    attestation.price,
+                    attestation.scalars.clone(),
+                    cfd.dlc()
+                        .context("No DLC available when attestation was received")?,
+                    cfd.role(),
+                )?))?
                 .is_none()
             {
                 // if we don't transition to a new state after oracle attestation we ignore the cfd
