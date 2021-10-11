@@ -4,7 +4,7 @@ use crate::model::OracleEventId;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
-use futures::stream::FuturesOrdered;
+use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
 use reqwest::StatusCode;
 use rocket::time::format_description::FormatItem;
@@ -106,7 +106,7 @@ where
                     .context("Failed to deserialize as Announcement")?;
                 Result::<_, anyhow::Error>::Ok((event_id, announcement))
             })
-            .collect::<FuturesOrdered<_>>()
+            .collect::<FuturesUnordered<_>>()
             .try_collect::<HashMap<_, _>>()
             .await?;
 
