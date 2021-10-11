@@ -12,6 +12,7 @@ use model::WalletInfo;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::task::Poll;
@@ -54,9 +55,9 @@ struct Opts {
     #[clap(long, default_value = "9999")]
     p2p_port: u16,
 
-    /// The port to listen on for the HTTP API.
-    #[clap(long, default_value = "8001")]
-    http_port: u16,
+    /// The IP address to listen on for the HTTP API.
+    #[clap(long, default_value = "127.0.0.1:8001")]
+    http_address: SocketAddr,
 
     /// Where to permanently store data, defaults to the current working directory.
     #[clap(long)]
@@ -171,7 +172,8 @@ async fn main() -> Result<()> {
 
     let figment = rocket::Config::figment()
         .merge(("databases.maker.url", data_dir.join("maker.sqlite")))
-        .merge(("port", opts.http_port));
+        .merge(("address", opts.http_address.ip()))
+        .merge(("port", opts.http_address.port()));
 
     let listener = tokio::net::TcpListener::bind(&format!("0.0.0.0:{}", opts.p2p_port)).await?;
     let local_addr = listener.local_addr().unwrap();
