@@ -19,6 +19,10 @@ jobs:
             os: ubuntu-latest
             archive_ext: tar
           - bin: taker
+            target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive_ext: tar
+          - bin: taker
             target: x86_64-apple-darwin
             os: macos-latest
             archive_ext: tar
@@ -32,6 +36,10 @@ jobs:
             archive_ext: tar
           - bin: maker
             target: armv7-unknown-linux-gnueabihf
+            os: ubuntu-latest
+            archive_ext: tar
+          - bin: maker
+            target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             archive_ext: tar
           - bin: maker
@@ -63,6 +71,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install gcc-arm-linux-gnueabihf
 
+      - name: Install compiler for aarch64 arch (armv8)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install 'gcc-aarch64-linux-gnu'
+
       - uses: actions/setup-node@v2
         with:
           node-version: '16'
@@ -80,7 +94,8 @@ jobs:
         run: cargo build --target=${{ matrix.target }} --release --bin ${{ matrix.bin }}
 
       - name: Smoke test the binary
-        if: matrix.target != 'armv7-unknown-linux-gnueabihf' # armv7-unknown-linux-gnueabihf is only cross-compiled, no smoke test
+        # armv7-* and aarch64-* is only cross-compiled, no smoke test
+        if: matrix.target != 'armv7-unknown-linux-gnueabihf' && matrix.target != 'aarch64-unknown-linux-gnu'
         run: target/${{ matrix.target }}/release/${{ matrix.bin }} --help
 
       # Remove once python 3 is the default
