@@ -57,9 +57,9 @@ struct Opts {
     #[clap(long, default_value = "127.0.0.1:9999")]
     maker: SocketAddr,
 
-    /// The port to listen on for the HTTP API.
-    #[clap(long, default_value = "8000")]
-    http_port: u16,
+    /// The IP address to listen on for the HTTP API.
+    #[clap(long, default_value = "127.0.0.1:8000")]
+    http_address: SocketAddr,
 
     /// Where to permanently store data, defaults to the current working directory.
     #[clap(long)]
@@ -180,7 +180,8 @@ async fn main() -> Result<()> {
 
     let figment = rocket::Config::figment()
         .merge(("databases.taker.url", data_dir.join("taker.sqlite")))
-        .merge(("port", opts.http_port));
+        .merge(("address", opts.http_address.ip()))
+        .merge(("port", opts.http_address.port()));
 
     rocket::custom(figment)
         .manage(order_feed_receiver)
