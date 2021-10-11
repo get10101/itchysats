@@ -742,7 +742,14 @@ impl Cfd {
                 }
             }
             CfdStateChangeEvent::OracleAttestation(attestation) => match self.state.clone() {
-                CfdState::PendingOpen { dlc, .. } | CfdState::Open { dlc, .. } => CfdState::Open {
+                CfdState::PendingOpen { dlc, .. } => CfdState::PendingOpen {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
+                    dlc,
+                    attestation: Some(attestation),
+                },
+                CfdState::Open { dlc, .. } => CfdState::Open {
                     common: CfdStateCommon {
                         transition_timestamp: SystemTime::now(),
                     },
