@@ -284,7 +284,7 @@ where
                 let txid = response.tx_hash;
                 let script = match txid_to_script.get(&txid) {
                     None => {
-                        tracing::error!(
+                        tracing::trace!(
                             "Could not find script in own state for txid {}, ignoring",
                             txid
                         );
@@ -382,6 +382,12 @@ where
                         });
 
                     tracing::trace!("{} subscriptions reached their monitoring target, {} remaining for this script", reached_monitoring_target.len(), remaining.len());
+
+                    // TODO: When reaching finality of a final tx (CET, refund_tx,
+                    // collaborate_close_tx) we have to remove the remaining "competing"
+                    // transactions. This is not critical, but when fetching
+                    // `GetHistoryRes` by script we can have entries that we don't care about
+                    // anymore.
 
                     if remaining.is_empty() {
                         occupied.remove();
