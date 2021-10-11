@@ -84,10 +84,14 @@ where
     }
 
     async fn update_latest_announcements(&mut self) -> Result<()> {
-        self.latest_announcements = next_ids()
+        let new_announcements = next_ids()
             .into_iter()
+            .filter(|event_id| !self.latest_announcements.contains_key(event_id))
             .map(|event_id| async move {
                 let url = event_id.to_olivia_url();
+
+                tracing::debug!("Fetching attestation for {}", event_id);
+
                 let response = reqwest::get(url.clone())
                     .await
                     .with_context(|| format!("Failed to GET {}", url))?;
@@ -103,8 +107,10 @@ where
                 Result::<_, anyhow::Error>::Ok((event_id, announcement))
             })
             .collect::<FuturesOrdered<_>>()
-            .try_collect()
+            .try_collect::<HashMap<_, _>>()
             .await?;
+
+        self.latest_announcements.extend(new_announcements); // FIXME: This results in linear memory growth.
 
         Ok(())
     }
