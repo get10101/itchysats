@@ -4,8 +4,6 @@ use crate::model::OracleEventId;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
-use futures::stream::FuturesUnordered;
-use futures::TryStreamExt;
 use reqwest::StatusCode;
 use rocket::time::format_description::FormatItem;
 use rocket::time::macros::format_description;
@@ -41,6 +39,13 @@ pub struct Attestation {
     pub id: OracleEventId,
     pub price: u64,
     pub scalars: Vec<SecretKey>,
+}
+
+/// A module-private message to allow parallelization of fetching announcements.
+#[derive(Debug)]
+struct NewAnnouncementFetched {
+    id: OracleEventId,
+    announcement: Announcement,
 }
 
 impl<CFD, M> Actor<CFD, M> {
@@ -90,8 +95,8 @@ where
     CFD: xtra::Handler<Attestation>,
     M: xtra::Handler<Attestation>,
 {
-    async fn update_state(&mut self) -> Result<()> {
-        self.update_latest_announcements()
+    async fn update_state(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
+        self.update_latest_announcements(ctx)
             .await
             .context("failed to update announcements")?;
         self.update_pending_attestations()
@@ -101,11 +106,15 @@ where
         Ok(())
     }
 
-    async fn update_latest_announcements(&mut self) -> Result<()> {
-        let new_announcements = next_ids()?
-            .into_iter()
-            .filter(|event_id| !self.latest_announcements.contains_key(event_id))
-            .map(|event_id| async move {
+    async fn update_latest_announcements(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
+        for event_id in next_ids()? {
+            if self.latest_announcements.contains_key(&event_id) {
+                continue;
+            }
+
+            let this = ctx.address().expect("self to be alive");
+
+            tokio::spawn(async move {
                 let url = event_id.to_olivia_url();
 
                 tracing::debug!("Fetching attestation for {}", event_id);
@@ -122,13 +131,16 @@ where
                     .json::<Announcement>()
                     .await
                     .context("Failed to deserialize as Announcement")?;
-                Result::<_, anyhow::Error>::Ok((event_id, announcement))
-            })
-            .collect::<FuturesUnordered<_>>()
-            .try_collect::<HashMap<_, _>>()
-            .await?;
 
-        self.latest_announcements.extend(new_announcements); // FIXME: This results in linear memory growth.
+                this.send(NewAnnouncementFetched {
+                    id: event_id,
+                    announcement,
+                })
+                .await?;
+
+                Ok(())
+            });
+        }
 
         Ok(())
     }
@@ -189,6 +201,13 @@ impl<CFD: 'static, M: 'static> xtra::Handler<GetAnnouncement> for Actor<CFD, M> 
         _ctx: &mut xtra::Context<Self>,
     ) -> Option<Announcement> {
         self.latest_announcements.get(&msg.0).cloned()
+    }
+}
+
+#[async_trait]
+impl<CFD: 'static, M: 'static> xtra::Handler<NewAnnouncementFetched> for Actor<CFD, M> {
+    async fn handle(&mut self, msg: NewAnnouncementFetched, _ctx: &mut xtra::Context<Self>) {
+        self.latest_announcements.insert(msg.id, msg.announcement);
     }
 }
 
@@ -265,8 +284,8 @@ where
     CFD: xtra::Handler<Attestation>,
     M: xtra::Handler<Attestation>,
 {
-    async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
-        log_error!(self.update_state())
+    async fn handle(&mut self, _: Sync, ctx: &mut xtra::Context<Self>) {
+        log_error!(self.update_state(ctx))
     }
 }
 
@@ -282,6 +301,10 @@ impl xtra::Message for GetAnnouncement {
 }
 
 impl xtra::Message for Attestation {
+    type Result = ();
+}
+
+impl xtra::Message for NewAnnouncementFetched {
     type Result = ();
 }
 
