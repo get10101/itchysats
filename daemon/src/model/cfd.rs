@@ -1,6 +1,5 @@
 use crate::model::{Leverage, OracleEventId, Percent, Position, TakerId, TradingPair, Usd};
-use crate::monitor;
-use crate::oracle::Attestation;
+use crate::{monitor, oracle};
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, Script, SignedAmount, Transaction, Txid};
@@ -282,12 +281,50 @@ pub enum CfdState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Attestation {
+    pub id: OracleEventId,
+    pub price: u64,
+    pub scalars: Vec<SecretKey>,
+}
+
+impl From<oracle::Attestation> for Attestation {
+    fn from(attestation: oracle::Attestation) -> Self {
+        Attestation {
+            id: attestation.id,
+            price: attestation.price,
+            scalars: attestation.scalars,
+        }
+    }
+}
+
+impl From<Attestation> for oracle::Attestation {
+    fn from(attestation: Attestation) -> oracle::Attestation {
+        oracle::Attestation {
+            id: attestation.id,
+            price: attestation.price,
+            scalars: attestation.scalars,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "payload")]
 pub enum CetStatus {
     Unprepared,
     TimelockExpired,
     OracleSigned(Attestation),
     Ready(Attestation),
+}
+
+impl fmt::Display for CetStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CetStatus::Unprepared => write!(f, "Unprepared"),
+            CetStatus::TimelockExpired => write!(f, "TimelockExpired"),
+            CetStatus::OracleSigned(_) => write!(f, "OracleSigned"),
+            CetStatus::Ready(_) => write!(f, "Ready"),
+        }
+    }
 }
 
 impl CfdState {
@@ -505,13 +542,23 @@ impl Cfd {
     #[allow(dead_code)]
     pub const CET_TIMELOCK: u32 = 12;
 
-    pub fn handle(&mut self, event: CfdStateChangeEvent) -> Result<CfdState> {
+    pub fn handle(&mut self, event: CfdStateChangeEvent) -> Result<Option<CfdState>> {
         use CfdState::*;
 
         // TODO: Display impl
         tracing::info!("Cfd state change event {:?}", event);
 
         let order_id = self.order.id;
+
+        // early exit if already final
+        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
+            tracing::trace!(
+                "Ignoring event {:?} because cfd already in state {}",
+                event,
+                self.state
+            );
+            return Ok(None);
+        }
 
         let new_state = match event {
             CfdStateChangeEvent::Monitor(event) => match event {
@@ -543,11 +590,20 @@ impl Cfd {
                     }
                 }
                 monitor::Event::CommitFinality(_) => {
-                    let dlc = if let PendingCommit { dlc, .. } = self.state.clone() {
-                        dlc
-                    } else if let PendingOpen { dlc, .. } | Open { dlc, .. } = self.state.clone() {
+                    let (dlc, attestation) = if let PendingCommit {
+                        dlc, attestation, ..
+                    } = self.state.clone()
+                    {
+                        (dlc, attestation)
+                    } else if let PendingOpen {
+                        dlc, attestation, ..
+                    }
+                    | Open {
+                        dlc, attestation, ..
+                    } = self.state.clone()
+                    {
                         tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
-                        dlc
+                        (dlc, attestation)
                     } else {
                         bail!(
                             "Cannot transition to OpenCommitted because of unexpected state {}",
@@ -560,7 +616,11 @@ impl Cfd {
                             transition_timestamp: SystemTime::now(),
                         },
                         dlc,
-                        cet_status: CetStatus::Unprepared,
+                        cet_status: if let Some(attestation) = attestation {
+                            CetStatus::OracleSigned(attestation)
+                        } else {
+                            CetStatus::Unprepared
+                        },
                     }
                 }
                 monitor::Event::CetTimelockExpired(_) => match self.state.clone() {
@@ -620,7 +680,7 @@ impl Cfd {
                         dlc
                     } else {
                         bail!(
-                            "Cannot transition to OpenCommitted because of unexpected state {}",
+                            "Cannot transition to MustRefund because of unexpected state {}",
                             self.state
                         )
                     };
@@ -681,7 +741,7 @@ impl Cfd {
                 }
             }
             CfdStateChangeEvent::OracleAttestation(attestation) => match self.state.clone() {
-                CfdState::Open { dlc, .. } => CfdState::Open {
+                CfdState::PendingOpen { dlc, .. } | CfdState::Open { dlc, .. } => CfdState::Open {
                     common: CfdStateCommon {
                         transition_timestamp: SystemTime::now(),
                     },
@@ -741,7 +801,7 @@ impl Cfd {
 
         self.state = new_state.clone();
 
-        Ok(new_state)
+        Ok(Some(new_state))
     }
 
     pub fn refund_tx(&self) -> Result<Transaction> {
@@ -822,10 +882,13 @@ impl Cfd {
                 cet_status: CetStatus::Ready(attestation),
                 ..
             } => (dlc, attestation),
-            CfdState::OpenCommitted { .. }
-            | CfdState::Open { .. }
-            | CfdState::PendingCommit { .. } => {
-                return Ok(Err(NotReadyYet));
+            CfdState::OpenCommitted { cet_status, .. } => {
+                return Ok(Err(NotReadyYet { cet_status }));
+            }
+            CfdState::Open { .. } | CfdState::PendingCommit { .. } => {
+                return Ok(Err(NotReadyYet {
+                    cet_status: CetStatus::Unprepared,
+                }));
             }
             _ => bail!("Cannot publish CET in state {}", self.state.clone()),
         };
@@ -919,9 +982,11 @@ impl Cfd {
     }
 }
 
-#[derive(thiserror::Error, Debug, Clone, Copy)]
-#[error("The cfd is not ready for CET publication yet")]
-pub struct NotReadyYet;
+#[derive(thiserror::Error, Debug, Clone)]
+#[error("The cfd is not ready for CET publication yet: {cet_status}")]
+pub struct NotReadyYet {
+    cet_status: CetStatus,
+}
 
 #[derive(Debug, Clone)]
 pub enum CfdStateChangeEvent {
@@ -1301,9 +1366,9 @@ pub struct Dlc {
     pub cets: HashMap<OracleEventId, Vec<Cet>>,
     pub refund: (Transaction, Signature),
 
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     pub maker_lock_amount: Amount,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     pub taker_lock_amount: Amount,
 
     pub revoked_commit: Vec<RevokedCommit>,

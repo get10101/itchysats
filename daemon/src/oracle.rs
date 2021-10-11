@@ -10,7 +10,7 @@ use reqwest::StatusCode;
 use rocket::time::format_description::FormatItem;
 use rocket::time::macros::format_description;
 use rocket::time::{Duration, OffsetDateTime, Time};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::ops::Add;
 use time::ext::NumericalDuration;
@@ -133,7 +133,7 @@ where
                     }
                 };
 
-                let attestation = dbg!(res).json::<Attestation>().await?;
+                let attestation = res.json::<Attestation>().await?;
 
                 self.cfd_actor_address
                     .clone()
@@ -284,7 +284,7 @@ impl From<Announcement> for cfd_protocol::Announcement {
 
 // TODO: Implement real deserialization once price attestation is
 // implemented in `olivia`
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(try_from = "olivia_api::Response")]
 pub struct Attestation {
     pub id: OracleEventId,
