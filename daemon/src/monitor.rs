@@ -383,7 +383,11 @@ where
 
                     tracing::trace!("{} subscriptions reached their monitoring target, {} remaining for this script", reached_monitoring_target.len(), remaining.len());
 
-                    occupied.insert(remaining);
+                    if remaining.is_empty() {
+                        occupied.remove();
+                    } else {
+                        occupied.insert(remaining);
+                    }
 
                     for (target_status, event) in reached_monitoring_target {
                         tracing::info!(%txid, target = %target_status, current = %status, "Bitcoin transaction reached monitoring target");
@@ -720,6 +724,37 @@ mod tests {
 
         assert!(recorder.events.contains(&cet_finality));
         assert!(!recorder.events.contains(&refund_finality));
+    }
+
+    #[tokio::test]
+    async fn stop_monitoring_after_target_reached() {
+        let _guard = tracing_subscriber::fmt()
+            .with_env_filter("trace")
+            .with_test_writer()
+            .set_default();
+
+        let (recorder_address, mut recorder_context) =
+            xtra::Context::<MessageRecordingActor>::new(None);
+        let mut recorder = MessageRecordingActor::default();
+
+        let cet_finality = Event::CetFinality(OrderId::default());
+
+        let mut monitor = Actor::for_test(
+            recorder_address,
+            [(
+                (txid1(), script1()),
+                vec![(ScriptStatus::finality(), cet_finality.clone())],
+            )],
+        );
+        monitor.client.include_tx(txid1(), 5);
+
+        recorder_context
+            .handle_while(&mut recorder, monitor.sync())
+            .await
+            .unwrap();
+
+        assert!(recorder.events.contains(&cet_finality));
+        assert!(monitor.awaiting_status.is_empty());
     }
 
     impl<A> Actor<A, stub::Client>
