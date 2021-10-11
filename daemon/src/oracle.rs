@@ -165,10 +165,17 @@ where
                     }
                 };
 
-                let attestation = res
+                let attestation = match res
                     .json::<Attestation>()
                     .await
-                    .with_context(|| format!("Failed to decode body for event {}", event_id))?;
+                    .with_context(|| format!("Failed to decode body for event {}", event_id))
+                {
+                    Ok(attestation) => attestation,
+                    Err(e) => {
+                        tracing::debug!("{:#}", e);
+                        continue;
+                    }
+                };
 
                 self.cfd_actor_address
                     .clone()
@@ -349,7 +356,7 @@ mod olivia_api {
 
             let data =
                 serde_json::from_str::<AnnouncementData>(&response.announcement.oracle_event.data)?;
-            let attestation = response.attestation.context("Missing attestation")?;
+            let attestation = response.attestation.context("attestation missing")?;
 
             Ok(Self {
                 id: OracleEventId(data.id),
