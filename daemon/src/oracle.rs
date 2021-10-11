@@ -165,7 +165,10 @@ where
                     }
                 };
 
-                let attestation = res.json::<Attestation>().await?;
+                let attestation = res
+                    .json::<Attestation>()
+                    .await
+                    .with_context(|| format!("Failed to decode body for event {}", event_id))?;
 
                 self.cfd_actor_address
                     .clone()
