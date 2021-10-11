@@ -25,6 +25,24 @@ pub struct Actor<CFD, M> {
     monitor_actor_address: xtra::Address<M>,
 }
 
+pub struct Sync;
+
+pub struct MonitorEvent {
+    pub event_id: OracleEventId,
+}
+
+#[derive(Debug, Clone)]
+pub struct GetAnnouncement(pub OracleEventId);
+
+// TODO: Split xtra::Message and API object
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(try_from = "olivia_api::Response")]
+pub struct Attestation {
+    pub id: OracleEventId,
+    pub price: u64,
+    pub scalars: Vec<SecretKey>,
+}
+
 impl<CFD, M> Actor<CFD, M> {
     pub fn new(
         cfd_actor_address: xtra::Address<CFD>,
@@ -154,33 +172,6 @@ where
     }
 }
 
-impl<CFD: 'static, M: 'static> xtra::Actor for Actor<CFD, M> {}
-
-pub struct Sync;
-
-impl xtra::Message for Sync {
-    type Result = ();
-}
-
-#[async_trait]
-impl<CFD, M> xtra::Handler<Sync> for Actor<CFD, M>
-where
-    CFD: xtra::Handler<Attestation>,
-    M: xtra::Handler<Attestation>,
-{
-    async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
-        log_error!(self.update_state())
-    }
-}
-
-pub struct MonitorEvent {
-    pub event_id: OracleEventId,
-}
-
-impl xtra::Message for MonitorEvent {
-    type Result = ();
-}
-
 #[async_trait]
 impl<CFD: 'static, M: 'static> xtra::Handler<MonitorEvent> for Actor<CFD, M> {
     async fn handle(&mut self, msg: MonitorEvent, _ctx: &mut xtra::Context<Self>) {
@@ -189,9 +180,6 @@ impl<CFD: 'static, M: 'static> xtra::Handler<MonitorEvent> for Actor<CFD, M> {
         }
     }
 }
-
-#[derive(Debug, Clone)]
-pub struct GetAnnouncement(pub OracleEventId);
 
 #[async_trait]
 impl<CFD: 'static, M: 'static> xtra::Handler<GetAnnouncement> for Actor<CFD, M> {
@@ -269,14 +257,24 @@ impl From<Announcement> for cfd_protocol::Announcement {
     }
 }
 
-// TODO: Implement real deserialization once price attestation is
-// implemented in `olivia`
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-#[serde(try_from = "olivia_api::Response")]
-pub struct Attestation {
-    pub id: OracleEventId,
-    pub price: u64,
-    pub scalars: Vec<SecretKey>,
+impl<CFD: 'static, M: 'static> xtra::Actor for Actor<CFD, M> {}
+
+#[async_trait]
+impl<CFD, M> xtra::Handler<Sync> for Actor<CFD, M>
+where
+    CFD: xtra::Handler<Attestation>,
+    M: xtra::Handler<Attestation>,
+{
+    async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
+        log_error!(self.update_state())
+    }
+}
+
+impl xtra::Message for Sync {
+    type Result = ();
+}
+impl xtra::Message for MonitorEvent {
+    type Result = ();
 }
 
 impl xtra::Message for GetAnnouncement {
