@@ -291,6 +291,7 @@ pub struct Attestation {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     payout: Amount,
     price: u64,
+    txid: Txid,
 }
 
 impl Attestation {
@@ -306,6 +307,8 @@ impl Attestation {
             .iter()
             .find_map(|(_, cet)| cet.iter().find(|cet| cet.range.contains(&price)))
             .context("Unable to find attested price in any range")?;
+
+        let txid = cet.tx.txid();
 
         let payout = cet
             .tx
@@ -326,6 +329,7 @@ impl Attestation {
             price,
             scalars,
             payout,
+            txid,
         })
     }
 
