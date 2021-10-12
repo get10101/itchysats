@@ -32,7 +32,7 @@ use std::ops::RangeInclusive;
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
-    (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
+    (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
     cfd: Cfd,
     wallet: Wallet,
     role: Role,
@@ -74,7 +74,7 @@ pub async fn new(
     }
 
     let payouts = HashMap::from_iter([(
-        announcement.clone(),
+        announcement.into(),
         payout_curve::calculate(cfd.order.price, cfd.quantity_usd, cfd.order.leverage)?,
     )]);
 

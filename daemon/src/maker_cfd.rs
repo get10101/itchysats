@@ -199,6 +199,10 @@ impl Actor {
         let oracle_event_id =
             oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM)?;
 
+        self.oracle_actor
+            .do_send_async(oracle::FetchAnnouncement(oracle_event_id.clone()))
+            .await?;
+
         let order = Order::new(
             price,
             min_quantity,
@@ -587,7 +591,7 @@ impl Actor {
             .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
 
         self.oracle_actor
-            .do_send_async(oracle::MonitorEvent {
+            .do_send_async(oracle::MonitorAttestation {
                 event_id: offer_announcement.id.clone(),
             })
             .await?;
@@ -600,7 +604,7 @@ impl Actor {
                 })
             }),
             receiver,
-            (self.oracle_pk, offer_announcement.clone().into()),
+            (self.oracle_pk, offer_announcement),
             cfd,
             self.wallet.clone(),
             Role::Maker,
@@ -778,7 +782,7 @@ impl Actor {
             .await?;
 
         self.oracle_actor
-            .do_send_async(oracle::MonitorEvent {
+            .do_send_async(oracle::MonitorAttestation {
                 event_id: announcement.id.clone(),
             })
             .await?;
