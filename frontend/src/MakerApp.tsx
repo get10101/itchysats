@@ -108,7 +108,7 @@ export default function App() {
                             value={format(maxQuantity)}
                         />
 
-                        <Text>Order Price:</Text>
+                        <Text>Offer Price:</Text>
                         <HStack>
                             <CurrencyInputField
                                 onChange={(valueString: string) => {
