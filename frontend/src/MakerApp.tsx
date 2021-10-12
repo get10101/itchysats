@@ -100,7 +100,7 @@ export default function App() {
                             value={format(minQuantity)}
                         />
 
-                        <Text>Min Quantity:</Text>
+                        <Text>Max Quantity:</Text>
                         <CurrencyInputField
                             onChange={(valueString: string) => setMaxQuantity(parse(valueString))}
                             value={format(maxQuantity)}
