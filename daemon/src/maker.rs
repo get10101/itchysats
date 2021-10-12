@@ -276,8 +276,10 @@ async fn main() -> Result<()> {
                     cfds,
                 )));
 
-                // use `.send` here to ensure we only continue once the update was processed
-                oracle_actor_address.send(oracle::Sync).await.unwrap();
+                oracle_actor_address
+                    .do_send_async(oracle::Sync)
+                    .await
+                    .unwrap();
 
                 let listener_stream = futures::stream::poll_fn(move |ctx| {
                     let message = match futures::ready!(listener.poll_accept(ctx)) {
