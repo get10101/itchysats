@@ -5,7 +5,6 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::str::FromStr;
 use std::time::SystemTime;
 use uuid::Uuid;
 
@@ -111,7 +110,8 @@ pub struct BitMexPriceEventId(pub String);
 
 impl BitMexPriceEventId {
     pub fn to_olivia_url(&self) -> Url {
-        Url::from_str("https://h00.ooo")
+        "https://h00.ooo"
+            .parse::<Url>()
             .expect("valid URL from constant")
             .join(self.0.as_str())
             .expect("Event id can be joined")
@@ -135,7 +135,9 @@ mod tests {
 
         assert_eq!(
             url,
-            Url::from_str("https://h00.ooo/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20").unwrap()
+            "https://h00.ooo/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20"
+                .parse()
+                .unwrap()
         );
     }
 }
