@@ -1,12 +1,9 @@
-use std::fmt::{Display, Formatter};
-
 use anyhow::{Context, Result};
+use bdk::bitcoin::{Address, Amount};
+use reqwest::Url;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-
-use bdk::bitcoin::{Address, Amount};
-use reqwest::Url;
 use std::fmt;
 use std::str::FromStr;
 use std::time::SystemTime;
@@ -46,8 +43,8 @@ impl Usd {
     }
 }
 
-impl Display for Usd {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Usd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -61,8 +58,8 @@ impl From<Decimal> for Usd {
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Percent(pub Decimal);
 
-impl Display for Percent {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Percent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.round_dp(2).fmt(f)
     }
 }
@@ -96,8 +93,8 @@ impl Default for TakerId {
     }
 }
 
-impl Display for TakerId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for TakerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -121,8 +118,8 @@ impl BitMexPriceEventId {
     }
 }
 
-impl Display for BitMexPriceEventId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+impl fmt::Display for BitMexPriceEventId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
