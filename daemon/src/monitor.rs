@@ -24,7 +24,7 @@ pub struct StartMonitoring {
 }
 
 #[derive(Clone)]
-pub struct Cet {
+struct Cet {
     txid: Txid,
     script: Script,
     range: RangeInclusive<u64>,
