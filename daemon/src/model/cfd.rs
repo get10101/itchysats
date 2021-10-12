@@ -271,7 +271,7 @@ pub enum CfdState {
     ///
     /// This state applies to taker and maker.
     /// This is a final state.
-    Refunded { common: CfdStateCommon },
+    Refunded { common: CfdStateCommon, dlc: Dlc },
 
     /// The Cfd was in a state that could not be continued after the application got interrupted
     ///
@@ -310,17 +310,16 @@ impl Attestation {
 
         let txid = cet.tx.txid();
 
+        let our_script_pubkey = match role {
+            Role::Maker => dlc.maker_address.script_pubkey(),
+            Role::Taker => dlc.taker_address.script_pubkey(),
+        };
         let payout = cet
             .tx
             .output
             .iter()
             .find_map(|output| {
-                (output.script_pubkey
-                    == match role {
-                        Role::Maker => dlc.maker_address.script_pubkey(),
-                        Role::Taker => dlc.taker_address.script_pubkey(),
-                    })
-                .then(|| Amount::from_sat(output.value))
+                (output.script_pubkey == our_script_pubkey).then(|| Amount::from_sat(output.value))
             })
             .unwrap_or_default();
 
@@ -335,6 +334,14 @@ impl Attestation {
 
     pub fn price(&self) -> Usd {
         Usd(Decimal::from(self.price))
+    }
+
+    pub fn txid(&self) -> Txid {
+        self.txid
+    }
+
+    pub fn payout(&self) -> Amount {
+        self.payout
     }
 }
 
@@ -742,18 +749,15 @@ impl Cfd {
                     }
                 }
                 monitor::Event::RefundFinality(_) => {
-                    if let MustRefund { .. } = self.state.clone() {
-                    } else {
-                        tracing::debug!(
-                            "Was in unexpected state {}, jumping ahead to Refunded",
-                            self.state
-                        );
-                    }
+                    let dlc = self
+                        .dlc()
+                        .context("No dlc available when reaching refund finality")?;
 
                     Refunded {
                         common: CfdStateCommon {
                             transition_timestamp: SystemTime::now(),
                         },
+                        dlc,
                     }
                 }
                 monitor::Event::CetFinality(_) => {
@@ -1539,6 +1543,21 @@ impl Dlc {
         )?;
 
         Ok(spend_tx)
+    }
+
+    pub fn refund_amount(&self, role: Role) -> Amount {
+        let our_script_pubkey = match role {
+            Role::Taker => self.taker_address.script_pubkey(),
+            Role::Maker => self.maker_address.script_pubkey(),
+        };
+
+        self.refund
+            .0
+            .output
+            .iter()
+            .find(|output| output.script_pubkey == our_script_pubkey)
+            .map(|output| Amount::from_sat(output.value))
+            .unwrap_or_default()
     }
 }
 

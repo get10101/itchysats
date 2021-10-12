@@ -142,7 +142,8 @@ async fn main() -> Result<()> {
 
     let seed = Seed::initialize(&data_dir.join("maker_seed"), opts.generate_seed).await?;
 
-    let ext_priv_key = seed.derive_extended_priv_key(opts.network.bitcoin_network())?;
+    let bitcoin_network = opts.network.bitcoin_network();
+    let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
 
     let wallet = Wallet::new(
         opts.network.electrum(),
@@ -189,6 +190,7 @@ async fn main() -> Result<()> {
         .manage(update_cfd_feed_receiver)
         .manage(auth_password)
         .manage(quote_updates)
+        .manage(bitcoin_network)
         .attach(Db::init())
         .attach(AdHoc::try_on_ignite(
             "SQL migrations",

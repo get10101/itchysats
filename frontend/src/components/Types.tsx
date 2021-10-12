@@ -48,6 +48,17 @@ export interface Cfd {
     state: State;
     actions: Action[];
     state_transition_timestamp: number;
+    details: CfdDetails;
+}
+
+export interface CfdDetails {
+    tx_url_list: Tx[];
+    payout?: number;
+}
+
+export interface Tx {
+    label: string;
+    url: string;
 }
 
 export class State {
