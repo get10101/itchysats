@@ -242,6 +242,10 @@ impl Actor {
             Some(mut order) => {
                 order.origin = Origin::Theirs;
 
+                self.oracle_actor
+                    .do_send_async(oracle::FetchAnnouncement(order.oracle_event_id.clone()))
+                    .await?;
+
                 let mut conn = self.db.acquire().await?;
                 insert_order(&order, &mut conn).await?;
                 self.order_feed_actor_inbox.send(Some(order))?;
@@ -300,7 +304,7 @@ impl Actor {
                 .into_sink()
                 .with(|msg| future::ok(wire::TakerToMaker::Protocol(msg))),
             receiver,
-            (self.oracle_pk, offer_announcement.clone().into()),
+            (self.oracle_pk, offer_announcement),
             cfd,
             self.wallet.clone(),
             Role::Taker,
