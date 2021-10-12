@@ -34,7 +34,7 @@ pub struct Sync;
 #[derive(Debug, Clone)]
 pub struct FetchAnnouncement(pub OracleEventId);
 
-pub struct MonitorEvent {
+pub struct MonitorAttestation {
     pub event_id: OracleEventId,
 }
 
@@ -214,8 +214,8 @@ where
 }
 
 #[async_trait]
-impl<CFD: 'static, M: 'static> xtra::Handler<MonitorEvent> for Actor<CFD, M> {
-    async fn handle(&mut self, msg: MonitorEvent, _ctx: &mut xtra::Context<Self>) {
+impl<CFD: 'static, M: 'static> xtra::Handler<MonitorAttestation> for Actor<CFD, M> {
+    async fn handle(&mut self, msg: MonitorAttestation, _ctx: &mut xtra::Context<Self>) {
         if !self.pending_attestations.insert(msg.event_id.clone()) {
             tracing::trace!("Attestation {} already being monitored", msg.event_id);
         }
@@ -320,7 +320,7 @@ where
 impl xtra::Message for Sync {
     type Result = ();
 }
-impl xtra::Message for MonitorEvent {
+impl xtra::Message for MonitorAttestation {
     type Result = ();
 }
 

@@ -590,7 +590,7 @@ impl Actor {
             .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
 
         self.oracle_actor
-            .do_send_async(oracle::MonitorEvent {
+            .do_send_async(oracle::MonitorAttestation {
                 event_id: offer_announcement.id.clone(),
             })
             .await?;
@@ -781,7 +781,7 @@ impl Actor {
             .await?;
 
         self.oracle_actor
-            .do_send_async(oracle::MonitorEvent {
+            .do_send_async(oracle::MonitorAttestation {
                 event_id: announcement.id.clone(),
             })
             .await?;
