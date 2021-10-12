@@ -33,6 +33,7 @@ mod maker_cfd;
 mod maker_inc_connections;
 mod model;
 mod monitor;
+mod olivia;
 mod oracle;
 mod payout_curve;
 mod routes;

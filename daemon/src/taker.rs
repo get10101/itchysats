@@ -32,6 +32,7 @@ mod keypair;
 mod logger;
 mod model;
 mod monitor;
+mod olivia;
 mod oracle;
 mod payout_curve;
 mod routes;

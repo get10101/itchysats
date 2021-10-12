@@ -5,16 +5,11 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
 use reqwest::StatusCode;
-use rocket::time::format_description::FormatItem;
-use rocket::time::macros::format_description;
 use rocket::time::{OffsetDateTime, Time};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::ops::Add;
 use time::ext::NumericalDuration;
-
-const OLIVIA_EVENT_TIME_FORMAT: &[FormatItem] =
-    format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
 
 pub struct Actor<CFD, M> {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
@@ -213,7 +208,7 @@ where
 #[async_trait]
 impl<CFD: 'static, M: 'static> xtra::Handler<MonitorAttestation> for Actor<CFD, M> {
     async fn handle(&mut self, msg: MonitorAttestation, _ctx: &mut xtra::Context<Self>) {
-        if !self.pending_attestations.insert(msg.event_id.clone()) {
+        if !self.pending_attestations.insert(msg.event_id) {
             tracing::trace!("Attestation {} already being monitored", msg.event_id);
         }
     }
@@ -222,7 +217,7 @@ impl<CFD: 'static, M: 'static> xtra::Handler<MonitorAttestation> for Actor<CFD, 
 #[async_trait]
 impl<CFD: 'static, M: 'static> xtra::Handler<FetchAnnouncement> for Actor<CFD, M> {
     async fn handle(&mut self, msg: FetchAnnouncement, _ctx: &mut xtra::Context<Self>) {
-        if !self.pending_announcements.insert(msg.0.clone()) {
+        if !self.pending_announcements.insert(msg.0) {
             tracing::trace!("Announcement {} already being fetched", msg.0);
         }
     }
@@ -238,7 +233,7 @@ impl<CFD: 'static, M: 'static> xtra::Handler<GetAnnouncement> for Actor<CFD, M> 
         self.announcements
             .get_key_value(&msg.0)
             .map(|(id, (time, nonce_pks))| Announcement {
-                id: id.clone(),
+                id: *id,
                 expected_outcome_time: *time,
                 nonce_pks: nonce_pks.clone(),
             })
@@ -258,7 +253,7 @@ impl<CFD: 'static, M: 'static> xtra::Handler<NewAnnouncementFetched> for Actor<C
 pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<BitMexPriceEventId> {
     let adjusted = ceil_to_next_hour(timestamp)?;
 
-    Ok(event_id(adjusted))
+    Ok(BitMexPriceEventId::with_20_digits(adjusted))
 }
 
 fn ceil_to_next_hour(original: OffsetDateTime) -> Result<OffsetDateTime, anyhow::Error> {
@@ -268,16 +263,6 @@ fn ceil_to_next_hour(original: OffsetDateTime) -> Result<OffsetDateTime, anyhow:
     let adjusted = timestamp.replace_time(exact_hour);
 
     Ok(adjusted)
-}
-
-/// Construct the URL of `olivia`'s `BitMEX/BXBT` event to be attested
-/// for at the time indicated by the argument `datetime`.
-fn event_id(datetime: OffsetDateTime) -> BitMexPriceEventId {
-    let datetime = datetime
-        .format(&OLIVIA_EVENT_TIME_FORMAT)
-        .expect("valid formatter for datetime");
-
-    BitMexPriceEventId(format!("/x/BitMEX/BXBT/{}.price?n=20", datetime))
 }
 
 #[derive(Debug, Clone, serde::Deserialize, PartialEq)]
@@ -295,7 +280,7 @@ pub struct Announcement {
 impl From<Announcement> for cfd_protocol::Announcement {
     fn from(announcement: Announcement) -> Self {
         cfd_protocol::Announcement {
-            id: announcement.id.0,
+            id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks,
         }
     }
@@ -360,7 +345,7 @@ mod olivia_api {
                 serde_json::from_str::<AnnouncementData>(&response.announcement.oracle_event.data)?;
 
             Ok(Self {
-                id: BitMexPriceEventId(data.id),
+                id: data.id,
                 expected_outcome_time: data.expected_outcome_time,
                 nonce_pks: data.schemes.olivia_v1.nonces,
             })
@@ -378,7 +363,7 @@ mod olivia_api {
             let attestation = response.attestation.context("attestation missing")?;
 
             Ok(Self {
-                id: BitMexPriceEventId(data.id),
+                id: data.id,
                 price: attestation.outcome.parse()?,
                 scalars: attestation.schemes.olivia_v1.scalars,
             })
@@ -399,7 +384,7 @@ mod olivia_api {
     #[derive(Debug, Clone, serde::Deserialize)]
     #[serde(rename_all = "kebab-case")]
     struct AnnouncementData {
-        id: String,
+        id: BitMexPriceEventId,
         #[serde(with = "timestamp")]
         expected_outcome_time: OffsetDateTime,
         schemes: Schemes,
@@ -428,7 +413,7 @@ mod olivia_api {
     }
 
     mod timestamp {
-        use crate::oracle::OLIVIA_EVENT_TIME_FORMAT;
+        use crate::olivia;
         use serde::de::Error as _;
         use serde::{Deserialize, Deserializer};
         use time::{OffsetDateTime, PrimitiveDateTime};
@@ -438,7 +423,7 @@ mod olivia_api {
             D: Deserializer<'a>,
         {
             let string = String::deserialize(deserializer)?;
-            let date_time = PrimitiveDateTime::parse(&string, &OLIVIA_EVENT_TIME_FORMAT)
+            let date_time = PrimitiveDateTime::parse(&string, &olivia::EVENT_TIME_FORMAT)
                 .map_err(D::Error::custom)?;
 
             Ok(date_time.assume_utc())
@@ -459,7 +444,7 @@ mod olivia_api {
 
             let deserialized = serde_json::from_str::<oracle::Announcement>(json).unwrap();
             let expected = oracle::Announcement {
-                id: BitMexPriceEventId("/x/BitMEX/BXBT/2021-10-04T22:00:00.price?n=20".to_string()),
+                id: BitMexPriceEventId::with_20_digits(datetime!(2021-10-04 22:00:00).assume_utc()),
                 expected_outcome_time: datetime!(2021-10-04 22:00:00).assume_utc(),
                 nonce_pks: vec![
                     "8d72028eeaf4b85aec0f750f05a4a320cac193f5d8494bfe05cd4b29f3df4239"
@@ -534,7 +519,7 @@ mod olivia_api {
 
             let deserialized = serde_json::from_str::<oracle::Attestation>(json).unwrap();
             let expected = oracle::Attestation {
-                id: BitMexPriceEventId("/x/BitMEX/BXBT/2021-10-04T22:00:00.price?n=20".to_string()),
+                id: BitMexPriceEventId::with_20_digits(datetime!(2021-10-04 22:00:00).assume_utc()),
                 price: 48935,
                 scalars: vec![
                     "1327b3bd0f1faf45d6fed6c96d0c158da22a2033a6fed98bed036df0a4eef484"
@@ -611,18 +596,14 @@ mod tests {
     use time::macros::datetime;
 
     #[test]
-    fn next_event_id_is_correct() {
-        let event_id = event_id(datetime!(2021-09-23 10:00:00).assume_utc());
-
-        assert_eq!(event_id.0, "/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20");
-    }
-
-    #[test]
     fn next_event_id_after_timestamp() {
         let event_id =
             next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc()).unwrap();
 
-        assert_eq!(event_id.0, "/x/BitMEX/BXBT/2021-09-23T11:00:00.price?n=20");
+        assert_eq!(
+            event_id.to_string(),
+            "/x/BitMEX/BXBT/2021-09-23T11:00:00.price?n=20"
+        );
     }
 
     #[test]
@@ -630,6 +611,9 @@ mod tests {
         let event_id =
             next_announcement_after(datetime!(2021-09-23 23:40:00).assume_utc()).unwrap();
 
-        assert_eq!(event_id.0, "/x/BitMEX/BXBT/2021-09-24T00:00:00.price?n=20");
+        assert_eq!(
+            event_id.to_string(),
+            "/x/BitMEX/BXBT/2021-09-24T00:00:00.price?n=20"
+        );
     }
 }

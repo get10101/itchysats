@@ -24,7 +24,7 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
     let creation_timestamp = serde_json::to_string(&order.creation_timestamp).unwrap();
     let term = serde_json::to_string(&order.term).unwrap();
     let origin = serde_json::to_string(&order.origin).unwrap();
-    let oracle_event_id = order.oracle_event_id.0.clone();
+    let oracle_event_id = order.oracle_event_id.to_string();
 
     sqlx::query!(
         r#"
@@ -88,7 +88,6 @@ pub async fn load_order_by_id(
     let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
     let term = serde_json::from_str(row.term.as_str()).unwrap();
     let origin = serde_json::from_str(row.origin.as_str()).unwrap();
-    let oracle_event_id = BitMexPriceEventId(row.oracle_event_id);
 
     Ok(Order {
         id: uuid,
@@ -102,7 +101,7 @@ pub async fn load_order_by_id(
         creation_timestamp,
         term,
         origin,
-        oracle_event_id,
+        oracle_event_id: row.oracle_event_id.parse().unwrap(),
     })
 }
 
@@ -299,7 +298,7 @@ pub async fn load_cfd_by_order_id(
     let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
     let term = serde_json::from_str(row.term.as_str()).unwrap();
     let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
-    let oracle_event_id = BitMexPriceEventId(row.oracle_event_id.clone());
+    let oracle_event_id = row.oracle_event_id.parse().unwrap();
 
     let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
     let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
@@ -377,7 +376,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
             let term = serde_json::from_str(row.term.as_str()).unwrap();
             let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
-            let oracle_event_id = BitMexPriceEventId(row.oracle_event_id.clone());
+            let oracle_event_id = row.oracle_event_id.clone().parse().unwrap();
 
             let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
             let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
@@ -413,6 +412,8 @@ pub async fn load_cfds_by_oracle_event_id(
     oracle_event_id: BitMexPriceEventId,
     conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<Vec<Cfd>> {
+    let oracle_event_id = oracle_event_id.to_string();
+
     let rows = sqlx::query!(
         r#"
         select
@@ -443,7 +444,7 @@ pub async fn load_cfds_by_oracle_event_id(
         )
         and orders.oracle_event_id = ?
         "#,
-        oracle_event_id.0
+        oracle_event_id
     )
     .fetch_all(conn)
     .await?;
@@ -462,7 +463,7 @@ pub async fn load_cfds_by_oracle_event_id(
             let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
             let term = serde_json::from_str(row.term.as_str()).unwrap();
             let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
-            let oracle_event_id = BitMexPriceEventId(row.oracle_event_id.clone());
+            let oracle_event_id = row.oracle_event_id.parse().unwrap();
 
             let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
             let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
@@ -501,6 +502,8 @@ mod tests {
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;
     use tempfile::tempdir;
+    use time::macros::datetime;
+    use time::OffsetDateTime;
 
     use crate::db::insert_order;
     use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Order};
@@ -580,22 +583,24 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let oracle_event_id_1 = BitMexPriceEventId("dummy_1".to_string());
-        let oracle_event_id_2 = BitMexPriceEventId("dummy_2".to_string());
+        let oracle_event_id_1 =
+            BitMexPriceEventId::with_20_digits(datetime!(2021-10-13 10:00:00).assume_utc());
+        let oracle_event_id_2 =
+            BitMexPriceEventId::with_20_digits(datetime!(2021-10-25 18:00:00).assume_utc());
 
-        let cfd_1 = Cfd::default()
-            .with_order(Order::default().with_oracle_event_id(oracle_event_id_1.clone()));
+        let cfd_1 =
+            Cfd::default().with_order(Order::default().with_oracle_event_id(oracle_event_id_1));
 
         insert_order(&cfd_1.order, &mut conn).await.unwrap();
         insert_cfd(cfd_1.clone(), &mut conn).await.unwrap();
 
-        let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_1.clone(), &mut conn)
+        let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_1, &mut conn)
             .await
             .unwrap();
         assert_eq!(vec![cfd_1.clone()], cfd_from_db);
 
-        let cfd_2 = Cfd::default()
-            .with_order(Order::default().with_oracle_event_id(oracle_event_id_1.clone()));
+        let cfd_2 =
+            Cfd::default().with_order(Order::default().with_oracle_event_id(oracle_event_id_1));
 
         insert_order(&cfd_2.order, &mut conn).await.unwrap();
         insert_cfd(cfd_2.clone(), &mut conn).await.unwrap();
@@ -605,8 +610,8 @@ mod tests {
             .unwrap();
         assert_eq!(vec![cfd_1, cfd_2], cfd_from_db);
 
-        let cfd_3 = Cfd::default()
-            .with_order(Order::default().with_oracle_event_id(oracle_event_id_2.clone()));
+        let cfd_3 =
+            Cfd::default().with_order(Order::default().with_oracle_event_id(oracle_event_id_2));
 
         insert_order(&cfd_3.order, &mut conn).await.unwrap();
         insert_cfd(cfd_3.clone(), &mut conn).await.unwrap();
@@ -686,7 +691,7 @@ mod tests {
                 Usd(dec!(100)),
                 Usd(dec!(1000)),
                 Origin::Theirs,
-                BitMexPriceEventId("Dummy".to_string()),
+                BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
             )
             .unwrap()
         }

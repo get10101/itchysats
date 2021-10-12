@@ -1,5 +1,4 @@
 use crate::model::cfd::{Cet, Cfd, Dlc, RevokedCommit, Role};
-use crate::model::BitMexPriceEventId;
 use crate::wallet::Wallet;
 use crate::wire::{
     Msg0, Msg1, Msg2, RollOverMsg, RollOverMsg0, RollOverMsg1, RollOverMsg2, SetupMsg,
@@ -213,7 +212,7 @@ pub async fn new(
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok((BitMexPriceEventId(event_id), cets))
+            Ok((event_id.parse()?, cets))
         })
         .collect::<Result<HashMap<_, _>>>()?;
 
@@ -272,7 +271,7 @@ pub async fn roll_over(
     let payouts = HashMap::from_iter([(
         // TODO : we want to support multiple announcements
         Announcement {
-            id: announcement.id.0,
+            id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
         },
         payout_curve::calculate(cfd.order.price, cfd.quantity_usd, cfd.order.leverage)?,
@@ -435,7 +434,7 @@ pub async fn roll_over(
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok((BitMexPriceEventId(event_id), cets))
+            Ok((event_id.parse()?, cets))
         })
         .collect::<Result<HashMap<_, _>>>()?;
 

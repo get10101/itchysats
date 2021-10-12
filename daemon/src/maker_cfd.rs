@@ -200,7 +200,7 @@ impl Actor {
             oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM)?;
 
         self.oracle_actor
-            .do_send_async(oracle::FetchAnnouncement(oracle_event_id.clone()))
+            .do_send_async(oracle::FetchAnnouncement(oracle_event_id))
             .await?;
 
         let order = Order::new(
@@ -586,13 +586,13 @@ impl Actor {
 
         let offer_announcement = self
             .oracle_actor
-            .send(oracle::GetAnnouncement(cfd.order.oracle_event_id.clone()))
+            .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
             .await?
             .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
 
         self.oracle_actor
             .do_send_async(oracle::MonitorAttestation {
-                event_id: offer_announcement.id.clone(),
+                event_id: offer_announcement.id,
             })
             .await?;
 
@@ -767,7 +767,7 @@ impl Actor {
             oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM)?;
         let announcement = self
             .oracle_actor
-            .send(oracle::GetAnnouncement(oracle_event_id.clone()))
+            .send(oracle::GetAnnouncement(oracle_event_id))
             .await?
             .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
 
@@ -783,7 +783,7 @@ impl Actor {
 
         self.oracle_actor
             .do_send_async(oracle::MonitorAttestation {
-                event_id: announcement.id.clone(),
+                event_id: announcement.id,
             })
             .await?;
 
@@ -892,12 +892,12 @@ impl Actor {
         );
 
         let mut conn = self.db.acquire().await?;
-        let cfds = load_cfds_by_oracle_event_id(attestation.id.clone(), &mut conn).await?;
+        let cfds = load_cfds_by_oracle_event_id(attestation.id, &mut conn).await?;
 
         for mut cfd in cfds {
             if cfd
                 .handle(CfdStateChangeEvent::OracleAttestation(Attestation::new(
-                    attestation.id.clone(),
+                    attestation.id,
                     attestation.price,
                     attestation.scalars.clone(),
                     cfd.dlc()
