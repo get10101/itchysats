@@ -31,6 +31,8 @@ import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 const SPREAD = 1.01;
 
 export default function App() {
+    document.title = "Hermes Maker";
+
     let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
