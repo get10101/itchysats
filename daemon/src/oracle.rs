@@ -1,6 +1,6 @@
 use crate::actors::log_error;
 use crate::model::cfd::{Cfd, CfdState};
-use crate::model::OracleEventId;
+use crate::model::BitMexPriceEventId;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
@@ -17,9 +17,9 @@ const OLIVIA_EVENT_TIME_FORMAT: &[FormatItem] =
     format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
 
 pub struct Actor<CFD, M> {
-    announcements: HashMap<OracleEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
-    pending_announcements: HashSet<OracleEventId>,
-    pending_attestations: HashSet<OracleEventId>,
+    announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
+    pending_announcements: HashSet<BitMexPriceEventId>,
+    pending_attestations: HashSet<BitMexPriceEventId>,
     cfd_actor_address: xtra::Address<CFD>,
     monitor_actor_address: xtra::Address<M>,
 }
@@ -32,25 +32,25 @@ pub struct Sync;
 /// The `Announcement` corresponds to the `OracleEventId` included in
 /// the message.
 #[derive(Debug, Clone)]
-pub struct FetchAnnouncement(pub OracleEventId);
+pub struct FetchAnnouncement(pub BitMexPriceEventId);
 
 pub struct MonitorAttestation {
-    pub event_id: OracleEventId,
+    pub event_id: BitMexPriceEventId,
 }
 
 /// Message used to request the `Announcement` from the
 /// `oracle::Actor`'s local state.
 ///
-/// The `Announcement` corresponds to the `OracleEventId` included in
+/// The `Announcement` corresponds to the [`BitMexPriceEventId`] included in
 /// the message.
 #[derive(Debug, Clone)]
-pub struct GetAnnouncement(pub OracleEventId);
+pub struct GetAnnouncement(pub BitMexPriceEventId);
 
 // TODO: Split xtra::Message and API object
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(try_from = "olivia_api::Response")]
 pub struct Attestation {
-    pub id: OracleEventId,
+    pub id: BitMexPriceEventId,
     pub price: u64,
     pub scalars: Vec<SecretKey>,
 }
@@ -58,7 +58,7 @@ pub struct Attestation {
 /// A module-private message to allow parallelization of fetching announcements.
 #[derive(Debug)]
 struct NewAnnouncementFetched {
-    id: OracleEventId,
+    id: BitMexPriceEventId,
     expected_outcome_time: OffsetDateTime,
     nonce_pks: Vec<schnorrsig::PublicKey>,
 }
@@ -258,7 +258,7 @@ impl<CFD: 'static, M: 'static> xtra::Handler<NewAnnouncementFetched> for Actor<C
 }
 
 #[allow(dead_code)]
-pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<OracleEventId> {
+pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<BitMexPriceEventId> {
     let adjusted = ceil_to_next_hour(timestamp)?;
 
     Ok(event_id(adjusted))
@@ -275,12 +275,12 @@ fn ceil_to_next_hour(original: OffsetDateTime) -> Result<OffsetDateTime, anyhow:
 
 /// Construct the URL of `olivia`'s `BitMEX/BXBT` event to be attested
 /// for at the time indicated by the argument `datetime`.
-fn event_id(datetime: OffsetDateTime) -> OracleEventId {
+fn event_id(datetime: OffsetDateTime) -> BitMexPriceEventId {
     let datetime = datetime
         .format(&OLIVIA_EVENT_TIME_FORMAT)
         .expect("valid formatter for datetime");
 
-    OracleEventId(format!("/x/BitMEX/BXBT/{}.price?n=20", datetime))
+    BitMexPriceEventId(format!("/x/BitMEX/BXBT/{}.price?n=20", datetime))
 }
 
 #[derive(Debug, Clone, serde::Deserialize, PartialEq)]
@@ -290,7 +290,7 @@ pub struct Announcement {
     ///
     /// Doubles up as the path of the URL for this event i.e.
     /// https://h00.ooo/{id}.
-    pub id: OracleEventId,
+    pub id: BitMexPriceEventId,
     pub expected_outcome_time: OffsetDateTime,
     pub nonce_pks: Vec<schnorrsig::PublicKey>,
 }
@@ -341,7 +341,7 @@ impl xtra::Message for NewAnnouncementFetched {
 }
 
 mod olivia_api {
-    use crate::model::OracleEventId;
+    use crate::model::BitMexPriceEventId;
     use anyhow::Context;
     use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
     use std::convert::TryFrom;
@@ -363,7 +363,7 @@ mod olivia_api {
                 serde_json::from_str::<AnnouncementData>(&response.announcement.oracle_event.data)?;
 
             Ok(Self {
-                id: OracleEventId(data.id),
+                id: BitMexPriceEventId(data.id),
                 expected_outcome_time: data.expected_outcome_time,
                 nonce_pks: data.schemes.olivia_v1.nonces,
             })
@@ -381,7 +381,7 @@ mod olivia_api {
             let attestation = response.attestation.context("attestation missing")?;
 
             Ok(Self {
-                id: OracleEventId(data.id),
+                id: BitMexPriceEventId(data.id),
                 price: attestation.outcome.parse()?,
                 scalars: attestation.schemes.olivia_v1.scalars,
             })
@@ -452,7 +452,7 @@ mod olivia_api {
     mod tests {
         use std::vec;
 
-        use crate::model::OracleEventId;
+        use crate::model::BitMexPriceEventId;
         use crate::oracle;
         use time::macros::datetime;
 
@@ -462,7 +462,7 @@ mod olivia_api {
 
             let deserialized = serde_json::from_str::<oracle::Announcement>(json).unwrap();
             let expected = oracle::Announcement {
-                id: OracleEventId("/x/BitMEX/BXBT/2021-10-04T22:00:00.price?n=20".to_string()),
+                id: BitMexPriceEventId("/x/BitMEX/BXBT/2021-10-04T22:00:00.price?n=20".to_string()),
                 expected_outcome_time: datetime!(2021-10-04 22:00:00).assume_utc(),
                 nonce_pks: vec![
                     "8d72028eeaf4b85aec0f750f05a4a320cac193f5d8494bfe05cd4b29f3df4239"
@@ -537,7 +537,7 @@ mod olivia_api {
 
             let deserialized = serde_json::from_str::<oracle::Attestation>(json).unwrap();
             let expected = oracle::Attestation {
-                id: OracleEventId("/x/BitMEX/BXBT/2021-10-04T22:00:00.price?n=20".to_string()),
+                id: BitMexPriceEventId("/x/BitMEX/BXBT/2021-10-04T22:00:00.price?n=20".to_string()),
                 price: 48935,
                 scalars: vec![
                     "1327b3bd0f1faf45d6fed6c96d0c158da22a2033a6fed98bed036df0a4eef484"

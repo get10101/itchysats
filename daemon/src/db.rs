@@ -1,5 +1,5 @@
 use crate::model::cfd::{Cfd, CfdState, Order, OrderId, Origin};
-use crate::model::{Leverage, OracleEventId, Position};
+use crate::model::{BitMexPriceEventId, Leverage, Position};
 use anyhow::{Context, Result};
 use rocket_db_pools::sqlx;
 use sqlx::pool::PoolConnection;
@@ -88,7 +88,7 @@ pub async fn load_order_by_id(
     let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
     let term = serde_json::from_str(row.term.as_str()).unwrap();
     let origin = serde_json::from_str(row.origin.as_str()).unwrap();
-    let oracle_event_id = OracleEventId(row.oracle_event_id);
+    let oracle_event_id = BitMexPriceEventId(row.oracle_event_id);
 
     Ok(Order {
         id: uuid,
@@ -299,7 +299,7 @@ pub async fn load_cfd_by_order_id(
     let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
     let term = serde_json::from_str(row.term.as_str()).unwrap();
     let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
-    let oracle_event_id = OracleEventId(row.oracle_event_id.clone());
+    let oracle_event_id = BitMexPriceEventId(row.oracle_event_id.clone());
 
     let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
     let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
@@ -377,7 +377,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
             let term = serde_json::from_str(row.term.as_str()).unwrap();
             let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
-            let oracle_event_id = OracleEventId(row.oracle_event_id.clone());
+            let oracle_event_id = BitMexPriceEventId(row.oracle_event_id.clone());
 
             let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
             let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
@@ -410,7 +410,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
 
 /// Loads all CFDs with the latest state as the CFD state
 pub async fn load_cfds_by_oracle_event_id(
-    oracle_event_id: OracleEventId,
+    oracle_event_id: BitMexPriceEventId,
     conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<Vec<Cfd>> {
     let rows = sqlx::query!(
@@ -462,7 +462,7 @@ pub async fn load_cfds_by_oracle_event_id(
             let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
             let term = serde_json::from_str(row.term.as_str()).unwrap();
             let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
-            let oracle_event_id = OracleEventId(row.oracle_event_id.clone());
+            let oracle_event_id = BitMexPriceEventId(row.oracle_event_id.clone());
 
             let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
             let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
@@ -580,8 +580,8 @@ mod tests {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let oracle_event_id_1 = OracleEventId("dummy_1".to_string());
-        let oracle_event_id_2 = OracleEventId("dummy_2".to_string());
+        let oracle_event_id_1 = BitMexPriceEventId("dummy_1".to_string());
+        let oracle_event_id_2 = BitMexPriceEventId("dummy_2".to_string());
 
         let cfd_1 = Cfd::default()
             .with_order(Order::default().with_oracle_event_id(oracle_event_id_1.clone()));
@@ -686,14 +686,14 @@ mod tests {
                 Usd(dec!(100)),
                 Usd(dec!(1000)),
                 Origin::Theirs,
-                OracleEventId("Dummy".to_string()),
+                BitMexPriceEventId("Dummy".to_string()),
             )
             .unwrap()
         }
     }
 
     impl Order {
-        pub fn with_oracle_event_id(mut self, oracle_event_id: OracleEventId) -> Self {
+        pub fn with_oracle_event_id(mut self, oracle_event_id: BitMexPriceEventId) -> Self {
             self.oracle_event_id = oracle_event_id;
             self
         }

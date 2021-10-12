@@ -1,5 +1,5 @@
 use crate::model::cfd::{Cet, Cfd, Dlc, RevokedCommit, Role};
-use crate::model::OracleEventId;
+use crate::model::BitMexPriceEventId;
 use crate::wallet::Wallet;
 use crate::wire::{
     Msg0, Msg1, Msg2, RollOverMsg, RollOverMsg0, RollOverMsg1, RollOverMsg2, SetupMsg,
@@ -213,7 +213,7 @@ pub async fn new(
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok((OracleEventId(event_id), cets))
+            Ok((BitMexPriceEventId(event_id), cets))
         })
         .collect::<Result<HashMap<_, _>>>()?;
 
@@ -435,7 +435,7 @@ pub async fn roll_over(
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok((OracleEventId(event_id), cets))
+            Ok((BitMexPriceEventId(event_id), cets))
         })
         .collect::<Result<HashMap<_, _>>>()?;
 

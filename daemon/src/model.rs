@@ -110,9 +110,9 @@ pub struct WalletInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct OracleEventId(pub String);
+pub struct BitMexPriceEventId(pub String);
 
-impl OracleEventId {
+impl BitMexPriceEventId {
     pub fn to_olivia_url(&self) -> Url {
         Url::from_str("https://h00.ooo")
             .expect("valid URL from constant")
@@ -121,7 +121,7 @@ impl OracleEventId {
     }
 }
 
-impl Display for OracleEventId {
+impl Display for BitMexPriceEventId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn to_olivia_url() {
-        let url = OracleEventId("/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20".to_string())
+        let url = BitMexPriceEventId("/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20".to_string())
             .to_olivia_url();
 
         assert_eq!(

@@ -1,5 +1,5 @@
 use crate::model::cfd::OrderId;
-use crate::model::{OracleEventId, Usd};
+use crate::model::{BitMexPriceEventId, Usd};
 use crate::Order;
 use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::Signature;
@@ -72,7 +72,7 @@ pub enum MakerToTaker {
     RollOverProtocol(RollOverMsg),
     ConfirmRollOver {
         order_id: OrderId,
-        oracle_event_id: OracleEventId,
+        oracle_event_id: BitMexPriceEventId,
     },
     RejectRollOver(OrderId),
 }

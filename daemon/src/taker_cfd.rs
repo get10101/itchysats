@@ -8,7 +8,7 @@ use crate::model::cfd::{
     Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
     UpdateCfdProposals,
 };
-use crate::model::{OracleEventId, Usd};
+use crate::model::{BitMexPriceEventId, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
@@ -380,7 +380,7 @@ impl Actor {
     async fn handle_roll_over_accepted(
         &mut self,
         order_id: OrderId,
-        oracle_event_id: OracleEventId,
+        oracle_event_id: BitMexPriceEventId,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
         tracing::info!(%order_id, "Roll; over request got accepted");
