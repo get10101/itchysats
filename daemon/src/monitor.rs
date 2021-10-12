@@ -24,14 +24,6 @@ pub struct StartMonitoring {
 }
 
 #[derive(Clone)]
-struct Cet {
-    txid: Txid,
-    script: Script,
-    range: RangeInclusive<u64>,
-    n_bits: usize,
-}
-
-#[derive(Clone)]
 pub struct MonitorParams {
     lock: (Txid, Descriptor<PublicKey>),
     commit: (Txid, Descriptor<PublicKey>),
@@ -562,25 +554,33 @@ impl MonitorParams {
     }
 }
 
+#[derive(Clone)]
+struct Cet {
+    txid: Txid,
+    script: Script,
+    range: RangeInclusive<u64>,
+    n_bits: usize,
+}
+
+impl From<model::cfd::Cet> for Cet {
+    fn from(cet: model::cfd::Cet) -> Self {
+        Cet {
+            txid: cet.tx.txid(),
+            script: cet.tx.output[0].script_pubkey.clone(),
+            range: cet.range.clone(),
+            n_bits: cet.n_bits,
+        }
+    }
+}
+
 fn map_cets(
     cets: HashMap<OracleEventId, Vec<model::cfd::Cet>>,
 ) -> HashMap<OracleEventId, Vec<Cet>> {
-    cets.iter()
+    cets.into_iter()
         .map(|(event_id, cets)| {
             (
-                event_id.clone(),
-                cets.iter()
-                    .map(
-                        |model::cfd::Cet {
-                             tx, range, n_bits, ..
-                         }| Cet {
-                            txid: tx.txid(),
-                            script: tx.output[0].script_pubkey.clone(),
-                            range: range.clone(),
-                            n_bits: *n_bits,
-                        },
-                    )
-                    .collect::<Vec<_>>(),
+                event_id,
+                cets.into_iter().map(Cet::from).collect::<Vec<_>>(),
             )
         })
         .collect()
