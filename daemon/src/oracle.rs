@@ -1,6 +1,7 @@
 use crate::actors::log_error;
 use crate::model::cfd::{Cfd, CfdState};
 use crate::model::BitMexPriceEventId;
+use crate::tokio_ext;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
@@ -111,7 +112,7 @@ where
 
         for event_id in self.pending_announcements.iter().cloned() {
             let this = this.clone();
-            tokio::spawn(async move {
+            tokio_ext::spawn_fallible(async move {
                 let url = event_id.to_olivia_url();
 
                 tracing::debug!("Fetching announcement for {}", event_id);

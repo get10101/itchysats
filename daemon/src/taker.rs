@@ -42,6 +42,7 @@ mod send_to_socket;
 mod setup_contract;
 mod taker_cfd;
 mod to_sse_event;
+mod tokio_ext;
 mod wallet;
 mod wallet_sync;
 mod wire;
