@@ -5,7 +5,8 @@ use crate::db::{
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
     Attestation, Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
-   Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal, UpdateCfdProposals,
+    Role, RollOverProposal, SettlementKind, SettlementProposal, TimestampedTransaction,
+    UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;

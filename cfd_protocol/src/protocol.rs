@@ -409,6 +409,18 @@ pub fn generate_payouts(
 }
 
 impl Payout {
+    pub fn digits(&self) -> &interval::Digits {
+        &self.digits
+    }
+
+    pub fn maker_amount(&self) -> &Amount {
+        &self.maker_amount
+    }
+
+    pub fn taker_amount(&self) -> &Amount {
+        &self.taker_amount
+    }
+
     fn into_txouts(self, maker_address: &Address, taker_address: &Address) -> Vec<TxOut> {
         let txouts = [
             (self.maker_amount, maker_address),

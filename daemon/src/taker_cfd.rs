@@ -4,7 +4,8 @@ use crate::db::{
 };
 use crate::model::cfd::{
     Attestation, Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
-    Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal, UpdateCfdProposals,
+    Role, RollOverProposal, SettlementKind, SettlementProposal, TimestampedTransaction,
+    UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{BitMexPriceEventId, Usd};
 use crate::monitor::{self, MonitorParams};

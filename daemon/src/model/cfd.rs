@@ -1,5 +1,5 @@
 use crate::model::{BitMexPriceEventId, Leverage, Percent, Position, TakerId, TradingPair, Usd};
-use crate::{monitor, oracle};
+use crate::{monitor, oracle, payout_curve};
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, Script, SignedAmount, Transaction, Txid};
@@ -581,14 +581,22 @@ impl Cfd {
     }
 
     #[allow(dead_code)] // Not used by all binaries.
-    pub fn calculate_settlement(&self, _current_price: Usd) -> Result<SettlementProposal> {
-        // TODO: Calculate values for taker and maker
-        // For the time being, assume that everybody loses :)
+    pub fn calculate_settlement(&self, current_price: Usd) -> Result<SettlementProposal> {
+        let payout_curve =
+            payout_curve::calculate(self.order.price, self.quantity_usd, self.order.leverage)?;
+
+        let current_price = current_price.try_into_u64()?;
+
+        let payout = payout_curve
+            .iter()
+            .find(|&x| x.digits().range().contains(&current_price))
+            .context("find current price on the payout curve")?;
+
         let settlement = SettlementProposal {
             order_id: self.order.id,
             timestamp: SystemTime::now(),
-            taker: Amount::ZERO,
-            maker: Amount::ZERO,
+            taker: *payout.taker_amount(),
+            maker: *payout.maker_amount(),
         };
 
         Ok(settlement)
@@ -910,7 +918,7 @@ impl Cfd {
                     dlc,
                     attestation,
                 }
-               
+
             },
             CfdStateChangeEvent::ProposalSigned(collaborative_close) => match self.state.clone() {
                 CfdState::Open {
@@ -947,6 +955,7 @@ impl Cfd {
                 } => bail!("Cannot transition to PendingClose because Open state did not record a settlement proposal beforehand"),
                 _ => bail!(
                     "Cannot transition to PendingClose because of unexpected state {}",
+                    self.state)
             }
         };
 
