@@ -3,7 +3,7 @@ use crate::model::{Leverage, Usd, WalletInfo};
 use crate::routes::EmbeddedFileExt;
 use crate::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
 use crate::{bitmex_price_feed, taker_cfd};
-use bdk::bitcoin::Amount;
+use bdk::bitcoin::{Amount, Network};
 use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
 use rocket::response::{status, Responder};
@@ -24,12 +24,14 @@ pub async fn feed(
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
     rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
     rx_settlements: &State<watch::Receiver<UpdateCfdProposals>>,
+    network: &State<Network>,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
     let mut rx_order = rx_order.inner().clone();
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_quote = rx_quote.inner().clone();
     let mut rx_settlements = rx_settlements.inner().clone();
+    let network = *network.inner();
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -41,7 +43,13 @@ pub async fn feed(
         let quote = rx_quote.borrow().clone();
         yield quote.to_sse_event();
 
-        yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Taker).to_sse_event();
+        yield CfdsWithAuxData::new(
+            &rx_cfds,
+            &rx_quote,
+            &rx_settlements,
+            Role::Taker,
+            network
+        ).to_sse_event();
 
         loop{
             select! {
@@ -54,15 +62,33 @@ pub async fn feed(
                     yield order.to_sse_event();
                 }
                 Ok(()) = rx_cfds.changed() => {
-                    yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Taker).to_sse_event();
+                    yield CfdsWithAuxData::new(
+                        &rx_cfds,
+                        &rx_quote,
+                        &rx_settlements,
+                        Role::Taker,
+                        network
+                    ).to_sse_event();
                 }
                 Ok(()) = rx_settlements.changed() => {
-                    yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Taker).to_sse_event();
+                    yield CfdsWithAuxData::new(
+                        &rx_cfds,
+                        &rx_quote,
+                        &rx_settlements,
+                        Role::Taker,
+                        network
+                    ).to_sse_event();
                 }
                 Ok(()) = rx_quote.changed() => {
                     let quote = rx_quote.borrow().clone();
                     yield quote.to_sse_event();
-                    yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Taker).to_sse_event();
+                    yield CfdsWithAuxData::new(
+                        &rx_cfds,
+                        &rx_quote,
+                        &rx_settlements,
+                        Role::Taker,
+                        network
+                    ).to_sse_event();
                 }
             }
         }

@@ -248,7 +248,7 @@ pub enum CfdState {
     PendingCet {
         common: CfdStateCommon,
         dlc: Dlc,
-        cet_status: CetStatus,
+        attestation: Attestation,
     },
 
     /// The position was closed collaboratively or non-collaboratively
@@ -258,7 +258,10 @@ pub enum CfdState {
     /// This is the final state for all happy-path scenarios where we had an open position and then
     /// "settled" it. Settlement can be collaboratively or non-collaboratively (by publishing
     /// commit + cet).
-    Closed { common: CfdStateCommon },
+    Closed {
+        common: CfdStateCommon,
+        attestation: Attestation,
+    },
 
     // TODO: Can be extended with CetStatus
     /// The CFD contract's refund transaction was published but it not final yet
@@ -268,7 +271,7 @@ pub enum CfdState {
     ///
     /// This state applies to taker and maker.
     /// This is a final state.
-    Refunded { common: CfdStateCommon },
+    Refunded { common: CfdStateCommon, dlc: Dlc },
 
     /// The Cfd was in a state that could not be continued after the application got interrupted
     ///
@@ -284,17 +287,61 @@ pub enum CfdState {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Attestation {
     pub id: OracleEventId,
-    pub price: u64,
     pub scalars: Vec<SecretKey>,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
+    payout: Amount,
+    price: u64,
+    txid: Txid,
 }
 
-impl From<oracle::Attestation> for Attestation {
-    fn from(attestation: oracle::Attestation) -> Self {
-        Attestation {
-            id: attestation.id,
-            price: attestation.price,
-            scalars: attestation.scalars,
-        }
+impl Attestation {
+    pub fn new(
+        id: OracleEventId,
+        price: u64,
+        scalars: Vec<SecretKey>,
+        dlc: Dlc,
+        role: Role,
+    ) -> Result<Self> {
+        let cet = dlc
+            .cets
+            .iter()
+            .find_map(|(_, cet)| cet.iter().find(|cet| cet.range.contains(&price)))
+            .context("Unable to find attested price in any range")?;
+
+        let txid = cet.tx.txid();
+
+        let our_script_pubkey = match role {
+            Role::Maker => dlc.maker_address.script_pubkey(),
+            Role::Taker => dlc.taker_address.script_pubkey(),
+        };
+        let payout = cet
+            .tx
+            .output
+            .iter()
+            .find_map(|output| {
+                (output.script_pubkey == our_script_pubkey).then(|| Amount::from_sat(output.value))
+            })
+            .unwrap_or_default();
+
+        Ok(Self {
+            id,
+            price,
+            scalars,
+            payout,
+            txid,
+        })
+    }
+
+    pub fn price(&self) -> Usd {
+        Usd(Decimal::from(self.price))
+    }
+
+    pub fn txid(&self) -> Txid {
+        self.txid
+    }
+
+    pub fn payout(&self) -> Amount {
+        self.payout
     }
 }
 
@@ -483,6 +530,14 @@ impl Cfd {
     }
 
     pub fn profit(&self, current_price: Usd) -> Result<(SignedAmount, Percent)> {
+        // TODO: We should use the payout curve here and not just the current price!
+
+        let current_price = if let Some(attestation) = self.attestation() {
+            attestation.price()
+        } else {
+            current_price
+        };
+
         let (p_n_l, p_n_l_percent) = calculate_profit(
             self.order.price,
             current_price,
@@ -694,25 +749,29 @@ impl Cfd {
                     }
                 }
                 monitor::Event::RefundFinality(_) => {
-                    if let MustRefund { .. } = self.state.clone() {
-                    } else {
-                        tracing::debug!(
-                            "Was in unexpected state {}, jumping ahead to Refunded",
-                            self.state
-                        );
-                    }
+                    let dlc = self
+                        .dlc()
+                        .context("No dlc available when reaching refund finality")?;
 
                     Refunded {
                         common: CfdStateCommon {
                             transition_timestamp: SystemTime::now(),
                         },
+                        dlc,
                     }
                 }
-                monitor::Event::CetFinality(_) => Closed {
-                    common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
-                    },
-                },
+                monitor::Event::CetFinality(_) => {
+                    let attestation = self
+                        .attestation()
+                        .context("No attestation available when reaching CET finality")?;
+
+                    CfdState::Closed {
+                        common: CfdStateCommon {
+                            transition_timestamp: SystemTime::now(),
+                        },
+                        attestation,
+                    }
+                }
                 monitor::Event::RevokedTransactionFound(_) => {
                     todo!("Punish bad counterparty")
                 }
@@ -790,21 +849,20 @@ impl Cfd {
                     self.state
                 ),
             },
-            CfdStateChangeEvent::CetSent => match self.state.clone() {
-                CfdState::OpenCommitted {
-                    common,
+            CfdStateChangeEvent::CetSent => {
+                let dlc = self.dlc().context("No DLC available after CET was sent")?;
+                let attestation = self
+                    .attestation()
+                    .context("No attestation available after CET was sent")?;
+
+                CfdState::PendingCet {
+                    common: CfdStateCommon {
+                        transition_timestamp: SystemTime::now(),
+                    },
                     dlc,
-                    cet_status,
-                } => CfdState::PendingCet {
-                    common,
-                    dlc,
-                    cet_status,
-                },
-                _ => bail!(
-                    "Cannot transition to PendingCet because of unexpected state {}",
-                    self.state
-                ),
-            },
+                    attestation,
+                }
+            }
         };
 
         self.state = new_state.clone();
@@ -886,9 +944,7 @@ impl Cfd {
                 ..
             }
             | CfdState::PendingCet {
-                dlc,
-                cet_status: CetStatus::Ready(attestation),
-                ..
+                dlc, attestation, ..
             } => (dlc, attestation),
             CfdState::OpenCommitted { cet_status, .. } => {
                 return Ok(Err(NotReadyYet { cet_status }));
@@ -987,6 +1043,62 @@ impl Cfd {
 
     pub fn role(&self) -> Role {
         self.order.origin.into()
+    }
+
+    pub fn dlc(&self) -> Option<Dlc> {
+        match self.state.clone() {
+            CfdState::PendingOpen { dlc, .. }
+            | CfdState::Open { dlc, .. }
+            | CfdState::PendingCommit { dlc, .. }
+            | CfdState::OpenCommitted { dlc, .. }
+            | CfdState::PendingCet { dlc, .. } => Some(dlc),
+
+            CfdState::OutgoingOrderRequest { .. }
+            | CfdState::IncomingOrderRequest { .. }
+            | CfdState::Accepted { .. }
+            | CfdState::Rejected { .. }
+            | CfdState::ContractSetup { .. }
+            | CfdState::Closed { .. }
+            | CfdState::MustRefund { .. }
+            | CfdState::Refunded { .. }
+            | CfdState::SetupFailed { .. } => None,
+        }
+    }
+
+    fn attestation(&self) -> Option<Attestation> {
+        match self.state.clone() {
+            CfdState::PendingOpen {
+                attestation: Some(attestation),
+                ..
+            }
+            | CfdState::Open {
+                attestation: Some(attestation),
+                ..
+            }
+            | CfdState::PendingCommit {
+                attestation: Some(attestation),
+                ..
+            }
+            | CfdState::OpenCommitted {
+                cet_status: CetStatus::OracleSigned(attestation) | CetStatus::Ready(attestation),
+                ..
+            }
+            | CfdState::PendingCet { attestation, .. }
+            | CfdState::Closed { attestation, .. } => Some(attestation),
+
+            CfdState::OutgoingOrderRequest { .. }
+            | CfdState::IncomingOrderRequest { .. }
+            | CfdState::Accepted { .. }
+            | CfdState::Rejected { .. }
+            | CfdState::ContractSetup { .. }
+            | CfdState::PendingOpen { .. }
+            | CfdState::Open { .. }
+            | CfdState::PendingCommit { .. }
+            | CfdState::OpenCommitted { .. }
+            | CfdState::MustRefund { .. }
+            | CfdState::Refunded { .. }
+            | CfdState::SetupFailed { .. } => None,
+        }
     }
 }
 
@@ -1431,6 +1543,21 @@ impl Dlc {
         )?;
 
         Ok(spend_tx)
+    }
+
+    pub fn refund_amount(&self, role: Role) -> Amount {
+        let our_script_pubkey = match role {
+            Role::Taker => self.taker_address.script_pubkey(),
+            Role::Maker => self.maker_address.script_pubkey(),
+        };
+
+        self.refund
+            .0
+            .output
+            .iter()
+            .find(|output| output.script_pubkey == our_script_pubkey)
+            .map(|output| Amount::from_sat(output.value))
+            .unwrap_or_default()
     }
 }
 

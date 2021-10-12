@@ -4,6 +4,7 @@ import {
     ChevronRightIcon,
     ChevronUpIcon,
     CloseIcon,
+    ExternalLinkIcon,
     RepeatIcon,
     TriangleDownIcon,
     TriangleUpIcon,
@@ -15,6 +16,7 @@ import {
     chakra,
     HStack,
     IconButton,
+    Link,
     Table as CUITable,
     Tbody,
     Td,
@@ -22,6 +24,7 @@ import {
     Thead,
     Tr,
     useToast,
+    VStack,
 } from "@chakra-ui/react";
 import React from "react";
 import { useAsync } from "react-async";
@@ -88,6 +91,26 @@ export function CfdTable(
             {
                 Header: "OrderId",
                 accessor: "order_id", // accessor is the "key" in the data
+            },
+            {
+                Header: "Details",
+                accessor: ({ details }) => {
+                    const txs = details.tx_url_list.map((tx) => {
+                        return (<Link href={tx.url} key={tx.url} isExternal>
+                            {tx.label + " transaction"}
+                            <ExternalLinkIcon mx="2px" />
+                        </Link>);
+                    });
+
+                    return (
+                        <Box>
+                            <VStack>
+                                {txs}
+                                {details.payout && <Box>Payout: {details.payout}</Box>}
+                            </VStack>
+                        </Box>
+                    );
+                },
             },
             {
                 Header: "Position",
@@ -174,7 +197,7 @@ export function CfdTable(
     );
 
     // if we mark certain columns only as hidden, they are still around and we can render them in the sub-row
-    const hiddenColumns = ["order_id", "leverage", "state_transition_timestamp"];
+    const hiddenColumns = ["order_id", "leverage", "state_transition_timestamp", "Details"];
 
     return (
         <Table
@@ -233,10 +256,9 @@ function colorSchemaForAction(action: Action): string {
 }
 
 function renderRowSubComponent(row: Row<Cfd>) {
-    // TODO: I would show additional information here such as txids, timestamps, actions
     let cells = row.allCells
         .filter((cell) => {
-            return ["state_transition_timestamp"].includes(cell.column.id);
+            return ["Details"].includes(cell.column.id);
         })
         .map((cell) => {
             return cell;
@@ -244,11 +266,10 @@ function renderRowSubComponent(row: Row<Cfd>) {
 
     return (
         <>
-            Showing some more information here...
             <HStack>
                 {cells.map(cell => (
                     <Box key={cell.column.id}>
-                        {cell.column.id} = {cell.render("Cell")}
+                        {cell.render("Cell")}
                     </Box>
                 ))}
             </HStack>

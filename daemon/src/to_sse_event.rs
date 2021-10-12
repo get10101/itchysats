@@ -1,7 +1,9 @@
-use crate::model::cfd::{OrderId, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals};
+use crate::model::cfd::{
+    CetStatus, Dlc, OrderId, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
+};
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
-use bdk::bitcoin::{Amount, SignedAmount};
+use bdk::bitcoin::{Amount, Network, SignedAmount, Txid};
 use rocket::request::FromParam;
 use rocket::response::stream::Event;
 use rust_decimal::Decimal;
@@ -32,6 +34,69 @@ pub struct Cfd {
     pub state: CfdState,
     pub actions: Vec<CfdAction>,
     pub state_transition_timestamp: u64,
+
+    pub details: CfdDetails,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CfdDetails {
+    tx_url_list: Vec<TxUrl>,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
+    payout: Option<Amount>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TxUrl {
+    pub label: TxLabel,
+    pub url: String,
+}
+
+impl TxUrl {
+    pub fn new(txid: Txid, network: Network, label: TxLabel) -> Self {
+        Self {
+            label,
+            url: match network {
+                Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
+                Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
+                Network::Signet => format!("https://mempool.space/signet/tx/{}", txid),
+                Network::Regtest => txid.to_string(),
+            },
+        }
+    }
+}
+
+struct TxUrlBuilder {
+    network: Network,
+}
+
+impl TxUrlBuilder {
+    pub fn new(network: Network) -> Self {
+        Self { network }
+    }
+
+    pub fn lock(&self, dlc: &Dlc) -> TxUrl {
+        TxUrl::new(dlc.lock.0.txid(), self.network, TxLabel::Lock)
+    }
+
+    pub fn commit(&self, dlc: &Dlc) -> TxUrl {
+        TxUrl::new(dlc.commit.0.txid(), self.network, TxLabel::Commit)
+    }
+
+    pub fn cet(&self, txid: Txid) -> TxUrl {
+        TxUrl::new(txid, self.network, TxLabel::Cet)
+    }
+
+    pub fn refund(&self, dlc: &Dlc) -> TxUrl {
+        TxUrl::new(dlc.refund.0.txid(), self.network, TxLabel::Refund)
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum TxLabel {
+    Lock,
+    Commit,
+    Cet,
+    Refund,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -109,6 +174,7 @@ pub struct CfdsWithAuxData {
     pub cfds: Vec<model::cfd::Cfd>,
     pub current_price: Usd,
     pub pending_proposals: UpdateCfdProposals,
+    pub network: Network,
 }
 
 impl CfdsWithAuxData {
@@ -117,6 +183,7 @@ impl CfdsWithAuxData {
         rx_quote: &watch::Receiver<bitmex_price_feed::Quote>,
         rx_updates: &watch::Receiver<UpdateCfdProposals>,
         role: Role,
+        network: Network,
     ) -> Self {
         let quote = rx_quote.borrow().clone();
         let current_price = match role {
@@ -130,6 +197,7 @@ impl CfdsWithAuxData {
             cfds: rx_cfds.borrow().clone(),
             current_price,
             pending_proposals,
+            network,
         }
     }
 }
@@ -138,6 +206,7 @@ impl ToSseEvent for CfdsWithAuxData {
     // TODO: This conversion can fail, we might want to change the API
     fn to_sse_event(&self) -> Event {
         let current_price = self.current_price;
+        let network = self.network;
 
         let cfds = self
             .cfds
@@ -177,6 +246,7 @@ impl ToSseEvent for CfdsWithAuxData {
                     // TODO: Depending on the state the margin might be set (i.e. in Open we save it
                     // in the DB internally) and does not have to be calculated
                     margin: cfd.margin().unwrap(),
+                    details: to_cfd_details(cfd.state.clone(), cfd.role(), network),
                 }
             })
             .collect::<Vec<Cfd>>();
@@ -269,6 +339,73 @@ fn to_cfd_state(
             direction: SettlementKind::Incoming,
             ..
         }) => CfdState::IncomingRollOverProposal,
+    }
+}
+
+fn to_cfd_details(state: model::cfd::CfdState, role: Role, network: Network) -> CfdDetails {
+    use model::cfd::CfdState::*;
+
+    let tx_ub = TxUrlBuilder::new(network);
+
+    let (txs, payout) = match state {
+        PendingOpen {
+            dlc, attestation, ..
+        }
+        | Open {
+            dlc, attestation, ..
+        } => (
+            vec![tx_ub.lock(&dlc)],
+            attestation.map(|attestation| attestation.payout()),
+        ),
+        PendingCommit {
+            dlc, attestation, ..
+        } => (
+            vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)],
+            attestation.map(|attestation| attestation.payout()),
+        ),
+        OpenCommitted {
+            dlc,
+            cet_status: CetStatus::Unprepared | CetStatus::TimelockExpired,
+            ..
+        } => (vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)], None),
+        OpenCommitted {
+            dlc,
+            cet_status: CetStatus::OracleSigned(attestation) | CetStatus::Ready(attestation),
+            ..
+        } => (
+            vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)],
+            Some(attestation.payout()),
+        ),
+        PendingCet {
+            dlc, attestation, ..
+        } => (
+            vec![
+                tx_ub.lock(&dlc),
+                tx_ub.commit(&dlc),
+                tx_ub.cet(attestation.txid()),
+            ],
+            Some(attestation.payout()),
+        ),
+        Closed { attestation, .. } => (
+            vec![tx_ub.cet(attestation.txid())],
+            Some(attestation.payout()),
+        ),
+        MustRefund { dlc, .. } => (
+            vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc), tx_ub.refund(&dlc)],
+            Some(dlc.refund_amount(role)),
+        ),
+        Refunded { dlc, .. } => (vec![tx_ub.refund(&dlc)], Some(dlc.refund_amount(role))),
+        OutgoingOrderRequest { .. }
+        | IncomingOrderRequest { .. }
+        | Accepted { .. }
+        | Rejected { .. }
+        | ContractSetup { .. }
+        | SetupFailed { .. } => (vec![], None),
+    };
+
+    CfdDetails {
+        tx_url_list: txs,
+        payout,
     }
 }
 

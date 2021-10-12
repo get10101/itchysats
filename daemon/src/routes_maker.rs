@@ -5,6 +5,7 @@ use crate::routes::EmbeddedFileExt;
 use crate::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
 use crate::{bitmex_price_feed, maker_cfd};
 use anyhow::Result;
+use bdk::bitcoin::Network;
 use rocket::http::{ContentType, Header, Status};
 use rocket::response::stream::EventStream;
 use rocket::response::{status, Responder};
@@ -25,6 +26,7 @@ pub async fn maker_feed(
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
     rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
     rx_settlements: &State<watch::Receiver<UpdateCfdProposals>>,
+    network: &State<Network>,
     _auth: Authenticated,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
@@ -32,6 +34,7 @@ pub async fn maker_feed(
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_quote = rx_quote.inner().clone();
     let mut rx_settlements = rx_settlements.inner().clone();
+    let network = *network.inner();
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -43,7 +46,12 @@ pub async fn maker_feed(
         let quote = rx_quote.borrow().clone();
         yield quote.to_sse_event();
 
-        yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Maker).to_sse_event();
+        yield CfdsWithAuxData::new(
+            &rx_cfds,
+            &rx_quote,
+            &rx_settlements,
+            Role::Maker, network
+        ).to_sse_event();
 
         loop{
             select! {
@@ -56,15 +64,33 @@ pub async fn maker_feed(
                     yield order.to_sse_event();
                 }
                 Ok(()) = rx_cfds.changed() => {
-                    yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Maker).to_sse_event();
+                    yield CfdsWithAuxData::new(
+                        &rx_cfds,
+                        &rx_quote,
+                        &rx_settlements,
+                        Role::Maker,
+                        network
+                    ).to_sse_event();
                 }
                 Ok(()) = rx_settlements.changed() => {
-                    yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Maker).to_sse_event();
+                    yield CfdsWithAuxData::new(
+                        &rx_cfds,
+                        &rx_quote,
+                        &rx_settlements,
+                        Role::Maker,
+                        network
+                    ).to_sse_event();
                 }
                 Ok(()) = rx_quote.changed() => {
                     let quote = rx_quote.borrow().clone();
                     yield quote.to_sse_event();
-                    yield CfdsWithAuxData::new(&rx_cfds, &rx_quote, &rx_settlements, Role::Maker).to_sse_event();
+                    yield CfdsWithAuxData::new(
+                        &rx_cfds,
+                        &rx_quote,
+                        &rx_settlements,
+                        Role::Maker,
+                        network
+                    ).to_sse_event();
                 }
             }
         }
