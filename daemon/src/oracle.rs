@@ -5,7 +5,6 @@ use crate::tokio_ext;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
-use reqwest::StatusCode;
 use rocket::time::{OffsetDateTime, Time};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -59,6 +58,13 @@ struct NewAnnouncementFetched {
     nonce_pks: Vec<schnorrsig::PublicKey>,
 }
 
+/// A module-private message to allow parallelization of fetching attestations.
+#[derive(Debug)]
+struct NewAttestationFetched {
+    id: BitMexPriceEventId,
+    attestation: Attestation,
+}
+
 impl<CFD, M> Actor<CFD, M> {
     pub fn new(
         cfd_actor_address: xtra::Address<CFD>,
@@ -108,10 +114,9 @@ where
     M: 'static,
 {
     fn update_pending_announcements(&mut self, ctx: &mut xtra::Context<Self>) {
-        let this = ctx.address().expect("self to be alive");
-
         for event_id in self.pending_announcements.iter().cloned() {
-            let this = this.clone();
+            let this = ctx.address().expect("self to be alive");
+
             tokio_ext::spawn_fallible(async move {
                 let url = event_id.to_olivia_url();
 
@@ -148,59 +153,65 @@ where
     CFD: xtra::Handler<Attestation>,
     M: xtra::Handler<Attestation>,
 {
-    async fn update_state(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        self.update_pending_announcements(ctx);
-        self.update_pending_attestations()
-            .await
-            .context("failed to update pending attestations")?;
+    fn update_pending_attestations(&mut self, ctx: &mut xtra::Context<Self>) {
+        for event_id in self.pending_attestations.iter().copied() {
+            if !event_id.has_likely_occured() {
+                tracing::trace!(
+                    "Skipping {} because it likely hasn't occurred yet",
+                    event_id
+                );
 
-        Ok(())
-    }
+                continue;
+            }
 
-    async fn update_pending_attestations(&mut self) -> Result<()> {
-        let pending_attestations = self.pending_attestations.clone();
-        for event_id in pending_attestations.into_iter() {
-            {
-                let res = match reqwest::get(event_id.to_olivia_url()).await {
-                    Ok(res) if res.status().is_success() => res,
-                    Ok(res) if res.status() == StatusCode::NOT_FOUND => {
-                        tracing::trace!("Attestation not ready yet");
-                        continue;
-                    }
-                    Ok(res) => {
-                        tracing::warn!("Unexpected response, status {}", res.status());
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::warn!(%event_id, "Failed to fetch attestation: {}", e);
-                        continue;
-                    }
-                };
+            let this = ctx.address().expect("self to be alive");
 
-                let attestation = match res
+            tokio_ext::spawn_fallible(async move {
+                let url = event_id.to_olivia_url();
+
+                tracing::debug!("Fetching attestation for {}", event_id);
+
+                let response = reqwest::get(url.clone())
+                    .await
+                    .with_context(|| format!("Failed to GET {}", url))?;
+
+                if !response.status().is_success() {
+                    anyhow::bail!("GET {} responded with {}", url, response.status());
+                }
+
+                let attestation = response
                     .json::<Attestation>()
                     .await
-                    .with_context(|| format!("Failed to decode body for event {}", event_id))
-                {
-                    Ok(attestation) => attestation,
-                    Err(e) => {
-                        tracing::debug!("{:#}", e);
-                        continue;
-                    }
-                };
+                    .context("Failed to deserialize as Attestation")?;
 
-                self.cfd_actor_address
-                    .clone()
-                    .do_send_async(attestation.clone())
-                    .await?;
-                self.monitor_actor_address
-                    .clone()
-                    .do_send_async(attestation)
-                    .await?;
+                this.send(NewAttestationFetched {
+                    id: event_id,
+                    attestation,
+                })
+                .await?;
 
-                self.pending_attestations.remove(&event_id);
-            }
+                Ok(())
+            });
         }
+    }
+
+    async fn handle_new_attestation_fetched(
+        &mut self,
+        id: BitMexPriceEventId,
+        attestation: Attestation,
+    ) -> Result<()> {
+        tracing::info!("Fetched new attestation for {}", id);
+
+        self.cfd_actor_address
+            .clone()
+            .do_send_async(attestation.clone())
+            .await?;
+        self.monitor_actor_address
+            .clone()
+            .do_send_async(attestation)
+            .await?;
+
+        self.pending_attestations.remove(&id);
 
         Ok(())
     }
@@ -250,6 +261,17 @@ impl<CFD: 'static, M: 'static> xtra::Handler<NewAnnouncementFetched> for Actor<C
     }
 }
 
+#[async_trait]
+impl<CFD, M> xtra::Handler<NewAttestationFetched> for Actor<CFD, M>
+where
+    CFD: xtra::Handler<Attestation>,
+    M: xtra::Handler<Attestation>,
+{
+    async fn handle(&mut self, msg: NewAttestationFetched, _ctx: &mut xtra::Context<Self>) {
+        log_error!(self.handle_new_attestation_fetched(msg.id, msg.attestation));
+    }
+}
+
 #[allow(dead_code)]
 pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<BitMexPriceEventId> {
     let adjusted = ceil_to_next_hour(timestamp)?;
@@ -296,7 +318,8 @@ where
     M: xtra::Handler<Attestation>,
 {
     async fn handle(&mut self, _: Sync, ctx: &mut xtra::Context<Self>) {
-        log_error!(self.update_state(ctx))
+        self.update_pending_announcements(ctx);
+        self.update_pending_attestations(ctx);
     }
 }
 
@@ -320,6 +343,10 @@ impl xtra::Message for Attestation {
 }
 
 impl xtra::Message for NewAnnouncementFetched {
+    type Result = ();
+}
+
+impl xtra::Message for NewAttestationFetched {
     type Result = ();
 }
 

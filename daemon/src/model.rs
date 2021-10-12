@@ -135,6 +135,15 @@ impl BitMexPriceEventId {
         Self::new(timestamp, 20)
     }
 
+    /// Checks whether this event has likely already occurred.
+    ///
+    /// We can't be sure about it because our local clock might be off from the oracle's clock.
+    pub fn has_likely_occured(&self) -> bool {
+        let now = OffsetDateTime::now_utc();
+
+        now > self.timestamp
+    }
+
     pub fn to_olivia_url(self) -> Url {
         "https://h00.ooo"
             .parse::<Url>()
@@ -209,5 +218,13 @@ mod tests {
         let now = BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc());
 
         assert_eq!(now.timestamp.nanosecond(), 0);
+    }
+
+    #[test]
+    fn has_occured_if_in_the_past() {
+        let past_event =
+            BitMexPriceEventId::with_20_digits(datetime!(2021-09-23 10:00:00).assume_utc());
+
+        assert!(past_event.has_likely_occured());
     }
 }
