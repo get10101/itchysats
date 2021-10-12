@@ -111,7 +111,7 @@ where
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
                         CetStatus::OracleSigned(attestation) => {
-                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.maker_address.script_pubkey()), attestation.into(), cfd.order.id)?;
+                            actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.order.id)?;
                             actor.monitor_commit_cet_timelock(&params, cfd.order.id);
                             actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                             actor.monitor_refund_finality(&params,cfd.order.id);
@@ -121,7 +121,7 @@ where
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
                         CetStatus::Ready(attestation) => {
-                            actor.monitor_cet_finality(map_cets(dlc.cets, dlc.maker_address.script_pubkey()), attestation.into(), cfd.order.id)?;
+                            actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.order.id)?;
                             actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                             actor.monitor_refund_finality(&params,cfd.order.id);
                         }
@@ -547,7 +547,7 @@ impl MonitorParams {
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
             commit: (dlc.commit.0.txid(), dlc.commit.2),
-            cets: map_cets(dlc.cets, script_pubkey.clone()),
+            cets: map_cets(dlc.cets),
             refund: (
                 dlc.refund.0.txid(),
                 script_pubkey,
@@ -564,7 +564,6 @@ impl MonitorParams {
 
 fn map_cets(
     cets: HashMap<OracleEventId, Vec<model::cfd::Cet>>,
-    script_pubkey: Script,
 ) -> HashMap<OracleEventId, Vec<Cet>> {
     cets.iter()
         .map(|(event_id, cets)| {
@@ -576,7 +575,7 @@ fn map_cets(
                              tx, range, n_bits, ..
                          }| Cet {
                             txid: tx.txid(),
-                            script: script_pubkey.clone(),
+                            script: tx.output[0].script_pubkey.clone(),
                             range: range.clone(),
                             n_bits: *n_bits,
                         },
