@@ -57,7 +57,9 @@ impl Wallet {
 
     pub async fn sync(&self) -> Result<WalletInfo> {
         let wallet = self.wallet.lock().await;
-        wallet.sync(NoopProgress, None)?;
+        wallet
+            .sync(NoopProgress, None)
+            .context("Failed to sync wallet")?;
 
         let balance = wallet.get_balance()?;
 

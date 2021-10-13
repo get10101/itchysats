@@ -153,7 +153,7 @@ async fn main() -> Result<()> {
         ext_priv_key,
     )
     .await?;
-    let wallet_info = wallet.sync().await.unwrap();
+    let wallet_info = wallet.sync().await?;
 
     let auth_password = seed.derive_auth_password::<auth::Password>();
 
@@ -178,7 +178,12 @@ async fn main() -> Result<()> {
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()));
 
-    let listener = tokio::net::TcpListener::bind(&format!("0.0.0.0:{}", opts.p2p_port)).await?;
+    let p2p_socket = format!("0.0.0.0:{}", opts.p2p_port)
+        .parse::<SocketAddr>()
+        .unwrap();
+    let listener = tokio::net::TcpListener::bind(p2p_socket)
+        .await
+        .with_context(|| format!("Failed to listen on {}", p2p_socket))?;
     let local_addr = listener.local_addr().unwrap();
 
     tracing::info!("Listening on {}", local_addr);
