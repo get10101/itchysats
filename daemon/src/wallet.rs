@@ -1,5 +1,6 @@
 use crate::model::WalletInfo;
 use anyhow::{Context, Result};
+use bdk::bitcoin::consensus::encode::serialize_hex;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Amount, PublicKey, Transaction, Txid};
@@ -96,7 +97,14 @@ impl Wallet {
         // TODO: Optimize this match to be a map_err / more readable in general
         let txid = tx.txid();
 
-        let result = wallet.broadcast(tx);
+        let result = wallet.broadcast(tx.clone());
+
+        if result.is_err() {
+            tracing::error!(
+                "Broadcasting transaction failed. Raw transaction: {}",
+                serialize_hex(&tx)
+            );
+        }
 
         if let Err(&bdk::Error::Electrum(electrum_client::Error::Protocol(ref value))) =
             result.as_ref()
