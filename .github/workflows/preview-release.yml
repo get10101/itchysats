@@ -16,5 +16,8 @@ jobs:
 
       - name: Update 'preview' release
         run: |
-          gh release delete preview || true # First delete, ignore failures
+          # First delete release + tag, ignore failures
+          gh release delete preview || true
+          gh api -X DELETE /repos/{owner}/{repo}/git/refs/tags/preview || true
+
           gh release create preview --prerelease --title preview
