@@ -168,7 +168,7 @@ jobs:
         if: matrix.os != 'windows-latest' && matrix.os != 'macos-latest'
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: comit-network
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish docker image
@@ -177,6 +177,6 @@ jobs:
           docker buildx build \
             --push \
             --platform=${{ matrix.docker_platforms }} \
-            --tag ghcr.io/${{ github.actor }}/hermes-${{ matrix.bin }}-${{ matrix.target }} \
+            --tag ghcr.io/comit-network/hermes-${{ matrix.bin }}-${{ matrix.target }} \
             --build-arg BINARY_PATH=target/${{ matrix.target }}/release/${{ matrix.bin }} \
             .
