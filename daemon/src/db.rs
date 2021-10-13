@@ -652,8 +652,6 @@ mod tests {
         // file has to exist in order to connect with sqlite
         File::create(temp_db.clone()).unwrap();
 
-        dbg!(&temp_db);
-
         let pool = SqlitePool::connect(format!("sqlite:{}", temp_db.display()).as_str())
             .await
             .unwrap();
