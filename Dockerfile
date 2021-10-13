@@ -1,9 +1,11 @@
 FROM debian:bullseye-slim
 
+ARG TARGETPLATFORM
 ARG BINARY_PATH
-RUN echo "Copying $BINARY_PATH into container"
 
-COPY $BINARY_PATH hermes
+RUN echo "Copying $TARGETPLATFORM/$BINARY_PATH into container"
+
+COPY $TARGETPLATFORM/$BINARY_PATH hermes
 
 RUN chmod a+x hermes
 
