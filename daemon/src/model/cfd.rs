@@ -1,4 +1,4 @@
-use crate::model::{Leverage, OracleEventId, Percent, Position, TakerId, TradingPair, Usd};
+use crate::model::{BitMexPriceEventId, Leverage, Percent, Position, TakerId, TradingPair, Usd};
 use crate::{monitor, oracle};
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
@@ -97,7 +97,7 @@ pub struct Order {
     /// The id of the event to be used for price attestation
     ///
     /// The maker includes this into the Order based on the Oracle announcement to be used.
-    pub oracle_event_id: OracleEventId,
+    pub oracle_event_id: BitMexPriceEventId,
 }
 
 #[allow(dead_code)] // Only one binary and the tests use this.
@@ -109,7 +109,7 @@ impl Order {
         min_quantity: Usd,
         max_quantity: Usd,
         origin: Origin,
-        oracle_event_id: OracleEventId,
+        oracle_event_id: BitMexPriceEventId,
     ) -> Result<Self> {
         let leverage = Leverage(2);
         let maintenance_margin_rate = dec!(0.005);
@@ -286,7 +286,7 @@ pub enum CfdState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Attestation {
-    pub id: OracleEventId,
+    pub id: BitMexPriceEventId,
     pub scalars: Vec<SecretKey>,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     payout: Amount,
@@ -296,7 +296,7 @@ pub struct Attestation {
 
 impl Attestation {
     pub fn new(
-        id: OracleEventId,
+        id: BitMexPriceEventId,
         price: u64,
         scalars: Vec<SecretKey>,
         dlc: Dlc,
@@ -1483,7 +1483,7 @@ pub struct Dlc {
     /// The fully signed lock transaction ready to be published on chain
     pub lock: (Transaction, Descriptor<PublicKey>),
     pub commit: (Transaction, EcdsaAdaptorSignature, Descriptor<PublicKey>),
-    pub cets: HashMap<OracleEventId, Vec<Cet>>,
+    pub cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
     pub refund: (Transaction, Signature),
 
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]

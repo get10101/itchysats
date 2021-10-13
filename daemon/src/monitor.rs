@@ -1,6 +1,6 @@
 use crate::actors::log_error;
 use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId};
-use crate::model::OracleEventId;
+use crate::model::BitMexPriceEventId;
 use crate::oracle::Attestation;
 use crate::{model, oracle};
 use anyhow::{Context, Result};
@@ -27,7 +27,7 @@ pub struct StartMonitoring {
 pub struct MonitorParams {
     lock: (Txid, Descriptor<PublicKey>),
     commit: (Txid, Descriptor<PublicKey>),
-    cets: HashMap<OracleEventId, Vec<Cet>>,
+    cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
     refund: (Txid, Script, u32),
     revoked_commits: Vec<(Txid, Script)>,
 }
@@ -209,7 +209,7 @@ where
 
     fn monitor_cet_finality(
         &mut self,
-        cets: HashMap<OracleEventId, Vec<Cet>>,
+        cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
         attestation: Attestation,
         order_id: OrderId,
     ) -> Result<()> {
@@ -581,8 +581,8 @@ impl From<model::cfd::Cet> for Cet {
 }
 
 fn map_cets(
-    cets: HashMap<OracleEventId, Vec<model::cfd::Cet>>,
-) -> HashMap<OracleEventId, Vec<Cet>> {
+    cets: HashMap<BitMexPriceEventId, Vec<model::cfd::Cet>>,
+) -> HashMap<BitMexPriceEventId, Vec<Cet>> {
     cets.into_iter()
         .map(|(event_id, cets)| {
             (

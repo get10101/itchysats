@@ -1,6 +1,6 @@
 use crate::actors::log_error;
 use crate::model::cfd::{Order, OrderId};
-use crate::model::{OracleEventId, TakerId};
+use crate::model::{BitMexPriceEventId, TakerId};
 use crate::{maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
@@ -38,7 +38,7 @@ pub enum TakerCommand {
     },
     NotifyRollOverAccepted {
         id: OrderId,
-        oracle_event_id: OracleEventId,
+        oracle_event_id: BitMexPriceEventId,
     },
     NotifyRollOverRejected {
         id: OrderId,

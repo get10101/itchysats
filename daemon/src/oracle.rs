@@ -1,25 +1,20 @@
 use crate::actors::log_error;
 use crate::model::cfd::{Cfd, CfdState};
-use crate::model::OracleEventId;
+use crate::model::BitMexPriceEventId;
+use crate::tokio_ext;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
-use reqwest::StatusCode;
-use rocket::time::format_description::FormatItem;
-use rocket::time::macros::format_description;
 use rocket::time::{OffsetDateTime, Time};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::ops::Add;
 use time::ext::NumericalDuration;
 
-const OLIVIA_EVENT_TIME_FORMAT: &[FormatItem] =
-    format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
-
 pub struct Actor<CFD, M> {
-    announcements: HashMap<OracleEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
-    pending_announcements: HashSet<OracleEventId>,
-    pending_attestations: HashSet<OracleEventId>,
+    announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
+    pending_announcements: HashSet<BitMexPriceEventId>,
+    pending_attestations: HashSet<BitMexPriceEventId>,
     cfd_actor_address: xtra::Address<CFD>,
     monitor_actor_address: xtra::Address<M>,
 }
@@ -32,25 +27,25 @@ pub struct Sync;
 /// The `Announcement` corresponds to the `OracleEventId` included in
 /// the message.
 #[derive(Debug, Clone)]
-pub struct FetchAnnouncement(pub OracleEventId);
+pub struct FetchAnnouncement(pub BitMexPriceEventId);
 
 pub struct MonitorAttestation {
-    pub event_id: OracleEventId,
+    pub event_id: BitMexPriceEventId,
 }
 
 /// Message used to request the `Announcement` from the
 /// `oracle::Actor`'s local state.
 ///
-/// The `Announcement` corresponds to the `OracleEventId` included in
+/// The `Announcement` corresponds to the [`BitMexPriceEventId`] included in
 /// the message.
 #[derive(Debug, Clone)]
-pub struct GetAnnouncement(pub OracleEventId);
+pub struct GetAnnouncement(pub BitMexPriceEventId);
 
 // TODO: Split xtra::Message and API object
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(try_from = "olivia_api::Response")]
 pub struct Attestation {
-    pub id: OracleEventId,
+    pub id: BitMexPriceEventId,
     pub price: u64,
     pub scalars: Vec<SecretKey>,
 }
@@ -58,9 +53,16 @@ pub struct Attestation {
 /// A module-private message to allow parallelization of fetching announcements.
 #[derive(Debug)]
 struct NewAnnouncementFetched {
-    id: OracleEventId,
+    id: BitMexPriceEventId,
     expected_outcome_time: OffsetDateTime,
     nonce_pks: Vec<schnorrsig::PublicKey>,
+}
+
+/// A module-private message to allow parallelization of fetching attestations.
+#[derive(Debug)]
+struct NewAttestationFetched {
+    id: BitMexPriceEventId,
+    attestation: Attestation,
 }
 
 impl<CFD, M> Actor<CFD, M> {
@@ -111,11 +113,11 @@ where
     CFD: 'static,
     M: 'static,
 {
-    async fn update_pending_announcements(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let this = ctx.address().expect("self to be alive");
+    fn update_pending_announcements(&mut self, ctx: &mut xtra::Context<Self>) {
         for event_id in self.pending_announcements.iter().cloned() {
-            let this = this.clone();
-            tokio::spawn(async move {
+            let this = ctx.address().expect("self to be alive");
+
+            tokio_ext::spawn_fallible(async move {
                 let url = event_id.to_olivia_url();
 
                 tracing::debug!("Fetching announcement for {}", event_id);
@@ -143,8 +145,6 @@ where
                 Ok(())
             });
         }
-
-        Ok(())
     }
 }
 
@@ -153,61 +153,65 @@ where
     CFD: xtra::Handler<Attestation>,
     M: xtra::Handler<Attestation>,
 {
-    async fn update_state(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        self.update_pending_announcements(ctx)
-            .await
-            .context("failed to update pending announcements")?;
-        self.update_pending_attestations()
-            .await
-            .context("failed to update pending attestations")?;
+    fn update_pending_attestations(&mut self, ctx: &mut xtra::Context<Self>) {
+        for event_id in self.pending_attestations.iter().copied() {
+            if !event_id.has_likely_occured() {
+                tracing::trace!(
+                    "Skipping {} because it likely hasn't occurred yet",
+                    event_id
+                );
 
-        Ok(())
-    }
+                continue;
+            }
 
-    async fn update_pending_attestations(&mut self) -> Result<()> {
-        let pending_attestations = self.pending_attestations.clone();
-        for event_id in pending_attestations.into_iter() {
-            {
-                let res = match reqwest::get(event_id.to_olivia_url()).await {
-                    Ok(res) if res.status().is_success() => res,
-                    Ok(res) if res.status() == StatusCode::NOT_FOUND => {
-                        tracing::trace!("Attestation not ready yet");
-                        continue;
-                    }
-                    Ok(res) => {
-                        tracing::warn!("Unexpected response, status {}", res.status());
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::warn!(%event_id, "Failed to fetch attestation: {}", e);
-                        continue;
-                    }
-                };
+            let this = ctx.address().expect("self to be alive");
 
-                let attestation = match res
+            tokio_ext::spawn_fallible(async move {
+                let url = event_id.to_olivia_url();
+
+                tracing::debug!("Fetching attestation for {}", event_id);
+
+                let response = reqwest::get(url.clone())
+                    .await
+                    .with_context(|| format!("Failed to GET {}", url))?;
+
+                if !response.status().is_success() {
+                    anyhow::bail!("GET {} responded with {}", url, response.status());
+                }
+
+                let attestation = response
                     .json::<Attestation>()
                     .await
-                    .with_context(|| format!("Failed to decode body for event {}", event_id))
-                {
-                    Ok(attestation) => attestation,
-                    Err(e) => {
-                        tracing::debug!("{:#}", e);
-                        continue;
-                    }
-                };
+                    .context("Failed to deserialize as Attestation")?;
 
-                self.cfd_actor_address
-                    .clone()
-                    .do_send_async(attestation.clone())
-                    .await?;
-                self.monitor_actor_address
-                    .clone()
-                    .do_send_async(attestation)
-                    .await?;
+                this.send(NewAttestationFetched {
+                    id: event_id,
+                    attestation,
+                })
+                .await?;
 
-                self.pending_attestations.remove(&event_id);
-            }
+                Ok(())
+            });
         }
+    }
+
+    async fn handle_new_attestation_fetched(
+        &mut self,
+        id: BitMexPriceEventId,
+        attestation: Attestation,
+    ) -> Result<()> {
+        tracing::info!("Fetched new attestation for {}", id);
+
+        self.cfd_actor_address
+            .clone()
+            .do_send_async(attestation.clone())
+            .await?;
+        self.monitor_actor_address
+            .clone()
+            .do_send_async(attestation)
+            .await?;
+
+        self.pending_attestations.remove(&id);
 
         Ok(())
     }
@@ -216,7 +220,7 @@ where
 #[async_trait]
 impl<CFD: 'static, M: 'static> xtra::Handler<MonitorAttestation> for Actor<CFD, M> {
     async fn handle(&mut self, msg: MonitorAttestation, _ctx: &mut xtra::Context<Self>) {
-        if !self.pending_attestations.insert(msg.event_id.clone()) {
+        if !self.pending_attestations.insert(msg.event_id) {
             tracing::trace!("Attestation {} already being monitored", msg.event_id);
         }
     }
@@ -225,7 +229,7 @@ impl<CFD: 'static, M: 'static> xtra::Handler<MonitorAttestation> for Actor<CFD, 
 #[async_trait]
 impl<CFD: 'static, M: 'static> xtra::Handler<FetchAnnouncement> for Actor<CFD, M> {
     async fn handle(&mut self, msg: FetchAnnouncement, _ctx: &mut xtra::Context<Self>) {
-        if !self.pending_announcements.insert(msg.0.clone()) {
+        if !self.pending_announcements.insert(msg.0) {
             tracing::trace!("Announcement {} already being fetched", msg.0);
         }
     }
@@ -241,7 +245,7 @@ impl<CFD: 'static, M: 'static> xtra::Handler<GetAnnouncement> for Actor<CFD, M> 
         self.announcements
             .get_key_value(&msg.0)
             .map(|(id, (time, nonce_pks))| Announcement {
-                id: id.clone(),
+                id: *id,
                 expected_outcome_time: *time,
                 nonce_pks: nonce_pks.clone(),
             })
@@ -257,11 +261,22 @@ impl<CFD: 'static, M: 'static> xtra::Handler<NewAnnouncementFetched> for Actor<C
     }
 }
 
+#[async_trait]
+impl<CFD, M> xtra::Handler<NewAttestationFetched> for Actor<CFD, M>
+where
+    CFD: xtra::Handler<Attestation>,
+    M: xtra::Handler<Attestation>,
+{
+    async fn handle(&mut self, msg: NewAttestationFetched, _ctx: &mut xtra::Context<Self>) {
+        log_error!(self.handle_new_attestation_fetched(msg.id, msg.attestation));
+    }
+}
+
 #[allow(dead_code)]
-pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<OracleEventId> {
+pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<BitMexPriceEventId> {
     let adjusted = ceil_to_next_hour(timestamp)?;
 
-    Ok(event_id(adjusted))
+    Ok(BitMexPriceEventId::with_20_digits(adjusted))
 }
 
 fn ceil_to_next_hour(original: OffsetDateTime) -> Result<OffsetDateTime, anyhow::Error> {
@@ -273,16 +288,6 @@ fn ceil_to_next_hour(original: OffsetDateTime) -> Result<OffsetDateTime, anyhow:
     Ok(adjusted)
 }
 
-/// Construct the URL of `olivia`'s `BitMEX/BXBT` event to be attested
-/// for at the time indicated by the argument `datetime`.
-fn event_id(datetime: OffsetDateTime) -> OracleEventId {
-    let datetime = datetime
-        .format(&OLIVIA_EVENT_TIME_FORMAT)
-        .expect("valid formatter for datetime");
-
-    OracleEventId(format!("/x/BitMEX/BXBT/{}.price?n=20", datetime))
-}
-
 #[derive(Debug, Clone, serde::Deserialize, PartialEq)]
 #[serde(try_from = "olivia_api::Response")]
 pub struct Announcement {
@@ -290,7 +295,7 @@ pub struct Announcement {
     ///
     /// Doubles up as the path of the URL for this event i.e.
     /// https://h00.ooo/{id}.
-    pub id: OracleEventId,
+    pub id: BitMexPriceEventId,
     pub expected_outcome_time: OffsetDateTime,
     pub nonce_pks: Vec<schnorrsig::PublicKey>,
 }
@@ -298,7 +303,7 @@ pub struct Announcement {
 impl From<Announcement> for cfd_protocol::Announcement {
     fn from(announcement: Announcement) -> Self {
         cfd_protocol::Announcement {
-            id: announcement.id.0,
+            id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks,
         }
     }
@@ -313,7 +318,8 @@ where
     M: xtra::Handler<Attestation>,
 {
     async fn handle(&mut self, _: Sync, ctx: &mut xtra::Context<Self>) {
-        log_error!(self.update_state(ctx))
+        self.update_pending_announcements(ctx);
+        self.update_pending_attestations(ctx);
     }
 }
 
@@ -340,8 +346,12 @@ impl xtra::Message for NewAnnouncementFetched {
     type Result = ();
 }
 
+impl xtra::Message for NewAttestationFetched {
+    type Result = ();
+}
+
 mod olivia_api {
-    use crate::model::OracleEventId;
+    use crate::model::BitMexPriceEventId;
     use anyhow::Context;
     use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
     use std::convert::TryFrom;
@@ -363,7 +373,7 @@ mod olivia_api {
                 serde_json::from_str::<AnnouncementData>(&response.announcement.oracle_event.data)?;
 
             Ok(Self {
-                id: OracleEventId(data.id),
+                id: data.id,
                 expected_outcome_time: data.expected_outcome_time,
                 nonce_pks: data.schemes.olivia_v1.nonces,
             })
@@ -381,7 +391,7 @@ mod olivia_api {
             let attestation = response.attestation.context("attestation missing")?;
 
             Ok(Self {
-                id: OracleEventId(data.id),
+                id: data.id,
                 price: attestation.outcome.parse()?,
                 scalars: attestation.schemes.olivia_v1.scalars,
             })
@@ -402,7 +412,7 @@ mod olivia_api {
     #[derive(Debug, Clone, serde::Deserialize)]
     #[serde(rename_all = "kebab-case")]
     struct AnnouncementData {
-        id: String,
+        id: BitMexPriceEventId,
         #[serde(with = "timestamp")]
         expected_outcome_time: OffsetDateTime,
         schemes: Schemes,
@@ -431,7 +441,7 @@ mod olivia_api {
     }
 
     mod timestamp {
-        use crate::oracle::OLIVIA_EVENT_TIME_FORMAT;
+        use crate::olivia;
         use serde::de::Error as _;
         use serde::{Deserialize, Deserializer};
         use time::{OffsetDateTime, PrimitiveDateTime};
@@ -441,7 +451,7 @@ mod olivia_api {
             D: Deserializer<'a>,
         {
             let string = String::deserialize(deserializer)?;
-            let date_time = PrimitiveDateTime::parse(&string, &OLIVIA_EVENT_TIME_FORMAT)
+            let date_time = PrimitiveDateTime::parse(&string, &olivia::EVENT_TIME_FORMAT)
                 .map_err(D::Error::custom)?;
 
             Ok(date_time.assume_utc())
@@ -452,7 +462,7 @@ mod olivia_api {
     mod tests {
         use std::vec;
 
-        use crate::model::OracleEventId;
+        use crate::model::BitMexPriceEventId;
         use crate::oracle;
         use time::macros::datetime;
 
@@ -462,7 +472,7 @@ mod olivia_api {
 
             let deserialized = serde_json::from_str::<oracle::Announcement>(json).unwrap();
             let expected = oracle::Announcement {
-                id: OracleEventId("/x/BitMEX/BXBT/2021-10-04T22:00:00.price?n=20".to_string()),
+                id: BitMexPriceEventId::with_20_digits(datetime!(2021-10-04 22:00:00).assume_utc()),
                 expected_outcome_time: datetime!(2021-10-04 22:00:00).assume_utc(),
                 nonce_pks: vec![
                     "8d72028eeaf4b85aec0f750f05a4a320cac193f5d8494bfe05cd4b29f3df4239"
@@ -537,7 +547,7 @@ mod olivia_api {
 
             let deserialized = serde_json::from_str::<oracle::Attestation>(json).unwrap();
             let expected = oracle::Attestation {
-                id: OracleEventId("/x/BitMEX/BXBT/2021-10-04T22:00:00.price?n=20".to_string()),
+                id: BitMexPriceEventId::with_20_digits(datetime!(2021-10-04 22:00:00).assume_utc()),
                 price: 48935,
                 scalars: vec![
                     "1327b3bd0f1faf45d6fed6c96d0c158da22a2033a6fed98bed036df0a4eef484"
@@ -614,18 +624,14 @@ mod tests {
     use time::macros::datetime;
 
     #[test]
-    fn next_event_id_is_correct() {
-        let event_id = event_id(datetime!(2021-09-23 10:00:00).assume_utc());
-
-        assert_eq!(event_id.0, "/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20");
-    }
-
-    #[test]
     fn next_event_id_after_timestamp() {
         let event_id =
             next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc()).unwrap();
 
-        assert_eq!(event_id.0, "/x/BitMEX/BXBT/2021-09-23T11:00:00.price?n=20");
+        assert_eq!(
+            event_id.to_string(),
+            "/x/BitMEX/BXBT/2021-09-23T11:00:00.price?n=20"
+        );
     }
 
     #[test]
@@ -633,6 +639,9 @@ mod tests {
         let event_id =
             next_announcement_after(datetime!(2021-09-23 23:40:00).assume_utc()).unwrap();
 
-        assert_eq!(event_id.0, "/x/BitMEX/BXBT/2021-09-24T00:00:00.price?n=20");
+        assert_eq!(
+            event_id.to_string(),
+            "/x/BitMEX/BXBT/2021-09-24T00:00:00.price?n=20"
+        );
     }
 }
