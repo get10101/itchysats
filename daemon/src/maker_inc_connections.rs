@@ -1,7 +1,7 @@
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
-use crate::{forward_only_ok, log_error, maker_cfd, send_to_socket, wire};
+use crate::{forward_only_ok, log_error, maker_cfd, send_to_socket, tokio_ext, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
@@ -88,17 +88,6 @@ impl Actor {
 
         // use `.send` here to ensure we only continue once the message has been sent
         conn.send(msg).await?;
-
-        Ok(())
-    }
-
-    async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) -> Result<()> {
-        let order = msg.0;
-
-        for conn in self.write_connections.values() {
-            conn.do_send_async(wire::MakerToTaker::CurrentOrder(order.clone()))
-                .await?;
-        }
 
         Ok(())
     }
@@ -216,7 +205,11 @@ macro_rules! log_error {
 #[async_trait]
 impl Handler<BroadcastOrder> for Actor {
     async fn handle(&mut self, msg: BroadcastOrder, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_broadcast_order(msg));
+        let order = msg.0;
+
+        for conn in self.write_connections.values() {
+            tokio_ext::spawn_fallible(conn.send(wire::MakerToTaker::CurrentOrder(order.clone())));
+        }
     }
 }
 

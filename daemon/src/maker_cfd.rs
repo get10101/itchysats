@@ -415,7 +415,7 @@ impl Actor {
         tracing::info!("Lock transaction published with txid {}", txid);
 
         self.monitor_actor
-            .do_send_async(monitor::StartMonitoring {
+            .send(monitor::StartMonitoring {
                 id: order_id,
                 params: MonitorParams::from_dlc_and_timelocks(dlc, cfd.refund_timelock_in_blocks()),
             })
@@ -450,7 +450,7 @@ impl Actor {
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.monitor_actor
-            .do_send_async(monitor::StartMonitoring {
+            .send(monitor::StartMonitoring {
                 id: order_id,
                 params: MonitorParams::from_dlc_and_timelocks(dlc, cfd.refund_timelock_in_blocks()),
             })
@@ -521,7 +521,7 @@ impl Actor {
         // 4. Remove current order
         self.current_order_id = None;
         self.takers
-            .do_send_async(maker_inc_connections::BroadcastOrder(None))
+            .send(maker_inc_connections::BroadcastOrder(None))
             .await?;
         self.order_feed_sender.send(None)?;
 
@@ -658,8 +658,9 @@ impl Actor {
 
         // Remove order for all
         self.current_order_id = None;
+
         self.takers
-            .do_send_async(maker_inc_connections::BroadcastOrder(None))
+            .send(maker_inc_connections::BroadcastOrder(None))
             .await?;
         self.order_feed_sender.send(None)?;
 
