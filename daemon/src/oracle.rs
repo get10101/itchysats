@@ -111,8 +111,9 @@ where
     CFD: 'static,
     M: 'static,
 {
-    async fn update_pending_announcements(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    fn update_pending_announcements(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
+
         for event_id in self.pending_announcements.iter().cloned() {
             let this = this.clone();
             tokio::spawn(async move {
@@ -143,8 +144,6 @@ where
                 Ok(())
             });
         }
-
-        Ok(())
     }
 }
 
@@ -154,9 +153,7 @@ where
     M: xtra::Handler<Attestation>,
 {
     async fn update_state(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        self.update_pending_announcements(ctx)
-            .await
-            .context("failed to update pending announcements")?;
+        self.update_pending_announcements(ctx);
         self.update_pending_attestations()
             .await
             .context("failed to update pending attestations")?;
