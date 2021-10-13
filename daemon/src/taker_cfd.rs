@@ -587,7 +587,7 @@ impl Actor {
 
         // TODO: code duplicateion maker/taker
         if let CfdState::OpenCommitted { .. } = cfd.state {
-            self.try_cet_publication(cfd).await?;
+            self.try_cet_publication(&mut cfd).await?;
         } else if let CfdState::MustRefund { .. } = cfd.state {
             let signed_refund_tx = cfd.refund_tx()?;
             let txid = self
@@ -633,16 +633,18 @@ impl Actor {
         );
 
         let mut conn = self.db.acquire().await?;
-        let cfds = load_cfds_by_oracle_event_id(attestation.id, &mut conn).await?;
+        let mut cfds = load_cfds_by_oracle_event_id(attestation.id, &mut conn).await?;
 
-        for mut cfd in cfds {
+        for (cfd, dlc) in cfds
+            .iter_mut()
+            .filter_map(|cfd| cfd.dlc().map(|dlc| (cfd, dlc)))
+        {
             if cfd
                 .handle(CfdStateChangeEvent::OracleAttestation(Attestation::new(
                     attestation.id,
                     attestation.price,
                     attestation.scalars.clone(),
-                    cfd.dlc()
-                        .context("No DLC available when attestation was received")?,
+                    dlc,
                     cfd.role(),
                 )?))?
                 .is_none()
@@ -667,7 +669,7 @@ impl Actor {
     }
 
     // TODO: code duplication maker/taker
-    async fn try_cet_publication(&mut self, mut cfd: Cfd) -> Result<()> {
+    async fn try_cet_publication(&mut self, cfd: &mut Cfd) -> Result<()> {
         let mut conn = self.db.acquire().await?;
 
         match cfd.cet()? {
