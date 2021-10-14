@@ -622,27 +622,55 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_insert_new_cfd_state() {
+    async fn test_insert_new_cfd_state_and_load_with_multiple_cfd() {
         let pool = setup_test_db().await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let mut cfd = Cfd::default();
+        let mut cfd_1 = Cfd::default();
 
-        insert_order(&cfd.order, &mut conn).await.unwrap();
-        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
+        insert_order(&cfd_1.order, &mut conn).await.unwrap();
+        insert_cfd(cfd_1.clone(), &mut conn).await.unwrap();
 
-        cfd.state = CfdState::Accepted {
+        cfd_1.state = CfdState::Accepted {
             common: CfdStateCommon {
                 transition_timestamp: SystemTime::now(),
             },
         };
-        insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn)
+        insert_new_cfd_state_by_order_id(cfd_1.order.id, &cfd_1.state, &mut conn)
             .await
             .unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
+        assert_eq!(cfds_from_db.len(), 1);
+
         let cfd_from_db = cfds_from_db.first().unwrap().clone();
-        assert_eq!(cfd, cfd_from_db)
+        assert_eq!(cfd_1, cfd_from_db);
+
+        let mut cfd_2 = Cfd::default();
+
+        insert_order(&cfd_2.order, &mut conn).await.unwrap();
+        insert_cfd(cfd_2.clone(), &mut conn).await.unwrap();
+
+        let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
+        assert_eq!(cfds_from_db.len(), 2);
+
+        assert!(cfds_from_db.contains(&cfd_1));
+        assert!(cfds_from_db.contains(&cfd_2));
+
+        cfd_2.state = CfdState::Rejected {
+            common: CfdStateCommon {
+                transition_timestamp: SystemTime::now(),
+            },
+        };
+        insert_new_cfd_state_by_order_id(cfd_2.order.id, &cfd_2.state, &mut conn)
+            .await
+            .unwrap();
+
+        let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
+        assert_eq!(cfds_from_db.len(), 2);
+
+        assert!(cfds_from_db.contains(&cfd_1));
+        assert!(cfds_from_db.contains(&cfd_2));
     }
 
     async fn setup_test_db() -> SqlitePool {
