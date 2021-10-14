@@ -148,6 +148,8 @@ export default function App() {
                                 calculateMargin(payload);
                             }}
                             value={format(quantity)}
+                            min={order?.min_quantity}
+                            max={order?.max_quantity}
                         />
 
                         <Text>Margin in BTC:</Text>
