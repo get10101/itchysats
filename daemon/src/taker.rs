@@ -8,7 +8,7 @@ use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::wallet::Wallet;
 use daemon::{
-    bitmex_price_feed, housekeeping, logger, monitor, oracle, send_to_socket, taker_cfd,
+    bitmex_price_feed, fan_out, housekeeping, logger, monitor, oracle, send_to_socket, taker_cfd,
     wallet_sync, wire,
 };
 use futures::StreamExt;
@@ -253,13 +253,11 @@ async fn main() -> Result<()> {
                         .notify_interval(Duration::from_secs(60), || oracle::Sync)
                         .unwrap(),
                 );
-                tokio::spawn(oracle_actor_context.run(oracle::Actor::new(
-                    cfds,
-                    [
-                        Box::new(cfd_actor_inbox.clone()),
-                        Box::new(monitor_actor_address),
-                    ],
-                )));
+                let actor = fan_out::Actor::new(&[&cfd_actor_inbox, &monitor_actor_address])
+                    .create(None)
+                    .spawn_global();
+
+                tokio::spawn(oracle_actor_context.run(oracle::Actor::new(cfds, actor)));
 
                 oracle_actor_address
                     .do_send_async(oracle::Sync)
