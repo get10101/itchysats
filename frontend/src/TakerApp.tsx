@@ -15,7 +15,7 @@ import {
     useToast,
     VStack,
 } from "@chakra-ui/react";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
@@ -58,6 +58,8 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
 }
 
 export default function App() {
+    const toast = useToast();
+
     document.title = "Hermes Taker";
 
     let source = useEventSource({ source: "/api/feed" });
@@ -67,9 +69,11 @@ export default function App() {
     const order = useLatestEvent<Order>(source, "order", intoOrder);
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
-    const toast = useToast();
     let [quantity, setQuantity] = useState("0");
     let [margin, setMargin] = useState("0");
+    let [userHasEdited, setUserHasEdited] = useState(false);
+
+    let quantityToShow = userHasEdited ? quantity : (order?.min_quantity.toString() || "0");
 
     let { run: calculateMargin } = useAsync({
         deferFn: async ([payload]: any[]) => {
@@ -89,6 +93,23 @@ export default function App() {
             }
         },
     });
+
+    useEffect(() => {
+        if (!order) {
+            return;
+        }
+        let quantity = quantityToShow ? Number.parseFloat(quantityToShow) : 0;
+        let payload: MarginRequestPayload = {
+            leverage: order.leverage,
+            price: order.price,
+            quantity,
+        };
+        calculateMargin(payload);
+    }, // Eslint demands us to include `calculateMargin` in the list of dependencies.
+     // We don't want that as we will end up in an endless loop. It is safe to ignore `calculateMargin` because
+    // nothing in `calculateMargin` depends on outside values, i.e. is guaranteed to be stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [margin, quantityToShow, order]);
 
     const format = (val: any) => `$` + val;
     const parse = (val: any) => val.replace(/^\$/, "");
@@ -135,6 +156,7 @@ export default function App() {
                         <Text>Quantity:</Text>
                         <CurrencyInputField
                             onChange={(valueString: string) => {
+                                setUserHasEdited(true);
                                 setQuantity(parse(valueString));
                                 if (!order) {
                                     return;
@@ -147,7 +169,7 @@ export default function App() {
                                 };
                                 calculateMargin(payload);
                             }}
-                            value={format(quantity)}
+                            value={format(quantityToShow)}
                             min={order?.min_quantity}
                             max={order?.max_quantity}
                         />
