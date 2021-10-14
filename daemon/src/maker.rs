@@ -234,7 +234,8 @@ async fn main() -> Result<()> {
 
                 tokio::spawn(
                     maker_inc_connections_context.run(maker_inc_connections::Actor::new(
-                        cfd_maker_actor_inbox.clone(),
+                        &cfd_maker_actor_inbox,
+                        &cfd_maker_actor_inbox,
                     )),
                 );
                 tokio::spawn(
