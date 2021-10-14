@@ -82,6 +82,8 @@ export class State {
                 return "Open";
             case StateKey.PENDING_COMMIT:
                 return "Pending Commit";
+            case StateKey.PENDING_CLOSE:
+                return "Pending Close";
             case StateKey.OPEN_COMMITTED:
                 return "Open (commit-tx published)";
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
@@ -123,6 +125,7 @@ export class State {
             case StateKey.OPEN_COMMITTED:
             case StateKey.MUST_REFUND:
             case StateKey.PENDING_CET:
+            case StateKey.PENDING_CLOSE:
                 return orange;
 
             case StateKey.OUTGOING_ORDER_REQUEST:
@@ -158,6 +161,7 @@ export class State {
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
             case StateKey.OUTGOING_ROLL_OVER_PROPOSAL:
             case StateKey.PENDING_CET:
+            case StateKey.PENDING_CLOSE:
                 return StateGroupKey.OPEN;
 
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
@@ -195,6 +199,7 @@ const enum StateKey {
     CONTRACT_SETUP = "ContractSetup",
     PENDING_OPEN = "PendingOpen",
     OPEN = "Open",
+    PENDING_CLOSE = "PendingClose",
     PENDING_COMMIT = "PendingCommit",
     PENDING_CET = "PendingCet",
     OPEN_COMMITTED = "OpenCommitted",

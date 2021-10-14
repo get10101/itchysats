@@ -253,17 +253,6 @@ pub enum CfdState {
         attestation: Attestation,
     },
 
-    /// The collaborative close transaction was published but is not final yet.
-    ///
-    /// This state applies to taker and maker.
-    /// This state is needed, because otherwise the user does not get any feedback.
-    PendingClose {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        attestation: Option<Attestation>,
-        collaborative_close: TimestampedTransaction,
-    },
-
     /// The position was closed collaboratively or non-collaboratively
     ///
     /// This state applies to taker and maker.
@@ -408,7 +397,6 @@ impl CfdState {
             CfdState::SetupFailed { common, .. } => common,
             CfdState::PendingCommit { common, .. } => common,
             CfdState::PendingCet { common, .. } => common,
-            CfdState::PendingClose { common, .. } => common,
             CfdState::Closed { common, .. } => common,
         };
 
@@ -425,10 +413,6 @@ impl CfdState {
                 collaborative_close,
                 ..
             } => collaborative_close.clone(),
-            CfdState::PendingClose {
-                collaborative_close,
-                ..
-            } => Some(collaborative_close.clone()),
             _ => None,
         }
     }
@@ -475,9 +459,6 @@ impl fmt::Display for CfdState {
             }
             CfdState::PendingCet { .. } => {
                 write!(f, "Pending CET")
-            }
-            CfdState::PendingClose { .. } => {
-                write!(f, "Pending Close")
             }
             CfdState::Closed { .. } => {
                 write!(f, "Closed")
@@ -584,7 +565,6 @@ impl Cfd {
         Ok((p_n_l, p_n_l_percent))
     }
 
-    #[allow(dead_code)] // Not used by all binaries.
     pub fn calculate_settlement(&self, current_price: Usd) -> Result<SettlementProposal> {
         let payout_curve =
             payout_curve::calculate(self.order.price, self.quantity_usd, self.order.leverage)?;
@@ -946,26 +926,6 @@ impl Cfd {
                     self.state
                 ),
             },
-            CfdStateChangeEvent::CloseSent(collaborative_close) => match self.state.clone() {
-                CfdState::Open {
-                    common,
-                    dlc,
-                    attestation,
-                    collaborative_close : Some(_),
-                } => CfdState::PendingClose {
-                    common,
-                    dlc,
-                    attestation,
-                    collaborative_close,
-                },
-                CfdState::Open {
-                    collaborative_close : None,
-                    ..
-                } => bail!("Cannot transition to PendingClose because Open state did not record a settlement proposal beforehand"),
-                _ => bail!(
-                    "Cannot transition to PendingClose because of unexpected state {}",
-                    self.state)
-            }
         };
 
         self.state = new_state.clone();
@@ -1161,7 +1121,6 @@ impl Cfd {
             | CfdState::Accepted { .. }
             | CfdState::Rejected { .. }
             | CfdState::ContractSetup { .. }
-            | CfdState::PendingClose { .. }
             | CfdState::Closed { .. }
             | CfdState::MustRefund { .. }
             | CfdState::Refunded { .. }
@@ -1201,7 +1160,6 @@ impl Cfd {
             | CfdState::PendingOpen { .. }
             | CfdState::Open { .. }
             | CfdState::PendingCommit { .. }
-            | CfdState::PendingClose { .. }
             | CfdState::Closed { .. }
             | CfdState::OpenCommitted { .. }
             | CfdState::MustRefund { .. }
@@ -1214,10 +1172,6 @@ impl Cfd {
         match self.state.clone() {
             CfdState::Open {
                 collaborative_close: Some(collaborative_close),
-                ..
-            }
-            | CfdState::PendingClose {
-                collaborative_close,
                 ..
             }
             | CfdState::Closed {
@@ -1282,8 +1236,6 @@ pub enum CfdStateChangeEvent {
     CetSent,
     /// Settlement proposal was signed by the taker and sent to the maker
     ProposalSigned(TimestampedTransaction),
-    /// Maker signed and finalized the close transaction with both signatures
-    CloseSent(TimestampedTransaction),
 }
 
 /// Returns the Profit/Loss (P/L) as Bitcoin. Losses are capped by the provided margin
