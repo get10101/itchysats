@@ -547,8 +547,6 @@ impl Cfd {
     }
 
     pub fn profit(&self, current_price: Usd) -> Result<(SignedAmount, Percent)> {
-        // TODO: We should use the payout curve here and not just the current price!
-
         let closing_price = match (self.attestation(), self.collaborative_close()) {
             (Some(_attestation), Some(collaborative_close)) => collaborative_close.price,
             (None, Some(collaborative_close)) => collaborative_close.price,
