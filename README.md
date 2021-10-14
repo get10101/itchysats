@@ -48,7 +48,8 @@ However, the development environment still needs to be start twice!
 Which frontend to start is configured via the `APP` environment variable.
 
 ```bash
-cd frontend;
+cd frontend
+yarn install
 APP=taker yarn dev
 APP=maker yarn dev
 ```
