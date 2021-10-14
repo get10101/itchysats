@@ -14,6 +14,9 @@ All the components can be started at once by running the following script:
 ./start_all.sh
 ```
 
+Note: Before first run, you need to run `cd frontend; yarn install` command to
+ensure that `vite` gets installed.
+
 The script combines the logs from all binaries inside a single terminal so it
 might not be ideal for all cases, but it is convenient for quick regression testing.
 
