@@ -360,11 +360,22 @@ fn to_tx_url_list(state: model::cfd::CfdState, network: Network) -> Vec<TxUrl> {
     let tx_ub = TxUrlBuilder::new(network);
 
     match state {
-        PendingOpen { dlc, .. } | Open { dlc, .. } => {
+        PendingOpen { dlc, .. } => {
             vec![tx_ub.lock(&dlc)]
         }
         PendingCommit { dlc, .. } => vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)],
         OpenCommitted { dlc, .. } => vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)],
+        Open {
+            dlc,
+            collaborative_close,
+            ..
+        } => {
+            let mut tx_urls = vec![tx_ub.lock(&dlc)];
+            if let Some(collaborative_close) = collaborative_close {
+                tx_urls.push(tx_ub.collaborative_close(collaborative_close.tx.txid()));
+            }
+            tx_urls
+        }
         PendingCet {
             dlc, attestation, ..
         } => vec![
