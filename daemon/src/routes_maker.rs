@@ -17,6 +17,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
+use xtra::prelude::MessageChannel;
 use xtra::Address;
 
 #[rocket::get("/feed")]
@@ -109,18 +110,17 @@ pub struct CfdNewOrderRequest {
 }
 
 #[rocket::post("/order/sell", data = "<order>")]
-pub async fn post_sell_order(
+pub fn post_sell_order(
     order: Json<CfdNewOrderRequest>,
-    cfd_actor_address: &State<Address<maker_cfd::Actor>>,
+    new_order_channel: &State<Box<dyn MessageChannel<maker_cfd::NewOrder>>>,
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, Status> {
-    cfd_actor_address
-        .do_send_async(maker_cfd::NewOrder {
+    new_order_channel
+        .do_send(maker_cfd::NewOrder {
             price: order.price,
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
         })
-        .await
         .map_err(|_| Status::new(500))?;
 
     Ok(status::Accepted(None))
