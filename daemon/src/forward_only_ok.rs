@@ -39,7 +39,7 @@ where
         let ok = match result {
             Ok(ok) => ok,
             Err(e) => {
-                tracing::error!("Received error: {}", e);
+                tracing::error!("Stopping forwarding due to error: {}", e);
 
                 return KeepRunning::StopSelf;
             }

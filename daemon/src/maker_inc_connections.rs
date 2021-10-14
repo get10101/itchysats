@@ -176,17 +176,27 @@ impl Actor {
             .map_ok(move |msg| FromTaker { taker_id, msg })
             .map(forward_only_ok::Message);
 
+        let (out_msg_actor_address, mut out_msg_actor_context) = xtra::Context::new(None);
+
         let forward_to_cfd = forward_only_ok::Actor::new(self.taker_msg_channel.clone_channel())
             .create(None)
             .spawn_global();
 
-        tokio::spawn(forward_to_cfd.attach_stream(read));
+        // only allow outgoing messages while we are successfully reading incoming ones
+        tokio::spawn(async move {
+            let mut actor = send_to_socket::Actor::new(write);
 
-        let out_msg_actor = send_to_socket::Actor::new(write)
-            .create(None)
-            .spawn_global();
+            out_msg_actor_context
+                .handle_while(&mut actor, forward_to_cfd.attach_stream(read))
+                .await;
 
-        self.write_connections.insert(taker_id, out_msg_actor);
+            tracing::error!("Closing connection to taker {}", taker_id);
+
+            actor.shutdown().await;
+        });
+
+        self.write_connections
+            .insert(taker_id, out_msg_actor_address);
 
         let _ = self
             .new_taker_channel

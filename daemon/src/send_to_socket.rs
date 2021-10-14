@@ -2,6 +2,7 @@ use crate::wire::{self, JsonCodec};
 use futures::SinkExt;
 use serde::Serialize;
 use std::fmt;
+use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio_util::codec::FramedWrite;
 use xtra::{Handler, Message};
@@ -15,6 +16,10 @@ impl<T> Actor<T> {
         Self {
             write: FramedWrite::new(write, JsonCodec::default()),
         }
+    }
+
+    pub async fn shutdown(self) {
+        let _ = self.write.into_inner().shutdown().await;
     }
 }
 
