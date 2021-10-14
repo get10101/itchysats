@@ -14,6 +14,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::marker::Send;
 use std::ops::{Add, RangeInclusive};
+use xtra::prelude::StrongMessageChannel;
 
 const FINALITY_CONFIRMATIONS: u32 = 1;
 
@@ -33,26 +34,19 @@ pub struct MonitorParams {
 
 pub struct Sync;
 
-pub struct Actor<T, C = bdk::electrum_client::Client>
-where
-    T: xtra::Actor,
-{
+pub struct Actor<C = bdk::electrum_client::Client> {
     cfds: HashMap<OrderId, MonitorParams>,
-    cfd_actor_addr: xtra::Address<T>,
-
+    event_channel: Box<dyn StrongMessageChannel<Event>>,
     client: C,
     latest_block_height: BlockHeight,
     current_status: BTreeMap<(Txid, Script), ScriptStatus>,
     awaiting_status: HashMap<(Txid, Script), Vec<(ScriptStatus, Event)>>,
 }
 
-impl<T> Actor<T, bdk::electrum_client::Client>
-where
-    T: xtra::Actor + xtra::Handler<Event>,
-{
+impl Actor<bdk::electrum_client::Client> {
     pub async fn new(
         electrum_rpc_url: &str,
-        cfd_actor_addr: xtra::Address<T>,
+        event_channel: impl StrongMessageChannel<Event> + 'static,
         cfds: Vec<Cfd>,
     ) -> Result<Self> {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
@@ -66,7 +60,7 @@ where
 
         let mut actor = Self {
             cfds: HashMap::new(),
-            cfd_actor_addr,
+            event_channel: Box::new(event_channel),
             client,
             latest_block_height: BlockHeight::try_from(latest_block)?,
             current_status: BTreeMap::default(),
@@ -131,7 +125,7 @@ where
                     actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.order.id)?;
                     actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                     actor.monitor_refund_finality(&params,cfd.order.id);
-	        }
+                }
                 CfdState::PendingClose { collaborative_close, .. } => {
                     let transaction  = collaborative_close.tx;
                     let close_params = (transaction.txid(),
@@ -164,9 +158,8 @@ where
     }
 }
 
-impl<T, C> Actor<T, C>
+impl<C> Actor<C>
 where
-    T: xtra::Actor + xtra::Handler<Event>,
     C: bdk::electrum_client::ElectrumApi,
 {
     fn monitor_all(&mut self, params: &MonitorParams, order_id: OrderId) {
@@ -415,7 +408,7 @@ where
 
                     for (target_status, event) in reached_monitoring_target {
                         tracing::info!(%txid, target = %target_status, current = %status, "Bitcoin transaction reached monitoring target");
-                        self.cfd_actor_addr.send(event).await?;
+                        self.event_channel.send(event).await?;
                     }
                 }
             }
@@ -622,18 +615,11 @@ impl xtra::Message for Sync {
     type Result = ();
 }
 
-impl<T, C> xtra::Actor for Actor<T, C>
-where
-    T: xtra::Actor,
-    C: Send,
-    C: 'static,
-{
-}
+impl<C> xtra::Actor for Actor<C> where C: Send + 'static {}
 
 #[async_trait]
-impl<T, C> xtra::Handler<StartMonitoring> for Actor<T, C>
+impl<C> xtra::Handler<StartMonitoring> for Actor<C>
 where
-    T: xtra::Actor + xtra::Handler<Event>,
     C: bdk::electrum_client::ElectrumApi + Send + 'static,
 {
     async fn handle(&mut self, msg: StartMonitoring, _ctx: &mut xtra::Context<Self>) {
@@ -644,9 +630,8 @@ where
     }
 }
 #[async_trait]
-impl<T, C> xtra::Handler<Sync> for Actor<T, C>
+impl<C> xtra::Handler<Sync> for Actor<C>
 where
-    T: xtra::Actor + xtra::Handler<Event>,
     C: bdk::electrum_client::ElectrumApi + Send + 'static,
 {
     async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
@@ -655,10 +640,7 @@ where
 }
 
 #[async_trait]
-impl<T> xtra::Handler<oracle::Attestation> for Actor<T>
-where
-    T: xtra::Actor + xtra::Handler<Event>,
-{
+impl xtra::Handler<oracle::Attestation> for Actor {
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut xtra::Context<Self>) {
         log_error!(self.handle_oracle_attestation(msg));
     }
@@ -690,7 +672,7 @@ mod tests {
         let refund_expired = Event::RefundTimelockExpired(OrderId::default());
 
         let mut monitor = Actor::for_test(
-            recorder_address,
+            Box::new(recorder_address),
             [(
                 (txid1(), script1()),
                 vec![
@@ -736,7 +718,7 @@ mod tests {
         let refund_finality = Event::RefundFinality(OrderId::default());
 
         let mut monitor = Actor::for_test(
-            recorder_address,
+            Box::new(recorder_address),
             [
                 (
                     (txid1(), script1()),
@@ -773,7 +755,7 @@ mod tests {
         let cet_finality = Event::CetFinality(OrderId::default());
 
         let mut monitor = Actor::for_test(
-            recorder_address,
+            Box::new(recorder_address),
             [(
                 (txid1(), script1()),
                 vec![(ScriptStatus::finality(), cet_finality.clone())],
@@ -790,18 +772,15 @@ mod tests {
         assert!(monitor.awaiting_status.is_empty());
     }
 
-    impl<A> Actor<A, stub::Client>
-    where
-        A: xtra::Actor + xtra::Handler<Event>,
-    {
+    impl Actor<stub::Client> {
         #[allow(clippy::type_complexity)]
         fn for_test<const N: usize>(
-            address: xtra::Address<A>,
+            event_channel: Box<dyn StrongMessageChannel<Event>>,
             subscriptions: [((Txid, Script), Vec<(ScriptStatus, Event)>); N],
         ) -> Self {
             Actor {
                 cfds: HashMap::default(),
-                cfd_actor_addr: address,
+                event_channel,
                 client: stub::Client::default(),
                 latest_block_height: BlockHeight(0),
                 current_status: BTreeMap::default(),

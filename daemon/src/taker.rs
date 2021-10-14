@@ -254,9 +254,11 @@ async fn main() -> Result<()> {
                         .unwrap(),
                 );
                 tokio::spawn(oracle_actor_context.run(oracle::Actor::new(
-                    cfd_actor_inbox.clone(),
-                    monitor_actor_address,
                     cfds,
+                    [
+                        Box::new(cfd_actor_inbox.clone()),
+                        Box::new(monitor_actor_address),
+                    ],
                 )));
 
                 oracle_actor_address
