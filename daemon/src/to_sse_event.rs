@@ -1,5 +1,5 @@
 use crate::model::cfd::{
-    CetStatus, Dlc, OrderId, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
+    Dlc, OrderId, Payout, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{Leverage, Position, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
@@ -86,6 +86,10 @@ impl TxUrlBuilder {
         TxUrl::new(txid, self.network, TxLabel::Cet)
     }
 
+    pub fn collaborative_close(&self, txid: Txid) -> TxUrl {
+        TxUrl::new(txid, self.network, TxLabel::Collaborative)
+    }
+
     pub fn refund(&self, dlc: &Dlc) -> TxUrl {
         TxUrl::new(dlc.refund.0.txid(), self.network, TxLabel::Refund)
     }
@@ -97,6 +101,7 @@ pub enum TxLabel {
     Commit,
     Cet,
     Refund,
+    Collaborative,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -225,6 +230,11 @@ impl ToSseEvent for CfdsWithAuxData {
                 let pending_proposal = self.pending_proposals.get(&cfd.order.id);
                 let state = to_cfd_state(&cfd.state, pending_proposal);
 
+                let details = CfdDetails {
+                    tx_url_list: to_tx_url_list(cfd.state.clone(), network),
+                    payout: cfd.payout(),
+                };
+
                 Cfd {
                     order_id: cfd.order.id,
                     initial_price: cfd.order.price,
@@ -247,7 +257,7 @@ impl ToSseEvent for CfdsWithAuxData {
                     // TODO: Depending on the state the margin might be set (i.e. in Open we save it
                     // in the DB internally) and does not have to be calculated
                     margin: cfd.margin().unwrap(),
-                    details: to_cfd_details(cfd.state.clone(), cfd.role(), network),
+                    details,
                 }
             })
             .collect::<Vec<Cfd>>();
@@ -344,80 +354,43 @@ fn to_cfd_state(
     }
 }
 
-fn to_cfd_details(state: model::cfd::CfdState, role: Role, network: Network) -> CfdDetails {
+fn to_tx_url_list(state: model::cfd::CfdState, network: Network) -> Vec<TxUrl> {
     use model::cfd::CfdState::*;
 
     let tx_ub = TxUrlBuilder::new(network);
 
-    let (txs, payout) = match state {
-        PendingOpen {
-            dlc, attestation, ..
+    match state {
+        PendingOpen { dlc, .. } | Open { dlc, .. } => {
+            vec![tx_ub.lock(&dlc)]
         }
-        | Open {
-            dlc, attestation, ..
-        } => (
-            vec![tx_ub.lock(&dlc)],
-            attestation.map(|attestation| attestation.payout()),
-        ),
-        PendingCommit {
-            dlc, attestation, ..
-        } => (
-            vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)],
-            attestation.map(|attestation| attestation.payout()),
-        ),
-        OpenCommitted {
-            dlc,
-            cet_status: CetStatus::Unprepared | CetStatus::TimelockExpired,
-            ..
-        } => (vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)], None),
-        OpenCommitted {
-            dlc,
-            cet_status: CetStatus::OracleSigned(attestation) | CetStatus::Ready(attestation),
-            ..
-        } => (
-            vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)],
-            Some(attestation.payout()),
-        ),
+        PendingCommit { dlc, .. } => vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)],
+        OpenCommitted { dlc, .. } => vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)],
         PendingCet {
             dlc, attestation, ..
-        } => (
-            vec![
-                tx_ub.lock(&dlc),
-                tx_ub.commit(&dlc),
-                tx_ub.cet(attestation.txid()),
-            ],
-            Some(attestation.payout()),
-        ),
+        } => vec![
+            tx_ub.lock(&dlc),
+            tx_ub.commit(&dlc),
+            tx_ub.cet(attestation.txid()),
+        ],
         Closed {
-            attestation: Some(attestation),
+            payout: Payout::Cet(attestation),
             ..
-        } => (
-            vec![tx_ub.cet(attestation.txid())],
-            Some(attestation.payout()),
-        ),
+        } => vec![tx_ub.cet(attestation.txid())],
         Closed {
-            attestation: None, ..
+            payout: Payout::CollaborativeClose(collaborative_close),
+            ..
         } => {
-            // TODO: Provide CfdDetails about collaborative settlement
-            (vec![], None)
+            vec![tx_ub.collaborative_close(collaborative_close.tx.txid())]
         }
-        MustRefund { dlc, .. } => (
-            vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc), tx_ub.refund(&dlc)],
-            Some(dlc.refund_amount(role)),
-        ),
-        Refunded { dlc, .. } => (vec![tx_ub.refund(&dlc)], Some(dlc.refund_amount(role))),
+        MustRefund { dlc, .. } => vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc), tx_ub.refund(&dlc)],
+        Refunded { dlc, .. } => vec![tx_ub.refund(&dlc)],
         OutgoingOrderRequest { .. }
         | IncomingOrderRequest { .. }
         | PendingClose { .. }
         | Accepted { .. }
         | Rejected { .. }
         | ContractSetup { .. }
-        | SetupFailed { .. } => (vec![], None),
-    };
-
-    CfdDetails {
-        tx_url_list: txs,
-        payout,
+        | SetupFailed { .. } => vec![],
     }
 }
 

@@ -304,7 +304,7 @@ impl Actor {
         let (tx, sig_maker) = dlc.close_transaction(proposal)?;
 
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
-            TimestampedTransaction::new(tx.clone()),
+            TimestampedTransaction::new(tx.clone(), dlc.script_pubkey_for(cfd.role())),
         ))?;
         insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn).await?;
 
@@ -319,6 +319,7 @@ impl Actor {
 
         cfd.handle(CfdStateChangeEvent::CloseSent(TimestampedTransaction::new(
             spend_tx,
+            dlc.script_pubkey_for(cfd.role()),
         )))?;
         insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state, &mut conn).await?;
 

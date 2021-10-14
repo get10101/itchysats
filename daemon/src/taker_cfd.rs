@@ -370,9 +370,12 @@ impl Actor {
             .await?;
 
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
-            TimestampedTransaction::new(tx),
+            TimestampedTransaction::new(tx, dlc.script_pubkey_for(cfd.role())),
         ))?;
         insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state, &mut conn).await?;
+
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
 
         self.remove_pending_proposal(&order_id)?;
 

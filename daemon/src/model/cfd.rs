@@ -273,7 +273,7 @@ pub enum CfdState {
     Closed {
         common: CfdStateCommon,
         // TODO: Use an enum of either Attestation or CollaborativeSettlement
-        attestation: Option<Attestation>,
+        payout: Payout,
     },
 
     // TODO: Can be extended with CetStatus
@@ -295,6 +295,12 @@ pub enum CfdState {
         common: CfdStateCommon,
         info: String,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum Payout {
+    CollaborativeClose(TimestampedTransaction),
+    Cet(Attestation),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -323,10 +329,7 @@ impl Attestation {
 
         let txid = cet.tx.txid();
 
-        let our_script_pubkey = match role {
-            Role::Maker => dlc.maker_address.script_pubkey(),
-            Role::Taker => dlc.taker_address.script_pubkey(),
-        };
+        let our_script_pubkey = dlc.script_pubkey_for(role);
         let payout = cet
             .tx
             .output
@@ -723,11 +726,16 @@ impl Cfd {
                         },
                     }
                 }
-                monitor::Event::CloseFinality(_) => CfdState::Closed {
-                    common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
-                    },
-                    attestation: None
+                monitor::Event::CloseFinality(_) => {
+                    let collaborative_close = self.collaborative_close().context("No collaborative close after reaching collaborative close finality")?;
+
+                    CfdState::Closed {
+                        common: CfdStateCommon {
+                            transition_timestamp: SystemTime::now(),
+                        },
+                        payout: Payout::CollaborativeClose(collaborative_close)
+                    }
+
                 },
                 monitor::Event::CetTimelockExpired(_) => match self.state.clone() {
                     CfdState::OpenCommitted {
@@ -819,7 +827,7 @@ impl Cfd {
                         common: CfdStateCommon {
                             transition_timestamp: SystemTime::now(),
                         },
-                        attestation: Some(attestation),
+                        payout: Payout::Cet(attestation)
                     }
                 }
                 monitor::Event::RevokedTransactionFound(_) => {
@@ -1180,7 +1188,7 @@ impl Cfd {
             }
             | CfdState::PendingCet { attestation, .. }
             | CfdState::Closed {
-                attestation: Some(attestation),
+                payout: Payout::Cet(attestation),
                 ..
             } => Some(attestation),
 
@@ -1198,6 +1206,60 @@ impl Cfd {
             | CfdState::MustRefund { .. }
             | CfdState::Refunded { .. }
             | CfdState::SetupFailed { .. } => None,
+        }
+    }
+
+    pub fn collaborative_close(&self) -> Option<TimestampedTransaction> {
+        match self.state.clone() {
+            CfdState::Open {
+                collaborative_close: Some(collaborative_close),
+                ..
+            }
+            | CfdState::PendingClose {
+                collaborative_close,
+                ..
+            }
+            | CfdState::Closed {
+                payout: Payout::CollaborativeClose(collaborative_close),
+                ..
+            } => Some(collaborative_close),
+
+            CfdState::OutgoingOrderRequest { .. }
+            | CfdState::IncomingOrderRequest { .. }
+            | CfdState::Accepted { .. }
+            | CfdState::Rejected { .. }
+            | CfdState::ContractSetup { .. }
+            | CfdState::PendingOpen { .. }
+            | CfdState::Open { .. }
+            | CfdState::PendingCommit { .. }
+            | CfdState::PendingCet { .. }
+            | CfdState::Closed { .. }
+            | CfdState::OpenCommitted { .. }
+            | CfdState::MustRefund { .. }
+            | CfdState::Refunded { .. }
+            | CfdState::SetupFailed { .. } => None,
+        }
+    }
+
+    /// Returns the payout of the Cfd
+    ///
+    /// In case the cfd's payout is not fixed yet (because we don't have attestation or
+    /// collaborative close transaction None is returned, which means that the payout is still
+    /// undecided
+    pub fn payout(&self) -> Option<Amount> {
+        // early exit in case of refund scenario
+        if let CfdState::MustRefund { dlc, .. } | CfdState::Refunded { dlc, .. } =
+            self.state.clone()
+        {
+            return Some(dlc.refund_amount(self.role()));
+        }
+
+        // decision between attestation and collaborative close payout
+        match (self.attestation(), self.collaborative_close()) {
+            (Some(_attestation), Some(collaborative_close)) => Some(collaborative_close.payout()),
+            (None, Some(collaborative_close)) => Some(collaborative_close.payout()),
+            (Some(attestation), None) => Some(attestation.payout()),
+            (None, None) => None,
         }
     }
 }
@@ -1664,6 +1726,13 @@ impl Dlc {
             .map(|output| Amount::from_sat(output.value))
             .unwrap_or_default()
     }
+
+    pub fn script_pubkey_for(&self, role: Role) -> Script {
+        match role {
+            Role::Maker => self.maker_address.script_pubkey(),
+            Role::Taker => self.taker_address.script_pubkey(),
+        }
+    }
 }
 
 /// Information which we need to remember in order to construct a
@@ -1691,13 +1760,37 @@ pub struct RevokedCommit {
 pub struct TimestampedTransaction {
     pub tx: Transaction,
     pub timestamp: SystemTime,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
+    payout: Amount,
 }
 
 impl TimestampedTransaction {
-    pub fn new(tx: Transaction) -> Self {
+    pub fn new(tx: Transaction, own_script_pubkey: Script) -> Self {
+        // Falls back to Amount::ZERO in case we don't find an output that matches out script pubkey
+        // The assumption is, that this can happen for cases where we were liuqidated
+        let payout = match tx
+            .output
+            .iter()
+            .find(|output| output.script_pubkey == own_script_pubkey)
+            .map(|output| Amount::from_sat(output.value))
+        {
+            Some(payout) => payout,
+            None => {
+                tracing::error!(
+                    "Collaborative settlement with a zero amount, this should really not happen!"
+                );
+                Amount::ZERO
+            }
+        };
+
         Self {
             tx,
             timestamp: SystemTime::now(),
+            payout,
         }
+    }
+
+    pub fn payout(&self) -> Amount {
+        self.payout
     }
 }
