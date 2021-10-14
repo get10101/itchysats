@@ -306,7 +306,7 @@ impl Actor {
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
             TimestampedTransaction::new(tx.clone(), dlc.script_pubkey_for(cfd.role())),
         ))?;
-        insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn).await?;
+        insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
 
         let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
 
@@ -321,7 +321,7 @@ impl Actor {
             spend_tx,
             dlc.script_pubkey_for(cfd.role()),
         )))?;
-        insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state, &mut conn).await?;
+        insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
 
         self.current_agreed_proposals
             .remove(&order_id)
@@ -421,7 +421,7 @@ impl Actor {
 
         insert_new_cfd_state_by_order_id(
             order_id,
-            CfdState::PendingOpen {
+            &CfdState::PendingOpen {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },
@@ -467,7 +467,7 @@ impl Actor {
         let mut conn = self.db.acquire().await?;
         insert_new_cfd_state_by_order_id(
             order_id,
-            CfdState::Open {
+            &CfdState::Open {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },
@@ -576,7 +576,7 @@ impl Actor {
 
         insert_new_cfd_state_by_order_id(
             order_id,
-            CfdState::ContractSetup {
+            &CfdState::ContractSetup {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },
@@ -660,7 +660,7 @@ impl Actor {
         // Update order in db
         insert_new_cfd_state_by_order_id(
             order_id,
-            CfdState::Rejected {
+            &CfdState::Rejected {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },
@@ -703,7 +703,7 @@ impl Actor {
         tracing::info!("Commit transaction published on chain: {}", txid);
 
         if let Some(new_state) = cfd.handle(CfdStateChangeEvent::CommitTxSent)? {
-            insert_new_cfd_state_by_order_id(cfd.order.id, new_state, &mut conn).await?;
+            insert_new_cfd_state_by_order_id(cfd.order.id, &new_state, &mut conn).await?;
         }
 
         self.cfd_feed_actor_inbox
@@ -876,7 +876,7 @@ impl Actor {
             return Ok(());
         }
 
-        insert_new_cfd_state_by_order_id(order_id, cfd.state.clone(), &mut conn).await?;
+        insert_new_cfd_state_by_order_id(order_id, &cfd.state, &mut conn).await?;
 
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
@@ -926,7 +926,7 @@ impl Actor {
                 continue;
             }
 
-            insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn).await?;
+            insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
             self.cfd_feed_actor_inbox
                 .send(load_all_cfds(&mut conn).await?)?;
 
@@ -952,8 +952,7 @@ impl Actor {
                     bail!("If we can get the CET we should be able to transition")
                 }
 
-                insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn)
-                    .await?;
+                insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
 
                 self.cfd_feed_actor_inbox
                     .send(load_all_cfds(&mut conn).await?)?;

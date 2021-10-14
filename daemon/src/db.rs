@@ -163,7 +163,7 @@ pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::
 #[allow(dead_code)]
 pub async fn insert_new_cfd_state_by_order_id(
     order_id: OrderId,
-    new_state: CfdState,
+    new_state: &CfdState,
     conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<()> {
     let cfd_id = load_cfd_id_by_order_uuid(order_id, conn).await?;
@@ -171,7 +171,7 @@ pub async fn insert_new_cfd_state_by_order_id(
         .await
         .context("loading latest state failed")?;
 
-    if mem::discriminant(&latest_cfd_state_in_db) == mem::discriminant(&new_state) {
+    if mem::discriminant(&latest_cfd_state_in_db) == mem::discriminant(new_state) {
         // Since we have states where we add information this happens quite frequently
         tracing::trace!(
             "Same state transition for cfd with order_id {}: {}",
@@ -180,7 +180,7 @@ pub async fn insert_new_cfd_state_by_order_id(
         );
     }
 
-    let cfd_state = serde_json::to_string(&new_state)?;
+    let cfd_state = serde_json::to_string(new_state)?;
 
     sqlx::query!(
         r#"
@@ -637,7 +637,7 @@ mod tests {
                 transition_timestamp: SystemTime::now(),
             },
         };
-        insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn)
+        insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn)
             .await
             .unwrap();
 
