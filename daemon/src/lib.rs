@@ -2,6 +2,7 @@ pub mod actors;
 pub mod auth;
 pub mod bitmex_price_feed;
 pub mod db;
+pub mod fan_out;
 pub mod housekeeping;
 pub mod keypair;
 pub mod logger;

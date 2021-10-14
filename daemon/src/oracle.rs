@@ -15,7 +15,7 @@ pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
     pending_announcements: HashSet<BitMexPriceEventId>,
     pending_attestations: HashSet<BitMexPriceEventId>,
-    attestation_channels: [Box<dyn StrongMessageChannel<Attestation>>; 2],
+    attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
 }
 
 pub struct Sync;
@@ -67,7 +67,7 @@ struct NewAttestationFetched {
 impl Actor {
     pub fn new(
         cfds: Vec<Cfd>,
-        attestation_channels: [Box<dyn StrongMessageChannel<Attestation>>; 2],
+        attestation_channel: impl StrongMessageChannel<Attestation> + 'static,
     ) -> Self {
         let mut pending_attestations = HashSet::new();
 
@@ -101,7 +101,7 @@ impl Actor {
             announcements: HashMap::new(),
             pending_announcements: HashSet::new(),
             pending_attestations,
-            attestation_channels,
+            attestation_channel: Box::new(attestation_channel),
         }
     }
 }
@@ -192,10 +192,7 @@ impl Actor {
     ) -> Result<()> {
         tracing::info!("Fetched new attestation for {}", id);
 
-        for channel in self.attestation_channels.iter() {
-            channel.do_send(attestation.clone())?;
-        }
-
+        let _ = self.attestation_channel.send(attestation).await;
         self.pending_attestations.remove(&id);
 
         Ok(())
