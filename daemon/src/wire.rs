@@ -31,6 +31,7 @@ pub enum TakerToMaker {
         taker: Amount,
         #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
         maker: Amount,
+        price: Usd,
     },
     InitiateSettlement {
         order_id: OrderId,
