@@ -4,8 +4,8 @@ use crate::db::{
 };
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
-    Attestation, Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
-    Role, RollOverProposal, SettlementKind, SettlementProposal, TimestampedTransaction,
+    Attestation, Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, CollaborativeSettlement, Dlc,
+    Order, OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal,
     UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{TakerId, Usd};
@@ -304,7 +304,11 @@ impl Actor {
         let (tx, sig_maker) = dlc.close_transaction(proposal)?;
 
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
-            TimestampedTransaction::new(tx.clone(), dlc.script_pubkey_for(cfd.role())),
+            CollaborativeSettlement::new(
+                tx.clone(),
+                dlc.script_pubkey_for(cfd.role()),
+                proposal.price,
+            ),
         ))?;
         insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
         self.cfd_feed_actor_inbox
@@ -1077,6 +1081,7 @@ impl Handler<TakerStreamMessage> for Actor {
                 timestamp,
                 taker,
                 maker,
+                price,
             } => {
                 log_error!(self.handle_propose_settlement(
                     taker_id,
@@ -1084,7 +1089,8 @@ impl Handler<TakerStreamMessage> for Actor {
                         order_id,
                         timestamp,
                         taker,
-                        maker
+                        maker,
+                        price
                     }
                 ))
             }

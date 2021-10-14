@@ -3,8 +3,8 @@ use crate::db::{
     load_cfd_by_order_id, load_cfds_by_oracle_event_id, load_order_by_id,
 };
 use crate::model::cfd::{
-    Attestation, Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
-    Role, RollOverProposal, SettlementKind, SettlementProposal, TimestampedTransaction,
+    Attestation, Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, CollaborativeSettlement, Dlc,
+    Order, OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal,
     UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{BitMexPriceEventId, Usd};
@@ -204,6 +204,7 @@ impl Actor {
                 timestamp: proposal.timestamp,
                 taker: proposal.taker,
                 maker: proposal.maker,
+                price: proposal.price,
             })
             .await?;
         Ok(())
@@ -370,7 +371,7 @@ impl Actor {
             .await?;
 
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
-            TimestampedTransaction::new(tx, dlc.script_pubkey_for(cfd.role())),
+            CollaborativeSettlement::new(tx, dlc.script_pubkey_for(cfd.role()), proposal.price),
         ))?;
         insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
 

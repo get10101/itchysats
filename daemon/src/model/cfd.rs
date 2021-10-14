@@ -217,7 +217,7 @@ pub enum CfdState {
         common: CfdStateCommon,
         dlc: Dlc,
         attestation: Option<Attestation>,
-        collaborative_close: Option<TimestampedTransaction>,
+        collaborative_close: Option<CollaborativeSettlement>,
     },
 
     /// The commit transaction was published but it not final yet
@@ -289,7 +289,7 @@ pub enum CfdState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Payout {
-    CollaborativeClose(TimestampedTransaction),
+    CollaborativeClose(CollaborativeSettlement),
     Cet(Attestation),
 }
 
@@ -407,7 +407,7 @@ impl CfdState {
         self.get_common().transition_timestamp
     }
 
-    pub fn get_collaborative_close(&self) -> Option<TimestampedTransaction> {
+    pub fn get_collaborative_close(&self) -> Option<CollaborativeSettlement> {
         match self {
             CfdState::Open {
                 collaborative_close,
@@ -486,6 +486,7 @@ pub struct SettlementProposal {
     pub timestamp: SystemTime,
     pub taker: Amount,
     pub maker: Amount,
+    pub price: Usd,
 }
 
 /// Proposed collaborative settlement
@@ -547,16 +548,17 @@ impl Cfd {
 
     pub fn profit(&self, current_price: Usd) -> Result<(SignedAmount, Percent)> {
         // TODO: We should use the payout curve here and not just the current price!
-        // TODO: Use the collab settlement if there was one
-        let current_price = if let Some(attestation) = self.attestation() {
-            attestation.price()
-        } else {
-            current_price
+
+        let closing_price = match (self.attestation(), self.collaborative_close()) {
+            (Some(_attestation), Some(collaborative_close)) => collaborative_close.price,
+            (None, Some(collaborative_close)) => collaborative_close.price,
+            (Some(attestation), None) => attestation.price(),
+            (None, None) => current_price,
         };
 
         let (p_n_l, p_n_l_percent) = calculate_profit(
             self.order.price,
-            current_price,
+            closing_price,
             self.quantity_usd,
             self.margin()?,
             self.position(),
@@ -569,18 +571,20 @@ impl Cfd {
         let payout_curve =
             payout_curve::calculate(self.order.price, self.quantity_usd, self.order.leverage)?;
 
-        let current_price = current_price.try_into_u64()?;
-
-        let payout = payout_curve
-            .iter()
-            .find(|&x| x.digits().range().contains(&current_price))
-            .context("find current price on the payout curve")?;
+        let payout = {
+            let current_price = current_price.try_into_u64()?;
+            payout_curve
+                .iter()
+                .find(|&x| x.digits().range().contains(&current_price))
+                .context("find current price on the payout curve")?
+        };
 
         let settlement = SettlementProposal {
             order_id: self.order.id,
             timestamp: SystemTime::now(),
             taker: *payout.taker_amount(),
             maker: *payout.maker_amount(),
+            price: current_price,
         };
 
         Ok(settlement)
@@ -1168,7 +1172,7 @@ impl Cfd {
         }
     }
 
-    pub fn collaborative_close(&self) -> Option<TimestampedTransaction> {
+    pub fn collaborative_close(&self) -> Option<CollaborativeSettlement> {
         match self.state.clone() {
             CfdState::Open {
                 collaborative_close: Some(collaborative_close),
@@ -1235,13 +1239,13 @@ pub enum CfdStateChangeEvent {
     OracleAttestation(Attestation),
     CetSent,
     /// Settlement proposal was signed by the taker and sent to the maker
-    ProposalSigned(TimestampedTransaction),
+    ProposalSigned(CollaborativeSettlement),
 }
 
 /// Returns the Profit/Loss (P/L) as Bitcoin. Losses are capped by the provided margin
 fn calculate_profit(
     initial_price: Usd,
-    current_price: Usd,
+    closing_price: Usd,
     quantity: Usd,
     margin: Amount,
     position: Position,
@@ -1253,7 +1257,7 @@ fn calculate_profit(
         .checked_div(initial_price.0)
         .context("Calculating inverse of initial_price resulted in overflow")?;
     let current_price_inverse = dec!(1)
-        .checked_div(current_price.0)
+        .checked_div(closing_price.0)
         .context("Calculating inverse of current_price resulted in overflow")?;
 
     // calculate profit/loss (P and L) in BTC
@@ -1710,15 +1714,16 @@ pub struct RevokedCommit {
 /// timestamp as it could have occured for different reasons (like a new
 /// attestation in Open state)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct TimestampedTransaction {
+pub struct CollaborativeSettlement {
     pub tx: Transaction,
     pub timestamp: SystemTime,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     payout: Amount,
+    price: Usd,
 }
 
-impl TimestampedTransaction {
-    pub fn new(tx: Transaction, own_script_pubkey: Script) -> Self {
+impl CollaborativeSettlement {
+    pub fn new(tx: Transaction, own_script_pubkey: Script, price: Usd) -> Self {
         // Falls back to Amount::ZERO in case we don't find an output that matches out script pubkey
         // The assumption is, that this can happen for cases where we were liuqidated
         let payout = match tx
@@ -1740,6 +1745,7 @@ impl TimestampedTransaction {
             tx,
             timestamp: SystemTime::now(),
             payout,
+            price,
         }
     }
 

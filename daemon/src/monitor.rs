@@ -1,4 +1,4 @@
-use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId, TimestampedTransaction};
+use crate::model::cfd::{CetStatus, Cfd, CfdState, CollaborativeSettlement, Dlc, OrderId};
 use crate::model::BitMexPriceEventId;
 use crate::oracle::Attestation;
 use crate::{log_error, model, oracle};
@@ -84,7 +84,7 @@ impl Actor<bdk::electrum_client::Client> {
                     actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                     actor.monitor_refund_finality(&params,cfd.order.id);
 
-                    if let Some(TimestampedTransaction { tx, ..}
+                    if let Some(CollaborativeSettlement { tx, ..}
                     ) = cfd.state.get_collaborative_close()  {
                         let close_params = (tx.txid(),
                             tx.output.first().expect("have output").script_pubkey.clone());
