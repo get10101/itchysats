@@ -1,6 +1,7 @@
+use crate::actors::insert_cfd;
+use crate::actors::insert_new_cfd_state_by_order_id;
 use crate::db::{
-    insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
-    load_cfd_by_order_id, load_cfds_by_oracle_event_id, load_order_by_id,
+    insert_order, load_cfd_by_order_id, load_cfds_by_oracle_event_id, load_order_by_id,
 };
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
@@ -310,9 +311,13 @@ impl Actor {
                 proposal.price,
             ),
         ))?;
-        insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
+        insert_new_cfd_state_by_order_id(
+            cfd.order.id,
+            &cfd.state,
+            &mut conn,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
 
         let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
 
@@ -429,11 +434,9 @@ impl Actor {
                 attestation: None,
             },
             &mut conn,
+            &self.cfd_feed_actor_inbox,
         )
         .await?;
-
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
 
         let txid = self
             .wallet
@@ -480,11 +483,9 @@ impl Actor {
                 collaborative_close: None,
             },
             &mut conn,
+            &self.cfd_feed_actor_inbox,
         )
         .await?;
-
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
 
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
@@ -547,10 +548,7 @@ impl Actor {
                 taker_id,
             },
         );
-        insert_cfd(cfd, &mut conn).await?;
-
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
+        insert_cfd(cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         // 4. Remove current order
         self.current_order_id = None;
@@ -604,11 +602,9 @@ impl Actor {
                 },
             },
             &mut conn,
+            &self.cfd_feed_actor_inbox,
         )
         .await?;
-
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
 
         // 4. Notify the taker that we are ready for contract setup
         // Use `.send` here to ensure we only continue once the message has been sent
@@ -682,9 +678,9 @@ impl Actor {
                 },
             },
             &mut conn,
+            &self.cfd_feed_actor_inbox,
         )
-        .await
-        .unwrap();
+        .await?;
 
         self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
@@ -692,8 +688,6 @@ impl Actor {
                 command: TakerCommand::NotifyOrderRejected { id: order_id },
             })
             .await?;
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
 
         // Remove order for all
         self.current_order_id = None;
@@ -719,11 +713,15 @@ impl Actor {
         tracing::info!("Commit transaction published on chain: {}", txid);
 
         if let Some(new_state) = cfd.handle(CfdStateChangeEvent::CommitTxSent)? {
-            insert_new_cfd_state_by_order_id(cfd.order.id, &new_state, &mut conn).await?;
+            insert_new_cfd_state_by_order_id(
+                cfd.order.id,
+                &new_state,
+                &mut conn,
+                &self.cfd_feed_actor_inbox,
+            )
+            .await?;
         }
 
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
         Ok(())
     }
 
@@ -892,10 +890,13 @@ impl Actor {
             return Ok(());
         }
 
-        insert_new_cfd_state_by_order_id(order_id, &cfd.state, &mut conn).await?;
-
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
+        insert_new_cfd_state_by_order_id(
+            order_id,
+            &cfd.state,
+            &mut conn,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
 
         // TODO: code duplication maker/taker
         if let CfdState::OpenCommitted { .. } = cfd.state {
@@ -942,9 +943,13 @@ impl Actor {
                 continue;
             }
 
-            insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
-            self.cfd_feed_actor_inbox
-                .send(load_all_cfds(&mut conn).await?)?;
+            insert_new_cfd_state_by_order_id(
+                cfd.order.id,
+                &cfd.state,
+                &mut conn,
+                &self.cfd_feed_actor_inbox,
+            )
+            .await?;
 
             if let Err(e) = self.try_cet_publication(cfd).await {
                 tracing::error!("Error when trying to publish CET: {:#}", e);
@@ -968,10 +973,13 @@ impl Actor {
                     bail!("If we can get the CET we should be able to transition")
                 }
 
-                insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
-
-                self.cfd_feed_actor_inbox
-                    .send(load_all_cfds(&mut conn).await?)?;
+                insert_new_cfd_state_by_order_id(
+                    cfd.order.id,
+                    &cfd.state,
+                    &mut conn,
+                    &self.cfd_feed_actor_inbox,
+                )
+                .await?;
             }
             Err(not_ready_yet) => {
                 tracing::debug!("{:#}", not_ready_yet);
