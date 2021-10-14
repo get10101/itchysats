@@ -525,7 +525,18 @@ impl Actor {
             }
         };
 
-        // 2. Insert CFD in DB
+        // 2. check if order has acceptable amounts
+        if quantity < current_order.min_quantity || quantity > current_order.max_quantity {
+            self.takers
+                .do_send_async(maker_inc_connections::TakerMessage {
+                    taker_id,
+                    command: TakerCommand::NotifyOrderRejected { id: order_id },
+                })
+                .await?;
+            return Ok(());
+        }
+
+        // 3. Insert CFD in DB
         let cfd = Cfd::new(
             current_order.clone(),
             quantity,
@@ -541,7 +552,7 @@ impl Actor {
         self.cfd_feed_actor_inbox
             .send(load_all_cfds(&mut conn).await?)?;
 
-        // 3. Remove current order
+        // 4. Remove current order
         self.current_order_id = None;
         self.takers
             .do_send_async(maker_inc_connections::BroadcastOrder(None))

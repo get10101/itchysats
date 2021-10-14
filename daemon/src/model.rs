@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 pub mod cfd;
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub struct Usd(pub Decimal);
 
 impl Usd {
