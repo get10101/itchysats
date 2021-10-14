@@ -18,6 +18,7 @@ jobs:
         run: |
           # First delete release + tag, ignore failures
           gh release delete preview || true
+          sleep 5
           gh api -X DELETE /repos/{owner}/{repo}/git/refs/tags/preview || true
-
+          sleep 5
           gh release create preview --prerelease --title preview
