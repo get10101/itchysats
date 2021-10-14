@@ -80,7 +80,7 @@ pub struct Actor {
     monitor_actor: Address<monitor::Actor>,
     setup_state: SetupState,
     roll_over_state: RollOverState,
-    oracle_actor: Address<oracle::Actor<Actor, monitor::Actor>>,
+    oracle_actor: Address<oracle::Actor>,
     current_pending_proposals: UpdateCfdProposals,
 }
 
@@ -95,7 +95,7 @@ impl Actor {
         update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
         send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
         monitor_actor: Address<monitor::Actor>,
-        oracle_actor: Address<oracle::Actor<Actor, monitor::Actor>>,
+        oracle_actor: Address<oracle::Actor>,
     ) -> Self {
         Self {
             db,

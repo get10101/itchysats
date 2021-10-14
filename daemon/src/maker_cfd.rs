@@ -89,7 +89,7 @@ pub struct Actor {
     monitor_actor: Address<monitor::Actor>,
     setup_state: SetupState,
     roll_over_state: RollOverState,
-    oracle_actor: Address<oracle::Actor<Actor, monitor::Actor>>,
+    oracle_actor: Address<oracle::Actor>,
     // Maker needs to also store TakerId to be able to send a reply back
     current_pending_proposals: HashMap<OrderId, (UpdateCfdProposal, TakerId)>,
     // TODO: Persist instead of using an in-memory hashmap for resiliency?
@@ -125,7 +125,7 @@ impl Actor {
         update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
         takers: Address<maker_inc_connections::Actor>,
         monitor_actor: Address<monitor::Actor>,
-        oracle_actor: Address<oracle::Actor<Actor, monitor::Actor>>,
+        oracle_actor: Address<oracle::Actor>,
     ) -> Self {
         Self {
             db,
