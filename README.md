@@ -14,6 +14,9 @@ All the components can be started at once by running the following script:
 ./start_all.sh
 ```
 
+Note: Before first run, you need to run `cd frontend; yarn install` command to
+ensure that all dependencies get installed.
+
 The script combines the logs from all binaries inside a single terminal so it
 might not be ideal for all cases, but it is convenient for quick regression testing.
 
@@ -48,7 +51,8 @@ However, the development environment still needs to be start twice!
 Which frontend to start is configured via the `APP` environment variable.
 
 ```bash
-cd frontend;
+cd frontend
+yarn install
 APP=taker yarn dev
 APP=maker yarn dev
 ```
