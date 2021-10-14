@@ -88,7 +88,6 @@ impl Actor {
                 | CfdState::Accepted { .. }
                 | CfdState::Rejected { .. }
                 | CfdState::ContractSetup { .. }
-                | CfdState::PendingClose { .. }
 
                 // Final states
                 | CfdState::Closed { .. }

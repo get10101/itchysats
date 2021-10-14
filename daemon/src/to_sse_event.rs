@@ -326,7 +326,21 @@ fn to_cfd_state(
             direction: SettlementKind::Incoming,
             ..
         }) => CfdState::IncomingSettlementProposal,
+        Some(UpdateCfdProposal::RollOverProposal {
+            direction: SettlementKind::Outgoing,
+            ..
+        }) => CfdState::OutgoingRollOverProposal,
+        Some(UpdateCfdProposal::RollOverProposal {
+            direction: SettlementKind::Incoming,
+            ..
+        }) => CfdState::IncomingRollOverProposal,
         None => match cfd_state {
+            // Filled in collaborative close in Open means that we're awaiting
+            // a collaborative closure
+            model::cfd::CfdState::Open {
+                collaborative_close: Some(_),
+                ..
+            } => CfdState::PendingClose,
             model::cfd::CfdState::OutgoingOrderRequest { .. } => CfdState::OutgoingOrderRequest,
             model::cfd::CfdState::IncomingOrderRequest { .. } => CfdState::IncomingOrderRequest,
             model::cfd::CfdState::Accepted { .. } => CfdState::Accepted,
@@ -340,17 +354,8 @@ fn to_cfd_state(
             model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
             model::cfd::CfdState::PendingCommit { .. } => CfdState::PendingCommit,
             model::cfd::CfdState::PendingCet { .. } => CfdState::PendingCet,
-            model::cfd::CfdState::PendingClose { .. } => CfdState::PendingClose,
             model::cfd::CfdState::Closed { .. } => CfdState::Closed,
         },
-        Some(UpdateCfdProposal::RollOverProposal {
-            direction: SettlementKind::Outgoing,
-            ..
-        }) => CfdState::OutgoingRollOverProposal,
-        Some(UpdateCfdProposal::RollOverProposal {
-            direction: SettlementKind::Incoming,
-            ..
-        }) => CfdState::IncomingRollOverProposal,
     }
 }
 
@@ -397,7 +402,6 @@ fn to_tx_url_list(state: model::cfd::CfdState, network: Network) -> Vec<TxUrl> {
         Refunded { dlc, .. } => vec![tx_ub.refund(&dlc)],
         OutgoingOrderRequest { .. }
         | IncomingOrderRequest { .. }
-        | PendingClose { .. }
         | Accepted { .. }
         | Rejected { .. }
         | ContractSetup { .. }
@@ -444,6 +448,10 @@ fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
         // If there is an outgoing settlement proposal already, user can't
         // initiate new one
         (CfdState::OutgoingSettlementProposal { .. }, Role::Maker) => {
+            vec![CfdAction::Commit]
+        }
+        // User is awaiting collaborative close, commit is left as a safeguard
+        (CfdState::PendingClose { .. }, _) => {
             vec![CfdAction::Commit]
         }
         (CfdState::Open { .. }, Role::Taker) => {

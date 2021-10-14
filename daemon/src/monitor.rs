@@ -126,12 +126,6 @@ impl Actor<bdk::electrum_client::Client> {
                     actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                     actor.monitor_refund_finality(&params,cfd.order.id);
                 }
-                CfdState::PendingClose { collaborative_close, .. } => {
-                    let transaction  = collaborative_close.tx;
-                    let close_params = (transaction.txid(),
-                                        transaction.output.first().expect("have output").script_pubkey.clone());
-                    actor.monitor_close_finality(close_params,cfd.order.id);
-                }
                 CfdState::MustRefund { dlc, .. } => {
                     let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
                     actor.cfds.insert(cfd.order.id, params.clone());

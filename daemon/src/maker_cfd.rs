@@ -307,6 +307,8 @@ impl Actor {
             TimestampedTransaction::new(tx.clone(), dlc.script_pubkey_for(cfd.role())),
         ))?;
         insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
 
         let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
 
@@ -316,12 +318,6 @@ impl Actor {
             .await
             .context("Broadcasting spend transaction")?;
         tracing::info!("Close transaction published with txid {}", txid);
-
-        cfd.handle(CfdStateChangeEvent::CloseSent(TimestampedTransaction::new(
-            spend_tx,
-            dlc.script_pubkey_for(cfd.role()),
-        )))?;
-        insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
 
         self.current_agreed_proposals
             .remove(&order_id)
