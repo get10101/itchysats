@@ -564,7 +564,7 @@ impl Actor {
 
         let mut conn = self.db.acquire().await?;
 
-        // Validate if order is still valid
+        // 1. Validate if order is still valid
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         let taker_id = match cfd {
             Cfd {
@@ -576,8 +576,15 @@ impl Actor {
             }
         };
 
-        let (sender, receiver) = mpsc::unbounded();
+        // 2. Try to get the oracle announcement, if that fails we should exit prior to changing any
+        // state
+        let offer_announcement = self
+            .oracle_actor
+            .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
+            .await?
+            .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
 
+        // 3. Insert that we are in contract setup and refresh our own feed
         insert_new_cfd_state_by_order_id(
             order_id,
             &CfdState::ContractSetup {
@@ -589,7 +596,13 @@ impl Actor {
         )
         .await?;
 
-        // use `.send` here to ensure we only continue once the message has been sent
+        self.cfd_feed_actor_inbox
+            .send(load_all_cfds(&mut conn).await?)?;
+
+        // 4. Notify the taker that we are ready for contract setup
+        // Use `.send` here to ensure we only continue once the message has been sent
+        // Nothing done after this call should be able to fail, otherwise we notified the taker, but
+        // might not transition to `Active` ourselves!
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
@@ -597,15 +610,8 @@ impl Actor {
             })
             .await?;
 
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
-
-        let offer_announcement = self
-            .oracle_actor
-            .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
-            .await?
-            .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
-
+        // 5. Spawn away the contract setup
+        let (sender, receiver) = mpsc::unbounded();
         let contract_future = setup_contract::new(
             self.takers.clone().into_sink().with(move |msg| {
                 future::ok(maker_inc_connections::TakerMessage {
@@ -631,6 +637,7 @@ impl Actor {
                 .await
         });
 
+        // 6. Record that we are in an active contract setup
         self.setup_state = SetupState::Active {
             sender,
             taker: taker_id,
