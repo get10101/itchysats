@@ -1,4 +1,5 @@
 /// Wrapper for handlers to log errors
+#[macro_export]
 macro_rules! log_error {
     ($future:expr) => {
         if let Err(e) = $future.await {
@@ -6,4 +7,3 @@ macro_rules! log_error {
         }
     };
 }
-pub(crate) use log_error;

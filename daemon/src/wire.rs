@@ -1,6 +1,5 @@
-use crate::model::cfd::OrderId;
+use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, Usd};
-use crate::Order;
 use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -99,8 +98,8 @@ pub struct JsonCodec<T> {
     inner: LengthDelimitedCodec,
 }
 
-impl<T> JsonCodec<T> {
-    pub fn new() -> Self {
+impl<T> Default for JsonCodec<T> {
+    fn default() -> Self {
         Self {
             _type: PhantomData,
             inner: LengthDelimitedCodec::new(),

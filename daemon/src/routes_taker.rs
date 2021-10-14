@@ -1,9 +1,9 @@
-use crate::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId, Role, UpdateCfdProposals};
-use crate::model::{Leverage, Usd, WalletInfo};
-use crate::routes::EmbeddedFileExt;
-use crate::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
-use crate::{bitmex_price_feed, taker_cfd};
 use bdk::bitcoin::{Amount, Network};
+use daemon::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId, Role, UpdateCfdProposals};
+use daemon::model::{Leverage, Usd, WalletInfo};
+use daemon::routes::EmbeddedFileExt;
+use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
+use daemon::{bitmex_price_feed, taker_cfd};
 use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
 use rocket::response::{status, Responder};

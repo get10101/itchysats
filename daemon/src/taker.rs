@@ -1,16 +1,19 @@
-use crate::db::load_all_cfds;
-use crate::model::cfd::UpdateCfdProposals;
-use crate::model::WalletInfo;
-use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use bdk::bitcoin;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use clap::Clap;
+use daemon::db::{self, load_all_cfds};
+use daemon::model::cfd::{Order, UpdateCfdProposals};
+use daemon::model::WalletInfo;
+use daemon::seed::Seed;
+use daemon::wallet::Wallet;
+use daemon::{
+    bitmex_price_feed, housekeeping, logger, monitor, oracle, send_to_socket, taker_cfd,
+    wallet_sync, wire,
+};
 use futures::StreamExt;
-use model::cfd::Order;
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
-use seed::Seed;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -20,32 +23,10 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio_util::codec::FramedRead;
 use tracing_subscriber::filter::LevelFilter;
-use wire::TakerToMaker;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 
-mod actors;
-mod bitmex_price_feed;
-mod db;
-mod housekeeping;
-mod keypair;
-mod logger;
-mod model;
-mod monitor;
-mod olivia;
-mod oracle;
-mod payout_curve;
-mod routes;
 mod routes_taker;
-mod seed;
-mod send_to_socket;
-mod setup_contract;
-mod taker_cfd;
-mod to_sse_event;
-mod tokio_ext;
-mod wallet;
-mod wallet_sync;
-mod wire;
 
 const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -246,7 +227,7 @@ async fn main() -> Result<()> {
                 .create(None)
                 .spawn_global();
 
-                let read = FramedRead::new(read, wire::JsonCodec::new())
+                let read = FramedRead::new(read, wire::JsonCodec::default())
                     .map(move |item| taker_cfd::MakerStreamMessage { item });
 
                 tokio::spawn(cfd_actor_inbox.clone().attach_stream(read));
@@ -304,8 +285,4 @@ async fn main() -> Result<()> {
         .await?;
 
     Ok(())
-}
-
-impl xtra::Message for TakerToMaker {
-    type Result = ();
 }

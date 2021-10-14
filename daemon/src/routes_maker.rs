@@ -1,11 +1,11 @@
-use crate::auth::Authenticated;
-use crate::model::cfd::{Cfd, Order, OrderId, Role, UpdateCfdProposals};
-use crate::model::{Usd, WalletInfo};
-use crate::routes::EmbeddedFileExt;
-use crate::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
-use crate::{bitmex_price_feed, maker_cfd};
 use anyhow::Result;
 use bdk::bitcoin::Network;
+use daemon::auth::Authenticated;
+use daemon::model::cfd::{Cfd, Order, OrderId, Role, UpdateCfdProposals};
+use daemon::model::{Usd, WalletInfo};
+use daemon::routes::EmbeddedFileExt;
+use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
+use daemon::{bitmex_price_feed, maker_cfd};
 use rocket::http::{ContentType, Header, Status};
 use rocket::response::stream::EventStream;
 use rocket::response::{status, Responder};
@@ -231,7 +231,7 @@ pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 's
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::Password;
+    use daemon::auth::Password;
     use rocket::http::{Header, Status};
     use rocket::local::blocking::Client;
     use rocket::{Build, Rocket};

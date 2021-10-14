@@ -1,5 +1,5 @@
+use crate::model::WalletInfo;
 use crate::wallet::Wallet;
-use crate::WalletInfo;
 use std::time::Duration;
 use tokio::sync::watch;
 use tokio::time::sleep;

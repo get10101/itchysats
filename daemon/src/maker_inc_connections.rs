@@ -1,7 +1,6 @@
-use crate::actors::log_error;
 use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
-use crate::{maker_cfd, send_to_socket, wire};
+use crate::{log_error, maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -162,7 +161,7 @@ impl Actor {
         tracing::info!("New taker {} connected on {}", taker_id, address);
 
         let (read, write) = stream.into_split();
-        let read = FramedRead::new(read, wire::JsonCodec::new())
+        let read = FramedRead::new(read, wire::JsonCodec::default())
             .map(move |item| maker_cfd::TakerStreamMessage { taker_id, item });
 
         tokio::spawn(self.cfd_actor.clone().attach_stream(read));

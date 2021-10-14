@@ -19,13 +19,7 @@ mod curve_factory;
 mod splineobject;
 mod utils;
 
-/// function to generate an iterator of values, heuristically viewed as:
-///
-///     `[left_price_boundary, right_price_boundary], maker_payout_value`
-///
-/// with units
-///
-///     `[Usd, Usd], bitcoin::Amount`
+/// Generate a list of [`Payout`]s.
 ///
 /// A key item to note is that although the POC logic has been to imposed
 /// that maker goes short every time, there is no reason to make the math
@@ -39,7 +33,7 @@ mod utils;
 /// in the call to PayoutCurve::new(), so this behaviour can be changed in
 /// the future trivially.
 ///
-/// ### Paramters
+/// ### Parameters
 ///
 /// * price: BTC-USD exchange rate used to create CFD contract
 /// * quantity: Interger number of one-dollar USD contracts contained in the

@@ -1,14 +1,17 @@
-use crate::auth::MAKER_USERNAME;
-use crate::db::load_all_cfds;
-use crate::model::cfd::UpdateCfdProposals;
-use crate::seed::Seed;
-use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use bdk::bitcoin;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use clap::Clap;
-use model::cfd::Order;
-use model::WalletInfo;
+use daemon::auth::{self, MAKER_USERNAME};
+use daemon::db::{self, load_all_cfds};
+use daemon::model::cfd::{Order, UpdateCfdProposals};
+use daemon::model::WalletInfo;
+use daemon::seed::Seed;
+use daemon::wallet::Wallet;
+use daemon::{
+    bitmex_price_feed, housekeeping, logger, maker_cfd, maker_inc_connections, monitor, oracle,
+    wallet_sync,
+};
 use rocket::fairing::AdHoc;
 use rocket_db_pools::Database;
 use std::collections::HashMap;
@@ -22,30 +25,7 @@ use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
 
-mod actors;
-mod auth;
-mod bitmex_price_feed;
-mod db;
-mod housekeeping;
-mod keypair;
-mod logger;
-mod maker_cfd;
-mod maker_inc_connections;
-mod model;
-mod monitor;
-mod olivia;
-mod oracle;
-mod payout_curve;
-mod routes;
 mod routes_maker;
-mod seed;
-mod send_to_socket;
-mod setup_contract;
-mod to_sse_event;
-mod tokio_ext;
-mod wallet;
-mod wallet_sync;
-mod wire;
 
 #[derive(Database)]
 #[database("maker")]
@@ -331,8 +311,4 @@ async fn main() -> Result<()> {
         .await?;
 
     Ok(())
-}
-
-impl xtra::Message for wire::MakerToTaker {
-    type Result = ();
 }
