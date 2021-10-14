@@ -442,14 +442,18 @@ impl Actor {
 
         tracing::info!("Lock transaction published with txid {}", txid);
 
-        // TODO: It's a bit suspicious to load this just to get the
-        // refund timelock
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         self.monitor_actor
             .do_send_async(monitor::StartMonitoring {
                 id: order_id,
                 params: MonitorParams::from_dlc_and_timelocks(dlc, cfd.refund_timelock_in_blocks()),
+            })
+            .await?;
+
+        self.oracle_actor
+            .do_send_async(oracle::MonitorAttestation {
+                event_id: cfd.order.oracle_event_id,
             })
             .await?;
 
@@ -601,12 +605,6 @@ impl Actor {
             .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
             .await?
             .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
-
-        self.oracle_actor
-            .do_send_async(oracle::MonitorAttestation {
-                event_id: offer_announcement.id,
-            })
-            .await?;
 
         let contract_future = setup_contract::new(
             self.takers.clone().into_sink().with(move |msg| {
