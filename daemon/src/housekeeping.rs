@@ -14,7 +14,7 @@ pub async fn transition_non_continue_cfds_to_setup_failed(
     for cfd in cfds.iter().filter(|cfd| Cfd::is_cleanup(cfd)) {
         insert_new_cfd_state_by_order_id(
             cfd.order.id,
-            CfdState::SetupFailed {
+            &CfdState::SetupFailed {
                 common: CfdStateCommon {
                     transition_timestamp: SystemTime::now(),
                 },
