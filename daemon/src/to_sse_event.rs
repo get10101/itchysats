@@ -26,6 +26,8 @@ pub struct Cfd {
 
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub margin: Amount,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub margin_counterparty: Amount,
 
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub profit_btc: SignedAmount,
@@ -257,6 +259,7 @@ impl ToSseEvent for CfdsWithAuxData {
                     // TODO: Depending on the state the margin might be set (i.e. in Open we save it
                     // in the DB internally) and does not have to be calculated
                     margin: cfd.margin().unwrap(),
+                    margin_counterparty: cfd.counterparty_margin().unwrap(),
                     details,
                 }
             })
