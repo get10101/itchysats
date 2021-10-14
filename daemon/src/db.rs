@@ -720,7 +720,8 @@ mod tests {
             .unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
-        let cfd_from_db = cfds_from_db.last().unwrap().clone();
+
+        let cfd_from_db = cfds_from_db.first().unwrap().clone();
         assert_eq!(cfd, cfd_from_db)
     }
 
