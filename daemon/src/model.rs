@@ -72,15 +72,16 @@ impl From<Decimal> for Percent {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[sqlx(transparent)]
 pub struct Leverage(pub u8);
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub enum TradingPair {
     BtcUsd,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub enum Position {
     Buy,
     Sell,
@@ -109,7 +110,17 @@ pub struct WalletInfo {
 }
 
 #[derive(
-    Debug, Clone, Copy, SerializeDisplay, DeserializeFromStr, PartialEq, Eq, Hash, PartialOrd, Ord,
+    Debug,
+    Clone,
+    Copy,
+    SerializeDisplay,
+    DeserializeFromStr,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    sqlx::Type,
 )]
 pub struct BitMexPriceEventId {
     /// The timestamp this price event refers to.

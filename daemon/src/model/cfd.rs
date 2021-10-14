@@ -19,7 +19,8 @@ use std::time::SystemTime;
 use time::Duration;
 use uuid::Uuid;
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, sqlx::Type)]
+#[sqlx(transparent)]
 pub struct OrderId(Uuid);
 
 impl Default for OrderId {
@@ -45,7 +46,7 @@ impl<'v> FromParam<'v> for OrderId {
 
 // TODO: Could potentially remove this and use the Role in the Order instead
 /// Origin of the order
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub enum Origin {
     Ours,
     Theirs,
