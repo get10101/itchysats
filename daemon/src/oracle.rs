@@ -78,7 +78,8 @@ impl<CFD, M> Actor<CFD, M> {
                 | CfdState::Open { .. }
                 | CfdState::PendingCommit { .. }
                 | CfdState::OpenCommitted { .. }
-                | CfdState::PendingCet { .. } => {
+                | CfdState::PendingCet { .. } =>
+                {
                     pending_attestations.insert(cfd.order.oracle_event_id);
                 }
 
@@ -88,6 +89,7 @@ impl<CFD, M> Actor<CFD, M> {
                 | CfdState::Accepted { .. }
                 | CfdState::Rejected { .. }
                 | CfdState::ContractSetup { .. }
+                | CfdState::PendingClose { .. }
 
                 // Final states
                 | CfdState::Closed { .. }

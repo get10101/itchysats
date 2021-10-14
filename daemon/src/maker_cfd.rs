@@ -5,8 +5,8 @@ use crate::db::{
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
     Attestation, Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
-    Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
-    UpdateCfdProposals,
+    Role, RollOverProposal, SettlementKind, SettlementProposal, TimestampedTransaction,
+    UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
@@ -298,22 +298,33 @@ impl Actor {
 
         let mut conn = self.db.acquire().await?;
 
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
 
         let (tx, sig_maker) = dlc.close_transaction(proposal)?;
+
+        cfd.handle(CfdStateChangeEvent::ProposalSigned(
+            TimestampedTransaction::new(tx.clone()),
+        ))?;
+        insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state.clone(), &mut conn).await?;
+
         let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
 
-        self.wallet
-            .try_broadcast_transaction(spend_tx)
+        let txid = self
+            .wallet
+            .try_broadcast_transaction(spend_tx.clone())
             .await
             .context("Broadcasting spend transaction")?;
+        tracing::info!("Close transaction published with txid {}", txid);
+
+        cfd.handle(CfdStateChangeEvent::CloseSent(TimestampedTransaction::new(
+            spend_tx,
+        )))?;
+        insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state, &mut conn).await?;
 
         self.current_agreed_proposals
             .remove(&order_id)
             .context("remove accepted proposal after signing")?;
-
-        // TODO: Monitor for the transaction
 
         Ok(())
     }
@@ -461,6 +472,7 @@ impl Actor {
                 },
                 dlc: dlc.clone(),
                 attestation: None,
+                collaborative_close: None,
             },
             &mut conn,
         )

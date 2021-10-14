@@ -4,8 +4,8 @@ use crate::db::{
 };
 use crate::model::cfd::{
     Attestation, Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, Dlc, Order, OrderId, Origin,
-    Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
-    UpdateCfdProposals,
+    Role, RollOverProposal, SettlementKind, SettlementProposal, TimestampedTransaction,
+    UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{BitMexPriceEventId, Usd};
 use crate::monitor::{self, MonitorParams};
@@ -356,11 +356,11 @@ impl Actor {
 
         let mut conn = self.db.acquire().await?;
 
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
 
         let proposal = self.get_settlement_proposal(order_id)?;
-        let (_tx, sig_taker) = dlc.close_transaction(proposal)?;
+        let (tx, sig_taker) = dlc.close_transaction(proposal)?;
 
         self.send_to_maker
             .do_send_async(wire::TakerToMaker::InitiateSettlement {
@@ -369,7 +369,10 @@ impl Actor {
             })
             .await?;
 
-        // TODO: Monitor for the transaction
+        cfd.handle(CfdStateChangeEvent::ProposalSigned(
+            TimestampedTransaction::new(tx),
+        ))?;
+        insert_new_cfd_state_by_order_id(cfd.order.id, cfd.state, &mut conn).await?;
 
         self.remove_pending_proposal(&order_id)?;
 
@@ -547,6 +550,7 @@ impl Actor {
                 },
                 dlc: dlc.clone(),
                 attestation: None,
+                collaborative_close: None,
             },
             &mut conn,
         )
