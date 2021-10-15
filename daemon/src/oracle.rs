@@ -1,6 +1,6 @@
 use crate::model::cfd::{Cfd, CfdState};
 use crate::model::BitMexPriceEventId;
-use crate::{log_error, tokio_ext};
+use crate::tokio_ext;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
@@ -184,19 +184,6 @@ impl Actor {
             });
         }
     }
-
-    async fn handle_new_attestation_fetched(
-        &mut self,
-        id: BitMexPriceEventId,
-        attestation: Attestation,
-    ) -> Result<()> {
-        tracing::info!("Fetched new attestation for {}", id);
-
-        let _ = self.attestation_channel.send(attestation).await;
-        self.pending_attestations.remove(&id);
-
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -246,7 +233,10 @@ impl xtra::Handler<NewAnnouncementFetched> for Actor {
 #[async_trait]
 impl xtra::Handler<NewAttestationFetched> for Actor {
     async fn handle(&mut self, msg: NewAttestationFetched, _ctx: &mut xtra::Context<Self>) {
-        log_error!(self.handle_new_attestation_fetched(msg.id, msg.attestation));
+        tracing::info!("Fetched new attestation for {}", msg.id);
+
+        let _ = self.attestation_channel.send(msg.attestation).await;
+        self.pending_attestations.remove(&msg.id);
     }
 }
 
