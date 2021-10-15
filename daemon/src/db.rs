@@ -495,6 +495,7 @@ mod tests {
     use std::fs::File;
 
     use pretty_assertions::assert_eq;
+    use rand::Rng;
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;
     use tempfile::tempdir;
@@ -606,6 +607,43 @@ mod tests {
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         assert_eq!(vec![cfd_1, cfd_2], cfds_from_db);
+    }
+
+    // test more data; test will add 100 cfds to the database, with each
+    // having a random number of random updates. Final results are deterministic.
+    #[tokio::test]
+    async fn test_multiple_cfd_updates_per_cfd() {
+        let mut conn = setup_test_db().await;
+
+        for _ in 0..100 {
+            let mut cfd = Cfd::dummy().insert(&mut conn).await;
+
+            let n_updates = rand::thread_rng().gen_range(1, 30);
+
+            for _ in 0..n_updates {
+                cfd.state = random_simple_state();
+                append_cfd_state(&cfd, &mut conn).await.unwrap();
+            }
+
+            // verify current state is correct
+            let loaded = load_cfd_by_order_id(cfd.order.id, &mut conn).await.unwrap();
+            assert_eq!(loaded, cfd);
+        }
+
+        // verify query returns only one state per CFD
+        let data = load_all_cfds(&mut conn).await.unwrap();
+
+        assert_eq!(data.len(), 100);
+    }
+
+    fn random_simple_state() -> CfdState {
+        match rand::thread_rng().gen_range(0, 5) {
+            0 => CfdState::outgoing_order_request(),
+            1 => CfdState::accepted(),
+            2 => CfdState::rejected(),
+            3 => CfdState::contract_setup(),
+            _ => CfdState::setup_failed(String::from("dummy failure")),
+        }
     }
 
     async fn setup_test_db() -> PoolConnection<Sqlite> {
