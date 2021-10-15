@@ -22,6 +22,7 @@ import {
     Td,
     Th,
     Thead,
+    Tooltip,
     Tr,
     useToast,
     VStack,
@@ -179,14 +180,16 @@ export function CfdTable(
                 Header: "Action",
                 accessor: ({ actions, order_id }) => {
                     const actionIcons = actions.map((action) => {
-                        return (<IconButton
-                            key={action}
-                            colorScheme={colorSchemaForAction(action)}
-                            aria-label={action}
-                            icon={iconForAction(action)}
-                            onClick={() => postAction(order_id, action)}
-                            isLoading={isActioning}
-                        />);
+                        return (<Tooltip label={action}>
+                            <IconButton
+                                key={action}
+                                colorScheme={colorSchemaForAction(action)}
+                                aria-label={action}
+                                icon={iconForAction(action)}
+                                onClick={() => postAction(order_id, action)}
+                                isLoading={isActioning}
+                            />
+                        </Tooltip>);
                     });
 
                     return <HStack>{actionIcons}</HStack>;
