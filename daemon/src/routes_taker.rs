@@ -15,6 +15,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
+use xtra::prelude::MessageChannel;
 use xtra::Address;
 
 #[rocket::get("/feed")]
@@ -104,14 +105,13 @@ pub struct CfdOrderRequest {
 #[rocket::post("/cfd/order", data = "<cfd_order_request>")]
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
-    cfd_actor_inbox: &State<Address<taker_cfd::Actor>>,
+    take_offer_channel: &State<Box<dyn MessageChannel<taker_cfd::TakeOffer>>>,
 ) {
-    cfd_actor_inbox
-        .do_send_async(taker_cfd::TakeOffer {
+    take_offer_channel
+        .do_send(taker_cfd::TakeOffer {
             order_id: cfd_order_request.order_id,
             quantity: cfd_order_request.quantity,
         })
-        .await
         .expect("actor to always be available");
 }
 
