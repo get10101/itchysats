@@ -105,7 +105,7 @@ pub async fn load_order_by_id(
     })
 }
 
-pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
+pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
     let mut tx = conn.begin().await?;
 
     let order_uuid = serde_json::to_string(&cfd.order.id)?;
@@ -160,22 +160,19 @@ pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::
     Ok(())
 }
 
-pub async fn insert_new_cfd_state_by_order_id(
-    order_id: OrderId,
-    new_state: &CfdState,
-    conn: &mut PoolConnection<Sqlite>,
-) -> anyhow::Result<()> {
-    let cfd_id = load_cfd_id_by_order_uuid(order_id, conn).await?;
-    let latest_cfd_state_in_db = load_latest_cfd_state(cfd_id, conn)
+pub async fn append_cfd_state(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
+    let cfd_id = load_cfd_id_by_order_uuid(cfd.order.id, conn).await?;
+    let current_state = load_latest_cfd_state(cfd_id, conn)
         .await
         .context("loading latest state failed")?;
+    let new_state = &cfd.state;
 
-    if mem::discriminant(&latest_cfd_state_in_db) == mem::discriminant(new_state) {
+    if mem::discriminant(&current_state) == mem::discriminant(new_state) {
         // Since we have states where we add information this happens quite frequently
         tracing::trace!(
             "Same state transition for cfd with order_id {}: {}",
-            order_id,
-            latest_cfd_state_in_db
+            cfd.order.id,
+            current_state
         );
     }
 
@@ -495,194 +492,200 @@ pub async fn load_cfds_by_oracle_event_id(
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-    use std::time::SystemTime;
-
+    use pretty_assertions::assert_eq;
+    use rand::Rng;
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;
-    use tempfile::tempdir;
     use time::macros::datetime;
     use time::OffsetDateTime;
 
     use crate::db::insert_order;
-    use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Order};
+    use crate::model::cfd::{Cfd, CfdState, Order};
     use crate::model::Usd;
 
     use super::*;
 
     #[tokio::test]
     async fn test_insert_and_load_order() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
-        let order = Order::default();
-        insert_order(&order, &mut conn).await.unwrap();
+        let order = Order::dummy().insert(&mut conn).await;
+        let loaded = load_order_by_id(order.id, &mut conn).await.unwrap();
 
-        let order_loaded = load_order_by_id(order.id, &mut conn).await.unwrap();
-
-        assert_eq!(order, order_loaded);
+        assert_eq!(order, loaded);
     }
 
     #[tokio::test]
     async fn test_insert_and_load_cfd() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
-        let cfd = Cfd::default();
+        let cfd = Cfd::dummy().insert(&mut conn).await;
+        let loaded = load_all_cfds(&mut conn).await.unwrap();
 
-        insert_order(&cfd.order, &mut conn).await.unwrap();
-        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
-
-        let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
-        let cfd_from_db = cfds_from_db.first().unwrap().clone();
-        assert_eq!(cfd, cfd_from_db)
+        assert_eq!(vec![cfd], loaded);
     }
 
     #[tokio::test]
     async fn test_insert_and_load_cfd_by_order_id() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
-        let cfd = Cfd::default();
-        let order_id = cfd.order.id;
+        let cfd = Cfd::dummy().insert(&mut conn).await;
+        let loaded = load_cfd_by_order_id(cfd.order.id, &mut conn).await.unwrap();
 
-        insert_order(&cfd.order, &mut conn).await.unwrap();
-        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
-
-        let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
-        assert_eq!(cfd, cfd_from_db)
+        assert_eq!(cfd, loaded)
     }
 
     #[tokio::test]
     async fn test_insert_and_load_cfd_by_order_id_multiple() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
-        let cfd = Cfd::default();
-        let order_id = cfd.order.id;
+        let cfd1 = Cfd::dummy().insert(&mut conn).await;
+        let cfd2 = Cfd::dummy().insert(&mut conn).await;
 
-        insert_order(&cfd.order, &mut conn).await.unwrap();
-        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
+        let loaded_1 = load_cfd_by_order_id(cfd1.order.id, &mut conn)
+            .await
+            .unwrap();
+        let loaded_2 = load_cfd_by_order_id(cfd2.order.id, &mut conn)
+            .await
+            .unwrap();
 
-        let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
-        assert_eq!(cfd, cfd_from_db);
-
-        let cfd = Cfd::default();
-        let order_id = cfd.order.id;
-
-        insert_order(&cfd.order, &mut conn).await.unwrap();
-        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
-
-        let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
-        assert_eq!(cfd, cfd_from_db);
+        assert_eq!(cfd1, loaded_1);
+        assert_eq!(cfd2, loaded_2);
     }
 
     #[tokio::test]
     async fn test_insert_and_load_cfd_by_oracle_event_id() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
-        let oracle_event_id_1 =
-            BitMexPriceEventId::with_20_digits(datetime!(2021-10-13 10:00:00).assume_utc());
-        let oracle_event_id_2 =
-            BitMexPriceEventId::with_20_digits(datetime!(2021-10-25 18:00:00).assume_utc());
+        let cfd_1 = Cfd::dummy()
+            .with_event_id(BitMexPriceEventId::event1())
+            .insert(&mut conn)
+            .await;
+        let cfd_2 = Cfd::dummy()
+            .with_event_id(BitMexPriceEventId::event1())
+            .insert(&mut conn)
+            .await;
+        let cfd_3 = Cfd::dummy()
+            .with_event_id(BitMexPriceEventId::event2())
+            .insert(&mut conn)
+            .await;
 
-        let cfd_1 =
-            Cfd::default().with_order(Order::default().with_oracle_event_id(oracle_event_id_1));
-
-        insert_order(&cfd_1.order, &mut conn).await.unwrap();
-        insert_cfd(cfd_1.clone(), &mut conn).await.unwrap();
-
-        let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_1, &mut conn)
+        let cfds_event_1 = load_cfds_by_oracle_event_id(BitMexPriceEventId::event1(), &mut conn)
             .await
             .unwrap();
-        assert_eq!(vec![cfd_1.clone()], cfd_from_db);
 
-        let cfd_2 =
-            Cfd::default().with_order(Order::default().with_oracle_event_id(oracle_event_id_1));
-
-        insert_order(&cfd_2.order, &mut conn).await.unwrap();
-        insert_cfd(cfd_2.clone(), &mut conn).await.unwrap();
-
-        let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_1, &mut conn)
+        let cfds_event_2 = load_cfds_by_oracle_event_id(BitMexPriceEventId::event2(), &mut conn)
             .await
             .unwrap();
-        assert_eq!(vec![cfd_1, cfd_2], cfd_from_db);
 
-        let cfd_3 =
-            Cfd::default().with_order(Order::default().with_oracle_event_id(oracle_event_id_2));
-
-        insert_order(&cfd_3.order, &mut conn).await.unwrap();
-        insert_cfd(cfd_3.clone(), &mut conn).await.unwrap();
-
-        let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_2, &mut conn)
-            .await
-            .unwrap();
-        assert_eq!(vec![cfd_3], cfd_from_db);
+        assert_eq!(vec![cfd_1, cfd_2], cfds_event_1);
+        assert_eq!(vec![cfd_3], cfds_event_2);
     }
 
     #[tokio::test]
-    async fn test_insert_new_cfd_state() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+    async fn test_insert_new_cfd_state_and_load_with_multiple_cfd() {
+        let mut conn = setup_test_db().await;
 
-        let mut cfd = Cfd::default();
+        let mut cfd_1 = Cfd::dummy().insert(&mut conn).await;
 
-        insert_order(&cfd.order, &mut conn).await.unwrap();
-        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
-
-        cfd.state = CfdState::Accepted {
-            common: CfdStateCommon {
-                transition_timestamp: SystemTime::now(),
-            },
-        };
-        insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn)
-            .await
-            .unwrap();
+        cfd_1.state = CfdState::accepted();
+        append_cfd_state(&cfd_1, &mut conn).await.unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
-        let cfd_from_db = cfds_from_db.first().unwrap().clone();
-        assert_eq!(cfd, cfd_from_db)
+        assert_eq!(vec![cfd_1.clone()], cfds_from_db);
+
+        let mut cfd_2 = Cfd::dummy().insert(&mut conn).await;
+
+        let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
+        assert_eq!(vec![cfd_1.clone(), cfd_2.clone()], cfds_from_db);
+
+        cfd_2.state = CfdState::rejected();
+        append_cfd_state(&cfd_2, &mut conn).await.unwrap();
+
+        let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
+        assert_eq!(vec![cfd_1, cfd_2], cfds_from_db);
     }
 
-    async fn setup_test_db() -> SqlitePool {
-        let temp_db = tempdir().unwrap().into_path().join("tempdb");
+    // test more data; test will add 100 cfds to the database, with each
+    // having a random number of random updates. Final results are deterministic.
+    #[tokio::test]
+    async fn test_multiple_cfd_updates_per_cfd() {
+        let mut conn = setup_test_db().await;
 
-        // file has to exist in order to connect with sqlite
-        File::create(temp_db.clone()).unwrap();
+        for _ in 0..100 {
+            let mut cfd = Cfd::dummy().insert(&mut conn).await;
 
-        let pool = SqlitePool::connect(format!("sqlite:{}", temp_db.display()).as_str())
-            .await
-            .unwrap();
+            let n_updates = rand::thread_rng().gen_range(1, 30);
+
+            for _ in 0..n_updates {
+                cfd.state = random_simple_state();
+                append_cfd_state(&cfd, &mut conn).await.unwrap();
+            }
+
+            // verify current state is correct
+            let loaded = load_cfd_by_order_id(cfd.order.id, &mut conn).await.unwrap();
+            assert_eq!(loaded, cfd);
+        }
+
+        // verify query returns only one state per CFD
+        let data = load_all_cfds(&mut conn).await.unwrap();
+
+        assert_eq!(data.len(), 100);
+    }
+
+    fn random_simple_state() -> CfdState {
+        match rand::thread_rng().gen_range(0, 5) {
+            0 => CfdState::outgoing_order_request(),
+            1 => CfdState::accepted(),
+            2 => CfdState::rejected(),
+            3 => CfdState::contract_setup(),
+            _ => CfdState::setup_failed(String::from("dummy failure")),
+        }
+    }
+
+    async fn setup_test_db() -> PoolConnection<Sqlite> {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
 
         run_migrations(&pool).await.unwrap();
 
-        pool
+        pool.acquire().await.unwrap()
     }
 
-    impl Default for Cfd {
-        fn default() -> Self {
-            Cfd::new(
-                Order::default(),
-                Usd(dec!(1000)),
-                CfdState::OutgoingOrderRequest {
-                    common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
-                    },
-                },
-            )
+    impl BitMexPriceEventId {
+        fn event1() -> Self {
+            BitMexPriceEventId::with_20_digits(datetime!(2021-10-13 10:00:00).assume_utc())
+        }
+
+        fn event2() -> Self {
+            BitMexPriceEventId::with_20_digits(datetime!(2021-10-25 18:00:00).assume_utc())
         }
     }
 
     impl Cfd {
-        pub fn with_order(mut self, order: Order) -> Self {
-            self.order = order;
+        fn dummy() -> Self {
+            Cfd::new(
+                Order::dummy(),
+                Usd(dec!(1000)),
+                CfdState::outgoing_order_request(),
+            )
+        }
+
+        /// Insert this [`Cfd`] into the database, returning the instance for further chaining.
+        async fn insert(self, conn: &mut PoolConnection<Sqlite>) -> Self {
+            insert_order(&self.order, conn).await.unwrap();
+            insert_cfd(&self, conn).await.unwrap();
+
+            self
+        }
+
+        fn with_event_id(mut self, id: BitMexPriceEventId) -> Self {
+            self.order.oracle_event_id = id;
             self
         }
     }
 
-    impl Default for Order {
-        fn default() -> Self {
+    impl Order {
+        fn dummy() -> Self {
             Order::new(
                 Usd(dec!(1000)),
                 Usd(dec!(100)),
@@ -692,11 +695,11 @@ mod tests {
             )
             .unwrap()
         }
-    }
 
-    impl Order {
-        pub fn with_oracle_event_id(mut self, oracle_event_id: BitMexPriceEventId) -> Self {
-            self.oracle_event_id = oracle_event_id;
+        /// Insert this [`Order`] into the database, returning the instance for further chaining.
+        async fn insert(self, conn: &mut PoolConnection<Sqlite>) -> Self {
+            insert_order(&self, conn).await.unwrap();
+
             self
         }
     }

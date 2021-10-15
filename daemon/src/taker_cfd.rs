@@ -1,4 +1,4 @@
-use crate::cfd_actors::{self, insert_cfd, insert_new_cfd_state_by_order_id};
+use crate::cfd_actors::{self, append_cfd_state, insert_cfd};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, CollaborativeSettlement, Dlc, Order,
@@ -149,14 +149,10 @@ impl Actor {
         let cfd = Cfd::new(
             current_order.clone(),
             quantity,
-            CfdState::OutgoingOrderRequest {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
+            CfdState::outgoing_order_request(),
         );
 
-        insert_cfd(cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        insert_cfd(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.send_to_maker
             .do_send_async(wire::TakerToMaker::TakeOrder { order_id, quantity })
@@ -268,19 +264,10 @@ impl Actor {
         }
 
         let mut conn = self.db.acquire().await?;
-        insert_new_cfd_state_by_order_id(
-            order_id,
-            &CfdState::ContractSetup {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-            &mut conn,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::contract_setup();
 
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         let offer_announcement = self
             .oracle_actor
@@ -326,17 +313,10 @@ impl Actor {
         tracing::debug!(%order_id, "Order rejected");
 
         let mut conn = self.db.acquire().await?;
-        insert_new_cfd_state_by_order_id(
-            order_id,
-            &CfdState::Rejected {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-            },
-            &mut conn,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::rejected();
+
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         Ok(())
     }
@@ -366,13 +346,7 @@ impl Actor {
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
             CollaborativeSettlement::new(tx, dlc.script_pubkey_for(cfd.role()), proposal.price),
         ))?;
-        insert_new_cfd_state_by_order_id(
-            cfd.order.id,
-            &cfd.state,
-            &mut conn,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.remove_pending_proposal(&order_id)?;
 
@@ -489,20 +463,14 @@ impl Actor {
         tracing::info!("Setup complete, publishing on chain now");
 
         let mut conn = self.db.acquire().await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::PendingOpen {
+            common: CfdStateCommon::default(),
+            dlc: dlc.clone(),
+            attestation: None,
+        };
 
-        insert_new_cfd_state_by_order_id(
-            order_id,
-            &CfdState::PendingOpen {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-                dlc: dlc.clone(),
-                attestation: None,
-            },
-            &mut conn,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         let txid = self
             .wallet
@@ -510,8 +478,6 @@ impl Actor {
             .await?;
 
         tracing::info!("Lock transaction published with txid {}", txid);
-
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         self.monitor_actor
             .do_send_async(monitor::StartMonitoring {
@@ -538,22 +504,15 @@ impl Actor {
         self.roll_over_state = RollOverState::None;
 
         let mut conn = self.db.acquire().await?;
-        insert_new_cfd_state_by_order_id(
-            order_id,
-            &CfdState::Open {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-                dlc: dlc.clone(),
-                attestation: None,
-                collaborative_close: None,
-            },
-            &mut conn,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::Open {
+            common: CfdStateCommon::default(),
+            dlc: dlc.clone(),
+            attestation: None,
+            collaborative_close: None,
+        };
 
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.monitor_actor
             .do_send_async(monitor::StartMonitoring {

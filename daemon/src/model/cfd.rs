@@ -168,6 +168,14 @@ pub struct CfdStateCommon {
     pub transition_timestamp: SystemTime,
 }
 
+impl Default for CfdStateCommon {
+    fn default() -> Self {
+        Self {
+            transition_timestamp: SystemTime::now(),
+        }
+    }
+}
+
 // Note: De-/Serialize with type tag to make handling on UI easier
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -283,6 +291,60 @@ pub enum CfdState {
         common: CfdStateCommon,
         info: String,
     },
+}
+
+impl CfdState {
+    pub fn outgoing_order_request() -> Self {
+        Self::OutgoingOrderRequest {
+            common: CfdStateCommon::default(),
+        }
+    }
+
+    pub fn accepted() -> Self {
+        Self::Accepted {
+            common: CfdStateCommon::default(),
+        }
+    }
+
+    pub fn rejected() -> Self {
+        Self::Rejected {
+            common: CfdStateCommon::default(),
+        }
+    }
+
+    pub fn contract_setup() -> Self {
+        Self::ContractSetup {
+            common: CfdStateCommon::default(),
+        }
+    }
+
+    pub fn closed(payout: Payout) -> Self {
+        Self::Closed {
+            common: CfdStateCommon::default(),
+            payout,
+        }
+    }
+
+    pub fn must_refund(dlc: Dlc) -> Self {
+        Self::MustRefund {
+            common: CfdStateCommon::default(),
+            dlc,
+        }
+    }
+
+    pub fn refunded(dlc: Dlc) -> Self {
+        Self::Refunded {
+            common: CfdStateCommon::default(),
+            dlc,
+        }
+    }
+
+    pub fn setup_failed(info: String) -> Self {
+        Self::SetupFailed {
+            common: CfdStateCommon::default(),
+            info,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -710,12 +772,7 @@ impl Cfd {
                 monitor::Event::CloseFinality(_) => {
                     let collaborative_close = self.collaborative_close().context("No collaborative close after reaching collaborative close finality")?;
 
-                    CfdState::Closed {
-                        common: CfdStateCommon {
-                            transition_timestamp: SystemTime::now(),
-                        },
-                        payout: Payout::CollaborativeClose(collaborative_close)
-                    }
+                    CfdState::closed(Payout::CollaborativeClose(collaborative_close))
 
                 },
                 monitor::Event::CetTimelockExpired(_) => match self.state.clone() {
@@ -780,36 +837,21 @@ impl Cfd {
                         )
                     };
 
-                    MustRefund {
-                        common: CfdStateCommon {
-                            transition_timestamp: SystemTime::now(),
-                        },
-                        dlc,
-                    }
+                    CfdState::must_refund(dlc)
                 }
                 monitor::Event::RefundFinality(_) => {
                     let dlc = self
                         .dlc()
                         .context("No dlc available when reaching refund finality")?;
 
-                    Refunded {
-                        common: CfdStateCommon {
-                            transition_timestamp: SystemTime::now(),
-                        },
-                        dlc,
-                    }
+                    CfdState::refunded(dlc)
                 }
                 monitor::Event::CetFinality(_) => {
                     let attestation = self
                         .attestation()
                         .context("No attestation available when reaching CET finality")?;
 
-                    CfdState::Closed {
-                        common: CfdStateCommon {
-                            transition_timestamp: SystemTime::now(),
-                        },
-                        payout: Payout::Cet(attestation)
-                    }
+                    CfdState::closed(Payout::Cet(attestation))
                 }
                 monitor::Event::RevokedTransactionFound(_) => {
                     todo!("Punish bad counterparty")
