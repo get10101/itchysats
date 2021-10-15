@@ -73,7 +73,7 @@ export default function App() {
     let [margin, setMargin] = useState("0");
     let [userHasEdited, setUserHasEdited] = useState(false);
 
-    let quantityToShow = userHasEdited ? quantity : (order?.min_quantity.toString() || "0");
+    let effectiveQuantity = userHasEdited ? quantity : (order?.min_quantity.toString() || "0");
 
     let { run: calculateMargin } = useAsync({
         deferFn: async ([payload]: any[]) => {
@@ -98,7 +98,7 @@ export default function App() {
         if (!order) {
             return;
         }
-        let quantity = quantityToShow ? Number.parseFloat(quantityToShow) : 0;
+        let quantity = effectiveQuantity ? Number.parseFloat(effectiveQuantity) : 0;
         let payload: MarginRequestPayload = {
             leverage: order.leverage,
             price: order.price,
@@ -109,7 +109,7 @@ export default function App() {
      // We don't want that as we will end up in an endless loop. It is safe to ignore `calculateMargin` because
     // nothing in `calculateMargin` depends on outside values, i.e. is guaranteed to be stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [margin, quantityToShow, order]);
+    [margin, effectiveQuantity, order]);
 
     const format = (val: any) => `$` + val;
     const parse = (val: any) => val.replace(/^\$/, "");
@@ -169,7 +169,7 @@ export default function App() {
                                 };
                                 calculateMargin(payload);
                             }}
-                            value={format(quantityToShow)}
+                            value={format(effectiveQuantity)}
                             min={order?.min_quantity}
                             max={order?.max_quantity}
                         />
@@ -197,7 +197,7 @@ export default function App() {
                                 onClick={() => {
                                     let payload: CfdOrderRequestPayload = {
                                         order_id: order!.id,
-                                        quantity: Number.parseFloat(quantity),
+                                        quantity: Number.parseFloat(effectiveQuantity),
                                     };
                                     makeNewOrderRequest(payload);
                                 }}

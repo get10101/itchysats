@@ -507,6 +507,12 @@ impl Actor {
 
         // 2. check if order has acceptable amounts
         if quantity < current_order.min_quantity || quantity > current_order.max_quantity {
+            tracing::warn!(
+                "Order rejected because quantity {} was out of bounds. It was either <{} or >{}",
+                quantity,
+                current_order.min_quantity,
+                current_order.max_quantity
+            );
             self.takers
                 .do_send_async(maker_inc_connections::TakerMessage {
                     taker_id,
