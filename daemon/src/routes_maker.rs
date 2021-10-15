@@ -143,40 +143,45 @@ pub struct PromptAuthentication {
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
-pub fn post_cfd_action(
+pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
     cfd_action_channel: &State<Box<dyn MessageChannel<maker_cfd::CfdAction>>>,
     _auth: Authenticated,
-) -> Result<status::Accepted<()>, status::Custom<()>> {
+) -> status::Custom<()> {
     use maker_cfd::CfdAction::*;
     let result = match action {
-        CfdAction::AcceptOrder => cfd_action_channel.do_send(AcceptOrder { order_id: id }),
-        CfdAction::RejectOrder => cfd_action_channel.do_send(RejectOrder { order_id: id }),
-        CfdAction::AcceptSettlement => {
-            cfd_action_channel.do_send(AcceptSettlement { order_id: id })
-        }
-        CfdAction::RejectSettlement => {
-            cfd_action_channel.do_send(RejectSettlement { order_id: id })
-        }
-        CfdAction::AcceptRollOver => cfd_action_channel.do_send(AcceptRollOver { order_id: id }),
-        CfdAction::RejectRollOver => cfd_action_channel.do_send(RejectRollOver { order_id: id }),
-        CfdAction::Commit => cfd_action_channel.do_send(Commit { order_id: id }),
+        CfdAction::AcceptOrder => cfd_action_channel.send(AcceptOrder { order_id: id }),
+        CfdAction::RejectOrder => cfd_action_channel.send(RejectOrder { order_id: id }),
+        CfdAction::AcceptSettlement => cfd_action_channel.send(AcceptSettlement { order_id: id }),
+        CfdAction::RejectSettlement => cfd_action_channel.send(RejectSettlement { order_id: id }),
+        CfdAction::AcceptRollOver => cfd_action_channel.send(AcceptRollOver { order_id: id }),
+        CfdAction::RejectRollOver => cfd_action_channel.send(RejectRollOver { order_id: id }),
+        CfdAction::Commit => cfd_action_channel.send(Commit { order_id: id }),
         CfdAction::Settle => {
             tracing::error!("Collaborative settlement can only be triggered by taker");
 
-            return Err(status::Custom(Status::BadRequest, ()));
+            return status::Custom(Status::BadRequest, ());
         }
         CfdAction::RollOver => {
             tracing::error!("RollOver proposal can only be triggered by taker");
 
-            return Err(status::Custom(Status::BadRequest, ()));
+            return status::Custom(Status::BadRequest, ());
         }
+    }
+    .await;
+
+    let status = match result {
+        Ok(Ok(())) => Status::NoContent,
+        Ok(Err(e)) => {
+            tracing::warn!(%id, "{:?} failed: {:#}", action, e);
+
+            Status::BadRequest
+        }
+        Err(xtra::Disconnected) => Status::InternalServerError,
     };
 
-    result
-        .map(|()| status::Accepted(None))
-        .map_err(|_| status::Custom(Status::InternalServerError, ()))
+    status::Custom(status, ())
 }
 
 #[rocket::get("/alive")]

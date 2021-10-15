@@ -859,9 +859,10 @@ impl Actor {
 
 #[async_trait]
 impl Handler<CfdAction> for Actor {
-    async fn handle(&mut self, msg: CfdAction, ctx: &mut Context<Self>) {
+    async fn handle(&mut self, msg: CfdAction, ctx: &mut Context<Self>) -> Result<()> {
         use CfdAction::*;
-        if let Err(e) = match msg {
+
+        match msg {
             AcceptOrder { order_id } => self.handle_accept_order(order_id, ctx).await,
             RejectOrder { order_id } => self.handle_reject_order(order_id).await,
             AcceptSettlement { order_id } => self.handle_accept_settlement(order_id).await,
@@ -869,8 +870,6 @@ impl Handler<CfdAction> for Actor {
             AcceptRollOver { order_id } => self.handle_accept_roll_over(order_id, ctx).await,
             RejectRollOver { order_id } => self.handle_reject_roll_over(order_id).await,
             Commit { order_id } => self.handle_commit(order_id).await,
-        } {
-            tracing::error!("Message handler failed: {:#}", e);
         }
     }
 }
@@ -988,7 +987,7 @@ impl Message for CfdRollOverCompleted {
 }
 
 impl Message for CfdAction {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl Message for FromTaker {
