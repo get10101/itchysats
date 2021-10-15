@@ -307,14 +307,6 @@ where
         Ok(())
     }
 
-    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
-        for (order_id, MonitorParams { cets, .. }) in self.cfds.clone().into_iter() {
-            self.monitor_cet_finality(cets, attestation.clone(), order_id)?;
-        }
-
-        Ok(())
-    }
-
     async fn update_state(
         &mut self,
         latest_block_height: BlockHeight,
@@ -633,12 +625,20 @@ where
     }
 }
 
-#[async_trait]
-impl xtra::Handler<oracle::Attestation> for Actor {
-    async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut xtra::Context<Self>) {
-        log_error!(self.handle_oracle_attestation(msg));
-    }
-}
+// #[async_trait]
+// impl xtra::Handler<oracle::Attestation> for Actor {
+//     async fn handle(
+//         &mut self,
+//         msg: oracle::Attestation,
+//         _ctx: &mut xtra::Context<Self>,
+//     ) -> Result<()> {
+//         for (order_id, MonitorParams { cets, .. }) in self.cfds.clone().into_iter() {
+//             self.monitor_cet_finality(cets, msg.clone(), order_id)?;
+//         }
+
+//         Ok(())
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

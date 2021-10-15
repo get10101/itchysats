@@ -303,7 +303,7 @@ impl xtra::Message for GetAnnouncement {
 }
 
 impl xtra::Message for Attestation {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl xtra::Message for NewAnnouncementFetched {

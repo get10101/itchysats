@@ -658,8 +658,8 @@ impl Handler<monitor::Event> for Actor {
 
 #[async_trait]
 impl Handler<oracle::Attestation> for Actor {
-    async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_oracle_attestation(msg))
+    async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_oracle_attestation(msg).await
     }
 }
 
