@@ -67,7 +67,7 @@ struct NewAttestationFetched {
 impl Actor {
     pub fn new(
         cfds: Vec<Cfd>,
-        attestation_channel: impl StrongMessageChannel<Attestation> + 'static,
+        attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
     ) -> Self {
         let mut pending_attestations = HashSet::new();
 
@@ -101,7 +101,7 @@ impl Actor {
             announcements: HashMap::new(),
             pending_announcements: HashSet::new(),
             pending_attestations,
-            attestation_channel: Box::new(attestation_channel),
+            attestation_channel,
         }
     }
 }
