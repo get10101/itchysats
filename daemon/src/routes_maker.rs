@@ -150,47 +150,48 @@ pub async fn post_cfd_action(
     cfd_actor_address: &State<Address<maker_cfd::Actor>>,
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
+    use maker_cfd::CfdAction::*;
     match action {
         CfdAction::AcceptOrder => {
             cfd_actor_address
-                .do_send_async(maker_cfd::AcceptOrder { order_id: id })
+                .do_send_async(AcceptOrder { order_id: id })
                 .await
                 .expect("actor to always be available");
         }
         CfdAction::RejectOrder => {
             cfd_actor_address
-                .do_send_async(maker_cfd::RejectOrder { order_id: id })
+                .do_send_async(RejectOrder { order_id: id })
                 .await
                 .expect("actor to always be available");
         }
         CfdAction::AcceptSettlement => {
             cfd_actor_address
-                .do_send_async(maker_cfd::AcceptSettlement { order_id: id })
+                .do_send_async(AcceptSettlement { order_id: id })
                 .await
                 .expect("actor to always be available");
         }
         CfdAction::RejectSettlement => {
             cfd_actor_address
-                .do_send_async(maker_cfd::RejectSettlement { order_id: id })
+                .do_send_async(RejectSettlement { order_id: id })
                 .await
                 .expect("actor to always be available");
         }
 
         CfdAction::AcceptRollOver => {
             cfd_actor_address
-                .do_send_async(maker_cfd::AcceptRollOver { order_id: id })
+                .do_send_async(AcceptRollOver { order_id: id })
                 .await
                 .expect("actor to always be available");
         }
         CfdAction::RejectRollOver => {
             cfd_actor_address
-                .do_send_async(maker_cfd::RejectRollOver { order_id: id })
+                .do_send_async(RejectRollOver { order_id: id })
                 .await
                 .expect("actor to always be available");
         }
         CfdAction::Commit => {
             cfd_actor_address
-                .do_send_async(maker_cfd::Commit { order_id: id })
+                .do_send_async(Commit { order_id: id })
                 .await
                 .expect("actor to always be available");
         }
