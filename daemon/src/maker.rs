@@ -212,8 +212,7 @@ async fn main() -> Result<()> {
                 let (maker_inc_connections_address, maker_inc_connections_context) =
                     xtra::Context::new(None);
 
-                let (monitor_actor_address, mut monitor_actor_context) = xtra::Context::new(None);
-
+                let (monitor_actor_address, monitor_actor_context) = xtra::Context::new(None);
                 let (oracle_actor_address, mut oracle_actor_context) = xtra::Context::new(None);
 
                 let mut conn = db.acquire().await.unwrap();
@@ -238,11 +237,19 @@ async fn main() -> Result<()> {
                         &cfd_maker_actor_inbox,
                     )),
                 );
-                tokio::spawn(
-                    monitor_actor_context
-                        .notify_interval(Duration::from_secs(20), || monitor::Sync)
-                        .unwrap(),
-                );
+                tokio::spawn({
+                    let monitor_actor_address = monitor_actor_address.clone();
+
+                    async move {
+                        while let Ok(result) = monitor_actor_address.send(monitor::Sync).await {
+                            if let Err(e) = result {
+                                tracing::warn!("Sync failed: {:#}", e);
+                            };
+
+                            tokio::time::sleep(Duration::from_secs(20)).await;
+                        }
+                    }
+                });
                 tokio::spawn(
                     monitor_actor_context.run(
                         monitor::Actor::new(

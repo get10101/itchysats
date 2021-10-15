@@ -606,7 +606,7 @@ impl xtra::Message for Event {
 }
 
 impl xtra::Message for Sync {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl<C> xtra::Actor for Actor<C> where C: Send + 'static {}
@@ -628,8 +628,8 @@ impl<C> xtra::Handler<Sync> for Actor<C>
 where
     C: bdk::electrum_client::ElectrumApi + Send + 'static,
 {
-    async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
-        log_error!(self.sync());
+    async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) -> Result<()> {
+        self.sync().await
     }
 }
 
