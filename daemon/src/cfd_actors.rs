@@ -7,22 +7,21 @@ use sqlx::Sqlite;
 use tokio::sync::watch;
 
 pub async fn insert_cfd(
-    cfd: Cfd,
+    cfd: &Cfd,
     conn: &mut PoolConnection<Sqlite>,
     update_sender: &watch::Sender<Vec<Cfd>>,
 ) -> Result<()> {
-    db::insert_cfd(&cfd, conn).await?;
+    db::insert_cfd(cfd, conn).await?;
     update_sender.send(db::load_all_cfds(conn).await?)?;
     Ok(())
 }
 
-pub async fn insert_new_cfd_state_by_order_id(
-    order_id: OrderId,
-    new_state: &CfdState,
+pub async fn append_cfd_state(
+    cfd: &Cfd,
     conn: &mut PoolConnection<Sqlite>,
     update_sender: &watch::Sender<Vec<Cfd>>,
 ) -> Result<()> {
-    db::insert_new_cfd_state_by_order_id(order_id, new_state, conn).await?;
+    db::append_cfd_state(cfd, conn).await?;
     update_sender.send(db::load_all_cfds(conn).await?)?;
     Ok(())
 }
@@ -42,7 +41,7 @@ pub async fn try_cet_publication(
                 bail!("If we can get the CET we should be able to transition")
             }
 
-            insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, conn, update_sender).await?;
+            append_cfd_state(cfd, conn, update_sender).await?;
         }
         Err(not_ready_yet) => {
             tracing::debug!("{:#}", not_ready_yet);
@@ -69,7 +68,7 @@ pub async fn handle_monitoring_event(
         return Ok(());
     }
 
-    insert_new_cfd_state_by_order_id(order_id, &cfd.state, conn, update_sender).await?;
+    append_cfd_state(&cfd, conn, update_sender).await?;
 
     if let CfdState::OpenCommitted { .. } = cfd.state {
         try_cet_publication(&mut cfd, conn, wallet, update_sender).await?;
@@ -98,7 +97,7 @@ pub async fn handle_commit(
         bail!("If we can get the commit tx we should be able to transition")
     }
 
-    insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, conn, update_sender).await?;
+    append_cfd_state(&cfd, conn, update_sender).await?;
     tracing::info!("Commit transaction published on chain: {}", txid);
 
     Ok(())
@@ -137,7 +136,7 @@ pub async fn handle_oracle_attestation(
             continue;
         }
 
-        insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, conn, update_sender).await?;
+        append_cfd_state(cfd, conn, update_sender).await?;
 
         if let Err(e) = try_cet_publication(cfd, conn, wallet, update_sender).await {
             tracing::error!("Error when trying to publish CET: {:#}", e);

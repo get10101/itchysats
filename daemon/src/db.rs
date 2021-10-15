@@ -160,22 +160,19 @@ pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow:
     Ok(())
 }
 
-pub async fn insert_new_cfd_state_by_order_id(
-    order_id: OrderId,
-    new_state: &CfdState,
-    conn: &mut PoolConnection<Sqlite>,
-) -> anyhow::Result<()> {
-    let cfd_id = load_cfd_id_by_order_uuid(order_id, conn).await?;
-    let latest_cfd_state_in_db = load_latest_cfd_state(cfd_id, conn)
+pub async fn append_cfd_state(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
+    let cfd_id = load_cfd_id_by_order_uuid(cfd.order.id, conn).await?;
+    let current_state = load_latest_cfd_state(cfd_id, conn)
         .await
         .context("loading latest state failed")?;
+    let new_state = &cfd.state;
 
-    if mem::discriminant(&latest_cfd_state_in_db) == mem::discriminant(new_state) {
+    if mem::discriminant(&current_state) == mem::discriminant(new_state) {
         // Since we have states where we add information this happens quite frequently
         tracing::trace!(
             "Same state transition for cfd with order_id {}: {}",
-            order_id,
-            latest_cfd_state_in_db
+            cfd.order.id,
+            current_state
         );
     }
 
@@ -599,9 +596,7 @@ mod tests {
                 transition_timestamp: SystemTime::now(),
             },
         };
-        insert_new_cfd_state_by_order_id(cfd_1.order.id, &cfd_1.state, &mut conn)
-            .await
-            .unwrap();
+        append_cfd_state(&cfd_1, &mut conn).await.unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         assert_eq!(vec![cfd_1.clone()], cfds_from_db);
@@ -616,9 +611,7 @@ mod tests {
                 transition_timestamp: SystemTime::now(),
             },
         };
-        insert_new_cfd_state_by_order_id(cfd_2.order.id, &cfd_2.state, &mut conn)
-            .await
-            .unwrap();
+        append_cfd_state(&cfd_2, &mut conn).await.unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         assert_eq!(vec![cfd_1, cfd_2], cfds_from_db);

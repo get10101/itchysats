@@ -1,4 +1,4 @@
-use crate::cfd_actors::{self, insert_cfd, insert_new_cfd_state_by_order_id};
+use crate::cfd_actors::{self, append_cfd_state, insert_cfd};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
@@ -292,13 +292,7 @@ impl Actor {
                 proposal.price,
             ),
         ))?;
-        insert_new_cfd_state_by_order_id(
-            cfd.order.id,
-            &cfd.state,
-            &mut conn,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
 
@@ -405,19 +399,16 @@ impl Actor {
 
         let mut conn = self.db.acquire().await?;
 
-        insert_new_cfd_state_by_order_id(
-            order_id,
-            &CfdState::PendingOpen {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-                dlc: dlc.clone(),
-                attestation: None,
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::PendingOpen {
+            common: CfdStateCommon {
+                transition_timestamp: SystemTime::now(),
             },
-            &mut conn,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+            dlc: dlc.clone(),
+            attestation: None,
+        };
+
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         let txid = self
             .wallet
@@ -425,8 +416,6 @@ impl Actor {
             .await?;
 
         tracing::info!("Lock transaction published with txid {}", txid);
-
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         self.monitor_actor
             .do_send_async(monitor::StartMonitoring {
@@ -453,22 +442,17 @@ impl Actor {
         self.roll_over_state = RollOverState::None;
 
         let mut conn = self.db.acquire().await?;
-        insert_new_cfd_state_by_order_id(
-            order_id,
-            &CfdState::Open {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
-                dlc: dlc.clone(),
-                attestation: None,
-                collaborative_close: None,
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::Open {
+            common: CfdStateCommon {
+                transition_timestamp: SystemTime::now(),
             },
-            &mut conn,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+            dlc: dlc.clone(),
+            attestation: None,
+            collaborative_close: None,
+        };
 
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.monitor_actor
             .do_send_async(monitor::StartMonitoring {
@@ -513,20 +497,7 @@ impl Actor {
             }
         };
 
-        // 2. check if order has acceptable amounts
-        if quantity < current_order.min_quantity || quantity > current_order.max_quantity {
-            tracing::warn!(
-                "Order rejected because quantity {} was out of bounds. It was either <{} or >{}",
-                quantity,
-                current_order.min_quantity,
-                current_order.max_quantity
-            );
-
-            self.reject_order(taker_id, order_id, conn).await?;
-            return Ok(());
-        }
-
-        // 3. Insert CFD in DB
+        // 2. Create a new CFD
         let cfd = Cfd::new(
             current_order.clone(),
             quantity,
@@ -537,7 +508,20 @@ impl Actor {
                 taker_id,
             },
         );
-        insert_cfd(cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        insert_cfd(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+
+        // 3. check if order has acceptable amounts
+        if quantity < current_order.min_quantity || quantity > current_order.max_quantity {
+            tracing::warn!(
+                "Order rejected because quantity {} was out of bounds. It was either <{} or >{}",
+                quantity,
+                current_order.min_quantity,
+                current_order.max_quantity
+            );
+
+            self.reject_order(taker_id, cfd, conn).await?;
+            return Ok(());
+        }
 
         // 4. Remove current order
         self.current_order_id = None;
@@ -563,7 +547,7 @@ impl Actor {
         let mut conn = self.db.acquire().await?;
 
         // 1. Validate if order is still valid
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         let taker_id = match cfd {
             Cfd {
                 state: CfdState::IncomingOrderRequest { taker_id, .. },
@@ -583,17 +567,13 @@ impl Actor {
             .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
 
         // 3. Insert that we are in contract setup and refresh our own feed
-        insert_new_cfd_state_by_order_id(
-            order_id,
-            &CfdState::ContractSetup {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
+        cfd.state = CfdState::ContractSetup {
+            common: CfdStateCommon {
+                transition_timestamp: SystemTime::now(),
             },
-            &mut conn,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        };
+
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         // 4. Notify the taker that we are ready for contract setup
         // Use `.send` here to ensure we only continue once the message has been sent
@@ -658,7 +638,7 @@ impl Actor {
             }
         };
 
-        self.reject_order(taker_id, order_id, conn).await?;
+        self.reject_order(taker_id, cfd, conn).await?;
 
         Ok(())
     }
@@ -671,26 +651,22 @@ impl Actor {
     async fn reject_order(
         &mut self,
         taker_id: TakerId,
-        order_id: OrderId,
+        mut cfd: Cfd,
         mut conn: PoolConnection<Sqlite>,
     ) -> Result<()> {
         // Update order in db
-        insert_new_cfd_state_by_order_id(
-            order_id,
-            &CfdState::Rejected {
-                common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
-                },
+        cfd.state = CfdState::Rejected {
+            common: CfdStateCommon {
+                transition_timestamp: SystemTime::now(),
             },
-            &mut conn,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        };
+
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id,
-                command: TakerCommand::NotifyOrderRejected { id: order_id },
+                command: TakerCommand::NotifyOrderRejected { id: cfd.order.id },
             })
             .await?;
 
