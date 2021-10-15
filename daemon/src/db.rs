@@ -260,31 +260,26 @@ pub async fn load_cfd_by_order_id(
 
         cfd as (
             select
+                ord.order_id,
                 id as cfd_id,
-                order_id,
                 quantity_usd
             from cfds
-        ),
-
-        tmp as (
-            select
-                id as state_id,
-                cfd_id,
-                state
-            from cfd_states
+                inner join ord on ord.order_id = id
         ),
 
         state as (
             select
-                tmp.state,
+                id as state_id,
                 cfd.order_id,
-                cfd.quantity_usd
-            from tmp
-            inner join cfd on tmp.cfd_id = cfd.cfd_id
-            where tmp.state_id in (
-                select max(state_id)
-                from tmp
-                group by state_id
+                cfd.quantity_usd,
+                state
+            from cfd_states
+                inner join cfd on cfd.cfd_id = cfd_states.cfd_id
+            where id in (
+                select
+                    max(id) as id
+                from cfd_states
+                group by (cfd_id)
             )
         )
 
@@ -367,31 +362,26 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
 
         cfd as (
             select
+                ord.order_id,
                 id as cfd_id,
-                order_id,
-                quantity_usd as quantity_usd
+                quantity_usd
             from cfds
-        ),
-
-        tmp as (
-            select
-                id as state_id,
-                cfd_id,
-                state
-            from cfd_states
+                inner join ord on ord.order_id = id
         ),
 
         state as (
             select
-                tmp.state,
+                id as state_id,
                 cfd.order_id,
-                cfd.quantity_usd
-            from tmp
-            inner join cfd on tmp.cfd_id = cfd.cfd_id
-            where tmp.state_id in (
-                select max(state_id)
-                from tmp
-                group by state_id
+                cfd.quantity_usd,
+                state
+            from cfd_states
+                inner join cfd on cfd.cfd_id = cfd_states.cfd_id
+            where id in (
+                select
+                    max(id) as id
+                from cfd_states
+                group by (cfd_id)
             )
         )
 
@@ -479,31 +469,26 @@ pub async fn load_cfds_by_oracle_event_id(
 
         cfd as (
             select
+                ord.order_id,
                 id as cfd_id,
-                order_id,
-                quantity_usd as quantity_usd
+                quantity_usd
             from cfds
-        ),
-
-        tmp as (
-            select
-                id as state_id,
-                cfd_id,
-                state
-            from cfd_states
+                inner join ord on ord.order_id = id
         ),
 
         state as (
             select
-                tmp.state,
+                id as state_id,
                 cfd.order_id,
-                cfd.quantity_usd
-            from tmp
-            inner join cfd on tmp.cfd_id = cfd.cfd_id
-            where tmp.state_id in (
-                select max(state_id)
-                from tmp
-                group by state_id
+                cfd.quantity_usd,
+                state
+            from cfd_states
+                inner join cfd on cfd.cfd_id = cfd_states.cfd_id
+            where id in (
+                select
+                    max(id) as id
+                from cfd_states
+                group by (cfd_id)
             )
         )
 
