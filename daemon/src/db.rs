@@ -1,14 +1,11 @@
-use crate::model::cfd::{Cfd, CfdState, Order, OrderId};
-use crate::model::{BitMexPriceEventId, Usd};
+use crate::model::cfd::{Cfd, CfdState, Order, OrderId, Origin};
+use crate::model::{BitMexPriceEventId, Leverage, Position};
 use anyhow::{Context, Result};
 use rocket_db_pools::sqlx;
-use rust_decimal::Decimal;
 use sqlx::pool::PoolConnection;
-use sqlx::{Sqlite, SqlitePool};
+use sqlx::{Acquire, Sqlite, SqlitePool};
+use std::convert::TryInto;
 use std::mem;
-use std::str::FromStr;
-use std::time::SystemTime;
-use time::{Duration, OffsetDateTime};
 
 pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(pool).await?;
@@ -16,48 +13,49 @@ pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
 }
 
 pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"insert into orders (
-            uuid,
-            trading_pair,
-            position,
-            initial_price,
-            min_quantity,
-            max_quantity,
-            leverage,
-            liquidation_price,
-            creation_timestamp_seconds,
-            creation_timestamp_nanoseconds,
-            term_seconds,
-            term_nanoseconds,
-            origin,
-            oracle_event_id
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#,
+    let uuid = serde_json::to_string(&order.id).unwrap();
+    let trading_pair = serde_json::to_string(&order.trading_pair).unwrap();
+    let position = serde_json::to_string(&order.position).unwrap();
+    let initial_price = serde_json::to_string(&order.price).unwrap();
+    let min_quantity = serde_json::to_string(&order.min_quantity).unwrap();
+    let max_quantity = serde_json::to_string(&order.max_quantity).unwrap();
+    let leverage = order.leverage.0;
+    let liquidation_price = serde_json::to_string(&order.liquidation_price).unwrap();
+    let creation_timestamp = serde_json::to_string(&order.creation_timestamp).unwrap();
+    let term = serde_json::to_string(&order.term).unwrap();
+    let origin = serde_json::to_string(&order.origin).unwrap();
+    let oracle_event_id = order.oracle_event_id.to_string();
+
+    sqlx::query!(
+        r#"
+            insert into orders (
+                uuid,
+                trading_pair,
+                position,
+                initial_price,
+                min_quantity,
+                max_quantity,
+                leverage,
+                liquidation_price,
+                creation_timestamp,
+                term,
+                origin,
+                oracle_event_id
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            "#,
+        uuid,
+        trading_pair,
+        position,
+        initial_price,
+        min_quantity,
+        max_quantity,
+        leverage,
+        liquidation_price,
+        creation_timestamp,
+        term,
+        origin,
+        oracle_event_id
     )
-    .bind(&order.id)
-    .bind(&order.trading_pair)
-    .bind(&order.position)
-    .bind(&order.price.to_string())
-    .bind(&order.min_quantity.to_string())
-    .bind(&order.max_quantity.to_string())
-    .bind(order.leverage.0)
-    .bind(&order.liquidation_price.to_string())
-    .bind(
-        order
-            .creation_timestamp
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_secs() as i64,
-    )
-    .bind(
-        order
-            .creation_timestamp
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .subsec_nanos() as i32,
-    )
-    .bind(&order.term.whole_seconds())
-    .bind(&order.term.subsec_nanoseconds())
-    .bind(&order.origin)
-    .bind(&order.oracle_event_id.to_string())
     .execute(conn)
     .await?;
 
@@ -68,82 +66,96 @@ pub async fn load_order_by_id(
     id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<Order> {
+    let uuid = serde_json::to_string(&id).unwrap();
+
     let row = sqlx::query!(
         r#"
-        select
-            uuid as "uuid: crate::model::cfd::OrderId",
-            trading_pair as "trading_pair: crate::model::TradingPair",
-            position as "position: crate::model::Position",
-            initial_price,
-            min_quantity,
-            max_quantity,
-            leverage as "leverage: crate::model::Leverage",
-            liquidation_price,
-            creation_timestamp_seconds as "ts_secs: i64",
-            creation_timestamp_nanoseconds as "ts_nanos: i32",
-            term_seconds as "term_secs: i64",
-            term_nanoseconds as "term_nanos: i32",
-            origin as "origin: crate::model::cfd::Origin",
-            oracle_event_id
-
-        from orders
-        where uuid = $1
+        select * from orders where uuid = ?;
         "#,
-        id
+        uuid
     )
     .fetch_one(conn)
     .await?;
 
+    let uuid = serde_json::from_str(row.uuid.as_str()).unwrap();
+    let trading_pair = serde_json::from_str(row.trading_pair.as_str()).unwrap();
+    let position = serde_json::from_str(row.position.as_str()).unwrap();
+    let initial_price = serde_json::from_str(row.initial_price.as_str()).unwrap();
+    let min_quantity = serde_json::from_str(row.min_quantity.as_str()).unwrap();
+    let max_quantity = serde_json::from_str(row.max_quantity.as_str()).unwrap();
+    let leverage = Leverage(row.leverage.try_into().unwrap());
+    let liquidation_price = serde_json::from_str(row.liquidation_price.as_str()).unwrap();
+    let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
+    let term = serde_json::from_str(row.term.as_str()).unwrap();
+    let origin = serde_json::from_str(row.origin.as_str()).unwrap();
+
     Ok(Order {
-        id: row.uuid,
-        trading_pair: row.trading_pair,
-        position: row.position,
-        price: Usd(Decimal::from_str(&row.initial_price)?),
-        min_quantity: Usd(Decimal::from_str(&row.min_quantity)?),
-        max_quantity: Usd(Decimal::from_str(&row.max_quantity)?),
-        leverage: row.leverage,
-        liquidation_price: Usd(Decimal::from_str(&row.liquidation_price)?),
-        creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
-        term: Duration::new(row.term_secs, row.term_nanos),
-        origin: row.origin,
-        oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
+        id: uuid,
+        trading_pair,
+        position,
+        price: initial_price,
+        min_quantity,
+        max_quantity,
+        leverage,
+        liquidation_price,
+        creation_timestamp,
+        term,
+        origin,
+        oracle_event_id: row.oracle_event_id.parse().unwrap(),
     })
 }
 
 pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
-    let order_uuid = &cfd.order.id;
-    let quantity_usd = &cfd.quantity_usd.to_string();
-    let state = serde_json::to_string(&cfd.state)?;
-    sqlx::query!(
-        r#"
-        insert into cfds (
-            order_id,
-            order_uuid,
-            quantity_usd
-        )
-        select
-            id as order_id,
-            uuid as order_uuid,
-            $2 as quantity_usd
-        from orders
-        where uuid = $1;
+    let mut tx = conn.begin().await?;
 
-        insert into cfd_states (
-            cfd_id,
-            state
-        )
-        select
-            id as cfd_id,
-            $3 as state
-        from cfds
-        order by id desc limit 1;
+    let order_uuid = serde_json::to_string(&cfd.order.id)?;
+    let order_row = sqlx::query!(
+        r#"
+        select * from orders where uuid = ?;
         "#,
+        order_uuid
+    )
+    .fetch_one(&mut tx)
+    .await?;
+
+    let order_id = order_row.id;
+    let quantity_usd = serde_json::to_string(&cfd.quantity_usd)?;
+
+    let cfd_state = serde_json::to_string(&cfd.state)?;
+
+    // save cfd + state in a transaction to make sure the state is only inserted if the cfd was
+    // inserted
+
+    let cfd_id = sqlx::query!(
+        r#"
+            insert into cfds (
+                order_id,
+                order_uuid,
+                quantity_usd
+            ) values (?, ?, ?);
+            "#,
+        order_id,
         order_uuid,
         quantity_usd,
-        state
     )
-    .execute(conn)
+    .execute(&mut tx)
+    .await?
+    .last_insert_rowid();
+
+    sqlx::query!(
+        r#"
+            insert into cfd_states (
+                cfd_id,
+                state
+            ) values (?, ?);
+            "#,
+        cfd_id,
+        cfd_state,
+    )
+    .execute(&mut tx)
     .await?;
+
+    tx.commit().await?;
 
     Ok(())
 }
@@ -175,7 +187,7 @@ pub async fn insert_new_cfd_state_by_order_id(
         insert into cfd_states (
             cfd_id,
             state
-        ) values ($1, $2);
+        ) values (?, ?);
         "#,
         cfd_id,
         cfd_state,
@@ -191,12 +203,14 @@ async fn load_cfd_id_by_order_uuid(
     order_uuid: OrderId,
     conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<i64> {
+    let order_uuid = serde_json::to_string(&order_uuid)?;
+
     let cfd_id = sqlx::query!(
         r#"
         select
             id
         from cfds
-        where order_uuid = $1;
+        where order_uuid = ?;
         "#,
         order_uuid
     )
@@ -218,7 +232,7 @@ async fn load_latest_cfd_state(
         select
             state
         from cfd_states
-        where cfd_id = $1
+        where cfd_id = ?
         order by id desc
         limit 1;
         "#,
@@ -236,215 +250,159 @@ pub async fn load_cfd_by_order_id(
     order_id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
 ) -> Result<Cfd> {
+    let order_uuid = serde_json::to_string(&order_id)?;
+
     let row = sqlx::query!(
         r#"
-        with ord as (
-            select
-                id as order_id,
-                uuid,
-                trading_pair,
-                position,
-                initial_price,
-                min_quantity,
-                max_quantity,
-                leverage,
-                liquidation_price,
-                creation_timestamp_seconds as ts_secs,
-                creation_timestamp_nanoseconds as ts_nanos,
-                term_seconds as term_secs,
-                term_nanoseconds as term_nanos,
-                origin,
-                oracle_event_id
-            from orders
-        ),
-
-        cfd as (
-            select
-                id as cfd_id,
-                order_id,
-                quantity_usd
-            from cfds
-        ),
-
-        tmp as (
-            select
-                id as state_id,
-                cfd_id,
-                state
-            from cfd_states
-        ),
-
-        state as (
-            select
-                tmp.state,
-                cfd.order_id,
-                cfd.quantity_usd
-            from tmp
-            inner join cfd on tmp.cfd_id = cfd.cfd_id
-            where tmp.state_id in (
-                select max(state_id)
-                from tmp
-                group by state_id
-            )
-        )
-
         select
-            ord.uuid as "uuid: crate::model::cfd::OrderId",
-            ord.trading_pair as "trading_pair: crate::model::TradingPair",
-            ord.position as "position: crate::model::Position",
-            ord.initial_price,
-            ord.min_quantity,
-            ord.max_quantity,
-            ord.leverage as "leverage: crate::model::Leverage",
-            ord.liquidation_price,
-            ord.ts_secs as "ts_secs: i64",
-            ord.ts_nanos as "ts_nanos: i32",
-            ord.term_secs as "term_secs: i64",
-            ord.term_nanos as "term_nanos: i32",
-            ord.origin as "origin: crate::model::cfd::Origin",
-            ord.oracle_event_id,
-            state.quantity_usd,
-            state.state
-
-        from ord
-            inner join state on state.order_id = ord.order_id
-
-        where ord.uuid = $1
+            orders.uuid as order_id,
+            orders.initial_price as price,
+            orders.min_quantity as min_quantity,
+            orders.max_quantity as max_quantity,
+            orders.leverage as leverage,
+            orders.trading_pair as trading_pair,
+            orders.position as position,
+            orders.origin as origin,
+            orders.liquidation_price as liquidation_price,
+            orders.creation_timestamp as creation_timestamp,
+            orders.term as term,
+            orders.oracle_event_id,
+            cfds.quantity_usd as quantity_usd,
+            cfd_states.state as state
+        from cfds as cfds
+        inner join orders as orders on cfds.order_id = orders.id
+        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id
+        where cfd_states.state in (
+            select
+              state
+              from cfd_states
+            where cfd_id = cfds.id
+            order by id desc
+            limit 1
+        )
+        and orders.uuid = ?
         "#,
-        order_id
+        order_uuid
     )
     .fetch_one(conn)
     .await?;
 
+    let order_id = serde_json::from_str(row.order_id.as_str()).unwrap();
+    let trading_pair = serde_json::from_str(row.trading_pair.as_str()).unwrap();
+    let position: Position = serde_json::from_str(row.position.as_str()).unwrap();
+    let price = serde_json::from_str(row.price.as_str()).unwrap();
+    let min_quantity = serde_json::from_str(row.min_quantity.as_str()).unwrap();
+    let max_quantity = serde_json::from_str(row.max_quantity.as_str()).unwrap();
+    let leverage = Leverage(row.leverage.try_into().unwrap());
+    let liquidation_price = serde_json::from_str(row.liquidation_price.as_str()).unwrap();
+    let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
+    let term = serde_json::from_str(row.term.as_str()).unwrap();
+    let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
+    let oracle_event_id = row.oracle_event_id.parse().unwrap();
+
+    let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
+    let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
+
     let order = Order {
-        id: row.uuid,
-        trading_pair: row.trading_pair,
-        position: row.position,
-        price: Usd(Decimal::from_str(&row.initial_price)?),
-        min_quantity: Usd(Decimal::from_str(&row.min_quantity)?),
-        max_quantity: Usd(Decimal::from_str(&row.max_quantity)?),
-        leverage: row.leverage,
-        liquidation_price: Usd(Decimal::from_str(&row.liquidation_price)?),
-        creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
-        term: Duration::new(row.term_secs, row.term_nanos),
-        origin: row.origin,
-        oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
+        id: order_id,
+        trading_pair,
+        position,
+        price,
+        min_quantity,
+        max_quantity,
+        leverage,
+        liquidation_price,
+        creation_timestamp,
+        term,
+        origin,
+        oracle_event_id,
     };
 
-    // TODO:
-    // still have the use of serde_json::from_str() here, which will be dealt with
-    // via https://github.com/comit-network/hermes/issues/290
     Ok(Cfd {
         order,
-        quantity_usd: Usd(Decimal::from_str(&row.quantity_usd)?),
-        state: serde_json::from_str(row.state.as_str())?,
+        quantity_usd: quantity,
+        state: latest_state,
     })
 }
 
 /// Loads all CFDs with the latest state as the CFD state
 pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<Vec<Cfd>> {
+    // TODO: Could be optimized with something like but not sure it's worth the complexity:
+
     let rows = sqlx::query!(
         r#"
-        with ord as (
-            select
-                id as order_id,
-                uuid,
-                trading_pair,
-                position,
-                initial_price,
-                min_quantity,
-                max_quantity,
-                leverage,
-                liquidation_price,
-                creation_timestamp_seconds as ts_secs,
-                creation_timestamp_nanoseconds as ts_nanos,
-                term_seconds as term_secs,
-                term_nanoseconds as term_nanos,
-                origin,
-                oracle_event_id
-            from orders
-        ),
-
-        cfd as (
-            select
-                id as cfd_id,
-                order_id,
-                quantity_usd as quantity_usd
-            from cfds
-        ),
-
-        tmp as (
-            select
-                id as state_id,
-                cfd_id,
-                state
-            from cfd_states
-        ),
-
-        state as (
-            select
-                tmp.state,
-                cfd.order_id,
-                cfd.quantity_usd
-            from tmp
-            inner join cfd on tmp.cfd_id = cfd.cfd_id
-            where tmp.state_id in (
-                select max(state_id)
-                from tmp
-                group by state_id
-            )
-        )
-
         select
-            ord.uuid as "uuid: crate::model::cfd::OrderId",
-            ord.trading_pair as "trading_pair: crate::model::TradingPair",
-            ord.position as "position: crate::model::Position",
-            ord.initial_price,
-            ord.min_quantity,
-            ord.max_quantity,
-            ord.leverage as "leverage: crate::model::Leverage",
-            ord.liquidation_price,
-            ord.ts_secs as "ts_secs: i64",
-            ord.ts_nanos as "ts_nanos: i32",
-            ord.term_secs as "term_secs: i64",
-            ord.term_nanos as "term_nanos: i32",
-            ord.origin as "origin: crate::model::cfd::Origin",
-            ord.oracle_event_id,
-            state.quantity_usd,
-            state.state
-
-        from ord
-            inner join state on state.order_id = ord.order_id
+            orders.uuid as order_id,
+            orders.initial_price as price,
+            orders.min_quantity as min_quantity,
+            orders.max_quantity as max_quantity,
+            orders.leverage as leverage,
+            orders.trading_pair as trading_pair,
+            orders.position as position,
+            orders.origin as origin,
+            orders.liquidation_price as liquidation_price,
+            orders.creation_timestamp as creation_timestamp,
+            orders.term as term,
+            orders.oracle_event_id,
+            cfds.quantity_usd as quantity_usd,
+            cfd_states.state as state
+        from cfds as cfds
+        inner join orders as orders on cfds.order_id = orders.id
+        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id
+        where cfd_states.state in (
+            select
+              state
+              from cfd_states
+            where cfd_id = cfds.id
+            order by id desc
+            limit 1
+        )
         "#
     )
     .fetch_all(conn)
     .await?;
 
     let cfds = rows
-        .into_iter()
+        .iter()
         .map(|row| {
+            let order_id = serde_json::from_str(row.order_id.as_str()).unwrap();
+            let trading_pair = serde_json::from_str(row.trading_pair.as_str()).unwrap();
+            let position: Position = serde_json::from_str(row.position.as_str()).unwrap();
+            let price = serde_json::from_str(row.price.as_str()).unwrap();
+            let min_quantity = serde_json::from_str(row.min_quantity.as_str()).unwrap();
+            let max_quantity = serde_json::from_str(row.max_quantity.as_str()).unwrap();
+            let leverage = Leverage(row.leverage.try_into().unwrap());
+            let liquidation_price = serde_json::from_str(row.liquidation_price.as_str()).unwrap();
+            let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
+            let term = serde_json::from_str(row.term.as_str()).unwrap();
+            let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
+            let oracle_event_id = row.oracle_event_id.clone().parse().unwrap();
+
+            let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
+            let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
+
             let order = Order {
-                id: row.uuid,
-                trading_pair: row.trading_pair,
-                position: row.position,
-                price: Usd(Decimal::from_str(&row.initial_price)?),
-                min_quantity: Usd(Decimal::from_str(&row.min_quantity)?),
-                max_quantity: Usd(Decimal::from_str(&row.max_quantity)?),
-                leverage: row.leverage,
-                liquidation_price: Usd(Decimal::from_str(&row.liquidation_price)?),
-                creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
-                term: Duration::new(row.term_secs, row.term_nanos),
-                origin: row.origin,
-                oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
+                id: order_id,
+                trading_pair,
+                position,
+                price,
+                min_quantity,
+                max_quantity,
+                leverage,
+                liquidation_price,
+                creation_timestamp,
+                term,
+                origin,
+                oracle_event_id,
             };
 
-            Ok(Cfd {
+            Cfd {
                 order,
-                quantity_usd: Usd(Decimal::from_str(&row.quantity_usd)?),
-                state: serde_json::from_str(row.state.as_str())?,
-            })
+                quantity_usd: quantity,
+                state: latest_state,
+            }
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect();
 
     Ok(cfds)
 }
@@ -454,122 +412,86 @@ pub async fn load_cfds_by_oracle_event_id(
     oracle_event_id: BitMexPriceEventId,
     conn: &mut PoolConnection<Sqlite>,
 ) -> anyhow::Result<Vec<Cfd>> {
-    let event_id = oracle_event_id.to_string();
+    let oracle_event_id = oracle_event_id.to_string();
+
     let rows = sqlx::query!(
         r#"
-        with ord as (
-            select
-                id as order_id,
-                uuid,
-                trading_pair,
-                position,
-                initial_price,
-                min_quantity,
-                max_quantity,
-                leverage,
-                liquidation_price,
-                creation_timestamp_seconds as ts_secs,
-                creation_timestamp_nanoseconds as ts_nanos,
-                term_seconds as term_secs,
-                term_nanoseconds as term_nanos,
-                origin,
-                oracle_event_id
-            from orders
-        ),
-
-        cfd as (
-            select
-                id as cfd_id,
-                order_id,
-                quantity_usd as quantity_usd
-            from cfds
-        ),
-
-        tmp as (
-            select
-                id as state_id,
-                cfd_id,
-                state
-            from cfd_states
-        ),
-
-        state as (
-            select
-                tmp.state,
-                cfd.order_id,
-                cfd.quantity_usd
-            from tmp
-            inner join cfd on tmp.cfd_id = cfd.cfd_id
-            where tmp.state_id in (
-                select max(state_id)
-                from tmp
-                group by state_id
-            )
-        )
-
         select
-            ord.uuid as "uuid: crate::model::cfd::OrderId",
-            ord.trading_pair as "trading_pair: crate::model::TradingPair",
-            ord.position as "position: crate::model::Position",
-            ord.initial_price,
-            ord.min_quantity,
-            ord.max_quantity,
-            ord.leverage as "leverage: crate::model::Leverage",
-            ord.liquidation_price,
-            ord.ts_secs as "ts_secs: i64",
-            ord.ts_nanos as "ts_nanos: i32",
-            ord.term_secs as "term_secs: i64",
-            ord.term_nanos as "term_nanos: i32",
-            ord.origin as "origin: crate::model::cfd::Origin",
-            ord.oracle_event_id,
-            state.quantity_usd,
-            state.state
-
-        from ord
-            inner join state on state.order_id = ord.order_id
-
-        where ord.oracle_event_id = $1
+            orders.uuid as order_id,
+            orders.initial_price as price,
+            orders.min_quantity as min_quantity,
+            orders.max_quantity as max_quantity,
+            orders.leverage as leverage,
+            orders.trading_pair as trading_pair,
+            orders.position as position,
+            orders.origin as origin,
+            orders.liquidation_price as liquidation_price,
+            orders.creation_timestamp as creation_timestamp,
+            orders.term as term,
+            orders.oracle_event_id,
+            cfds.quantity_usd as quantity_usd,
+            cfd_states.state as state
+        from cfds as cfds
+        inner join orders as orders on cfds.order_id = orders.id
+        inner join cfd_states as cfd_states on cfd_states.cfd_id = cfds.id
+        where cfd_states.state in (
+            select
+              state
+              from cfd_states
+            where cfd_id = cfds.id
+            order by id desc
+            limit 1
+        )
+        and orders.oracle_event_id = ?
         "#,
-        event_id
+        oracle_event_id
     )
     .fetch_all(conn)
     .await?;
 
     let cfds = rows
-        .into_iter()
+        .iter()
         .map(|row| {
+            let order_id = serde_json::from_str(row.order_id.as_str()).unwrap();
+            let trading_pair = serde_json::from_str(row.trading_pair.as_str()).unwrap();
+            let position: Position = serde_json::from_str(row.position.as_str()).unwrap();
+            let price = serde_json::from_str(row.price.as_str()).unwrap();
+            let min_quantity = serde_json::from_str(row.min_quantity.as_str()).unwrap();
+            let max_quantity = serde_json::from_str(row.max_quantity.as_str()).unwrap();
+            let leverage = Leverage(row.leverage.try_into().unwrap());
+            let liquidation_price = serde_json::from_str(row.liquidation_price.as_str()).unwrap();
+            let creation_timestamp = serde_json::from_str(row.creation_timestamp.as_str()).unwrap();
+            let term = serde_json::from_str(row.term.as_str()).unwrap();
+            let origin: Origin = serde_json::from_str(row.origin.as_str()).unwrap();
+            let oracle_event_id = row.oracle_event_id.parse().unwrap();
+
+            let quantity = serde_json::from_str(row.quantity_usd.as_str()).unwrap();
+            let latest_state = serde_json::from_str(row.state.as_str()).unwrap();
+
             let order = Order {
-                id: row.uuid,
-                trading_pair: row.trading_pair,
-                position: row.position,
-                price: Usd(Decimal::from_str(&row.initial_price)?),
-                min_quantity: Usd(Decimal::from_str(&row.min_quantity)?),
-                max_quantity: Usd(Decimal::from_str(&row.max_quantity)?),
-                leverage: row.leverage,
-                liquidation_price: Usd(Decimal::from_str(&row.liquidation_price)?),
-                creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
-                term: Duration::new(row.term_secs, row.term_nanos),
-                origin: row.origin,
-                oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
+                id: order_id,
+                trading_pair,
+                position,
+                price,
+                min_quantity,
+                max_quantity,
+                leverage,
+                liquidation_price,
+                creation_timestamp,
+                term,
+                origin,
+                oracle_event_id,
             };
 
-            Ok(Cfd {
+            Cfd {
                 order,
-                quantity_usd: Usd(Decimal::from_str(&row.quantity_usd)?),
-                state: serde_json::from_str(row.state.as_str())?,
-            })
+                quantity_usd: quantity,
+                state: latest_state,
+            }
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect();
 
     Ok(cfds)
-}
-
-fn convert_to_system_time(row_secs: i64, row_nanos: i32) -> Result<SystemTime> {
-    let secs = row_secs as i128;
-    let nanos = row_nanos as i128;
-    let offset_dt = OffsetDateTime::from_unix_timestamp_nanos(secs * 1_000_000_000 + nanos)?;
-
-    Ok(SystemTime::from(offset_dt))
 }
 
 #[cfg(test)]
@@ -584,7 +506,7 @@ mod tests {
     use time::OffsetDateTime;
 
     use crate::db::insert_order;
-    use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Order, Origin};
+    use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Order};
     use crate::model::Usd;
 
     use super::*;
@@ -720,7 +642,7 @@ mod tests {
             .unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
-        let cfd_from_db = cfds_from_db.last().unwrap().clone();
+        let cfd_from_db = cfds_from_db.first().unwrap().clone();
         assert_eq!(cfd, cfd_from_db)
     }
 
