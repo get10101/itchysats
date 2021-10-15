@@ -148,7 +148,7 @@ pub fn post_cfd_action(
     action: CfdAction,
     cfd_action_channel: &State<Box<dyn MessageChannel<maker_cfd::CfdAction>>>,
     _auth: Authenticated,
-) -> Result<status::Accepted<()>, status::BadRequest<String>> {
+) -> Result<status::Accepted<()>, status::BadRequest<()>> {
     use maker_cfd::CfdAction::*;
     match action {
         CfdAction::AcceptOrder => {
@@ -188,14 +188,14 @@ pub fn post_cfd_action(
                 .expect("actor to always be available");
         }
         CfdAction::Settle => {
-            return Err(status::BadRequest(Some(
-                "Collaborative settlement can only be triggered by taker".to_string(),
-            )));
+            tracing::error!("Collaborative settlement can only be triggered by taker");
+
+            return Err(status::BadRequest(None));
         }
         CfdAction::RollOver => {
-            return Err(status::BadRequest(Some(
-                "RollOver proposal can only be triggered by taker".to_string(),
-            )));
+            tracing::error!("RollOver proposal can only be triggered by taker");
+
+            return Err(status::BadRequest(None));
         }
     }
 
