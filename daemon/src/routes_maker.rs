@@ -148,58 +148,35 @@ pub fn post_cfd_action(
     action: CfdAction,
     cfd_action_channel: &State<Box<dyn MessageChannel<maker_cfd::CfdAction>>>,
     _auth: Authenticated,
-) -> Result<status::Accepted<()>, status::BadRequest<String>> {
+) -> Result<status::Accepted<()>, status::Custom<()>> {
     use maker_cfd::CfdAction::*;
-    match action {
-        CfdAction::AcceptOrder => {
-            cfd_action_channel
-                .do_send(AcceptOrder { order_id: id })
-                .expect("actor to always be available");
-        }
-        CfdAction::RejectOrder => {
-            cfd_action_channel
-                .do_send(RejectOrder { order_id: id })
-                .expect("actor to always be available");
-        }
+    let result = match action {
+        CfdAction::AcceptOrder => cfd_action_channel.do_send(AcceptOrder { order_id: id }),
+        CfdAction::RejectOrder => cfd_action_channel.do_send(RejectOrder { order_id: id }),
         CfdAction::AcceptSettlement => {
-            cfd_action_channel
-                .do_send(AcceptSettlement { order_id: id })
-                .expect("actor to always be available");
+            cfd_action_channel.do_send(AcceptSettlement { order_id: id })
         }
         CfdAction::RejectSettlement => {
-            cfd_action_channel
-                .do_send(RejectSettlement { order_id: id })
-                .expect("actor to always be available");
+            cfd_action_channel.do_send(RejectSettlement { order_id: id })
         }
-
-        CfdAction::AcceptRollOver => {
-            cfd_action_channel
-                .do_send(AcceptRollOver { order_id: id })
-                .expect("actor to always be available");
-        }
-        CfdAction::RejectRollOver => {
-            cfd_action_channel
-                .do_send(RejectRollOver { order_id: id })
-                .expect("actor to always be available");
-        }
-        CfdAction::Commit => {
-            cfd_action_channel
-                .do_send(Commit { order_id: id })
-                .expect("actor to always be available");
-        }
+        CfdAction::AcceptRollOver => cfd_action_channel.do_send(AcceptRollOver { order_id: id }),
+        CfdAction::RejectRollOver => cfd_action_channel.do_send(RejectRollOver { order_id: id }),
+        CfdAction::Commit => cfd_action_channel.do_send(Commit { order_id: id }),
         CfdAction::Settle => {
-            return Err(status::BadRequest(Some(
-                "Collaborative settlement can only be triggered by taker".to_string(),
-            )));
+            tracing::error!("Collaborative settlement can only be triggered by taker");
+
+            return Err(status::Custom(Status::BadRequest, ()));
         }
         CfdAction::RollOver => {
-            return Err(status::BadRequest(Some(
-                "RollOver proposal can only be triggered by taker".to_string(),
-            )));
-        }
-    }
+            tracing::error!("RollOver proposal can only be triggered by taker");
 
-    Ok(status::Accepted(None))
+            return Err(status::Custom(Status::BadRequest, ()));
+        }
+    };
+
+    result
+        .map(|()| status::Accepted(None))
+        .map_err(|_| status::Custom(Status::InternalServerError, ()))
 }
 
 #[rocket::get("/alive")]

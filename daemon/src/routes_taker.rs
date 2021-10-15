@@ -15,7 +15,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
-use xtra::Address;
+use xtra::prelude::MessageChannel;
 
 #[rocket::get("/feed")]
 pub async fn feed(
@@ -104,14 +104,13 @@ pub struct CfdOrderRequest {
 #[rocket::post("/cfd/order", data = "<cfd_order_request>")]
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
-    cfd_actor_inbox: &State<Address<taker_cfd::Actor>>,
+    take_offer_channel: &State<Box<dyn MessageChannel<taker_cfd::TakeOffer>>>,
 ) {
-    cfd_actor_inbox
-        .do_send_async(taker_cfd::TakeOffer {
+    take_offer_channel
+        .do_send(taker_cfd::TakeOffer {
             order_id: cfd_order_request.order_id,
             quantity: cfd_order_request.quantity,
         })
-        .await
         .expect("actor to always be available");
 }
 
@@ -119,9 +118,10 @@ pub async fn post_order_request(
 pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
-    cfd_actor_address: &State<Address<taker_cfd::Actor>>,
+    cfd_action_channel: &State<Box<dyn MessageChannel<taker_cfd::CfdAction>>>,
     quote_updates: &State<watch::Receiver<bitmex_price_feed::Quote>>,
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
+    use taker_cfd::CfdAction::*;
     match action {
         CfdAction::AcceptOrder
         | CfdAction::RejectOrder
@@ -132,25 +132,22 @@ pub async fn post_cfd_action(
             return Err(status::BadRequest(None));
         }
         CfdAction::Commit => {
-            cfd_actor_address
-                .do_send_async(taker_cfd::Commit { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(Commit { order_id: id })
                 .map_err(|e| status::BadRequest(Some(e.to_string())))?;
         }
         CfdAction::Settle => {
             let current_price = quote_updates.borrow().for_taker();
-            cfd_actor_address
-                .do_send_async(taker_cfd::ProposeSettlement {
+            cfd_action_channel
+                .do_send(ProposeSettlement {
                     order_id: id,
                     current_price,
                 })
-                .await
                 .expect("actor to always be available");
         }
         CfdAction::RollOver => {
-            cfd_actor_address
-                .do_send_async(taker_cfd::ProposeRollOver { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(ProposeRollOver { order_id: id })
                 .expect("actor to always be available");
         }
     }
