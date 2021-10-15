@@ -44,7 +44,7 @@ pub struct Actor<C = bdk::electrum_client::Client> {
 }
 
 impl Actor<bdk::electrum_client::Client> {
-    pub async fn new(
+    pub fn new(
         electrum_rpc_url: &str,
         event_channel: impl StrongMessageChannel<Event> + 'static,
         cfds: Vec<Cfd>,

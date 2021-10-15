@@ -250,7 +250,6 @@ async fn main() -> Result<()> {
                             cfd_maker_actor_inbox.clone(),
                             cfds.clone(),
                         )
-                        .await
                         .unwrap(),
                     ),
                 );
