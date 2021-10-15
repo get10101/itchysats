@@ -267,9 +267,11 @@ async fn main() -> Result<()> {
 
                 let take_offer_channel =
                     MessageChannel::<taker_cfd::TakeOffer>::clone_channel(&cfd_actor_inbox);
+                let cfd_action_channel =
+                    MessageChannel::<taker_cfd::CfdAction>::clone_channel(&cfd_actor_inbox);
                 Ok(rocket
                     .manage(take_offer_channel)
-                    .manage(cfd_actor_inbox)
+                    .manage(cfd_action_channel)
                     .manage(cfd_feed_receiver))
             },
         ))

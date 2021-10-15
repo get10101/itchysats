@@ -16,7 +16,6 @@ use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
 use xtra::prelude::MessageChannel;
-use xtra::Address;
 
 #[rocket::get("/feed")]
 pub async fn feed(
@@ -119,7 +118,7 @@ pub async fn post_order_request(
 pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
-    cfd_actor_address: &State<Address<taker_cfd::Actor>>,
+    cfd_action_channel: &State<Box<dyn MessageChannel<taker_cfd::CfdAction>>>,
     quote_updates: &State<watch::Receiver<bitmex_price_feed::Quote>>,
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
     use taker_cfd::CfdAction::*;
@@ -133,25 +132,22 @@ pub async fn post_cfd_action(
             return Err(status::BadRequest(None));
         }
         CfdAction::Commit => {
-            cfd_actor_address
-                .do_send_async(Commit { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(Commit { order_id: id })
                 .map_err(|e| status::BadRequest(Some(e.to_string())))?;
         }
         CfdAction::Settle => {
             let current_price = quote_updates.borrow().for_taker();
-            cfd_actor_address
-                .do_send_async(ProposeSettlement {
+            cfd_action_channel
+                .do_send(ProposeSettlement {
                     order_id: id,
                     current_price,
                 })
-                .await
                 .expect("actor to always be available");
         }
         CfdAction::RollOver => {
-            cfd_actor_address
-                .do_send_async(ProposeRollOver { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(ProposeRollOver { order_id: id })
                 .expect("actor to always be available");
         }
     }
