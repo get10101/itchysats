@@ -541,7 +541,6 @@ dependencies = [
  "serde_with",
  "sha2",
  "sqlx",
- "tempfile",
  "thiserror",
  "time",
  "tokio",
