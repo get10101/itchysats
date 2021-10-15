@@ -22,7 +22,6 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
-use xtra::KeepRunning;
 
 pub enum CfdAction {
     AcceptOrder { order_id: OrderId },
@@ -54,9 +53,9 @@ pub struct CfdRollOverCompleted {
     pub dlc: Result<Dlc>,
 }
 
-pub struct TakerStreamMessage {
+pub struct FromTaker {
     pub taker_id: TakerId,
-    pub item: Result<wire::TakerToMaker>,
+    pub msg: wire::TakerToMaker,
 }
 
 pub struct Actor {
@@ -948,21 +947,8 @@ impl Handler<monitor::Event> for Actor {
 }
 
 #[async_trait]
-impl Handler<TakerStreamMessage> for Actor {
-    async fn handle(&mut self, msg: TakerStreamMessage, _ctx: &mut Context<Self>) -> KeepRunning {
-        let TakerStreamMessage { taker_id, item } = msg;
-        let msg = match item {
-            Ok(msg) => msg,
-            Err(e) => {
-                tracing::warn!(
-                    "Error while receiving message from taker {}: {:#}",
-                    taker_id,
-                    e
-                );
-                return KeepRunning::Yes;
-            }
-        };
-
+impl Handler<FromTaker> for Actor {
+    async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker, _ctx: &mut Context<Self>) {
         match msg {
             wire::TakerToMaker::TakeOrder { order_id, quantity } => {
                 log_error!(self.handle_take_order(taker_id, order_id, quantity))
@@ -1011,8 +997,6 @@ impl Handler<TakerStreamMessage> for Actor {
                 log_error!(self.handle_inc_roll_over_protocol_msg(taker_id, msg))
             }
         }
-
-        KeepRunning::Yes
     }
 }
 
@@ -1043,9 +1027,8 @@ impl Message for CfdAction {
     type Result = ();
 }
 
-// this signature is a bit different because we use `Address::attach_stream`
-impl Message for TakerStreamMessage {
-    type Result = KeepRunning;
+impl Message for FromTaker {
+    type Result = ();
 }
 
 impl xtra::Actor for Actor {}

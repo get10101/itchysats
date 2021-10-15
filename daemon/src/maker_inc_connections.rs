@@ -1,10 +1,10 @@
-use crate::maker_cfd::{NewTakerOnline, TakerStreamMessage};
+use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
-use crate::{log_error, maker_cfd, send_to_socket, wire};
+use crate::{forward_only_ok, log_error, maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use async_trait::async_trait;
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
@@ -65,13 +65,13 @@ pub enum ListenerMessage {
 pub struct Actor {
     write_connections: HashMap<TakerId, Address<send_to_socket::Actor<wire::MakerToTaker>>>,
     new_taker_channel: Box<dyn MessageChannel<NewTakerOnline>>,
-    taker_msg_channel: Box<dyn MessageChannel<TakerStreamMessage>>,
+    taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
 }
 
 impl Actor {
     pub fn new(
         new_taker_channel: &impl MessageChannel<NewTakerOnline>,
-        taker_msg_channel: &impl MessageChannel<TakerStreamMessage>,
+        taker_msg_channel: &impl MessageChannel<FromTaker>,
     ) -> Self {
         Self {
             write_connections: HashMap::new(),
@@ -165,7 +165,7 @@ impl Actor {
         &mut self,
         stream: TcpStream,
         address: SocketAddr,
-        ctx: &mut Context<Self>,
+        _: &mut Context<Self>,
     ) {
         let taker_id = TakerId::default();
 
@@ -173,16 +173,30 @@ impl Actor {
 
         let (read, write) = stream.into_split();
         let read = FramedRead::new(read, wire::JsonCodec::default())
-            .map(move |item| maker_cfd::TakerStreamMessage { taker_id, item });
+            .map_ok(move |msg| FromTaker { taker_id, msg })
+            .map(forward_only_ok::Message);
 
-        let this = ctx.address().expect("self to be alive");
-        tokio::spawn(this.attach_stream(Box::pin(read)));
+        let (out_msg_actor_address, mut out_msg_actor_context) = xtra::Context::new(None);
 
-        let out_msg_actor = send_to_socket::Actor::new(write)
+        let forward_to_cfd = forward_only_ok::Actor::new(self.taker_msg_channel.clone_channel())
             .create(None)
             .spawn_global();
 
-        self.write_connections.insert(taker_id, out_msg_actor);
+        // only allow outgoing messages while we are successfully reading incoming ones
+        tokio::spawn(async move {
+            let mut actor = send_to_socket::Actor::new(write);
+
+            out_msg_actor_context
+                .handle_while(&mut actor, forward_to_cfd.attach_stream(read))
+                .await;
+
+            tracing::error!("Closing connection to taker {}", taker_id);
+
+            actor.shutdown().await;
+        });
+
+        self.write_connections
+            .insert(taker_id, out_msg_actor_address);
 
         let _ = self
             .new_taker_channel
@@ -230,14 +244,6 @@ impl Handler<ListenerMessage> for Actor {
                 KeepRunning::Yes
             }
         }
-    }
-}
-
-#[async_trait]
-impl Handler<TakerStreamMessage> for Actor {
-    async fn handle(&mut self, msg: TakerStreamMessage, _ctx: &mut Context<Self>) -> KeepRunning {
-        log_error!(self.taker_msg_channel.send(msg));
-        KeepRunning::Yes
     }
 }
 
