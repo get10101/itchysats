@@ -168,6 +168,14 @@ pub struct CfdStateCommon {
     pub transition_timestamp: SystemTime,
 }
 
+impl Default for CfdStateCommon {
+    fn default() -> Self {
+        Self {
+            transition_timestamp: SystemTime::now(),
+        }
+    }
+}
+
 // Note: De-/Serialize with type tag to make handling on UI easier
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

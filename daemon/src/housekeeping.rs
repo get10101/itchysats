@@ -4,7 +4,6 @@ use crate::wallet::Wallet;
 use anyhow::Result;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
-use std::time::SystemTime;
 
 pub async fn transition_non_continue_cfds_to_setup_failed(
     conn: &mut PoolConnection<Sqlite>,
@@ -13,9 +12,7 @@ pub async fn transition_non_continue_cfds_to_setup_failed(
 
     for cfd in cfds.iter_mut().filter(|cfd| Cfd::is_cleanup(cfd)) {
         cfd.state = CfdState::SetupFailed {
-            common: CfdStateCommon {
-                transition_timestamp: SystemTime::now(),
-            },
+            common: CfdStateCommon::default(),
             info: format!("Was in state {} which cannot be continued.", cfd.state),
         };
 

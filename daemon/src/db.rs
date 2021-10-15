@@ -592,9 +592,7 @@ mod tests {
         let mut cfd_1 = Cfd::dummy().insert(&mut conn).await;
 
         cfd_1.state = CfdState::Accepted {
-            common: CfdStateCommon {
-                transition_timestamp: SystemTime::now(),
-            },
+            common: CfdStateCommon::default(),
         };
         append_cfd_state(&cfd_1, &mut conn).await.unwrap();
 
@@ -607,9 +605,7 @@ mod tests {
         assert_eq!(vec![cfd_1.clone(), cfd_2.clone()], cfds_from_db);
 
         cfd_2.state = CfdState::Rejected {
-            common: CfdStateCommon {
-                transition_timestamp: SystemTime::now(),
-            },
+            common: CfdStateCommon::default(),
         };
         append_cfd_state(&cfd_2, &mut conn).await.unwrap();
 

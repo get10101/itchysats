@@ -401,9 +401,7 @@ impl Actor {
 
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         cfd.state = CfdState::PendingOpen {
-            common: CfdStateCommon {
-                transition_timestamp: SystemTime::now(),
-            },
+            common: CfdStateCommon::default(),
             dlc: dlc.clone(),
             attestation: None,
         };
@@ -444,9 +442,7 @@ impl Actor {
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         cfd.state = CfdState::Open {
-            common: CfdStateCommon {
-                transition_timestamp: SystemTime::now(),
-            },
+            common: CfdStateCommon::default(),
             dlc: dlc.clone(),
             attestation: None,
             collaborative_close: None,
@@ -568,9 +564,7 @@ impl Actor {
 
         // 3. Insert that we are in contract setup and refresh our own feed
         cfd.state = CfdState::ContractSetup {
-            common: CfdStateCommon {
-                transition_timestamp: SystemTime::now(),
-            },
+            common: CfdStateCommon::default(),
         };
 
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
@@ -656,9 +650,7 @@ impl Actor {
     ) -> Result<()> {
         // Update order in db
         cfd.state = CfdState::Rejected {
-            common: CfdStateCommon {
-                transition_timestamp: SystemTime::now(),
-            },
+            common: CfdStateCommon::default(),
         };
 
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
