@@ -512,8 +512,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_load_order() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
         let order = Order::default();
         insert_order(&order, &mut conn).await.unwrap();
@@ -525,8 +524,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_load_cfd() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
         let cfd = Cfd::default();
 
@@ -540,8 +538,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_load_cfd_by_order_id() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
         let cfd = Cfd::default();
         let order_id = cfd.order.id;
@@ -555,8 +552,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_load_cfd_by_order_id_multiple() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
         let cfd = Cfd::default();
         let order_id = cfd.order.id;
@@ -579,8 +575,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_load_cfd_by_oracle_event_id() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
         let oracle_event_id_1 =
             BitMexPriceEventId::with_20_digits(datetime!(2021-10-13 10:00:00).assume_utc());
@@ -623,8 +618,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_new_cfd_state_and_load_with_multiple_cfd() {
-        let pool = setup_test_db().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = setup_test_db().await;
 
         let mut cfd_1 = Cfd::default();
 
@@ -673,7 +667,7 @@ mod tests {
         assert!(cfds_from_db.contains(&cfd_2));
     }
 
-    async fn setup_test_db() -> SqlitePool {
+    async fn setup_test_db() -> PoolConnection<Sqlite> {
         let temp_db = tempdir().unwrap().into_path().join("tempdb");
 
         // file has to exist in order to connect with sqlite
@@ -685,7 +679,7 @@ mod tests {
 
         run_migrations(&pool).await.unwrap();
 
-        pool
+        pool.acquire().await.unwrap()
     }
 
     impl Default for Cfd {
