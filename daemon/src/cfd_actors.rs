@@ -11,7 +11,7 @@ pub async fn insert_cfd(
     conn: &mut PoolConnection<Sqlite>,
     update_sender: &watch::Sender<Vec<Cfd>>,
 ) -> Result<()> {
-    db::insert_cfd(cfd, conn).await?;
+    db::insert_cfd(&cfd, conn).await?;
     update_sender.send(db::load_all_cfds(conn).await?)?;
     Ok(())
 }

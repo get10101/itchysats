@@ -105,7 +105,7 @@ pub async fn load_order_by_id(
     })
 }
 
-pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
+pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
     let mut tx = conn.begin().await?;
 
     let order_uuid = serde_json::to_string(&cfd.order.id)?;
@@ -528,7 +528,7 @@ mod tests {
         let cfd = Cfd::dummy();
 
         insert_order(&cfd.order, &mut conn).await.unwrap();
-        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
+        insert_cfd(&cfd, &mut conn).await.unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         let cfd_from_db = cfds_from_db.first().unwrap().clone();
@@ -543,7 +543,7 @@ mod tests {
         let order_id = cfd.order.id;
 
         insert_order(&cfd.order, &mut conn).await.unwrap();
-        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
+        insert_cfd(&cfd, &mut conn).await.unwrap();
 
         let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
         assert_eq!(cfd, cfd_from_db)
@@ -557,7 +557,7 @@ mod tests {
         let order_id = cfd.order.id;
 
         insert_order(&cfd.order, &mut conn).await.unwrap();
-        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
+        insert_cfd(&cfd, &mut conn).await.unwrap();
 
         let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
         assert_eq!(cfd, cfd_from_db);
@@ -566,7 +566,7 @@ mod tests {
         let order_id = cfd.order.id;
 
         insert_order(&cfd.order, &mut conn).await.unwrap();
-        insert_cfd(cfd.clone(), &mut conn).await.unwrap();
+        insert_cfd(&cfd, &mut conn).await.unwrap();
 
         let cfd_from_db = load_cfd_by_order_id(order_id, &mut conn).await.unwrap();
         assert_eq!(cfd, cfd_from_db);
@@ -584,7 +584,7 @@ mod tests {
         let cfd_1 = Cfd::dummy().with_order(Order::dummy().with_oracle_event_id(oracle_event_id_1));
 
         insert_order(&cfd_1.order, &mut conn).await.unwrap();
-        insert_cfd(cfd_1.clone(), &mut conn).await.unwrap();
+        insert_cfd(&cfd_1, &mut conn).await.unwrap();
 
         let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_1, &mut conn)
             .await
@@ -594,7 +594,7 @@ mod tests {
         let cfd_2 = Cfd::dummy().with_order(Order::dummy().with_oracle_event_id(oracle_event_id_1));
 
         insert_order(&cfd_2.order, &mut conn).await.unwrap();
-        insert_cfd(cfd_2.clone(), &mut conn).await.unwrap();
+        insert_cfd(&cfd_2, &mut conn).await.unwrap();
 
         let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_1, &mut conn)
             .await
@@ -604,7 +604,7 @@ mod tests {
         let cfd_3 = Cfd::dummy().with_order(Order::dummy().with_oracle_event_id(oracle_event_id_2));
 
         insert_order(&cfd_3.order, &mut conn).await.unwrap();
-        insert_cfd(cfd_3.clone(), &mut conn).await.unwrap();
+        insert_cfd(&cfd_3, &mut conn).await.unwrap();
 
         let cfd_from_db = load_cfds_by_oracle_event_id(oracle_event_id_2, &mut conn)
             .await
@@ -619,7 +619,7 @@ mod tests {
         let mut cfd_1 = Cfd::dummy();
 
         insert_order(&cfd_1.order, &mut conn).await.unwrap();
-        insert_cfd(cfd_1.clone(), &mut conn).await.unwrap();
+        insert_cfd(&cfd_1, &mut conn).await.unwrap();
 
         cfd_1.state = CfdState::Accepted {
             common: CfdStateCommon {
@@ -639,7 +639,7 @@ mod tests {
         let mut cfd_2 = Cfd::dummy();
 
         insert_order(&cfd_2.order, &mut conn).await.unwrap();
-        insert_cfd(cfd_2.clone(), &mut conn).await.unwrap();
+        insert_cfd(&cfd_2, &mut conn).await.unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         assert_eq!(cfds_from_db.len(), 2);
