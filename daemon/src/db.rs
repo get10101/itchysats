@@ -498,6 +498,7 @@ mod tests {
     use std::fs::File;
     use std::time::SystemTime;
 
+    use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;
     use tempfile::tempdir;
