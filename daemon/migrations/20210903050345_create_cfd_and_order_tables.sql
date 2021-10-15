@@ -1,21 +1,19 @@
 -- todo: Decimal is had to deserialize as number so we use text
 create table if not exists orders
 (
-    id                              integer primary key autoincrement,
-    uuid                            text unique not null,
-    trading_pair                    text        not null,
-    position                        text        not null,
-    initial_price                   text        not null,
-    min_quantity                    text        not null,
-    max_quantity                    text        not null,
-    leverage                        integer     not null,
-    liquidation_price               text        not null,
-    creation_timestamp_seconds      integer     not null,
-    creation_timestamp_nanoseconds  integer     not null,
-    term_seconds                    integer     not null,
-    term_nanoseconds                integer     not null,
-    origin                          text        not null,
-    oracle_event_id                 text        not null
+    id                 integer primary key autoincrement,
+    uuid               text unique not null,
+    trading_pair       text        not null,
+    position           text        not null,
+    initial_price      text        not null,
+    min_quantity       text        not null,
+    max_quantity       text        not null,
+    leverage           integer     not null,
+    liquidation_price  text        not null,
+    creation_timestamp text        not null,
+    term               text        not null,
+    origin             text        not null,
+    oracle_event_id    text        not null
 );
 
 create unique index if not exists orders_uuid
