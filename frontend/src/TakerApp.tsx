@@ -153,6 +153,10 @@ export default function App() {
                         <Text align={"left"}>Order Price:</Text>
                         <Text>{order?.price}</Text>
 
+                        <Text align={"left"}>Available Quantity:</Text>
+                        <Text>
+                            {order ? (format(order?.min_quantity) + "-" + format!(order?.max_quantity)) : "None"}
+                        </Text>
                         <Text>Quantity:</Text>
                         <CurrencyInputField
                             onChange={(valueString: string) => {
