@@ -16,6 +16,8 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use cfd_protocol::secp256k1_zkp::Signature;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
+use rocket_db_pools::sqlx::Sqlite;
+use sqlx::pool::PoolConnection;
 use std::collections::HashMap;
 use std::time::SystemTime;
 use tokio::sync::watch;
@@ -513,12 +515,8 @@ impl Actor {
                 current_order.min_quantity,
                 current_order.max_quantity
             );
-            self.takers
-                .do_send_async(maker_inc_connections::TakerMessage {
-                    taker_id,
-                    command: TakerCommand::NotifyOrderRejected { id: order_id },
-                })
-                .await?;
+
+            self.reject_order(taker_id, order_id, conn).await?;
             return Ok(());
         }
 
@@ -654,6 +652,22 @@ impl Actor {
             }
         };
 
+        self.reject_order(taker_id, order_id, conn).await?;
+
+        Ok(())
+    }
+
+    /// Reject an order
+    ///
+    /// Rejection includes removing the order and saving in the db that it was rejected.
+    /// In the current model it is essential to remove the order because a taker
+    /// that received a rejection cannot communicate with the maker until a new order is published.
+    async fn reject_order(
+        &mut self,
+        taker_id: TakerId,
+        order_id: OrderId,
+        mut conn: PoolConnection<Sqlite>,
+    ) -> Result<()> {
         // Update order in db
         insert_new_cfd_state_by_order_id(
             order_id,
