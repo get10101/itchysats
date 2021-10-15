@@ -26,13 +26,17 @@ pub struct TakeOffer {
     pub quantity: Usd,
 }
 
-pub struct ProposeSettlement {
-    pub order_id: OrderId,
-    pub current_price: Usd,
-}
-
-pub struct ProposeRollOver {
-    pub order_id: OrderId,
+pub enum CfdAction {
+    ProposeSettlement {
+        order_id: OrderId,
+        current_price: Usd,
+    },
+    ProposeRollOver {
+        order_id: OrderId,
+    },
+    Commit {
+        order_id: OrderId,
+    },
 }
 
 pub struct MakerStreamMessage {
@@ -47,10 +51,6 @@ pub struct CfdSetupCompleted {
 pub struct CfdRollOverCompleted {
     pub order_id: OrderId,
     pub dlc: Result<Dlc>,
-}
-
-pub struct Commit {
-    pub order_id: OrderId,
 }
 
 enum SetupState {
@@ -610,16 +610,23 @@ impl Handler<TakeOffer> for Actor {
 }
 
 #[async_trait]
-impl Handler<ProposeSettlement> for Actor {
-    async fn handle(&mut self, msg: ProposeSettlement, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_propose_settlement(msg.order_id, msg.current_price));
-    }
-}
+impl Handler<CfdAction> for Actor {
+    async fn handle(&mut self, msg: CfdAction, _ctx: &mut Context<Self>) {
+        use CfdAction::*;
 
-#[async_trait]
-impl Handler<ProposeRollOver> for Actor {
-    async fn handle(&mut self, msg: ProposeRollOver, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_propose_roll_over(msg.order_id));
+        if let Err(e) = match msg {
+            Commit { order_id } => self.handle_commit(order_id).await,
+            ProposeSettlement {
+                order_id,
+                current_price,
+            } => {
+                self.handle_propose_settlement(order_id, current_price)
+                    .await
+            }
+            ProposeRollOver { order_id } => self.handle_propose_roll_over(order_id).await,
+        } {
+            tracing::error!("Message handler failed: {:#}", e);
+        }
     }
 }
 
@@ -704,22 +711,11 @@ impl Handler<oracle::Attestation> for Actor {
     }
 }
 
-#[async_trait]
-impl Handler<Commit> for Actor {
-    async fn handle(&mut self, msg: Commit, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_commit(msg.order_id))
-    }
-}
-
 impl Message for TakeOffer {
     type Result = ();
 }
 
-impl Message for ProposeSettlement {
-    type Result = ();
-}
-
-impl Message for ProposeRollOver {
+impl Message for CfdAction {
     type Result = ();
 }
 
@@ -733,10 +729,6 @@ impl Message for CfdSetupCompleted {
 }
 
 impl Message for CfdRollOverCompleted {
-    type Result = ();
-}
-
-impl Message for Commit {
     type Result = ();
 }
 

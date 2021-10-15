@@ -122,6 +122,7 @@ pub async fn post_cfd_action(
     cfd_actor_address: &State<Address<taker_cfd::Actor>>,
     quote_updates: &State<watch::Receiver<bitmex_price_feed::Quote>>,
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
+    use taker_cfd::CfdAction::*;
     match action {
         CfdAction::AcceptOrder
         | CfdAction::RejectOrder
@@ -133,14 +134,14 @@ pub async fn post_cfd_action(
         }
         CfdAction::Commit => {
             cfd_actor_address
-                .do_send_async(taker_cfd::Commit { order_id: id })
+                .do_send_async(Commit { order_id: id })
                 .await
                 .map_err(|e| status::BadRequest(Some(e.to_string())))?;
         }
         CfdAction::Settle => {
             let current_price = quote_updates.borrow().for_taker();
             cfd_actor_address
-                .do_send_async(taker_cfd::ProposeSettlement {
+                .do_send_async(ProposeSettlement {
                     order_id: id,
                     current_price,
                 })
@@ -149,7 +150,7 @@ pub async fn post_cfd_action(
         }
         CfdAction::RollOver => {
             cfd_actor_address
-                .do_send_async(taker_cfd::ProposeRollOver { order_id: id })
+                .do_send_async(ProposeRollOver { order_id: id })
                 .await
                 .expect("actor to always be available");
         }
