@@ -17,7 +17,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
-use xtra::Address;
+use xtra::prelude::MessageChannel;
 
 #[rocket::get("/feed")]
 pub async fn maker_feed(
@@ -109,18 +109,17 @@ pub struct CfdNewOrderRequest {
 }
 
 #[rocket::post("/order/sell", data = "<order>")]
-pub async fn post_sell_order(
+pub fn post_sell_order(
     order: Json<CfdNewOrderRequest>,
-    cfd_actor_address: &State<Address<maker_cfd::Actor>>,
+    new_order_channel: &State<Box<dyn MessageChannel<maker_cfd::NewOrder>>>,
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, Status> {
-    cfd_actor_address
-        .do_send_async(maker_cfd::NewOrder {
+    new_order_channel
+        .do_send(maker_cfd::NewOrder {
             price: order.price,
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
         })
-        .await
         .map_err(|_| Status::new(500))?;
 
     Ok(status::Accepted(None))
@@ -144,54 +143,48 @@ pub struct PromptAuthentication {
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
-pub async fn post_cfd_action(
+pub fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
-    cfd_actor_address: &State<Address<maker_cfd::Actor>>,
+    cfd_action_channel: &State<Box<dyn MessageChannel<maker_cfd::CfdAction>>>,
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, status::BadRequest<String>> {
+    use maker_cfd::CfdAction::*;
     match action {
         CfdAction::AcceptOrder => {
-            cfd_actor_address
-                .do_send_async(maker_cfd::AcceptOrder { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(AcceptOrder { order_id: id })
                 .expect("actor to always be available");
         }
         CfdAction::RejectOrder => {
-            cfd_actor_address
-                .do_send_async(maker_cfd::RejectOrder { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(RejectOrder { order_id: id })
                 .expect("actor to always be available");
         }
         CfdAction::AcceptSettlement => {
-            cfd_actor_address
-                .do_send_async(maker_cfd::AcceptSettlement { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(AcceptSettlement { order_id: id })
                 .expect("actor to always be available");
         }
         CfdAction::RejectSettlement => {
-            cfd_actor_address
-                .do_send_async(maker_cfd::RejectSettlement { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(RejectSettlement { order_id: id })
                 .expect("actor to always be available");
         }
 
         CfdAction::AcceptRollOver => {
-            cfd_actor_address
-                .do_send_async(maker_cfd::AcceptRollOver { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(AcceptRollOver { order_id: id })
                 .expect("actor to always be available");
         }
         CfdAction::RejectRollOver => {
-            cfd_actor_address
-                .do_send_async(maker_cfd::RejectRollOver { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(RejectRollOver { order_id: id })
                 .expect("actor to always be available");
         }
         CfdAction::Commit => {
-            cfd_actor_address
-                .do_send_async(maker_cfd::Commit { order_id: id })
-                .await
+            cfd_action_channel
+                .do_send(Commit { order_id: id })
                 .expect("actor to always be available");
         }
         CfdAction::Settle => {

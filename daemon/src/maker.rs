@@ -288,8 +288,13 @@ async fn main() -> Result<()> {
                 tokio::spawn(maker_inc_connections_address.attach_stream(listener_stream));
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
 
+                let cfd_action_channel =
+                    MessageChannel::<maker_cfd::CfdAction>::clone_channel(&cfd_maker_actor_inbox);
+                let new_order_channel =
+                    MessageChannel::<maker_cfd::NewOrder>::clone_channel(&cfd_maker_actor_inbox);
                 Ok(rocket
-                    .manage(cfd_maker_actor_inbox)
+                    .manage(cfd_action_channel)
+                    .manage(new_order_channel)
                     .manage(cfd_feed_receiver))
             },
         ))

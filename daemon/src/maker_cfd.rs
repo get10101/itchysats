@@ -22,32 +22,14 @@ use tokio::sync::watch;
 use xtra::prelude::*;
 use xtra::KeepRunning;
 
-pub struct AcceptOrder {
-    pub order_id: OrderId,
-}
-
-pub struct RejectOrder {
-    pub order_id: OrderId,
-}
-
-pub struct Commit {
-    pub order_id: OrderId,
-}
-
-pub struct AcceptSettlement {
-    pub order_id: OrderId,
-}
-
-pub struct RejectSettlement {
-    pub order_id: OrderId,
-}
-
-pub struct AcceptRollOver {
-    pub order_id: OrderId,
-}
-
-pub struct RejectRollOver {
-    pub order_id: OrderId,
+pub enum CfdAction {
+    AcceptOrder { order_id: OrderId },
+    RejectOrder { order_id: OrderId },
+    AcceptSettlement { order_id: OrderId },
+    RejectSettlement { order_id: OrderId },
+    AcceptRollOver { order_id: OrderId },
+    RejectRollOver { order_id: OrderId },
+    Commit { order_id: OrderId },
 }
 
 pub struct NewOrder {
@@ -887,51 +869,20 @@ impl Actor {
 }
 
 #[async_trait]
-impl Handler<AcceptOrder> for Actor {
-    async fn handle(&mut self, msg: AcceptOrder, ctx: &mut Context<Self>) {
-        log_error!(self.handle_accept_order(msg.order_id, ctx))
-    }
-}
-
-#[async_trait]
-impl Handler<RejectOrder> for Actor {
-    async fn handle(&mut self, msg: RejectOrder, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_reject_order(msg.order_id))
-    }
-}
-
-#[async_trait]
-impl Handler<AcceptSettlement> for Actor {
-    async fn handle(&mut self, msg: AcceptSettlement, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_accept_settlement(msg.order_id))
-    }
-}
-
-#[async_trait]
-impl Handler<RejectSettlement> for Actor {
-    async fn handle(&mut self, msg: RejectSettlement, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_reject_settlement(msg.order_id))
-    }
-}
-
-#[async_trait]
-impl Handler<AcceptRollOver> for Actor {
-    async fn handle(&mut self, msg: AcceptRollOver, ctx: &mut Context<Self>) {
-        log_error!(self.handle_accept_roll_over(msg.order_id, ctx))
-    }
-}
-
-#[async_trait]
-impl Handler<RejectRollOver> for Actor {
-    async fn handle(&mut self, msg: RejectRollOver, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_reject_roll_over(msg.order_id))
-    }
-}
-
-#[async_trait]
-impl Handler<Commit> for Actor {
-    async fn handle(&mut self, msg: Commit, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_commit(msg.order_id))
+impl Handler<CfdAction> for Actor {
+    async fn handle(&mut self, msg: CfdAction, ctx: &mut Context<Self>) {
+        use CfdAction::*;
+        if let Err(e) = match msg {
+            AcceptOrder { order_id } => self.handle_accept_order(order_id, ctx).await,
+            RejectOrder { order_id } => self.handle_reject_order(order_id).await,
+            AcceptSettlement { order_id } => self.handle_accept_settlement(order_id).await,
+            RejectSettlement { order_id } => self.handle_reject_settlement(order_id).await,
+            AcceptRollOver { order_id } => self.handle_accept_roll_over(order_id, ctx).await,
+            RejectRollOver { order_id } => self.handle_reject_roll_over(order_id).await,
+            Commit { order_id } => self.handle_commit(order_id).await,
+        } {
+            tracing::error!("Message handler failed: {:#}", e);
+        }
     }
 }
 
@@ -1062,31 +1013,7 @@ impl Message for CfdRollOverCompleted {
     type Result = ();
 }
 
-impl Message for AcceptOrder {
-    type Result = ();
-}
-
-impl Message for RejectOrder {
-    type Result = ();
-}
-
-impl Message for Commit {
-    type Result = ();
-}
-
-impl Message for AcceptSettlement {
-    type Result = ();
-}
-
-impl Message for RejectSettlement {
-    type Result = ();
-}
-
-impl Message for AcceptRollOver {
-    type Result = ();
-}
-
-impl Message for RejectRollOver {
+impl Message for CfdAction {
     type Result = ();
 }
 
