@@ -492,13 +492,10 @@ pub async fn load_cfds_by_oracle_event_id(
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-
     use pretty_assertions::assert_eq;
     use rand::Rng;
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;
-    use tempfile::tempdir;
     use time::macros::datetime;
     use time::OffsetDateTime;
 
@@ -647,14 +644,7 @@ mod tests {
     }
 
     async fn setup_test_db() -> PoolConnection<Sqlite> {
-        let temp_db = tempdir().unwrap().into_path().join("tempdb");
-
-        // file has to exist in order to connect with sqlite
-        File::create(temp_db.clone()).unwrap();
-
-        let pool = SqlitePool::connect(format!("sqlite:{}", temp_db.display()).as_str())
-            .await
-            .unwrap();
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
 
         run_migrations(&pool).await.unwrap();
 
