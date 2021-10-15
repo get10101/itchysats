@@ -262,7 +262,6 @@ pub enum CfdState {
     /// commit + cet).
     Closed {
         common: CfdStateCommon,
-        // TODO: Use an enum of either Attestation or CollaborativeSettlement
         payout: Payout,
     },
 

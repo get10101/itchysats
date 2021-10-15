@@ -148,7 +148,6 @@ pub async fn insert_cfd(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn insert_new_cfd_state_by_order_id(
     order_id: OrderId,
     new_state: &CfdState,

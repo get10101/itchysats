@@ -1,18 +1,16 @@
-use crate::db::{
-    insert_cfd, insert_new_cfd_state_by_order_id, insert_order, load_all_cfds,
-    load_cfd_by_order_id, load_cfds_by_oracle_event_id, load_order_by_id,
-};
+use crate::cfd_actors::{self, insert_cfd, insert_new_cfd_state_by_order_id};
+use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
-    Attestation, Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, CollaborativeSettlement, Dlc,
-    Order, OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal,
-    UpdateCfdProposal, UpdateCfdProposals,
+    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, CollaborativeSettlement, Dlc, Order,
+    OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
+    UpdateCfdProposals,
 };
 use crate::model::{BitMexPriceEventId, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
 use crate::{log_error, oracle, send_to_socket, setup_contract, wire};
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
@@ -158,10 +156,8 @@ impl Actor {
             },
         );
 
-        insert_cfd(cfd, &mut conn).await?;
+        insert_cfd(cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
         self.send_to_maker
             .do_send_async(wire::TakerToMaker::TakeOrder { order_id, quantity })
             .await?;
@@ -280,11 +276,10 @@ impl Actor {
                 },
             },
             &mut conn,
+            &self.cfd_feed_actor_inbox,
         )
         .await?;
 
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
         let offer_announcement = self
@@ -339,11 +334,9 @@ impl Actor {
                 },
             },
             &mut conn,
+            &self.cfd_feed_actor_inbox,
         )
         .await?;
-
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
 
         Ok(())
     }
@@ -373,10 +366,13 @@ impl Actor {
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
             CollaborativeSettlement::new(tx, dlc.script_pubkey_for(cfd.role()), proposal.price),
         ))?;
-        insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
-
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
+        insert_new_cfd_state_by_order_id(
+            cfd.order.id,
+            &cfd.state,
+            &mut conn,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
 
         self.remove_pending_proposal(&order_id)?;
 
@@ -504,11 +500,9 @@ impl Actor {
                 attestation: None,
             },
             &mut conn,
+            &self.cfd_feed_actor_inbox,
         )
         .await?;
-
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
 
         let txid = self
             .wallet
@@ -555,11 +549,9 @@ impl Actor {
                 collaborative_close: None,
             },
             &mut conn,
+            &self.cfd_feed_actor_inbox,
         )
         .await?;
-
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
 
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
@@ -574,129 +566,38 @@ impl Actor {
     }
 
     async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
-        let order_id = event.order_id();
-
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-
-        if cfd.handle(CfdStateChangeEvent::Monitor(event))?.is_none() {
-            // early exit if there was not state change
-            // this is for cases where we are already in a final state
-            return Ok(());
-        }
-
-        insert_new_cfd_state_by_order_id(order_id, &cfd.state, &mut conn).await?;
-
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
-
-        // TODO: code duplicateion maker/taker
-        if let CfdState::OpenCommitted { .. } = cfd.state {
-            self.try_cet_publication(&mut cfd).await?;
-        } else if let CfdState::MustRefund { .. } = cfd.state {
-            let signed_refund_tx = cfd.refund_tx()?;
-            let txid = self
-                .wallet
-                .try_broadcast_transaction(signed_refund_tx)
-                .await?;
-
-            tracing::info!("Refund transaction published on chain: {}", txid);
-        }
-
+        cfd_actors::handle_monitoring_event(
+            event,
+            &mut conn,
+            &self.wallet,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
         Ok(())
     }
 
-    // TODO: code duplicateion maker/taker
     async fn handle_commit(&mut self, order_id: OrderId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-
-        let signed_commit_tx = cfd.commit_tx()?;
-
-        let txid = self
-            .wallet
-            .try_broadcast_transaction(signed_commit_tx)
-            .await?;
-
-        if cfd.handle(CfdStateChangeEvent::CommitTxSent)?.is_none() {
-            bail!("If we can get the commit tx we should be able to transition")
-        }
-
-        insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
-        self.cfd_feed_actor_inbox
-            .send(load_all_cfds(&mut conn).await?)?;
-
-        tracing::info!("Commit transaction published on chain: {}", txid);
-
+        cfd_actors::handle_commit(
+            order_id,
+            &mut conn,
+            &self.wallet,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
         Ok(())
     }
 
     async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
-        tracing::debug!(
-            "Learnt latest oracle attestation for event: {}",
-            attestation.id
-        );
-
         let mut conn = self.db.acquire().await?;
-        let mut cfds = load_cfds_by_oracle_event_id(attestation.id, &mut conn).await?;
-
-        for (cfd, dlc) in cfds
-            .iter_mut()
-            .filter_map(|cfd| cfd.dlc().map(|dlc| (cfd, dlc)))
-        {
-            if cfd
-                .handle(CfdStateChangeEvent::OracleAttestation(Attestation::new(
-                    attestation.id,
-                    attestation.price,
-                    attestation.scalars.clone(),
-                    dlc,
-                    cfd.role(),
-                )?))?
-                .is_none()
-            {
-                // if we don't transition to a new state after oracle attestation we ignore the cfd
-                // this is for cases where we cannot handle the attestation which should be in a
-                // final state
-                continue;
-            }
-
-            insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
-            self.cfd_feed_actor_inbox
-                .send(load_all_cfds(&mut conn).await?)?;
-
-            if let Err(e) = self.try_cet_publication(cfd).await {
-                tracing::error!("Error when trying to publish CET: {:#}", e);
-                continue;
-            }
-        }
-
-        Ok(())
-    }
-
-    // TODO: code duplication maker/taker
-    async fn try_cet_publication(&mut self, cfd: &mut Cfd) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-
-        match cfd.cet()? {
-            Ok(cet) => {
-                let txid = self.wallet.try_broadcast_transaction(cet).await?;
-                tracing::info!("CET published with txid {}", txid);
-
-                if cfd.handle(CfdStateChangeEvent::CetSent)?.is_none() {
-                    bail!("If we can get the CET we should be able to transition")
-                }
-
-                insert_new_cfd_state_by_order_id(cfd.order.id, &cfd.state, &mut conn).await?;
-
-                self.cfd_feed_actor_inbox
-                    .send(load_all_cfds(&mut conn).await?)?;
-            }
-            Err(not_ready_yet) => {
-                tracing::debug!("{:#}", not_ready_yet);
-                return Ok(());
-            }
-        };
-
+        cfd_actors::handle_oracle_attestation(
+            attestation,
+            &mut conn,
+            &self.wallet,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
         Ok(())
     }
 }
