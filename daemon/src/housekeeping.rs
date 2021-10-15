@@ -1,5 +1,5 @@
 use crate::db::{append_cfd_state, load_all_cfds};
-use crate::model::cfd::{Cfd, CfdState, CfdStateCommon};
+use crate::model::cfd::{Cfd, CfdState};
 use crate::wallet::Wallet;
 use anyhow::Result;
 use sqlx::pool::PoolConnection;
@@ -11,10 +11,10 @@ pub async fn transition_non_continue_cfds_to_setup_failed(
     let mut cfds = load_all_cfds(conn).await?;
 
     for cfd in cfds.iter_mut().filter(|cfd| Cfd::is_cleanup(cfd)) {
-        cfd.state = CfdState::SetupFailed {
-            common: CfdStateCommon::default(),
-            info: format!("Was in state {} which cannot be continued.", cfd.state),
-        };
+        cfd.state = CfdState::setup_failed(format!(
+            "Was in state {} which cannot be continued.",
+            cfd.state
+        ));
 
         append_cfd_state(cfd, conn).await?;
     }

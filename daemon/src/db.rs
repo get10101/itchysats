@@ -493,7 +493,6 @@ pub async fn load_cfds_by_oracle_event_id(
 #[cfg(test)]
 mod tests {
     use std::fs::File;
-    use std::time::SystemTime;
 
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
@@ -503,7 +502,7 @@ mod tests {
     use time::OffsetDateTime;
 
     use crate::db::insert_order;
-    use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Order};
+    use crate::model::cfd::{Cfd, CfdState, Order};
     use crate::model::Usd;
 
     use super::*;
@@ -591,9 +590,7 @@ mod tests {
 
         let mut cfd_1 = Cfd::dummy().insert(&mut conn).await;
 
-        cfd_1.state = CfdState::Accepted {
-            common: CfdStateCommon::default(),
-        };
+        cfd_1.state = CfdState::accepted();
         append_cfd_state(&cfd_1, &mut conn).await.unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
@@ -604,9 +601,7 @@ mod tests {
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         assert_eq!(vec![cfd_1.clone(), cfd_2.clone()], cfds_from_db);
 
-        cfd_2.state = CfdState::Rejected {
-            common: CfdStateCommon::default(),
-        };
+        cfd_2.state = CfdState::rejected();
         append_cfd_state(&cfd_2, &mut conn).await.unwrap();
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
@@ -643,11 +638,7 @@ mod tests {
             Cfd::new(
                 Order::dummy(),
                 Usd(dec!(1000)),
-                CfdState::OutgoingOrderRequest {
-                    common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
-                    },
-                },
+                CfdState::outgoing_order_request(),
             )
         }
 

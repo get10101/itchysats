@@ -563,9 +563,7 @@ impl Actor {
             .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
 
         // 3. Insert that we are in contract setup and refresh our own feed
-        cfd.state = CfdState::ContractSetup {
-            common: CfdStateCommon::default(),
-        };
+        cfd.state = CfdState::contract_setup();
 
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
@@ -649,10 +647,7 @@ impl Actor {
         mut conn: PoolConnection<Sqlite>,
     ) -> Result<()> {
         // Update order in db
-        cfd.state = CfdState::Rejected {
-            common: CfdStateCommon::default(),
-        };
-
+        cfd.state = CfdState::rejected();
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.takers
