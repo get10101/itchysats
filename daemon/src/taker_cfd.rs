@@ -9,7 +9,7 @@ use crate::model::{BitMexPriceEventId, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
-use crate::{log_error, oracle, send_to_socket, setup_contract, wire};
+use crate::{log_error, oracle, setup_contract, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -74,7 +74,7 @@ pub struct Actor {
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_actor_inbox: watch::Sender<Option<Order>>,
     update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
-    send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
+    send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
     monitor_actor: Address<monitor::Actor>,
     setup_state: SetupState,
     roll_over_state: RollOverState,
@@ -91,7 +91,7 @@ impl Actor {
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
         update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
-        send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
+        send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker> + Send>,
         monitor_actor: Address<monitor::Actor>,
         oracle_actor: Address<oracle::Actor>,
     ) -> Self {
@@ -155,8 +155,7 @@ impl Actor {
         insert_cfd(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.send_to_maker
-            .do_send_async(wire::TakerToMaker::TakeOrder { order_id, quantity })
-            .await?;
+            .do_send(wire::TakerToMaker::TakeOrder { order_id, quantity })?;
 
         Ok(())
     }
@@ -191,14 +190,13 @@ impl Actor {
         self.send_pending_update_proposals()?;
 
         self.send_to_maker
-            .do_send_async(wire::TakerToMaker::ProposeSettlement {
+            .do_send(wire::TakerToMaker::ProposeSettlement {
                 order_id: proposal.order_id,
                 timestamp: proposal.timestamp,
                 taker: proposal.taker,
                 maker: proposal.maker,
                 price: proposal.price,
-            })
-            .await?;
+            })?;
         Ok(())
     }
 
@@ -222,11 +220,10 @@ impl Actor {
         self.send_pending_update_proposals()?;
 
         self.send_to_maker
-            .do_send_async(wire::TakerToMaker::ProposeRollOver {
+            .do_send(wire::TakerToMaker::ProposeRollOver {
                 order_id: proposal.order_id,
                 timestamp: proposal.timestamp,
-            })
-            .await?;
+            })?;
         Ok(())
     }
 
@@ -283,8 +280,8 @@ impl Actor {
 
         let contract_future = setup_contract::new(
             self.send_to_maker
-                .clone()
-                .into_sink()
+                .sink()
+                .clone_message_sink()
                 .with(|msg| future::ok(wire::TakerToMaker::Protocol(msg))),
             receiver,
             (self.oracle_pk, offer_announcement),
@@ -337,11 +334,10 @@ impl Actor {
         let (tx, sig_taker) = dlc.close_transaction(proposal)?;
 
         self.send_to_maker
-            .do_send_async(wire::TakerToMaker::InitiateSettlement {
+            .do_send(wire::TakerToMaker::InitiateSettlement {
                 order_id,
                 sig_taker,
-            })
-            .await?;
+            })?;
 
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
             CollaborativeSettlement::new(
@@ -391,8 +387,7 @@ impl Actor {
 
         let contract_future = setup_contract::roll_over(
             self.send_to_maker
-                .clone()
-                .into_sink()
+                .sink()
                 .with(|msg| future::ok(wire::TakerToMaker::RollOverProtocol(msg))),
             receiver,
             (self.oracle_pk, announcement),

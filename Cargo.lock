@@ -3353,7 +3353,7 @@ dependencies = [
 [[package]]
 name = "xtra"
 version = "0.6.0"
-source = "git+https://github.com/Restioson/xtra#7ae9140dbc30127aaa5f701078b72ac143babeb4"
+source = "git+https://github.com/luckysori/xtra?rev=19684c196f71ec762e595906cc88c6142b82092e#19684c196f71ec762e595906cc88c6142b82092e"
 dependencies = [
  "async-trait",
  "barrage",
