@@ -1,4 +1,5 @@
 use crate::model::cfd::{Cet, Cfd, Dlc, RevokedCommit, Role};
+use crate::tokio_ext::FutureExt;
 use crate::wallet::Wallet;
 use crate::wire::{
     Msg0, Msg1, Msg2, RollOverMsg, RollOverMsg0, RollOverMsg1, RollOverMsg2, SetupMsg,
@@ -21,6 +22,7 @@ use futures::{Sink, SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::ops::RangeInclusive;
+use std::time::Duration;
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
@@ -52,7 +54,9 @@ pub async fn new(
         .context("Failed to send Msg0")?;
     let msg0 = stream
         .select_next_some()
+        .timeout(Duration::from_secs(60))
         .await
+        .context("Expected Msg0 within 60 seconds")?
         .try_into_msg0()
         .context("Failed to read Msg0")?;
 
@@ -96,7 +100,9 @@ pub async fn new(
 
     let msg1 = stream
         .select_next_some()
+        .timeout(Duration::from_secs(60))
         .await
+        .context("Expected Msg1 within 60 seconds")?
         .try_into_msg1()
         .context("Failed to read Msg1")?;
 
@@ -173,7 +179,9 @@ pub async fn new(
     .context("Failed to send Msg2")?;
     let msg2 = stream
         .select_next_some()
+        .timeout(Duration::from_secs(60))
         .await
+        .context("Expected Msg2 within 60 seconds")?
         .try_into_msg2()
         .context("Failed to read Msg2")?;
     signed_lock_tx
