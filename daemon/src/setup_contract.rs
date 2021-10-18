@@ -1,4 +1,5 @@
 use crate::model::cfd::{Cet, Cfd, Dlc, RevokedCommit, Role};
+use crate::tokio_ext::FutureExt;
 use crate::wallet::Wallet;
 use crate::wire::{
     Msg0, Msg1, Msg2, RollOverMsg, RollOverMsg0, RollOverMsg1, RollOverMsg2, SetupMsg,
@@ -21,13 +22,10 @@ use futures::{Sink, SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::ops::RangeInclusive;
+use std::time::Duration;
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
-///
-/// TODO: Replace `nonce_pks` argument with set of
-/// `daemon::oracle::Announcement`, which can be mapped into
-/// `cfd_protocol::Announcement`.
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
@@ -56,9 +54,13 @@ pub async fn new(
         .context("Failed to send Msg0")?;
     let msg0 = stream
         .select_next_some()
+        .timeout(Duration::from_secs(60))
         .await
+        .context("Expected Msg0 within 60 seconds")?
         .try_into_msg0()
         .context("Failed to read Msg0")?;
+
+    tracing::info!("Exchanged setup parameters");
 
     let (other, other_punish) = msg0.into();
 
@@ -90,15 +92,21 @@ pub async fn new(
     )
     .context("Failed to create CFD transactions")?;
 
+    tracing::info!("Created CFD transactions");
+
     sink.send(SetupMsg::Msg1(Msg1::from(own_cfd_txs.clone())))
         .await
         .context("Failed to send Msg1")?;
 
     let msg1 = stream
         .select_next_some()
+        .timeout(Duration::from_secs(60))
         .await
+        .context("Expected Msg1 within 60 seconds")?
         .try_into_msg1()
         .context("Failed to read Msg1")?;
+
+    tracing::info!("Exchanged CFD transactions");
 
     let lock_desc = lock_descriptor(params.maker().identity_pk, params.taker().identity_pk);
 
@@ -161,6 +169,8 @@ pub async fn new(
     )
     .context("Refund signature does not verify")?;
 
+    tracing::info!("Verified all signatures");
+
     let mut signed_lock_tx = wallet.sign(lock_tx).await?;
     sink.send(SetupMsg::Msg2(Msg2 {
         signed_lock: signed_lock_tx.clone(),
@@ -169,7 +179,9 @@ pub async fn new(
     .context("Failed to send Msg2")?;
     let msg2 = stream
         .select_next_some()
+        .timeout(Duration::from_secs(60))
         .await
+        .context("Expected Msg2 within 60 seconds")?
         .try_into_msg2()
         .context("Failed to read Msg2")?;
     signed_lock_tx
@@ -215,6 +227,8 @@ pub async fn new(
             Ok((event_id.parse()?, cets))
         })
         .collect::<Result<HashMap<_, _>>>()?;
+
+    tracing::info!("Exchanged signed lock transaction");
 
     Ok(Dlc {
         identity: sk,
@@ -262,7 +276,9 @@ pub async fn roll_over(
     .context("Failed to send Msg0")?;
     let msg0 = stream
         .select_next_some()
+        .timeout(Duration::from_secs(60))
         .await
+        .context("Expected Msg0 within 60 seconds")?
         .try_into_msg0()
         .context("Failed to read Msg0")?;
 
@@ -330,7 +346,9 @@ pub async fn roll_over(
 
     let msg1 = stream
         .select_next_some()
+        .timeout(Duration::from_secs(60))
         .await
+        .context("Expected Msg1 within 60 seconds")?
         .try_into_msg1()
         .context("Failed to read Msg1")?;
 
@@ -443,13 +461,15 @@ pub async fn roll_over(
         revocation_sk: dlc.revocation,
     }))
     .await
-    .context("Failed to send Msg1")?;
+    .context("Failed to send Msg2")?;
 
     let msg2 = stream
         .select_next_some()
+        .timeout(Duration::from_secs(60))
         .await
+        .context("Expected Msg2 within 60 seconds")?
         .try_into_msg2()
-        .context("Failed to read Msg1")?;
+        .context("Failed to read Msg2")?;
     let revocation_sk_theirs = msg2.revocation_sk;
 
     {
