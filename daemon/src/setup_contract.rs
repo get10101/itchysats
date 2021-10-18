@@ -457,13 +457,13 @@ pub async fn roll_over(
         revocation_sk: dlc.revocation,
     }))
     .await
-    .context("Failed to send Msg1")?;
+    .context("Failed to send Msg2")?;
 
     let msg2 = stream
         .select_next_some()
         .await
         .try_into_msg2()
-        .context("Failed to read Msg1")?;
+        .context("Failed to read Msg2")?;
     let revocation_sk_theirs = msg2.revocation_sk;
 
     {
