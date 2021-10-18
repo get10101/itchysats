@@ -70,8 +70,8 @@ pub struct Actor {
 
 impl Actor {
     pub fn new(
-        new_taker_channel: &impl MessageChannel<NewTakerOnline>,
-        taker_msg_channel: &impl MessageChannel<FromTaker>,
+        new_taker_channel: Box<dyn MessageChannel<NewTakerOnline>>,
+        taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
     ) -> Self {
         Self {
             write_connections: HashMap::new(),

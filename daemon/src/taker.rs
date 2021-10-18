@@ -240,8 +240,8 @@ async fn main() -> Result<()> {
                 tokio::spawn(
                     monitor_actor_context.run(
                         monitor::Actor::new(
-                            opts.network.electrum(),
-                            cfd_actor_inbox.clone(),
+                            opts.network.electrum().to_string(),
+                            Box::new(cfd_actor_inbox.clone()),
                             cfds.clone(),
                         )
                         .await
@@ -258,7 +258,7 @@ async fn main() -> Result<()> {
                     .create(None)
                     .spawn_global();
 
-                tokio::spawn(oracle_actor_context.run(oracle::Actor::new(cfds, actor)));
+                tokio::spawn(oracle_actor_context.run(oracle::Actor::new(cfds, Box::new(actor))));
 
                 oracle_actor_address
                     .do_send_async(oracle::Sync)

@@ -50,11 +50,11 @@ pub struct Actor<C = bdk::electrum_client::Client> {
 
 impl Actor<bdk::electrum_client::Client> {
     pub async fn new(
-        electrum_rpc_url: &str,
-        event_channel: impl StrongMessageChannel<Event> + 'static,
+        electrum_rpc_url: String,
+        event_channel: Box<dyn StrongMessageChannel<Event>>,
         cfds: Vec<Cfd>,
     ) -> Result<Self> {
-        let client = bdk::electrum_client::Client::new(electrum_rpc_url)
+        let client = bdk::electrum_client::Client::new(&electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
         // Initially fetch the latest block for storing the height.
@@ -65,7 +65,7 @@ impl Actor<bdk::electrum_client::Client> {
 
         let mut actor = Self {
             cfds: HashMap::new(),
-            event_channel: Box::new(event_channel),
+            event_channel,
             client,
             latest_block_height: BlockHeight::try_from(latest_block)?,
             current_status: BTreeMap::default(),
