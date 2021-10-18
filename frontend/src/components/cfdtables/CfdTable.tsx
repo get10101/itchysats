@@ -180,9 +180,8 @@ export function CfdTable(
                 Header: "Action",
                 accessor: ({ actions, order_id }) => {
                     const actionIcons = actions.map((action) => {
-                        return (<Tooltip label={action}>
+                        return (<Tooltip label={action} key={action}>
                             <IconButton
-                                key={action}
                                 colorScheme={colorSchemaForAction(action)}
                                 aria-label={action}
                                 icon={iconForAction(action)}
