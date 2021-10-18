@@ -189,7 +189,7 @@ pub fn margin_calc(
 }
 
 #[derive(RustEmbed)]
-#[folder = "../frontend/dist/maker"]
+#[folder = "../frontend/dist/taker"]
 struct Asset;
 
 #[rocket::get("/assets/<file..>")]
