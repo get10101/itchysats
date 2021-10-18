@@ -221,7 +221,7 @@ async fn main() -> Result<()> {
                     cfd_feed_sender,
                     order_feed_sender,
                     update_cfd_feed_sender,
-                    send_to_maker,
+                    Box::new(send_to_maker),
                     monitor_actor_address.clone(),
                     oracle_actor_address.clone(),
                 )

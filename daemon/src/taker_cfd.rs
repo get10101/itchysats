@@ -9,7 +9,7 @@ use crate::model::{BitMexPriceEventId, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wallet::Wallet;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
-use crate::{log_error, oracle, send_to_socket, setup_contract, wire};
+use crate::{log_error, oracle, setup_contract, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -67,22 +67,22 @@ enum RollOverState {
     None,
 }
 
-pub struct Actor {
+pub struct Actor<O, M> {
     db: sqlx::SqlitePool,
     wallet: Wallet,
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_actor_inbox: watch::Sender<Option<Order>>,
     update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
-    send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
-    monitor_actor: Address<monitor::Actor>,
+    send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
+    monitor_actor: Address<M>,
     setup_state: SetupState,
     roll_over_state: RollOverState,
-    oracle_actor: Address<oracle::Actor>,
+    oracle_actor: Address<O>,
     current_pending_proposals: UpdateCfdProposals,
 }
 
-impl Actor {
+impl<O, M> Actor<O, M> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
@@ -91,9 +91,9 @@ impl Actor {
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
         update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
-        send_to_maker: Address<send_to_socket::Actor<wire::TakerToMaker>>,
-        monitor_actor: Address<monitor::Actor>,
-        oracle_actor: Address<oracle::Actor>,
+        send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker> + Send>,
+        monitor_actor: Address<M>,
+        oracle_actor: Address<O>,
     ) -> Self {
         Self {
             db,
@@ -155,8 +155,7 @@ impl Actor {
         insert_cfd(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.send_to_maker
-            .do_send_async(wire::TakerToMaker::TakeOrder { order_id, quantity })
-            .await?;
+            .do_send(wire::TakerToMaker::TakeOrder { order_id, quantity })?;
 
         Ok(())
     }
@@ -191,14 +190,13 @@ impl Actor {
         self.send_pending_update_proposals()?;
 
         self.send_to_maker
-            .do_send_async(wire::TakerToMaker::ProposeSettlement {
+            .do_send(wire::TakerToMaker::ProposeSettlement {
                 order_id: proposal.order_id,
                 timestamp: proposal.timestamp,
                 taker: proposal.taker,
                 maker: proposal.maker,
                 price: proposal.price,
-            })
-            .await?;
+            })?;
         Ok(())
     }
 
@@ -222,90 +220,10 @@ impl Actor {
         self.send_pending_update_proposals()?;
 
         self.send_to_maker
-            .do_send_async(wire::TakerToMaker::ProposeRollOver {
+            .do_send(wire::TakerToMaker::ProposeRollOver {
                 order_id: proposal.order_id,
                 timestamp: proposal.timestamp,
-            })
-            .await?;
-        Ok(())
-    }
-
-    async fn handle_new_order(&mut self, order: Option<Order>) -> Result<()> {
-        match order {
-            Some(mut order) => {
-                order.origin = Origin::Theirs;
-
-                self.oracle_actor
-                    .do_send_async(oracle::FetchAnnouncement(order.oracle_event_id))
-                    .await?;
-
-                let mut conn = self.db.acquire().await?;
-                insert_order(&order, &mut conn).await?;
-                self.order_feed_actor_inbox.send(Some(order))?;
-            }
-            None => {
-                self.order_feed_actor_inbox.send(None)?;
-            }
-        }
-        Ok(())
-    }
-
-    async fn handle_order_accepted(
-        &mut self,
-        order_id: OrderId,
-        ctx: &mut Context<Self>,
-    ) -> Result<()> {
-        tracing::info!(%order_id, "Order got accepted");
-
-        let (sender, receiver) = mpsc::unbounded();
-
-        if let SetupState::Active { .. } = self.setup_state {
-            anyhow::bail!("Already setting up a contract!")
-        }
-
-        let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::contract_setup();
-
-        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
-
-        let offer_announcement = self
-            .oracle_actor
-            .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
-            .await?
-            .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
-
-        self.oracle_actor
-            .do_send_async(oracle::MonitorAttestation {
-                event_id: offer_announcement.id,
-            })
-            .await?;
-
-        let contract_future = setup_contract::new(
-            self.send_to_maker
-                .clone()
-                .into_sink()
-                .with(|msg| future::ok(wire::TakerToMaker::Protocol(msg))),
-            receiver,
-            (self.oracle_pk, offer_announcement),
-            cfd,
-            self.wallet.clone(),
-            Role::Taker,
-        );
-
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
-
-        tokio::spawn(async move {
-            let dlc = contract_future.await;
-
-            this.do_send_async(CfdSetupCompleted { order_id, dlc })
-                .await
-        });
-
-        self.setup_state = SetupState::Active { sender };
-
+            })?;
         Ok(())
     }
 
@@ -318,104 +236,6 @@ impl Actor {
 
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
-        Ok(())
-    }
-
-    async fn handle_settlement_accepted(
-        &mut self,
-        order_id: OrderId,
-        _ctx: &mut Context<Self>,
-    ) -> Result<()> {
-        tracing::info!(%order_id, "Settlement proposal got accepted");
-
-        let mut conn = self.db.acquire().await?;
-
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
-
-        let proposal = self.get_settlement_proposal(order_id)?;
-        let (tx, sig_taker) = dlc.close_transaction(proposal)?;
-
-        self.send_to_maker
-            .do_send_async(wire::TakerToMaker::InitiateSettlement {
-                order_id,
-                sig_taker,
-            })
-            .await?;
-
-        cfd.handle(CfdStateChangeEvent::ProposalSigned(
-            CollaborativeSettlement::new(
-                tx.clone(),
-                dlc.script_pubkey_for(cfd.role()),
-                proposal.price,
-            ),
-        ))?;
-        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
-
-        self.remove_pending_proposal(&order_id)?;
-
-        self.monitor_actor
-            .do_send_async(monitor::CollaborativeSettlement {
-                order_id,
-                tx: (tx.txid(), dlc.script_pubkey_for(Role::Taker)),
-            })
-            .await?;
-
-        Ok(())
-    }
-
-    async fn handle_roll_over_accepted(
-        &mut self,
-        order_id: OrderId,
-        oracle_event_id: BitMexPriceEventId,
-        ctx: &mut Context<Self>,
-    ) -> Result<()> {
-        tracing::info!(%order_id, "Roll; over request got accepted");
-
-        let (sender, receiver) = mpsc::unbounded();
-
-        if let RollOverState::Active { .. } = self.roll_over_state {
-            anyhow::bail!("Already rolling over a contract!")
-        }
-
-        let mut conn = self.db.acquire().await?;
-
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
-
-        let announcement = self
-            .oracle_actor
-            .send(oracle::GetAnnouncement(oracle_event_id))
-            .await?
-            .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
-
-        let contract_future = setup_contract::roll_over(
-            self.send_to_maker
-                .clone()
-                .into_sink()
-                .with(|msg| future::ok(wire::TakerToMaker::RollOverProtocol(msg))),
-            receiver,
-            (self.oracle_pk, announcement),
-            cfd,
-            Role::Taker,
-            dlc,
-        );
-
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
-
-        self.roll_over_state = RollOverState::Active { sender };
-
-        tokio::spawn(async move {
-            let dlc = contract_future.await;
-
-            this.do_send_async(CfdRollOverCompleted { order_id, dlc })
-                .await
-        });
-
-        self.remove_pending_proposal(&order_id)
-            .context("Could not remove accepted roll over")?;
         Ok(())
     }
 
@@ -463,6 +283,73 @@ impl Actor {
         Ok(())
     }
 
+    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_monitoring_event(
+            event,
+            &mut conn,
+            &self.wallet,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn handle_commit(&mut self, order_id: OrderId) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_commit(
+            order_id,
+            &mut conn,
+            &self.wallet,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_oracle_attestation(
+            attestation,
+            &mut conn,
+            &self.wallet,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
+        Ok(())
+    }
+}
+
+impl<O, M> Actor<O, M>
+where
+    O: xtra::Handler<oracle::FetchAnnouncement>,
+{
+    async fn handle_new_order(&mut self, order: Option<Order>) -> Result<()> {
+        match order {
+            Some(mut order) => {
+                order.origin = Origin::Theirs;
+
+                self.oracle_actor
+                    .do_send_async(oracle::FetchAnnouncement(order.oracle_event_id))
+                    .await?;
+
+                let mut conn = self.db.acquire().await?;
+                insert_order(&order, &mut conn).await?;
+                self.order_feed_actor_inbox.send(Some(order))?;
+            }
+            None => {
+                self.order_feed_actor_inbox.send(None)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<O, M> Actor<O, M>
+where
+    O: xtra::Handler<oracle::MonitorAttestation>,
+    M: xtra::Handler<monitor::StartMonitoring>,
+{
     async fn handle_cfd_setup_completed(
         &mut self,
         order_id: OrderId,
@@ -505,7 +392,137 @@ impl Actor {
 
         Ok(())
     }
+}
 
+impl<O: 'static, M: 'static> Actor<O, M>
+where
+    Self: xtra::Handler<CfdSetupCompleted>,
+    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
+{
+    async fn handle_order_accepted(
+        &mut self,
+        order_id: OrderId,
+        ctx: &mut Context<Self>,
+    ) -> Result<()> {
+        tracing::info!(%order_id, "Order got accepted");
+
+        let (sender, receiver) = mpsc::unbounded();
+
+        if let SetupState::Active { .. } = self.setup_state {
+            anyhow::bail!("Already setting up a contract!")
+        }
+
+        let mut conn = self.db.acquire().await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::contract_setup();
+
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+
+        let offer_announcement = self
+            .oracle_actor
+            .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
+            .await?
+            .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
+
+        self.oracle_actor
+            .do_send_async(oracle::MonitorAttestation {
+                event_id: offer_announcement.id,
+            })
+            .await?;
+
+        let contract_future = setup_contract::new(
+            self.send_to_maker
+                .sink()
+                .clone_message_sink()
+                .with(|msg| future::ok(wire::TakerToMaker::Protocol(msg))),
+            receiver,
+            (self.oracle_pk, offer_announcement),
+            cfd,
+            self.wallet.clone(),
+            Role::Taker,
+        );
+
+        let this = ctx
+            .address()
+            .expect("actor to be able to give address to itself");
+
+        tokio::spawn(async move {
+            let dlc = contract_future.await;
+
+            this.do_send_async(CfdSetupCompleted { order_id, dlc })
+                .await
+        });
+
+        self.setup_state = SetupState::Active { sender };
+
+        Ok(())
+    }
+}
+
+impl<O: 'static, M: 'static> Actor<O, M>
+where
+    Self: xtra::Handler<CfdRollOverCompleted>,
+    O: xtra::Handler<oracle::GetAnnouncement>,
+{
+    async fn handle_roll_over_accepted(
+        &mut self,
+        order_id: OrderId,
+        oracle_event_id: BitMexPriceEventId,
+        ctx: &mut Context<Self>,
+    ) -> Result<()> {
+        tracing::info!(%order_id, "Roll; over request got accepted");
+
+        let (sender, receiver) = mpsc::unbounded();
+
+        if let RollOverState::Active { .. } = self.roll_over_state {
+            anyhow::bail!("Already rolling over a contract!")
+        }
+
+        let mut conn = self.db.acquire().await?;
+
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
+
+        let announcement = self
+            .oracle_actor
+            .send(oracle::GetAnnouncement(oracle_event_id))
+            .await?
+            .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
+
+        let contract_future = setup_contract::roll_over(
+            self.send_to_maker
+                .sink()
+                .with(|msg| future::ok(wire::TakerToMaker::RollOverProtocol(msg))),
+            receiver,
+            (self.oracle_pk, announcement),
+            cfd,
+            Role::Taker,
+            dlc,
+        );
+
+        let this = ctx
+            .address()
+            .expect("actor to be able to give address to itself");
+
+        self.roll_over_state = RollOverState::Active { sender };
+
+        tokio::spawn(async move {
+            let dlc = contract_future.await;
+
+            this.do_send_async(CfdRollOverCompleted { order_id, dlc })
+                .await
+        });
+
+        self.remove_pending_proposal(&order_id)
+            .context("Could not remove accepted roll over")?;
+        Ok(())
+    }
+}
+
+impl<O: 'static, M: 'static> Actor<O, M>
+where
+    M: xtra::Handler<monitor::StartMonitoring>,
+{
     async fn handle_cfd_roll_over_completed(
         &mut self,
         order_id: OrderId,
@@ -534,53 +551,64 @@ impl Actor {
 
         Ok(())
     }
+}
 
-    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_monitoring_event(
-            event,
-            &mut conn,
-            &self.wallet,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
-        Ok(())
-    }
+impl<O: 'static, M: 'static> Actor<O, M>
+where
+    M: xtra::Handler<monitor::CollaborativeSettlement>,
+{
+    async fn handle_settlement_accepted(
+        &mut self,
+        order_id: OrderId,
+        _ctx: &mut Context<Self>,
+    ) -> Result<()> {
+        tracing::info!(%order_id, "Settlement proposal got accepted");
 
-    async fn handle_commit(&mut self, order_id: OrderId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_commit(
-            order_id,
-            &mut conn,
-            &self.wallet,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
-        Ok(())
-    }
 
-    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_oracle_attestation(
-            attestation,
-            &mut conn,
-            &self.wallet,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
+
+        let proposal = self.get_settlement_proposal(order_id)?;
+        let (tx, sig_taker) = dlc.close_transaction(proposal)?;
+
+        self.send_to_maker
+            .do_send(wire::TakerToMaker::InitiateSettlement {
+                order_id,
+                sig_taker,
+            })?;
+
+        cfd.handle(CfdStateChangeEvent::ProposalSigned(
+            CollaborativeSettlement::new(
+                tx.clone(),
+                dlc.script_pubkey_for(cfd.role()),
+                proposal.price,
+            ),
+        ))?;
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+
+        self.remove_pending_proposal(&order_id)?;
+
+        self.monitor_actor
+            .do_send_async(monitor::CollaborativeSettlement {
+                order_id,
+                tx: (tx.txid(), dlc.script_pubkey_for(Role::Taker)),
+            })
+            .await?;
+
         Ok(())
     }
 }
 
 #[async_trait]
-impl Handler<TakeOffer> for Actor {
+impl<O: 'static, M: 'static> Handler<TakeOffer> for Actor<O, M> {
     async fn handle(&mut self, msg: TakeOffer, _ctx: &mut Context<Self>) {
         log_error!(self.handle_take_offer(msg.order_id, msg.quantity));
     }
 }
 
 #[async_trait]
-impl Handler<CfdAction> for Actor {
+impl<O: 'static, M: 'static> Handler<CfdAction> for Actor<O, M> {
     async fn handle(&mut self, msg: CfdAction, _ctx: &mut Context<Self>) {
         use CfdAction::*;
 
@@ -601,7 +629,14 @@ impl Handler<CfdAction> for Actor {
 }
 
 #[async_trait]
-impl Handler<MakerStreamMessage> for Actor {
+impl<O: 'static, M: 'static> Handler<MakerStreamMessage> for Actor<O, M>
+where
+    Self: xtra::Handler<CfdSetupCompleted> + xtra::Handler<CfdRollOverCompleted>,
+    O: xtra::Handler<oracle::FetchAnnouncement>
+        + xtra::Handler<oracle::GetAnnouncement>
+        + xtra::Handler<oracle::MonitorAttestation>,
+    M: xtra::Handler<monitor::CollaborativeSettlement>,
+{
     async fn handle(
         &mut self,
         message: MakerStreamMessage,
@@ -654,28 +689,35 @@ impl Handler<MakerStreamMessage> for Actor {
 }
 
 #[async_trait]
-impl Handler<CfdSetupCompleted> for Actor {
+impl<O: 'static, M: 'static> Handler<CfdSetupCompleted> for Actor<O, M>
+where
+    O: xtra::Handler<oracle::MonitorAttestation>,
+    M: xtra::Handler<monitor::StartMonitoring>,
+{
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_setup_completed(msg.order_id, msg.dlc));
     }
 }
 
 #[async_trait]
-impl Handler<CfdRollOverCompleted> for Actor {
+impl<O: 'static, M: 'static> Handler<CfdRollOverCompleted> for Actor<O, M>
+where
+    M: xtra::Handler<monitor::StartMonitoring>,
+{
     async fn handle(&mut self, msg: CfdRollOverCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_roll_over_completed(msg.order_id, msg.dlc));
     }
 }
 
 #[async_trait]
-impl Handler<monitor::Event> for Actor {
+impl<O: 'static, M: 'static> Handler<monitor::Event> for Actor<O, M> {
     async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) {
         log_error!(self.handle_monitoring_event(msg))
     }
 }
 
 #[async_trait]
-impl Handler<oracle::Attestation> for Actor {
+impl<O: 'static, M: 'static> Handler<oracle::Attestation> for Actor<O, M> {
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) {
         log_error!(self.handle_oracle_attestation(msg))
     }
@@ -702,4 +744,4 @@ impl Message for CfdRollOverCompleted {
     type Result = ();
 }
 
-impl xtra::Actor for Actor {}
+impl<O: 'static, M: 'static> xtra::Actor for Actor<O, M> {}
