@@ -17,6 +17,7 @@ use futures::channel::mpsc;
 use futures::{future, SinkExt};
 use std::collections::HashMap;
 use std::time::SystemTime;
+use time::OffsetDateTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
 use xtra::KeepRunning;
@@ -200,33 +201,6 @@ impl<O, M> Actor<O, M> {
         Ok(())
     }
 
-    async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
-        if self.current_pending_proposals.contains_key(&order_id) {
-            anyhow::bail!("An update for order id {} is already in progress", order_id)
-        }
-
-        let proposal = RollOverProposal {
-            order_id,
-            timestamp: SystemTime::now(),
-        };
-
-        self.current_pending_proposals.insert(
-            proposal.order_id,
-            UpdateCfdProposal::RollOverProposal {
-                proposal: proposal.clone(),
-                direction: SettlementKind::Outgoing,
-            },
-        );
-        self.send_pending_update_proposals()?;
-
-        self.send_to_maker
-            .do_send(wire::TakerToMaker::ProposeRollOver {
-                order_id: proposal.order_id,
-                timestamp: proposal.timestamp,
-            })?;
-        Ok(())
-    }
-
     async fn handle_order_rejected(&mut self, order_id: OrderId) -> Result<()> {
         tracing::debug!(%order_id, "Order rejected");
 
@@ -341,6 +315,40 @@ where
                 self.order_feed_actor_inbox.send(None)?;
             }
         }
+        Ok(())
+    }
+
+    async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
+        if self.current_pending_proposals.contains_key(&order_id) {
+            anyhow::bail!("An update for order id {} is already in progress", order_id)
+        }
+
+        let proposal = RollOverProposal {
+            order_id,
+            timestamp: SystemTime::now(),
+        };
+
+        self.current_pending_proposals.insert(
+            proposal.order_id,
+            UpdateCfdProposal::RollOverProposal {
+                proposal: proposal.clone(),
+                direction: SettlementKind::Outgoing,
+            },
+        );
+        self.send_pending_update_proposals()?;
+
+        // we are likely going to need this one
+        self.oracle_actor
+            .send(oracle::FetchAnnouncement(oracle::next_announcement_after(
+                OffsetDateTime::now_utc() + Order::TERM,
+            )?))
+            .await?;
+
+        self.send_to_maker
+            .do_send(wire::TakerToMaker::ProposeRollOver {
+                order_id: proposal.order_id,
+                timestamp: proposal.timestamp,
+            })?;
         Ok(())
     }
 }
@@ -610,7 +618,10 @@ impl<O: 'static, M: 'static> Handler<TakeOffer> for Actor<O, M> {
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static> Handler<CfdAction> for Actor<O, M> {
+impl<O: 'static, M: 'static> Handler<CfdAction> for Actor<O, M>
+where
+    O: xtra::Handler<oracle::FetchAnnouncement>,
+{
     async fn handle(&mut self, msg: CfdAction, _ctx: &mut Context<Self>) {
         use CfdAction::*;
 
