@@ -24,10 +24,6 @@ use std::ops::RangeInclusive;
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
-///
-/// TODO: Replace `nonce_pks` argument with set of
-/// `daemon::oracle::Announcement`, which can be mapped into
-/// `cfd_protocol::Announcement`.
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
