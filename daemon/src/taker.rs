@@ -251,7 +251,7 @@ async fn main() -> Result<()> {
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
                 tokio::spawn(
                     oracle_actor_context
-                        .notify_interval(Duration::from_secs(60), || oracle::Sync)
+                        .notify_interval(Duration::from_secs(5), || oracle::Sync)
                         .unwrap(),
                 );
                 let actor = fan_out::Actor::new(&[&cfd_actor_inbox, &monitor_actor_address])

@@ -224,13 +224,20 @@ impl xtra::Handler<GetAnnouncement> for Actor {
         msg: GetAnnouncement,
         _ctx: &mut xtra::Context<Self>,
     ) -> Option<Announcement> {
-        self.announcements
-            .get_key_value(&msg.0)
-            .map(|(id, (time, nonce_pks))| Announcement {
-                id: *id,
-                expected_outcome_time: *time,
-                nonce_pks: nonce_pks.clone(),
-            })
+        let announcement =
+            self.announcements
+                .get_key_value(&msg.0)
+                .map(|(id, (time, nonce_pks))| Announcement {
+                    id: *id,
+                    expected_outcome_time: *time,
+                    nonce_pks: nonce_pks.clone(),
+                });
+
+        if announcement.is_none() {
+            self.pending_announcements.insert(msg.0);
+        }
+
+        announcement
     }
 }
 
