@@ -203,63 +203,6 @@ impl<O, M, T> Actor<O, M, T> {
         Ok(())
     }
 
-    async fn handle_initiate_settlement(
-        &mut self,
-        taker_id: TakerId,
-        order_id: OrderId,
-        sig_taker: Signature,
-    ) -> Result<()> {
-        tracing::info!(
-            "Taker {} initiated collab settlement for order { } by sending their signature",
-            taker_id,
-            order_id,
-        );
-
-        let (proposal, agreed_taker_id) = self
-            .current_agreed_proposals
-            .get(&order_id)
-            .context("maker should have data matching the agreed settlement")?;
-
-        if taker_id != *agreed_taker_id {
-            anyhow::bail!(
-                "taker Id mismatch. Expected: {}, received: {}",
-                agreed_taker_id,
-                taker_id
-            );
-        }
-
-        let mut conn = self.db.acquire().await?;
-
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
-
-        let (tx, sig_maker) = dlc.close_transaction(proposal)?;
-
-        cfd.handle(CfdStateChangeEvent::ProposalSigned(
-            CollaborativeSettlement::new(
-                tx.clone(),
-                dlc.script_pubkey_for(cfd.role()),
-                proposal.price,
-            ),
-        ))?;
-        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
-
-        let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
-
-        let txid = self
-            .wallet
-            .try_broadcast_transaction(spend_tx.clone())
-            .await
-            .context("Broadcasting spend transaction")?;
-        tracing::info!("Close transaction published with txid {}", txid);
-
-        self.current_agreed_proposals
-            .remove(&order_id)
-            .context("remove accepted proposal after signing")?;
-
-        Ok(())
-    }
-
     async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
         let mut conn = self.db.acquire().await?;
         cfd_actors::handle_monitoring_event(
@@ -899,6 +842,72 @@ where
     }
 }
 
+impl<O, M, T> Actor<O, M, T>
+where
+    M: xtra::Handler<monitor::CollaborativeSettlement>,
+{
+    async fn handle_initiate_settlement(
+        &mut self,
+        taker_id: TakerId,
+        order_id: OrderId,
+        sig_taker: Signature,
+    ) -> Result<()> {
+        tracing::info!(
+            "Taker {} initiated collab settlement for order { } by sending their signature",
+            taker_id,
+            order_id,
+        );
+
+        let (proposal, agreed_taker_id) = self
+            .current_agreed_proposals
+            .get(&order_id)
+            .context("maker should have data matching the agreed settlement")?;
+
+        if taker_id != *agreed_taker_id {
+            anyhow::bail!(
+                "taker Id mismatch. Expected: {}, received: {}",
+                agreed_taker_id,
+                taker_id
+            );
+        }
+
+        let mut conn = self.db.acquire().await?;
+
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
+
+        let (tx, sig_maker) = dlc.close_transaction(proposal)?;
+
+        let own_script_pubkey = dlc.script_pubkey_for(cfd.role());
+        cfd.handle(CfdStateChangeEvent::ProposalSigned(
+            CollaborativeSettlement::new(tx.clone(), own_script_pubkey.clone(), proposal.price),
+        ))?;
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+
+        let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
+
+        let txid = self
+            .wallet
+            .try_broadcast_transaction(spend_tx.clone())
+            .await
+            .context("Broadcasting spend transaction")?;
+        tracing::info!("Close transaction published with txid {}", txid);
+
+        self.monitor_actor
+            .do_send_async(monitor::CollaborativeSettlement {
+                order_id,
+                tx: (txid, own_script_pubkey),
+            })
+            .await?;
+
+        self.current_agreed_proposals
+            .remove(&order_id)
+            .context("remove accepted proposal after signing")?;
+
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl<O: 'static, M: 'static, T: 'static> Handler<CfdAction> for Actor<O, M, T>
 where
@@ -977,6 +986,7 @@ impl<O: 'static, M: 'static, T: 'static> Handler<FromTaker> for Actor<O, M, T>
 where
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>
         + xtra::Handler<maker_inc_connections::TakerMessage>,
+    M: xtra::Handler<monitor::CollaborativeSettlement>,
 {
     async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker, _ctx: &mut Context<Self>) {
         match msg {

@@ -1,4 +1,4 @@
-use crate::model::cfd::{CetStatus, Cfd, CfdState, CollaborativeSettlement, Dlc, OrderId};
+use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId};
 use crate::model::BitMexPriceEventId;
 use crate::oracle::Attestation;
 use crate::{log_error, model, oracle};
@@ -21,6 +21,11 @@ const FINALITY_CONFIRMATIONS: u32 = 1;
 pub struct StartMonitoring {
     pub id: OrderId,
     pub params: MonitorParams,
+}
+
+pub struct CollaborativeSettlement {
+    pub order_id: OrderId,
+    pub tx: (Txid, Script),
 }
 
 #[derive(Clone)]
@@ -84,7 +89,7 @@ impl Actor<bdk::electrum_client::Client> {
                     actor.monitor_commit_refund_timelock(&params, cfd.order.id);
                     actor.monitor_refund_finality(&params,cfd.order.id);
 
-                    if let Some(CollaborativeSettlement { tx, ..}
+                    if let Some(model::cfd::CollaborativeSettlement { tx, ..}
                     ) = cfd.state.get_collaborative_close()  {
                         let close_params = (tx.txid(),
                             tx.output.first().expect("have output").script_pubkey.clone());
@@ -315,6 +320,16 @@ where
         Ok(())
     }
 
+    fn handle_collaborative_settlement(
+        &mut self,
+        collaborative_settlement: CollaborativeSettlement,
+    ) {
+        self.monitor_close_finality(
+            collaborative_settlement.tx,
+            collaborative_settlement.order_id,
+        );
+    }
+
     async fn update_state(
         &mut self,
         latest_block_height: BlockHeight,
@@ -519,6 +534,10 @@ impl xtra::Message for StartMonitoring {
     type Result = ();
 }
 
+impl xtra::Message for CollaborativeSettlement {
+    type Result = ();
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     LockFinality(OrderId),
@@ -637,6 +656,16 @@ where
 impl xtra::Handler<oracle::Attestation> for Actor {
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut xtra::Context<Self>) {
         log_error!(self.handle_oracle_attestation(msg));
+    }
+}
+
+#[async_trait]
+impl<C> xtra::Handler<CollaborativeSettlement> for Actor<C>
+where
+    C: bdk::electrum_client::ElectrumApi + Send + 'static,
+{
+    async fn handle(&mut self, msg: CollaborativeSettlement, _ctx: &mut xtra::Context<Self>) {
+        self.handle_collaborative_settlement(msg);
     }
 }
 

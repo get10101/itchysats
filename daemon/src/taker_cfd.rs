@@ -344,11 +344,22 @@ impl Actor {
             .await?;
 
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
-            CollaborativeSettlement::new(tx, dlc.script_pubkey_for(cfd.role()), proposal.price),
+            CollaborativeSettlement::new(
+                tx.clone(),
+                dlc.script_pubkey_for(cfd.role()),
+                proposal.price,
+            ),
         ))?;
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.remove_pending_proposal(&order_id)?;
+
+        self.monitor_actor
+            .do_send_async(monitor::CollaborativeSettlement {
+                order_id,
+                tx: (tx.txid(), dlc.script_pubkey_for(Role::Taker)),
+            })
+            .await?;
 
         Ok(())
     }
