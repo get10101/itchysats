@@ -222,11 +222,10 @@ impl<O, M> Actor<O, M> {
     }
 
     async fn handle_roll_over_rejected(&mut self, order_id: OrderId) -> Result<()> {
-        tracing::debug!(%order_id, "Roll over request rejected");
-        // TODO: tell UI that roll over was rejected
+        tracing::info!(%order_id, "Roll over proposal got rejected");
 
-        // this is not too bad as we are still monitoring for the CFD to expiry
-        // the taker can just try to ask again :)
+        self.remove_pending_proposal(&order_id)
+            .context("rejected settlement")?;
 
         Ok(())
     }

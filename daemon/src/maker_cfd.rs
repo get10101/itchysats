@@ -73,9 +73,6 @@ pub struct Actor<O, M, T> {
     oracle_actor: Address<O>,
     // Maker needs to also store TakerId to be able to send a reply back
     current_pending_proposals: HashMap<OrderId, (UpdateCfdProposal, TakerId)>,
-    // TODO: Persist instead of using an in-memory hashmap for resiliency?
-    // (not a huge deal, as in the worst case taker will fall back to
-    // noncollaborative settlement)
     current_agreed_proposals: HashMap<OrderId, (SettlementProposal, TakerId)>,
 }
 
@@ -745,8 +742,6 @@ where
         };
 
         let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
-
-        // TODO: do we want to store in the db that we rolled over?
 
         let oracle_event_id =
             oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM)?;
