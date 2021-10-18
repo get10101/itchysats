@@ -115,6 +115,7 @@ async fn main() -> Result<()> {
     let opts = Opts::parse();
 
     logger::init(LevelFilter::DEBUG, opts.json).context("initialize logger")?;
+    tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
 
     let data_dir = opts
         .data_dir
