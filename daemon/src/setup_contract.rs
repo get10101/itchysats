@@ -56,6 +56,8 @@ pub async fn new(
         .try_into_msg0()
         .context("Failed to read Msg0")?;
 
+    tracing::info!("Exchanged setup parameters");
+
     let (other, other_punish) = msg0.into();
 
     let params = AllParams::new(own_params, own_punish, other, other_punish, role);
@@ -86,6 +88,8 @@ pub async fn new(
     )
     .context("Failed to create CFD transactions")?;
 
+    tracing::info!("Created CFD transactions");
+
     sink.send(SetupMsg::Msg1(Msg1::from(own_cfd_txs.clone())))
         .await
         .context("Failed to send Msg1")?;
@@ -95,6 +99,8 @@ pub async fn new(
         .await
         .try_into_msg1()
         .context("Failed to read Msg1")?;
+
+    tracing::info!("Exchanged CFD transactions");
 
     let lock_desc = lock_descriptor(params.maker().identity_pk, params.taker().identity_pk);
 
@@ -157,6 +163,8 @@ pub async fn new(
     )
     .context("Refund signature does not verify")?;
 
+    tracing::info!("Verified all signatures");
+
     let mut signed_lock_tx = wallet.sign(lock_tx).await?;
     sink.send(SetupMsg::Msg2(Msg2 {
         signed_lock: signed_lock_tx.clone(),
@@ -211,6 +219,8 @@ pub async fn new(
             Ok((event_id.parse()?, cets))
         })
         .collect::<Result<HashMap<_, _>>>()?;
+
+    tracing::info!("Exchanged signed lock transaction");
 
     Ok(Dlc {
         identity: sk,
