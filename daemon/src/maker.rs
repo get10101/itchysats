@@ -157,6 +157,7 @@ async fn main() -> Result<()> {
 
     let figment = rocket::Config::figment()
         .merge(("databases.maker.url", data_dir.join("maker.sqlite")))
+        .merge(("databases.maker.max_connections", 1))
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()));
 
@@ -198,14 +199,16 @@ async fn main() -> Result<()> {
                     None => return Err(rocket),
                 };
 
-                let mut conn = db.acquire().await.unwrap();
+                {
+                    let mut conn = db.acquire().await.unwrap();
 
-                housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn)
-                    .await
-                    .unwrap();
-                housekeeping::rebroadcast_transactions(&mut conn, &wallet)
-                    .await
-                    .unwrap();
+                    housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn)
+                        .await
+                        .unwrap();
+                    housekeeping::rebroadcast_transactions(&mut conn, &wallet)
+                        .await
+                        .unwrap();
+                }
 
                 let ActorSystem {
                     cfd_actor_addr,

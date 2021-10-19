@@ -165,6 +165,7 @@ async fn main() -> Result<()> {
 
     let figment = rocket::Config::figment()
         .merge(("databases.taker.url", data_dir.join("taker.sqlite")))
+        .merge(("databases.taker.max_connections", 1))
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()));
 
@@ -212,8 +213,6 @@ async fn main() -> Result<()> {
                 let (monitor_actor_address, mut monitor_actor_context) = xtra::Context::new(None);
                 let (oracle_actor_address, mut oracle_actor_context) = xtra::Context::new(None);
 
-                let mut conn = db.acquire().await.unwrap();
-                let cfds = load_all_cfds(&mut conn).await.unwrap();
                 let cfd_actor_inbox = taker_cfd::Actor::new(
                     db.clone(),
                     wallet.clone(),
