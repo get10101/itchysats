@@ -535,7 +535,6 @@ dependencies = [
  "reqwest",
  "rocket",
  "rocket-basicauth",
- "rocket_db_pools",
  "rust-embed",
  "rust_decimal",
  "rust_decimal_macros",
@@ -2161,26 +2160,6 @@ dependencies = [
  "rocket_http",
  "syn",
  "unicode-xid",
-]
-
-[[package]]
-name = "rocket_db_pools"
-version = "0.1.0-rc"
-source = "git+https://github.com/SergioBenitez/Rocket#8cae077ba1d54b92cdef3e171a730b819d5eeb8e"
-dependencies = [
- "rocket",
- "rocket_db_pools_codegen",
- "sqlx",
- "version_check",
-]
-
-[[package]]
-name = "rocket_db_pools_codegen"
-version = "0.1.0-rc"
-source = "git+https://github.com/SergioBenitez/Rocket#8cae077ba1d54b92cdef3e171a730b819d5eeb8e"
-dependencies = [
- "devise",
- "quote",
 ]
 
 [[package]]

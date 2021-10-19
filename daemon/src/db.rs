@@ -1,7 +1,6 @@
 use crate::model::cfd::{Cfd, CfdState, Order, OrderId};
 use crate::model::{BitMexPriceEventId, Usd};
 use anyhow::{Context, Result};
-use rocket_db_pools::sqlx;
 use rust_decimal::Decimal;
 use sqlx::pool::PoolConnection;
 use sqlx::{Sqlite, SqlitePool};

@@ -13,7 +13,8 @@ use daemon::{
 };
 use futures::StreamExt;
 use rocket::fairing::AdHoc;
-use rocket_db_pools::Database;
+use sqlx::sqlite::SqliteConnectOptions;
+use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -30,10 +31,6 @@ use xtra::Actor;
 mod routes_taker;
 
 const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
-
-#[derive(Database)]
-#[database("taker")]
-pub struct Db(sqlx::SqlitePool);
 
 #[derive(Clap)]
 struct Opts {
@@ -165,9 +162,15 @@ async fn main() -> Result<()> {
     tokio::spawn(task);
 
     let figment = rocket::Config::figment()
-        .merge(("databases.taker.url", data_dir.join("taker.sqlite")))
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()));
+
+    let db = SqlitePool::connect_with(
+        SqliteConnectOptions::new()
+            .create_if_missing(true)
+            .filename(data_dir.join("taker.sqlite")),
+    )
+    .await?;
 
     rocket::custom(figment)
         .manage(order_feed_receiver)
@@ -175,26 +178,20 @@ async fn main() -> Result<()> {
         .manage(update_feed_receiver)
         .manage(quote_updates)
         .manage(bitcoin_network)
-        .attach(Db::init())
-        .attach(AdHoc::try_on_ignite(
-            "SQL migrations",
-            |rocket| async move {
-                match Db::fetch(&rocket) {
-                    Some(db) => match db::run_migrations(&**db).await {
-                        Ok(_) => Ok(rocket),
-                        Err(_) => Err(rocket),
-                    },
-                    None => Err(rocket),
-                }
-            },
-        ))
-        .attach(AdHoc::try_on_ignite(
-            "Create actors",
+        .attach(AdHoc::try_on_ignite("SQL migrations", {
+            let db = db.clone();
+
             move |rocket| async move {
-                let db = match Db::fetch(&rocket) {
-                    Some(db) => (**db).clone(),
-                    None => return Err(rocket),
-                };
+                match db::run_migrations(&db).await {
+                    Ok(_) => Ok(rocket),
+                    Err(_) => Err(rocket),
+                }
+            }
+        }))
+        .attach(AdHoc::try_on_ignite("Create actors", {
+            let db = db.clone();
+
+            move |rocket| async move {
                 let mut conn = db.acquire().await.unwrap();
 
                 housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn)
@@ -213,8 +210,6 @@ async fn main() -> Result<()> {
                 let (monitor_actor_address, mut monitor_actor_context) = xtra::Context::new(None);
                 let (oracle_actor_address, mut oracle_actor_context) = xtra::Context::new(None);
 
-                let mut conn = db.acquire().await.unwrap();
-                let cfds = load_all_cfds(&mut conn).await.unwrap();
                 let cfd_actor_inbox = taker_cfd::Actor::new(
                     db.clone(),
                     wallet.clone(),
@@ -274,8 +269,8 @@ async fn main() -> Result<()> {
                     .manage(take_offer_channel)
                     .manage(cfd_action_channel)
                     .manage(cfd_feed_receiver))
-            },
-        ))
+            }
+        }))
         .mount(
             "/api",
             rocket::routes![
@@ -292,6 +287,8 @@ async fn main() -> Result<()> {
         )
         .launch()
         .await?;
+
+    db.close().await;
 
     Ok(())
 }

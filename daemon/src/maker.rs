@@ -16,7 +16,7 @@ use daemon::{
 };
 use futures::Future;
 use rocket::fairing::AdHoc;
-use rocket_db_pools::Database;
+use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -31,10 +31,6 @@ use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
 
 mod routes_maker;
-
-#[derive(Database)]
-#[database("maker")]
-pub struct Db(sqlx::SqlitePool);
 
 #[derive(Clap)]
 struct Opts {
@@ -157,7 +153,6 @@ async fn main() -> Result<()> {
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
 
     let figment = rocket::Config::figment()
-        .merge(("databases.maker.url", data_dir.join("maker.sqlite")))
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()));
 
@@ -174,31 +169,32 @@ async fn main() -> Result<()> {
     let (task, quote_updates) = bitmex_price_feed::new().await?;
     tokio::spawn(task);
 
+    let db = SqlitePool::connect_with(
+        SqliteConnectOptions::new()
+            .create_if_missing(true)
+            .filename(data_dir.join("maker.sqlite")),
+    )
+    .await?;
+
     rocket::custom(figment)
         .manage(wallet_feed_receiver)
         .manage(auth_password)
         .manage(quote_updates)
         .manage(bitcoin_network)
-        .attach(Db::init())
-        .attach(AdHoc::try_on_ignite(
-            "SQL migrations",
-            |rocket| async move {
-                match Db::fetch(&rocket) {
-                    Some(db) => match db::run_migrations(&**db).await {
-                        Ok(_) => Ok(rocket),
-                        Err(_) => Err(rocket),
-                    },
-                    None => Err(rocket),
-                }
-            },
-        ))
-        .attach(AdHoc::try_on_ignite("Create actors", {
-            move |rocket| async move {
-                let db = match Db::fetch(&rocket) {
-                    Some(db) => (**db).clone(),
-                    None => return Err(rocket),
-                };
+        .attach(AdHoc::try_on_ignite("SQL migrations", {
+            let db = db.clone();
 
+            move |rocket| async move {
+                match db::run_migrations(&db).await {
+                    Ok(_) => Ok(rocket),
+                    Err(_) => Err(rocket),
+                }
+            }
+        }))
+        .attach(AdHoc::try_on_ignite("Create actors", {
+            let db = db.clone();
+
+            move |rocket| async move {
                 let mut conn = db.acquire().await.unwrap();
 
                 housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn)
@@ -209,27 +205,30 @@ async fn main() -> Result<()> {
                     .unwrap();
 
                 let ActorSystem {
-                    cfd_actor_addr,
-                    cfd_feed_receiver,
-                    order_feed_receiver,
-                    update_cfd_feed_receiver,
-                } = ActorSystem::new(
-                    db,
-                    wallet.clone(),
-                    oracle,
-                    |cfds, channel| oracle::Actor::new(cfds, channel),
-                    {
-                        |channel, cfds| {
-                            let electrum = opts.network.electrum().to_string();
-                            async move {
-                                monitor::Actor::new(electrum, channel, cfds.clone()).await
-                            }
-                        }
-                    },
-                    |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
-                    listener,
-                )
-                .await;
+                        cfd_actor_addr,
+                        cfd_feed_receiver,
+                        order_feed_receiver,
+                        update_cfd_feed_receiver,
+                    } =
+                        ActorSystem::new(
+                            db,
+                            wallet.clone(),
+                            oracle,
+                            |cfds, channel| oracle::Actor::new(cfds, channel),
+                            {
+                                |channel, cfds| {
+                                    let electrum = opts.network.electrum().to_string();
+                                    async move {
+                                        monitor::Actor::new(electrum, channel, cfds.clone()).await
+                                    }
+                                }
+                            },
+                            |channel0, channel1| {
+                                maker_inc_connections::Actor::new(channel0, channel1)
+                            },
+                            listener,
+                        )
+                        .await;
 
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
 
@@ -263,6 +262,8 @@ async fn main() -> Result<()> {
         .register("/", rocket::catchers![routes_maker::unauthorized])
         .launch()
         .await?;
+
+    db.close().await;
 
     Ok(())
 }
