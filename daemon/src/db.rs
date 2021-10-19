@@ -267,7 +267,7 @@ pub async fn load_cfd_by_order_id(
                 id as cfd_id,
                 quantity_usd
             from cfds
-                inner join ord on ord.order_id = id
+                inner join ord on ord.order_id = cfds.order_id
         ),
 
         state as (
@@ -369,7 +369,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 id as cfd_id,
                 quantity_usd
             from cfds
-                inner join ord on ord.order_id = id
+                inner join ord on ord.order_id = cfds.order_id
         ),
 
         state as (
@@ -476,7 +476,7 @@ pub async fn load_cfds_by_oracle_event_id(
                 id as cfd_id,
                 quantity_usd
             from cfds
-                inner join ord on ord.order_id = id
+                inner join ord on ord.order_id = cfds.order_id
         ),
 
         state as (
