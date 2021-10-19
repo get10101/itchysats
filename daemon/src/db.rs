@@ -16,7 +16,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
 }
 
 pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
-    sqlx::query(
+    let query_result = sqlx::query(
         r#"insert into orders (
             uuid,
             trading_pair,
@@ -60,6 +60,10 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
     .bind(&order.oracle_event_id.to_string())
     .execute(conn)
     .await?;
+
+    if query_result.rows_affected() != 1 {
+        anyhow::bail!("failed to insert order");
+    }
 
     Ok(())
 }
@@ -112,7 +116,7 @@ pub async fn load_order_by_id(
 
 pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
     let state = serde_json::to_string(&cfd.state)?;
-    sqlx::query(
+    let query_result = sqlx::query(
         r#"
         insert into cfds (
             order_id,
@@ -142,6 +146,11 @@ pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow:
     .bind(state)
     .execute(conn)
     .await?;
+
+    // Should be 2 because we insert into cfds and cfd_states
+    if query_result.rows_affected() != 2 {
+        anyhow::bail!("failed to insert cfd");
+    }
 
     Ok(())
 }
