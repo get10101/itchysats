@@ -266,7 +266,7 @@ pub async fn load_cfd_by_order_id(
                 id as cfd_id,
                 quantity_usd
             from cfds
-                inner join ord on ord.order_id = id
+                inner join ord on ord.order_id = cfds.order_id
         ),
 
         state as (
@@ -368,7 +368,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 id as cfd_id,
                 quantity_usd
             from cfds
-                inner join ord on ord.order_id = id
+                inner join ord on ord.order_id = cfds.order_id
         ),
 
         state as (
@@ -475,7 +475,7 @@ pub async fn load_cfds_by_oracle_event_id(
                 id as cfd_id,
                 quantity_usd
             from cfds
-                inner join ord on ord.order_id = id
+                inner join ord on ord.order_id = cfds.order_id
         ),
 
         state as (
@@ -701,6 +701,21 @@ mod tests {
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         assert_eq!(vec![cfd_1, cfd_2], cfds_from_db);
+    }
+
+    #[tokio::test]
+    async fn test_insert_order_without_cfd_associates_with_correct_cfd() {
+        let mut conn = setup_test_db().await;
+
+        // Insert an order without a CFD
+        let _order_1 = Order::dummy().insert(&mut conn).await;
+
+        // Insert a CFD (this also inserts an order)
+        let cfd_1 = Cfd::dummy().insert(&mut conn).await;
+
+        let all_cfds = load_all_cfds(&mut conn).await.unwrap();
+
+        assert_eq!(all_cfds, vec![cfd_1]);
     }
 
     // test more data; test will add 100 cfds to the database, with each
