@@ -16,7 +16,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
 }
 
 pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
-    sqlx::query(
+    let query_result = sqlx::query(
         r#"insert into orders (
             uuid,
             trading_pair,
@@ -60,6 +60,10 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
     .bind(&order.oracle_event_id.to_string())
     .execute(conn)
     .await?;
+
+    if query_result.rows_affected() != 1 {
+        anyhow::bail!("failed to insert order");
+    }
 
     Ok(())
 }
@@ -112,7 +116,7 @@ pub async fn load_order_by_id(
 
 pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
     let state = serde_json::to_string(&cfd.state)?;
-    sqlx::query(
+    let query_result = sqlx::query(
         r#"
         insert into cfds (
             order_id,
@@ -142,6 +146,11 @@ pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow:
     .bind(state)
     .execute(conn)
     .await?;
+
+    // Should be 2 because we insert into cfds and cfd_states
+    if query_result.rows_affected() != 2 {
+        anyhow::bail!("failed to insert cfd");
+    }
 
     Ok(())
 }
@@ -553,14 +562,16 @@ fn convert_to_system_time(row_secs: i64, row_nanos: i32) -> Result<SystemTime> {
 
 #[cfg(test)]
 mod tests {
+    use crate::cfd_actors;
     use pretty_assertions::assert_eq;
     use rand::Rng;
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;
     use time::macros::datetime;
     use time::OffsetDateTime;
+    use tokio::sync::watch;
 
-    use crate::db::insert_order;
+    use crate::db::{self, insert_order};
     use crate::model::cfd::{Cfd, CfdState, Order, Origin};
     use crate::model::Usd;
 
@@ -584,6 +595,32 @@ mod tests {
         let loaded = load_all_cfds(&mut conn).await.unwrap();
 
         assert_eq!(vec![cfd], loaded);
+    }
+
+    #[tokio::test]
+    async fn test_insert_like_cfd_actor() {
+        let mut conn = setup_test_db().await;
+
+        let cfds = load_all_cfds(&mut conn).await.unwrap();
+
+        let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
+
+        assert_eq!(cfd_feed_receiver.borrow().clone(), vec![]);
+
+        let cfd_1 = Cfd::dummy();
+        db::insert_order(&cfd_1.order, &mut conn).await.unwrap();
+        cfd_actors::insert_cfd(&cfd_1, &mut conn, &cfd_feed_sender)
+            .await
+            .unwrap();
+
+        assert_eq!(cfd_feed_receiver.borrow().clone(), vec![cfd_1.clone()]);
+
+        let cfd_2 = Cfd::dummy();
+        db::insert_order(&cfd_2.order, &mut conn).await.unwrap();
+        cfd_actors::insert_cfd(&cfd_2, &mut conn, &cfd_feed_sender)
+            .await
+            .unwrap();
+        assert_eq!(cfd_feed_receiver.borrow().clone(), vec![cfd_1, cfd_2]);
     }
 
     #[tokio::test]
