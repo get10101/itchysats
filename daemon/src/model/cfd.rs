@@ -11,21 +11,44 @@ use rocket::request::FromParam;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Neg, RangeInclusive};
 use std::time::SystemTime;
 use time::Duration;
+use uuid::adapter::Hyphenated;
 use uuid::Uuid;
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, sqlx::Type)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
-pub struct OrderId(Uuid);
+pub struct OrderId(Hyphenated);
+
+impl Serialize for OrderId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for OrderId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let uuid = String::deserialize(deserializer)?;
+        let uuid = uuid.parse::<Uuid>().map_err(D::Error::custom)?;
+
+        Ok(Self(uuid.to_hyphenated()))
+    }
+}
 
 impl Default for OrderId {
     fn default() -> Self {
-        Self(Uuid::new_v4())
+        Self(Uuid::new_v4().to_hyphenated())
     }
 }
 
@@ -40,7 +63,7 @@ impl<'v> FromParam<'v> for OrderId {
 
     fn from_param(param: &'v str) -> Result<Self, Self::Error> {
         let uuid = param.parse::<Uuid>()?;
-        Ok(OrderId(uuid))
+        Ok(OrderId(uuid.to_hyphenated()))
     }
 }
 
@@ -1614,6 +1637,15 @@ mod tests {
             profit_in_percent.0.checked_add(loss_in_percent.0).unwrap(),
             Decimal::ZERO
         );
+    }
+
+    #[test]
+    fn order_id_serde_roundtrip() {
+        let id = OrderId::default();
+
+        let deserialized = serde_json::from_str(&serde_json::to_string(&id).unwrap()).unwrap();
+
+        assert_eq!(id, deserialized);
     }
 }
 
