@@ -202,13 +202,7 @@ impl<O, M> Actor<O, M> {
     }
 
     async fn handle_order_rejected(&mut self, order_id: OrderId) -> Result<()> {
-        tracing::debug!(%order_id, "Order rejected");
-
-        let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::rejected();
-
-        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        self.append_cfd_state_rejected(order_id).await?;
 
         Ok(())
     }
@@ -289,6 +283,25 @@ impl<O, M> Actor<O, M> {
             &self.cfd_feed_actor_inbox,
         )
         .await?;
+        Ok(())
+    }
+
+    async fn handle_invalid_order_id(&mut self, order_id: OrderId) -> Result<()> {
+        tracing::debug!(%order_id, "Invalid order ID");
+
+        self.append_cfd_state_rejected(order_id).await?;
+
+        Ok(())
+    }
+
+    async fn append_cfd_state_rejected(&mut self, order_id: OrderId) -> Result<()> {
+        tracing::debug!(%order_id, "Order rejected");
+
+        let mut conn = self.db.acquire().await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::rejected();
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+
         Ok(())
     }
 }
@@ -678,7 +691,9 @@ where
             wire::MakerToTaker::RejectSettlement(order_id) => {
                 log_error!(self.handle_settlement_rejected(order_id))
             }
-            wire::MakerToTaker::InvalidOrderId(_) => todo!(),
+            wire::MakerToTaker::InvalidOrderId(order_id) => {
+                log_error!(self.handle_invalid_order_id(order_id))
+            }
             wire::MakerToTaker::Protocol(setup_msg) => {
                 log_error!(self.handle_inc_protocol_msg(setup_msg))
             }
