@@ -2391,7 +2391,7 @@ dependencies = [
 [[package]]
 name = "secp256k1-zkp"
 version = "0.4.0"
-source = "git+https://github.com/ElementsProject/rust-secp256k1-zkp#ab7f6d8f5e74fd7bf5348d4fc3593bcc1dd532ad"
+source = "git+https://github.com/klochowicz/rust-secp256k1-zkp?branch=ecdsa-signatures-release-build#37c6afcf3ead55cbc99cbbba459745c43c7197a3"
 dependencies = [
  "rand 0.6.5",
  "secp256k1",
@@ -2402,7 +2402,7 @@ dependencies = [
 [[package]]
 name = "secp256k1-zkp-sys"
 version = "0.4.0"
-source = "git+https://github.com/ElementsProject/rust-secp256k1-zkp#ab7f6d8f5e74fd7bf5348d4fc3593bcc1dd532ad"
+source = "git+https://github.com/klochowicz/rust-secp256k1-zkp?branch=ecdsa-signatures-release-build#37c6afcf3ead55cbc99cbbba459745c43c7197a3"
 dependencies = [
  "cc",
  "secp256k1-sys",
