@@ -2,6 +2,7 @@ use crate::db::{append_cfd_state, load_all_cfds};
 use crate::model::cfd::{Cfd, CfdState};
 use crate::wallet::Wallet;
 use anyhow::Result;
+use bdk::bitcoin::Transaction;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 
@@ -29,32 +30,34 @@ pub async fn rebroadcast_transactions(
     let cfds = load_all_cfds(conn).await?;
 
     for dlc in cfds.iter().filter_map(|cfd| Cfd::pending_open_dlc(cfd)) {
-        let txid = wallet.try_broadcast_transaction(dlc.lock.0.clone()).await?;
-
-        tracing::info!("Lock transaction published with txid {}", txid);
+        rebroadcast(dlc.lock.0.clone(), wallet, "lock").await;
     }
 
     for cfd in cfds.iter().filter(|cfd| Cfd::is_must_refund(cfd)) {
         let signed_refund_tx = cfd.refund_tx()?;
-        let txid = wallet.try_broadcast_transaction(signed_refund_tx).await?;
-
-        tracing::info!("Refund transaction published on chain: {}", txid);
+        rebroadcast(signed_refund_tx, wallet, "refund").await;
     }
 
     for cfd in cfds.iter().filter(|cfd| Cfd::is_pending_commit(cfd)) {
         let signed_commit_tx = cfd.commit_tx()?;
-        let txid = wallet.try_broadcast_transaction(signed_commit_tx).await?;
-
-        tracing::info!("Commit transaction published on chain: {}", txid);
+        rebroadcast(signed_commit_tx, wallet, "commit").await;
     }
 
     for cfd in cfds.iter().filter(|cfd| Cfd::is_pending_cet(cfd)) {
         // Double question-mark OK because if we are in PendingCet we must have been Ready before
         let signed_cet = cfd.cet()??;
-        let txid = wallet.try_broadcast_transaction(signed_cet).await?;
-
-        tracing::info!("CET published on chain: {}", txid);
+        rebroadcast(signed_cet, wallet, "cet").await;
     }
 
     Ok(())
+}
+
+async fn rebroadcast(tx: Transaction, wallet: &Wallet, label: &str) {
+    let txid = tx.txid();
+    match wallet.try_broadcast_transaction(tx).await {
+        Ok(txid) => tracing::info!(tx=%txid, "{} transaction published", label),
+        Err(e) => {
+            tracing::error!(tx=%txid, "Failed to re-broadcast {} transaction: {:#}", label, e)
+        }
+    }
 }
