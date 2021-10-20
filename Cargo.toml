@@ -4,4 +4,5 @@ resolver = "2"
 
 [patch.crates-io]
 rocket = { git = "https://github.com/SergioBenitez/Rocket" } # Need to patch rocket dependency of `rocket_basicauth` until there is an official release.
-xtra = { git = "https://github.com/luckysori/xtra", rev = "19684c196f71ec762e595906cc88c6142b82092e" } # Need to patch xtra dependency until there is an official release as it contains useful PRs from us.
+xtra = { git = "https://github.com/Restioson/xtra" } # Latest master has crucial patches.
+secp256k1-zkp = { git = "https://github.com/ElementsProject/rust-secp256k1-zkp" } # Latest master has crucial patches.

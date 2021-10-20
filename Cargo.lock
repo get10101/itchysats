@@ -2391,7 +2391,7 @@ dependencies = [
 [[package]]
 name = "secp256k1-zkp"
 version = "0.4.0"
-source = "git+https://github.com/klochowicz/rust-secp256k1-zkp?branch=ecdsa-signatures-release-build#e8692101e357fbda0a613023e0cd3e36457d9bf4"
+source = "git+https://github.com/ElementsProject/rust-secp256k1-zkp#c8ff901516c9c299c9cc7331b15a7a14a05ced89"
 dependencies = [
  "rand 0.6.5",
  "secp256k1",
@@ -2402,7 +2402,7 @@ dependencies = [
 [[package]]
 name = "secp256k1-zkp-sys"
 version = "0.4.0"
-source = "git+https://github.com/klochowicz/rust-secp256k1-zkp?branch=ecdsa-signatures-release-build#e8692101e357fbda0a613023e0cd3e36457d9bf4"
+source = "git+https://github.com/ElementsProject/rust-secp256k1-zkp#c8ff901516c9c299c9cc7331b15a7a14a05ced89"
 dependencies = [
  "cc",
  "secp256k1-sys",
@@ -3488,7 +3488,7 @@ dependencies = [
 [[package]]
 name = "xtra"
 version = "0.6.0"
-source = "git+https://github.com/luckysori/xtra?rev=19684c196f71ec762e595906cc88c6142b82092e#19684c196f71ec762e595906cc88c6142b82092e"
+source = "git+https://github.com/Restioson/xtra#8bc69134b9204a5c247e3926f7ccc4132212dbea"
 dependencies = [
  "async-trait",
  "barrage",
