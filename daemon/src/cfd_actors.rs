@@ -1,3 +1,4 @@
+use crate::db::load_cfd_by_order_id;
 use crate::model::cfd::{Attestation, Cfd, CfdState, CfdStateChangeEvent, OrderId};
 use crate::wallet::Wallet;
 use crate::{db, monitor, oracle};
@@ -11,6 +12,13 @@ pub async fn insert_cfd(
     conn: &mut PoolConnection<Sqlite>,
     update_sender: &watch::Sender<Vec<Cfd>>,
 ) -> Result<()> {
+    if load_cfd_by_order_id(cfd.order.id, conn).await.is_ok() {
+        bail!(
+            "Cannot insert cfd because there is already a cfd for order id {}",
+            cfd.order.id
+        )
+    }
+
     db::insert_cfd(cfd, conn).await?;
     update_sender.send(db::load_all_cfds(conn).await?)?;
     Ok(())
