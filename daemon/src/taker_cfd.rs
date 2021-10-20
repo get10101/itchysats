@@ -155,6 +155,11 @@ impl<O, M> Actor<O, M> {
 
         insert_cfd(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
+        // Cleanup own order feed, after inserting the cfd.
+        // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
+        // same order id.
+        self.order_feed_actor_inbox.send(None)?;
+
         self.send_to_maker
             .do_send(wire::TakerToMaker::TakeOrder { order_id, quantity })?;
 
