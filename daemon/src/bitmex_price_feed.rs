@@ -74,7 +74,7 @@ impl Quote {
 
     pub fn for_taker(&self) -> Usd {
         // TODO: verify whether this is correct
-        self.mid_range().unwrap()
+        self.mid_range().expect("decimal arithmetic to not fail")
     }
 
     fn mid_range(&self) -> Result<Usd> {

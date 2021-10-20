@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), warn(clippy::unwrap_used))]
+
 pub mod actors;
 pub mod auth;
 pub mod bitmex_price_feed;

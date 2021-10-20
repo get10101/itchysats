@@ -351,7 +351,7 @@ impl PayoutCurve {
             vec.push(arr[[i, 1]]);
         }
 
-        *arr = Array2::<f64>::from_shape_vec((capacity, 2), vec).unwrap();
+        *arr = Array2::<f64>::from_shape_vec((capacity, 2), vec).expect("vec is a 2D array");
     }
 
     fn modify_samples_unbounded(&self, arr: &mut Array2<f64>) {
@@ -377,7 +377,7 @@ impl PayoutCurve {
             vec.push(arr[[i, 1]]);
         }
 
-        *arr = Array2::<f64>::from_shape_vec((capacity, 2), vec).unwrap();
+        *arr = Array2::<f64>::from_shape_vec((capacity, 2), vec).expect("vec is a 2D array");
     }
 
     /// this should only be used on an array `arr` that has been
@@ -397,7 +397,7 @@ impl PayoutCurve {
             }
         }
 
-        *arr = Array2::<f64>::from_shape_vec((capacity / 3, 3), vec).unwrap();
+        *arr = Array2::<f64>::from_shape_vec((capacity / 3, 3), vec).expect("vec is a 2D array");
     }
 }
 
@@ -446,7 +446,7 @@ fn create_long_payout_function(
             vec.push(eval);
         }
 
-        Array2::<f64>::from_shape_vec((t.len(), 2), vec).unwrap()
+        Array2::<f64>::from_shape_vec((t.len(), 2), vec).expect("vec is a 2D array")
     }
 }
 

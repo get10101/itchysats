@@ -248,7 +248,7 @@ impl SplineObject {
 
             // this ends up being F-contiguous, every time
             let res_slice = result.select(Axis(axis_r), &idx[..]).to_owned();
-            let raveled = res_slice.to_shape(((n_res,), Order::C)).unwrap();
+            let raveled = res_slice.to_shape(((n_res,), Order::C))?;
             let fixed = raveled.to_shape((res_slice.shape(), Order::C))?.to_owned();
 
             result = fixed;
