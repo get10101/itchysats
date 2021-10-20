@@ -1,8 +1,7 @@
 use crate::model::Usd;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures::{StreamExt, TryStreamExt};
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use std::convert::TryFrom;
 use std::future::Future;
 use std::time::SystemTime;
@@ -81,10 +80,10 @@ impl Quote {
     }
 
     fn mid_range(&self) -> Result<Usd> {
-        Ok(Usd((self.bid.checked_add(self.ask))?
-            .0
-            .checked_div(dec!(2))
-            .context("division error")?))
+        let sum = self.bid.checked_add(self.ask)?;
+        let half = sum.half();
+
+        Ok(half)
     }
 }
 
@@ -120,7 +119,7 @@ mod tests {
 
         let quote = Quote::from_message(message).unwrap().unwrap();
 
-        assert_eq!(quote.bid, Usd(dec!(42640.5)));
-        assert_eq!(quote.ask, Usd(dec!(42641)));
+        assert_eq!(quote.bid, Usd::new(dec!(42640.5)));
+        assert_eq!(quote.ask, Usd::new(dec!(42641)));
     }
 }

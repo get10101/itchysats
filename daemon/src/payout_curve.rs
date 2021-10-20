@@ -503,9 +503,12 @@ mod tests {
 
     #[test]
     fn calculate_snapshot() {
-        let actual_payouts =
-            calculate_payout_parameters(Usd(dec!(54000.00)), Usd(dec!(3500.00)), Leverage(5))
-                .unwrap();
+        let actual_payouts = calculate_payout_parameters(
+            Usd::new(dec!(54000.00)),
+            Usd::new(dec!(3500.00)),
+            Leverage(5),
+        )
+        .unwrap();
 
         let expected_payouts = vec![
             payout(0..=45000, 7777777, 0),
@@ -716,9 +719,12 @@ mod tests {
 
     #[test]
     fn verfiy_tails() {
-        let actual_payouts =
-            calculate_payout_parameters(Usd(dec!(54000.00)), Usd(dec!(3500.00)), Leverage(5))
-                .unwrap();
+        let actual_payouts = calculate_payout_parameters(
+            Usd::new(dec!(54000.00)),
+            Usd::new(dec!(3500.00)),
+            Leverage(5),
+        )
+        .unwrap();
 
         let lower_tail = payout(0..=45000, 7777777, 0);
         let upper_tail = payout(107765..=108000, 3240740, 4537037);

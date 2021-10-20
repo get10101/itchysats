@@ -4,6 +4,7 @@ use bdk::bitcoin::{Address, Amount};
 use reqwest::Url;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::time::SystemTime;
@@ -13,10 +14,14 @@ use uuid::Uuid;
 
 pub mod cfd;
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
-pub struct Usd(pub Decimal);
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub struct Usd(Decimal);
 
 impl Usd {
+    pub fn new(dec: Decimal) -> Self {
+        Self(dec)
+    }
+
     pub fn checked_add(&self, other: Usd) -> Result<Usd> {
         let result = self.0.checked_add(other.0).context("addition error")?;
         Ok(Usd(result))
@@ -27,6 +32,7 @@ impl Usd {
         Ok(Usd(result))
     }
 
+    // TODO: Usd * Usd = Usd^2 not Usd !!!
     pub fn checked_mul(&self, other: Usd) -> Result<Usd> {
         let result = self
             .0
@@ -43,6 +49,35 @@ impl Usd {
     pub fn try_into_u64(&self) -> Result<u64> {
         self.0.to_u64().context("could not fit decimal into u64")
     }
+
+    pub fn half(&self) -> Usd {
+        let half = self
+            .0
+            .checked_div(dec!(2))
+            .expect("can always divide by two");
+
+        Usd(half)
+    }
+}
+
+impl Serialize for Usd {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        <Decimal as Serialize>::serialize(&self.0.round_dp(2), serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Usd {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let dec = <Decimal as Deserialize>::deserialize(deserializer)?.round_dp(2);
+
+        Ok(Usd(dec))
+    }
 }
 
 impl fmt::Display for Usd {
@@ -57,12 +92,32 @@ impl From<Decimal> for Usd {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Percent(pub Decimal);
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Percent(Decimal);
 
 impl fmt::Display for Percent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.round_dp(2).fmt(f)
+    }
+}
+
+impl Serialize for Percent {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        <Decimal as Serialize>::serialize(&self.0.round_dp(2), serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Percent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let dec = <Decimal as Deserialize>::deserialize(deserializer)?.round_dp(2);
+
+        Ok(Percent(dec))
     }
 }
 
@@ -186,9 +241,24 @@ impl str::FromStr for BitMexPriceEventId {
 
 #[cfg(test)]
 mod tests {
+    use serde_test::{assert_de_tokens, assert_ser_tokens, Token};
     use time::macros::datetime;
 
     use super::*;
+
+    #[test]
+    fn usd_serializes_with_only_cents() {
+        let usd = Usd::new(dec!(1000.12345));
+
+        assert_ser_tokens(&usd, &[Token::Str("1000.12")]);
+    }
+
+    #[test]
+    fn usd_deserializes_trims_precision() {
+        let usd = Usd::new(dec!(1000.12));
+
+        assert_de_tokens(&usd, &[Token::Str("1000.12345")]);
+    }
 
     #[test]
     fn to_olivia_url() {
