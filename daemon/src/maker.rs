@@ -25,7 +25,7 @@ use std::str::FromStr;
 use std::task::Poll;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::watch::{self, Receiver};
+use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -270,9 +270,9 @@ async fn main() -> Result<()> {
 
 pub struct ActorSystem<O, M, T> {
     cfd_actor_addr: Address<maker_cfd::Actor<O, M, T>>,
-    cfd_feed_receiver: Receiver<Vec<Cfd>>,
-    order_feed_receiver: Receiver<Option<Order>>,
-    update_cfd_feed_receiver: Receiver<UpdateCfdProposals>,
+    cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
+    order_feed_receiver: watch::Receiver<Option<Order>>,
+    update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
 }
 
 impl<O, M, T> ActorSystem<O, M, T>
