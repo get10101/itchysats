@@ -96,17 +96,9 @@ impl Wallet {
 
     pub async fn try_broadcast_transaction(&self, tx: Transaction) -> Result<Txid> {
         let wallet = self.wallet.lock().await;
-        // TODO: Optimize this match to be a map_err / more readable in general
         let txid = tx.txid();
 
         let result = wallet.broadcast(tx.clone());
-
-        if result.is_err() {
-            tracing::error!(
-                "Broadcasting transaction failed. Raw transaction: {}",
-                serialize_hex(&tx)
-            );
-        }
 
         if let Err(&bdk::Error::Electrum(electrum_client::Error::Protocol(ref value))) =
             result.as_ref()
@@ -116,11 +108,21 @@ impl Wallet {
             })?;
 
             if error_code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
+                tracing::trace!(
+                    %txid, "Attempted to broadcast transaction that was already on-chain",
+                );
+
                 return Ok(txid);
             }
         }
 
-        let txid = result?;
+        let txid = result.with_context(|| {
+            format!(
+                "Broadcasting transaction failed. Txid: {}. Raw transaction: {}",
+                txid,
+                serialize_hex(&tx)
+            )
+        })?;
 
         Ok(txid)
     }
