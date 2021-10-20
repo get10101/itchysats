@@ -1,7 +1,7 @@
 use crate::model::cfd::{Attestation, Cfd, CfdState, CfdStateChangeEvent, OrderId};
 use crate::wallet::Wallet;
-use crate::{db, monitor, oracle};
-use anyhow::{bail, Result};
+use crate::{db, monitor, oracle, try_continue};
+use anyhow::{bail, Context, Result};
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 use tokio::sync::watch;
@@ -120,28 +120,28 @@ pub async fn handle_oracle_attestation(
         .iter_mut()
         .filter_map(|cfd| cfd.dlc().map(|dlc| (cfd, dlc)))
     {
-        if cfd
-            .handle(CfdStateChangeEvent::OracleAttestation(Attestation::new(
-                attestation.id,
-                attestation.price,
-                attestation.scalars.clone(),
-                dlc,
-                cfd.role(),
-            )?))?
-            .is_none()
-        {
+        let attestation = try_continue!(Attestation::new(
+            attestation.id,
+            attestation.price,
+            attestation.scalars.clone(),
+            dlc,
+            cfd.role(),
+        ));
+
+        let new_state =
+            try_continue!(cfd.handle(CfdStateChangeEvent::OracleAttestation(attestation)));
+
+        if new_state.is_none() {
             // if we don't transition to a new state after oracle attestation we ignore the cfd
             // this is for cases where we cannot handle the attestation which should be in a
             // final state
             continue;
         }
 
-        append_cfd_state(cfd, conn, update_sender).await?;
-
-        if let Err(e) = try_cet_publication(cfd, conn, wallet, update_sender).await {
-            tracing::error!("Error when trying to publish CET: {:#}", e);
-            continue;
-        }
+        try_continue!(append_cfd_state(cfd, conn, update_sender).await);
+        try_continue!(try_cet_publication(cfd, conn, wallet, update_sender)
+            .await
+            .context("Error when trying to publish CET"));
     }
 
     Ok(())
