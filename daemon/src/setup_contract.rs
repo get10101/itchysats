@@ -578,7 +578,12 @@ fn verify_cets(
         let other_encsig = cets
             .iter()
             .find_map(|(range, encsig)| (range == &digits.range()).then(|| encsig))
-            .expect("one encsig per cet, per party");
+            .with_context(|| {
+                format!(
+                    "no enc sig from other party for price range {:?}",
+                    digits.range()
+                )
+            })?;
 
         verify_cet_encsig(
             tx,
@@ -589,7 +594,7 @@ fn verify_cets(
             commit_desc,
             commit_amount,
         )
-        .expect("valid maker cet encsig")
+        .context("enc sig on CET does not verify")?;
     }
     Ok(())
 }
