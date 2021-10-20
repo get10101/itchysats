@@ -101,11 +101,11 @@ pub async fn load_order_by_id(
         id: row.uuid,
         trading_pair: row.trading_pair,
         position: row.position,
-        price: Usd(Decimal::from_str(&row.initial_price)?),
-        min_quantity: Usd(Decimal::from_str(&row.min_quantity)?),
-        max_quantity: Usd(Decimal::from_str(&row.max_quantity)?),
+        price: Usd::new(Decimal::from_str(&row.initial_price)?),
+        min_quantity: Usd::new(Decimal::from_str(&row.min_quantity)?),
+        max_quantity: Usd::new(Decimal::from_str(&row.max_quantity)?),
         leverage: row.leverage,
-        liquidation_price: Usd(Decimal::from_str(&row.liquidation_price)?),
+        liquidation_price: Usd::new(Decimal::from_str(&row.liquidation_price)?),
         creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
         term: Duration::new(row.term_secs, row.term_nanos),
         origin: row.origin,
@@ -317,11 +317,11 @@ pub async fn load_cfd_by_order_id(
         id: row.uuid,
         trading_pair: row.trading_pair,
         position: row.position,
-        price: Usd(Decimal::from_str(&row.initial_price)?),
-        min_quantity: Usd(Decimal::from_str(&row.min_quantity)?),
-        max_quantity: Usd(Decimal::from_str(&row.max_quantity)?),
+        price: Usd::new(Decimal::from_str(&row.initial_price)?),
+        min_quantity: Usd::new(Decimal::from_str(&row.min_quantity)?),
+        max_quantity: Usd::new(Decimal::from_str(&row.max_quantity)?),
         leverage: row.leverage,
-        liquidation_price: Usd(Decimal::from_str(&row.liquidation_price)?),
+        liquidation_price: Usd::new(Decimal::from_str(&row.liquidation_price)?),
         creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
         term: Duration::new(row.term_secs, row.term_nanos),
         origin: row.origin,
@@ -333,7 +333,7 @@ pub async fn load_cfd_by_order_id(
     // via https://github.com/comit-network/hermes/issues/290
     Ok(Cfd {
         order,
-        quantity_usd: Usd(Decimal::from_str(&row.quantity_usd)?),
+        quantity_usd: Usd::new(Decimal::from_str(&row.quantity_usd)?),
         state: serde_json::from_str(row.state.as_str())?,
     })
 }
@@ -419,11 +419,11 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 id: row.uuid,
                 trading_pair: row.trading_pair,
                 position: row.position,
-                price: Usd(Decimal::from_str(&row.initial_price)?),
-                min_quantity: Usd(Decimal::from_str(&row.min_quantity)?),
-                max_quantity: Usd(Decimal::from_str(&row.max_quantity)?),
+                price: Usd::new(Decimal::from_str(&row.initial_price)?),
+                min_quantity: Usd::new(Decimal::from_str(&row.min_quantity)?),
+                max_quantity: Usd::new(Decimal::from_str(&row.max_quantity)?),
                 leverage: row.leverage,
-                liquidation_price: Usd(Decimal::from_str(&row.liquidation_price)?),
+                liquidation_price: Usd::new(Decimal::from_str(&row.liquidation_price)?),
                 creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
                 term: Duration::new(row.term_secs, row.term_nanos),
                 origin: row.origin,
@@ -432,7 +432,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
 
             Ok(Cfd {
                 order,
-                quantity_usd: Usd(Decimal::from_str(&row.quantity_usd)?),
+                quantity_usd: Usd::new(Decimal::from_str(&row.quantity_usd)?),
                 state: serde_json::from_str(row.state.as_str())?,
             })
         })
@@ -529,11 +529,11 @@ pub async fn load_cfds_by_oracle_event_id(
                 id: row.uuid,
                 trading_pair: row.trading_pair,
                 position: row.position,
-                price: Usd(Decimal::from_str(&row.initial_price)?),
-                min_quantity: Usd(Decimal::from_str(&row.min_quantity)?),
-                max_quantity: Usd(Decimal::from_str(&row.max_quantity)?),
+                price: Usd::new(Decimal::from_str(&row.initial_price)?),
+                min_quantity: Usd::new(Decimal::from_str(&row.min_quantity)?),
+                max_quantity: Usd::new(Decimal::from_str(&row.max_quantity)?),
                 leverage: row.leverage,
-                liquidation_price: Usd(Decimal::from_str(&row.liquidation_price)?),
+                liquidation_price: Usd::new(Decimal::from_str(&row.liquidation_price)?),
                 creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
                 term: Duration::new(row.term_secs, row.term_nanos),
                 origin: row.origin,
@@ -542,7 +542,7 @@ pub async fn load_cfds_by_oracle_event_id(
 
             Ok(Cfd {
                 order,
-                quantity_usd: Usd(Decimal::from_str(&row.quantity_usd)?),
+                quantity_usd: Usd::new(Decimal::from_str(&row.quantity_usd)?),
                 state: serde_json::from_str(row.state.as_str())?,
             })
         })
@@ -787,7 +787,7 @@ mod tests {
         fn dummy() -> Self {
             Cfd::new(
                 Order::dummy(),
-                Usd(dec!(1000)),
+                Usd::new(dec!(1000)),
                 CfdState::outgoing_order_request(),
             )
         }
@@ -809,9 +809,9 @@ mod tests {
     impl Order {
         fn dummy() -> Self {
             Order::new(
-                Usd(dec!(1000)),
-                Usd(dec!(100)),
-                Usd(dec!(1000)),
+                Usd::new(dec!(1000)),
+                Usd::new(dec!(100)),
+                Usd::new(dec!(1000)),
                 Origin::Theirs,
                 BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
             )
