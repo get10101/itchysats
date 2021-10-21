@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Neg, RangeInclusive};
 use std::time::SystemTime;
-use time::Duration;
+use time::{Duration, OffsetDateTime};
 use uuid::adapter::Hyphenated;
 use uuid::Uuid;
 
@@ -687,6 +687,10 @@ impl Cfd {
     #[allow(dead_code)]
     pub fn refund_timelock_in_blocks(&self) -> u32 {
         (self.order.term * Cfd::REFUND_THRESHOLD).as_blocks().ceil() as u32
+    }
+
+    pub fn expiry_timestamp(&self) -> OffsetDateTime {
+        self.order.oracle_event_id.timestamp()
     }
 
     /// A factor to be added to the CFD order term for calculating the refund timelock.
