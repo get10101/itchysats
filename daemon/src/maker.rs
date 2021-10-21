@@ -205,30 +205,25 @@ async fn main() -> Result<()> {
                     .unwrap();
 
                 let ActorSystem {
-                        cfd_actor_addr,
-                        cfd_feed_receiver,
-                        order_feed_receiver,
-                        update_cfd_feed_receiver,
-                    } =
-                        ActorSystem::new(
-                            db,
-                            wallet.clone(),
-                            oracle,
-                            |cfds, channel| oracle::Actor::new(cfds, channel),
-                            {
-                                |channel, cfds| {
-                                    let electrum = opts.network.electrum().to_string();
-                                    async move {
-                                        monitor::Actor::new(electrum, channel, cfds.clone()).await
-                                    }
-                                }
-                            },
-                            |channel0, channel1| {
-                                maker_inc_connections::Actor::new(channel0, channel1)
-                            },
-                            listener,
-                        )
-                        .await;
+                    cfd_actor_addr,
+                    cfd_feed_receiver,
+                    order_feed_receiver,
+                    update_cfd_feed_receiver,
+                } = ActorSystem::new(
+                    db,
+                    wallet.clone(),
+                    oracle,
+                    |cfds, channel| oracle::Actor::new(cfds, channel),
+                    {
+                        |channel, cfds| {
+                            let electrum = opts.network.electrum().to_string();
+                            monitor::Actor::new(electrum, channel, cfds)
+                        }
+                    },
+                    |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
+                    listener,
+                )
+                .await;
 
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
 
