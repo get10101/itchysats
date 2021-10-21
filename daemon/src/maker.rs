@@ -53,6 +53,10 @@ struct Opts {
     #[clap(short, long)]
     json: bool,
 
+    /// The term length of each CFD in hours.
+    #[clap(long, default_value = "24")]
+    term: u8,
+
     #[clap(subcommand)]
     network: Network,
 }
@@ -203,6 +207,7 @@ async fn main() -> Result<()> {
         },
         |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
         listener,
+        time::Duration::hours(opts.term as i64),
     )
     .await?;
 
@@ -265,6 +270,7 @@ where
         + xtra::Handler<maker_inc_connections::BroadcastOrder>
         + xtra::Handler<maker_inc_connections::ListenerMessage>,
 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new<F>(
         db: SqlitePool,
         wallet: Wallet,
@@ -276,6 +282,7 @@ where
             Box<dyn MessageChannel<FromTaker>>,
         ) -> T,
         listener: TcpListener,
+        term: time::Duration,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
@@ -296,6 +303,7 @@ where
         let cfd_actor_addr = maker_cfd::Actor::new(
             db,
             wallet,
+            term,
             oracle_pk,
             cfd_feed_sender,
             order_feed_sender,

@@ -125,14 +125,13 @@ pub struct Order {
 }
 
 impl Order {
-    pub const TERM: Duration = Duration::hours(24);
-
     pub fn new(
         price: Usd,
         min_quantity: Usd,
         max_quantity: Usd,
         origin: Origin,
         oracle_event_id: BitMexPriceEventId,
+        term: Duration,
     ) -> Result<Self> {
         let leverage = Leverage(2);
         let maintenance_margin_rate = dec!(0.005);
@@ -149,7 +148,7 @@ impl Order {
             liquidation_price,
             position: Position::Sell,
             creation_timestamp: SystemTime::now(),
-            term: Self::TERM,
+            term,
             origin,
             oracle_event_id,
         })
