@@ -283,7 +283,8 @@ where
         + xtra::Handler<oracle::Sync>,
     M: xtra::Handler<monitor::StartMonitoring>
         + xtra::Handler<monitor::Sync>
-        + xtra::Handler<monitor::CollaborativeSettlement>,
+        + xtra::Handler<monitor::CollaborativeSettlement>
+        + xtra::Handler<oracle::Attestation>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>
         + xtra::Handler<maker_inc_connections::ListenerMessage>,
@@ -324,7 +325,7 @@ where
             order_feed_sender,
             update_cfd_feed_sender,
             inc_conn_addr.clone(),
-            monitor_addr,
+            monitor_addr.clone(),
             oracle_addr.clone(),
         )
         .create(None)
@@ -353,7 +354,7 @@ where
                 .notify_interval(Duration::from_secs(5), || oracle::Sync)
                 .unwrap(),
         );
-        let fan_out_actor = fan_out::Actor::new(&[&cfd_actor_addr, &cfd_actor_addr])
+        let fan_out_actor = fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
             .create(None)
             .spawn_global();
 
