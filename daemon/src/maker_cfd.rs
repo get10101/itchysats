@@ -751,7 +751,7 @@ where
         let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
 
         let oracle_event_id =
-            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + Order::TERM)?;
+            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + cfd.order.term)?;
         let announcement = self
             .oracle_actor
             .send(oracle::GetAnnouncement(oracle_event_id))

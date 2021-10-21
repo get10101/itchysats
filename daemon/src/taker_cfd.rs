@@ -340,6 +340,8 @@ where
             anyhow::bail!("An update for order id {} is already in progress", order_id)
         }
 
+        let order = load_order_by_id(order_id, &mut self.db.acquire().await?).await?;
+
         let proposal = RollOverProposal {
             order_id,
             timestamp: SystemTime::now(),
@@ -357,7 +359,7 @@ where
         // we are likely going to need this one
         self.oracle_actor
             .send(oracle::FetchAnnouncement(oracle::next_announcement_after(
-                OffsetDateTime::now_utc() + Order::TERM,
+                OffsetDateTime::now_utc() + order.term,
             )?))
             .await?;
 
