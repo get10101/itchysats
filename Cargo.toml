@@ -1,5 +1,5 @@
 [workspace]
-members = ["cfd_protocol", "daemon"]
+members = ["cfd_protocol", "daemon", "xtra_productivity"]
 resolver = "2"
 
 [patch.crates-io]
