@@ -152,6 +152,8 @@ pub enum Error {
     CannotInitCSR,
     #[error("matrix must be square")]
     MatrixMustBeSquare,
+    #[error("cannot invert singular matrix")]
+    SingularMatrix,
     #[error("evaluation outside parametric domain")]
     InvalidDomain,
     #[error("einsum error--array size mismatch?")]
