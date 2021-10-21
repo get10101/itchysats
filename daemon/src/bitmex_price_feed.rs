@@ -68,12 +68,10 @@ impl Quote {
         }))
     }
 
-    #[allow(dead_code)] // Not used by all binaries.
     pub fn for_maker(&self) -> Usd {
         self.ask
     }
 
-    #[allow(dead_code)] // Not used by all binaries.
     pub fn for_taker(&self) -> Usd {
         // TODO: verify whether this is correct
         self.mid_range().unwrap()

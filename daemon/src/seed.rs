@@ -63,7 +63,6 @@ impl Seed {
         Ok(ext_priv_key)
     }
 
-    #[allow(dead_code)] // Not used by all binaries.
     pub fn derive_auth_password<P: From<[u8; 32]>>(&self) -> P {
         let mut password = [0u8; 32];
 

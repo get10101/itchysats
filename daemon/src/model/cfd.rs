@@ -124,7 +124,6 @@ pub struct Order {
     pub oracle_event_id: BitMexPriceEventId,
 }
 
-#[allow(dead_code)] // Only one binary and the tests use this.
 impl Order {
     pub const TERM: Duration = Duration::hours(24);
 
@@ -581,7 +580,6 @@ pub struct RollOverProposal {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Variants (for now) used by different binaries.
 pub enum SettlementKind {
     Incoming,
     Outgoing,
@@ -684,7 +682,6 @@ impl Cfd {
         }
     }
 
-    #[allow(dead_code)]
     pub fn refund_timelock_in_blocks(&self) -> u32 {
         (self.order.term * Cfd::REFUND_THRESHOLD).as_blocks().ceil() as u32
     }
@@ -701,10 +698,8 @@ impl Cfd {
     /// The downside is that if the oracle disappears: the users would only notice at the end
     /// of the cfd term. In this case the users has to wait for another `1.5` times of the
     /// term to get his funds back.
-    #[allow(dead_code)]
     const REFUND_THRESHOLD: f32 = 1.5;
 
-    #[allow(dead_code)]
     pub const CET_TIMELOCK: u32 = 12;
 
     pub fn handle(&mut self, event: CfdStateChangeEvent) -> Result<Option<CfdState>> {
@@ -1292,7 +1287,6 @@ pub struct NotReadyYet {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Not all variants are used by all binaries.
 pub enum CfdStateChangeEvent {
     // TODO: group other events by actors into enums and add them here so we can bundle all
     // transitions into cfd.transition_to(...)
@@ -1718,7 +1712,6 @@ impl Dlc {
         Ok((tx, sig))
     }
 
-    #[allow(dead_code)] // Used only by the maker.
     pub fn finalize_spend_transaction(
         &self,
         (close_tx, own_sig): (Transaction, Signature),

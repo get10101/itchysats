@@ -257,7 +257,6 @@ impl xtra::Handler<NewAttestationFetched> for Actor {
     }
 }
 
-#[allow(dead_code)]
 pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<BitMexPriceEventId> {
     let adjusted = ceil_to_next_hour(timestamp)?;
 

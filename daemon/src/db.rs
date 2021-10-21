@@ -188,7 +188,6 @@ pub async fn append_cfd_state(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> a
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn load_cfd_id_by_order_uuid(
     order_uuid: OrderId,
     conn: &mut PoolConnection<Sqlite>,
@@ -210,7 +209,6 @@ async fn load_cfd_id_by_order_uuid(
     Ok(cfd_id)
 }
 
-#[allow(dead_code)]
 async fn load_latest_cfd_state(
     cfd_id: i64,
     conn: &mut PoolConnection<Sqlite>,
