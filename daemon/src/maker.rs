@@ -25,7 +25,7 @@ use std::str::FromStr;
 use std::task::Poll;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::watch::{self, Receiver};
+use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -205,30 +205,25 @@ async fn main() -> Result<()> {
                     .unwrap();
 
                 let ActorSystem {
-                        cfd_actor_addr,
-                        cfd_feed_receiver,
-                        order_feed_receiver,
-                        update_cfd_feed_receiver,
-                    } =
-                        ActorSystem::new(
-                            db,
-                            wallet.clone(),
-                            oracle,
-                            |cfds, channel| oracle::Actor::new(cfds, channel),
-                            {
-                                |channel, cfds| {
-                                    let electrum = opts.network.electrum().to_string();
-                                    async move {
-                                        monitor::Actor::new(electrum, channel, cfds.clone()).await
-                                    }
-                                }
-                            },
-                            |channel0, channel1| {
-                                maker_inc_connections::Actor::new(channel0, channel1)
-                            },
-                            listener,
-                        )
-                        .await;
+                    cfd_actor_addr,
+                    cfd_feed_receiver,
+                    order_feed_receiver,
+                    update_cfd_feed_receiver,
+                } = ActorSystem::new(
+                    db,
+                    wallet.clone(),
+                    oracle,
+                    |cfds, channel| oracle::Actor::new(cfds, channel),
+                    {
+                        |channel, cfds| {
+                            let electrum = opts.network.electrum().to_string();
+                            monitor::Actor::new(electrum, channel, cfds)
+                        }
+                    },
+                    |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
+                    listener,
+                )
+                .await;
 
                 tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
 
@@ -270,9 +265,9 @@ async fn main() -> Result<()> {
 
 pub struct ActorSystem<O, M, T> {
     cfd_actor_addr: Address<maker_cfd::Actor<O, M, T>>,
-    cfd_feed_receiver: Receiver<Vec<Cfd>>,
-    order_feed_receiver: Receiver<Option<Order>>,
-    update_cfd_feed_receiver: Receiver<UpdateCfdProposals>,
+    cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
+    order_feed_receiver: watch::Receiver<Option<Order>>,
+    update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
 }
 
 impl<O, M, T> ActorSystem<O, M, T>
@@ -283,7 +278,8 @@ where
         + xtra::Handler<oracle::Sync>,
     M: xtra::Handler<monitor::StartMonitoring>
         + xtra::Handler<monitor::Sync>
-        + xtra::Handler<monitor::CollaborativeSettlement>,
+        + xtra::Handler<monitor::CollaborativeSettlement>
+        + xtra::Handler<oracle::Attestation>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>
         + xtra::Handler<maker_inc_connections::ListenerMessage>,
@@ -324,7 +320,7 @@ where
             order_feed_sender,
             update_cfd_feed_sender,
             inc_conn_addr.clone(),
-            monitor_addr,
+            monitor_addr.clone(),
             oracle_addr.clone(),
         )
         .create(None)
@@ -353,7 +349,7 @@ where
                 .notify_interval(Duration::from_secs(5), || oracle::Sync)
                 .unwrap(),
         );
-        let fan_out_actor = fan_out::Actor::new(&[&cfd_actor_addr, &cfd_actor_addr])
+        let fan_out_actor = fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
             .create(None)
             .spawn_global();
 

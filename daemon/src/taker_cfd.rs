@@ -92,7 +92,7 @@ impl<O, M> Actor<O, M> {
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
         update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
-        send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker> + Send>,
+        send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
     ) -> Self {
