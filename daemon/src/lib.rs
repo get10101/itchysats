@@ -15,6 +15,7 @@ use tokio::sync::watch;
 use xtra::message_channel::{MessageChannel, StrongMessageChannel};
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::{Actor, Address};
+use futures::Stream;
 
 pub mod actors;
 pub mod auth;
@@ -148,6 +149,94 @@ where
         });
 
         tokio::spawn(inc_conn_addr.attach_stream(listener_stream));
+
+        Ok(Self {
+            cfd_actor_addr,
+            cfd_feed_receiver,
+            order_feed_receiver,
+            update_cfd_feed_receiver,
+        })
+    }
+}
+
+pub struct Taker<O, M> {
+    pub cfd_actor_addr: Address<taker_cfd::Actor<O, M>>,
+    pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
+    pub order_feed_receiver: watch::Receiver<Option<Order>>,
+    pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
+}
+
+impl<O, M> Taker<O, M>
+    where
+        O: xtra::Handler<oracle::MonitorAttestation>
+        + xtra::Handler<oracle::GetAnnouncement>
+        + xtra::Handler<oracle::FetchAnnouncement>
+        + xtra::Handler<oracle::Sync>,
+        M: xtra::Handler<monitor::StartMonitoring>
+        + xtra::Handler<monitor::Sync>
+        + xtra::Handler<monitor::CollaborativeSettlement>
+        + xtra::Handler<oracle::Attestation>,
+{
+    pub async fn new<F>(
+        db: SqlitePool,
+        wallet: Wallet,
+        oracle_pk: schnorrsig::PublicKey,
+        send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
+        read_from_maker: Box<dyn Stream<Item = taker_cfd::MakerStreamMessage> + Unpin + Send>,
+        oracle_constructor: impl Fn(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
+        monitor_constructor: impl Fn(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
+    ) -> Result<Self>
+        where
+            F: Future<Output = Result<M>>,
+    {
+        let mut conn = db.acquire().await?;
+
+        let cfds = load_all_cfds(&mut conn).await?;
+
+        let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
+        let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
+        let (update_cfd_feed_sender, update_cfd_feed_receiver) =
+            watch::channel::<UpdateCfdProposals>(HashMap::new());
+
+        let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
+        let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
+
+        let cfd_actor_addr = taker_cfd::Actor::new(
+            db,
+            wallet,
+            oracle_pk,
+            cfd_feed_sender,
+            order_feed_sender,
+            update_cfd_feed_sender,
+            send_to_maker,
+            monitor_addr.clone(),
+            oracle_addr,
+        )
+            .create(None)
+            .spawn_global();
+
+        tokio::spawn(cfd_actor_addr.clone().attach_stream(read_from_maker));
+
+        tokio::spawn(
+            monitor_ctx
+                .notify_interval(Duration::from_secs(20), || monitor::Sync)
+                .map_err(|e| anyhow::anyhow!(e))?,
+        );
+        tokio::spawn(
+            monitor_ctx
+                .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?),
+        );
+
+        tokio::spawn(
+            oracle_ctx
+                .notify_interval(Duration::from_secs(5), || oracle::Sync)
+                .unwrap(),
+        );
+        let fan_out_actor = fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
+            .create(None)
+            .spawn_global();
+
+        tokio::spawn(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
 
         Ok(Self {
             cfd_actor_addr,
