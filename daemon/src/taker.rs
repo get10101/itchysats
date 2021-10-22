@@ -9,7 +9,8 @@ use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::wallet::Wallet;
 use daemon::{
-    bitmex_price_feed, housekeeping, logger, monitor, oracle, taker_cfd, wallet_sync, Taker,
+    bitmex_price_feed, connection, housekeeping, logger, monitor, oracle, taker_cfd, wallet_sync,
+    Taker,
 };
 
 use sqlx::sqlite::SqliteConnectOptions;
@@ -23,7 +24,6 @@ use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::MessageChannel;
 
-mod connection;
 mod routes_taker;
 
 #[derive(Clap)]

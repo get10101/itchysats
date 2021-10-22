@@ -1,11 +1,8 @@
-use anyhow::Result;
 use async_trait::async_trait;
-use cfd_protocol::Announcement;
-use daemon::maker_cfd::NewTakerOnline;
-use daemon::maker_inc_connections::TakerCommand;
 use daemon::model::cfd::Order;
-use daemon::{maker_cfd, maker_inc_connections, monitor, oracle, taker_cfd, wire};
-use futures::channel::mpsc::{self, UnboundedSender};
+use daemon::{connection, maker_cfd, maker_inc_connections, monitor, oracle};
+use std::net::SocketAddr;
+use std::task::Poll;
 use tokio::sync::watch;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
@@ -80,64 +77,49 @@ impl Monitor {
     }
 }
 
-/// Test Stub simulating the MakerIncConnections actor
-struct MakerIncConnections {
-    new_taker_online: Box<dyn MessageChannel<NewTakerOnline>>,
-    send_to_taker: UnboundedSender<taker_cfd::MakerStreamMessage>,
-}
-
-impl xtra::Actor for MakerIncConnections {}
-
-#[xtra_productivity(message_impl = false)]
-impl MakerIncConnections {
-    async fn broadcast_order(&mut self, _msg: maker_inc_connections::BroadcastOrder) -> Result<()> {
-        todo!("forward order to taker")
-    }
-
-    async fn taker_message(&mut self, msg: maker_inc_connections::TakerMessage) -> Result<()> {
-        todo!("we're using send_to_taker() here");
-
-        match msg.command {
-            TakerCommand::SendOrder { order } => {
-                self.send_to_taker(msg.taker_id, wire::MakerToTaker::CurrentOrder(order))
-                    .await?;
-            }
-            _ => panic!("boom"),
-        }
-    }
-
-    async fn taker_wire_message(&mut self, _msg: wire::TakerToMaker) -> () {
-        todo!("we're using send_to_taker() here");
-    }
-}
-
 /// Maker Test Setup
 struct Maker {
-    cfd_actor_addr: xtra::Address<maker_cfd::Actor<Oracle, Monitor, MakerIncConnections>>,
+    cfd_actor_addr: xtra::Address<maker_cfd::Actor<Oracle, Monitor, maker_inc_connections::Actor>>,
     order_feed_receiver: watch::Receiver<Option<Order>>,
-    inc_conn_addr: xtra::Address<MakerIncConnections>,
+    inc_conn_addr: xtra::Address<maker_inc_connections::Actor>,
+    address: SocketAddr,
 }
 
 impl Maker {
-    async fn start(send_to_taker: UnboundedSender<taker_cfd::MakerStreamMessage>) -> Self {
+    async fn start() -> Self {
         let maker = daemon::Maker::new(
             todo!("db"),
             todo!("wallet"),
             todo!("oracle_pk"),
             |_, _| Oracle,
             |_, _| async { Ok(Monitor) },
-            move |new_taker_online, _| MakerIncConnections {
-                new_taker_online,
-                send_to_taker,
-            },
+            |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
         )
         .await
         .unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+        let address = listener.local_addr().unwrap();
+
+        let listener_stream = futures::stream::poll_fn(move |ctx| {
+            let message = match futures::ready!(listener.poll_accept(ctx)) {
+                Ok((stream, address)) => {
+                    maker_inc_connections::ListenerMessage::NewConnection { stream, address }
+                }
+                Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
+            };
+
+            Poll::Ready(Some(message))
+        });
+
+        tokio::spawn(maker.inc_conn_addr.attach_stream(listener_stream));
 
         Self {
             cfd_actor_addr: maker.cfd_actor_addr,
             order_feed_receiver: maker.order_feed_receiver,
             inc_conn_addr: maker.inc_conn_addr,
+            address,
         }
     }
 
@@ -155,16 +137,18 @@ struct Taker {
 }
 
 impl Taker {
-    async fn start(
-        maker_inc_connections: xtra::Address<MakerIncConnections>,
-        read_from_maker: mpsc::UnboundedReceiver<taker_cfd::MakerStreamMessage>,
-    ) -> Self {
+    async fn start(maker_address: SocketAddr) -> Self {
+        let connection::Actor {
+            send_to_maker,
+            read_from_maker,
+        } = connection::Actor::new(maker_address).await;
+
         let taker = daemon::Taker::new(
             todo!("db"),
             todo!("wallet"),
             todo!("oracle_pk"),
-            Box::new(maker_inc_connections),
-            Box::new(read_from_maker),
+            send_to_maker,
+            read_from_maker,
             |_, _| Oracle,
             |_, _| async { Ok(Monitor) },
         )
@@ -184,11 +168,7 @@ impl Taker {
 }
 
 async fn start_both() -> (Maker, Taker) {
-    let (sender, recv) = mpsc::unbounded();
-
-    let maker = Maker::start(sender).await;
-
-    let taker = Taker::start(maker.inc_conn_addr.clone(), recv).await;
-
+    let maker = Maker::start().await;
+    let taker = Taker::start(maker.address).await;
     (maker, taker)
 }
