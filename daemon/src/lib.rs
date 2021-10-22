@@ -10,9 +10,7 @@ use futures::Stream;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::future::Future;
-use std::task::Poll;
 use std::time::Duration;
-use tokio::net::TcpListener;
 use tokio::sync::watch;
 use xtra::message_channel::{MessageChannel, StrongMessageChannel};
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -52,6 +50,7 @@ pub struct Maker<O, M, T> {
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
     pub order_feed_receiver: watch::Receiver<Option<Order>>,
     pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
+    pub inc_conn_addr: Address<T>,
 }
 
 impl<O, M, T> Maker<O, M, T>
@@ -65,8 +64,7 @@ where
         + xtra::Handler<monitor::CollaborativeSettlement>
         + xtra::Handler<oracle::Attestation>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>
-        + xtra::Handler<maker_inc_connections::ListenerMessage>,
+        + xtra::Handler<maker_inc_connections::BroadcastOrder>,
 {
     pub async fn new<F>(
         db: SqlitePool,
@@ -78,7 +76,6 @@ where
             Box<dyn MessageChannel<NewTakerOnline>>,
             Box<dyn MessageChannel<FromTaker>>,
         ) -> T,
-        listener: TcpListener,
         term: time::Duration,
     ) -> Result<Self>
     where
@@ -140,24 +137,12 @@ where
 
         oracle_addr.do_send_async(oracle::Sync).await?;
 
-        let listener_stream = futures::stream::poll_fn(move |ctx| {
-            let message = match futures::ready!(listener.poll_accept(ctx)) {
-                Ok((stream, address)) => {
-                    maker_inc_connections::ListenerMessage::NewConnection { stream, address }
-                }
-                Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
-            };
-
-            Poll::Ready(Some(message))
-        });
-
-        tokio::spawn(inc_conn_addr.attach_stream(listener_stream));
-
         Ok(Self {
             cfd_actor_addr,
             cfd_feed_receiver,
             order_feed_receiver,
             update_cfd_feed_receiver,
+            inc_conn_addr,
         })
     }
 }
