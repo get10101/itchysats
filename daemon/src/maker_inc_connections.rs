@@ -3,7 +3,6 @@ use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
 use crate::{forward_only_ok, maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
-use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use std::collections::HashMap;
 use std::io;

@@ -65,7 +65,7 @@ pub fn xtra_productivity(_attribute: TokenStream, item: TokenStream) -> TokenStr
                     type Result = #result_type;
                 }
 
-                #[async_trait]
+                #[async_trait::async_trait]
                 impl<#generic_params> xtra::Handler<#message_type> for #actor
                     where
                         #additional_bounds

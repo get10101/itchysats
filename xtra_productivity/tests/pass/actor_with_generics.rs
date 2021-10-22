@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use std::marker::PhantomData;
 use xtra_productivity::xtra_productivity;
 

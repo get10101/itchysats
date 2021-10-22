@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra_productivity::xtra_productivity;
