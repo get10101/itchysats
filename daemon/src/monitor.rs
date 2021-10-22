@@ -15,6 +15,7 @@ use std::fmt;
 use std::marker::Send;
 use std::ops::{Add, RangeInclusive};
 use xtra::prelude::StrongMessageChannel;
+use xtra_productivity::xtra_productivity;
 
 const FINALITY_CONFIRMATIONS: u32 = 1;
 
@@ -320,16 +321,6 @@ where
         Ok(())
     }
 
-    fn handle_collaborative_settlement(
-        &mut self,
-        collaborative_settlement: CollaborativeSettlement,
-    ) {
-        self.monitor_close_finality(
-            collaborative_settlement.tx,
-            collaborative_settlement.order_id,
-        );
-    }
-
     async fn update_state(
         &mut self,
         latest_block_height: BlockHeight,
@@ -530,14 +521,6 @@ impl Add<u32> for BlockHeight {
     }
 }
 
-impl xtra::Message for StartMonitoring {
-    type Result = ();
-}
-
-impl xtra::Message for CollaborativeSettlement {
-    type Result = ();
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     LockFinality(OrderId),
@@ -630,16 +613,30 @@ impl xtra::Message for Sync {
 
 impl<C> xtra::Actor for Actor<C> where C: Send + 'static {}
 
-#[async_trait]
-impl<C> xtra::Handler<StartMonitoring> for Actor<C>
+#[xtra_productivity]
+impl<C> Actor<C>
 where
     C: bdk::electrum_client::ElectrumApi + Send + 'static,
 {
-    async fn handle(&mut self, msg: StartMonitoring, _ctx: &mut xtra::Context<Self>) {
+    async fn handle_start_monitoring(
+        &mut self,
+        msg: StartMonitoring,
+        _ctx: &mut xtra::Context<Self>,
+    ) {
         let StartMonitoring { id, params } = msg;
 
         self.monitor_all(&params, id);
         self.cfds.insert(id, params);
+    }
+
+    fn handle_collaborative_settlement(
+        &mut self,
+        collaborative_settlement: CollaborativeSettlement,
+    ) {
+        self.monitor_close_finality(
+            collaborative_settlement.tx,
+            collaborative_settlement.order_id,
+        );
     }
 }
 #[async_trait]
@@ -656,16 +653,6 @@ where
 impl xtra::Handler<oracle::Attestation> for Actor {
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut xtra::Context<Self>) {
         log_error!(self.handle_oracle_attestation(msg));
-    }
-}
-
-#[async_trait]
-impl<C> xtra::Handler<CollaborativeSettlement> for Actor<C>
-where
-    C: bdk::electrum_client::ElectrumApi + Send + 'static,
-{
-    async fn handle(&mut self, msg: CollaborativeSettlement, _ctx: &mut xtra::Context<Self>) {
-        self.handle_collaborative_settlement(msg);
     }
 }
 
