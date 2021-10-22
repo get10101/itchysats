@@ -207,6 +207,10 @@ impl BitMexPriceEventId {
             .join(&self.to_string())
             .expect("Event id can be joined")
     }
+
+    pub fn timestamp(&self) -> OffsetDateTime {
+        self.timestamp
+    }
 }
 
 impl fmt::Display for BitMexPriceEventId {

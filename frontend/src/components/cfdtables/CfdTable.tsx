@@ -20,6 +20,7 @@ import {
     Table as CUITable,
     Tbody,
     Td,
+    Text,
     Th,
     Thead,
     Tooltip,
@@ -30,6 +31,7 @@ import {
 import React from "react";
 import { useAsync } from "react-async";
 import { Column, Row, useExpanded, useSortBy, useTable } from "react-table";
+import Timestamp from "../Timestamp";
 import { Action, Cfd } from "../Types";
 
 interface CfdTableProps {
@@ -95,7 +97,7 @@ export function CfdTable(
             },
             {
                 Header: "Details",
-                accessor: ({ details }) => {
+                accessor: ({ details, expiry_timestamp }) => {
                     const txs = details.tx_url_list.map((tx) => {
                         return (<Link href={tx.url} key={tx.url} isExternal>
                             {tx.label + " transaction"}
@@ -108,6 +110,10 @@ export function CfdTable(
                             <VStack>
                                 {txs}
                                 {details.payout && <Box>Payout: {details.payout}</Box>}
+                                <HStack>
+                                    <Text>Expires on:</Text>
+                                    <Timestamp timestamp={expiry_timestamp} />
+                                </HStack>
                             </VStack>
                         </Box>
                     );
@@ -260,7 +266,7 @@ function colorSchemaForAction(action: Action): string {
 function renderRowSubComponent(row: Row<Cfd>) {
     let cells = row.allCells
         .filter((cell) => {
-            return ["Details"].includes(cell.column.id);
+            return ["Details", "Timestamp"].includes(cell.column.id);
         })
         .map((cell) => {
             return cell;

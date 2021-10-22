@@ -49,6 +49,7 @@ export interface Cfd {
     actions: Action[];
     state_transition_timestamp: number;
     details: CfdDetails;
+    expiry_timestamp: number;
 }
 
 export interface CfdDetails {

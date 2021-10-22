@@ -10,6 +10,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::time::{SystemTime, UNIX_EPOCH};
+use time::OffsetDateTime;
 use tokio::sync::watch;
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,6 +39,9 @@ pub struct Cfd {
     pub state_transition_timestamp: u64,
 
     pub details: CfdDetails,
+
+    #[serde(with = "::time::serde::timestamp")]
+    pub expiry_timestamp: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -261,6 +265,7 @@ impl ToSseEvent for CfdsWithAuxData {
                     margin: cfd.margin().unwrap(),
                     margin_counterparty: cfd.counterparty_margin().unwrap(),
                     details,
+                    expiry_timestamp: cfd.expiry_timestamp(),
                 }
             })
             .collect::<Vec<Cfd>>();
