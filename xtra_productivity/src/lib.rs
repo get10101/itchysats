@@ -1,12 +1,36 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{FnArg, ImplItem, ItemImpl, ReturnType};
+use syn::{FnArg, GenericParam, ImplItem, ItemImpl, ReturnType};
 
 #[proc_macro_attribute]
 pub fn xtra_productivity(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     let block = syn::parse::<ItemImpl>(item).unwrap();
 
     let actor = block.self_ty;
+
+    let generic_params = &block.generics.params;
+
+    let generic_types = block
+        .generics
+        .params
+        .iter()
+        .filter_map(|param| match param {
+            GenericParam::Type(ty) => Some(ty.ident.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let additional_bounds = block
+        .generics
+        .where_clause
+        .map(|bounds| {
+            let predicates = bounds.predicates;
+
+            quote! {
+                #predicates
+            }
+        })
+        .unwrap_or_default();
 
     let code = block
         .items
@@ -42,7 +66,11 @@ pub fn xtra_productivity(_attribute: TokenStream, item: TokenStream) -> TokenStr
                 }
 
                 #[async_trait]
-                impl xtra::Handler<#message_type> for #actor {
+                impl<#generic_params> xtra::Handler<#message_type> for #actor
+                    where
+                        #additional_bounds
+                        #(#generic_types: Send + 'static),*
+                {
                     async fn handle(&mut self, #message_arg, #context_arg) #method_return #method_block
                 }
             }
