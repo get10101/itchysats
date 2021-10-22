@@ -1,0 +1,17 @@
+[package]
+name = "xtra_productivity"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1"
+syn = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+async-trait = "0.1.51"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+trybuild = "1"
+xtra = { version = "0.6", features = ["with-tokio-1"] }
