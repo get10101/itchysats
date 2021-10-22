@@ -555,6 +555,7 @@ dependencies = [
  "uuid",
  "vergen",
  "xtra",
+ "xtra_productivity",
 ]
 
 [[package]]

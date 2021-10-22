@@ -583,7 +583,7 @@ where
                         taker_id,
                         command: TakerCommand::NotifyOrderAccepted { id: order_id },
                     })
-                    .await?;
+                    .await??;
                 Ok(())
             }
         });
@@ -770,7 +770,7 @@ where
                             oracle_event_id,
                         },
                     })
-                    .await?;
+                    .await??;
                 Ok(())
             }
         });
