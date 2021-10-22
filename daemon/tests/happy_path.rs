@@ -1,27 +1,52 @@
-use daemon::maker_cfd;
+use anyhow::Result;
+use async_trait::async_trait;
 use daemon::model::cfd::Order;
+use daemon::{maker_cfd, maker_inc_connections, oracle};
 use tokio::sync::watch;
+use xtra_productivity::xtra_productivity;
 
 #[tokio::test]
 async fn taker_receives_order_from_maker_on_publication() {
-    let (maker, taker) = start_both().await;
+    let (mut maker, mut taker) = start_both().await;
 
-    let (published, received) = tokio::join!(
-        maker.publish_order(maker_cfd::NewOrder::dummy()),
-        taker.next_order()
-    );
+    let (published, received) =
+        tokio::join!(maker.publish_order(new_dummy_order()), taker.next_order());
 
     assert_eq!(published, received)
 }
 
+fn new_dummy_order() -> maker_cfd::NewOrder {
+    todo!("dummy new order")
+}
+
 /// Test Stub simulating the Oracle actor
 struct Oracle;
+impl xtra::Actor for Oracle {}
+
+#[xtra_productivity(message_impl = false)]
+impl Oracle {
+    async fn fetch_announcement(&mut self, msg: oracle::FetchAnnouncement) {
+        todo!("stub this if needed")
+    }
+}
 
 /// Test Stub simulating the Monitor actor
 struct Monitor;
+impl xtra::Actor for Monitor {}
 
 /// Test Stub simulating the TakerConnections actor
-struct TakerConnections;
+struct TakerConnections {
+    taker_connection: (),
+}
+
+impl xtra::Actor for TakerConnections {}
+
+#[xtra_productivity(message_impl = false)]
+impl TakerConnections {
+    async fn broadcast_order(&mut self, msg: maker_inc_connections::BroadcastOrder) -> Result<()> {
+        todo!("forward order to taker")
+    }
+}
 
 /// Maker Test Setup
 struct Maker {
