@@ -30,6 +30,21 @@ impl DummyActor {
 
 fn is_i32(_: i32) {}
 
+struct DummyMessageWithoutMessageImpl;
+
+#[xtra_productivity(message_impl = false)]
+impl DummyActor {
+    pub fn handle_dummy_message_without_message_impl(
+        &mut self,
+        _message: DummyMessageWithoutMessageImpl,
+    ) {
+    }
+}
+
+impl xtra::Message for DummyMessageWithoutMessageImpl {
+    type Result = ();
+}
+
 #[tokio::main]
 async fn main() {
     // Create dummy actor
@@ -39,4 +54,9 @@ async fn main() {
     let i32 = dummy_actor.send(DummyMessage).await.unwrap();
     is_i32(i32);
     dummy_actor.send(DummyMessageWithContext).await.unwrap();
+
+    dummy_actor
+        .send(DummyMessageWithoutMessageImpl)
+        .await
+        .unwrap();
 }
