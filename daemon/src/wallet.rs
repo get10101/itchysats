@@ -146,7 +146,7 @@ struct RpcError {
     code: i64,
 }
 
-/// Bitcoin error codes: https://github.com/bitcoin/bitcoin/blob/97d3500601c1d28642347d014a6de1e38f53ae4e/src/rpc/protocol.h#L23
+/// Bitcoin error codes: <https://github.com/bitcoin/bitcoin/blob/97d3500601c1d28642347d014a6de1e38f53ae4e/src/rpc/protocol.h#L23>
 pub enum RpcErrorCode {
     /// Transaction or block was rejected by network rules. Error code -27.
     RpcVerifyAlreadyInChain,

@@ -279,7 +279,7 @@ pub struct Announcement {
     /// Identifier for an oracle event.
     ///
     /// Doubles up as the path of the URL for this event i.e.
-    /// https://h00.ooo/{id}.
+    /// <https://h00.ooo/>{id}.
     pub id: BitMexPriceEventId,
     pub expected_outcome_time: OffsetDateTime,
     pub nonce_pks: Vec<schnorrsig::PublicKey>,

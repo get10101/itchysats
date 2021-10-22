@@ -1,7 +1,7 @@
 //! Utility functions to decompose numeric outcome values
 //!
 //! This code has been lifted from:
-//! https://github.com/p2pderivatives/rust-dlc/blob/chore%2Ffactor-out-dlc-trie/dlc-trie/src/digit_decomposition.rs
+//! <https://github.com/p2pderivatives/rust-dlc/blob/chore%2Ffactor-out-dlc-trie/dlc-trie/src/digit_decomposition.rs>
 
 /// Describes an interval that starts at `prefix || start` and terminates at `prefix || end`.
 struct PrefixInterval {
