@@ -25,7 +25,7 @@ impl xtra::Actor for Oracle {}
 
 #[xtra_productivity(message_impl = false)]
 impl Oracle {
-    async fn fetch_announcement(&mut self, msg: oracle::FetchAnnouncement) {
+    async fn fetch_announcement(&mut self, _msg: oracle::FetchAnnouncement) {
         todo!("stub this if needed")
     }
 }
@@ -43,7 +43,7 @@ impl xtra::Actor for TakerConnections {}
 
 #[xtra_productivity(message_impl = false)]
 impl TakerConnections {
-    async fn broadcast_order(&mut self, msg: maker_inc_connections::BroadcastOrder) -> Result<()> {
+    async fn broadcast_order(&mut self, _msg: maker_inc_connections::BroadcastOrder) -> Result<()> {
         todo!("forward order to taker")
     }
 }
