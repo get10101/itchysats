@@ -5,17 +5,15 @@ use crate::oracle::Attestation;
 use crate::wallet::Wallet;
 use anyhow::Result;
 use cfd_protocol::secp256k1_zkp::schnorrsig;
+use futures::Stream;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::future::Future;
-use std::task::Poll;
 use std::time::Duration;
-use tokio::net::TcpListener;
 use tokio::sync::watch;
 use xtra::message_channel::{MessageChannel, StrongMessageChannel};
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::{Actor, Address};
-use futures::Stream;
 
 pub mod actors;
 pub mod auth;
@@ -51,6 +49,7 @@ pub struct Maker<O, M, T> {
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
     pub order_feed_receiver: watch::Receiver<Option<Order>>,
     pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
+    pub inc_conn_addr: Address<T>,
 }
 
 impl<O, M, T> Maker<O, M, T>
@@ -64,8 +63,7 @@ where
         + xtra::Handler<monitor::CollaborativeSettlement>
         + xtra::Handler<oracle::Attestation>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>
-        + xtra::Handler<maker_inc_connections::ListenerMessage>,
+        + xtra::Handler<maker_inc_connections::BroadcastOrder>,
 {
     pub async fn new<F>(
         db: SqlitePool,
@@ -77,7 +75,6 @@ where
             Box<dyn MessageChannel<NewTakerOnline>>,
             Box<dyn MessageChannel<FromTaker>>,
         ) -> T,
-        listener: TcpListener,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
@@ -137,24 +134,12 @@ where
 
         oracle_addr.do_send_async(oracle::Sync).await?;
 
-        let listener_stream = futures::stream::poll_fn(move |ctx| {
-            let message = match futures::ready!(listener.poll_accept(ctx)) {
-                Ok((stream, address)) => {
-                    maker_inc_connections::ListenerMessage::NewConnection { stream, address }
-                }
-                Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
-            };
-
-            Poll::Ready(Some(message))
-        });
-
-        tokio::spawn(inc_conn_addr.attach_stream(listener_stream));
-
         Ok(Self {
             cfd_actor_addr,
             cfd_feed_receiver,
             order_feed_receiver,
             update_cfd_feed_receiver,
+            inc_conn_addr,
         })
     }
 }
@@ -167,12 +152,12 @@ pub struct Taker<O, M> {
 }
 
 impl<O, M> Taker<O, M>
-    where
-        O: xtra::Handler<oracle::MonitorAttestation>
+where
+    O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
         + xtra::Handler<oracle::FetchAnnouncement>
         + xtra::Handler<oracle::Sync>,
-        M: xtra::Handler<monitor::StartMonitoring>
+    M: xtra::Handler<monitor::StartMonitoring>
         + xtra::Handler<monitor::Sync>
         + xtra::Handler<monitor::CollaborativeSettlement>
         + xtra::Handler<oracle::Attestation>,
@@ -186,8 +171,8 @@ impl<O, M> Taker<O, M>
         oracle_constructor: impl Fn(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl Fn(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
     ) -> Result<Self>
-        where
-            F: Future<Output = Result<M>>,
+    where
+        F: Future<Output = Result<M>>,
     {
         let mut conn = db.acquire().await?;
 
@@ -212,8 +197,8 @@ impl<O, M> Taker<O, M>
             monitor_addr.clone(),
             oracle_addr,
         )
-            .create(None)
-            .spawn_global();
+        .create(None)
+        .spawn_global();
 
         tokio::spawn(cfd_actor_addr.clone().attach_stream(read_from_maker));
 

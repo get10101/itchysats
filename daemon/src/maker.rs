@@ -21,6 +21,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use std::task::Poll;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
@@ -186,6 +187,7 @@ async fn main() -> Result<()> {
         cfd_feed_receiver,
         order_feed_receiver,
         update_cfd_feed_receiver,
+        inc_conn_addr: incoming_connection_addr,
     } = Maker::new(
         db.clone(),
         wallet.clone(),
@@ -198,9 +200,21 @@ async fn main() -> Result<()> {
             }
         },
         |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
-        listener,
     )
     .await?;
+
+    let listener_stream = futures::stream::poll_fn(move |ctx| {
+        let message = match futures::ready!(listener.poll_accept(ctx)) {
+            Ok((stream, address)) => {
+                maker_inc_connections::ListenerMessage::NewConnection { stream, address }
+            }
+            Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
+        };
+
+        Poll::Ready(Some(message))
+    });
+
+    tokio::spawn(incoming_connection_addr.attach_stream(listener_stream));
 
     tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
 
