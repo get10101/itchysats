@@ -57,7 +57,6 @@ impl<O, M, T, W> MakerActorSystem<O, M, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
-        + xtra::Handler<oracle::FetchAnnouncement>
         + xtra::Handler<oracle::Sync>,
     M: xtra::Handler<monitor::StartMonitoring>
         + xtra::Handler<monitor::Sync>
@@ -162,7 +161,6 @@ impl<O, M, W> TakerActorSystem<O, M, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
-        + xtra::Handler<oracle::FetchAnnouncement>
         + xtra::Handler<oracle::Sync>,
     M: xtra::Handler<monitor::StartMonitoring>
         + xtra::Handler<monitor::Sync>

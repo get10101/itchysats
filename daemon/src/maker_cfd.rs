@@ -629,7 +629,6 @@ where
 
 impl<O, M, T, W> Actor<O, M, T, W>
 where
-    O: xtra::Handler<oracle::FetchAnnouncement>,
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
 {
     async fn handle_new_order(
@@ -640,10 +639,6 @@ where
     ) -> Result<()> {
         let oracle_event_id =
             oracle::next_announcement_after(time::OffsetDateTime::now_utc() + self.term)?;
-
-        self.oracle_actor
-            .do_send_async(oracle::FetchAnnouncement(oracle_event_id))
-            .await?;
 
         let order = Order::new(
             price,
@@ -949,7 +944,6 @@ where
 #[async_trait]
 impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<NewOrder> for Actor<O, M, T, W>
 where
-    O: xtra::Handler<oracle::FetchAnnouncement>,
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
 {
     async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
