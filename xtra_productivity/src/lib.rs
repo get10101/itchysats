@@ -1,6 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{FnArg, ImplItem, ItemImpl, ReturnType};
+use syn::spanned::Spanned;
+use syn::{FnArg, GenericParam, ImplItem, ItemImpl, ItemStruct, ReturnType, WherePredicate};
 
 #[proc_macro_attribute]
 pub fn xtra_productivity(_attribute: TokenStream, item: TokenStream) -> TokenStream {
@@ -50,6 +51,72 @@ pub fn xtra_productivity(_attribute: TokenStream, item: TokenStream) -> TokenStr
 
     (quote! {
         #(#code)*
+    })
+    .into()
+}
+
+#[proc_macro_derive(Actor)]
+pub fn derive_actor(item: TokenStream) -> TokenStream {
+    let struct_item = syn::parse::<ItemStruct>(item).unwrap();
+
+    let ty = struct_item.ident;
+
+    for param in &struct_item.generics.params {
+        if let GenericParam::Type(ty) = param {
+            if !ty.bounds.is_empty() {
+                return syn::Error::new(
+                    ty.bounds.span(),
+                    r#"Move bounds to where clause when using the `Actor` custom derive"#,
+                )
+                .to_compile_error()
+                .into();
+            }
+        }
+    }
+
+    let generic_types = &struct_item
+        .generics
+        .params
+        .iter()
+        .filter_map(|param| match param {
+            GenericParam::Type(ty) => Some(ty.ident.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let where_clauses = struct_item
+        .generics
+        .where_clause
+        .map(|clause| {
+            let clauses = clause
+                .predicates
+                .into_iter()
+                .flat_map(|predicate| match predicate {
+                    WherePredicate::Type(pt) => Some({
+                        let ty = pt.bounded_ty;
+                        let bounds = pt.bounds;
+
+                        quote! {
+                            #ty: #bounds + Send + 'static
+                        }
+                    }),
+                    _ => None,
+                });
+
+            quote! {
+                #(#clauses),*
+            }
+        })
+        .unwrap_or_else(|| {
+            quote! {
+                #(#generic_types: Send + 'static),*
+            }
+        });
+
+    (quote! {
+        impl<#(#generic_types),*> xtra::Actor for #ty<#(#generic_types),*> where #where_clauses {
+
+        }
     })
     .into()
 }

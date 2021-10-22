@@ -1,0 +1,5 @@
+error: Move bounds to where clause when using the `Actor` custom derive
+ --> tests/fail/derive_actor.rs:9:27
+  |
+9 | struct OneArgWithBound<T: Foo> {
+  |                           ^^^
