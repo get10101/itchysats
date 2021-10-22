@@ -5,6 +5,7 @@ use xtra::{Handler, KeepRunning};
 
 /// A forwarding actor that only forwards [`Result::Ok`] values and shuts itself down upon the first
 /// error.
+#[derive(xtra_productivity::Actor)]
 pub struct Actor<M> {
     forward: Box<dyn MessageChannel<M>>,
 }
@@ -54,5 +55,3 @@ where
         KeepRunning::Yes
     }
 }
-
-impl<T: 'static + Send> xtra::Actor for Actor<T> {}

@@ -39,6 +39,7 @@ pub struct MonitorParams {
 
 pub struct Sync;
 
+#[derive(xtra_productivity::Actor)]
 pub struct Actor<C = bdk::electrum_client::Client> {
     cfds: HashMap<OrderId, MonitorParams>,
     event_channel: Box<dyn StrongMessageChannel<Event>>,
@@ -628,8 +629,6 @@ impl xtra::Message for Sync {
     type Result = ();
 }
 
-impl<C> xtra::Actor for Actor<C> where C: Send + 'static {}
-
 #[async_trait]
 impl<C> xtra::Handler<StartMonitoring> for Actor<C>
 where
@@ -828,12 +827,10 @@ mod tests {
         "6a4c50001d97ca0002d3829148f63cc8ee21241e3f1c5eaee58781dd45a7d814710fac571b92aadff583e85d5a295f61856f469b401efe615657bf040c32f1000065bce011a420ca9ea3657fff154d95d1a95c".parse().unwrap()
     }
 
-    #[derive(Default)]
+    #[derive(Default, xtra_productivity::Actor)]
     struct MessageRecordingActor {
         events: Vec<Event>,
     }
-
-    impl xtra::Actor for MessageRecordingActor {}
 
     #[async_trait]
     impl xtra::Handler<Event> for MessageRecordingActor {

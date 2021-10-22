@@ -59,6 +59,7 @@ pub struct FromTaker {
     pub msg: wire::TakerToMaker,
 }
 
+#[derive(xtra_productivity::Actor)]
 pub struct Actor<O, M, T> {
     db: sqlx::SqlitePool,
     wallet: Wallet,
@@ -918,12 +919,14 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<CfdAction> for Actor<O, M, T>
+impl<O, M, T> Handler<CfdAction> for Actor<O, M, T>
 where
     Self: xtra::Handler<CfdSetupCompleted> + xtra::Handler<CfdRollOverCompleted>,
-    O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
+    O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement> + 'static,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>,
+        + xtra::Handler<maker_inc_connections::BroadcastOrder>
+        + 'static,
+    M: 'static,
 {
     async fn handle(&mut self, msg: CfdAction, ctx: &mut Context<Self>) {
         use CfdAction::*;
@@ -942,10 +945,11 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<NewOrder> for Actor<O, M, T>
+impl<O, M, T> Handler<NewOrder> for Actor<O, M, T>
 where
-    O: xtra::Handler<oracle::FetchAnnouncement>,
-    T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
+    O: xtra::Handler<oracle::FetchAnnouncement> + 'static,
+    T: xtra::Handler<maker_inc_connections::BroadcastOrder> + 'static,
+    M: 'static + Send,
 {
     async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
         log_error!(self.handle_new_order(msg.price, msg.min_quantity, msg.max_quantity));
@@ -953,9 +957,11 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<NewTakerOnline> for Actor<O, M, T>
+impl<O, M, T> Handler<NewTakerOnline> for Actor<O, M, T>
 where
-    T: xtra::Handler<maker_inc_connections::TakerMessage>,
+    T: xtra::Handler<maker_inc_connections::TakerMessage> + 'static + Send,
+    O: 'static + Send,
+    M: 'static + Send,
 {
     async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) {
         log_error!(self.handle_new_taker_online(msg.id));
@@ -963,10 +969,11 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<CfdSetupCompleted> for Actor<O, M, T>
+impl<O, M, T> Handler<CfdSetupCompleted> for Actor<O, M, T>
 where
-    O: xtra::Handler<oracle::MonitorAttestation>,
-    M: xtra::Handler<monitor::StartMonitoring>,
+    O: xtra::Handler<oracle::MonitorAttestation> + 'static + Send,
+    M: xtra::Handler<monitor::StartMonitoring> + 'static + Send,
+    T: 'static + Send,
 {
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_setup_completed(msg.order_id, msg.dlc));
@@ -974,9 +981,11 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<CfdRollOverCompleted> for Actor<O, M, T>
+impl<O, M, T> Handler<CfdRollOverCompleted> for Actor<O, M, T>
 where
-    M: xtra::Handler<monitor::StartMonitoring>,
+    M: xtra::Handler<monitor::StartMonitoring> + 'static + Send,
+    O: 'static + Send,
+    T: 'static + Send,
 {
     async fn handle(&mut self, msg: CfdRollOverCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_roll_over_completed(msg.order_id, msg.dlc));
@@ -984,18 +993,26 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<monitor::Event> for Actor<O, M, T> {
+impl<O, M, T> Handler<monitor::Event> for Actor<O, M, T>
+where
+    O: 'static + Send,
+    M: 'static + Send,
+    T: 'static + Send,
+{
     async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) {
         log_error!(self.handle_monitoring_event(msg))
     }
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<FromTaker> for Actor<O, M, T>
+impl<O, M, T> Handler<FromTaker> for Actor<O, M, T>
 where
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>
-        + xtra::Handler<maker_inc_connections::TakerMessage>,
-    M: xtra::Handler<monitor::CollaborativeSettlement>,
+        + xtra::Handler<maker_inc_connections::TakerMessage>
+        + 'static
+        + Send,
+    M: xtra::Handler<monitor::CollaborativeSettlement> + 'static + Send,
+    O: 'static + Send,
 {
     async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker, _ctx: &mut Context<Self>) {
         match msg {
@@ -1050,7 +1067,12 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<oracle::Attestation> for Actor<O, M, T> {
+impl<O, M, T> Handler<oracle::Attestation> for Actor<O, M, T>
+where
+    O: 'static + Send,
+    M: 'static + Send,
+    T: 'static + Send,
+{
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) {
         log_error!(self.handle_oracle_attestation(msg))
     }
@@ -1079,5 +1101,3 @@ impl Message for CfdAction {
 impl Message for FromTaker {
     type Result = ();
 }
-
-impl<O: 'static, M: 'static, T: 'static> xtra::Actor for Actor<O, M, T> {}

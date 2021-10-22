@@ -63,6 +63,7 @@ pub enum ListenerMessage {
     },
 }
 
+#[derive(xtra_productivity::Actor)]
 pub struct Actor {
     write_connections: HashMap<TakerId, Address<send_to_socket::Actor<wire::MakerToTaker>>>,
     new_taker_channel: Box<dyn MessageChannel<NewTakerOnline>>,
@@ -225,5 +226,3 @@ impl Actor {
         }
     }
 }
-
-impl xtra::Actor for Actor {}

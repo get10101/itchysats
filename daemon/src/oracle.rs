@@ -11,6 +11,7 @@ use std::ops::Add;
 use time::ext::NumericalDuration;
 use xtra::prelude::StrongMessageChannel;
 
+#[derive(xtra_productivity::Actor)]
 pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
     pending_announcements: HashSet<BitMexPriceEventId>,
@@ -292,8 +293,6 @@ impl From<Announcement> for cfd_protocol::Announcement {
         }
     }
 }
-
-impl xtra::Actor for Actor {}
 
 #[async_trait]
 impl xtra::Handler<Sync> for Actor {

@@ -1,19 +1,24 @@
 use xtra::prelude::MessageChannel;
 
 /// A fan-out actor takes every incoming message and forwards it to a set of other actors.
-pub struct Actor<M: xtra::Message<Result = ()>> {
+#[derive(xtra_productivity::Actor)]
+pub struct Actor<M>
+where
+    M: xtra::Message<Result = ()>,
+{
     receivers: Vec<Box<dyn MessageChannel<M>>>,
 }
 
-impl<M: xtra::Message<Result = ()>> Actor<M> {
+impl<M> Actor<M>
+where
+    M: xtra::Message<Result = ()>,
+{
     pub fn new(receivers: &[&dyn MessageChannel<M>]) -> Self {
         Self {
             receivers: receivers.iter().map(|c| c.clone_channel()).collect(),
         }
     }
 }
-
-impl<M> xtra::Actor for Actor<M> where M: xtra::Message<Result = ()> {}
 
 #[async_trait::async_trait]
 impl<M> xtra::Handler<M> for Actor<M>

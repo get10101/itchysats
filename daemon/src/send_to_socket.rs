@@ -7,6 +7,7 @@ use tokio::net::tcp::OwnedWriteHalf;
 use tokio_util::codec::FramedWrite;
 use xtra::{Handler, Message};
 
+#[derive(xtra_productivity::Actor)]
 pub struct Actor<T> {
     write: FramedWrite<OwnedWriteHalf, JsonCodec<T>>,
 }
@@ -37,8 +38,6 @@ where
         }
     }
 }
-
-impl<T: 'static + Send> xtra::Actor for Actor<T> {}
 
 impl xtra::Message for wire::MakerToTaker {
     type Result = ();

@@ -68,6 +68,7 @@ enum RollOverState {
     None,
 }
 
+#[derive(xtra_productivity::Actor)]
 pub struct Actor<O, M> {
     db: sqlx::SqlitePool,
     wallet: Wallet,
@@ -419,10 +420,14 @@ where
     }
 }
 
-impl<O: 'static, M: 'static> Actor<O, M>
+impl<O, M> Actor<O, M>
 where
     Self: xtra::Handler<CfdSetupCompleted>,
-    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
+    O: xtra::Handler<oracle::GetAnnouncement>
+        + xtra::Handler<oracle::MonitorAttestation>
+        + 'static
+        + Send,
+    M: 'static + Send,
 {
     async fn handle_order_accepted(
         &mut self,
@@ -484,10 +489,11 @@ where
     }
 }
 
-impl<O: 'static, M: 'static> Actor<O, M>
+impl<O, M> Actor<O, M>
 where
     Self: xtra::Handler<CfdRollOverCompleted>,
-    O: xtra::Handler<oracle::GetAnnouncement>,
+    O: xtra::Handler<oracle::GetAnnouncement> + 'static + Send,
+    M: 'static + Send,
 {
     async fn handle_roll_over_accepted(
         &mut self,
@@ -544,9 +550,10 @@ where
     }
 }
 
-impl<O: 'static, M: 'static> Actor<O, M>
+impl<O, M> Actor<O, M>
 where
-    M: xtra::Handler<monitor::StartMonitoring>,
+    M: xtra::Handler<monitor::StartMonitoring> + 'static + Send,
+    O: 'static + Send,
 {
     async fn handle_cfd_roll_over_completed(
         &mut self,
@@ -578,9 +585,10 @@ where
     }
 }
 
-impl<O: 'static, M: 'static> Actor<O, M>
+impl<O, M> Actor<O, M>
 where
-    M: xtra::Handler<monitor::CollaborativeSettlement>,
+    M: xtra::Handler<monitor::CollaborativeSettlement> + 'static + Send,
+    O: 'static + Send,
 {
     async fn handle_settlement_accepted(
         &mut self,
@@ -628,16 +636,21 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static> Handler<TakeOffer> for Actor<O, M> {
+impl<O, M> Handler<TakeOffer> for Actor<O, M>
+where
+    O: 'static + Send,
+    M: 'static + Send,
+{
     async fn handle(&mut self, msg: TakeOffer, _ctx: &mut Context<Self>) {
         log_error!(self.handle_take_offer(msg.order_id, msg.quantity));
     }
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static> Handler<CfdAction> for Actor<O, M>
+impl<O, M> Handler<CfdAction> for Actor<O, M>
 where
-    O: xtra::Handler<oracle::FetchAnnouncement>,
+    O: xtra::Handler<oracle::FetchAnnouncement> + 'static + Send,
+    M: 'static + Send,
 {
     async fn handle(&mut self, msg: CfdAction, _ctx: &mut Context<Self>) {
         use CfdAction::*;
@@ -659,13 +672,15 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static> Handler<MakerStreamMessage> for Actor<O, M>
+impl<O, M> Handler<MakerStreamMessage> for Actor<O, M>
 where
     Self: xtra::Handler<CfdSetupCompleted> + xtra::Handler<CfdRollOverCompleted>,
     O: xtra::Handler<oracle::FetchAnnouncement>
         + xtra::Handler<oracle::GetAnnouncement>
-        + xtra::Handler<oracle::MonitorAttestation>,
-    M: xtra::Handler<monitor::CollaborativeSettlement>,
+        + xtra::Handler<oracle::MonitorAttestation>
+        + 'static
+        + Send,
+    M: xtra::Handler<monitor::CollaborativeSettlement> + 'static + Send,
 {
     async fn handle(
         &mut self,
@@ -721,10 +736,10 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static> Handler<CfdSetupCompleted> for Actor<O, M>
+impl<O, M> Handler<CfdSetupCompleted> for Actor<O, M>
 where
-    O: xtra::Handler<oracle::MonitorAttestation>,
-    M: xtra::Handler<monitor::StartMonitoring>,
+    O: xtra::Handler<oracle::MonitorAttestation> + 'static + Send,
+    M: xtra::Handler<monitor::StartMonitoring> + 'static + Send,
 {
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_setup_completed(msg.order_id, msg.dlc));
@@ -732,9 +747,10 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static> Handler<CfdRollOverCompleted> for Actor<O, M>
+impl<O, M> Handler<CfdRollOverCompleted> for Actor<O, M>
 where
-    M: xtra::Handler<monitor::StartMonitoring>,
+    M: xtra::Handler<monitor::StartMonitoring> + 'static + Send,
+    O: 'static + Send,
 {
     async fn handle(&mut self, msg: CfdRollOverCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_roll_over_completed(msg.order_id, msg.dlc));
@@ -742,14 +758,22 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static> Handler<monitor::Event> for Actor<O, M> {
+impl<O, M> Handler<monitor::Event> for Actor<O, M>
+where
+    O: 'static + Send,
+    M: 'static + Send,
+{
     async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) {
         log_error!(self.handle_monitoring_event(msg))
     }
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static> Handler<oracle::Attestation> for Actor<O, M> {
+impl<O, M> Handler<oracle::Attestation> for Actor<O, M>
+where
+    O: 'static + Send,
+    M: 'static + Send,
+{
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) {
         log_error!(self.handle_oracle_attestation(msg))
     }
@@ -775,5 +799,3 @@ impl Message for CfdSetupCompleted {
 impl Message for CfdRollOverCompleted {
     type Result = ();
 }
-
-impl<O: 'static, M: 'static> xtra::Actor for Actor<O, M> {}
