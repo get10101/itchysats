@@ -69,9 +69,9 @@ where
         db: SqlitePool,
         wallet: Wallet,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_constructor: impl Fn(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
-        monitor_constructor: impl Fn(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
-        inc_conn_constructor: impl Fn(
+        oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
+        monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
+        inc_conn_constructor: impl FnOnce(
             Box<dyn MessageChannel<NewTakerOnline>>,
             Box<dyn MessageChannel<FromTaker>>,
         ) -> T,
@@ -168,8 +168,8 @@ where
         oracle_pk: schnorrsig::PublicKey,
         send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
         read_from_maker: Box<dyn Stream<Item = taker_cfd::MakerStreamMessage> + Unpin + Send>,
-        oracle_constructor: impl Fn(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
-        monitor_constructor: impl Fn(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
+        oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
+        monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
