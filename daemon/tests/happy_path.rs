@@ -1,7 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use cfd_protocol::Announcement;
 use daemon::model::cfd::Order;
-use daemon::{maker_cfd, maker_inc_connections, oracle};
+use daemon::{maker_cfd, maker_inc_connections, monitor, oracle};
 use tokio::sync::watch;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
@@ -26,7 +27,22 @@ impl xtra::Actor for Oracle {}
 
 #[xtra_productivity(message_impl = false)]
 impl Oracle {
-    async fn fetch_announcement(&mut self, _msg: oracle::FetchAnnouncement) {
+    async fn handle_fetch_announcement(&mut self, _msg: oracle::FetchAnnouncement) {
+        todo!("stub this if needed")
+    }
+
+    async fn handle_get_announcement(
+        &mut self,
+        _msg: oracle::GetAnnouncement,
+    ) -> Option<oracle::Announcement> {
+        todo!("stub this if needed")
+    }
+
+    async fn handle_monitor_attestation(&mut self, _msg: oracle::MonitorAttestation) {
+        todo!("stub this if needed")
+    }
+
+    async fn handle_sync(&mut self, _msg: oracle::Sync) {
         todo!("stub this if needed")
     }
 }
@@ -35,44 +51,80 @@ impl Oracle {
 struct Monitor;
 impl xtra::Actor for Monitor {}
 
-/// Test Stub simulating the TakerConnections actor
-struct TakerConnections {
+#[xtra_productivity(message_impl = false)]
+impl Monitor {
+    async fn handle_sync(&mut self, _msg: monitor::Sync) {
+        todo!("stub this if needed")
+    }
+
+    async fn handle_start_monitoring(&mut self, _msg: monitor::StartMonitoring) {
+        todo!("stub this if needed")
+    }
+
+    async fn handle_collaborative_settlement(&mut self, _msg: monitor::CollaborativeSettlement) {
+        todo!("stub this if needed")
+    }
+
+    async fn handle_oracle_attestation(&mut self, _msg: oracle::Attestation) {
+        todo!("stub this if needed")
+    }
+}
+
+/// Test Stub simulating the MakerIncConnections actor
+struct MakerIncConnections {
     taker_connection: (),
 }
 
-impl xtra::Actor for TakerConnections {}
+impl xtra::Actor for MakerIncConnections {}
 
 #[xtra_productivity(message_impl = false)]
-impl TakerConnections {
+impl MakerIncConnections {
     async fn broadcast_order(&mut self, _msg: maker_inc_connections::BroadcastOrder) -> Result<()> {
         todo!("forward order to taker")
     }
 
-    async fn listener_message(
-        &mut self,
-        _msg: maker_inc_connections::ListenerMessage,
-    ) -> KeepRunning {
-        todo!("handle connection of taker")
+    async fn taker_message(&mut self, _msg: maker_inc_connections::TakerMessage) -> Result<()> {
+        todo!("stub this if needed")
     }
 }
 
 /// Maker Test Setup
 struct Maker {
-    cfd_actor: xtra::Address<maker_cfd::Actor<Oracle, Monitor, TakerConnections>>,
-    order_feed: watch::Receiver<Option<Order>>,
+    cfd_actor_addr: xtra::Address<maker_cfd::Actor<Oracle, Monitor, MakerIncConnections>>,
+    order_feed_receiver: watch::Receiver<Option<Order>>,
+    inc_conn_addr: xtra::Address<MakerIncConnections>,
 }
 
 impl Maker {
     async fn start() -> Self {
+        let daemon::Maker {
+            cfd_actor_addr,
+            order_feed_receiver,
+            inc_conn_addr,
+            ..
+        } = daemon::Maker::new(
+            todo!("db"),
+            todo!("wallet"),
+            todo!("oracle_pk"),
+            |_, _| Oracle,
+            |_, _| async { Ok(Monitor) },
+            |_, _| MakerIncConnections {
+                taker_connection: (),
+            },
+        )
+        .await
+        .unwrap();
+
         Self {
-            cfd_actor: todo!("plug in cfd actor"),
-            order_feed: todo!("plug in order feed"),
+            cfd_actor_addr,
+            order_feed_receiver,
+            inc_conn_addr,
         }
     }
 
     async fn publish_order(&mut self, new_order_params: maker_cfd::NewOrder) -> Order {
-        self.cfd_actor.send(new_order_params).await.unwrap();
-        let next_order = self.order_feed.borrow().clone().unwrap();
+        self.cfd_actor_addr.send(new_order_params).await.unwrap();
+        let next_order = self.order_feed_receiver.borrow().clone().unwrap();
 
         next_order
     }
