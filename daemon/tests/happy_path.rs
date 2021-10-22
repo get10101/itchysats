@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use daemon::model::cfd::Order;
 use daemon::{maker_cfd, maker_inc_connections, oracle};
 use tokio::sync::watch;
+use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 
 #[tokio::test]
@@ -45,6 +46,13 @@ impl xtra::Actor for TakerConnections {}
 impl TakerConnections {
     async fn broadcast_order(&mut self, _msg: maker_inc_connections::BroadcastOrder) -> Result<()> {
         todo!("forward order to taker")
+    }
+
+    async fn listener_message(
+        &mut self,
+        _msg: maker_inc_connections::ListenerMessage,
+    ) -> KeepRunning {
+        todo!("handle connection of taker")
     }
 }
 
