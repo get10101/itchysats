@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use daemon::model::cfd::Order;
-use daemon::{connection, maker_cfd, maker_inc_connections, monitor, oracle};
+use daemon::{connection, db, maker_cfd, maker_inc_connections, monitor, oracle};
+use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::task::Poll;
 use tokio::sync::watch;
@@ -87,8 +88,9 @@ struct Maker {
 
 impl Maker {
     async fn start() -> Self {
+        let db = in_memory_db().await;
         let maker = daemon::Maker::new(
-            todo!("db"),
+            db,
             todo!("wallet"),
             todo!("oracle_pk"),
             |_, _| Oracle,
@@ -143,8 +145,10 @@ impl Taker {
             read_from_maker,
         } = connection::Actor::new(maker_address).await;
 
+        let db = in_memory_db().await;
+
         let taker = daemon::Taker::new(
-            todo!("db"),
+            db,
             todo!("wallet"),
             todo!("oracle_pk"),
             send_to_maker,
@@ -171,4 +175,15 @@ async fn start_both() -> (Maker, Taker) {
     let maker = Maker::start().await;
     let taker = Taker::start(maker.address).await;
     (maker, taker)
+}
+
+async fn in_memory_db() -> SqlitePool {
+    // Note: Every :memory: database is distinct from every other. So, opening two database
+    // connections each with the filename ":memory:" will create two independent in-memory
+    // databases. see: https://www.sqlite.org/inmemorydb.html
+    let pool = SqlitePool::connect(":memory:").await.unwrap();
+
+    db::run_migrations(&pool).await.unwrap();
+
+    pool
 }
