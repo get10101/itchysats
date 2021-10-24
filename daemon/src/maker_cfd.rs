@@ -8,7 +8,6 @@ use crate::model::cfd::{
 };
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
-use crate::tokio_ext::spawn_fallible;
 use crate::wallet::Wallet;
 use crate::{log_error, maker_inc_connections, monitor, oracle, setup_contract, wire};
 use anyhow::{Context as _, Result};
@@ -579,18 +578,12 @@ where
         // Use `.send` here to ensure we only continue once the message has been sent
         // Nothing done after this call should be able to fail, otherwise we notified the taker, but
         // might not transition to `Active` ourselves!
-        spawn_fallible::<_, anyhow::Error>({
-            let takers = self.takers.clone();
-            async move {
-                takers
-                    .send(maker_inc_connections::TakerMessage {
-                        taker_id,
-                        command: TakerCommand::NotifyOrderAccepted { id: order_id },
-                    })
-                    .await??;
-                Ok(())
-            }
-        });
+        self.takers
+            .send(maker_inc_connections::TakerMessage {
+                taker_id,
+                command: TakerCommand::NotifyOrderAccepted { id: order_id },
+            })
+            .await??;
 
         // 5. Spawn away the contract setup
         let (sender, receiver) = mpsc::unbounded();
@@ -763,22 +756,15 @@ where
             .await?
             .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
 
-        spawn_fallible::<_, anyhow::Error>({
-            let takers = self.takers.clone();
-            let order_id = proposal.order_id;
-            async move {
-                takers
-                    .send(maker_inc_connections::TakerMessage {
-                        taker_id,
-                        command: TakerCommand::NotifyRollOverAccepted {
-                            id: order_id,
-                            oracle_event_id,
-                        },
-                    })
-                    .await??;
-                Ok(())
-            }
-        });
+        self.takers
+            .send(maker_inc_connections::TakerMessage {
+                taker_id,
+                command: TakerCommand::NotifyRollOverAccepted {
+                    id: proposal.order_id,
+                    oracle_event_id,
+                },
+            })
+            .await??;
 
         self.oracle_actor
             .do_send_async(oracle::MonitorAttestation {
