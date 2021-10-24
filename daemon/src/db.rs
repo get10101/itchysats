@@ -812,6 +812,7 @@ mod tests {
                 Usd::new(dec!(1000)),
                 Origin::Theirs,
                 BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
+                time::Duration::hours(24),
             )
             .unwrap()
         }
