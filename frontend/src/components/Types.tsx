@@ -8,7 +8,7 @@ export interface Order {
     leverage: number;
     liquidation_price: number;
     creation_timestamp: number;
-    term_in_secs: number;
+    settlement_time_interval_in_secs: number;
 }
 
 export class Position {

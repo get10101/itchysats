@@ -79,7 +79,7 @@ where
             Box<dyn MessageChannel<NewTakerOnline>>,
             Box<dyn MessageChannel<FromTaker>>,
         ) -> T,
-        term: time::Duration,
+        settlement_time_interval_hours: time::Duration,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
@@ -100,7 +100,7 @@ where
         let cfd_actor_addr = maker_cfd::Actor::new(
             db,
             wallet_addr,
-            term,
+            settlement_time_interval_hours,
             oracle_pk,
             cfd_feed_sender,
             order_feed_sender,

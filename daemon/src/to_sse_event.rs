@@ -172,7 +172,7 @@ pub struct CfdOrder {
     pub liquidation_price: Usd,
 
     pub creation_timestamp: u64,
-    pub term_in_secs: u64,
+    pub settlement_time_interval_in_secs: u64,
 }
 
 pub trait ToSseEvent {
@@ -290,11 +290,11 @@ impl ToSseEvent for Option<model::cfd::Order> {
                 .duration_since(UNIX_EPOCH)
                 .expect("timestamp to be convertible to duration since epoch")
                 .as_secs(),
-            term_in_secs: order
-                .term
+            settlement_time_interval_in_secs: order
+                .settlement_time_interval_hours
                 .whole_seconds()
                 .try_into()
-                .expect("term is always positive number"),
+                .expect("settlement_time_interval_hours is always positive number"),
         });
 
         Event::json(&order).event("order")

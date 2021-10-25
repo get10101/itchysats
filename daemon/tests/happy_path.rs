@@ -165,7 +165,7 @@ impl Maker {
 
         let wallet_addr = Wallet {}.create(None).spawn_global();
 
-        let term = time::Duration::hours(24);
+        let settlement_time_interval_hours = time::Duration::hours(24);
 
         let maker = daemon::MakerActorSystem::new(
             db,
@@ -174,7 +174,7 @@ impl Maker {
             |_, _| Oracle,
             |_, _| async { Ok(Monitor) },
             |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
-            term,
+            settlement_time_interval_hours,
         )
         .await
         .unwrap();

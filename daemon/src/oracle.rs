@@ -17,7 +17,7 @@ pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
     pending_attestations: HashSet<BitMexPriceEventId>,
     attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
-    term: Duration,
+    announcement_lookahead: Duration,
 }
 
 pub struct Sync;
@@ -62,7 +62,7 @@ impl Actor {
     pub fn new(
         cfds: Vec<Cfd>,
         attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
-        term: Duration,
+        announcement_lookahead: Duration,
     ) -> Self {
         let mut pending_attestations = HashSet::new();
 
@@ -96,13 +96,17 @@ impl Actor {
             announcements: HashMap::new(),
             pending_attestations,
             attestation_channel,
-            term,
+            announcement_lookahead,
         }
     }
 
-    fn ensure_having_announcements(&mut self, term: Duration, ctx: &mut xtra::Context<Self>) {
-        // we want inclusive the term length hence +1
-        for hour in 1..term.whole_hours() + 1 {
+    fn ensure_having_announcements(
+        &mut self,
+        announcement_lookahead: Duration,
+        ctx: &mut xtra::Context<Self>,
+    ) {
+        // we want inclusive the settlement_time_interval_hours length hence +1
+        for hour in 1..announcement_lookahead.whole_hours() + 1 {
             let event_id = try_continue!(next_announcement_after(
                 time::OffsetDateTime::now_utc() + Duration::hours(hour)
             ));
@@ -235,7 +239,7 @@ impl Actor {
     }
 
     fn handle_sync(&mut self, _: Sync, ctx: &mut xtra::Context<Self>) {
-        self.ensure_having_announcements(self.term, ctx);
+        self.ensure_having_announcements(self.announcement_lookahead, ctx);
         self.update_pending_attestations(ctx);
     }
 }
