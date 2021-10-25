@@ -19,12 +19,19 @@ use xtra_productivity::xtra_productivity;
 
 #[tokio::test]
 async fn taker_receives_order_from_maker_on_publication() {
-    let (mut maker, mut taker) = start_both().await;
+    let (mut maker, taker) = start_both().await;
 
-    let (published, received) =
-        tokio::join!(maker.publish_order(new_dummy_order()), taker.next_order());
+    assert!(taker.order_feed.borrow().is_none());
 
-    assert_eq!(published, received)
+    let published = maker.publish_order(new_dummy_order()).await;
+
+    let received = taker
+        .order_feed
+        .borrow()
+        .clone()
+        .expect("order to appear in the feed");
+
+    assert_eq!(published, received);
 }
 
 fn new_dummy_order() -> maker_cfd::NewOrder {
@@ -197,10 +204,8 @@ impl Taker {
         }
     }
 
-    async fn next_order(&mut self) -> Order {
-        self.order_feed.changed().await.unwrap();
-        let next_order = self.order_feed.borrow().clone().unwrap();
-        next_order
+    fn order_feed(&self) -> &watch::Receiver<Option<Order>> {
+        &self.order_feed
     }
 }
 
