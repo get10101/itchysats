@@ -1,37 +1,49 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::Txid;
-use cfd_protocol::secp256k1_zkp::schnorrsig;
+use bdk::bitcoin::{ecdsa, Txid};
+use cfd_protocol::secp256k1_zkp::{schnorrsig, Secp256k1};
 use cfd_protocol::PartyParams;
 use daemon::model::cfd::Order;
 use daemon::model::{Usd, WalletInfo};
-use daemon::{connection, db, maker_cfd, maker_inc_connections, monitor, oracle, wallet};
+use daemon::tokio_ext::FutureExt;
+use daemon::{connection, db, logger, maker_cfd, maker_inc_connections, monitor, oracle, wallet};
+use rand::thread_rng;
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::task::Poll;
+use std::time::{Duration, SystemTime};
 use tokio::sync::watch;
+use tracing_subscriber::filter::LevelFilter;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra_productivity::xtra_productivity;
 
 #[tokio::test]
 async fn taker_receives_order_from_maker_on_publication() {
-    let (mut maker, taker) = start_both().await;
+    logger::init(LevelFilter::DEBUG, false).unwrap();
+    tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
+
+    let (mut maker, mut taker) = start_both().await;
 
     assert!(taker.order_feed.borrow().is_none());
 
     let published = maker.publish_order(new_dummy_order()).await;
 
-    let received = taker
-        .order_feed
-        .borrow()
-        .clone()
-        .expect("order to appear in the feed");
+    async move {
+        loop {
+            taker.order_feed.changed().await.unwrap();
 
-    assert_eq!(published, received);
+            if let Some(order) = taker.order_feed.borrow().clone() {
+                assert_eq!(published, order);
+            }
+        }
+    }
+    .timeout(Duration::from_secs(60))
+    .await
+    .unwrap();
 }
 
 fn new_dummy_order() -> maker_cfd::NewOrder {
@@ -41,13 +53,6 @@ fn new_dummy_order() -> maker_cfd::NewOrder {
         max_quantity: Usd::new(dec!(100)),
     }
 }
-
-// Mocks the network layer between the taker and the maker ("the wire")
-struct ActorConnection {}
-impl xtra::Actor for ActorConnection {}
-
-#[xtra_productivity(message_impl = false)]
-impl ActorConnection {}
 
 /// Test Stub simulating the Oracle actor
 struct Oracle;
@@ -102,7 +107,15 @@ impl Wallet {
         todo!("stub this if needed")
     }
     async fn handle(&mut self, _msg: wallet::Sync) -> Result<WalletInfo> {
-        todo!("stub this if needed")
+        let s = Secp256k1::new();
+        let public_key = ecdsa::PublicKey::new(s.generate_keypair(&mut thread_rng()).1);
+        let address = bdk::bitcoin::Address::p2pkh(&public_key, bdk::bitcoin::Network::Testnet);
+
+        Ok(WalletInfo {
+            balance: bdk::bitcoin::Amount::ONE_BTC,
+            address,
+            last_updated_at: SystemTime::now(),
+        })
     }
     async fn handle(&mut self, _msg: wallet::Sign) -> Result<PartiallySignedTransaction> {
         todo!("stub this if needed")
@@ -145,6 +158,7 @@ impl Maker {
         let listener_stream = futures::stream::poll_fn(move |ctx| {
             let message = match futures::ready!(listener.poll_accept(ctx)) {
                 Ok((stream, address)) => {
+                    dbg!("new connection");
                     maker_inc_connections::ListenerMessage::NewConnection { stream, address }
                 }
                 Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
