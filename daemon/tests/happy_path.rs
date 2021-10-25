@@ -6,7 +6,6 @@ use cfd_protocol::secp256k1_zkp::{schnorrsig, Secp256k1};
 use cfd_protocol::PartyParams;
 use daemon::model::cfd::Order;
 use daemon::model::{Usd, WalletInfo};
-use daemon::tokio_ext::FutureExt;
 use daemon::{connection, db, logger, maker_cfd, maker_inc_connections, monitor, oracle, wallet};
 use rand::thread_rng;
 use rust_decimal_macros::dec;
@@ -14,12 +13,21 @@ use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::task::Poll;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra_productivity::xtra_productivity;
+
+/// Needs to be called once for the initial value to mark it as "seen"
+async fn next_value<T>(rx: &mut watch::Receiver<T>) -> T
+where
+    T: Clone,
+{
+    rx.changed().await.unwrap();
+    rx.borrow().clone()
+}
 
 #[tokio::test]
 async fn taker_receives_order_from_maker_on_publication() {
@@ -28,22 +36,13 @@ async fn taker_receives_order_from_maker_on_publication() {
 
     let (mut maker, mut taker) = start_both().await;
 
-    assert!(taker.order_feed.borrow().is_none());
+    assert!(next_value(&mut taker.order_feed).await.is_none());
 
-    let published = maker.publish_order(new_dummy_order()).await;
+    let (published, received) = tokio::join!(maker.publish_order(new_dummy_order()), {
+        next_value(&mut taker.order_feed)
+    });
 
-    async move {
-        loop {
-            taker.order_feed.changed().await.unwrap();
-
-            if let Some(order) = taker.order_feed.borrow().clone() {
-                assert_eq!(published, order);
-            }
-        }
-    }
-    .timeout(Duration::from_secs(60))
-    .await
-    .unwrap();
+    assert_eq!(published.id, received.unwrap().id);
 }
 
 fn new_dummy_order() -> maker_cfd::NewOrder {
