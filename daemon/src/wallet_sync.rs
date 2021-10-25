@@ -1,14 +1,19 @@
 use crate::model::WalletInfo;
-use crate::wallet::Wallet;
+use crate::wallet;
 use std::time::Duration;
 use tokio::sync::watch;
 use tokio::time::sleep;
+use xtra::Address;
 
-pub async fn new(wallet: Wallet, sender: watch::Sender<WalletInfo>) {
+pub async fn new(wallet: Address<wallet::Actor>, sender: watch::Sender<WalletInfo>) {
     loop {
         sleep(Duration::from_secs(10)).await;
 
-        let info = match wallet.sync().await {
+        let info = match wallet
+            .send(wallet::Sync)
+            .await
+            .expect("Wallet actor to be available")
+        {
             Ok(info) => info,
             Err(e) => {
                 tracing::warn!("Failed to sync wallet: {:#}", e);

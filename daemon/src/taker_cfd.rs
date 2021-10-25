@@ -7,9 +7,8 @@ use crate::model::cfd::{
 };
 use crate::model::{BitMexPriceEventId, Usd};
 use crate::monitor::{self, MonitorParams};
-use crate::wallet::Wallet;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
-use crate::{log_error, oracle, setup_contract, wire};
+use crate::{log_error, oracle, setup_contract, wallet, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -70,7 +69,7 @@ enum RollOverState {
 
 pub struct Actor<O, M> {
     db: sqlx::SqlitePool,
-    wallet: Wallet,
+    wallet: Address<wallet::Actor>,
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_actor_inbox: watch::Sender<Option<Order>>,
@@ -87,7 +86,7 @@ impl<O, M> Actor<O, M> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        wallet: Wallet,
+        wallet: Address<wallet::Actor>,
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_actor_inbox: watch::Sender<Option<Order>>,
@@ -397,8 +396,10 @@ where
 
         let txid = self
             .wallet
-            .try_broadcast_transaction(dlc.lock.0.clone())
-            .await?;
+            .send(wallet::TryBroadcastTransaction {
+                tx: dlc.lock.0.clone(),
+            })
+            .await??;
 
         tracing::info!("Lock transaction published with txid {}", txid);
 

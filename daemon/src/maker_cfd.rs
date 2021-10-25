@@ -9,8 +9,7 @@ use crate::model::cfd::{
 use crate::model::{TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::tokio_ext::spawn_fallible;
-use crate::wallet::Wallet;
-use crate::{log_error, maker_inc_connections, monitor, oracle, setup_contract, wire};
+use crate::{log_error, maker_inc_connections, monitor, oracle, setup_contract, wallet, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -61,7 +60,7 @@ pub struct FromTaker {
 
 pub struct Actor<O, M, T> {
     db: sqlx::SqlitePool,
-    wallet: Wallet,
+    wallet: Address<wallet::Actor>,
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_sender: watch::Sender<Option<Order>>,
@@ -97,7 +96,7 @@ impl<O, M, T> Actor<O, M, T> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        wallet: Wallet,
+        wallet: Address<wallet::Actor>,
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_sender: watch::Sender<Option<Order>>,
@@ -696,8 +695,10 @@ where
 
         let txid = self
             .wallet
-            .try_broadcast_transaction(dlc.lock.0.clone())
-            .await?;
+            .send(wallet::TryBroadcastTransaction {
+                tx: dlc.lock.0.clone(),
+            })
+            .await??;
 
         tracing::info!("Lock transaction published with txid {}", txid);
 
@@ -897,8 +898,10 @@ where
 
         let txid = self
             .wallet
-            .try_broadcast_transaction(spend_tx.clone())
-            .await
+            .send(wallet::TryBroadcastTransaction {
+                tx: spend_tx.clone(),
+            })
+            .await?
             .context("Broadcasting spend transaction")?;
         tracing::info!("Close transaction published with txid {}", txid);
 

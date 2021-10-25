@@ -2,7 +2,6 @@ use crate::db::load_all_cfds;
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
 use crate::oracle::Attestation;
-use crate::wallet::Wallet;
 use anyhow::Result;
 use cfd_protocol::secp256k1_zkp::schnorrsig;
 use futures::Stream;
@@ -68,7 +67,7 @@ where
 {
     pub async fn new<F>(
         db: SqlitePool,
-        wallet: Wallet,
+        wallet: Address<wallet::Actor>,
         oracle_pk: schnorrsig::PublicKey,
         oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
@@ -165,7 +164,7 @@ where
 {
     pub async fn new<F>(
         db: SqlitePool,
-        wallet: Wallet,
+        wallet: Address<wallet::Actor>,
         oracle_pk: schnorrsig::PublicKey,
         send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
         read_from_maker: Box<dyn Stream<Item = taker_cfd::MakerStreamMessage> + Unpin + Send>,

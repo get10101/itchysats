@@ -8,10 +8,9 @@ use daemon::db::{self};
 use daemon::model::WalletInfo;
 
 use daemon::seed::Seed;
-use daemon::wallet::Wallet;
 use daemon::{
     bitmex_price_feed, housekeeping, logger, maker_cfd, maker_inc_connections, monitor, oracle,
-    wallet_sync, Maker,
+    wallet, wallet_sync, Maker,
 };
 
 use sqlx::sqlite::SqliteConnectOptions;
@@ -25,6 +24,8 @@ use std::task::Poll;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
+use xtra::spawn::TokioGlobalSpawnExt;
+use xtra::Actor;
 
 mod routes_maker;
 
@@ -125,13 +126,16 @@ async fn main() -> Result<()> {
     let bitcoin_network = opts.network.bitcoin_network();
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
 
-    let wallet = Wallet::new(
+    let wallet = wallet::Actor::new(
         opts.network.electrum(),
         &data_dir.join("maker_wallet.sqlite"),
         ext_priv_key,
     )
-    .await?;
-    let wallet_info = wallet.sync().await?;
+    .await?
+    .create(None)
+    .spawn_global();
+
+    let wallet_info = wallet.send(wallet::Sync).await??;
 
     let auth_password = seed.derive_auth_password::<auth::Password>();
 

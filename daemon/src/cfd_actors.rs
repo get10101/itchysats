@@ -1,7 +1,6 @@
 use crate::db::load_cfd_by_order_id;
 use crate::model::cfd::{Attestation, Cfd, CfdState, CfdStateChangeEvent, OrderId};
-use crate::wallet::Wallet;
-use crate::{db, monitor, oracle, try_continue};
+use crate::{db, monitor, oracle, try_continue, wallet};
 use anyhow::{bail, Context, Result};
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
@@ -37,12 +36,15 @@ pub async fn append_cfd_state(
 pub async fn try_cet_publication(
     cfd: &mut Cfd,
     conn: &mut PoolConnection<Sqlite>,
-    wallet: &Wallet,
+    wallet: &xtra::Address<wallet::Actor>,
     update_sender: &watch::Sender<Vec<Cfd>>,
 ) -> Result<()> {
     match cfd.cet()? {
         Ok(cet) => {
-            let txid = wallet.try_broadcast_transaction(cet).await?;
+            let txid = wallet
+                .send(wallet::TryBroadcastTransaction { tx: cet })
+                .await?
+                .context("Failed to send transaction")?;
             tracing::info!("CET published with txid {}", txid);
 
             if cfd.handle(CfdStateChangeEvent::CetSent)?.is_none() {
@@ -63,7 +65,7 @@ pub async fn try_cet_publication(
 pub async fn handle_monitoring_event(
     event: monitor::Event,
     conn: &mut PoolConnection<Sqlite>,
-    wallet: &Wallet,
+    wallet: &xtra::Address<wallet::Actor>,
     update_sender: &watch::Sender<Vec<Cfd>>,
 ) -> Result<()> {
     let order_id = event.order_id();
@@ -82,7 +84,12 @@ pub async fn handle_monitoring_event(
         try_cet_publication(&mut cfd, conn, wallet, update_sender).await?;
     } else if let CfdState::MustRefund { .. } = cfd.state {
         let signed_refund_tx = cfd.refund_tx()?;
-        let txid = wallet.try_broadcast_transaction(signed_refund_tx).await?;
+        let txid = wallet
+            .send(wallet::TryBroadcastTransaction {
+                tx: signed_refund_tx,
+            })
+            .await?
+            .context("Failed to publish CET")?;
 
         tracing::info!("Refund transaction published on chain: {}", txid);
     }
@@ -92,14 +99,19 @@ pub async fn handle_monitoring_event(
 pub async fn handle_commit(
     order_id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
-    wallet: &Wallet,
+    wallet: &xtra::Address<wallet::Actor>,
     update_sender: &watch::Sender<Vec<Cfd>>,
 ) -> Result<()> {
     let mut cfd = db::load_cfd_by_order_id(order_id, conn).await?;
 
     let signed_commit_tx = cfd.commit_tx()?;
 
-    let txid = wallet.try_broadcast_transaction(signed_commit_tx).await?;
+    let txid = wallet
+        .send(wallet::TryBroadcastTransaction {
+            tx: signed_commit_tx,
+        })
+        .await?
+        .context("Failed to publish commit tx")?;
 
     if cfd.handle(CfdStateChangeEvent::CommitTxSent)?.is_none() {
         bail!("If we can get the commit tx we should be able to transition")
@@ -114,7 +126,7 @@ pub async fn handle_commit(
 pub async fn handle_oracle_attestation(
     attestation: oracle::Attestation,
     conn: &mut PoolConnection<Sqlite>,
-    wallet: &Wallet,
+    wallet: &xtra::Address<wallet::Actor>,
     update_sender: &watch::Sender<Vec<Cfd>>,
 ) -> Result<()> {
     tracing::debug!(
