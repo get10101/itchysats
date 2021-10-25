@@ -9,10 +9,12 @@ use cfd_protocol::secp256k1_zkp::{EcdsaAdaptorSignature, SecretKey};
 use cfd_protocol::{CfdTransactions, PartyParams, PunishParams};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use snow::TransportState;
 use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
@@ -97,20 +99,22 @@ impl fmt::Display for MakerToTaker {
 pub struct JsonCodec<T> {
     _type: PhantomData<T>,
     inner: LengthDelimitedCodec,
+    transport_state: Arc<Mutex<TransportState>>,
 }
 
-impl<T> Default for JsonCodec<T> {
-    fn default() -> Self {
+impl<T> JsonCodec<T> {
+    pub fn new(transport_state: Arc<Mutex<TransportState>>) -> Self {
         Self {
             _type: PhantomData,
             inner: LengthDelimitedCodec::new(),
+            transport_state,
         }
     }
 }
 
 impl<T> Decoder for JsonCodec<T>
 where
-    T: DeserializeOwned,
+    T: DeserializeOwned + Sync,
 {
     type Item = T;
     type Error = anyhow::Error;
@@ -121,7 +125,15 @@ where
             Some(bytes) => bytes,
         };
 
-        let item = serde_json::from_slice(&bytes)?;
+        let mut buf = vec![0u8; 65535];
+
+        let mut transport = self
+            .transport_state
+            .lock()
+            .expect("acquired mutex lock on Noise object to encrypt message");
+        let len = transport.read_message(&bytes, &mut buf)?;
+
+        let item = serde_json::from_slice(&buf[..len])?;
 
         Ok(Some(item))
     }
@@ -136,7 +148,16 @@ where
     fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let bytes = serde_json::to_vec(&item)?;
 
-        self.inner.encode(bytes.into(), dst)?;
+        let mut buf = vec![0u8; 65535];
+
+        let mut transport = self
+            .transport_state
+            .lock()
+            .expect("acquired mutex lock on Noise object to encrypt message");
+        let len = transport.write_message(&bytes, &mut *buf)?;
+
+        let part: BytesMut = buf[..len].into();
+        self.inner.encode(part.into(), dst)?;
 
         Ok(())
     }

@@ -31,6 +31,7 @@ serde_json = "1"
 serde_plain = "1"
 serde_with = { version = "1", features = ["macros"] }
 sha2 = "0.9"
+snow = "0.8"
 sqlx = { version = "0.5", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
 thiserror = "1"
 time = { version = "0.3", features = ["serde"] }

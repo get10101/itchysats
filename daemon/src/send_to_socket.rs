@@ -1,7 +1,9 @@
 use crate::wire::{self, JsonCodec};
 use futures::SinkExt;
 use serde::Serialize;
+use snow::TransportState;
 use std::fmt;
+use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio_util::codec::FramedWrite;
@@ -12,9 +14,9 @@ pub struct Actor<T> {
 }
 
 impl<T> Actor<T> {
-    pub fn new(write: OwnedWriteHalf) -> Self {
+    pub fn new(write: OwnedWriteHalf, transport_state: Arc<Mutex<TransportState>>) -> Self {
         Self {
-            write: FramedWrite::new(write, JsonCodec::default()),
+            write: FramedWrite::new(write, JsonCodec::new(transport_state)),
         }
     }
 
