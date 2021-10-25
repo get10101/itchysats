@@ -20,29 +20,19 @@ use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra_productivity::xtra_productivity;
 
-/// Needs to be called once for the initial value to mark it as "seen"
-async fn next_value<T>(rx: &mut watch::Receiver<T>) -> T
-where
-    T: Clone,
-{
-    rx.changed().await.unwrap();
-    rx.borrow().clone()
-}
-
 #[tokio::test]
 async fn taker_receives_order_from_maker_on_publication() {
-    logger::init(LevelFilter::DEBUG, false).unwrap();
-    tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
-
     let (mut maker, mut taker) = start_both().await;
 
-    assert!(next_value(&mut taker.order_feed).await.is_none());
+    assert!(is_next_none(&mut taker.order_feed).await);
 
-    let (published, received) = tokio::join!(maker.publish_order(new_dummy_order()), {
-        next_value(&mut taker.order_feed)
-    });
+    let (published, received) = tokio::join!(
+        maker.publish_order(new_dummy_order()),
+        next_some(&mut taker.order_feed)
+    );
 
-    assert_eq!(published.id, received.unwrap().id);
+    // TODO: Add assertion function so we can assert on the other order values
+    assert_eq!(published.id, received.id);
 }
 
 fn new_dummy_order() -> maker_cfd::NewOrder {
@@ -51,6 +41,44 @@ fn new_dummy_order() -> maker_cfd::NewOrder {
         min_quantity: Usd::new(dec!(10)),
         max_quantity: Usd::new(dec!(100)),
     }
+}
+
+/// Returns the value if the next Option received on the stream is Some
+///
+/// Panics if None is received on the stream.
+async fn next_some<T>(rx: &mut watch::Receiver<Option<T>>) -> T
+where
+    T: Clone,
+{
+    if let Some(value) = next(rx).await {
+        value
+    } else {
+        panic!("Received None when Some was expected")
+    }
+}
+
+/// Returns true if the next Option received on the stream is None
+///
+/// Returns false if Some is received.
+async fn is_next_none<T>(rx: &mut watch::Receiver<Option<T>>) -> bool
+where
+    T: Clone,
+{
+    next(rx).await.is_none()
+}
+
+/// Returns watch channel value upon change
+async fn next<T>(rx: &mut watch::Receiver<T>) -> T
+where
+    T: Clone,
+{
+    rx.changed().await.unwrap();
+    rx.borrow().clone()
+}
+
+fn init_tracing() {
+    logger::init(LevelFilter::DEBUG, false).unwrap();
+    tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
 }
 
 /// Test Stub simulating the Oracle actor
@@ -223,6 +251,7 @@ impl Taker {
 }
 
 async fn start_both() -> (Maker, Taker) {
+    init_tracing();
     let oracle_pk: schnorrsig::PublicKey = schnorrsig::PublicKey::from_str(
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )
