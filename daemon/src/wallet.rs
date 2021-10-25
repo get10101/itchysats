@@ -139,6 +139,11 @@ impl Actor {
 
 impl xtra::Actor for Actor {}
 
+pub struct BuildPartyParams {
+    pub amount: Amount,
+    pub identity_pk: PublicKey,
+}
+
 pub struct Sync;
 
 pub struct Sign {
@@ -147,11 +152,6 @@ pub struct Sign {
 
 pub struct TryBroadcastTransaction {
     pub tx: Transaction,
-}
-
-pub struct BuildPartyParams {
-    pub amount: Amount,
-    pub identity_pk: PublicKey,
 }
 
 fn parse_rpc_protocol_error_code(error_value: &Value) -> Result<i64> {

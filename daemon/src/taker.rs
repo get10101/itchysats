@@ -9,7 +9,7 @@ use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::{
     bitmex_price_feed, connection, housekeeping, logger, monitor, oracle, taker_cfd, wallet,
-    wallet_sync, Taker,
+    wallet_sync, TakerActorSystem,
 };
 
 use sqlx::sqlite::SqliteConnectOptions;
@@ -168,12 +168,12 @@ async fn main() -> Result<()> {
         read_from_maker,
     } = connection::Actor::new(opts.maker).await;
 
-    let Taker {
+    let TakerActorSystem {
         cfd_actor_addr,
         cfd_feed_receiver,
         order_feed_receiver,
         update_cfd_feed_receiver,
-    } = Taker::new(
+    } = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
         oracle,

@@ -58,9 +58,9 @@ pub struct FromTaker {
     pub msg: wire::TakerToMaker,
 }
 
-pub struct Actor<O, M, T> {
+pub struct Actor<O, M, T, W> {
     db: sqlx::SqlitePool,
-    wallet: Address<wallet::Actor>,
+    wallet: Address<W>,
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_sender: watch::Sender<Option<Order>>,
@@ -92,11 +92,11 @@ enum RollOverState {
     None,
 }
 
-impl<O, M, T> Actor<O, M, T> {
+impl<O, M, T, W> Actor<O, M, T, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        wallet: Address<wallet::Actor>,
+        wallet: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_sender: watch::Sender<Option<Order>>,
@@ -121,19 +121,6 @@ impl<O, M, T> Actor<O, M, T> {
             current_pending_proposals: HashMap::new(),
             current_agreed_proposals: HashMap::new(),
         }
-    }
-
-    async fn handle_commit(&mut self, order_id: OrderId) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_commit(
-            order_id,
-            &mut conn,
-            &self.wallet,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
-
-        Ok(())
     }
 
     async fn handle_propose_roll_over(
@@ -197,30 +184,6 @@ impl<O, M, T> Actor<O, M, T> {
         );
         self.send_pending_proposals()?;
 
-        Ok(())
-    }
-
-    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_monitoring_event(
-            event,
-            &mut conn,
-            &self.wallet,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
-        Ok(())
-    }
-
-    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_oracle_attestation(
-            attestation,
-            &mut conn,
-            &self.wallet,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
         Ok(())
     }
 
@@ -307,7 +270,49 @@ impl<O, M, T> Actor<O, M, T> {
     }
 }
 
-impl<O, M, T> Actor<O, M, T>
+impl<O, M, T, W> Actor<O, M, T, W>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
+    async fn handle_commit(&mut self, order_id: OrderId) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_commit(
+            order_id,
+            &mut conn,
+            &self.wallet,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_monitoring_event(
+            event,
+            &mut conn,
+            &self.wallet,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_oracle_attestation(
+            attestation,
+            &mut conn,
+            &self.wallet,
+            &self.cfd_feed_actor_inbox,
+        )
+        .await?;
+        Ok(())
+    }
+}
+
+impl<O, M, T, W> Actor<O, M, T, W>
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
@@ -397,7 +402,7 @@ where
     }
 }
 
-impl<O, M, T> Actor<O, M, T>
+impl<O, M, T, W> Actor<O, M, T, W>
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>,
@@ -526,11 +531,12 @@ where
     }
 }
 
-impl<O, M, T> Actor<O, M, T>
+impl<O, M, T, W> Actor<O, M, T, W>
 where
     Self: xtra::Handler<CfdSetupCompleted>,
     O: xtra::Handler<oracle::GetAnnouncement>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
+    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle_accept_order(
         &mut self,
@@ -624,7 +630,7 @@ where
     }
 }
 
-impl<O, M, T> Actor<O, M, T>
+impl<O, M, T, W> Actor<O, M, T, W>
 where
     O: xtra::Handler<oracle::FetchAnnouncement>,
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
@@ -668,10 +674,11 @@ where
     }
 }
 
-impl<O, M, T> Actor<O, M, T>
+impl<O, M, T, W> Actor<O, M, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
     M: xtra::Handler<monitor::StartMonitoring>,
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle_cfd_setup_completed(
         &mut self,
@@ -719,7 +726,7 @@ where
     }
 }
 
-impl<O, M, T> Actor<O, M, T>
+impl<O, M, T, W> Actor<O, M, T, W>
 where
     Self: xtra::Handler<CfdRollOverCompleted>,
     O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
@@ -819,7 +826,7 @@ where
     }
 }
 
-impl<O, M, T> Actor<O, M, T>
+impl<O, M, T, W> Actor<O, M, T, W>
 where
     M: xtra::Handler<monitor::StartMonitoring>,
 {
@@ -852,9 +859,10 @@ where
     }
 }
 
-impl<O, M, T> Actor<O, M, T>
+impl<O, M, T, W> Actor<O, M, T, W>
 where
     M: xtra::Handler<monitor::CollaborativeSettlement>,
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle_initiate_settlement(
         &mut self,
@@ -921,12 +929,15 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<CfdAction> for Actor<O, M, T>
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<CfdAction> for Actor<O, M, T, W>
 where
     Self: xtra::Handler<CfdSetupCompleted> + xtra::Handler<CfdRollOverCompleted>,
     O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>,
+    W: xtra::Handler<wallet::Sign>
+        + xtra::Handler<wallet::BuildPartyParams>
+        + xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle(&mut self, msg: CfdAction, ctx: &mut Context<Self>) {
         use CfdAction::*;
@@ -945,7 +956,7 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<NewOrder> for Actor<O, M, T>
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<NewOrder> for Actor<O, M, T, W>
 where
     O: xtra::Handler<oracle::FetchAnnouncement>,
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
@@ -956,7 +967,7 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<NewTakerOnline> for Actor<O, M, T>
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<NewTakerOnline> for Actor<O, M, T, W>
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
@@ -966,10 +977,12 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<CfdSetupCompleted> for Actor<O, M, T>
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<CfdSetupCompleted>
+    for Actor<O, M, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
     M: xtra::Handler<monitor::StartMonitoring>,
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_cfd_setup_completed(msg.order_id, msg.dlc));
@@ -977,7 +990,8 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<CfdRollOverCompleted> for Actor<O, M, T>
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<CfdRollOverCompleted>
+    for Actor<O, M, T, W>
 where
     M: xtra::Handler<monitor::StartMonitoring>,
 {
@@ -987,18 +1001,22 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<monitor::Event> for Actor<O, M, T> {
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<monitor::Event> for Actor<O, M, T, W>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
     async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) {
         log_error!(self.handle_monitoring_event(msg))
     }
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<FromTaker> for Actor<O, M, T>
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<FromTaker> for Actor<O, M, T, W>
 where
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>
         + xtra::Handler<maker_inc_connections::TakerMessage>,
     M: xtra::Handler<monitor::CollaborativeSettlement>,
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker, _ctx: &mut Context<Self>) {
         match msg {
@@ -1053,7 +1071,11 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static> Handler<oracle::Attestation> for Actor<O, M, T> {
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<oracle::Attestation>
+    for Actor<O, M, T, W>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) {
         log_error!(self.handle_oracle_attestation(msg))
     }
@@ -1083,4 +1105,4 @@ impl Message for FromTaker {
     type Result = ();
 }
 
-impl<O: 'static, M: 'static, T: 'static> xtra::Actor for Actor<O, M, T> {}
+impl<O: 'static, M: 'static, T: 'static, W: 'static> xtra::Actor for Actor<O, M, T, W> {}

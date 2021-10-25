@@ -44,15 +44,15 @@ pub mod wallet;
 pub mod wallet_sync;
 pub mod wire;
 
-pub struct Maker<O, M, T> {
-    pub cfd_actor_addr: Address<maker_cfd::Actor<O, M, T>>,
+pub struct MakerActorSystem<O, M, T, W> {
+    pub cfd_actor_addr: Address<maker_cfd::Actor<O, M, T, W>>,
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
     pub order_feed_receiver: watch::Receiver<Option<Order>>,
     pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
     pub inc_conn_addr: Address<T>,
 }
 
-impl<O, M, T> Maker<O, M, T>
+impl<O, M, T, W> MakerActorSystem<O, M, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
@@ -64,10 +64,14 @@ where
         + xtra::Handler<oracle::Attestation>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>,
+    W: xtra::Handler<wallet::BuildPartyParams>
+        + xtra::Handler<wallet::Sync>
+        + xtra::Handler<wallet::Sign>
+        + xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     pub async fn new<F>(
         db: SqlitePool,
-        wallet: Address<wallet::Actor>,
+        wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
@@ -94,7 +98,7 @@ where
 
         let cfd_actor_addr = maker_cfd::Actor::new(
             db,
-            wallet,
+            wallet_addr,
             oracle_pk,
             cfd_feed_sender,
             order_feed_sender,
@@ -144,14 +148,14 @@ where
     }
 }
 
-pub struct Taker<O, M> {
-    pub cfd_actor_addr: Address<taker_cfd::Actor<O, M>>,
+pub struct TakerActorSystem<O, M, W> {
+    pub cfd_actor_addr: Address<taker_cfd::Actor<O, M, W>>,
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
     pub order_feed_receiver: watch::Receiver<Option<Order>>,
     pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
 }
 
-impl<O, M> Taker<O, M>
+impl<O, M, W> TakerActorSystem<O, M, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
@@ -161,10 +165,14 @@ where
         + xtra::Handler<monitor::Sync>
         + xtra::Handler<monitor::CollaborativeSettlement>
         + xtra::Handler<oracle::Attestation>,
+    W: xtra::Handler<wallet::BuildPartyParams>
+        + xtra::Handler<wallet::Sync>
+        + xtra::Handler<wallet::Sign>
+        + xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     pub async fn new<F>(
         db: SqlitePool,
-        wallet: Address<wallet::Actor>,
+        wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
         read_from_maker: Box<dyn Stream<Item = taker_cfd::MakerStreamMessage> + Unpin + Send>,
@@ -188,7 +196,7 @@ where
 
         let cfd_actor_addr = taker_cfd::Actor::new(
             db,
-            wallet,
+            wallet_addr,
             oracle_pk,
             cfd_feed_sender,
             order_feed_sender,
@@ -217,6 +225,7 @@ where
                 .notify_interval(Duration::from_secs(5), || oracle::Sync)
                 .unwrap(),
         );
+
         let fan_out_actor = fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
             .create(None)
             .spawn_global();

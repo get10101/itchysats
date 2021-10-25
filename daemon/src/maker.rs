@@ -10,7 +10,7 @@ use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::{
     bitmex_price_feed, housekeeping, logger, maker_cfd, maker_inc_connections, monitor, oracle,
-    wallet, wallet_sync, Maker,
+    wallet, wallet_sync, MakerActorSystem,
 };
 
 use sqlx::sqlite::SqliteConnectOptions;
@@ -186,13 +186,13 @@ async fn main() -> Result<()> {
     housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn).await?;
     housekeeping::rebroadcast_transactions(&mut conn, &wallet).await?;
 
-    let Maker {
+    let MakerActorSystem {
         cfd_actor_addr,
         cfd_feed_receiver,
         order_feed_receiver,
         update_cfd_feed_receiver,
         inc_conn_addr: incoming_connection_addr,
-    } = Maker::new(
+    } = MakerActorSystem::new(
         db.clone(),
         wallet.clone(),
         oracle,

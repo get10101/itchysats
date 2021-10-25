@@ -26,14 +26,17 @@ use xtra::Address;
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
-pub async fn new(
+pub async fn new<W>(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
     cfd: Cfd,
-    wallet: Address<wallet::Actor>,
+    wallet: Address<W>,
     role: Role,
-) -> Result<Dlc> {
+) -> Result<Dlc>
+where
+    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
+{
     let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
     let (rev_sk, rev_pk) = crate::keypair::new(&mut rand::thread_rng());
     let (publish_sk, publish_pk) = crate::keypair::new(&mut rand::thread_rng());

@@ -78,6 +78,13 @@ impl Monitor {
     }
 }
 
+/// Test Stub simulating the Wallet actor
+struct Wallet;
+impl xtra::Actor for Wallet {}
+
+#[xtra_productivity(message_impl = false)]
+impl Wallet {}
+
 /// Maker Test Setup
 struct Maker {
     cfd_actor_addr: xtra::Address<maker_cfd::Actor<Oracle, Monitor, maker_inc_connections::Actor>>,
@@ -89,7 +96,7 @@ struct Maker {
 impl Maker {
     async fn start() -> Self {
         let db = in_memory_db().await;
-        let maker = daemon::Maker::new(
+        let maker = daemon::MakerActorSystem::new(
             db,
             todo!("wallet"),
             todo!("oracle_pk"),
@@ -147,7 +154,7 @@ impl Taker {
 
         let db = in_memory_db().await;
 
-        let taker = daemon::Taker::new(
+        let taker = daemon::TakerActorSystem::new(
             db,
             todo!("wallet"),
             todo!("oracle_pk"),

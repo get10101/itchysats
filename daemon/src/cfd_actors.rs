@@ -33,12 +33,15 @@ pub async fn append_cfd_state(
     Ok(())
 }
 
-pub async fn try_cet_publication(
+pub async fn try_cet_publication<W>(
     cfd: &mut Cfd,
     conn: &mut PoolConnection<Sqlite>,
-    wallet: &xtra::Address<wallet::Actor>,
+    wallet: &xtra::Address<W>,
     update_sender: &watch::Sender<Vec<Cfd>>,
-) -> Result<()> {
+) -> Result<()>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
     match cfd.cet()? {
         Ok(cet) => {
             let txid = wallet
@@ -62,12 +65,15 @@ pub async fn try_cet_publication(
     Ok(())
 }
 
-pub async fn handle_monitoring_event(
+pub async fn handle_monitoring_event<W>(
     event: monitor::Event,
     conn: &mut PoolConnection<Sqlite>,
-    wallet: &xtra::Address<wallet::Actor>,
+    wallet: &xtra::Address<W>,
     update_sender: &watch::Sender<Vec<Cfd>>,
-) -> Result<()> {
+) -> Result<()>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
     let order_id = event.order_id();
 
     let mut cfd = db::load_cfd_by_order_id(order_id, conn).await?;
@@ -96,12 +102,15 @@ pub async fn handle_monitoring_event(
     Ok(())
 }
 
-pub async fn handle_commit(
+pub async fn handle_commit<W>(
     order_id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
-    wallet: &xtra::Address<wallet::Actor>,
+    wallet: &xtra::Address<W>,
     update_sender: &watch::Sender<Vec<Cfd>>,
-) -> Result<()> {
+) -> Result<()>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
     let mut cfd = db::load_cfd_by_order_id(order_id, conn).await?;
 
     let signed_commit_tx = cfd.commit_tx()?;
@@ -123,12 +132,15 @@ pub async fn handle_commit(
     Ok(())
 }
 
-pub async fn handle_oracle_attestation(
+pub async fn handle_oracle_attestation<W>(
     attestation: oracle::Attestation,
     conn: &mut PoolConnection<Sqlite>,
-    wallet: &xtra::Address<wallet::Actor>,
+    wallet: &xtra::Address<W>,
     update_sender: &watch::Sender<Vec<Cfd>>,
-) -> Result<()> {
+) -> Result<()>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
     tracing::debug!(
         "Learnt latest oracle attestation for event: {}",
         attestation.id
