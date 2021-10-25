@@ -13,9 +13,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::Mutex;
+use xtra_productivity::xtra_productivity;
 
 #[derive(Clone)]
-pub struct Wallet {
+pub struct Actor {
     wallet: Arc<Mutex<bdk::Wallet<ElectrumBlockchain, bdk::database::SqliteDatabase>>>,
 }
 
@@ -23,7 +24,7 @@ pub struct Wallet {
 #[error("The transaction is already in the blockchain")]
 pub struct TransactionAlreadyInBlockchain;
 
-impl Wallet {
+impl Actor {
     pub async fn new(
         electrum_rpc_url: &str,
         wallet_dir: &Path,
@@ -46,17 +47,11 @@ impl Wallet {
 
         Ok(Self { wallet })
     }
+}
 
-    pub async fn build_party_params(
-        &self,
-        amount: Amount,
-        identity_pk: PublicKey,
-    ) -> Result<PartyParams> {
-        let wallet = self.wallet.lock().await;
-        wallet.build_party_params(amount, identity_pk)
-    }
-
-    pub async fn sync(&self) -> Result<WalletInfo> {
+#[xtra_productivity]
+impl Actor {
+    pub async fn handle_sync(&self, _msg: Sync) -> Result<WalletInfo> {
         let wallet = self.wallet.lock().await;
         wallet
             .sync(NoopProgress, None)
@@ -75,10 +70,8 @@ impl Wallet {
         Ok(wallet_info)
     }
 
-    pub async fn sign(
-        &self,
-        mut psbt: PartiallySignedTransaction,
-    ) -> Result<PartiallySignedTransaction> {
+    pub async fn handle_sign(&self, msg: Sign) -> Result<PartiallySignedTransaction> {
+        let mut psbt = msg.psbt;
         let wallet = self.wallet.lock().await;
 
         wallet
@@ -94,7 +87,22 @@ impl Wallet {
         Ok(psbt)
     }
 
-    pub async fn try_broadcast_transaction(&self, tx: Transaction) -> Result<Txid> {
+    pub async fn build_party_params(
+        &self,
+        BuildPartyParams {
+            amount,
+            identity_pk,
+        }: BuildPartyParams,
+    ) -> Result<PartyParams> {
+        let wallet = self.wallet.lock().await;
+        wallet.build_party_params(amount, identity_pk)
+    }
+
+    pub async fn handle_try_broadcast_transaction(
+        &self,
+        msg: TryBroadcastTransaction,
+    ) -> Result<Txid> {
+        let tx = msg.tx;
         let wallet = self.wallet.lock().await;
         let txid = tx.txid();
 
@@ -126,6 +134,23 @@ impl Wallet {
 
         Ok(txid)
     }
+}
+
+impl xtra::Actor for Actor {}
+
+pub struct BuildPartyParams {
+    pub amount: Amount,
+    pub identity_pk: PublicKey,
+}
+
+pub struct Sync;
+
+pub struct Sign {
+    pub psbt: PartiallySignedTransaction,
+}
+
+pub struct TryBroadcastTransaction {
+    pub tx: Transaction,
 }
 
 fn parse_rpc_protocol_error_code(error_value: &Value) -> Result<i64> {

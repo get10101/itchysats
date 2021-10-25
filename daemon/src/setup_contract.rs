@@ -1,10 +1,9 @@
 use crate::model::cfd::{Cet, Cfd, Dlc, RevokedCommit, Role};
 use crate::tokio_ext::FutureExt;
-use crate::wallet::Wallet;
 use crate::wire::{
     Msg0, Msg1, Msg2, RollOverMsg, RollOverMsg0, RollOverMsg1, RollOverMsg2, SetupMsg,
 };
-use crate::{model, oracle, payout_curve};
+use crate::{model, oracle, payout_curve, wallet};
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::{schnorrsig, Signature, SECP256K1};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -23,25 +22,33 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::ops::RangeInclusive;
 use std::time::Duration;
+use xtra::Address;
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
-pub async fn new(
+pub async fn new<W>(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
     cfd: Cfd,
-    wallet: Wallet,
+    wallet: Address<W>,
     role: Role,
-) -> Result<Dlc> {
+) -> Result<Dlc>
+where
+    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
+{
     let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
     let (rev_sk, rev_pk) = crate::keypair::new(&mut rand::thread_rng());
     let (publish_sk, publish_pk) = crate::keypair::new(&mut rand::thread_rng());
 
     let margin = cfd.margin().context("Failed to calculate margin")?;
     let own_params = wallet
-        .build_party_params(margin, pk)
+        .send(wallet::BuildPartyParams {
+            amount: margin,
+            identity_pk: pk,
+        })
         .await
+        .context("Failed to send message to wallet actor")?
         .context("Failed to build party params")?;
 
     let own_punish = PunishParams {
@@ -171,7 +178,11 @@ pub async fn new(
 
     tracing::info!("Verified all signatures");
 
-    let mut signed_lock_tx = wallet.sign(lock_tx).await?;
+    let mut signed_lock_tx = wallet
+        .send(wallet::Sign { psbt: lock_tx })
+        .await
+        .context("Failed to send message to wallet actor")?
+        .context("Failed to sign transaction")?;
     sink.send(SetupMsg::Msg2(Msg2 {
         signed_lock: signed_lock_tx.clone(),
     }))

@@ -1,4 +1,4 @@
-use daemon::{send_to_socket, taker_cfd, wire};
+use crate::{send_to_socket, taker_cfd, wire};
 use futures::{Stream, StreamExt};
 use std::net::SocketAddr;
 use std::time::Duration;

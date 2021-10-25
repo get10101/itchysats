@@ -7,9 +7,9 @@ use daemon::db::{self};
 use daemon::model::WalletInfo;
 
 use daemon::seed::Seed;
-use daemon::wallet::Wallet;
 use daemon::{
-    bitmex_price_feed, housekeeping, logger, monitor, oracle, taker_cfd, wallet_sync, Taker,
+    bitmex_price_feed, connection, housekeeping, logger, monitor, oracle, taker_cfd, wallet,
+    wallet_sync, TakerActorSystem,
 };
 
 use sqlx::sqlite::SqliteConnectOptions;
@@ -22,8 +22,9 @@ use std::str::FromStr;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::MessageChannel;
+use xtra::spawn::TokioGlobalSpawnExt;
+use xtra::Actor;
 
-mod connection;
 mod routes_taker;
 
 #[derive(Clap)]
@@ -121,13 +122,15 @@ async fn main() -> Result<()> {
     let bitcoin_network = opts.network.bitcoin_network();
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
 
-    let wallet = Wallet::new(
+    let wallet = wallet::Actor::new(
         opts.network.electrum(),
         &data_dir.join("taker_wallet.sqlite"),
         ext_priv_key,
     )
-    .await?;
-    let wallet_info = wallet.sync().await.unwrap();
+    .await?
+    .create(None)
+    .spawn_global();
+    let wallet_info = wallet.send(wallet::Sync).await??;
 
     // TODO: Actually fetch it from Olivia
     let oracle = schnorrsig::PublicKey::from_str(
@@ -165,12 +168,12 @@ async fn main() -> Result<()> {
         read_from_maker,
     } = connection::Actor::new(opts.maker).await;
 
-    let Taker {
+    let TakerActorSystem {
         cfd_actor_addr,
         cfd_feed_receiver,
         order_feed_receiver,
         update_cfd_feed_receiver,
-    } = Taker::new(
+    } = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
         oracle,
