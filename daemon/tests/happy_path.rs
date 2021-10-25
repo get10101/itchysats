@@ -1,11 +1,20 @@
+use anyhow::Result;
 use async_trait::async_trait;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
+use bdk::bitcoin::Txid;
+use cfd_protocol::secp256k1_zkp::schnorrsig;
+use cfd_protocol::PartyParams;
 use daemon::model::cfd::Order;
-use daemon::{connection, db, maker_cfd, maker_inc_connections, monitor, oracle};
+use daemon::model::{Usd, WalletInfo};
+use daemon::{connection, db, maker_cfd, maker_inc_connections, monitor, oracle, wallet};
+use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::task::Poll;
 use tokio::sync::watch;
-use xtra::message_channel::MessageChannel;
+use xtra::spawn::TokioGlobalSpawnExt;
+use xtra::Actor;
 use xtra_productivity::xtra_productivity;
 
 #[tokio::test]
@@ -19,7 +28,11 @@ async fn taker_receives_order_from_maker_on_publication() {
 }
 
 fn new_dummy_order() -> maker_cfd::NewOrder {
-    todo!("dummy new order")
+    maker_cfd::NewOrder {
+        price: Usd::new(dec!(50_000)),
+        min_quantity: Usd::new(dec!(10)),
+        max_quantity: Usd::new(dec!(100)),
+    }
 }
 
 // Mocks the network layer between the taker and the maker ("the wire")
@@ -35,9 +48,7 @@ impl xtra::Actor for Oracle {}
 
 #[xtra_productivity(message_impl = false)]
 impl Oracle {
-    async fn handle_fetch_announcement(&mut self, _msg: oracle::FetchAnnouncement) {
-        todo!("stub this if needed")
-    }
+    async fn handle_fetch_announcement(&mut self, _msg: oracle::FetchAnnouncement) {}
 
     async fn handle_get_announcement(
         &mut self,
@@ -46,13 +57,11 @@ impl Oracle {
         todo!("stub this if needed")
     }
 
-    async fn handle_monitor_attestation(&mut self, _msg: oracle::MonitorAttestation) {
+    async fn handle(&mut self, _msg: oracle::MonitorAttestation) {
         todo!("stub this if needed")
     }
 
-    async fn handle_sync(&mut self, _msg: oracle::Sync) {
-        todo!("stub this if needed")
-    }
+    async fn handle(&mut self, _msg: oracle::Sync) {}
 }
 
 /// Test Stub simulating the Monitor actor
@@ -61,19 +70,17 @@ impl xtra::Actor for Monitor {}
 
 #[xtra_productivity(message_impl = false)]
 impl Monitor {
-    async fn handle_sync(&mut self, _msg: monitor::Sync) {
+    async fn handle(&mut self, _msg: monitor::Sync) {}
+
+    async fn handle(&mut self, _msg: monitor::StartMonitoring) {
         todo!("stub this if needed")
     }
 
-    async fn handle_start_monitoring(&mut self, _msg: monitor::StartMonitoring) {
+    async fn handle(&mut self, _msg: monitor::CollaborativeSettlement) {
         todo!("stub this if needed")
     }
 
-    async fn handle_collaborative_settlement(&mut self, _msg: monitor::CollaborativeSettlement) {
-        todo!("stub this if needed")
-    }
-
-    async fn handle_oracle_attestation(&mut self, _msg: oracle::Attestation) {
+    async fn handle(&mut self, _msg: oracle::Attestation) {
         todo!("stub this if needed")
     }
 }
@@ -83,23 +90,40 @@ struct Wallet;
 impl xtra::Actor for Wallet {}
 
 #[xtra_productivity(message_impl = false)]
-impl Wallet {}
+impl Wallet {
+    async fn handle(&mut self, _msg: wallet::BuildPartyParams) -> Result<PartyParams> {
+        todo!("stub this if needed")
+    }
+    async fn handle(&mut self, _msg: wallet::Sync) -> Result<WalletInfo> {
+        todo!("stub this if needed")
+    }
+    async fn handle(&mut self, _msg: wallet::Sign) -> Result<PartiallySignedTransaction> {
+        todo!("stub this if needed")
+    }
+    async fn handle(&mut self, _msg: wallet::TryBroadcastTransaction) -> Result<Txid> {
+        todo!("stub this if needed")
+    }
+}
 
 /// Maker Test Setup
 struct Maker {
-    cfd_actor_addr: xtra::Address<maker_cfd::Actor<Oracle, Monitor, maker_inc_connections::Actor>>,
+    cfd_actor_addr:
+        xtra::Address<maker_cfd::Actor<Oracle, Monitor, maker_inc_connections::Actor, Wallet>>,
     order_feed_receiver: watch::Receiver<Option<Order>>,
     inc_conn_addr: xtra::Address<maker_inc_connections::Actor>,
     address: SocketAddr,
 }
 
 impl Maker {
-    async fn start() -> Self {
+    async fn start(oracle_pk: schnorrsig::PublicKey) -> Self {
         let db = in_memory_db().await;
+
+        let wallet_addr = Wallet {}.create(None).spawn_global();
+
         let maker = daemon::MakerActorSystem::new(
             db,
-            todo!("wallet"),
-            todo!("oracle_pk"),
+            wallet_addr,
+            oracle_pk,
             |_, _| Oracle,
             |_, _| async { Ok(Monitor) },
             |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
@@ -122,7 +146,7 @@ impl Maker {
             Poll::Ready(Some(message))
         });
 
-        tokio::spawn(maker.inc_conn_addr.attach_stream(listener_stream));
+        tokio::spawn(maker.inc_conn_addr.clone().attach_stream(listener_stream));
 
         Self {
             cfd_actor_addr: maker.cfd_actor_addr,
@@ -146,7 +170,7 @@ struct Taker {
 }
 
 impl Taker {
-    async fn start(maker_address: SocketAddr) -> Self {
+    async fn start(oracle_pk: schnorrsig::PublicKey, maker_address: SocketAddr) -> Self {
         let connection::Actor {
             send_to_maker,
             read_from_maker,
@@ -154,10 +178,12 @@ impl Taker {
 
         let db = in_memory_db().await;
 
+        let wallet_addr = Wallet {}.create(None).spawn_global();
+
         let taker = daemon::TakerActorSystem::new(
             db,
-            todo!("wallet"),
-            todo!("oracle_pk"),
+            wallet_addr,
+            oracle_pk,
             send_to_maker,
             read_from_maker,
             |_, _| Oracle,
@@ -179,8 +205,13 @@ impl Taker {
 }
 
 async fn start_both() -> (Maker, Taker) {
-    let maker = Maker::start().await;
-    let taker = Taker::start(maker.address).await;
+    let oracle_pk: schnorrsig::PublicKey = schnorrsig::PublicKey::from_str(
+        "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
+    )
+    .unwrap();
+
+    let maker = Maker::start(oracle_pk).await;
+    let taker = Taker::start(oracle_pk, maker.address).await;
     (maker, taker)
 }
 
