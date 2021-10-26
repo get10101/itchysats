@@ -1,6 +1,6 @@
 use crate::model::cfd::{Cfd, CfdState};
 use crate::model::BitMexPriceEventId;
-use crate::{log_error, tokio_ext};
+use crate::{log_error, tokio_ext, try_continue};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
@@ -9,25 +9,18 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::ops::Add;
 use time::ext::NumericalDuration;
+use time::Duration;
 use xtra::prelude::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
-    pending_announcements: HashSet<BitMexPriceEventId>,
     pending_attestations: HashSet<BitMexPriceEventId>,
     attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
+    term: Duration,
 }
 
 pub struct Sync;
-
-/// Message used to tell the `oracle::Actor` to fetch an
-/// `Announcement` from `olivia`.
-///
-/// The `Announcement` corresponds to the `OracleEventId` included in
-/// the message.
-#[derive(Debug, Clone)]
-pub struct FetchAnnouncement(pub BitMexPriceEventId);
 
 pub struct MonitorAttestation {
     pub event_id: BitMexPriceEventId,
@@ -69,6 +62,7 @@ impl Actor {
     pub fn new(
         cfds: Vec<Cfd>,
         attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
+        term: Duration,
     ) -> Self {
         let mut pending_attestations = HashSet::new();
 
@@ -100,14 +94,23 @@ impl Actor {
 
         Self {
             announcements: HashMap::new(),
-            pending_announcements: HashSet::new(),
             pending_attestations,
             attestation_channel,
+            term,
         }
     }
 
-    fn update_pending_announcements(&mut self, ctx: &mut xtra::Context<Self>) {
-        for event_id in self.pending_announcements.iter().cloned() {
+    fn ensure_having_announcements(&mut self, term: Duration, ctx: &mut xtra::Context<Self>) {
+        // we want inclusive the term length hence +1
+        for hour in 1..term.whole_hours() + 1 {
+            let event_id = try_continue!(next_announcement_after(
+                time::OffsetDateTime::now_utc() + Duration::hours(hour)
+            ));
+
+            if self.announcements.get(&event_id).is_some() {
+                tracing::trace!("Announcement already known: {}", event_id,);
+                continue;
+            }
             let this = ctx.address().expect("self to be alive");
 
             tokio_ext::spawn_fallible(async move {
@@ -208,35 +211,18 @@ impl Actor {
         }
     }
 
-    fn handle_fetch_announcement(
-        &mut self,
-        msg: FetchAnnouncement,
-        _ctx: &mut xtra::Context<Self>,
-    ) {
-        if !self.pending_announcements.insert(msg.0) {
-            tracing::trace!("Announcement {} already being fetched", msg.0);
-        }
-    }
-
     fn handle_get_announcement(
         &mut self,
         msg: GetAnnouncement,
         _ctx: &mut xtra::Context<Self>,
     ) -> Option<Announcement> {
-        let announcement =
-            self.announcements
-                .get_key_value(&msg.0)
-                .map(|(id, (time, nonce_pks))| Announcement {
-                    id: *id,
-                    expected_outcome_time: *time,
-                    nonce_pks: nonce_pks.clone(),
-                });
-
-        if announcement.is_none() {
-            self.pending_announcements.insert(msg.0);
-        }
-
-        announcement
+        self.announcements
+            .get_key_value(&msg.0)
+            .map(|(id, (time, nonce_pks))| Announcement {
+                id: *id,
+                expected_outcome_time: *time,
+                nonce_pks: nonce_pks.clone(),
+            })
     }
 
     fn handle_new_announcement_fetched(
@@ -244,13 +230,12 @@ impl Actor {
         msg: NewAnnouncementFetched,
         _ctx: &mut xtra::Context<Self>,
     ) {
-        self.pending_announcements.remove(&msg.id);
         self.announcements
             .insert(msg.id, (msg.expected_outcome_time, msg.nonce_pks));
     }
 
     fn handle_sync(&mut self, _: Sync, ctx: &mut xtra::Context<Self>) {
-        self.update_pending_announcements(ctx);
+        self.ensure_having_announcements(self.term, ctx);
         self.update_pending_attestations(ctx);
     }
 }

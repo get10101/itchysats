@@ -190,6 +190,7 @@ async fn main() -> Result<()> {
     housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn).await?;
     housekeeping::rebroadcast_transactions(&mut conn, &wallet).await?;
 
+    let term = time::Duration::hours(opts.term as i64);
     let MakerActorSystem {
         cfd_actor_addr,
         cfd_feed_receiver,
@@ -200,7 +201,7 @@ async fn main() -> Result<()> {
         db.clone(),
         wallet.clone(),
         oracle,
-        |cfds, channel| oracle::Actor::new(cfds, channel),
+        |cfds, channel| oracle::Actor::new(cfds, channel, term),
         {
             |channel, cfds| {
                 let electrum = opts.network.electrum().to_string();

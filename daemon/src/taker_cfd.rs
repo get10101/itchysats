@@ -16,7 +16,6 @@ use futures::channel::mpsc;
 use futures::{future, SinkExt};
 use std::collections::HashMap;
 use std::time::SystemTime;
-use time::OffsetDateTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
 use xtra::KeepRunning;
@@ -300,18 +299,11 @@ where
     }
 }
 
-impl<O, M, W> Actor<O, M, W>
-where
-    O: xtra::Handler<oracle::FetchAnnouncement>,
-{
+impl<O, M, W> Actor<O, M, W> {
     async fn handle_new_order(&mut self, order: Option<Order>) -> Result<()> {
         match order {
             Some(mut order) => {
                 order.origin = Origin::Theirs;
-
-                self.oracle_actor
-                    .do_send_async(oracle::FetchAnnouncement(order.oracle_event_id))
-                    .await?;
 
                 let mut conn = self.db.acquire().await?;
                 insert_order(&order, &mut conn).await?;
@@ -356,15 +348,12 @@ where
 
 impl<O, M, W> Actor<O, M, W>
 where
-    O: xtra::Handler<oracle::FetchAnnouncement>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
         if self.current_pending_proposals.contains_key(&order_id) {
             anyhow::bail!("An update for order id {} is already in progress", order_id)
         }
-
-        let order = load_order_by_id(order_id, &mut self.db.acquire().await?).await?;
 
         let proposal = RollOverProposal {
             order_id,
@@ -380,13 +369,6 @@ where
         );
         self.send_pending_update_proposals()?;
 
-        // we are likely going to need this one
-        self.oracle_actor
-            .send(oracle::FetchAnnouncement(oracle::next_announcement_after(
-                OffsetDateTime::now_utc() + order.term,
-            )?))
-            .await?;
-
         self.send_to_maker
             .do_send(wire::TakerToMaker::ProposeRollOver {
                 order_id: proposal.order_id,
@@ -395,12 +377,10 @@ where
         Ok(())
     }
 }
-impl<O, M, W> Actor<O, M, W>
-where
-    O: xtra::Handler<oracle::FetchAnnouncement>,
+impl<O, M, W> Actor<O, M, W> where
     W: xtra::Handler<wallet::TryBroadcastTransaction>
         + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::BuildPartyParams>,
+        + xtra::Handler<wallet::BuildPartyParams>
 {
 }
 
@@ -681,7 +661,6 @@ impl<O: 'static, M: 'static, W: 'static> Handler<TakeOffer> for Actor<O, M, W> {
 #[async_trait]
 impl<O: 'static, M: 'static, W: 'static> Handler<CfdAction> for Actor<O, M, W>
 where
-    O: xtra::Handler<oracle::FetchAnnouncement>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::BuildPartyParams>,
@@ -709,9 +688,7 @@ where
 impl<O: 'static, M: 'static, W: 'static> Handler<MakerStreamMessage> for Actor<O, M, W>
 where
     Self: xtra::Handler<CfdSetupCompleted> + xtra::Handler<CfdRollOverCompleted>,
-    O: xtra::Handler<oracle::FetchAnnouncement>
-        + xtra::Handler<oracle::GetAnnouncement>
-        + xtra::Handler<oracle::MonitorAttestation>,
+    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     M: xtra::Handler<monitor::CollaborativeSettlement>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>
         + xtra::Handler<wallet::Sign>

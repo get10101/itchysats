@@ -86,8 +86,6 @@ impl xtra::Actor for Oracle {}
 
 #[xtra_productivity(message_impl = false)]
 impl Oracle {
-    async fn handle_fetch_announcement(&mut self, _msg: oracle::FetchAnnouncement) {}
-
     async fn handle_get_announcement(
         &mut self,
         _msg: oracle::GetAnnouncement,
