@@ -226,7 +226,7 @@ where
         tokio::spawn(
             oracle_ctx
                 .notify_interval(Duration::from_secs(5), || oracle::Sync)
-                .unwrap(),
+                .map_err(|e| anyhow::anyhow!(e))?,
         );
 
         let fan_out_actor = fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
