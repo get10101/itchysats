@@ -248,7 +248,7 @@ impl SplineObject {
 
             // this ends up being F-contiguous, every time
             let res_slice = result.select(Axis(axis_r), &idx[..]).to_owned();
-            let raveled = res_slice.to_shape(((n_res,), Order::C)).unwrap();
+            let raveled = res_slice.to_shape(((n_res,), Order::C))?;
             let fixed = raveled.to_shape((res_slice.shape(), Order::C))?.to_owned();
 
             result = fixed;
@@ -267,11 +267,7 @@ impl SplineObject {
     /// * direction: Direction number (axis) in which to get the knots.
     /// * with_multiplicities: If true, return knots with multiplicities \
     /// (i.e. repeated).
-    pub fn knots(
-        &self,
-        direction: isize,
-        with_multiplicities: Option<bool>,
-    ) -> Result<Vec<Array1<f64>>, Error> {
+    pub fn knots(&self, direction: isize, with_multiplicities: Option<bool>) -> Vec<Array1<f64>> {
         let with_multiplicities = with_multiplicities.unwrap_or(false);
         let out;
 
@@ -298,7 +294,7 @@ impl SplineObject {
             }
         }
 
-        Ok(out)
+        out
     }
 
     /// This will manipulate one or both to ensure that they are both rational

@@ -262,8 +262,8 @@ impl ToSseEvent for CfdsWithAuxData {
 
                     // TODO: Depending on the state the margin might be set (i.e. in Open we save it
                     // in the DB internally) and does not have to be calculated
-                    margin: cfd.margin().unwrap(),
-                    margin_counterparty: cfd.counterparty_margin().unwrap(),
+                    margin: cfd.margin().expect("margin to be available"),
+                    margin_counterparty: cfd.counterparty_margin().expect("margin to be available"),
                     details,
                     expiry_timestamp: cfd.expiry_timestamp(),
                 }

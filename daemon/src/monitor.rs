@@ -93,7 +93,7 @@ impl Actor<bdk::electrum_client::Client> {
                     if let Some(model::cfd::CollaborativeSettlement { tx, ..}
                     ) = cfd.state.get_collaborative_close()  {
                         let close_params = (tx.txid(),
-                            tx.output.first().expect("have output").script_pubkey.clone());
+                            tx.output.first().context("transaction has zero outputs")?.script_pubkey.clone());
                         actor.monitor_close_finality(close_params,cfd.order.id);
                     }
                 }
