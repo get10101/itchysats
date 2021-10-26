@@ -7,19 +7,21 @@ use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use cfd_protocol::secp256k1_zkp::{self, EcdsaAdaptorSignature, SECP256K1};
 use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash, TransactionExt};
+
 use rocket::request::FromParam;
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::{Neg, RangeInclusive};
+use std::ops::RangeInclusive;
 use std::time::SystemTime;
 use time::{Duration, OffsetDateTime};
 use uuid::adapter::Hyphenated;
 use uuid::Uuid;
+
+use super::{InversePrice, Price};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
@@ -99,7 +101,7 @@ pub struct Order {
     pub trading_pair: TradingPair,
     pub position: Position,
 
-    pub price: Usd,
+    pub price: Price,
 
     // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
     //  always 1 USD
@@ -109,7 +111,7 @@ pub struct Order {
     // TODO: [post-MVP] - Once we have multiple leverage we will have to move leverage and
     //  liquidation_price into the CFD and add a calculation endpoint for the taker buy screen
     pub leverage: Leverage,
-    pub liquidation_price: Usd,
+    pub liquidation_price: Price,
 
     pub creation_timestamp: SystemTime,
 
@@ -126,17 +128,15 @@ pub struct Order {
 
 impl Order {
     pub fn new(
-        price: Usd,
+        price: Price,
         min_quantity: Usd,
         max_quantity: Usd,
         origin: Origin,
         oracle_event_id: BitMexPriceEventId,
         term: Duration,
     ) -> Result<Self> {
-        let leverage = Leverage(2);
-        let maintenance_margin_rate = dec!(0.005);
-        let liquidation_price =
-            calculate_liquidation_price(&leverage, &price, &maintenance_margin_rate)?;
+        let leverage = Leverage::new(2)?;
+        let liquidation_price = calculate_liquidation_price(leverage, price);
 
         Ok(Order {
             id: OrderId::default(),
@@ -153,25 +153,6 @@ impl Order {
             oracle_event_id,
         })
     }
-}
-
-fn calculate_liquidation_price(
-    leverage: &Leverage,
-    price: &Usd,
-    maintenance_margin_rate: &Decimal,
-) -> Result<Usd> {
-    let leverage = Decimal::from(leverage.0).into();
-    let maintenance_margin_rate: Usd = (*maintenance_margin_rate).into();
-
-    // liquidation price calc in isolated margin mode
-    // currently based on: https://help.bybit.com/hc/en-us/articles/360039261334-How-to-calculate-Liquidation-Price-Inverse-Contract-
-    let liquidation_price = price.checked_mul(leverage)?.checked_div(
-        leverage
-            .checked_add(Decimal::ONE.into())?
-            .checked_sub(maintenance_margin_rate.checked_mul(leverage)?)?,
-    )?;
-
-    Ok(liquidation_price)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -420,8 +401,9 @@ impl Attestation {
         })
     }
 
-    pub fn price(&self) -> Usd {
-        Usd(Decimal::from(self.price))
+    pub fn price(&self) -> Result<Price> {
+        let dec = Decimal::from_u64(self.price).context("Could not convert u64 to decimal")?;
+        Ok(Price::new(dec)?)
     }
 
     pub fn txid(&self) -> Txid {
@@ -568,7 +550,7 @@ pub struct SettlementProposal {
     pub timestamp: SystemTime,
     pub taker: Amount,
     pub maker: Amount,
-    pub price: Usd,
+    pub price: Price,
 }
 
 /// Proposed collaborative settlement
@@ -608,9 +590,9 @@ impl Cfd {
     pub fn margin(&self) -> Result<Amount> {
         let margin = match self.position() {
             Position::Buy => {
-                calculate_buy_margin(self.order.price, self.quantity_usd, self.order.leverage)?
+                calculate_buy_margin(self.order.price, self.quantity_usd, self.order.leverage)
             }
-            Position::Sell => calculate_sell_margin(self.order.price, self.quantity_usd)?,
+            Position::Sell => calculate_sell_margin(self.order.price, self.quantity_usd),
         };
 
         Ok(margin)
@@ -618,20 +600,20 @@ impl Cfd {
 
     pub fn counterparty_margin(&self) -> Result<Amount> {
         let margin = match self.position() {
-            Position::Buy => calculate_sell_margin(self.order.price, self.quantity_usd)?,
+            Position::Buy => calculate_sell_margin(self.order.price, self.quantity_usd),
             Position::Sell => {
-                calculate_buy_margin(self.order.price, self.quantity_usd, self.order.leverage)?
+                calculate_buy_margin(self.order.price, self.quantity_usd, self.order.leverage)
             }
         };
 
         Ok(margin)
     }
 
-    pub fn profit(&self, current_price: Usd) -> Result<(SignedAmount, Percent)> {
+    pub fn profit(&self, current_price: Price) -> Result<(SignedAmount, Percent)> {
         let closing_price = match (self.attestation(), self.collaborative_close()) {
             (Some(_attestation), Some(collaborative_close)) => collaborative_close.price,
             (None, Some(collaborative_close)) => collaborative_close.price,
-            (Some(attestation), None) => attestation.price(),
+            (Some(attestation), None) => attestation.price()?,
             (None, None) => current_price,
         };
 
@@ -639,14 +621,14 @@ impl Cfd {
             self.order.price,
             closing_price,
             self.quantity_usd,
-            self.margin()?,
+            self.order.leverage,
             self.position(),
         )?;
 
         Ok((p_n_l, p_n_l_percent))
     }
 
-    pub fn calculate_settlement(&self, current_price: Usd) -> Result<SettlementProposal> {
+    pub fn calculate_settlement(&self, current_price: Price) -> Result<SettlementProposal> {
         let payout_curve =
             payout_curve::calculate(self.order.price, self.quantity_usd, self.order.leverage)?;
 
@@ -1301,92 +1283,6 @@ pub enum CfdStateChangeEvent {
     ProposalSigned(CollaborativeSettlement),
 }
 
-/// Returns the Profit/Loss (P/L) as Bitcoin. Losses are capped by the provided margin
-fn calculate_profit(
-    initial_price: Usd,
-    closing_price: Usd,
-    quantity: Usd,
-    margin: Amount,
-    position: Position,
-) -> Result<(SignedAmount, Percent)> {
-    let margin_as_sat =
-        Decimal::from_u64(margin.as_sat()).context("Expect to be a valid decimal")?;
-
-    let initial_price_inverse = dec!(1)
-        .checked_div(initial_price.0)
-        .context("Calculating inverse of initial_price resulted in overflow")?;
-    let current_price_inverse = dec!(1)
-        .checked_div(closing_price.0)
-        .context("Calculating inverse of current_price resulted in overflow")?;
-
-    // calculate profit/loss (P and L) in BTC
-    let profit_btc = match position {
-        Position::Buy => {
-            // for long: profit_btc = quantity_usd * ((1/initial_price)-(1/current_price))
-            quantity
-                .0
-                .checked_mul(
-                    initial_price_inverse
-                        .checked_sub(current_price_inverse)
-                        .context("Subtracting current_price_inverse from initial_price_inverse resulted in an overflow")?,
-                )
-        }
-        Position::Sell => {
-            // for short: profit_btc = quantity_usd * ((1/current_price)-(1/initial_price))
-            quantity
-                .0
-                .checked_mul(
-                    current_price_inverse
-                        .checked_sub(initial_price_inverse)
-                        .context("Subtracting initial_price_inverse from current_price_inverse resulted in an overflow")?,
-                )
-        }
-    }
-        .context("Calculating profit/loss resulted in an overflow")?;
-
-    let sat_adjust = Decimal::from(Amount::ONE_BTC.as_sat());
-    let profit_btc_as_sat = profit_btc
-        .checked_mul(sat_adjust)
-        .context("Could not adjust profit to satoshi")?;
-
-    // loss cannot be more than provided margin
-    let margin_plus_profit_btc = margin_as_sat
-        .checked_add(profit_btc_as_sat)
-        .context("Adding up margin and profit_btc resulted in an overflow")?;
-
-    let in_percent = if profit_btc_as_sat.is_zero() {
-        Decimal::ZERO
-    } else {
-        profit_btc_as_sat
-            .checked_div(margin_as_sat)
-            .context("Profit divided by margin resulted in overflow")?
-    };
-
-    if margin_plus_profit_btc < Decimal::ZERO {
-        return Ok((
-            SignedAmount::from_sat(
-                margin_as_sat
-                    .neg()
-                    .to_i64()
-                    .context("Could not convert margin to i64")?,
-            ),
-            dec!(-100).into(),
-        ));
-    }
-
-    Ok((
-        SignedAmount::from_sat(
-            profit_btc_as_sat
-                .to_i64()
-                .context("Could not convert profit to i64")?,
-        ),
-        in_percent
-            .checked_mul(dec!(100.0))
-            .context("Converting to percent resulted in an overflow")?
-            .into(),
-    ))
-}
-
 pub trait AsBlocks {
     /// Calculates the duration in Bitcoin blocks.
     ///
@@ -1406,16 +1302,8 @@ impl AsBlocks for Duration {
 /// The margin is the initial margin and represents the collateral the buyer has to come up with to
 /// satisfy the contract. Here we calculate the initial buy margin as: quantity / (initial_price *
 /// leverage)
-pub fn calculate_buy_margin(price: Usd, quantity: Usd, leverage: Leverage) -> Result<Amount> {
-    let leverage = Decimal::from(leverage.0).into();
-
-    let margin = quantity.checked_div(price.checked_mul(leverage)?)?;
-
-    let sat_adjust = Decimal::from(Amount::ONE_BTC.as_sat()).into();
-    let margin = margin.checked_mul(sat_adjust)?;
-    let margin = Amount::from_sat(margin.try_into_u64()?);
-
-    Ok(margin)
+pub fn calculate_buy_margin(price: Price, quantity: Usd, leverage: Leverage) -> Amount {
+    quantity / (price * leverage)
 }
 
 /// Calculates the seller's margin in BTC
@@ -1423,14 +1311,96 @@ pub fn calculate_buy_margin(price: Usd, quantity: Usd, leverage: Leverage) -> Re
 /// The seller margin is represented as the quantity of the contract given the initial price.
 /// The seller can currently not leverage the position but always has to cover the complete
 /// quantity.
-fn calculate_sell_margin(price: Usd, quantity: Usd) -> Result<Amount> {
-    let margin = quantity.checked_div(price)?;
+fn calculate_sell_margin(price: Price, quantity: Usd) -> Amount {
+    quantity / price
+}
 
-    let sat_adjust = Decimal::from(Amount::ONE_BTC.as_sat()).into();
-    let margin = margin.checked_mul(sat_adjust)?;
-    let margin = Amount::from_sat(margin.try_into_u64()?);
+fn calculate_liquidation_price(leverage: Leverage, price: Price) -> Price {
+    price * leverage / (leverage + 1)
+}
 
-    Ok(margin)
+/// Returns the Profit/Loss (P/L) as Bitcoin. Losses are capped by the provided margin
+fn calculate_profit(
+    initial_price: Price,
+    closing_price: Price,
+    quantity: Usd,
+    leverage: Leverage,
+    position: Position,
+) -> Result<(SignedAmount, Percent)> {
+    let inv_initial_price =
+        InversePrice::new(initial_price).context("cannot invert invalid price")?;
+    let inv_closing_price =
+        InversePrice::new(closing_price).context("cannot invert invalid price")?;
+    let long_liquidation_price = calculate_liquidation_price(leverage, initial_price);
+    let long_is_liquidated = closing_price <= long_liquidation_price;
+
+    let long_margin = calculate_buy_margin(initial_price, quantity, leverage)
+        .to_signed()
+        .context("Unable to compute long margin")?;
+    let short_margin = calculate_sell_margin(initial_price, quantity)
+        .to_signed()
+        .context("Unable to compute short margin")?;
+    let amount_changed = (quantity * inv_initial_price)
+        .to_signed()
+        .context("Unable to convert to SignedAmount")?
+        - (quantity * inv_closing_price)
+            .to_signed()
+            .context("Unable to convert to SignedAmount")?;
+
+    // calculate profit/loss (P and L) in BTC
+    let (margin, payout) = match position {
+        // TODO:
+        // Assuming that Buy == Taker, Sell == Maker which in turn has
+        // implications for being short or long (since taker can only go
+        // long at the momnet) and if leverage can be used
+        // (long_leverage == leverage, short_leverage == 1) which also
+        // has the effect that the right boundary `b` below is infinite
+        // and not used.
+        //
+        // The general case is:
+        //   let:
+        //     P = payout
+        //     Q = quantity
+        //     Ll = long_leverage
+        //     Ls = short_leverage
+        //     xi = initial_price
+        //     xc = closing_price
+        //
+        //     a = xi * Ll / (Ll + 1)
+        //     b = xi * Ls / (Ls - 1)
+        //
+        //     P_long(xc) = {
+        //          0 if xc <= a,
+        //          Q / (xi * Ll) + Q * (1 / xi - 1 / xc) if a < xc < b,
+        //          Q / xi * (1/Ll + 1/Ls) if xc if xc >= b
+        //     }
+        //
+        //     P_short(xc) = {
+        //          Q / xi * (1/Ll + 1/Ls) if xc <= a,
+        //          Q / (xi * Ls) - Q * (1 / xi - 1 / xc) if a < xc < b,
+        //          0 if xc >= b
+        //     }
+        Position::Buy => {
+            let payout = match long_is_liquidated {
+                true => SignedAmount::ZERO,
+                false => long_margin + amount_changed,
+            };
+            (long_margin, payout)
+        }
+        Position::Sell => {
+            let payout = match long_is_liquidated {
+                true => long_margin + short_margin,
+                false => short_margin - amount_changed,
+            };
+            (short_margin, payout)
+        }
+    };
+
+    let profit = payout - margin;
+    let percent = Decimal::from_f64(100. * profit.as_sat() as f64 / margin.as_sat() as f64)
+        .context("Unable to compute percent")?;
+
+    Ok((profit, Percent(percent)))
 }
 
 #[cfg(test)]
@@ -1440,64 +1410,63 @@ mod tests {
 
     #[test]
     fn given_default_values_then_expected_liquidation_price() {
-        let leverage = Leverage(5);
-        let price = Usd(dec!(49000));
-        let maintenance_margin_rate = dec!(0.005);
+        let price = Price::new(dec!(46125)).unwrap();
+        let leverage = Leverage::new(5).unwrap();
+        let expected = Price::new(dec!(38437.5)).unwrap();
 
-        let liquidation_price =
-            calculate_liquidation_price(&leverage, &price, &maintenance_margin_rate).unwrap();
+        let liquidation_price = calculate_liquidation_price(leverage, price);
 
-        assert_eq!(liquidation_price, Usd(dec!(41004.184100418410041841004184)));
+        assert_eq!(liquidation_price, expected);
     }
 
     #[test]
     fn given_leverage_of_one_and_equal_price_and_quantity_then_buy_margin_is_one_btc() {
-        let price = Usd(dec!(40000));
-        let quantity = Usd(dec![40000]);
-        let leverage = Leverage(1);
+        let price = Price::new(dec!(40000)).unwrap();
+        let quantity = Usd::new(dec!(40000));
+        let leverage = Leverage::new(1).unwrap();
 
-        let buy_margin = calculate_buy_margin(price, quantity, leverage).unwrap();
+        let buy_margin = calculate_buy_margin(price, quantity, leverage);
 
         assert_eq!(buy_margin, Amount::ONE_BTC);
     }
 
     #[test]
     fn given_leverage_of_one_and_leverage_of_ten_then_buy_margin_is_lower_factor_ten() {
-        let price = Usd(dec!(40000));
-        let quantity = Usd(dec![40000]);
-        let leverage = Leverage(10);
+        let price = Price::new(dec!(40000)).unwrap();
+        let quantity = Usd::new(dec!(40000));
+        let leverage = Leverage::new(10).unwrap();
 
-        let buy_margin = calculate_buy_margin(price, quantity, leverage).unwrap();
+        let buy_margin = calculate_buy_margin(price, quantity, leverage);
 
         assert_eq!(buy_margin, Amount::from_btc(0.1).unwrap());
     }
 
     #[test]
     fn given_quantity_equals_price_then_sell_margin_is_one_btc() {
-        let price = Usd(dec!(40000));
-        let quantity = Usd(dec![40000]);
+        let price = Price::new(dec!(40000)).unwrap();
+        let quantity = Usd::new(dec!(40000));
 
-        let sell_margin = calculate_sell_margin(price, quantity).unwrap();
+        let sell_margin = calculate_sell_margin(price, quantity);
 
         assert_eq!(sell_margin, Amount::ONE_BTC);
     }
 
     #[test]
     fn given_quantity_half_of_price_then_sell_margin_is_half_btc() {
-        let price = Usd(dec!(40000));
-        let quantity = Usd(dec![20000]);
+        let price = Price::new(dec!(40000)).unwrap();
+        let quantity = Usd::new(dec!(20000));
 
-        let sell_margin = calculate_sell_margin(price, quantity).unwrap();
+        let sell_margin = calculate_sell_margin(price, quantity);
 
         assert_eq!(sell_margin, Amount::from_btc(0.5).unwrap());
     }
 
     #[test]
     fn given_quantity_double_of_price_then_sell_margin_is_two_btc() {
-        let price = Usd(dec!(40000));
-        let quantity = Usd(dec![80000]);
+        let price = Price::new(dec!(40000)).unwrap();
+        let quantity = Usd::new(dec!(80000));
 
-        let sell_margin = calculate_sell_margin(price, quantity).unwrap();
+        let sell_margin = calculate_sell_margin(price, quantity);
 
         assert_eq!(sell_margin, Amount::from_btc(2.0).unwrap());
     }
@@ -1522,10 +1491,10 @@ mod tests {
     #[test]
     fn calculate_profit_and_loss() {
         assert_profit_loss_values(
-            Usd::from(dec!(10_000)),
-            Usd::from(dec!(10_000)),
-            Usd::from(dec!(10_000)),
-            Amount::ONE_BTC,
+            Price::new(dec!(10_000)).unwrap(),
+            Price::new(dec!(10_000)).unwrap(),
+            Usd::new(dec!(10_000)),
+            Leverage::new(2).unwrap(),
             Position::Buy,
             SignedAmount::ZERO,
             Decimal::ZERO.into(),
@@ -1533,74 +1502,74 @@ mod tests {
         );
 
         assert_profit_loss_values(
-            Usd::from(dec!(10_000)),
-            Usd::from(dec!(20_000)),
-            Usd::from(dec!(10_000)),
-            Amount::ONE_BTC,
+            Price::new(dec!(10_000)).unwrap(),
+            Price::new(dec!(20_000)).unwrap(),
+            Usd::new(dec!(10_000)),
+            Leverage::new(2).unwrap(),
             Position::Buy,
             SignedAmount::from_sat(50_000_000),
-            dec!(50).into(),
-            "A 100% price increase should be 50% profit",
+            dec!(100).into(),
+            "A price increase of 2x should result in a profit of 100% (long)",
         );
 
         assert_profit_loss_values(
-            Usd::from(dec!(10_000)),
-            Usd::from(dec!(5_000)),
-            Usd::from(dec!(10_000)),
-            Amount::ONE_BTC,
+            Price::new(dec!(9_000)).unwrap(),
+            Price::new(dec!(6_000)).unwrap(),
+            Usd::new(dec!(9_000)),
+            Leverage::new(2).unwrap(),
             Position::Buy,
-            SignedAmount::from_sat(-100_000_000),
+            SignedAmount::from_sat(-50_000_000),
             dec!(-100).into(),
-            "A 50% drop should result in 100% loss",
+            "A price drop of 1/(Leverage + 1) x should result in 100% loss (long)",
         );
 
         assert_profit_loss_values(
-            Usd::from(dec!(10_000)),
-            Usd::from(dec!(2_500)),
-            Usd::from(dec!(10_000)),
-            Amount::ONE_BTC,
+            Price::new(dec!(10_000)).unwrap(),
+            Price::new(dec!(5_000)).unwrap(),
+            Usd::new(dec!(10_000)),
+            Leverage::new(2).unwrap(),
             Position::Buy,
-            SignedAmount::from_sat(-100_000_000),
+            SignedAmount::from_sat(-50_000_000),
             dec!(-100).into(),
-            "A loss should be capped by 100%",
+            "A loss should be capped at 100% (long)",
         );
 
         assert_profit_loss_values(
-            Usd::from(dec!(50_400)),
-            Usd::from(dec!(60_000)),
-            Usd::from(dec!(10_000)),
-            Amount::from_btc(0.01984).unwrap(),
+            Price::new(dec!(50_400)).unwrap(),
+            Price::new(dec!(60_000)).unwrap(),
+            Usd::new(dec!(10_000)),
+            Leverage::new(2).unwrap(),
             Position::Buy,
             SignedAmount::from_sat(3_174_603),
-            dec!(160.01024065540194572452620968).into(),
-            "buy position should make a profit when price goes up",
+            dec!(31.99999798400001).into(),
+            "long position should make a profit when price goes up",
         );
 
         assert_profit_loss_values(
-            Usd::from(dec!(10_000)),
-            Usd::from(dec!(16_000)),
-            Usd::from(dec!(10_000)),
-            Amount::ONE_BTC,
+            Price::new(dec!(50_400)).unwrap(),
+            Price::new(dec!(60_000)).unwrap(),
+            Usd::new(dec!(10_000)),
+            Leverage::new(2).unwrap(),
             Position::Sell,
-            SignedAmount::from_sat(-37_500_000),
-            dec!(-37.5).into(),
+            SignedAmount::from_sat(-3_174_603),
+            dec!(-15.99999899200001).into(),
             "sell position should make a loss when price goes up",
         );
     }
 
     #[allow(clippy::too_many_arguments)]
     fn assert_profit_loss_values(
-        initial_price: Usd,
-        current_price: Usd,
+        initial_price: Price,
+        current_price: Price,
         quantity: Usd,
-        margin: Amount,
+        leverage: Leverage,
         position: Position,
         should_profit: SignedAmount,
         should_profit_in_percent: Percent,
         msg: &str,
     ) {
         let (profit, in_percent) =
-            calculate_profit(initial_price, current_price, quantity, margin, position).unwrap();
+            calculate_profit(initial_price, current_price, quantity, leverage, position).unwrap();
 
         assert_eq!(profit, should_profit, "{}", msg);
         assert_eq!(in_percent, should_profit_in_percent, "{}", msg);
@@ -1608,15 +1577,15 @@ mod tests {
 
     #[test]
     fn test_profit_calculation_loss_plus_profit_should_be_zero() {
-        let initial_price = Usd::from(dec!(10_000));
-        let closing_price = Usd::from(dec!(16_000));
-        let quantity = Usd::from(dec!(10_000));
-        let margin = Amount::ONE_BTC;
+        let initial_price = Price::new(dec!(10_000)).unwrap();
+        let closing_price = Price::new(dec!(16_000)).unwrap();
+        let quantity = Usd::new(dec!(10_000));
+        let leverage = Leverage::new(1).unwrap();
         let (profit, profit_in_percent) = calculate_profit(
             initial_price,
             closing_price,
             quantity,
-            margin,
+            leverage,
             Position::Buy,
         )
         .unwrap();
@@ -1624,16 +1593,55 @@ mod tests {
             initial_price,
             closing_price,
             quantity,
-            margin,
+            leverage,
             Position::Sell,
         )
         .unwrap();
 
         assert_eq!(profit.checked_add(loss).unwrap(), SignedAmount::ZERO);
+        // NOTE:
+        // this is only true when long_leverage == short_leverage
         assert_eq!(
             profit_in_percent.0.checked_add(loss_in_percent.0).unwrap(),
             Decimal::ZERO
         );
+    }
+
+    #[test]
+    fn margin_remains_constant() {
+        let initial_price = Price::new(dec!(15_000)).unwrap();
+        let quantity = Usd::new(dec!(10_000));
+        let leverage = Leverage::new(2).unwrap();
+        let long_margin = calculate_buy_margin(initial_price, quantity, leverage)
+            .to_signed()
+            .unwrap();
+        let short_margin = calculate_sell_margin(initial_price, quantity)
+            .to_signed()
+            .unwrap();
+        let pool_amount = SignedAmount::ONE_BTC;
+        let closing_prices = [
+            Price::new(dec!(0.15)).unwrap(),
+            Price::new(dec!(1.5)).unwrap(),
+            Price::new(dec!(15)).unwrap(),
+            Price::new(dec!(150)).unwrap(),
+            Price::new(dec!(1_500)).unwrap(),
+            Price::new(dec!(15_000)).unwrap(),
+            Price::new(dec!(150_000)).unwrap(),
+            Price::new(dec!(1_500_000)).unwrap(),
+            Price::new(dec!(15_000_000)).unwrap(),
+        ];
+
+        for price in closing_prices {
+            let (long_profit, _) =
+                calculate_profit(initial_price, price, quantity, leverage, Position::Buy).unwrap();
+            let (short_profit, _) =
+                calculate_profit(initial_price, price, quantity, leverage, Position::Sell).unwrap();
+
+            assert_eq!(
+                long_profit + long_margin + short_profit + short_margin,
+                pool_amount
+            );
+        }
     }
 
     #[test]
@@ -1786,11 +1794,11 @@ pub struct CollaborativeSettlement {
     pub timestamp: SystemTime,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     payout: Amount,
-    price: Usd,
+    price: Price,
 }
 
 impl CollaborativeSettlement {
-    pub fn new(tx: Transaction, own_script_pubkey: Script, price: Usd) -> Self {
+    pub fn new(tx: Transaction, own_script_pubkey: Script, price: Price) -> Self {
         // Falls back to Amount::ZERO in case we don't find an output that matches out script pubkey
         // The assumption is, that this can happen for cases where we were liuqidated
         let payout = match tx

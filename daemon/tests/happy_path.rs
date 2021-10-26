@@ -4,7 +4,7 @@ use bdk::bitcoin::{ecdsa, Txid};
 use cfd_protocol::secp256k1_zkp::{schnorrsig, Secp256k1};
 use cfd_protocol::PartyParams;
 use daemon::model::cfd::Order;
-use daemon::model::{Usd, WalletInfo};
+use daemon::model::{Price, Usd, WalletInfo};
 use daemon::{connection, db, logger, maker_cfd, maker_inc_connections, monitor, oracle, wallet};
 use rand::thread_rng;
 use rust_decimal_macros::dec;
@@ -36,7 +36,7 @@ async fn taker_receives_order_from_maker_on_publication() {
 
 fn new_dummy_order() -> maker_cfd::NewOrder {
     maker_cfd::NewOrder {
-        price: Usd::new(dec!(50_000)),
+        price: Price::new(dec!(50_000)).expect("unexpected failure"),
         min_quantity: Usd::new(dec!(10)),
         max_quantity: Usd::new(dec!(100)),
     }

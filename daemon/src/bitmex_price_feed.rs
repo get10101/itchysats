@@ -1,4 +1,4 @@
-use crate::model::Usd;
+use crate::model::Price;
 use anyhow::Result;
 use futures::{StreamExt, TryStreamExt};
 use rust_decimal::Decimal;
@@ -43,8 +43,8 @@ pub async fn new() -> Result<(impl Future<Output = ()>, watch::Receiver<Quote>)>
 #[derive(Clone, Debug)]
 pub struct Quote {
     pub timestamp: SystemTime,
-    pub bid: Usd,
-    pub ask: Usd,
+    pub bid: Price,
+    pub ask: Price,
 }
 
 impl Quote {
@@ -63,25 +63,22 @@ impl Quote {
 
         Ok(Some(Self {
             timestamp: SystemTime::now(),
-            bid: Usd::from(Decimal::try_from(quote.bid_price)?),
-            ask: Usd::from(Decimal::try_from(quote.ask_price)?),
+            bid: Price::new(Decimal::try_from(quote.bid_price)?)?,
+            ask: Price::new(Decimal::try_from(quote.ask_price)?)?,
         }))
     }
 
-    pub fn for_maker(&self) -> Usd {
+    pub fn for_maker(&self) -> Price {
         self.ask
     }
 
-    pub fn for_taker(&self) -> Usd {
+    pub fn for_taker(&self) -> Price {
         // TODO: verify whether this is correct
-        self.mid_range().expect("decimal arithmetic to not fail")
+        self.mid_range()
     }
 
-    fn mid_range(&self) -> Result<Usd> {
-        let sum = self.bid.checked_add(self.ask)?;
-        let half = sum.half();
-
-        Ok(half)
+    fn mid_range(&self) -> Price {
+        (self.bid + self.ask) / 2
     }
 }
 
@@ -117,7 +114,7 @@ mod tests {
 
         let quote = Quote::from_message(message).unwrap().unwrap();
 
-        assert_eq!(quote.bid, Usd::new(dec!(42640.5)));
-        assert_eq!(quote.ask, Usd::new(dec!(42641)));
+        assert_eq!(quote.bid, Price::new(dec!(42640.5)).unwrap());
+        assert_eq!(quote.ask, Price::new(dec!(42641)).unwrap());
     }
 }

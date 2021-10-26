@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::model::{Leverage, Usd};
+use crate::model::{Leverage, Price, Usd};
 use crate::payout_curve::curve::Curve;
 use anyhow::{Context, Result};
 use bdk::bitcoin;
@@ -43,7 +43,7 @@ mod utils;
 /// ### Returns
 ///
 /// The list of [`Payout`]s for the given price, quantity and leverage.
-pub fn calculate(price: Usd, quantity: Usd, leverage: Leverage) -> Result<Vec<Payout>> {
+pub fn calculate(price: Price, quantity: Usd, leverage: Leverage) -> Result<Vec<Payout>> {
     let payouts = calculate_payout_parameters(price, quantity, leverage)?
         .into_iter()
         .map(PayoutParameter::into_payouts)
@@ -62,20 +62,20 @@ const SHORT_LEVERAGE: usize = 1;
 /// To ease testing, we write our tests against this function because it has a more human-friendly
 /// output. The design goal here is that the the above `calculate` function is as thin as possible.
 fn calculate_payout_parameters(
-    price: Usd,
+    price: Price,
     quantity: Usd,
     long_leverage: Leverage,
 ) -> Result<Vec<PayoutParameter>> {
     let initial_rate = price
-        .try_into_u64()
-        .context("Cannot convert price to u64")? as f64;
+        .try_into_f64()
+        .context("Cannot convert price to f64")?;
     let quantity = quantity
         .try_into_u64()
         .context("Cannot convert quantity to u64")? as usize;
 
     let payout_curve = PayoutCurve::new(
-        initial_rate as f64,
-        long_leverage.0 as usize,
+        initial_rate,
+        long_leverage.get() as usize,
         SHORT_LEVERAGE,
         quantity,
         CONTRACT_VALUE,
@@ -506,9 +506,9 @@ mod tests {
     #[test]
     fn calculate_snapshot() {
         let actual_payouts = calculate_payout_parameters(
-            Usd::new(dec!(54000.00)),
+            Price::new(dec!(54000.00)).unwrap(),
             Usd::new(dec!(3500.00)),
-            Leverage(5),
+            Leverage::new(5).unwrap(),
         )
         .unwrap();
 
@@ -722,9 +722,9 @@ mod tests {
     #[test]
     fn verfiy_tails() {
         let actual_payouts = calculate_payout_parameters(
-            Usd::new(dec!(54000.00)),
+            Price::new(dec!(54000.00)).unwrap(),
             Usd::new(dec!(3500.00)),
-            Leverage(5),
+            Leverage::new(5).unwrap(),
         )
         .unwrap();
 

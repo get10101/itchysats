@@ -1,5 +1,5 @@
 use crate::model::cfd::{Order, OrderId};
-use crate::model::{BitMexPriceEventId, Usd};
+use crate::model::{BitMexPriceEventId, Price, Usd};
 use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -31,7 +31,7 @@ pub enum TakerToMaker {
         taker: Amount,
         #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
         maker: Amount,
-        price: Usd,
+        price: Price,
     },
     InitiateSettlement {
         order_id: OrderId,

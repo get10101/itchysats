@@ -17,7 +17,7 @@
 .pnp.*
 
 # Artifacts from running the daemons
-/*.sqlite*
+*.sqlite*
 /maker_seed
 /taker_seed
 /mainnet

@@ -5,7 +5,7 @@ use crate::model::cfd::{
     OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
     UpdateCfdProposals,
 };
-use crate::model::{BitMexPriceEventId, Usd};
+use crate::model::{BitMexPriceEventId, Price, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
 use crate::{log_error, oracle, setup_contract, wallet, wire};
@@ -28,7 +28,7 @@ pub struct TakeOffer {
 pub enum CfdAction {
     ProposeSettlement {
         order_id: OrderId,
-        current_price: Usd,
+        current_price: Price,
     },
     ProposeRollOver {
         order_id: OrderId,
@@ -193,7 +193,7 @@ where
     async fn handle_propose_settlement(
         &mut self,
         order_id: OrderId,
-        current_price: Usd,
+        current_price: Price,
     ) -> Result<()> {
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
