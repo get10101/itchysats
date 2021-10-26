@@ -1,10 +1,26 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{FnArg, GenericParam, ImplItem, ItemImpl, ReturnType};
+use syn::{FnArg, GenericParam, ImplItem, ItemImpl, MetaNameValue, ReturnType};
 
 #[proc_macro_attribute]
-pub fn xtra_productivity(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+pub fn xtra_productivity(attribute: TokenStream, item: TokenStream) -> TokenStream {
     let block = syn::parse::<ItemImpl>(item).unwrap();
+    let want_message_impl = if attribute.is_empty() {
+        true
+    } else {
+        let attribute = syn::parse::<MetaNameValue>(attribute).unwrap();
+        if !attribute.path.is_ident("message_impl") {
+            panic!(
+                "Unexpected attribute {:?}",
+                attribute.path.get_ident().unwrap()
+            )
+        }
+
+        matches!(
+            attribute.lit,
+            syn::Lit::Bool(syn::LitBool { value: true, .. })
+        )
+    };
 
     let actor = block.self_ty;
 
@@ -60,10 +76,18 @@ pub fn xtra_productivity(_attribute: TokenStream, item: TokenStream) -> TokenStr
                 ReturnType::Type(_, ref t) => quote! { #t }
             };
 
-            quote! {
-                impl xtra::Message for #message_type {
-                    type Result = #result_type;
+            let message_impl = if want_message_impl {
+                quote! {
+                    impl xtra::Message for #message_type {
+                        type Result = #result_type;
+                    }
                 }
+            } else {
+                quote! {}
+            };
+
+            quote! {
+                #message_impl
 
                 #[async_trait::async_trait]
                 impl<#generic_params> xtra::Handler<#message_type> for #actor
