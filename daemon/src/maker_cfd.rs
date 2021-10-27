@@ -684,6 +684,13 @@ where
 
         let mut conn = self.db.acquire().await?;
 
+        let txid = self
+            .wallet
+            .send(wallet::TryBroadcastTransaction {
+                tx: dlc.lock.0.clone(),
+            })
+            .await??;
+
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         cfd.state = CfdState::PendingOpen {
             common: CfdStateCommon::default(),
@@ -692,13 +699,6 @@ where
         };
 
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
-
-        let txid = self
-            .wallet
-            .send(wallet::TryBroadcastTransaction {
-                tx: dlc.lock.0.clone(),
-            })
-            .await??;
 
         tracing::info!("Lock transaction published with txid {}", txid);
 
@@ -749,8 +749,6 @@ where
             }
         };
 
-        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
-
         let oracle_event_id = oracle::next_announcement_after(
             time::OffsetDateTime::now_utc() + cfd.order.settlement_time_interval_hours,
         )?;
@@ -769,6 +767,8 @@ where
                 },
             })
             .await??;
+
+        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
 
         self.oracle_actor
             .do_send_async(oracle::MonitorAttestation {
