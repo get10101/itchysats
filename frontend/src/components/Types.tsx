@@ -16,17 +16,17 @@ export class Position {
 
     public getColorScheme(): string {
         switch (this.key) {
-            case PositionKey.BUY:
+            case PositionKey.LONG:
                 return "green";
-            case PositionKey.SELL:
+            case PositionKey.SHORT:
                 return "blue";
         }
     }
 }
 
 enum PositionKey {
-    BUY = "Buy",
-    SELL = "Sell",
+    LONG = "Long",
+    SHORT = "Short",
 }
 
 export interface Cfd {

@@ -441,8 +441,8 @@ pub enum TradingPair {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub enum Position {
-    Buy,
-    Sell,
+    Long,
+    Short,
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]

@@ -136,7 +136,7 @@ impl Order {
         settlement_time_interval_hours: Duration,
     ) -> Result<Self> {
         let leverage = Leverage::new(2)?;
-        let liquidation_price = calculate_liquidation_price(leverage, price);
+        let liquidation_price = calculate_long_liquidation_price(leverage, price);
 
         Ok(Order {
             id: OrderId::default(),
@@ -146,7 +146,7 @@ impl Order {
             leverage,
             trading_pair: TradingPair::BtcUsd,
             liquidation_price,
-            position: Position::Sell,
+            position: Position::Short,
             creation_timestamp: SystemTime::now(),
             settlement_time_interval_hours,
             origin,
@@ -589,10 +589,10 @@ impl Cfd {
 
     pub fn margin(&self) -> Result<Amount> {
         let margin = match self.position() {
-            Position::Buy => {
-                calculate_buy_margin(self.order.price, self.quantity_usd, self.order.leverage)
+            Position::Long => {
+                calculate_long_margin(self.order.price, self.quantity_usd, self.order.leverage)
             }
-            Position::Sell => calculate_sell_margin(self.order.price, self.quantity_usd),
+            Position::Short => calculate_short_margin(self.order.price, self.quantity_usd),
         };
 
         Ok(margin)
@@ -600,9 +600,9 @@ impl Cfd {
 
     pub fn counterparty_margin(&self) -> Result<Amount> {
         let margin = match self.position() {
-            Position::Buy => calculate_sell_margin(self.order.price, self.quantity_usd),
-            Position::Sell => {
-                calculate_buy_margin(self.order.price, self.quantity_usd, self.order.leverage)
+            Position::Long => calculate_short_margin(self.order.price, self.quantity_usd),
+            Position::Short => {
+                calculate_long_margin(self.order.price, self.quantity_usd, self.order.leverage)
             }
         };
 
@@ -657,8 +657,8 @@ impl Cfd {
 
             // If the order is not our own we take the counter-position in the CFD
             Origin::Theirs => match self.order.position {
-                Position::Buy => Position::Sell,
-                Position::Sell => Position::Buy,
+                Position::Long => Position::Short,
+                Position::Short => Position::Long,
             },
         }
     }
@@ -1301,27 +1301,32 @@ impl AsBlocks for Duration {
     }
 }
 
-/// Calculates the buyer's margin in BTC
+/// Calculates the long's margin in BTC
 ///
-/// The margin is the initial margin and represents the collateral the buyer has to come up with to
-/// satisfy the contract. Here we calculate the initial buy margin as: quantity / (initial_price *
-/// leverage)
-pub fn calculate_buy_margin(price: Price, quantity: Usd, leverage: Leverage) -> Amount {
+/// The margin is the initial margin and represents the collateral the buyer
+/// has to come up with to satisfy the contract. Here we calculate the initial
+/// long margin as: quantity / (initial_price * leverage)
+pub fn calculate_long_margin(price: Price, quantity: Usd, leverage: Leverage) -> Amount {
     quantity / (price * leverage)
 }
 
-/// Calculates the seller's margin in BTC
+/// Calculates the shorts's margin in BTC
 ///
-/// The seller margin is represented as the quantity of the contract given the initial price.
-/// The seller can currently not leverage the position but always has to cover the complete
-/// quantity.
-fn calculate_sell_margin(price: Price, quantity: Usd) -> Amount {
+/// The short margin is represented as the quantity of the contract given the
+/// initial price. The short side can currently not leverage the position but
+/// always has to cover the complete quantity.
+fn calculate_short_margin(price: Price, quantity: Usd) -> Amount {
     quantity / price
 }
 
-fn calculate_liquidation_price(leverage: Leverage, price: Price) -> Price {
+fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Price {
     price * leverage / (leverage + 1)
 }
+
+// PLACEHOLDER
+// fn calculate_short_liquidation_price(leverage: Leverage, price: Price) -> Price {
+//     price * leverage / (leverage - 1)
+// }
 
 /// Returns the Profit/Loss (P/L) as Bitcoin. Losses are capped by the provided margin
 fn calculate_profit(
@@ -1335,13 +1340,13 @@ fn calculate_profit(
         InversePrice::new(initial_price).context("cannot invert invalid price")?;
     let inv_closing_price =
         InversePrice::new(closing_price).context("cannot invert invalid price")?;
-    let long_liquidation_price = calculate_liquidation_price(leverage, initial_price);
+    let long_liquidation_price = calculate_long_liquidation_price(leverage, initial_price);
     let long_is_liquidated = closing_price <= long_liquidation_price;
 
-    let long_margin = calculate_buy_margin(initial_price, quantity, leverage)
+    let long_margin = calculate_long_margin(initial_price, quantity, leverage)
         .to_signed()
         .context("Unable to compute long margin")?;
-    let short_margin = calculate_sell_margin(initial_price, quantity)
+    let short_margin = calculate_short_margin(initial_price, quantity)
         .to_signed()
         .context("Unable to compute short margin")?;
     let amount_changed = (quantity * inv_initial_price)
@@ -1354,12 +1359,9 @@ fn calculate_profit(
     // calculate profit/loss (P and L) in BTC
     let (margin, payout) = match position {
         // TODO:
-        // Assuming that Buy == Taker, Sell == Maker which in turn has
-        // implications for being short or long (since taker can only go
-        // long at the momnet) and if leverage can be used
-        // (long_leverage == leverage, short_leverage == 1) which also
-        // has the effect that the right boundary `b` below is infinite
-        // and not used.
+        // At this point, long_leverage == leverage, short_leverage == 1
+        // which has the effect that the right boundary `b` below is
+        // infinite and not used.
         //
         // The general case is:
         //   let:
@@ -1384,14 +1386,14 @@ fn calculate_profit(
         //          Q / (xi * Ls) - Q * (1 / xi - 1 / xc) if a < xc < b,
         //          0 if xc >= b
         //     }
-        Position::Buy => {
+        Position::Long => {
             let payout = match long_is_liquidated {
                 true => SignedAmount::ZERO,
                 false => long_margin + amount_changed,
             };
             (long_margin, payout)
         }
-        Position::Sell => {
+        Position::Short => {
             let payout = match long_is_liquidated {
                 true => long_margin + short_margin,
                 false => short_margin - amount_changed,
@@ -1418,61 +1420,61 @@ mod tests {
         let leverage = Leverage::new(5).unwrap();
         let expected = Price::new(dec!(38437.5)).unwrap();
 
-        let liquidation_price = calculate_liquidation_price(leverage, price);
+        let liquidation_price = calculate_long_liquidation_price(leverage, price);
 
         assert_eq!(liquidation_price, expected);
     }
 
     #[test]
-    fn given_leverage_of_one_and_equal_price_and_quantity_then_buy_margin_is_one_btc() {
+    fn given_leverage_of_one_and_equal_price_and_quantity_then_long_margin_is_one_btc() {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Usd::new(dec!(40000));
         let leverage = Leverage::new(1).unwrap();
 
-        let buy_margin = calculate_buy_margin(price, quantity, leverage);
+        let long_margin = calculate_long_margin(price, quantity, leverage);
 
-        assert_eq!(buy_margin, Amount::ONE_BTC);
+        assert_eq!(long_margin, Amount::ONE_BTC);
     }
 
     #[test]
-    fn given_leverage_of_one_and_leverage_of_ten_then_buy_margin_is_lower_factor_ten() {
+    fn given_leverage_of_one_and_leverage_of_ten_then_long_margin_is_lower_factor_ten() {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Usd::new(dec!(40000));
         let leverage = Leverage::new(10).unwrap();
 
-        let buy_margin = calculate_buy_margin(price, quantity, leverage);
+        let long_margin = calculate_long_margin(price, quantity, leverage);
 
-        assert_eq!(buy_margin, Amount::from_btc(0.1).unwrap());
+        assert_eq!(long_margin, Amount::from_btc(0.1).unwrap());
     }
 
     #[test]
-    fn given_quantity_equals_price_then_sell_margin_is_one_btc() {
+    fn given_quantity_equals_price_then_short_margin_is_one_btc() {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Usd::new(dec!(40000));
 
-        let sell_margin = calculate_sell_margin(price, quantity);
+        let short_margin = calculate_short_margin(price, quantity);
 
-        assert_eq!(sell_margin, Amount::ONE_BTC);
+        assert_eq!(short_margin, Amount::ONE_BTC);
     }
 
     #[test]
-    fn given_quantity_half_of_price_then_sell_margin_is_half_btc() {
+    fn given_quantity_half_of_price_then_short_margin_is_half_btc() {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Usd::new(dec!(20000));
 
-        let sell_margin = calculate_sell_margin(price, quantity);
+        let short_margin = calculate_short_margin(price, quantity);
 
-        assert_eq!(sell_margin, Amount::from_btc(0.5).unwrap());
+        assert_eq!(short_margin, Amount::from_btc(0.5).unwrap());
     }
 
     #[test]
-    fn given_quantity_double_of_price_then_sell_margin_is_two_btc() {
+    fn given_quantity_double_of_price_then_short_margin_is_two_btc() {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Usd::new(dec!(80000));
 
-        let sell_margin = calculate_sell_margin(price, quantity);
+        let short_margin = calculate_short_margin(price, quantity);
 
-        assert_eq!(sell_margin, Amount::from_btc(2.0).unwrap());
+        assert_eq!(short_margin, Amount::from_btc(2.0).unwrap());
     }
 
     #[test]
@@ -1499,7 +1501,7 @@ mod tests {
             Price::new(dec!(10_000)).unwrap(),
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
-            Position::Buy,
+            Position::Long,
             SignedAmount::ZERO,
             Decimal::ZERO.into(),
             "No price increase means no profit",
@@ -1510,7 +1512,7 @@ mod tests {
             Price::new(dec!(20_000)).unwrap(),
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
-            Position::Buy,
+            Position::Long,
             SignedAmount::from_sat(50_000_000),
             dec!(100).into(),
             "A price increase of 2x should result in a profit of 100% (long)",
@@ -1521,7 +1523,7 @@ mod tests {
             Price::new(dec!(6_000)).unwrap(),
             Usd::new(dec!(9_000)),
             Leverage::new(2).unwrap(),
-            Position::Buy,
+            Position::Long,
             SignedAmount::from_sat(-50_000_000),
             dec!(-100).into(),
             "A price drop of 1/(Leverage + 1) x should result in 100% loss (long)",
@@ -1532,7 +1534,7 @@ mod tests {
             Price::new(dec!(5_000)).unwrap(),
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
-            Position::Buy,
+            Position::Long,
             SignedAmount::from_sat(-50_000_000),
             dec!(-100).into(),
             "A loss should be capped at 100% (long)",
@@ -1543,7 +1545,7 @@ mod tests {
             Price::new(dec!(60_000)).unwrap(),
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
-            Position::Buy,
+            Position::Long,
             SignedAmount::from_sat(3_174_603),
             dec!(31.99999798400001).into(),
             "long position should make a profit when price goes up",
@@ -1554,10 +1556,10 @@ mod tests {
             Price::new(dec!(60_000)).unwrap(),
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
-            Position::Sell,
+            Position::Short,
             SignedAmount::from_sat(-3_174_603),
             dec!(-15.99999899200001).into(),
-            "sell position should make a loss when price goes up",
+            "short position should make a loss when price goes up",
         );
     }
 
@@ -1590,7 +1592,7 @@ mod tests {
             closing_price,
             quantity,
             leverage,
-            Position::Buy,
+            Position::Long,
         )
         .unwrap();
         let (loss, loss_in_percent) = calculate_profit(
@@ -1598,7 +1600,7 @@ mod tests {
             closing_price,
             quantity,
             leverage,
-            Position::Sell,
+            Position::Short,
         )
         .unwrap();
 
@@ -1616,10 +1618,10 @@ mod tests {
         let initial_price = Price::new(dec!(15_000)).unwrap();
         let quantity = Usd::new(dec!(10_000));
         let leverage = Leverage::new(2).unwrap();
-        let long_margin = calculate_buy_margin(initial_price, quantity, leverage)
+        let long_margin = calculate_long_margin(initial_price, quantity, leverage)
             .to_signed()
             .unwrap();
-        let short_margin = calculate_sell_margin(initial_price, quantity)
+        let short_margin = calculate_short_margin(initial_price, quantity)
             .to_signed()
             .unwrap();
         let pool_amount = SignedAmount::ONE_BTC;
@@ -1637,9 +1639,10 @@ mod tests {
 
         for price in closing_prices {
             let (long_profit, _) =
-                calculate_profit(initial_price, price, quantity, leverage, Position::Buy).unwrap();
+                calculate_profit(initial_price, price, quantity, leverage, Position::Long).unwrap();
             let (short_profit, _) =
-                calculate_profit(initial_price, price, quantity, leverage, Position::Sell).unwrap();
+                calculate_profit(initial_price, price, quantity, leverage, Position::Short)
+                    .unwrap();
 
             assert_eq!(
                 long_profit + long_margin + short_profit + short_margin,
