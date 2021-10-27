@@ -25,7 +25,7 @@ pub enum Error {
     NegativePrice,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Usd(Decimal);
 
 impl Usd {
@@ -40,31 +40,16 @@ impl Usd {
     pub fn try_into_f64(&self) -> Result<f64> {
         self.0.to_f64().context("Could not fit decimal into f64")
     }
+
+    #[must_use]
+    pub fn into_decimal(self) -> Decimal {
+        self.0
+    }
 }
 
 impl fmt::Display for Usd {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.round_dp(2).fmt(f)
-    }
-}
-
-impl Serialize for Usd {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        <Decimal as Serialize>::serialize(&self.0.round_dp(2), serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Usd {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let dec = <Decimal as Deserialize>::deserialize(deserializer)?.round_dp(2);
-
-        Ok(Usd(dec))
     }
 }
 
@@ -77,7 +62,7 @@ impl str::FromStr for Usd {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Price(Decimal);
 
 impl Price {
@@ -100,25 +85,10 @@ impl Price {
     pub fn try_into_f64(&self) -> Result<f64> {
         self.0.to_f64().context("Could not fit decimal into f64")
     }
-}
 
-impl Serialize for Price {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        <Decimal as Serialize>::serialize(&self.0.round_dp(2), serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Price {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let dec = <Decimal as Deserialize>::deserialize(deserializer)?.round_dp(2);
-
-        Ok(Price(dec))
+    #[must_use]
+    pub fn into_decimal(self) -> Decimal {
+        self.0
     }
 }
 
@@ -137,7 +107,7 @@ impl str::FromStr for Price {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct InversePrice(Decimal);
 
 impl InversePrice {
@@ -159,26 +129,6 @@ impl InversePrice {
 
     pub fn try_into_f64(&self) -> Result<f64> {
         self.0.to_f64().context("Could not fit decimal into f64")
-    }
-}
-
-impl Serialize for InversePrice {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        <Decimal as Serialize>::serialize(&self.0.round_dp(2), serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for InversePrice {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let dec = <Decimal as Deserialize>::deserialize(deserializer)?.round_dp(2);
-
-        Ok(InversePrice(dec))
     }
 }
 
@@ -400,32 +350,19 @@ impl Div<Leverage> for Leverage {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Percent(Decimal);
+
+impl Percent {
+    #[must_use]
+    pub fn round_dp(self, digits: u32) -> Self {
+        Self(self.0.round_dp(digits))
+    }
+}
 
 impl fmt::Display for Percent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.round_dp(2).fmt(f)
-    }
-}
-
-impl Serialize for Percent {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        <Decimal as Serialize>::serialize(&self.0.round_dp(2), serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Percent {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let dec = <Decimal as Deserialize>::deserialize(deserializer)?.round_dp(2);
-
-        Ok(Percent(dec))
     }
 }
 
@@ -587,24 +524,9 @@ impl Timestamp {
 #[cfg(test)]
 mod tests {
     use rust_decimal_macros::dec;
-    use serde_test::{assert_de_tokens, assert_ser_tokens, Token};
     use time::macros::datetime;
 
     use super::*;
-
-    #[test]
-    fn usd_serializes_with_only_cents() {
-        let usd = Usd::new(dec!(1000.12345));
-
-        assert_ser_tokens(&usd, &[Token::Str("1000.12")]);
-    }
-
-    #[test]
-    fn usd_deserializes_trims_precision() {
-        let usd = Usd::new(dec!(1000.12));
-
-        assert_de_tokens(&usd, &[Token::Str("1000.12345")]);
-    }
 
     #[test]
     fn to_olivia_url() {
