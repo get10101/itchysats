@@ -4,7 +4,7 @@ use bdk::bitcoin::{ecdsa, Txid};
 use cfd_protocol::secp256k1_zkp::{schnorrsig, Secp256k1};
 use cfd_protocol::PartyParams;
 use daemon::maker_cfd::CfdAction;
-use daemon::model::cfd::{Cfd, CfdState, Order};
+use daemon::model::cfd::{Cfd, CfdState, Order, Origin};
 use daemon::model::{Price, Timestamp, Usd, WalletInfo};
 use daemon::tokio_ext::FutureExt;
 use daemon::{
@@ -40,8 +40,7 @@ async fn taker_receives_order_from_maker_on_publication() {
         next_some(&mut taker.order_feed)
     );
 
-    // TODO: Add assertion function so we can assert on the other order values
-    assert_eq!(published.id, received.id);
+    assert_is_same_order(&published, &received);
 }
 
 #[tokio::test]
@@ -59,8 +58,8 @@ async fn taker_takes_order_and_maker_rejects() {
     taker.take_order(received.clone(), Usd::new(dec!(10)));
 
     let (taker_cfd, maker_cfd) = next_cfd(&mut taker.cfd_feed, &mut maker.cfd_feed).await;
-    assert_eq!(taker_cfd.order.id, received.id);
-    assert_eq!(maker_cfd.order.id, received.id);
+    assert_is_same_order(&taker_cfd.order, &received);
+    assert_is_same_order(&maker_cfd.order, &received);
     assert!(matches!(
         taker_cfd.state,
         CfdState::OutgoingOrderRequest { .. }
@@ -74,10 +73,22 @@ async fn taker_takes_order_and_maker_rejects() {
 
     let (taker_cfd, maker_cfd) = next_cfd(&mut taker.cfd_feed, &mut maker.cfd_feed).await;
     // TODO: More elaborate Cfd assertions
-    assert_eq!(taker_cfd.order.id, received.id);
-    assert_eq!(maker_cfd.order.id, received.id);
+    assert_is_same_order(&taker_cfd.order, &received);
+    assert_is_same_order(&maker_cfd.order, &received);
     assert!(matches!(taker_cfd.state, CfdState::Rejected { .. }));
     assert!(matches!(maker_cfd.state, CfdState::Rejected { .. }));
+}
+
+/// The order cannot be directly compared in tests as the origin is different,
+/// therefore wrap the assertion macro in a code that unifies the 'Origin'
+fn assert_is_same_order(a: &Order, b: &Order) {
+    // Assume the same origin
+    let mut a = a.clone();
+    let mut b = b.clone();
+    a.origin = Origin::Ours;
+    b.origin = Origin::Ours;
+
+    assert_eq!(a, b);
 }
 
 fn new_dummy_order() -> maker_cfd::NewOrder {
