@@ -157,8 +157,8 @@ struct Maker {
         xtra::Address<maker_cfd::Actor<Oracle, Monitor, maker_inc_connections::Actor, Wallet>>,
     order_feed: watch::Receiver<Option<Order>>,
     #[allow(dead_code)] // we need to keep the xtra::Address for refcounting
-    inc_conn_addr: xtra::Address<maker_inc_connections::Actor>,
-    address: SocketAddr,
+    inc_conn_actor_addr: xtra::Address<maker_inc_connections::Actor>,
+    listen_addr: SocketAddr,
 }
 
 impl Maker {
@@ -202,8 +202,8 @@ impl Maker {
         Self {
             cfd_actor_addr: maker.cfd_actor_addr,
             order_feed: maker.order_feed_receiver,
-            inc_conn_addr: maker.inc_conn_addr,
-            address,
+            inc_conn_actor_addr: maker.inc_conn_addr,
+            listen_addr: address,
         }
     }
 
@@ -254,7 +254,7 @@ async fn start_both() -> (Maker, Taker) {
     .unwrap();
 
     let maker = Maker::start(oracle_pk).await;
-    let taker = Taker::start(oracle_pk, maker.address).await;
+    let taker = Taker::start(oracle_pk, maker.listen_addr).await;
     (maker, taker)
 }
 
