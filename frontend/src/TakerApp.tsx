@@ -206,7 +206,7 @@ export default function App() {
                                     makeNewOrderRequest(payload);
                                 }}
                             >
-                                BUY
+                                BUY LONG
                             </Button>
                         </GridItem>
                     </Grid>

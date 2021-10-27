@@ -34,7 +34,7 @@ UserApp -> User: Buy position open
 end group
 Seller -> SellerApp: Republish new sell-order
 group DLC settlement
-User -> UserApp: Close buy position
+User -> UserApp: Close long position
 UserApp -> Oracle: request attestation
 Oracle --> UserApp: attested price
 UserApp -> Bitcoin: CET according to price

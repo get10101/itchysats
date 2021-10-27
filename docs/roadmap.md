@@ -14,14 +14,14 @@ The Minimal Viable Product's goal is to showcase that non-custidial CFD trading 
 
 ### In scope
 
-For the MVP there is only one Maker that takes the selling side and creates sell orders.
+For the MVP there is only one Maker that takes the short side and creates orders.
 The maker does not do any automation.
 The maker dictates the price.
 
 A user is always in the role of a taker.
 The user has a simple user interface and can take the maker's order there.
-The taker can specify a quantity, the leverage is fixed to `x5`.
-For the MVP the leverage is fixed to `x5` for both sell and buy orders.
+The taker can specify a quantity, the leverage is fixed to `x2`.
+For the MVP the leverage is fixed to `x1` for the maker.
 The oracle is needed for attestation of prices at a certain point in time.
 The oracle is to be run by a separate party that is neither the taker nor the maker.
 
@@ -38,11 +38,11 @@ Constraints:
 - Software Setup
   - Taker
     - Local running daemon that exposes API + web-interface for UI
-    - Can take a sell order (represents the buy side)
+    - Can take an order (represents the long side)
       - Specify quantity
       - (fixed leverage of `x5`)
   - Maker
-    - Can create a sell order (represents the sell side)
+    - Can create an order (represents the short side)
     - Sell order publication is done manually
     - Take requests are accepted manually
   - ♻️ Oracle

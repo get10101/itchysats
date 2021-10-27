@@ -1,5 +1,5 @@
 use bdk::bitcoin::{Amount, Network};
-use daemon::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId, Role, UpdateCfdProposals};
+use daemon::model::cfd::{calculate_long_margin, Cfd, Order, OrderId, Role, UpdateCfdProposals};
 use daemon::model::{Leverage, Price, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
@@ -178,7 +178,7 @@ pub struct MarginResponse {
 pub fn margin_calc(
     margin_request: Json<MarginRequest>,
 ) -> Result<status::Accepted<Json<MarginResponse>>, status::BadRequest<String>> {
-    let margin = calculate_buy_margin(
+    let margin = calculate_long_margin(
         margin_request.price,
         margin_request.quantity,
         margin_request.leverage,
