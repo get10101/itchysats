@@ -61,7 +61,7 @@ pub struct FromTaker {
 pub struct Actor<O, M, T, W> {
     db: sqlx::SqlitePool,
     wallet: Address<W>,
-    term: Duration,
+    settlement_time_interval_hours: Duration,
     oracle_pk: schnorrsig::PublicKey,
     cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
     order_feed_sender: watch::Sender<Option<Order>>,
@@ -98,7 +98,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
     pub fn new(
         db: sqlx::SqlitePool,
         wallet: Address<W>,
-        term: Duration,
+        settlement_time_interval_hours: Duration,
         oracle_pk: schnorrsig::PublicKey,
         cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
         order_feed_sender: watch::Sender<Option<Order>>,
@@ -110,7 +110,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         Self {
             db,
             wallet,
-            term,
+            settlement_time_interval_hours,
             oracle_pk,
             cfd_feed_actor_inbox,
             order_feed_sender,
@@ -637,8 +637,9 @@ where
         min_quantity: Usd,
         max_quantity: Usd,
     ) -> Result<()> {
-        let oracle_event_id =
-            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + self.term)?;
+        let oracle_event_id = oracle::next_announcement_after(
+            time::OffsetDateTime::now_utc() + self.settlement_time_interval_hours,
+        )?;
 
         let order = Order::new(
             price,
@@ -646,7 +647,7 @@ where
             max_quantity,
             Origin::Ours,
             oracle_event_id,
-            self.term,
+            self.settlement_time_interval_hours,
         )?;
 
         // 1. Save to DB
@@ -751,8 +752,9 @@ where
 
         let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
 
-        let oracle_event_id =
-            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + cfd.order.term)?;
+        let oracle_event_id = oracle::next_announcement_after(
+            time::OffsetDateTime::now_utc() + cfd.order.settlement_time_interval_hours,
+        )?;
         let announcement = self
             .oracle_actor
             .send(oracle::GetAnnouncement(oracle_event_id))

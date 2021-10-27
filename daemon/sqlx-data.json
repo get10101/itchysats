@@ -1,25 +1,7 @@
 {
   "db": "SQLite",
-  "221a6283db798bacaba99e7e85130f9a8bbea1299d8cb99d272b1d478dc19775": {
-    "query": "\n        select\n            state\n        from cfd_states\n        where cfd_id = $1\n        order by id desc\n        limit 1;\n        ",
-    "describe": {
-      "columns": [
-        {
-          "name": "state",
-          "ordinal": 0,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
-        false
-      ]
-    }
-  },
-  "3e122ab8f81d5fb1ab7f137316c9aa15ea419114de5720b2667267a33daad6bd": {
-    "query": "\n        with ord as (\n            select\n                id as order_id,\n                uuid,\n                trading_pair,\n                position,\n                initial_price,\n                min_quantity,\n                max_quantity,\n                leverage,\n                liquidation_price,\n                creation_timestamp_seconds as ts_secs,\n                creation_timestamp_nanoseconds as ts_nanos,\n                term_seconds as term_secs,\n                term_nanoseconds as term_nanos,\n                origin,\n                oracle_event_id\n            from orders\n        ),\n\n        cfd as (\n            select\n                ord.order_id,\n                id as cfd_id,\n                quantity_usd\n            from cfds\n                inner join ord on ord.order_id = cfds.order_id\n        ),\n\n        state as (\n            select\n                id as state_id,\n                cfd.order_id,\n                cfd.quantity_usd,\n                state\n            from cfd_states\n                inner join cfd on cfd.cfd_id = cfd_states.cfd_id\n            where id in (\n                select\n                    max(id) as id\n                from cfd_states\n                group by (cfd_id)\n            )\n        )\n\n        select\n            ord.uuid as \"uuid: crate::model::cfd::OrderId\",\n            ord.trading_pair as \"trading_pair: crate::model::TradingPair\",\n            ord.position as \"position: crate::model::Position\",\n            ord.initial_price,\n            ord.min_quantity,\n            ord.max_quantity,\n            ord.leverage as \"leverage: crate::model::Leverage\",\n            ord.liquidation_price,\n            ord.ts_secs as \"ts_secs: i64\",\n            ord.ts_nanos as \"ts_nanos: i32\",\n            ord.term_secs as \"term_secs: i64\",\n            ord.term_nanos as \"term_nanos: i32\",\n            ord.origin as \"origin: crate::model::cfd::Origin\",\n            ord.oracle_event_id,\n            state.quantity_usd,\n            state.state\n\n        from ord\n            inner join state on state.order_id = ord.order_id\n        ",
+  "07b8db7d3a709a7f06a20251d5b7251c2a3428ec73c6710a83048d6c8e974958": {
+    "query": "\n        select\n            uuid as \"uuid: crate::model::cfd::OrderId\",\n            trading_pair as \"trading_pair: crate::model::TradingPair\",\n            position as \"position: crate::model::Position\",\n            initial_price,\n            min_quantity,\n            max_quantity,\n            leverage as \"leverage: crate::model::Leverage\",\n            liquidation_price,\n            creation_timestamp_seconds as \"ts_secs: i64\",\n            creation_timestamp_nanoseconds as \"ts_nanos: i32\",\n            settlement_time_interval_seconds as \"settlement_time_interval_secs: i64\",\n            settlement_time_interval_nanoseconds as \"settlement_time_interval_nanos: i32\",\n            origin as \"origin: crate::model::cfd::Origin\",\n            oracle_event_id\n\n        from orders\n        where uuid = $1\n        ",
     "describe": {
       "columns": [
         {
@@ -73,12 +55,108 @@
           "type_info": "Int64"
         },
         {
-          "name": "term_secs: i64",
+          "name": "settlement_time_interval_secs: i64",
           "ordinal": 10,
           "type_info": "Int64"
         },
         {
-          "name": "term_nanos: i32",
+          "name": "settlement_time_interval_nanos: i32",
+          "ordinal": 11,
+          "type_info": "Int64"
+        },
+        {
+          "name": "origin: crate::model::cfd::Origin",
+          "ordinal": 12,
+          "type_info": "Text"
+        },
+        {
+          "name": "oracle_event_id",
+          "ordinal": 13,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "1ea6916f2e25bdd8f4761f0810178ed3b5e52817e6440b54d2bf4e13fb786405": {
+    "query": "\n        with ord as (\n            select\n                id as order_id,\n                uuid,\n                trading_pair,\n                position,\n                initial_price,\n                min_quantity,\n                max_quantity,\n                leverage,\n                liquidation_price,\n                creation_timestamp_seconds as ts_secs,\n                creation_timestamp_nanoseconds as ts_nanos,\n                settlement_time_interval_seconds as settlement_time_interval_secs,\n                settlement_time_interval_nanoseconds as settlement_time_interval_nanos,\n                origin,\n                oracle_event_id\n            from orders\n        ),\n\n        cfd as (\n            select\n                ord.order_id,\n                id as cfd_id,\n                quantity_usd\n            from cfds\n                inner join ord on ord.order_id = cfds.order_id\n        ),\n\n        state as (\n            select\n                id as state_id,\n                cfd.order_id,\n                cfd.quantity_usd,\n                state\n            from cfd_states\n                inner join cfd on cfd.cfd_id = cfd_states.cfd_id\n            where id in (\n                select\n                    max(id) as id\n                from cfd_states\n                group by (cfd_id)\n            )\n        )\n\n        select\n            ord.uuid as \"uuid: crate::model::cfd::OrderId\",\n            ord.trading_pair as \"trading_pair: crate::model::TradingPair\",\n            ord.position as \"position: crate::model::Position\",\n            ord.initial_price,\n            ord.min_quantity,\n            ord.max_quantity,\n            ord.leverage as \"leverage: crate::model::Leverage\",\n            ord.liquidation_price,\n            ord.ts_secs as \"ts_secs: i64\",\n            ord.ts_nanos as \"ts_nanos: i32\",\n            ord.settlement_time_interval_secs as \"settlement_time_interval_secs: i64\",\n            ord.settlement_time_interval_nanos as \"settlement_time_interval_nanos: i32\",\n            ord.origin as \"origin: crate::model::cfd::Origin\",\n            ord.oracle_event_id,\n            state.quantity_usd,\n            state.state\n\n        from ord\n            inner join state on state.order_id = ord.order_id\n\n        where ord.uuid = $1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "uuid: crate::model::cfd::OrderId",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "trading_pair: crate::model::TradingPair",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "position: crate::model::Position",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "initial_price",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "min_quantity",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "max_quantity",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "leverage: crate::model::Leverage",
+          "ordinal": 6,
+          "type_info": "Int64"
+        },
+        {
+          "name": "liquidation_price",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "ts_secs: i64",
+          "ordinal": 8,
+          "type_info": "Int64"
+        },
+        {
+          "name": "ts_nanos: i32",
+          "ordinal": 9,
+          "type_info": "Int64"
+        },
+        {
+          "name": "settlement_time_interval_secs: i64",
+          "ordinal": 10,
+          "type_info": "Int64"
+        },
+        {
+          "name": "settlement_time_interval_nanos: i32",
           "ordinal": 11,
           "type_info": "Int64"
         },
@@ -104,7 +182,7 @@
         }
       ],
       "parameters": {
-        "Right": 0
+        "Right": 1
       },
       "nullable": [
         false,
@@ -126,8 +204,26 @@
       ]
     }
   },
-  "7610f0d5a9d216dba503cb5f9980fa5d9cabd13dc0131166bb6439ded37ee5dd": {
-    "query": "\n        with ord as (\n            select\n                id as order_id,\n                uuid,\n                trading_pair,\n                position,\n                initial_price,\n                min_quantity,\n                max_quantity,\n                leverage,\n                liquidation_price,\n                creation_timestamp_seconds as ts_secs,\n                creation_timestamp_nanoseconds as ts_nanos,\n                term_seconds as term_secs,\n                term_nanoseconds as term_nanos,\n                origin,\n                oracle_event_id\n            from orders\n        ),\n\n        cfd as (\n            select\n                ord.order_id,\n                id as cfd_id,\n                quantity_usd\n            from cfds\n                inner join ord on ord.order_id = cfds.order_id\n        ),\n\n        state as (\n            select\n                id as state_id,\n                cfd.order_id,\n                cfd.quantity_usd,\n                state\n            from cfd_states\n                inner join cfd on cfd.cfd_id = cfd_states.cfd_id\n            where id in (\n                select\n                    max(id) as id\n                from cfd_states\n                group by (cfd_id)\n            )\n        )\n\n        select\n            ord.uuid as \"uuid: crate::model::cfd::OrderId\",\n            ord.trading_pair as \"trading_pair: crate::model::TradingPair\",\n            ord.position as \"position: crate::model::Position\",\n            ord.initial_price,\n            ord.min_quantity,\n            ord.max_quantity,\n            ord.leverage as \"leverage: crate::model::Leverage\",\n            ord.liquidation_price,\n            ord.ts_secs as \"ts_secs: i64\",\n            ord.ts_nanos as \"ts_nanos: i32\",\n            ord.term_secs as \"term_secs: i64\",\n            ord.term_nanos as \"term_nanos: i32\",\n            ord.origin as \"origin: crate::model::cfd::Origin\",\n            ord.oracle_event_id,\n            state.quantity_usd,\n            state.state\n\n        from ord\n            inner join state on state.order_id = ord.order_id\n\n        where ord.uuid = $1\n        ",
+  "221a6283db798bacaba99e7e85130f9a8bbea1299d8cb99d272b1d478dc19775": {
+    "query": "\n        select\n            state\n        from cfd_states\n        where cfd_id = $1\n        order by id desc\n        limit 1;\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "state",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false
+      ]
+    }
+  },
+  "571575003ef3ad8ad627213f11c9080c25a29bb665077ada9047630acfe4465c": {
+    "query": "\n        with ord as (\n            select\n                id as order_id,\n                uuid,\n                trading_pair,\n                position,\n                initial_price,\n                min_quantity,\n                max_quantity,\n                leverage,\n                liquidation_price,\n                creation_timestamp_seconds as ts_secs,\n                creation_timestamp_nanoseconds as ts_nanos,\n                settlement_time_interval_seconds as settlement_time_interval_secs,\n                settlement_time_interval_nanoseconds as settlement_time_interval_nanos,\n                origin,\n                oracle_event_id\n            from orders\n        ),\n\n        cfd as (\n            select\n                ord.order_id,\n                id as cfd_id,\n                quantity_usd\n            from cfds\n                inner join ord on ord.order_id = cfds.order_id\n        ),\n\n        state as (\n            select\n                id as state_id,\n                cfd.order_id,\n                cfd.quantity_usd,\n                state\n            from cfd_states\n                inner join cfd on cfd.cfd_id = cfd_states.cfd_id\n            where id in (\n                select\n                    max(id) as id\n                from cfd_states\n                group by (cfd_id)\n            )\n        )\n\n        select\n            ord.uuid as \"uuid: crate::model::cfd::OrderId\",\n            ord.trading_pair as \"trading_pair: crate::model::TradingPair\",\n            ord.position as \"position: crate::model::Position\",\n            ord.initial_price,\n            ord.min_quantity,\n            ord.max_quantity,\n            ord.leverage as \"leverage: crate::model::Leverage\",\n            ord.liquidation_price,\n            ord.ts_secs as \"ts_secs: i64\",\n            ord.ts_nanos as \"ts_nanos: i32\",\n            ord.settlement_time_interval_secs as \"settlement_time_interval_secs: i64\",\n            ord.settlement_time_interval_nanos as \"settlement_time_interval_nanos: i32\",\n            ord.origin as \"origin: crate::model::cfd::Origin\",\n            ord.oracle_event_id,\n            state.quantity_usd,\n            state.state\n\n        from ord\n            inner join state on state.order_id = ord.order_id\n\n        where ord.oracle_event_id = $1\n        ",
     "describe": {
       "columns": [
         {
@@ -181,12 +277,12 @@
           "type_info": "Int64"
         },
         {
-          "name": "term_secs: i64",
+          "name": "settlement_time_interval_secs: i64",
           "ordinal": 10,
           "type_info": "Int64"
         },
         {
-          "name": "term_nanos: i32",
+          "name": "settlement_time_interval_nanos: i32",
           "ordinal": 11,
           "type_info": "Int64"
         },
@@ -252,8 +348,8 @@
       ]
     }
   },
-  "b593977ea0af1bfe0a111ec908bab2149cf6d0cdee74e3321b5f2fa8154480e5": {
-    "query": "\n        with ord as (\n            select\n                id as order_id,\n                uuid,\n                trading_pair,\n                position,\n                initial_price,\n                min_quantity,\n                max_quantity,\n                leverage,\n                liquidation_price,\n                creation_timestamp_seconds as ts_secs,\n                creation_timestamp_nanoseconds as ts_nanos,\n                term_seconds as term_secs,\n                term_nanoseconds as term_nanos,\n                origin,\n                oracle_event_id\n            from orders\n        ),\n\n        cfd as (\n            select\n                ord.order_id,\n                id as cfd_id,\n                quantity_usd\n            from cfds\n                inner join ord on ord.order_id = cfds.order_id\n        ),\n\n        state as (\n            select\n                id as state_id,\n                cfd.order_id,\n                cfd.quantity_usd,\n                state\n            from cfd_states\n                inner join cfd on cfd.cfd_id = cfd_states.cfd_id\n            where id in (\n                select\n                    max(id) as id\n                from cfd_states\n                group by (cfd_id)\n            )\n        )\n\n        select\n            ord.uuid as \"uuid: crate::model::cfd::OrderId\",\n            ord.trading_pair as \"trading_pair: crate::model::TradingPair\",\n            ord.position as \"position: crate::model::Position\",\n            ord.initial_price,\n            ord.min_quantity,\n            ord.max_quantity,\n            ord.leverage as \"leverage: crate::model::Leverage\",\n            ord.liquidation_price,\n            ord.ts_secs as \"ts_secs: i64\",\n            ord.ts_nanos as \"ts_nanos: i32\",\n            ord.term_secs as \"term_secs: i64\",\n            ord.term_nanos as \"term_nanos: i32\",\n            ord.origin as \"origin: crate::model::cfd::Origin\",\n            ord.oracle_event_id,\n            state.quantity_usd,\n            state.state\n\n        from ord\n            inner join state on state.order_id = ord.order_id\n\n        where ord.oracle_event_id = $1\n        ",
+  "b5a6bcafbfa745d147c30410e0acf8ee6c7733cc3e550a2db0c7860737c756dd": {
+    "query": "\n        with ord as (\n            select\n                id as order_id,\n                uuid,\n                trading_pair,\n                position,\n                initial_price,\n                min_quantity,\n                max_quantity,\n                leverage,\n                liquidation_price,\n                creation_timestamp_seconds as ts_secs,\n                creation_timestamp_nanoseconds as ts_nanos,\n                settlement_time_interval_seconds as settlement_time_interval_secs,\n                settlement_time_interval_nanoseconds as settlement_time_interval_nanos,\n                origin,\n                oracle_event_id\n            from orders\n        ),\n\n        cfd as (\n            select\n                ord.order_id,\n                id as cfd_id,\n                quantity_usd\n            from cfds\n                inner join ord on ord.order_id = cfds.order_id\n        ),\n\n        state as (\n            select\n                id as state_id,\n                cfd.order_id,\n                cfd.quantity_usd,\n                state\n            from cfd_states\n                inner join cfd on cfd.cfd_id = cfd_states.cfd_id\n            where id in (\n                select\n                    max(id) as id\n                from cfd_states\n                group by (cfd_id)\n            )\n        )\n\n        select\n            ord.uuid as \"uuid: crate::model::cfd::OrderId\",\n            ord.trading_pair as \"trading_pair: crate::model::TradingPair\",\n            ord.position as \"position: crate::model::Position\",\n            ord.initial_price,\n            ord.min_quantity,\n            ord.max_quantity,\n            ord.leverage as \"leverage: crate::model::Leverage\",\n            ord.liquidation_price,\n            ord.ts_secs as \"ts_secs: i64\",\n            ord.ts_nanos as \"ts_nanos: i32\",\n            ord.settlement_time_interval_secs as \"settlement_time_interval_secs: i64\",\n            ord.settlement_time_interval_nanos as \"settlement_time_interval_nanos: i32\",\n            ord.origin as \"origin: crate::model::cfd::Origin\",\n            ord.oracle_event_id,\n            state.quantity_usd,\n            state.state\n\n        from ord\n            inner join state on state.order_id = ord.order_id\n        ",
     "describe": {
       "columns": [
         {
@@ -307,12 +403,12 @@
           "type_info": "Int64"
         },
         {
-          "name": "term_secs: i64",
+          "name": "settlement_time_interval_secs: i64",
           "ordinal": 10,
           "type_info": "Int64"
         },
         {
-          "name": "term_nanos: i32",
+          "name": "settlement_time_interval_nanos: i32",
           "ordinal": 11,
           "type_info": "Int64"
         },
@@ -338,107 +434,11 @@
         }
       ],
       "parameters": {
-        "Right": 1
+        "Right": 0
       },
       "nullable": [
         false,
         false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
-  "b708b7116aa14093e0e21ab8f87e52928a70649a62250902054ef6526f1d6f66": {
-    "query": "\n        select\n            uuid as \"uuid: crate::model::cfd::OrderId\",\n            trading_pair as \"trading_pair: crate::model::TradingPair\",\n            position as \"position: crate::model::Position\",\n            initial_price,\n            min_quantity,\n            max_quantity,\n            leverage as \"leverage: crate::model::Leverage\",\n            liquidation_price,\n            creation_timestamp_seconds as \"ts_secs: i64\",\n            creation_timestamp_nanoseconds as \"ts_nanos: i32\",\n            term_seconds as \"term_secs: i64\",\n            term_nanoseconds as \"term_nanos: i32\",\n            origin as \"origin: crate::model::cfd::Origin\",\n            oracle_event_id\n\n        from orders\n        where uuid = $1\n        ",
-    "describe": {
-      "columns": [
-        {
-          "name": "uuid: crate::model::cfd::OrderId",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "trading_pair: crate::model::TradingPair",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "position: crate::model::Position",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "initial_price",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "min_quantity",
-          "ordinal": 4,
-          "type_info": "Text"
-        },
-        {
-          "name": "max_quantity",
-          "ordinal": 5,
-          "type_info": "Text"
-        },
-        {
-          "name": "leverage: crate::model::Leverage",
-          "ordinal": 6,
-          "type_info": "Int64"
-        },
-        {
-          "name": "liquidation_price",
-          "ordinal": 7,
-          "type_info": "Text"
-        },
-        {
-          "name": "ts_secs: i64",
-          "ordinal": 8,
-          "type_info": "Int64"
-        },
-        {
-          "name": "ts_nanos: i32",
-          "ordinal": 9,
-          "type_info": "Int64"
-        },
-        {
-          "name": "term_secs: i64",
-          "ordinal": 10,
-          "type_info": "Int64"
-        },
-        {
-          "name": "term_nanos: i32",
-          "ordinal": 11,
-          "type_info": "Int64"
-        },
-        {
-          "name": "origin: crate::model::cfd::Origin",
-          "ordinal": 12,
-          "type_info": "Text"
-        },
-        {
-          "name": "oracle_event_id",
-          "ordinal": 13,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
         false,
         false,
         false,

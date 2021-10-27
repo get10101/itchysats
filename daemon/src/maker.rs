@@ -51,9 +51,9 @@ struct Opts {
     #[clap(short, long)]
     json: bool,
 
-    /// The term length of each CFD in hours.
+    /// The time interval until potential settlement of each CFD in hours
     #[clap(long, default_value = "24")]
-    term: u8,
+    settlement_time_interval_hours: u8,
 
     #[clap(subcommand)]
     network: Network,
@@ -190,7 +190,8 @@ async fn main() -> Result<()> {
     housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn).await?;
     housekeeping::rebroadcast_transactions(&mut conn, &wallet).await?;
 
-    let term = time::Duration::hours(opts.term as i64);
+    let settlement_time_interval_hours =
+        time::Duration::hours(opts.settlement_time_interval_hours as i64);
     let MakerActorSystem {
         cfd_actor_addr,
         cfd_feed_receiver,
@@ -201,7 +202,7 @@ async fn main() -> Result<()> {
         db.clone(),
         wallet.clone(),
         oracle,
-        |cfds, channel| oracle::Actor::new(cfds, channel, term),
+        |cfds, channel| oracle::Actor::new(cfds, channel, settlement_time_interval_hours),
         {
             |channel, cfds| {
                 let electrum = opts.network.electrum().to_string();
@@ -209,7 +210,7 @@ async fn main() -> Result<()> {
             }
         },
         |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
-        time::Duration::hours(opts.term as i64),
+        time::Duration::hours(opts.settlement_time_interval_hours as i64),
     )
     .await?;
 

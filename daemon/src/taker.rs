@@ -27,7 +27,7 @@ use xtra::Actor;
 
 mod routes_taker;
 
-pub const TERM: time::Duration = time::Duration::hours(24);
+pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 
 #[derive(Clap)]
 struct Opts {
@@ -181,7 +181,7 @@ async fn main() -> Result<()> {
         oracle,
         send_to_maker,
         read_from_maker,
-        |cfds, channel| oracle::Actor::new(cfds, channel, TERM),
+        |cfds, channel| oracle::Actor::new(cfds, channel, ANNOUNCEMENT_LOOKAHEAD),
         {
             |channel, cfds| {
                 let electrum = opts.network.electrum().to_string();
