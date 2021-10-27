@@ -8,7 +8,7 @@ use daemon::model::cfd::{Cfd, CfdState, Order};
 use daemon::model::{Price, Usd, WalletInfo};
 use daemon::tokio_ext::FutureExt;
 use daemon::{
-    connection, db, logger, maker_cfd, maker_inc_connections, monitor, oracle, taker_cfd, wallet,
+    connection, db, maker_cfd, maker_inc_connections, monitor, oracle, taker_cfd, wallet,
 };
 use rand::thread_rng;
 use rust_decimal_macros::dec;
@@ -18,13 +18,17 @@ use std::str::FromStr;
 use std::task::Poll;
 use std::time::{Duration, SystemTime};
 use tokio::sync::watch;
+use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra_productivity::xtra_productivity;
 
 #[tokio::test]
 async fn taker_receives_order_from_maker_on_publication() {
+    let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
     assert!(is_next_none(&mut taker.order_feed).await);
@@ -42,6 +46,7 @@ async fn taker_receives_order_from_maker_on_publication() {
 
 #[tokio::test]
 async fn taker_takes_order_and_maker_rejects() {
+    let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
     // TODO: Why is this needed? For the cfd stream it is not needed
@@ -145,9 +150,29 @@ where
     rx.borrow().clone()
 }
 
-fn init_tracing() {
-    logger::init(LevelFilter::DEBUG, false).unwrap();
+fn init_tracing() -> DefaultGuard {
+    let filter = EnvFilter::from_default_env()
+        // apply warning level globally
+        .add_directive(format!("{}", LevelFilter::WARN).parse().unwrap())
+        // log traces from test itself
+        .add_directive(
+            format!("happy_path={}", LevelFilter::DEBUG)
+                .parse()
+                .unwrap(),
+        )
+        .add_directive(format!("taker={}", LevelFilter::DEBUG).parse().unwrap())
+        .add_directive(format!("maker={}", LevelFilter::DEBUG).parse().unwrap())
+        .add_directive(format!("daemon={}", LevelFilter::DEBUG).parse().unwrap())
+        .add_directive(format!("rocket={}", LevelFilter::WARN).parse().unwrap());
+
+    let guard = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_test_writer()
+        .set_default();
+
     tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
+
+    guard
 }
 
 /// Test Stub simulating the Oracle actor
@@ -338,7 +363,6 @@ impl Taker {
 }
 
 async fn start_both() -> (Maker, Taker) {
-    init_tracing();
     let oracle_pk: schnorrsig::PublicKey = schnorrsig::PublicKey::from_str(
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )
