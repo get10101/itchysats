@@ -25,8 +25,10 @@ async fn taker_receives_order_from_maker_on_publication() {
 
     assert!(is_next_none(&mut taker.order_feed).await);
 
+    maker.publish_order(new_dummy_order());
+
     let (published, received) = tokio::join!(
-        maker.publish_order(new_dummy_order()),
+        next_some(&mut maker.order_feed),
         next_some(&mut taker.order_feed)
     );
 
@@ -153,7 +155,7 @@ impl Wallet {
 struct Maker {
     cfd_actor_addr:
         xtra::Address<maker_cfd::Actor<Oracle, Monitor, maker_inc_connections::Actor, Wallet>>,
-    order_feed_receiver: watch::Receiver<Option<Order>>,
+    order_feed: watch::Receiver<Option<Order>>,
     #[allow(dead_code)] // we need to keep the xtra::Address for refcounting
     inc_conn_addr: xtra::Address<maker_inc_connections::Actor>,
     address: SocketAddr,
@@ -199,17 +201,14 @@ impl Maker {
 
         Self {
             cfd_actor_addr: maker.cfd_actor_addr,
-            order_feed_receiver: maker.order_feed_receiver,
+            order_feed: maker.order_feed_receiver,
             inc_conn_addr: maker.inc_conn_addr,
             address,
         }
     }
 
-    async fn publish_order(&mut self, new_order_params: maker_cfd::NewOrder) -> Order {
-        self.cfd_actor_addr.send(new_order_params).await.unwrap();
-        let next_order = self.order_feed_receiver.borrow().clone().unwrap();
-
-        next_order
+    fn publish_order(&mut self, new_order_params: maker_cfd::NewOrder) {
+        self.cfd_actor_addr.do_send(new_order_params).unwrap();
     }
 }
 
