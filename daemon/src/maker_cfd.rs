@@ -574,12 +574,7 @@ where
             .await?
             .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
 
-        // 3. Insert that we are in contract setup and refresh our own feed
-        cfd.state = CfdState::contract_setup();
-
-        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
-
-        // 4. Notify the taker that we are ready for contract setup
+        // 3. Notify the taker that we are ready for contract setup
         // Use `.send` here to ensure we only continue once the message has been sent
         // Nothing done after this call should be able to fail, otherwise we notified the taker, but
         // might not transition to `Active` ourselves!
@@ -589,6 +584,10 @@ where
                 command: TakerCommand::NotifyOrderAccepted { id: order_id },
             })
             .await??;
+
+        // 4. Insert that we are in contract setup and refresh our own feed
+        cfd.state = CfdState::contract_setup();
+        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         // 5. Spawn away the contract setup
         let (sender, receiver) = mpsc::unbounded();
