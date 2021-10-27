@@ -10,6 +10,7 @@ atty = "0.2"
 bdk = { version = "0.12", default-features = false, features = ["sqlite", "electrum"] }
 bytes = "1"
 cfd_protocol = { path = "../cfd_protocol" }
+chrono = { version = "0.4", features = ["serde"] }
 clap = "3.0.0-beta.4"
 futures = { version = "0.3", default-features = false }
 hex = "0.4"
