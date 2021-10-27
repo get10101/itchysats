@@ -1,12 +1,14 @@
 use crate::olivia;
+
 use anyhow::{Context, Result};
-use bdk::bitcoin::{Address, Amount};
+use bdk::bitcoin::{Address, Amount, Denomination};
 use reqwest::Url;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
+use std::num::NonZeroU8;
+use std::ops::{Add, Div, Mul, Sub};
 use std::time::SystemTime;
 use std::{fmt, str};
 use time::{OffsetDateTime, PrimitiveDateTime, Time};
@@ -14,49 +16,34 @@ use uuid::Uuid;
 
 pub mod cfd;
 
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Price of zero is not allowed.")]
+    ZeroPrice,
+    #[error("Negative Price is unimplemented.")]
+    NegativePrice,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct Usd(Decimal);
 
 impl Usd {
-    pub fn new(dec: Decimal) -> Self {
-        Self(dec)
-    }
-
-    pub fn checked_add(&self, other: Usd) -> Result<Usd> {
-        let result = self.0.checked_add(other.0).context("addition error")?;
-        Ok(Usd(result))
-    }
-
-    pub fn checked_sub(&self, other: Usd) -> Result<Usd> {
-        let result = self.0.checked_sub(other.0).context("subtraction error")?;
-        Ok(Usd(result))
-    }
-
-    // TODO: Usd * Usd = Usd^2 not Usd !!!
-    pub fn checked_mul(&self, other: Usd) -> Result<Usd> {
-        let result = self
-            .0
-            .checked_mul(other.0)
-            .context("multiplication error")?;
-        Ok(Usd(result))
-    }
-
-    pub fn checked_div(&self, other: Usd) -> Result<Usd> {
-        let result = self.0.checked_div(other.0).context("division error")?;
-        Ok(Usd(result))
+    pub fn new(value: Decimal) -> Self {
+        Self(value)
     }
 
     pub fn try_into_u64(&self) -> Result<u64> {
         self.0.to_u64().context("could not fit decimal into u64")
     }
 
-    pub fn half(&self) -> Usd {
-        let half = self
-            .0
-            .checked_div(dec!(2))
-            .expect("can always divide by two");
+    pub fn try_into_f64(&self) -> Result<f64> {
+        self.0.to_f64().context("Could not fit decimal into f64")
+    }
+}
 
-        Usd(half)
+impl fmt::Display for Usd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.round_dp(2).fmt(f)
     }
 }
 
@@ -80,15 +67,335 @@ impl<'de> Deserialize<'de> for Usd {
     }
 }
 
-impl fmt::Display for Usd {
+impl str::FromStr for Usd {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let dec = Decimal::from_str(s)?;
+        Ok(Usd(dec))
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub struct Price(Decimal);
+
+impl Price {
+    pub fn new(value: Decimal) -> Result<Self, Error> {
+        if value == Decimal::ZERO {
+            return Result::Err(Error::ZeroPrice);
+        }
+
+        if value < Decimal::ZERO {
+            return Result::Err(Error::NegativePrice);
+        }
+
+        Ok(Self(value))
+    }
+
+    pub fn try_into_u64(&self) -> Result<u64> {
+        self.0.to_u64().context("Could not fit decimal into u64")
+    }
+
+    pub fn try_into_f64(&self) -> Result<f64> {
+        self.0.to_f64().context("Could not fit decimal into f64")
+    }
+}
+
+impl Serialize for Price {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        <Decimal as Serialize>::serialize(&self.0.round_dp(2), serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Price {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let dec = <Decimal as Deserialize>::deserialize(deserializer)?.round_dp(2);
+
+        Ok(Price(dec))
+    }
+}
+
+impl fmt::Display for Price {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl From<Decimal> for Usd {
-    fn from(decimal: Decimal) -> Self {
-        Usd(decimal)
+impl str::FromStr for Price {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let dec = Decimal::from_str(s)?;
+        Ok(Price(dec))
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub struct InversePrice(Decimal);
+
+impl InversePrice {
+    pub fn new(value: Price) -> Result<Self, Error> {
+        if value.0 == Decimal::ZERO {
+            return Result::Err(Error::ZeroPrice);
+        }
+
+        if value.0 < Decimal::ZERO {
+            return Result::Err(Error::NegativePrice);
+        }
+
+        Ok(Self(Decimal::ONE / value.0))
+    }
+
+    pub fn try_into_u64(&self) -> Result<u64> {
+        self.0.to_u64().context("Could not fit decimal into u64")
+    }
+
+    pub fn try_into_f64(&self) -> Result<f64> {
+        self.0.to_f64().context("Could not fit decimal into f64")
+    }
+}
+
+impl Serialize for InversePrice {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        <Decimal as Serialize>::serialize(&self.0.round_dp(2), serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for InversePrice {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let dec = <Decimal as Deserialize>::deserialize(deserializer)?.round_dp(2);
+
+        Ok(InversePrice(dec))
+    }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+pub struct Leverage(u8);
+
+impl Leverage {
+    pub fn new(value: u8) -> Result<Self> {
+        let val = NonZeroU8::new(value).context("Cannot use non-positive values")?;
+        Ok(Self(u8::from(val)))
+    }
+
+    pub fn get(&self) -> u8 {
+        self.0
+    }
+}
+
+// add impl's to do algebra with Usd, Leverage, and ExhangeRate as required
+impl Mul<Leverage> for Usd {
+    type Output = Usd;
+
+    fn mul(self, rhs: Leverage) -> Self::Output {
+        let value = self.0 * Decimal::from(rhs.0);
+        Self(value)
+    }
+}
+
+impl Div<Leverage> for Usd {
+    type Output = Usd;
+
+    fn div(self, rhs: Leverage) -> Self::Output {
+        Self(self.0 / Decimal::from(rhs.0))
+    }
+}
+
+impl Mul<Usd> for Leverage {
+    type Output = Usd;
+
+    fn mul(self, rhs: Usd) -> Self::Output {
+        let value = Decimal::from(self.0) * rhs.0;
+        Usd(value)
+    }
+}
+
+impl Mul<u8> for Usd {
+    type Output = Usd;
+
+    fn mul(self, rhs: u8) -> Self::Output {
+        let value = self.0 * Decimal::from(rhs);
+        Self(value)
+    }
+}
+
+impl Div<u8> for Usd {
+    type Output = Usd;
+
+    fn div(self, rhs: u8) -> Self::Output {
+        let value = self.0 / Decimal::from(rhs);
+        Self(value)
+    }
+}
+
+impl Div<u8> for Price {
+    type Output = Price;
+
+    fn div(self, rhs: u8) -> Self::Output {
+        let value = self.0 / Decimal::from(rhs);
+        Self(value)
+    }
+}
+
+impl Add<Usd> for Usd {
+    type Output = Usd;
+
+    fn add(self, rhs: Usd) -> Self::Output {
+        let value = self.0 + rhs.0;
+        Self(value)
+    }
+}
+
+impl Sub<Usd> for Usd {
+    type Output = Usd;
+
+    fn sub(self, rhs: Usd) -> Self::Output {
+        let value = self.0 - rhs.0;
+        Self(value)
+    }
+}
+
+impl Div<Price> for Usd {
+    type Output = Amount;
+
+    fn div(self, rhs: Price) -> Self::Output {
+        let mut btc = self.0 / rhs.0;
+        btc.rescale(8);
+        Amount::from_str_in(&btc.to_string(), Denomination::Bitcoin)
+            .expect("Error computing BTC amount")
+    }
+}
+
+impl Mul<Leverage> for Price {
+    type Output = Price;
+
+    fn mul(self, rhs: Leverage) -> Self::Output {
+        let value = self.0 * Decimal::from(rhs.0);
+        Self(value)
+    }
+}
+
+impl Mul<Price> for Leverage {
+    type Output = Price;
+
+    fn mul(self, rhs: Price) -> Self::Output {
+        let value = Decimal::from(self.0) * rhs.0;
+        Price(value)
+    }
+}
+
+impl Div<Leverage> for Price {
+    type Output = Price;
+
+    fn div(self, rhs: Leverage) -> Self::Output {
+        let value = self.0 / Decimal::from(rhs.0);
+        Self(value)
+    }
+}
+
+impl Mul<InversePrice> for Usd {
+    type Output = Amount;
+
+    fn mul(self, rhs: InversePrice) -> Self::Output {
+        let mut btc = self.0 * rhs.0;
+        btc.rescale(8);
+        Amount::from_str_in(&btc.to_string(), Denomination::Bitcoin)
+            .expect("Error computing BTC amount")
+    }
+}
+
+impl Mul<Leverage> for InversePrice {
+    type Output = InversePrice;
+
+    fn mul(self, rhs: Leverage) -> Self::Output {
+        let value = self.0 * Decimal::from(rhs.0);
+        Self(value)
+    }
+}
+
+impl Mul<InversePrice> for Leverage {
+    type Output = InversePrice;
+
+    fn mul(self, rhs: InversePrice) -> Self::Output {
+        let value = Decimal::from(self.0) * rhs.0;
+        InversePrice(value)
+    }
+}
+
+impl Div<Leverage> for InversePrice {
+    type Output = InversePrice;
+
+    fn div(self, rhs: Leverage) -> Self::Output {
+        let value = self.0 / Decimal::from(rhs.0);
+        Self(value)
+    }
+}
+
+impl Add<Price> for Price {
+    type Output = Price;
+
+    fn add(self, rhs: Price) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Sub<Price> for Price {
+    type Output = Price;
+
+    fn sub(self, rhs: Price) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
+impl Add<InversePrice> for InversePrice {
+    type Output = InversePrice;
+
+    fn add(self, rhs: InversePrice) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Sub<InversePrice> for InversePrice {
+    type Output = InversePrice;
+
+    fn sub(self, rhs: InversePrice) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
+impl Add<u8> for Leverage {
+    type Output = Leverage;
+
+    fn add(self, rhs: u8) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+impl Add<Leverage> for u8 {
+    type Output = Leverage;
+
+    fn add(self, rhs: Leverage) -> Self::Output {
+        Leverage(self + rhs.0)
+    }
+}
+
+impl Div<Leverage> for Leverage {
+    type Output = Decimal;
+
+    fn div(self, rhs: Leverage) -> Self::Output {
+        Decimal::from(self.0) / Decimal::from(rhs.0)
     }
 }
 
@@ -126,10 +433,6 @@ impl From<Decimal> for Percent {
         Percent(decimal)
     }
 }
-
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
-#[sqlx(transparent)]
-pub struct Leverage(pub u8);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub enum TradingPair {
@@ -245,6 +548,7 @@ impl str::FromStr for BitMexPriceEventId {
 
 #[cfg(test)]
 mod tests {
+    use rust_decimal_macros::dec;
     use serde_test::{assert_de_tokens, assert_ser_tokens, Token};
     use time::macros::datetime;
 
@@ -301,5 +605,61 @@ mod tests {
             BitMexPriceEventId::with_20_digits(datetime!(2021-09-23 10:00:00).assume_utc());
 
         assert!(past_event.has_likely_occured());
+    }
+
+    #[test]
+    fn algebra_with_usd() {
+        let usd_0 = Usd::new(dec!(1.234));
+        let usd_1 = Usd::new(dec!(9.876));
+
+        let usd_sum = usd_0 + usd_1;
+        let usd_diff = usd_0 - usd_1;
+        let half = usd_0 / 2;
+        let double = usd_1 * 2;
+
+        assert_eq!(usd_sum.0, dec!(11.110));
+        assert_eq!(usd_diff.0, dec!(-8.642));
+        assert_eq!(half.0, dec!(0.617));
+        assert_eq!(double.0, dec!(19.752));
+    }
+
+    #[test]
+    fn usd_for_1_btc_buys_1_btc() {
+        let usd = Usd::new(dec!(61234.5678));
+        let price = Price::new(dec!(61234.5678)).unwrap();
+        let inv_price = InversePrice::new(price).unwrap();
+        let res_0 = usd / price;
+        let res_1 = usd * inv_price;
+
+        assert_eq!(res_0, Amount::ONE_BTC);
+        assert_eq!(res_1, Amount::ONE_BTC);
+    }
+
+    #[test]
+    fn leverage_does_not_alter_type() {
+        let usd = Usd::new(dec!(61234.5678));
+        let leverage = Leverage::new(3).unwrap();
+        let res = usd * leverage / leverage;
+
+        assert_eq!(res.0, usd.0);
+    }
+
+    #[test]
+    fn test_algebra_with_types() {
+        let usd = Usd::new(dec!(61234.5678));
+        let leverage = Leverage::new(5).unwrap();
+        let price = Price::new(dec!(61234.5678)).unwrap();
+        let expected_buyin = Amount::from_str_in("0.2", Denomination::Bitcoin).unwrap();
+
+        let liquidation_price = price * leverage / (leverage + 1);
+        let inv_price = InversePrice::new(price).unwrap();
+        let inv_liquidation_price = InversePrice::new(liquidation_price).unwrap();
+
+        let long_buyin = usd / (price * leverage);
+        let long_payout =
+            (usd / leverage) * ((leverage + 1) * inv_price - leverage * inv_liquidation_price);
+
+        assert_eq!(long_buyin, expected_buyin);
+        assert_eq!(long_payout, Amount::ZERO);
     }
 }

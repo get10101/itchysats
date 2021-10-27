@@ -2,7 +2,7 @@ use anyhow::Result;
 use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
 use daemon::model::cfd::{Cfd, Order, OrderId, Role, UpdateCfdProposals};
-use daemon::model::{Usd, WalletInfo};
+use daemon::model::{Price, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
 use daemon::{bitmex_price_feed, maker_cfd};
@@ -101,7 +101,7 @@ pub async fn maker_feed(
 // TODO: Use Rocket form?
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfdNewOrderRequest {
-    pub price: Usd,
+    pub price: Price,
     // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
     // always 1 USD
     pub min_quantity: Usd,

@@ -1,6 +1,6 @@
 use bdk::bitcoin::{Amount, Network};
 use daemon::model::cfd::{calculate_buy_margin, Cfd, Order, OrderId, Role, UpdateCfdProposals};
-use daemon::model::{Leverage, Usd, WalletInfo};
+use daemon::model::{Leverage, Price, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
 use daemon::{bitmex_price_feed, taker_cfd};
@@ -160,7 +160,7 @@ pub fn get_health_check() {}
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct MarginRequest {
-    pub price: Usd,
+    pub price: Price,
     pub quantity: Usd,
     pub leverage: Leverage,
 }
@@ -182,8 +182,7 @@ pub fn margin_calc(
         margin_request.price,
         margin_request.quantity,
         margin_request.leverage,
-    )
-    .map_err(|e| status::BadRequest(Some(e.to_string())))?;
+    );
 
     Ok(status::Accepted(Some(Json(MarginResponse { margin }))))
 }

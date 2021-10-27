@@ -1,7 +1,7 @@
 use crate::model::cfd::{
     Dlc, OrderId, Payout, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
 };
-use crate::model::{Leverage, Position, TradingPair, Usd};
+use crate::model::{Leverage, Position, Price, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::{Amount, Network, SignedAmount, Txid};
 use rocket::request::FromParam;
@@ -16,12 +16,12 @@ use tokio::sync::watch;
 #[derive(Debug, Clone, Serialize)]
 pub struct Cfd {
     pub order_id: OrderId,
-    pub initial_price: Usd,
+    pub initial_price: Price,
 
     pub leverage: Leverage,
     pub trading_pair: TradingPair,
     pub position: Position,
-    pub liquidation_price: Usd,
+    pub liquidation_price: Price,
 
     pub quantity_usd: Usd,
 
@@ -163,13 +163,13 @@ pub struct CfdOrder {
     pub trading_pair: TradingPair,
     pub position: Position,
 
-    pub price: Usd,
+    pub price: Price,
 
     pub min_quantity: Usd,
     pub max_quantity: Usd,
 
     pub leverage: Leverage,
-    pub liquidation_price: Usd,
+    pub liquidation_price: Price,
 
     pub creation_timestamp: u64,
     pub term_in_secs: u64,
@@ -184,7 +184,7 @@ pub trait ToSseEvent {
 /// by UI
 pub struct CfdsWithAuxData {
     pub cfds: Vec<model::cfd::Cfd>,
-    pub current_price: Usd,
+    pub current_price: Price,
     pub pending_proposals: UpdateCfdProposals,
     pub network: Network,
 }
@@ -419,8 +419,8 @@ fn to_tx_url_list(state: model::cfd::CfdState, network: Network) -> Vec<TxUrl> {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Quote {
-    bid: Usd,
-    ask: Usd,
+    bid: Price,
+    ask: Price,
     last_updated_at: u64,
 }
 

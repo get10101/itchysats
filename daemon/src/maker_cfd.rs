@@ -6,7 +6,7 @@ use crate::model::cfd::{
     OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
     UpdateCfdProposals,
 };
-use crate::model::{TakerId, Usd};
+use crate::model::{Price, TakerId, Usd};
 use crate::monitor::MonitorParams;
 use crate::{log_error, maker_inc_connections, monitor, oracle, setup_contract, wallet, wire};
 use anyhow::{Context as _, Result};
@@ -34,7 +34,7 @@ pub enum CfdAction {
 }
 
 pub struct NewOrder {
-    pub price: Usd,
+    pub price: Price,
     pub min_quantity: Usd,
     pub max_quantity: Usd,
 }
@@ -633,7 +633,7 @@ where
 {
     async fn handle_new_order(
         &mut self,
-        price: Usd,
+        price: Price,
         min_quantity: Usd,
         max_quantity: Usd,
     ) -> Result<()> {
