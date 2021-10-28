@@ -6,7 +6,7 @@ use crate::model::cfd::{
     OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
     UpdateCfdProposals,
 };
-use crate::model::{Price, TakerId, Usd};
+use crate::model::{Price, TakerId, Timestamp, Usd};
 use crate::monitor::MonitorParams;
 use crate::{log_error, maker_inc_connections, monitor, oracle, setup_contract, wallet, wire};
 use anyhow::{Context as _, Result};
@@ -18,7 +18,6 @@ use futures::{future, SinkExt};
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 use std::collections::HashMap;
-use std::time::SystemTime;
 use time::Duration;
 use tokio::sync::watch;
 use xtra::prelude::*;
@@ -449,7 +448,7 @@ where
             quantity,
             CfdState::IncomingOrderRequest {
                 common: CfdStateCommon {
-                    transition_timestamp: SystemTime::now(),
+                    transition_timestamp: Timestamp::now()?,
                 },
                 taker_id,
             },
@@ -885,7 +884,7 @@ where
 
         let own_script_pubkey = dlc.script_pubkey_for(cfd.role());
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
-            CollaborativeSettlement::new(tx.clone(), own_script_pubkey.clone(), proposal.price),
+            CollaborativeSettlement::new(tx.clone(), own_script_pubkey.clone(), proposal.price)?,
         ))?;
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 

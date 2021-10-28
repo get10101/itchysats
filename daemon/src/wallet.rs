@@ -1,4 +1,4 @@
-use crate::model::WalletInfo;
+use crate::model::{Timestamp, WalletInfo};
 use anyhow::{Context, Result};
 use bdk::bitcoin::consensus::encode::serialize_hex;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
@@ -11,7 +11,6 @@ use cfd_protocol::{PartyParams, WalletExt};
 use rocket::serde::json::Value;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::SystemTime;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;
 
@@ -64,7 +63,7 @@ impl Actor {
         let wallet_info = WalletInfo {
             balance: Amount::from_sat(balance),
             address,
-            last_updated_at: SystemTime::now(),
+            last_updated_at: Timestamp::now()?,
         };
 
         Ok(wallet_info)

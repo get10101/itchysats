@@ -5,7 +5,7 @@ use cfd_protocol::secp256k1_zkp::{schnorrsig, Secp256k1};
 use cfd_protocol::PartyParams;
 use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, CfdState, Order};
-use daemon::model::{Price, Usd, WalletInfo};
+use daemon::model::{Price, Timestamp, Usd, WalletInfo};
 use daemon::tokio_ext::FutureExt;
 use daemon::{
     connection, db, maker_cfd, maker_inc_connections, monitor, oracle, taker_cfd, wallet,
@@ -16,7 +16,7 @@ use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::task::Poll;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use tokio::sync::watch;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
@@ -233,7 +233,7 @@ impl Wallet {
         Ok(WalletInfo {
             balance: bdk::bitcoin::Amount::ONE_BTC,
             address,
-            last_updated_at: SystemTime::now(),
+            last_updated_at: Timestamp::now()?,
         })
     }
     async fn handle(&mut self, _msg: wallet::Sign) -> Result<PartiallySignedTransaction> {

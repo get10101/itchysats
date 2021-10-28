@@ -1,10 +1,9 @@
-use crate::model::Price;
+use crate::model::{Price, Timestamp};
 use anyhow::Result;
 use futures::{StreamExt, TryStreamExt};
 use rust_decimal::Decimal;
 use std::convert::TryFrom;
 use std::future::Future;
-use std::time::SystemTime;
 use tokio::sync::watch;
 use tokio_tungstenite::tungstenite;
 
@@ -42,7 +41,7 @@ pub async fn new() -> Result<(impl Future<Output = ()>, watch::Receiver<Quote>)>
 
 #[derive(Clone, Debug)]
 pub struct Quote {
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
     pub bid: Price,
     pub ask: Price,
 }
@@ -62,7 +61,7 @@ impl Quote {
         let [quote] = table_message.data;
 
         Ok(Some(Self {
-            timestamp: SystemTime::now(),
+            timestamp: Timestamp::parse_from_rfc3339(&quote.timestamp)?,
             bid: Price::new(Decimal::try_from(quote.bid_price)?)?,
             ask: Price::new(Decimal::try_from(quote.ask_price)?)?,
         }))
@@ -100,6 +99,7 @@ mod wire {
         pub bid_price: f64,
         pub ask_price: f64,
         pub symbol: String,
+        pub timestamp: String,
     }
 }
 
@@ -116,5 +116,6 @@ mod tests {
 
         assert_eq!(quote.bid, Price::new(dec!(42640.5)).unwrap());
         assert_eq!(quote.ask, Price::new(dec!(42641)).unwrap());
+        assert_eq!(quote.timestamp.seconds(), 1632192000)
     }
 }

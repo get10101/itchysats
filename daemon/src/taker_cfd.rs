@@ -5,7 +5,7 @@ use crate::model::cfd::{
     OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
     UpdateCfdProposals,
 };
-use crate::model::{BitMexPriceEventId, Price, Usd};
+use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
 use crate::{log_error, oracle, setup_contract, wallet, wire};
@@ -15,7 +15,6 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
 use std::collections::HashMap;
-use std::time::SystemTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
 use xtra::KeepRunning;
@@ -357,7 +356,7 @@ where
 
         let proposal = RollOverProposal {
             order_id,
-            timestamp: SystemTime::now(),
+            timestamp: Timestamp::now()?,
         };
 
         self.current_pending_proposals.insert(
@@ -634,7 +633,7 @@ where
                 tx.clone(),
                 dlc.script_pubkey_for(cfd.role()),
                 proposal.price,
-            ),
+            )?,
         ))?;
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
