@@ -30,6 +30,7 @@ pub mod maker_cfd;
 pub mod maker_inc_connections;
 pub mod model;
 pub mod monitor;
+pub mod noise;
 pub mod olivia;
 pub mod oracle;
 pub mod payout_curve;
