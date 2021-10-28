@@ -53,6 +53,8 @@ name = "maker"
 path = "src/maker.rs"
 
 [dev-dependencies]
+mockall = "0.10.2"
+mockall_derive = "0.10.2"
 pretty_assertions = "1"
 serde_test = "1"
 time = { version = "0.3", features = ["std"] }
