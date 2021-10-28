@@ -1,5 +1,5 @@
 use crate::model::cfd::{Cfd, CfdState, Order, OrderId};
-use crate::model::{BitMexPriceEventId, Price, Usd};
+use crate::model::{BitMexPriceEventId, Usd};
 use anyhow::{Context, Result};
 use rust_decimal::Decimal;
 use sqlx::pool::PoolConnection;
@@ -84,15 +84,15 @@ pub async fn load_order_by_id(
         id: row.uuid,
         trading_pair: row.trading_pair,
         position: row.position,
-        price: row.initial_price.parse::<Price>()?,
-        min_quantity: row.min_quantity.parse::<Usd>()?,
-        max_quantity: row.max_quantity.parse::<Usd>()?,
+        price: row.initial_price.parse()?,
+        min_quantity: row.min_quantity.parse()?,
+        max_quantity: row.max_quantity.parse()?,
         leverage: row.leverage,
-        liquidation_price: row.liquidation_price.parse::<Price>()?,
+        liquidation_price: row.liquidation_price.parse()?,
         creation_timestamp: row.ts_secs,
         settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
         origin: row.origin,
-        oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
+        oracle_event_id: row.oracle_event_id.parse()?,
     })
 }
 
@@ -294,15 +294,15 @@ pub async fn load_cfd_by_order_id(
         id: row.uuid,
         trading_pair: row.trading_pair,
         position: row.position,
-        price: row.initial_price.parse::<Price>()?,
-        min_quantity: row.min_quantity.parse::<Usd>()?,
-        max_quantity: row.max_quantity.parse::<Usd>()?,
+        price: row.initial_price.parse()?,
+        min_quantity: row.min_quantity.parse()?,
+        max_quantity: row.max_quantity.parse()?,
         leverage: row.leverage,
-        liquidation_price: row.liquidation_price.parse::<Price>()?,
+        liquidation_price: row.liquidation_price.parse()?,
         creation_timestamp: row.ts_secs,
         settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
         origin: row.origin,
-        oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
+        oracle_event_id: row.oracle_event_id.parse()?,
     };
 
     // TODO:
@@ -392,15 +392,15 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 id: row.uuid,
                 trading_pair: row.trading_pair,
                 position: row.position,
-                price: row.initial_price.parse::<Price>()?,
-                min_quantity: row.min_quantity.parse::<Usd>()?,
-                max_quantity: row.max_quantity.parse::<Usd>()?,
+                price: row.initial_price.parse()?,
+                min_quantity: row.min_quantity.parse()?,
+                max_quantity: row.max_quantity.parse()?,
                 leverage: row.leverage,
-                liquidation_price: row.liquidation_price.parse::<Price>()?,
+                liquidation_price: row.liquidation_price.parse()?,
                 creation_timestamp: row.ts_secs,
                 settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
                 origin: row.origin,
-                oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
+                oracle_event_id: row.oracle_event_id.parse()?,
             };
 
             Ok(Cfd {
@@ -498,20 +498,20 @@ pub async fn load_cfds_by_oracle_event_id(
                 id: row.uuid,
                 trading_pair: row.trading_pair,
                 position: row.position,
-                price: row.initial_price.parse::<Price>()?,
-                min_quantity: row.min_quantity.parse::<Usd>()?,
-                max_quantity: row.max_quantity.parse::<Usd>()?,
+                price: row.initial_price.parse()?,
+                min_quantity: row.min_quantity.parse()?,
+                max_quantity: row.max_quantity.parse()?,
                 leverage: row.leverage,
-                liquidation_price: row.liquidation_price.parse::<Price>()?,
+                liquidation_price: row.liquidation_price.parse()?,
                 creation_timestamp: row.ts_secs,
                 settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
                 origin: row.origin,
-                oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
+                oracle_event_id: row.oracle_event_id.parse()?,
             };
 
             Ok(Cfd {
                 order,
-                quantity_usd: row.quantity_usd.parse::<Usd>()?,
+                quantity_usd: row.quantity_usd.parse()?,
                 state: serde_json::from_str(row.state.as_str())?,
             })
         })
@@ -533,7 +533,7 @@ mod tests {
 
     use crate::db::{self, insert_order};
     use crate::model::cfd::{Cfd, CfdState, Order, Origin};
-    use crate::model::Usd;
+    use crate::model::{Price, Usd};
 
     use super::*;
 
