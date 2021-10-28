@@ -10,20 +10,24 @@ use daemon::tokio_ext::FutureExt;
 use daemon::{
     connection, db, maker_cfd, maker_inc_connections, monitor, oracle, taker_cfd, wallet,
 };
+
+use mockall::predicate::*;
+use mockall::*;
 use rand::thread_rng;
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex};
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
+use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::Actor;
 use xtra_productivity::xtra_productivity;
 
 #[tokio::test]
@@ -32,6 +36,21 @@ async fn taker_receives_order_from_maker_on_publication() {
     let (mut maker, mut taker) = start_both().await;
 
     assert!(is_next_none(&mut taker.order_feed).await);
+
+    // POC of the call
+    // does not mean anything in the test, but this is how it would look like
+    maker
+        .mocks
+        .wallet
+        .lock()
+        .await
+        .expect_sync()
+        .times(1)
+        .returning(|| dummy_wallet_info());
+
+    // Uncomment this to showcase that we can assert that a particular caller
+    // got called (with certain parameters too)
+    // maker.mocks.wallet.lock().await.checkpoint();
 
     maker.publish_order(new_dummy_order());
 
@@ -176,91 +195,200 @@ fn init_tracing() -> DefaultGuard {
 }
 
 /// Test Stub simulating the Oracle actor
-struct Oracle;
-impl xtra::Actor for Oracle {}
+
+struct OracleActor {
+    mock: Arc<Mutex<dyn Oracle + Send>>,
+}
+impl xtra::Actor for OracleActor {}
+impl Oracle for OracleActor {}
 
 #[xtra_productivity(message_impl = false)]
-impl Oracle {
-    async fn handle_get_announcement(
-        &mut self,
-        _msg: oracle::GetAnnouncement,
-    ) -> Option<oracle::Announcement> {
-        todo!("stub this if needed")
+impl OracleActor {
+    async fn handle(&mut self, _msg: oracle::GetAnnouncement) -> Option<oracle::Announcement> {
+        self.mock.lock().await.get_announcement()
     }
 
     async fn handle(&mut self, _msg: oracle::MonitorAttestation) {
+        self.mock.lock().await.monitor_attestation()
+    }
+
+    async fn handle(&mut self, _msg: oracle::Sync) {
+        self.mock.lock().await.sync()
+    }
+}
+
+#[automock]
+trait Oracle {
+    fn get_announcement(&mut self) -> Option<oracle::Announcement> {
         todo!("stub this if needed")
     }
 
-    async fn handle(&mut self, _msg: oracle::Sync) {}
+    fn monitor_attestation(&mut self) {
+        todo!("stub this if needed")
+    }
+
+    fn sync(&mut self) {}
 }
 
 /// Test Stub simulating the Monitor actor
-struct Monitor;
-impl xtra::Actor for Monitor {}
+struct MonitorActor {
+    mock: Arc<Mutex<dyn Monitor + Send>>,
+}
+
+impl xtra::Actor for MonitorActor {}
+impl Monitor for MonitorActor {}
 
 #[xtra_productivity(message_impl = false)]
-impl Monitor {
-    async fn handle(&mut self, _msg: monitor::Sync) {}
+impl MonitorActor {
+    async fn handle(&mut self, _msg: monitor::Sync) {
+        self.mock.lock().await.sync()
+    }
 
     async fn handle(&mut self, _msg: monitor::StartMonitoring) {
-        todo!("stub this if needed")
+        self.mock.lock().await.start_monitoring()
     }
 
     async fn handle(&mut self, _msg: monitor::CollaborativeSettlement) {
-        todo!("stub this if needed")
+        self.mock.lock().await.collaborative_settlement()
     }
 
     async fn handle(&mut self, _msg: oracle::Attestation) {
+        self.mock.lock().await.oracle_attestation()
+    }
+}
+
+#[automock]
+trait Monitor {
+    fn sync(&mut self) {
+        tracing::debug!("Issuing a monitor sync message")
+    }
+
+    fn start_monitoring(&mut self) {
+        todo!("stub this if needed")
+    }
+
+    fn collaborative_settlement(&mut self) {
+        todo!("stub this if needed")
+    }
+
+    fn oracle_attestation(&mut self) {
         todo!("stub this if needed")
     }
 }
 
 /// Test Stub simulating the Wallet actor
-struct Wallet;
-impl xtra::Actor for Wallet {}
+/// Serves as an entrypoint for injected handlers
+struct WalletActor {
+    mock: Arc<Mutex<dyn Wallet + Send>>,
+}
+
+impl xtra::Actor for WalletActor {}
 
 #[xtra_productivity(message_impl = false)]
-impl Wallet {
+impl WalletActor {
     async fn handle(&mut self, _msg: wallet::BuildPartyParams) -> Result<PartyParams> {
-        todo!("stub this if needed")
+        self.mock.lock().await.build_party_params()
     }
     async fn handle(&mut self, _msg: wallet::Sync) -> Result<WalletInfo> {
-        let s = Secp256k1::new();
-        let public_key = ecdsa::PublicKey::new(s.generate_keypair(&mut thread_rng()).1);
-        let address = bdk::bitcoin::Address::p2pkh(&public_key, bdk::bitcoin::Network::Testnet);
-
-        Ok(WalletInfo {
-            balance: bdk::bitcoin::Amount::ONE_BTC,
-            address,
-            last_updated_at: Timestamp::now()?,
-        })
+        tracing::info!("We are handling the wallet sync msg");
+        self.mock.lock().await.sync()
     }
     async fn handle(&mut self, _msg: wallet::Sign) -> Result<PartiallySignedTransaction> {
-        todo!("stub this if needed")
+        self.mock.lock().await.sign()
     }
     async fn handle(&mut self, _msg: wallet::TryBroadcastTransaction) -> Result<Txid> {
-        todo!("stub this if needed")
+        self.mock.lock().await.broadcast()
+    }
+}
+
+#[automock]
+trait Wallet {
+    fn build_party_params(&mut self) -> Result<PartyParams> {
+        todo!()
+    }
+
+    fn sign(&mut self) -> Result<PartiallySignedTransaction> {
+        todo!()
+    }
+
+    fn broadcast(&mut self) -> Result<Txid> {
+        todo!()
+    }
+
+    fn sync(&mut self) -> Result<WalletInfo> {
+        dummy_wallet_info()
+    }
+}
+
+#[derive(Clone)]
+struct Mocks {
+    wallet: Arc<Mutex<MockWallet>>,
+    monitor: Arc<Mutex<MockMonitor>>,
+    oracle: Arc<Mutex<MockOracle>>,
+}
+
+impl Default for Mocks {
+    fn default() -> Self {
+        Self {
+            oracle: Arc::new(Mutex::new(MockOracle::new())),
+            monitor: Arc::new(Mutex::new(MockMonitor::new())),
+            wallet: Arc::new(Mutex::new(MockWallet::new())),
+        }
     }
 }
 
 /// Maker Test Setup
 #[derive(Clone)]
 struct Maker {
-    cfd_actor_addr:
-        xtra::Address<maker_cfd::Actor<Oracle, Monitor, maker_inc_connections::Actor, Wallet>>,
+    cfd_actor_addr: xtra::Address<
+        maker_cfd::Actor<OracleActor, MonitorActor, maker_inc_connections::Actor, WalletActor>,
+    >,
     order_feed: watch::Receiver<Option<Order>>,
     cfd_feed: watch::Receiver<Vec<Cfd>>,
     #[allow(dead_code)] // we need to keep the xtra::Address for refcounting
     inc_conn_actor_addr: xtra::Address<maker_inc_connections::Actor>,
     listen_addr: SocketAddr,
+    mocks: Mocks,
+}
+
+struct SimpleWallet {}
+
+impl Wallet for SimpleWallet {}
+
+fn dummy_wallet_info() -> Result<WalletInfo> {
+    let s = Secp256k1::new();
+    let public_key = ecdsa::PublicKey::new(s.generate_keypair(&mut thread_rng()).1);
+    let address = bdk::bitcoin::Address::p2pkh(&public_key, bdk::bitcoin::Network::Testnet);
+
+    Ok(WalletInfo {
+        balance: bdk::bitcoin::Amount::ONE_BTC,
+        address,
+        last_updated_at: Timestamp::now()?,
+    })
+}
+
+/// Creates actors with embedded mock handlers
+fn create_actors(mocks: &Mocks) -> (OracleActor, MonitorActor, WalletActor) {
+    let oracle = OracleActor {
+        mock: mocks.oracle.clone(),
+    };
+    let monitor = MonitorActor {
+        mock: mocks.monitor.clone(),
+    };
+    let wallet = WalletActor {
+        mock: mocks.wallet.clone(),
+    };
+    (oracle, monitor, wallet)
 }
 
 impl Maker {
     async fn start(oracle_pk: schnorrsig::PublicKey) -> Self {
         let db = in_memory_db().await;
 
-        let wallet_addr = Wallet {}.create(None).spawn_global();
+        let mocks = Mocks::default();
+        let (oracle, monitor, wallet) = create_actors(&mocks);
+
+        let wallet_addr = wallet.create(None).spawn_global();
 
         let settlement_time_interval_hours = time::Duration::hours(24);
 
@@ -268,8 +396,8 @@ impl Maker {
             db,
             wallet_addr,
             oracle_pk,
-            |_, _| Oracle,
-            |_, _| async { Ok(Monitor) },
+            |_, _| oracle,
+            |_, _| async { Ok(monitor) },
             |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
             settlement_time_interval_hours,
         )
@@ -300,6 +428,7 @@ impl Maker {
             cfd_feed: maker.cfd_feed_receiver,
             inc_conn_actor_addr: maker.inc_conn_addr,
             listen_addr: address,
+            mocks,
         }
     }
 
@@ -319,7 +448,7 @@ impl Maker {
 struct Taker {
     order_feed: watch::Receiver<Option<Order>>,
     cfd_feed: watch::Receiver<Vec<Cfd>>,
-    cfd_actor_addr: xtra::Address<taker_cfd::Actor<Oracle, Monitor, Wallet>>,
+    cfd_actor_addr: xtra::Address<taker_cfd::Actor<OracleActor, MonitorActor, WalletActor>>,
 }
 
 impl Taker {
@@ -333,19 +462,50 @@ impl Taker {
 
         let db = in_memory_db().await;
 
-        let wallet_addr = Wallet {}.create(None).spawn_global();
+        let mocks = Mocks::default();
+        let (oracle, monitor, wallet) = create_actors(&mocks);
+
+        let mut seq = Sequence::new();
+
+        // This code should work the first time, and then fail on purpose
+
+        mocks
+            .wallet
+            .lock()
+            .await
+            .expect_sync()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|| dummy_wallet_info());
+        // .times(1)
+        // .returning(|| dummy_wallet_info());
+
+        mocks
+            .wallet
+            .lock()
+            .await
+            .expect_sync()
+            .times(1) // need to specify times always :(
+            .in_sequence(&mut seq)
+            // .returning(|| dummy_wallet_info());
+            .returning(|| anyhow::bail!("there is a problem here..."));
+
+        let wallet_addr = wallet.create(None).spawn_global();
 
         let taker = daemon::TakerActorSystem::new(
             db,
-            wallet_addr,
+            wallet_addr.clone(),
             oracle_pk,
             send_to_maker,
             read_from_maker,
-            |_, _| Oracle,
-            |_, _| async { Ok(Monitor) },
+            |_, _| oracle,
+            |_, _| async { Ok(monitor) },
         )
         .await
         .unwrap();
+
+        wallet_addr.do_send_async(wallet::Sync {}).await.unwrap();
+        wallet_addr.do_send_async(wallet::Sync {}).await.unwrap();
 
         Self {
             order_feed: taker.order_feed_receiver,
