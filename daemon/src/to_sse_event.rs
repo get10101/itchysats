@@ -1,7 +1,7 @@
 use crate::model::cfd::{
     Dlc, OrderId, Payout, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
 };
-use crate::model::{Leverage, Position, Price, TradingPair, Usd};
+use crate::model::{Leverage, Position, Price, Timestamp, TradingPair, Usd};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::{Amount, Network, SignedAmount, Txid};
 use rocket::request::FromParam;
@@ -9,7 +9,6 @@ use rocket::response::stream::Event;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
-use std::time::{SystemTime, UNIX_EPOCH};
 use time::OffsetDateTime;
 use tokio::sync::watch;
 
@@ -36,7 +35,7 @@ pub struct Cfd {
 
     pub state: CfdState,
     pub actions: Vec<CfdAction>,
-    pub state_transition_timestamp: u64,
+    pub state_transition_timestamp: i64,
 
     pub details: CfdDetails,
 
@@ -171,7 +170,7 @@ pub struct CfdOrder {
     pub leverage: Leverage,
     pub liquidation_price: Price,
 
-    pub creation_timestamp: u64,
+    pub creation_timestamp: Timestamp,
     pub settlement_time_interval_in_secs: u64,
 }
 
@@ -253,12 +252,7 @@ impl ToSseEvent for CfdsWithAuxData {
                     profit_in_percent: profit_in_percent.to_string(),
                     state: state.clone(),
                     actions: available_actions(state, cfd.role()),
-                    state_transition_timestamp: cfd
-                        .state
-                        .get_transition_timestamp()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("timestamp to be convertable to duration since epoch")
-                        .as_secs(),
+                    state_transition_timestamp: cfd.state.get_transition_timestamp().seconds(),
 
                     // TODO: Depending on the state the margin might be set (i.e. in Open we save it
                     // in the DB internally) and does not have to be calculated
@@ -285,11 +279,7 @@ impl ToSseEvent for Option<model::cfd::Order> {
             max_quantity: order.max_quantity,
             leverage: order.leverage,
             liquidation_price: order.liquidation_price,
-            creation_timestamp: order
-                .creation_timestamp
-                .duration_since(UNIX_EPOCH)
-                .expect("timestamp to be convertible to duration since epoch")
-                .as_secs(),
+            creation_timestamp: order.creation_timestamp,
             settlement_time_interval_in_secs: order
                 .settlement_time_interval_hours
                 .whole_seconds()
@@ -306,7 +296,7 @@ pub struct WalletInfo {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     balance: Amount,
     address: String,
-    last_updated_at: u64,
+    last_updated_at: Timestamp,
 }
 
 impl ToSseEvent for model::WalletInfo {
@@ -314,7 +304,7 @@ impl ToSseEvent for model::WalletInfo {
         let wallet_info = WalletInfo {
             balance: self.balance,
             address: self.address.to_string(),
-            last_updated_at: into_unix_secs(self.last_updated_at),
+            last_updated_at: self.last_updated_at,
         };
 
         Event::json(&wallet_info).event("wallet")
@@ -421,7 +411,7 @@ fn to_tx_url_list(state: model::cfd::CfdState, network: Network) -> Vec<TxUrl> {
 pub struct Quote {
     bid: Price,
     ask: Price,
-    last_updated_at: u64,
+    last_updated_at: Timestamp,
 }
 
 impl ToSseEvent for bitmex_price_feed::Quote {
@@ -429,17 +419,10 @@ impl ToSseEvent for bitmex_price_feed::Quote {
         let quote = Quote {
             bid: self.bid,
             ask: self.ask,
-            last_updated_at: into_unix_secs(self.timestamp),
+            last_updated_at: self.timestamp,
         };
         Event::json(&quote).event("quote")
     }
-}
-
-/// Convert to the format expected by the frontend
-fn into_unix_secs(time: SystemTime) -> u64 {
-    time.duration_since(UNIX_EPOCH)
-        .expect("timestamp to be convertible to duration since epoch")
-        .as_secs()
 }
 
 fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {

@@ -1,5 +1,5 @@
 use crate::model::cfd::{Order, OrderId};
-use crate::model::{BitMexPriceEventId, Price, Usd};
+use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
-use std::time::SystemTime;
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,7 +25,7 @@ pub enum TakerToMaker {
     },
     ProposeSettlement {
         order_id: OrderId,
-        timestamp: SystemTime,
+        timestamp: Timestamp,
         #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
         taker: Amount,
         #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
@@ -39,7 +38,7 @@ pub enum TakerToMaker {
     },
     ProposeRollOver {
         order_id: OrderId,
-        timestamp: SystemTime,
+        timestamp: Timestamp,
     },
     Protocol(SetupMsg),
     RollOverProtocol(RollOverMsg),

@@ -1,15 +1,16 @@
 use crate::olivia;
-
 use anyhow::{Context, Result};
 use bdk::bitcoin::{Address, Amount, Denomination};
+use chrono::DateTime;
 use reqwest::Url;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
+use std::convert::TryInto;
 use std::num::NonZeroU8;
 use std::ops::{Add, Div, Mul, Sub};
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fmt, str};
 use time::{OffsetDateTime, PrimitiveDateTime, Time};
 use uuid::Uuid;
@@ -464,7 +465,7 @@ impl fmt::Display for TakerId {
 pub struct WalletInfo {
     pub balance: Amount,
     pub address: Address,
-    pub last_updated_at: SystemTime,
+    pub last_updated_at: Timestamp,
 }
 
 #[derive(
@@ -543,6 +544,43 @@ impl str::FromStr for BitMexPriceEventId {
                 .assume_utc(),
             digits: digits.parse()?,
         })
+    }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+pub struct Timestamp(i64);
+
+impl Timestamp {
+    pub fn new(seconds: i64) -> Self {
+        Self(seconds)
+    }
+
+    pub fn now() -> Result<Self> {
+        let seconds: i64 = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("time has gone backwards!")?
+            .as_secs()
+            .try_into()
+            .context("Unable to convert u64 to i64")?;
+
+        Ok(Self(seconds))
+    }
+
+    pub fn parse_from_rfc3339(datetime_str: &str) -> Result<Self> {
+        let datetime = DateTime::parse_from_rfc3339(datetime_str)
+            .context("Unable to parse datetime as RFC3339")?;
+        let seconds = datetime.timestamp();
+
+        Ok(Self(seconds))
+    }
+
+    pub fn seconds(&self) -> i64 {
+        self.0
+    }
+
+    pub fn seconds_u64(&self) -> Result<u64> {
+        let out = self.0.try_into().context("Unable to convert i64 to u64")?;
+        Ok(out)
     }
 }
 
@@ -661,5 +699,15 @@ mod tests {
 
         assert_eq!(long_buyin, expected_buyin);
         assert_eq!(long_payout, Amount::ZERO);
+    }
+
+    #[test]
+    fn test_timestamp() {
+        let datetime_str_a = "1999-12-31T23:59:00.00Z";
+        let datetime_str_b = "1999-12-31T23:59:00.00+10:00";
+        let ts_a = Timestamp::parse_from_rfc3339(datetime_str_a).unwrap();
+        let ts_b = Timestamp::parse_from_rfc3339(datetime_str_b).unwrap();
+
+        assert_eq!(ts_b.seconds() - ts_a.seconds(), -36000);
     }
 }

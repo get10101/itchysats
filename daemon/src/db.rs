@@ -6,8 +6,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::{Sqlite, SqlitePool};
 use std::mem;
 use std::str::FromStr;
-use std::time::SystemTime;
-use time::{Duration, OffsetDateTime};
+use time::Duration;
 
 pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(pool).await?;
@@ -26,12 +25,10 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
             leverage,
             liquidation_price,
             creation_timestamp_seconds,
-            creation_timestamp_nanoseconds,
             settlement_time_interval_seconds,
-            settlement_time_interval_nanoseconds,
             origin,
             oracle_event_id
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#,
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
     )
     .bind(&order.id)
     .bind(&order.trading_pair)
@@ -41,20 +38,8 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
     .bind(&order.max_quantity.to_string())
     .bind(order.leverage.get())
     .bind(&order.liquidation_price.to_string())
-    .bind(
-        order
-            .creation_timestamp
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_secs() as i64,
-    )
-    .bind(
-        order
-            .creation_timestamp
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .subsec_nanos() as i32,
-    )
+    .bind(&order.creation_timestamp.seconds())
     .bind(&order.settlement_time_interval_hours.whole_seconds())
-    .bind(&order.settlement_time_interval_hours.subsec_nanoseconds())
     .bind(&order.origin)
     .bind(&order.oracle_event_id.to_string())
     .execute(conn)
@@ -82,10 +67,8 @@ pub async fn load_order_by_id(
             max_quantity,
             leverage as "leverage: crate::model::Leverage",
             liquidation_price,
-            creation_timestamp_seconds as "ts_secs: i64",
-            creation_timestamp_nanoseconds as "ts_nanos: i32",
+            creation_timestamp_seconds as "ts_secs: crate::model::Timestamp",
             settlement_time_interval_seconds as "settlement_time_interval_secs: i64",
-            settlement_time_interval_nanoseconds as "settlement_time_interval_nanos: i32",
             origin as "origin: crate::model::cfd::Origin",
             oracle_event_id
 
@@ -106,11 +89,8 @@ pub async fn load_order_by_id(
         max_quantity: row.max_quantity.parse::<Usd>()?,
         leverage: row.leverage,
         liquidation_price: row.liquidation_price.parse::<Price>()?,
-        creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
-        settlement_time_interval_hours: Duration::new(
-            row.settlement_time_interval_secs,
-            row.settlement_time_interval_nanos,
-        ),
+        creation_timestamp: row.ts_secs,
+        settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
         origin: row.origin,
         oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
     })
@@ -253,9 +233,7 @@ pub async fn load_cfd_by_order_id(
                 leverage,
                 liquidation_price,
                 creation_timestamp_seconds as ts_secs,
-                creation_timestamp_nanoseconds as ts_nanos,
                 settlement_time_interval_seconds as settlement_time_interval_secs,
-                settlement_time_interval_nanoseconds as settlement_time_interval_nanos,
                 origin,
                 oracle_event_id
             from orders
@@ -295,10 +273,8 @@ pub async fn load_cfd_by_order_id(
             ord.max_quantity,
             ord.leverage as "leverage: crate::model::Leverage",
             ord.liquidation_price,
-            ord.ts_secs as "ts_secs: i64",
-            ord.ts_nanos as "ts_nanos: i32",
+            ord.ts_secs as "ts_secs: crate::model::Timestamp",
             ord.settlement_time_interval_secs as "settlement_time_interval_secs: i64",
-            ord.settlement_time_interval_nanos as "settlement_time_interval_nanos: i32",
             ord.origin as "origin: crate::model::cfd::Origin",
             ord.oracle_event_id,
             state.quantity_usd,
@@ -323,11 +299,8 @@ pub async fn load_cfd_by_order_id(
         max_quantity: row.max_quantity.parse::<Usd>()?,
         leverage: row.leverage,
         liquidation_price: row.liquidation_price.parse::<Price>()?,
-        creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
-        settlement_time_interval_hours: Duration::new(
-            row.settlement_time_interval_secs,
-            row.settlement_time_interval_nanos,
-        ),
+        creation_timestamp: row.ts_secs,
+        settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
         origin: row.origin,
         oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
     };
@@ -358,9 +331,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 leverage,
                 liquidation_price,
                 creation_timestamp_seconds as ts_secs,
-                creation_timestamp_nanoseconds as ts_nanos,
                 settlement_time_interval_seconds as settlement_time_interval_secs,
-                settlement_time_interval_nanoseconds as settlement_time_interval_nanos,
                 origin,
                 oracle_event_id
             from orders
@@ -400,10 +371,8 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             ord.max_quantity,
             ord.leverage as "leverage: crate::model::Leverage",
             ord.liquidation_price,
-            ord.ts_secs as "ts_secs: i64",
-            ord.ts_nanos as "ts_nanos: i32",
+            ord.ts_secs as "ts_secs: crate::model::Timestamp",
             ord.settlement_time_interval_secs as "settlement_time_interval_secs: i64",
-            ord.settlement_time_interval_nanos as "settlement_time_interval_nanos: i32",
             ord.origin as "origin: crate::model::cfd::Origin",
             ord.oracle_event_id,
             state.quantity_usd,
@@ -428,11 +397,8 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 max_quantity: row.max_quantity.parse::<Usd>()?,
                 leverage: row.leverage,
                 liquidation_price: row.liquidation_price.parse::<Price>()?,
-                creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
-                settlement_time_interval_hours: Duration::new(
-                    row.settlement_time_interval_secs,
-                    row.settlement_time_interval_nanos,
-                ),
+                creation_timestamp: row.ts_secs,
+                settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
                 origin: row.origin,
                 oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
             };
@@ -468,9 +434,7 @@ pub async fn load_cfds_by_oracle_event_id(
                 leverage,
                 liquidation_price,
                 creation_timestamp_seconds as ts_secs,
-                creation_timestamp_nanoseconds as ts_nanos,
                 settlement_time_interval_seconds as settlement_time_interval_secs,
-                settlement_time_interval_nanoseconds as settlement_time_interval_nanos,
                 origin,
                 oracle_event_id
             from orders
@@ -510,10 +474,8 @@ pub async fn load_cfds_by_oracle_event_id(
             ord.max_quantity,
             ord.leverage as "leverage: crate::model::Leverage",
             ord.liquidation_price,
-            ord.ts_secs as "ts_secs: i64",
-            ord.ts_nanos as "ts_nanos: i32",
+            ord.ts_secs as "ts_secs: crate::model::Timestamp",
             ord.settlement_time_interval_secs as "settlement_time_interval_secs: i64",
-            ord.settlement_time_interval_nanos as "settlement_time_interval_nanos: i32",
             ord.origin as "origin: crate::model::cfd::Origin",
             ord.oracle_event_id,
             state.quantity_usd,
@@ -541,11 +503,8 @@ pub async fn load_cfds_by_oracle_event_id(
                 max_quantity: row.max_quantity.parse::<Usd>()?,
                 leverage: row.leverage,
                 liquidation_price: row.liquidation_price.parse::<Price>()?,
-                creation_timestamp: convert_to_system_time(row.ts_secs, row.ts_nanos)?,
-                settlement_time_interval_hours: Duration::new(
-                    row.settlement_time_interval_secs,
-                    row.settlement_time_interval_nanos,
-                ),
+                creation_timestamp: row.ts_secs,
+                settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
                 origin: row.origin,
                 oracle_event_id: row.oracle_event_id.parse::<BitMexPriceEventId>()?,
             };
@@ -559,14 +518,6 @@ pub async fn load_cfds_by_oracle_event_id(
         .collect::<Result<Vec<_>>>()?;
 
     Ok(cfds)
-}
-
-fn convert_to_system_time(row_secs: i64, row_nanos: i32) -> Result<SystemTime> {
-    let secs = row_secs as i128;
-    let nanos = row_nanos as i128;
-    let offset_dt = OffsetDateTime::from_unix_timestamp_nanos(secs * 1_000_000_000 + nanos)?;
-
-    Ok(SystemTime::from(offset_dt))
 }
 
 #[cfg(test)]

@@ -1,4 +1,7 @@
-use crate::model::{BitMexPriceEventId, Leverage, Percent, Position, TakerId, TradingPair, Usd};
+use crate::model::{
+    BitMexPriceEventId, InversePrice, Leverage, Percent, Position, Price, TakerId, Timestamp,
+    TradingPair, Usd,
+};
 use crate::{monitor, oracle, payout_curve};
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
@@ -7,7 +10,6 @@ use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use cfd_protocol::secp256k1_zkp::{self, EcdsaAdaptorSignature, SECP256K1};
 use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash, TransactionExt};
-
 use rocket::request::FromParam;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -16,12 +18,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::RangeInclusive;
-use std::time::SystemTime;
 use time::{Duration, OffsetDateTime};
 use uuid::adapter::Hyphenated;
 use uuid::Uuid;
-
-use super::{InversePrice, Price};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
@@ -113,7 +112,7 @@ pub struct Order {
     pub leverage: Leverage,
     pub liquidation_price: Price,
 
-    pub creation_timestamp: SystemTime,
+    pub creation_timestamp: Timestamp,
 
     /// The duration that will be used for calculating the settlement timestamp
     pub settlement_time_interval_hours: Duration,
@@ -147,7 +146,7 @@ impl Order {
             trading_pair: TradingPair::BtcUsd,
             liquidation_price,
             position: Position::Short,
-            creation_timestamp: SystemTime::now(),
+            creation_timestamp: Timestamp::now()?,
             settlement_time_interval_hours,
             origin,
             oracle_event_id,
@@ -168,13 +167,13 @@ pub struct CfdStateError {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct CfdStateCommon {
-    pub transition_timestamp: SystemTime,
+    pub transition_timestamp: Timestamp,
 }
 
 impl Default for CfdStateCommon {
     fn default() -> Self {
         Self {
-            transition_timestamp: SystemTime::now(),
+            transition_timestamp: Timestamp::now().expect("Unable to get current time"),
         }
     }
 }
@@ -467,7 +466,7 @@ impl CfdState {
         *common
     }
 
-    pub fn get_transition_timestamp(&self) -> SystemTime {
+    pub fn get_transition_timestamp(&self) -> Timestamp {
         self.get_common().transition_timestamp
     }
 
@@ -547,7 +546,7 @@ pub enum UpdateCfdProposal {
 #[derive(Debug, Clone)]
 pub struct SettlementProposal {
     pub order_id: OrderId,
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
     pub taker: Amount,
     pub maker: Amount,
     pub price: Price,
@@ -557,7 +556,7 @@ pub struct SettlementProposal {
 #[derive(Debug, Clone)]
 pub struct RollOverProposal {
     pub order_id: OrderId,
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
 }
 
 #[derive(Debug, Clone)]
@@ -642,7 +641,7 @@ impl Cfd {
 
         let settlement = SettlementProposal {
             order_id: self.order.id,
-            timestamp: SystemTime::now(),
+            timestamp: Timestamp::now()?,
             taker: *payout.taker_amount(),
             maker: *payout.maker_amount(),
             price: current_price,
@@ -715,7 +714,7 @@ impl Cfd {
                     if let PendingOpen { dlc, .. } = self.state.clone() {
                         CfdState::Open {
                             common: CfdStateCommon {
-                                transition_timestamp: SystemTime::now(),
+                                transition_timestamp: Timestamp::now()?,
                             },
                             dlc,
                             attestation: None,
@@ -730,7 +729,7 @@ impl Cfd {
                     {
                         CfdState::Open {
                             common: CfdStateCommon {
-                                transition_timestamp: SystemTime::now(),
+                                transition_timestamp: Timestamp::now()?,
                             },
                             dlc,
                             attestation,
@@ -767,7 +766,7 @@ impl Cfd {
 
                     OpenCommitted {
                         common: CfdStateCommon {
-                            transition_timestamp: SystemTime::now(),
+                            transition_timestamp: Timestamp::now()?,
                         },
                         dlc,
                         cet_status: if let Some(attestation) = attestation {
@@ -790,7 +789,7 @@ impl Cfd {
                         ..
                     } => CfdState::OpenCommitted {
                         common: CfdStateCommon {
-                            transition_timestamp: SystemTime::now(),
+                            transition_timestamp: Timestamp::now()?,
                         },
                         dlc,
                         cet_status: CetStatus::TimelockExpired,
@@ -801,7 +800,7 @@ impl Cfd {
                         ..
                     } => CfdState::OpenCommitted {
                         common: CfdStateCommon {
-                            transition_timestamp: SystemTime::now(),
+                            transition_timestamp: Timestamp::now()?,
                         },
                         dlc,
                         cet_status: CetStatus::Ready(attestation),
@@ -818,7 +817,7 @@ impl Cfd {
                         tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
                         CfdState::OpenCommitted {
                             common: CfdStateCommon {
-                                transition_timestamp: SystemTime::now(),
+                                transition_timestamp: Timestamp::now()?,
                             },
                             dlc,
                             cet_status: match attestation {
@@ -885,7 +884,7 @@ impl Cfd {
 
                 PendingCommit {
                     common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
+                        transition_timestamp: Timestamp::now()?,
                     },
                     dlc,
                     attestation,
@@ -894,14 +893,14 @@ impl Cfd {
             CfdStateChangeEvent::OracleAttestation(attestation) => match self.state.clone() {
                 CfdState::PendingOpen { dlc, .. } => CfdState::PendingOpen {
                     common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
+                        transition_timestamp: Timestamp::now()?,
                     },
                     dlc,
                     attestation: Some(attestation),
                 },
                 CfdState::Open { dlc, .. } => CfdState::Open {
                     common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
+                        transition_timestamp: Timestamp::now()?,
                     },
                     dlc,
                     attestation: Some(attestation),
@@ -912,7 +911,7 @@ impl Cfd {
                     ..
                 } => CfdState::PendingCommit {
                     common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
+                        transition_timestamp: Timestamp::now()?,
                     },
                     dlc,
                     attestation: Some(attestation),
@@ -923,7 +922,7 @@ impl Cfd {
                     ..
                 } => CfdState::OpenCommitted {
                     common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
+                        transition_timestamp: Timestamp::now()?,
                     },
                     dlc,
                     cet_status: CetStatus::OracleSigned(attestation),
@@ -934,7 +933,7 @@ impl Cfd {
                     ..
                 } => CfdState::OpenCommitted {
                     common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
+                        transition_timestamp: Timestamp::now()?,
                     },
                     dlc,
                     cet_status: CetStatus::Ready(attestation),
@@ -952,7 +951,7 @@ impl Cfd {
 
                 CfdState::PendingCet {
                     common: CfdStateCommon {
-                        transition_timestamp: SystemTime::now(),
+                        transition_timestamp: Timestamp::now()?,
                     },
                     dlc,
                     attestation,
@@ -1798,14 +1797,14 @@ pub struct RevokedCommit {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CollaborativeSettlement {
     pub tx: Transaction,
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     payout: Amount,
     price: Price,
 }
 
 impl CollaborativeSettlement {
-    pub fn new(tx: Transaction, own_script_pubkey: Script, price: Price) -> Self {
+    pub fn new(tx: Transaction, own_script_pubkey: Script, price: Price) -> Result<Self> {
         // Falls back to Amount::ZERO in case we don't find an output that matches out script pubkey
         // The assumption is, that this can happen for cases where we were liuqidated
         let payout = match tx
@@ -1823,12 +1822,12 @@ impl CollaborativeSettlement {
             }
         };
 
-        Self {
+        Ok(Self {
             tx,
-            timestamp: SystemTime::now(),
+            timestamp: Timestamp::now().context("Unable to get current time")?,
             payout,
             price,
-        }
+        })
     }
 
     pub fn payout(&self) -> Amount {
