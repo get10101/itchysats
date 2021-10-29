@@ -168,7 +168,7 @@ async fn main() -> Result<()> {
     let connection::Actor {
         send_to_maker,
         read_from_maker,
-    } = connection::Actor::new(opts.maker).await?;
+    } = connection::Actor::new(opts.maker).await;
 
     let TakerActorSystem {
         cfd_actor_addr,

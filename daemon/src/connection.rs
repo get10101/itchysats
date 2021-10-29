@@ -1,8 +1,6 @@
-use crate::{noise, send_to_socket, taker_cfd, wire};
-use anyhow::Result;
+use crate::{send_to_socket, taker_cfd, wire};
 use futures::{Stream, StreamExt};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_util::codec::FramedRead;
 use xtra::prelude::MessageChannel;
@@ -17,14 +15,11 @@ pub struct Actor {
 }
 
 impl Actor {
-    pub async fn new(maker: SocketAddr) -> Result<Self> {
-        let (read, write, noise) = loop {
+    pub async fn new(maker: SocketAddr) -> Self {
+        let (read, write) = loop {
             let socket = tokio::net::TcpSocket::new_v4().expect("Be able ta create a socket");
-            if let Ok(mut connection) = socket.connect(maker).await {
-                let noise = noise::initiator_handshake(&mut connection).await?;
-
-                let (read, write) = connection.into_split();
-                break (read, write, Arc::new(Mutex::new(noise)));
+            if let Ok(connection) = socket.connect(maker).await {
+                break connection.into_split();
             } else {
                 tracing::warn!(
                     "Could not connect to the maker, retrying in {}s ...",
@@ -34,16 +29,16 @@ impl Actor {
             }
         };
 
-        let send_to_maker = send_to_socket::Actor::new(write, noise.clone())
+        let send_to_maker = send_to_socket::Actor::new(write)
             .create(None)
             .spawn_global();
 
-        let read = FramedRead::new(read, wire::JsonCodec::new(noise))
+        let read = FramedRead::new(read, wire::JsonCodec::default())
             .map(move |item| taker_cfd::MakerStreamMessage { item });
 
-        Ok(Self {
+        Self {
             send_to_maker: Box::new(send_to_maker),
             read_from_maker: Box::new(read),
-        })
+        }
     }
 }
