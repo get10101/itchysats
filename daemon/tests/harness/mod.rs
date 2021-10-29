@@ -145,7 +145,9 @@ impl Taker {
         let connection::Actor {
             send_to_maker,
             read_from_maker,
-        } = connection::Actor::new(maker_address).await;
+        } = connection::Actor::new(maker_address)
+            .await
+            .expect("Connected to maker");
 
         let db = in_memory_db().await;
 

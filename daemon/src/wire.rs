@@ -1,5 +1,6 @@
 use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
+use crate::noise::{NOISE_MAX_MSG_LEN, NOISE_TAG_LEN};
 use anyhow::{bail, Result};
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -9,10 +10,12 @@ use cfd_protocol::secp256k1_zkp::{EcdsaAdaptorSignature, SecretKey};
 use cfd_protocol::{CfdTransactions, PartyParams, PunishParams};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use snow::TransportState;
 use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
+use std::sync::{Arc, Mutex};
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -93,21 +96,23 @@ impl fmt::Display for MakerToTaker {
     }
 }
 
-pub struct JsonCodec<T> {
+pub struct EncryptedJsonCodec<T> {
     _type: PhantomData<T>,
     inner: LengthDelimitedCodec,
+    transport_state: Arc<Mutex<TransportState>>,
 }
 
-impl<T> Default for JsonCodec<T> {
-    fn default() -> Self {
+impl<T> EncryptedJsonCodec<T> {
+    pub fn new(transport_state: Arc<Mutex<TransportState>>) -> Self {
         Self {
             _type: PhantomData,
             inner: LengthDelimitedCodec::new(),
+            transport_state,
         }
     }
 }
 
-impl<T> Decoder for JsonCodec<T>
+impl<T> Decoder for EncryptedJsonCodec<T>
 where
     T: DeserializeOwned,
 {
@@ -120,13 +125,30 @@ where
             Some(bytes) => bytes,
         };
 
-        let item = serde_json::from_slice(&bytes)?;
+        let mut transport = self
+            .transport_state
+            .lock()
+            .expect("acquired mutex lock on Noise object to encrypt message");
+
+        let decrypted = bytes
+            .chunks(NOISE_MAX_MSG_LEN as usize)
+            .map(|chunk| {
+                let mut buf = vec![0u8; chunk.len() - NOISE_TAG_LEN as usize];
+                transport.read_message(chunk, &mut *buf)?;
+                Ok(buf)
+            })
+            .collect::<Result<Vec<Vec<u8>>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<u8>>();
+
+        let item = serde_json::from_slice(&decrypted)?;
 
         Ok(Some(item))
     }
 }
 
-impl<T> Encoder<T> for JsonCodec<T>
+impl<T> Encoder<T> for EncryptedJsonCodec<T>
 where
     T: Serialize,
 {
@@ -135,7 +157,24 @@ where
     fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let bytes = serde_json::to_vec(&item)?;
 
-        self.inner.encode(bytes.into(), dst)?;
+        let mut transport = self
+            .transport_state
+            .lock()
+            .expect("acquired mutex lock on Noise object to encrypt message");
+
+        let encrypted = bytes
+            .chunks((NOISE_MAX_MSG_LEN - NOISE_TAG_LEN) as usize)
+            .map(|chunk| {
+                let mut buf = vec![0u8; chunk.len() + NOISE_TAG_LEN as usize];
+                transport.write_message(chunk, &mut *buf)?;
+                Ok(buf)
+            })
+            .collect::<Result<Vec<Vec<u8>>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<u8>>();
+
+        self.inner.encode(encrypted.into(), dst)?;
 
         Ok(())
     }
