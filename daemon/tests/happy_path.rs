@@ -46,7 +46,19 @@ async fn taker_receives_order_from_maker_on_publication() {
         .await
         .expect_sync()
         .times(1)
-        .returning(|| dummy_wallet_info());
+        .returning(dummy_wallet_info);
+
+    maker
+        .mocks
+        .wallet
+        .lock()
+        .await
+        .expect_build_party_params()
+        .times(1)
+        .returning(|msg| {
+            println!("{:?}", msg);
+            anyhow::bail!("no party params for you!")
+        });
 
     // Uncomment this to showcase that we can assert that a particular caller
     // got called (with certain parameters too)
@@ -204,8 +216,8 @@ impl Oracle for OracleActor {}
 
 #[xtra_productivity(message_impl = false)]
 impl OracleActor {
-    async fn handle(&mut self, _msg: oracle::GetAnnouncement) -> Option<oracle::Announcement> {
-        self.mock.lock().await.get_announcement()
+    async fn handle(&mut self, msg: oracle::GetAnnouncement) -> Option<oracle::Announcement> {
+        self.mock.lock().await.get_announcement(msg)
     }
 
     async fn handle(&mut self, _msg: oracle::MonitorAttestation) {
@@ -219,7 +231,7 @@ impl OracleActor {
 
 #[automock]
 trait Oracle {
-    fn get_announcement(&mut self) -> Option<oracle::Announcement> {
+    fn get_announcement(&mut self, _msg: oracle::GetAnnouncement) -> Option<oracle::Announcement> {
         todo!("stub this if needed")
     }
 
@@ -286,8 +298,8 @@ impl xtra::Actor for WalletActor {}
 
 #[xtra_productivity(message_impl = false)]
 impl WalletActor {
-    async fn handle(&mut self, _msg: wallet::BuildPartyParams) -> Result<PartyParams> {
-        self.mock.lock().await.build_party_params()
+    async fn handle(&mut self, msg: wallet::BuildPartyParams) -> Result<PartyParams> {
+        self.mock.lock().await.build_party_params(msg)
     }
     async fn handle(&mut self, _msg: wallet::Sync) -> Result<WalletInfo> {
         tracing::info!("We are handling the wallet sync msg");
@@ -303,7 +315,7 @@ impl WalletActor {
 
 #[automock]
 trait Wallet {
-    fn build_party_params(&mut self) -> Result<PartyParams> {
+    fn build_party_params(&mut self, _msg: wallet::BuildPartyParams) -> Result<PartyParams> {
         todo!()
     }
 
@@ -476,7 +488,7 @@ impl Taker {
             .expect_sync()
             .times(1)
             .in_sequence(&mut seq)
-            .returning(|| dummy_wallet_info());
+            .returning(dummy_wallet_info);
         // .times(1)
         // .returning(|| dummy_wallet_info());
 

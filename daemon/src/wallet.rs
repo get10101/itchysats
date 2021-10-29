@@ -137,6 +137,7 @@ impl Actor {
 
 impl xtra::Actor for Actor {}
 
+#[derive(Debug)]
 pub struct BuildPartyParams {
     pub amount: Amount,
     pub identity_pk: PublicKey,
