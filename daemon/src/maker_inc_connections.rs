@@ -1,13 +1,12 @@
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
-use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire};
+use crate::{forward_only_ok, maker_cfd, send_to_socket, wire};
 use anyhow::{Context as AnyhowContext, Result};
 use futures::{StreamExt, TryStreamExt};
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
 use tokio_util::codec::FramedRead;
 use xtra::prelude::*;
@@ -95,18 +94,16 @@ impl Actor {
 
     async fn handle_new_connection_impl(
         &mut self,
-        mut stream: TcpStream,
+        stream: TcpStream,
         address: SocketAddr,
         _: &mut Context<Self>,
-    ) -> Result<()> {
+    ) {
         let taker_id = TakerId::default();
 
         tracing::info!("New taker {} connected on {}", taker_id, address);
 
-        let noise = Arc::new(Mutex::new(noise::responder_handshake(&mut stream).await?));
-
         let (read, write) = stream.into_split();
-        let read = FramedRead::new(read, wire::JsonCodec::new(noise.clone()))
+        let read = FramedRead::new(read, wire::JsonCodec::default())
             .map_ok(move |msg| FromTaker { taker_id, msg })
             .map(forward_only_ok::Message);
 
@@ -118,7 +115,7 @@ impl Actor {
 
         // only allow outgoing messages while we are successfully reading incoming ones
         tokio::spawn(async move {
-            let mut actor = send_to_socket::Actor::new(write, noise.clone());
+            let mut actor = send_to_socket::Actor::new(write);
 
             out_msg_actor_context
                 .handle_while(&mut actor, forward_to_cfd.attach_stream(read))
@@ -136,8 +133,6 @@ impl Actor {
             .new_taker_channel
             .send(maker_cfd::NewTakerOnline { id: taker_id })
             .await;
-
-        Ok(())
     }
 }
 
@@ -215,9 +210,8 @@ impl Actor {
     async fn handle(&mut self, msg: ListenerMessage, ctx: &mut Context<Self>) -> KeepRunning {
         match msg {
             ListenerMessage::NewConnection { stream, address } => {
-                if let Err(err) = self.handle_new_connection_impl(stream, address, ctx).await {
-                    tracing::warn!("Maker was unable to negotiate a new connection: {}", err);
-                }
+                self.handle_new_connection_impl(stream, address, ctx).await;
+
                 KeepRunning::Yes
             }
             ListenerMessage::Error { source } => {

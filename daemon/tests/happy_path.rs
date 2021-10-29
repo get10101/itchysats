@@ -338,9 +338,7 @@ impl Taker {
         let connection::Actor {
             send_to_maker,
             read_from_maker,
-        } = connection::Actor::new(maker_address)
-            .await
-            .expect("Taker successfully initialised");
+        } = connection::Actor::new(maker_address).await;
 
         let db = in_memory_db().await;
 
