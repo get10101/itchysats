@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use bdk::bitcoin;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use clap::Clap;
+use clap::Parser;
 use daemon::auth::{self, MAKER_USERNAME};
 use daemon::db::{self};
 
@@ -29,7 +29,7 @@ use xtra::Actor;
 
 mod routes_maker;
 
-#[derive(Clap)]
+#[derive(Parser)]
 struct Opts {
     /// The port to listen on for p2p connections.
     #[clap(long, default_value = "9999")]
@@ -59,7 +59,7 @@ struct Opts {
     network: Network,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 enum Network {
     /// Run on mainnet.
     Mainnet {
