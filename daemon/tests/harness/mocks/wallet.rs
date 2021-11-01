@@ -1,93 +1,81 @@
 use crate::harness::cfd_protocol::dummy_wallet;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{ecdsa, Amount, Txid};
 use cfd_protocol::secp256k1_zkp::Secp256k1;
 use cfd_protocol::{PartyParams, WalletExt};
 use daemon::model::{Timestamp, WalletInfo};
-use daemon::wallet;
+use daemon::wallet::{self};
+use mockall::*;
 use rand::thread_rng;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;
 
-pub struct Wallet {
-    party_params: bool,
-    wallet_info: Option<WalletInfo>,
-    psbt: Option<PartiallySignedTransaction>,
-    txid: Option<Txid>,
+/// Test Stub simulating the Wallet actor.
+/// Serves as an entrypoint for injected mock handlers.
+pub struct WalletActor {
+    pub mock: Arc<Mutex<dyn Wallet + Send>>,
 }
 
-impl Wallet {
-    pub fn with_party_params(mut self) -> Self {
-        self.party_params = true;
-        self
-    }
-
-    pub fn with_wallet_info(mut self) -> Self {
-        let s = Secp256k1::new();
-        let public_key = ecdsa::PublicKey::new(s.generate_keypair(&mut thread_rng()).1);
-        let address = bdk::bitcoin::Address::p2pkh(&public_key, bdk::bitcoin::Network::Testnet);
-
-        self.wallet_info = Some(WalletInfo {
-            balance: bdk::bitcoin::Amount::ONE_BTC,
-            address,
-            last_updated_at: Timestamp::now().unwrap(),
-        });
-
-        self
-    }
-
-    pub fn with_psbt(mut self, psbt: PartiallySignedTransaction) -> Self {
-        self.psbt = Some(psbt);
-        self
-    }
-
-    pub fn with_txid(mut self, txid: Txid) -> Self {
-        self.txid = Some(txid);
-        self
-    }
-}
-
-impl xtra::Actor for Wallet {}
+impl xtra::Actor for WalletActor {}
 
 #[xtra_productivity(message_impl = false)]
-impl Wallet {
+impl WalletActor {
     async fn handle(&mut self, msg: wallet::BuildPartyParams) -> Result<PartyParams> {
-        if self.party_params {
-            let mut rng = thread_rng();
-            let wallet = dummy_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
-
-            let party_params = wallet
-                .build_party_params(msg.amount, msg.identity_pk)
-                .unwrap();
-
-            return Ok(party_params);
-        }
-
-        panic!("Stub not configured to return party params")
+        self.mock.lock().await.build_party_params(msg)
     }
-    async fn handle(&mut self, _msg: wallet::Sync) -> Result<WalletInfo> {
-        self.wallet_info
-            .clone()
-            .ok_or_else(|| anyhow!("Stub not configured to return WalletInfo"))
+    async fn handle(&mut self, msg: wallet::Sync) -> Result<WalletInfo> {
+        tracing::info!("We are handling the wallet sync msg");
+        self.mock.lock().await.sync(msg)
     }
-    async fn handle(&mut self, _msg: wallet::Sign) -> Result<PartiallySignedTransaction> {
-        self.psbt
-            .clone()
-            .ok_or_else(|| anyhow!("Stub not configured to return PartiallySignedTransaction"))
+    async fn handle(&mut self, msg: wallet::Sign) -> Result<PartiallySignedTransaction> {
+        self.mock.lock().await.sign(msg)
     }
-    async fn handle(&mut self, _msg: wallet::TryBroadcastTransaction) -> Result<Txid> {
-        self.txid
-            .ok_or_else(|| anyhow!("Stub not configured to return Txid"))
+    async fn handle(&mut self, msg: wallet::TryBroadcastTransaction) -> Result<Txid> {
+        self.mock.lock().await.broadcast(msg)
     }
 }
 
-impl Default for Wallet {
-    fn default() -> Self {
-        Wallet {
-            party_params: false,
-            wallet_info: None,
-            psbt: None,
-            txid: None,
-        }
+#[automock]
+pub trait Wallet {
+    fn build_party_params(&mut self, _msg: wallet::BuildPartyParams) -> Result<PartyParams> {
+        unreachable!("mockall will reimplement this method")
     }
+
+    fn sign(&mut self, _msg: wallet::Sign) -> Result<PartiallySignedTransaction> {
+        unreachable!("mockall will reimplement this method")
+    }
+
+    fn broadcast(&mut self, _msg: wallet::TryBroadcastTransaction) -> Result<Txid> {
+        unreachable!("mockall will reimplement this method")
+    }
+
+    fn sync(&mut self, _msg: wallet::Sync) -> Result<WalletInfo> {
+        unreachable!("mockall will reimplement this method")
+    }
+}
+
+#[allow(dead_code)]
+/// tells the user they have plenty of moneys
+fn dummy_wallet_info() -> Result<WalletInfo> {
+    let s = Secp256k1::new();
+    let public_key = ecdsa::PublicKey::new(s.generate_keypair(&mut thread_rng()).1);
+    let address = bdk::bitcoin::Address::p2pkh(&public_key, bdk::bitcoin::Network::Testnet);
+
+    Ok(WalletInfo {
+        balance: bdk::bitcoin::Amount::ONE_BTC,
+        address,
+        last_updated_at: Timestamp::now()?,
+    })
+}
+
+pub fn build_party_params(msg: wallet::BuildPartyParams) -> Result<PartyParams> {
+    let mut rng = thread_rng();
+    let wallet = dummy_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+
+    let party_params = wallet
+        .build_party_params(msg.amount, msg.identity_pk)
+        .unwrap();
+    Ok(party_params)
 }

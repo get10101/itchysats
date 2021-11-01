@@ -1,6 +1,6 @@
-use crate::harness::mocks::monitor::Monitor;
-use crate::harness::mocks::oracle::Oracle;
-use crate::harness::mocks::wallet::Wallet;
+use crate::harness::mocks::monitor::MonitorActor;
+use crate::harness::mocks::oracle::OracleActor;
+use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, Order};
@@ -18,53 +18,42 @@ pub mod bdk;
 pub mod cfd_protocol;
 pub mod mocks;
 
-// TODO: Remove all these parameters once we have the mock framework (because we have
-// Arcs then and can just default inside)
-pub async fn start_both(
-    taker_oracle: Oracle,
-    taker_monitor: Monitor,
-    taker_wallet: Wallet,
-    maker_oracle: Oracle,
-    maker_monitor: Monitor,
-    maker_wallet: Wallet,
-) -> (Maker, Taker) {
+pub async fn start_both() -> (Maker, Taker) {
     let oracle_pk: schnorrsig::PublicKey = schnorrsig::PublicKey::from_str(
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )
     .unwrap();
 
-    let maker = Maker::start(oracle_pk, maker_oracle, maker_monitor, maker_wallet).await;
-    let taker = Taker::start(
-        oracle_pk,
-        maker.listen_addr,
-        taker_oracle,
-        taker_monitor,
-        taker_wallet,
-    )
-    .await;
+    let maker = Maker::start(oracle_pk).await;
+    let taker = Taker::start(oracle_pk, maker.listen_addr).await;
     (maker, taker)
 }
 
 /// Maker Test Setup
 #[derive(Clone)]
 pub struct Maker {
-    pub cfd_actor_addr:
-        xtra::Address<maker_cfd::Actor<Oracle, Monitor, maker_inc_connections::Actor, Wallet>>,
+    pub cfd_actor_addr: xtra::Address<
+        maker_cfd::Actor<OracleActor, MonitorActor, maker_inc_connections::Actor, WalletActor>,
+    >,
     pub order_feed: watch::Receiver<Option<Order>>,
     pub cfd_feed: watch::Receiver<Vec<Cfd>>,
     #[allow(dead_code)] // we need to keep the xtra::Address for refcounting
     pub inc_conn_actor_addr: xtra::Address<maker_inc_connections::Actor>,
     pub listen_addr: SocketAddr,
+    pub mocks: mocks::Mocks,
 }
 
 impl Maker {
-    pub async fn start(
-        oracle_pk: schnorrsig::PublicKey,
-        oracle: Oracle,
-        monitor: Monitor,
-        wallet: Wallet,
-    ) -> Self {
+    pub async fn start(oracle_pk: schnorrsig::PublicKey) -> Self {
         let db = in_memory_db().await;
+
+        let mocks = mocks::Mocks::default();
+
+        let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
+
+        // Sync method need to be mocked before the actors start
+        mocks.oracle.lock().await.expect_sync().return_const(());
+        mocks.monitor.lock().await.expect_sync().return_const(());
 
         let wallet_addr = wallet.create(None).spawn_global();
 
@@ -106,6 +95,7 @@ impl Maker {
             cfd_feed: maker.cfd_feed_receiver,
             inc_conn_actor_addr: maker.inc_conn_addr,
             listen_addr: address,
+            mocks,
         }
     }
 
@@ -131,23 +121,25 @@ impl Maker {
 pub struct Taker {
     pub order_feed: watch::Receiver<Option<Order>>,
     pub cfd_feed: watch::Receiver<Vec<Cfd>>,
-    pub cfd_actor_addr: xtra::Address<taker_cfd::Actor<Oracle, Monitor, Wallet>>,
+    pub cfd_actor_addr: xtra::Address<taker_cfd::Actor<OracleActor, MonitorActor, WalletActor>>,
+    pub mocks: mocks::Mocks,
 }
 
 impl Taker {
-    pub async fn start(
-        oracle_pk: schnorrsig::PublicKey,
-        maker_address: SocketAddr,
-        oracle: Oracle,
-        monitor: Monitor,
-        wallet: Wallet,
-    ) -> Self {
+    pub async fn start(oracle_pk: schnorrsig::PublicKey, maker_address: SocketAddr) -> Self {
         let connection::Actor {
             send_to_maker,
             read_from_maker,
         } = connection::Actor::new(maker_address).await;
 
         let db = in_memory_db().await;
+
+        let mocks = mocks::Mocks::default();
+        let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
+
+        // Sync method need to be mocked before the actors start
+        mocks.oracle.lock().await.expect_sync().return_const(());
+        mocks.monitor.lock().await.expect_sync().return_const(());
 
         let wallet_addr = wallet.create(None).spawn_global();
 
@@ -167,6 +159,7 @@ impl Taker {
             order_feed: taker.order_feed_receiver,
             cfd_feed: taker.cfd_feed_receiver,
             cfd_actor_addr: taker.cfd_actor_addr,
+            mocks,
         }
     }
 

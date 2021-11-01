@@ -1,6 +1,6 @@
-use crate::harness::mocks::monitor::Monitor;
-use crate::harness::mocks::oracle::Oracle;
-use crate::harness::mocks::wallet::Wallet;
+use crate::harness::bdk::dummy_partially_signed_transaction;
+use crate::harness::mocks::oracle::dummy_announcement;
+use crate::harness::mocks::wallet::build_party_params;
 use crate::harness::start_both;
 use anyhow::Context;
 use cfd_protocol::secp256k1_zkp::schnorrsig;
@@ -8,9 +8,10 @@ use daemon::maker_cfd;
 use daemon::model::cfd::{Cfd, CfdState, Order, Origin};
 use daemon::model::{Price, Usd};
 use daemon::tokio_ext::FutureExt;
+use harness::bdk::dummy_tx_id;
 use rust_decimal_macros::dec;
 use std::time::Duration;
-use tokio::sync::watch;
+use tokio::sync::{watch, MutexGuard};
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -20,15 +21,7 @@ mod harness;
 #[tokio::test]
 async fn taker_receives_order_from_maker_on_publication() {
     let _guard = init_tracing();
-    let (mut maker, mut taker) = start_both(
-        Oracle::default(),
-        Monitor,
-        Wallet::default(),
-        Oracle::default(),
-        Monitor,
-        Wallet::default(),
-    )
-    .await;
+    let (mut maker, mut taker) = start_both().await;
 
     assert!(is_next_none(&mut taker.order_feed).await);
 
@@ -45,15 +38,7 @@ async fn taker_receives_order_from_maker_on_publication() {
 #[tokio::test]
 async fn taker_takes_order_and_maker_rejects() {
     let _guard = init_tracing();
-    let (mut maker, mut taker) = start_both(
-        Oracle::default(),
-        Monitor,
-        Wallet::default().with_wallet_info(),
-        Oracle::default(),
-        Monitor,
-        Wallet::default().with_wallet_info(),
-    )
-    .await;
+    let (mut maker, mut taker) = start_both().await;
 
     // TODO: Why is this needed? For the cfd stream it is not needed
     is_next_none(&mut taker.order_feed).await;
@@ -86,28 +71,25 @@ async fn taker_takes_order_and_maker_rejects() {
     assert!(matches!(maker_cfd.state, CfdState::Rejected { .. }));
 }
 
+// Helper function setting up a "happy path" wallet mock
+fn mock_wallet_sign_and_broadcast(wallet: &mut MutexGuard<'_, harness::mocks::wallet::MockWallet>) {
+    let mut seq = mockall::Sequence::new();
+    wallet
+        .expect_sign()
+        .times(1)
+        .returning(|_| Ok(dummy_partially_signed_transaction()))
+        .in_sequence(&mut seq);
+    wallet
+        .expect_broadcast()
+        .times(1)
+        .returning(|_| Ok(dummy_tx_id()))
+        .in_sequence(&mut seq);
+}
+
 #[tokio::test]
 async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     let _guard = init_tracing();
-    let (mut maker, mut taker) = start_both(
-        Oracle::default()
-            .with_dummy_announcement(harness::cfd_protocol::OliviaData::example_0().announcement()),
-        Monitor,
-        Wallet::default()
-            .with_wallet_info()
-            .with_party_params()
-            .with_psbt(harness::bdk::dummy_partially_signed_transaction())
-            .with_txid(harness::bdk::dummy_tx_id()),
-        Oracle::default()
-            .with_dummy_announcement(harness::cfd_protocol::OliviaData::example_0().announcement()),
-        Monitor,
-        Wallet::default()
-            .with_wallet_info()
-            .with_party_params()
-            .with_psbt(harness::bdk::dummy_partially_signed_transaction())
-            .with_txid(harness::bdk::dummy_tx_id()),
-    )
-    .await;
+    let (mut maker, mut taker) = start_both().await;
 
     is_next_none(&mut taker.order_feed).await;
 
@@ -118,7 +100,39 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     taker.take_order(received.clone(), Usd::new(dec!(5)));
     let (_, _) = next_cfd(&mut taker.cfd_feed, &mut maker.cfd_feed).await;
 
+    maker
+        .mocks
+        .oracle()
+        .await
+        .expect_get_announcement()
+        .returning(|_| Some(dummy_announcement()));
+
+    taker
+        .mocks
+        .oracle()
+        .await
+        .expect_get_announcement()
+        .returning(|_| Some(dummy_announcement()));
+
     maker.accept_take_request(received.clone());
+
+    #[allow(clippy::redundant_closure)] // clippy is in the wrong here
+    maker
+        .mocks
+        .wallet()
+        .await
+        .expect_build_party_params()
+        .times(1)
+        .returning(|msg| build_party_params(msg));
+
+    #[allow(clippy::redundant_closure)] // clippy is in the wrong here
+    taker
+        .mocks
+        .wallet()
+        .await
+        .expect_build_party_params()
+        .times(1)
+        .returning(|msg| build_party_params(msg));
 
     let (taker_cfd, maker_cfd) = next_cfd(&mut taker.cfd_feed, &mut maker.cfd_feed).await;
     // TODO: More elaborate Cfd assertions
@@ -126,6 +140,9 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     assert_eq!(maker_cfd.order.id, received.id);
     assert!(matches!(taker_cfd.state, CfdState::ContractSetup { .. }));
     assert!(matches!(maker_cfd.state, CfdState::ContractSetup { .. }));
+
+    mock_wallet_sign_and_broadcast(&mut maker.mocks.wallet().await);
+    mock_wallet_sign_and_broadcast(&mut taker.mocks.wallet().await);
 
     let (taker_cfd, maker_cfd) = next_cfd(&mut taker.cfd_feed, &mut maker.cfd_feed).await;
     // TODO: More elaborate Cfd assertions
