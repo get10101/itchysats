@@ -71,8 +71,8 @@ jobs:
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v1.3.0
-      - run: cargo build --bins --tests
-      - run: cargo test --workspace
+      - run: cargo build --features expensive_tests --bins --tests
+      - run: cargo test --workspace --features expensive_tests
       - name: Smoke test ${{ matrix.os }} binary
         shell: bash
         run: |

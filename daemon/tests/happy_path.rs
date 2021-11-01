@@ -87,6 +87,7 @@ fn mock_wallet_sign_and_broadcast(wallet: &mut MutexGuard<'_, harness::mocks::wa
 }
 
 #[tokio::test]
+#[cfg_attr(not(feature = "expensive_tests"), ignore)]
 async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
