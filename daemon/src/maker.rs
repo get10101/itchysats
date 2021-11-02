@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
-use bdk::bitcoin;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use clap::Parser;
+use bdk::{bitcoin, FeeRate};
+use clap::{Parser, Subcommand};
 use daemon::auth::{self, MAKER_USERNAME};
 use daemon::db::{self};
 
@@ -20,6 +20,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use bdk::bitcoin::Amount;
 use std::task::Poll;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
@@ -66,27 +67,53 @@ enum Network {
         /// URL to the electrum backend to use for the wallet.
         #[clap(long, default_value = "ssl://electrum.blockstream.info:50002")]
         electrum: String,
+
+        #[clap(subcommand)]
+        withdraw: Option<Withdraw>,
     },
     /// Run on testnet.
     Testnet {
         /// URL to the electrum backend to use for the wallet.
         #[clap(long, default_value = "ssl://electrum.blockstream.info:60002")]
         electrum: String,
+
+        #[clap(subcommand)]
+        withdraw: Option<Withdraw>,
     },
     /// Run on signet
     Signet {
         /// URL to the electrum backend to use for the wallet.
         #[clap(long)]
         electrum: String,
+
+        #[clap(subcommand)]
+        withdraw: Option<Withdraw>,
+    },
+}
+
+#[derive(Subcommand)]
+enum Withdraw {
+    Withdraw {
+        /// Optionally specify the amount of Bitcoin to be withdrawn. If not specified the wallet
+        /// will be drained. Amount is to be specified with denomination, e.g. "0.1 BTC"
+        #[clap(long)]
+        amount: Option<Amount>,
+        /// Optionally specify the fee-rate for the transaction. The fee-rate is specified as sats
+        /// per vbyte, e.g. 5.0
+        #[clap(long)]
+        fee: Option<f32>,
+        /// The address to receive the Bitcoin.
+        #[clap(long)]
+        address: bdk::bitcoin::Address,
     },
 }
 
 impl Network {
     fn electrum(&self) -> &str {
         match self {
-            Network::Mainnet { electrum } => electrum,
-            Network::Testnet { electrum } => electrum,
-            Network::Signet { electrum } => electrum,
+            Network::Mainnet { electrum, .. } => electrum,
+            Network::Testnet { electrum, .. } => electrum,
+            Network::Signet { electrum, .. } => electrum,
         }
     }
 
@@ -103,6 +130,14 @@ impl Network {
             Network::Mainnet { .. } => base.join("mainnet"),
             Network::Testnet { .. } => base.join("testnet"),
             Network::Signet { .. } => base.join("signet"),
+        }
+    }
+
+    fn withdraw(&self) -> &Option<Withdraw> {
+        match self {
+            Network::Mainnet { withdraw, .. } => withdraw,
+            Network::Testnet { withdraw, .. } => withdraw,
+            Network::Signet { withdraw, .. } => withdraw,
         }
     }
 }
@@ -139,7 +174,27 @@ async fn main() -> Result<()> {
     .create(None)
     .spawn_global();
 
+    // do this before withdraw to ensure the wallet is synced
     let wallet_info = wallet.send(wallet::Sync).await??;
+
+    if let Some(Withdraw::Withdraw {
+        amount,
+        address,
+        fee,
+    }) = opts.network.withdraw()
+    {
+        let txid = wallet
+            .send(wallet::Withdraw {
+                amount: *amount,
+                address: address.clone(),
+                fee: fee.map(FeeRate::from_sat_per_vb),
+            })
+            .await??;
+
+        tracing::info!(%txid, "Withdraw successful");
+
+        return Ok(());
+    }
 
     let auth_password = seed.derive_auth_password::<auth::Password>();
 

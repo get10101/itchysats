@@ -1,18 +1,20 @@
 use crate::model::{Timestamp, WalletInfo};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use bdk::bitcoin::consensus::encode::serialize_hex;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::{Amount, PublicKey, Transaction, Txid};
+use bdk::bitcoin::{Address, Amount, PublicKey, Script, Transaction, Txid};
 use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
 use bdk::wallet::AddressIndex;
-use bdk::{electrum_client, KeychainKind, SignOptions};
+use bdk::{electrum_client, FeeRate, KeychainKind, SignOptions};
 use cfd_protocol::{PartyParams, WalletExt};
 use rocket::serde::json::Value;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;
+
+const DUST_AMOUNT: u64 = 546;
 
 #[derive(Clone)]
 pub struct Actor {
@@ -45,6 +47,45 @@ impl Actor {
         let wallet = Arc::new(Mutex::new(wallet));
 
         Ok(Self { wallet })
+    }
+
+    /// Calculates the maximum "giveable" amount of this wallet.
+    ///
+    /// We define this as the maximum amount we can pay to a single output,
+    /// given a fee rate.
+    pub async fn max_giveable(
+        &self,
+        locking_script_size: usize,
+        fee_rate: FeeRate,
+    ) -> Result<Amount> {
+        let wallet = self.wallet.lock().await;
+        let balance = wallet.get_balance()?;
+
+        // TODO: Do we have to deal with the min_relay_fee here as well, i.e. if balance below
+        // min_relay_fee we should return Amount::ZERO?
+        if balance < DUST_AMOUNT {
+            return Ok(Amount::ZERO);
+        }
+
+        let mut tx_builder = wallet.build_tx();
+
+        let dummy_script = Script::from(vec![0u8; locking_script_size]);
+        tx_builder.drain_to(dummy_script);
+        tx_builder.fee_rate(fee_rate);
+        tx_builder.drain_wallet();
+
+        let response = tx_builder.finish();
+        match response {
+            Ok((_, details)) => {
+                let max_giveable = details.sent
+                    - details
+                        .fee
+                        .expect("fees are always present with Electrum backend");
+                Ok(Amount::from_sat(max_giveable))
+            }
+            Err(bdk::Error::InsufficientFunds { .. }) => Ok(Amount::ZERO),
+            Err(e) => bail!("Failed to build transaction. {:#}", e),
+        }
     }
 }
 
@@ -133,6 +174,38 @@ impl Actor {
 
         Ok(txid)
     }
+
+    pub async fn handle_withdraw(&self, msg: Withdraw) -> Result<Txid> {
+        let fee_rate = msg.fee.unwrap_or_else(FeeRate::default_min_relay_fee);
+        let address = msg.address;
+
+        let amount = if let Some(amount) = msg.amount {
+            amount
+        } else {
+            self.max_giveable(address.script_pubkey().len(), fee_rate)
+                .await
+                .context("Unable to drain wallet")?
+        };
+
+        tracing::info!(%amount, %address, "Amount to be sent to address");
+
+        let wallet = self.wallet.lock().await;
+        let mut tx_builder = wallet.build_tx();
+
+        tx_builder
+            .add_recipient(address.script_pubkey(), amount.as_sat())
+            .fee_rate(fee_rate)
+            // Turn on RBF signaling
+            .enable_rbf();
+
+        let (mut psbt, _) = tx_builder.finish()?;
+
+        wallet.sign(&mut psbt, SignOptions::default())?;
+
+        let txid = wallet.broadcast(psbt.extract_tx())?;
+
+        Ok(txid)
+    }
 }
 
 impl xtra::Actor for Actor {}
@@ -150,6 +223,12 @@ pub struct Sign {
 
 pub struct TryBroadcastTransaction {
     pub tx: Transaction,
+}
+
+pub struct Withdraw {
+    pub amount: Option<Amount>,
+    pub fee: Option<FeeRate>,
+    pub address: Address,
 }
 
 fn parse_rpc_protocol_error_code(error_value: &Value) -> Result<i64> {
