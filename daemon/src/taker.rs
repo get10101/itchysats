@@ -87,8 +87,8 @@ enum Withdraw {
         /// will be drained. Amount is to be specified with denomination, e.g. "0.1 BTC"
         #[clap(long)]
         amount: Option<Amount>,
-        /// Optionally specify the fee-rate for the transaction. The fee-rate is specified as btc
-        /// per kvb, e.g. 0.00001
+        /// Optionally specify the fee-rate for the transaction. The fee-rate is specified as sats
+        /// per vbyte, e.g. 5.0
         #[clap(long)]
         fee: Option<f32>,
         /// The address to receive the Bitcoin.
@@ -176,7 +176,7 @@ async fn main() -> Result<()> {
             .send(wallet::Withdraw {
                 amount: *amount,
                 address: address.clone(),
-                fee: fee.map(FeeRate::from_btc_per_kvb),
+                fee: fee.map(FeeRate::from_sat_per_vb),
             })
             .await??;
 
