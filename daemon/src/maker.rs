@@ -198,10 +198,14 @@ async fn main() -> Result<()> {
 
     let auth_password = seed.derive_auth_password::<auth::Password>();
 
+    let noise_static_sk = seed.derive_noise_static_secret();
+    let noise_static_pk = x25519_dalek::PublicKey::from(&noise_static_sk);
+
     tracing::info!(
-        "Authentication details: username='{}' password='{}'",
+        "Authentication details: username='{}' password='{}', noise_public_key='{}'",
         MAKER_USERNAME,
-        auth_password
+        auth_password,
+        hex::encode(noise_static_pk.to_bytes())
     );
 
     // TODO: Actually fetch it from Olivia
@@ -264,7 +268,7 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(electrum, channel, cfds)
             }
         },
-        |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
+        |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1, noise_static_sk),
         time::Duration::hours(opts.settlement_time_interval_hours as i64),
     )
     .await?;

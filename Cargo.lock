@@ -671,6 +671,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "vergen",
+ "x25519-dalek",
  "xtra",
  "xtra_productivity",
 ]

@@ -5,6 +5,7 @@ use crate::schnorrsig;
 use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, Order};
 use daemon::model::Usd;
+use daemon::seed::Seed;
 use daemon::{connection, db, maker_cfd, maker_inc_connections, taker_cfd};
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -25,7 +26,7 @@ pub async fn start_both() -> (Maker, Taker) {
     .unwrap();
 
     let maker = Maker::start(oracle_pk).await;
-    let taker = Taker::start(oracle_pk, maker.listen_addr).await;
+    let taker = Taker::start(oracle_pk, maker.listen_addr, maker.noise_static_pk).await;
     (maker, taker)
 }
 
@@ -41,6 +42,7 @@ pub struct Maker {
     pub inc_conn_actor_addr: xtra::Address<maker_inc_connections::Actor>,
     pub listen_addr: SocketAddr,
     pub mocks: mocks::Mocks,
+    pub noise_static_pk: x25519_dalek::PublicKey,
 }
 
 impl Maker {
@@ -59,13 +61,20 @@ impl Maker {
 
         let settlement_time_interval_hours = time::Duration::hours(24);
 
+        let seed = Seed::default();
+
+        let noise_static_sk = seed.derive_noise_static_secret();
+        let noise_static_pk = x25519_dalek::PublicKey::from(&noise_static_sk);
+
         let maker = daemon::MakerActorSystem::new(
             db,
             wallet_addr,
             oracle_pk,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
-            |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1),
+            |channel0, channel1| {
+                maker_inc_connections::Actor::new(channel0, channel1, noise_static_sk)
+            },
             settlement_time_interval_hours,
         )
         .await
@@ -95,6 +104,7 @@ impl Maker {
             cfd_feed: maker.cfd_feed_receiver,
             inc_conn_actor_addr: maker.inc_conn_addr,
             listen_addr: address,
+            noise_static_pk,
             mocks,
         }
     }
@@ -126,11 +136,19 @@ pub struct Taker {
 }
 
 impl Taker {
-    pub async fn start(oracle_pk: schnorrsig::PublicKey, maker_address: SocketAddr) -> Self {
+    pub async fn start(
+        oracle_pk: schnorrsig::PublicKey,
+        maker_address: SocketAddr,
+        maker_noise_pub_key: x25519_dalek::PublicKey,
+    ) -> Self {
+        let seed = Seed::default();
+
+        let noise_static_sk = seed.derive_noise_static_secret();
+
         let connection::Actor {
             send_to_maker,
             read_from_maker,
-        } = connection::Actor::new(maker_address)
+        } = connection::Actor::new(maker_address, maker_noise_pub_key, noise_static_sk)
             .await
             .expect("Connected to maker");
 

@@ -76,10 +76,13 @@ jobs:
       - name: Smoke test ${{ matrix.os }} binary
         shell: bash
         run: |
-          target/debug/maker --data-dir=/tmp/maker --generate-seed testnet &
-          sleep 10s # Wait for maker to start
+          mkdir -p /tmp/maker/testnet
+          cp -r daemon/util/testnet_seeds/maker_seed /tmp/maker/testnet/maker_seed
+          target/debug/maker --data-dir=/tmp/maker testnet &
+          sleep 10s # Wait for maker to start\
 
-          target/debug/taker --data-dir=/tmp/taker --generate-seed testnet &
+          # The maker-id is generated from the makers seed found in daemon/util/testnet_seeds/maker_seed
+          target/debug/taker --data-dir=/tmp/taker --generate-seed --maker-id 10d4ba2ac3f7a22da4009d813ff1bc3f404dfe2cc93a32bedf1512aa9951c95e testnet &
           sleep 10s # Wait for taker to start
 
           curl --fail http://localhost:8000/api/alive
