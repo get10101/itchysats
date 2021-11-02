@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use bdk::bitcoin;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use clap::Clap;
+use clap::Parser;
 use daemon::db::{self};
 
 use daemon::model::WalletInfo;
@@ -29,7 +29,7 @@ mod routes_taker;
 
 pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 
-#[derive(Clap)]
+#[derive(Parser)]
 struct Opts {
     /// The IP address of the other party (i.e. the maker).
     #[clap(long, default_value = "127.0.0.1:9999")]
@@ -55,7 +55,7 @@ struct Opts {
     network: Network,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 enum Network {
     Mainnet {
         /// URL to the electrum backend to use for the wallet.
