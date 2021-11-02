@@ -45,6 +45,10 @@ uuid = { version = "0.8", features = ["serde", "v4"] }
 xtra = { version = "0.6", features = ["with-tokio-1"] }
 xtra_productivity = { path = "../xtra_productivity" }
 
+[features]
+# Feature flag to enable tests that take longer to compile.
+expensive_tests = []
+
 [[bin]]
 name = "taker"
 path = "src/taker.rs"
