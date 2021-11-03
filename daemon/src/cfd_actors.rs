@@ -88,7 +88,7 @@ where
 
     if let CfdState::OpenCommitted { .. } = cfd.state {
         try_cet_publication(&mut cfd, conn, wallet, update_sender).await?;
-    } else if let CfdState::MustRefund { .. } = cfd.state {
+    } else if let CfdState::PendingRefund { .. } = cfd.state {
         let signed_refund_tx = cfd.refund_tx()?;
         let txid = wallet
             .send(wallet::TryBroadcastTransaction {

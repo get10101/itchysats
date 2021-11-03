@@ -86,7 +86,7 @@ impl Actor {
 
                 // Final states
                 | CfdState::Closed { .. }
-                | CfdState::MustRefund { .. }
+                | CfdState::PendingRefund { .. }
                 | CfdState::Refunded { .. }
                 | CfdState::SetupFailed { .. } => ()
             }
