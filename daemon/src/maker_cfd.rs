@@ -925,7 +925,7 @@ where
         + xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle(&mut self, msg: CfdAction, ctx: &mut Context<Self>) {
+    async fn handle(&mut self, msg: CfdAction, ctx: &mut Context<Self>) -> Result<()> {
         use CfdAction::*;
         if let Err(e) = match msg {
             AcceptOrder { order_id } => self.handle_accept_order(order_id, ctx).await,
@@ -936,8 +936,9 @@ where
             RejectRollOver { order_id } => self.handle_reject_roll_over(order_id).await,
             Commit { order_id } => self.handle_commit(order_id).await,
         } {
-            tracing::error!("Message handler failed: {:#}", e);
+            anyhow::bail!("Message handler failed: {:#}", e);
         }
+        Ok(())
     }
 }
 
@@ -946,8 +947,9 @@ impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<NewOrder> for Actor
 where
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
 {
-    async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_new_order(msg.price, msg.min_quantity, msg.max_quantity));
+    async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_new_order(msg.price, msg.min_quantity, msg.max_quantity)
+            .await
     }
 }
 
@@ -1067,7 +1069,7 @@ where
 }
 
 impl Message for NewOrder {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl Message for NewTakerOnline {
@@ -1083,7 +1085,7 @@ impl Message for CfdRollOverCompleted {
 }
 
 impl Message for CfdAction {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl Message for FromTaker {

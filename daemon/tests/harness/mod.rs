@@ -109,8 +109,12 @@ impl Maker {
         }
     }
 
-    pub fn publish_order(&mut self, new_order_params: maker_cfd::NewOrder) {
-        self.cfd_actor_addr.do_send(new_order_params).unwrap();
+    pub async fn publish_order(&mut self, new_order_params: maker_cfd::NewOrder) {
+        self.cfd_actor_addr
+            .send(new_order_params)
+            .await
+            .unwrap()
+            .unwrap();
     }
 
     pub fn reject_take_request(&self, order: Order) {

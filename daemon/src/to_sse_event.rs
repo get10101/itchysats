@@ -167,7 +167,7 @@ pub enum TxLabel {
     Collaborative,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, derive_more::Display, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum CfdAction {
     AcceptOrder,

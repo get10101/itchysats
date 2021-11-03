@@ -25,7 +25,7 @@ async fn taker_receives_order_from_maker_on_publication() {
 
     assert!(is_next_none(&mut taker.order_feed).await);
 
-    maker.publish_order(dummy_new_order());
+    maker.publish_order(dummy_new_order()).await;
 
     let (published, received) = tokio::join!(
         next_some(&mut maker.order_feed),
@@ -43,7 +43,7 @@ async fn taker_takes_order_and_maker_rejects() {
     // TODO: Why is this needed? For the cfd stream it is not needed
     is_next_none(&mut taker.order_feed).await;
 
-    maker.publish_order(dummy_new_order());
+    maker.publish_order(dummy_new_order()).await;
 
     let (_, received) = next_order(&mut maker.order_feed, &mut taker.order_feed).await;
 
@@ -94,7 +94,7 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 
     is_next_none(&mut taker.order_feed).await;
 
-    maker.publish_order(dummy_new_order());
+    maker.publish_order(dummy_new_order()).await;
 
     let (_, received) = next_order(&mut maker.order_feed, &mut taker.order_feed).await;
 

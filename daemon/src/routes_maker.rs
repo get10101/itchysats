@@ -6,6 +6,7 @@ use daemon::model::{Price, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
 use daemon::{bitmex_price_feed, maker_cfd};
+use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Header, Status};
 use rocket::response::stream::EventStream;
 use rocket::response::{status, Responder};
@@ -17,7 +18,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
-use xtra::prelude::MessageChannel;
+use xtra::prelude::*;
 
 #[rocket::get("/feed")]
 pub async fn maker_feed(
@@ -109,18 +110,24 @@ pub struct CfdNewOrderRequest {
 }
 
 #[rocket::post("/order/sell", data = "<order>")]
-pub fn post_sell_order(
+pub async fn post_sell_order(
     order: Json<CfdNewOrderRequest>,
     new_order_channel: &State<Box<dyn MessageChannel<maker_cfd::NewOrder>>>,
     _auth: Authenticated,
-) -> Result<status::Accepted<()>, Status> {
+) -> Result<status::Accepted<()>, HttpApiProblem> {
     new_order_channel
-        .do_send(maker_cfd::NewOrder {
+        .send(maker_cfd::NewOrder {
             price: order.price,
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
         })
-        .map_err(|_| Status::new(500))?;
+        .await
+        .unwrap_or_else(|_| anyhow::bail!("actor disconnected")) // TODO: is there a better way?
+        .map_err(|_| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Action failed")
+                .detail("failed to post a sell order")
+        })?;
 
     Ok(status::Accepted(None))
 }
@@ -143,40 +150,42 @@ pub struct PromptAuthentication {
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
-pub fn post_cfd_action(
+pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
     cfd_action_channel: &State<Box<dyn MessageChannel<maker_cfd::CfdAction>>>,
     _auth: Authenticated,
-) -> Result<status::Accepted<()>, status::Custom<()>> {
+) -> Result<status::Accepted<()>, HttpApiProblem> {
     use maker_cfd::CfdAction::*;
     let result = match action {
-        CfdAction::AcceptOrder => cfd_action_channel.do_send(AcceptOrder { order_id: id }),
-        CfdAction::RejectOrder => cfd_action_channel.do_send(RejectOrder { order_id: id }),
-        CfdAction::AcceptSettlement => {
-            cfd_action_channel.do_send(AcceptSettlement { order_id: id })
-        }
-        CfdAction::RejectSettlement => {
-            cfd_action_channel.do_send(RejectSettlement { order_id: id })
-        }
-        CfdAction::AcceptRollOver => cfd_action_channel.do_send(AcceptRollOver { order_id: id }),
-        CfdAction::RejectRollOver => cfd_action_channel.do_send(RejectRollOver { order_id: id }),
-        CfdAction::Commit => cfd_action_channel.do_send(Commit { order_id: id }),
+        CfdAction::AcceptOrder => cfd_action_channel.send(AcceptOrder { order_id: id }),
+        CfdAction::RejectOrder => cfd_action_channel.send(RejectOrder { order_id: id }),
+        CfdAction::AcceptSettlement => cfd_action_channel.send(AcceptSettlement { order_id: id }),
+        CfdAction::RejectSettlement => cfd_action_channel.send(RejectSettlement { order_id: id }),
+        CfdAction::AcceptRollOver => cfd_action_channel.send(AcceptRollOver { order_id: id }),
+        CfdAction::RejectRollOver => cfd_action_channel.send(RejectRollOver { order_id: id }),
+        CfdAction::Commit => cfd_action_channel.send(Commit { order_id: id }),
         CfdAction::Settle => {
-            tracing::error!("Collaborative settlement can only be triggered by taker");
-
-            return Err(status::Custom(Status::BadRequest, ()));
+            let msg = "Collaborative settlement can only be triggered by taker";
+            tracing::error!(msg);
+            return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST).detail(msg));
         }
         CfdAction::RollOver => {
-            tracing::error!("RollOver proposal can only be triggered by taker");
-
-            return Err(status::Custom(Status::BadRequest, ()));
+            let msg = "RollOver proposal can only be triggered by taker";
+            tracing::error!(msg);
+            return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST).detail(msg));
         }
     };
 
     result
-        .map(|()| status::Accepted(None))
-        .map_err(|_| status::Custom(Status::InternalServerError, ()))
+        .await
+        .unwrap_or_else(|_| anyhow::bail!("actor disconnected")) // TODO: is there a better way?
+        .map_err(|_| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title(action.to_string() + " failed")
+        })?;
+
+    Ok(status::Accepted(None))
 }
 
 #[rocket::get("/alive")]
