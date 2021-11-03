@@ -67,17 +67,20 @@ pub struct Actor {
     write_connections: HashMap<TakerId, Address<send_to_socket::Actor<wire::MakerToTaker>>>,
     new_taker_channel: Box<dyn MessageChannel<NewTakerOnline>>,
     taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
+    noise_priv_key: x25519_dalek::StaticSecret,
 }
 
 impl Actor {
     pub fn new(
         new_taker_channel: Box<dyn MessageChannel<NewTakerOnline>>,
         taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
+        noise_priv_key: x25519_dalek::StaticSecret,
     ) -> Self {
         Self {
             write_connections: HashMap::new(),
             new_taker_channel: new_taker_channel.clone_channel(),
             taker_msg_channel: taker_msg_channel.clone_channel(),
+            noise_priv_key,
         }
     }
 
@@ -96,14 +99,16 @@ impl Actor {
     async fn handle_new_connection_impl(
         &mut self,
         mut stream: TcpStream,
-        address: SocketAddr,
+        taker_address: SocketAddr,
         _: &mut Context<Self>,
     ) -> Result<()> {
         let taker_id = TakerId::default();
 
-        tracing::info!("New taker {} connected on {}", taker_id, address);
+        tracing::info!("New taker {} connected on {}", taker_id, taker_address);
 
-        let noise = Arc::new(Mutex::new(noise::responder_handshake(&mut stream).await?));
+        let noise = Arc::new(Mutex::new(
+            noise::responder_handshake(&mut stream, &self.noise_priv_key).await?,
+        ));
 
         let (read, write) = stream.into_split();
         let read = FramedRead::new(read, wire::EncryptedJsonCodec::new(noise.clone()))

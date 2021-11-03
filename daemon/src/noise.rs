@@ -6,15 +6,19 @@ use tokio::net::TcpStream;
 
 pub static NOISE_MAX_MSG_LEN: u32 = 65535;
 pub static NOISE_TAG_LEN: u32 = 16;
-// TODO: investigate what these params do and whether we can use get authentication for free using
-// them
-static NOISE_PARAMS: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
+static NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
-pub async fn initiator_handshake(connection: &mut TcpStream) -> Result<TransportState> {
+pub async fn initiator_handshake(
+    connection: &mut TcpStream,
+    local_priv_key: &x25519_dalek::StaticSecret,
+    remote_pub_key: &x25519_dalek::PublicKey,
+) -> Result<TransportState> {
     let builder: Builder<'_> = Builder::new(NOISE_PARAMS.parse()?);
-    let static_key = builder.generate_keypair()?.private;
 
-    let mut noise = builder.local_private_key(&static_key).build_initiator()?;
+    let mut noise = builder
+        .local_private_key(&local_priv_key.to_bytes())
+        .remote_public_key(&remote_pub_key.to_bytes())
+        .build_initiator()?;
 
     let mut buf = vec![0u8; NOISE_MAX_MSG_LEN as usize];
 
@@ -22,9 +26,6 @@ pub async fn initiator_handshake(connection: &mut TcpStream) -> Result<Transport
     send(connection, &buf[..len]).await?;
 
     noise.read_message(&recv(connection).await?, &mut buf)?;
-
-    let len = noise.write_message(&[], &mut buf)?;
-    send(connection, &buf[..len]).await?;
 
     let noise = noise.into_transport_mode()?;
 
@@ -33,11 +34,15 @@ pub async fn initiator_handshake(connection: &mut TcpStream) -> Result<Transport
     Ok(noise)
 }
 
-pub async fn responder_handshake(connection: &mut TcpStream) -> Result<TransportState> {
+pub async fn responder_handshake(
+    connection: &mut TcpStream,
+    local_priv_key: &x25519_dalek::StaticSecret,
+) -> Result<TransportState> {
     let builder: Builder<'_> = Builder::new(NOISE_PARAMS.parse()?);
-    let static_key = builder.generate_keypair()?.private;
 
-    let mut noise = builder.local_private_key(&static_key).build_responder()?;
+    let mut noise = builder
+        .local_private_key(&local_priv_key.to_bytes())
+        .build_responder()?;
 
     let mut buf = vec![0u8; NOISE_MAX_MSG_LEN as usize];
 
@@ -45,8 +50,6 @@ pub async fn responder_handshake(connection: &mut TcpStream) -> Result<Transport
 
     let len = noise.write_message(&[0u8; 0], &mut buf)?;
     send(connection, &buf[..len]).await?;
-
-    noise.read_message(&recv(connection).await?, &mut buf)?;
 
     let noise = noise.into_transport_mode()?;
 

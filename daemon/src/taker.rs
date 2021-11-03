@@ -31,6 +31,10 @@ struct Opts {
     #[clap(long, default_value = "127.0.0.1:9999")]
     maker: SocketAddr,
 
+    /// The public key of the maker as a 32 byte hex string.
+    #[clap(long, parse(try_from_str = parse_x25519_pubkey))]
+    maker_id: x25519_dalek::PublicKey,
+
     /// The IP address to listen on for the HTTP API.
     #[clap(long, default_value = "127.0.0.1:8000")]
     http_address: SocketAddr,
@@ -49,6 +53,12 @@ struct Opts {
 
     #[clap(subcommand)]
     network: Network,
+}
+
+fn parse_x25519_pubkey(s: &str) -> Result<x25519_dalek::PublicKey> {
+    let mut bytes = [0u8; 32];
+    hex::decode_to_slice(s, &mut bytes)?;
+    Ok(x25519_dalek::PublicKey::from(bytes))
 }
 
 #[derive(Parser)]
@@ -153,6 +163,7 @@ async fn main() -> Result<()> {
 
     let bitcoin_network = opts.network.bitcoin_network();
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
+    let noise_static_sk = seed.derive_noise_static_secret();
 
     let wallet = wallet::Actor::new(
         opts.network.electrum(),
@@ -219,7 +230,7 @@ async fn main() -> Result<()> {
     let connection::Actor {
         send_to_maker,
         read_from_maker,
-    } = connection::Actor::new(opts.maker).await?;
+    } = connection::Actor::new(opts.maker, opts.maker_id, noise_static_sk).await?;
 
     let TakerActorSystem {
         cfd_actor_addr,

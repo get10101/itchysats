@@ -17,12 +17,20 @@ pub struct Actor {
 }
 
 impl Actor {
-    pub async fn new(maker: SocketAddr) -> Result<Self> {
+    pub async fn new(
+        maker_addr: SocketAddr,
+        maker_noise_static_pk: x25519_dalek::PublicKey,
+        noise_static_sk: x25519_dalek::StaticSecret,
+    ) -> Result<Self> {
         let (read, write, noise) = loop {
             let socket = tokio::net::TcpSocket::new_v4().expect("Be able ta create a socket");
-            if let Ok(mut connection) = socket.connect(maker).await {
-                let noise = noise::initiator_handshake(&mut connection).await?;
-
+            if let Ok(mut connection) = socket.connect(maker_addr).await {
+                let noise = noise::initiator_handshake(
+                    &mut connection,
+                    &noise_static_sk,
+                    &maker_noise_static_pk,
+                )
+                .await?;
                 let (read, write) = connection.into_split();
                 break (read, write, Arc::new(Mutex::new(noise)));
             } else {
