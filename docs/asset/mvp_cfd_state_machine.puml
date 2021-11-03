@@ -1,0 +1,67 @@
+@startuml
+[*] --> OutgoingOrderRequest
+note right of OutgoingOrderRequest: Taker only
+[*] --> IncomingOrderRequest
+note left of IncomingOrderRequest: Maker only
+
+OutgoingOrderRequest --> SetupFailed: housekeeping \non startup
+IncomingOrderRequest --> SetupFailed: housekeeping \non startup
+ContractSetup --> SetupFailed: housekeeping \non startup
+
+state Accepted
+note right of Accepted: ;-(
+
+IncomingOrderRequest --> ContractSetup: handle_accept_order (maker) \nhandle_order_accepted (taker)
+
+OutgoingOrderRequest --> Rejected: handle_order_rejected \nhandle_invalid_order_id
+IncomingOrderRequest --> Rejected: handle_reject_order
+
+Open --> PendingCommit: CommitTxSent
+PendingOpen --> PendingCommit: CommitTxSent
+
+PendingOpen --> Closed: CloseFinality \nCetFinality
+Open --> Closed: CloseFinality \nCetFinality
+PendingCommit --> Closed: CloseFinality \nCetFinality
+OpenCommitted --> Closed: CloseFinality \nCetFinality
+PendingCET --> Closed: CloseFinality \nCetFinality
+PendingRefund --> Closed: CloseFinality \nCetFinality
+
+PendingOpen --> Open: LockFinality
+Open --> Open: LockFinality \nOracleAttestation \nProposalSigned
+note left of Open: handle_cfd_roll_over_completed \ntransitions every state into Open; \nnot depicted here for simplicity
+
+PendingOpen --> PendingOpen: OracleAttestation
+ContractSetup --> PendingOpen: handle_cfd_setup_completed
+
+PendingCommit --> PendingCommit: OracleAttestation
+
+PendingOpen --> OpenCommitted: CommitFinality \nCetTimelockExpired
+Open --> OpenCommitted: CommitFinality \nCetTimelockExpired
+PendingCommit --> OpenCommitted: CommitFinality \nCetTimelockExpired
+OpenCommitted --> OpenCommitted: CetTimelockExpired \nOracleAttestation
+
+OpenCommitted --> PendingRefund: RefundTimelockExpired
+Open --> PendingRefund: RefundTimelockExpired
+PendingOpen --> PendingRefund: RefundTimelockExpired
+
+PendingOpen --> Refunded: RefundFinality
+Open --> Refunded: RefundFinality
+PendingCommit --> Refunded: RefundFinality
+OpenCommitted --> Refunded: RefundFinality
+PendingCET --> Refunded: RefundFinality
+PendingRefund --> Refunded: RefundFinality
+
+PendingOpen --> PendingCET: CetSent
+Open --> PendingCET: CetSent
+PendingCommit --> PendingCET: CetSent
+OpenCommitted --> PendingCET: CetSent
+PendingCET --> PendingCET: CetSent
+note left of Closed: Closed --> PendingCET \nguarded in handle
+
+Closed --> [*]
+SetupFailed --> [*]
+Refunded --> [*]
+Rejected --> [*]
+note right of Rejected: Rejected is not guarded as final \nstate in handle(), but since no CFD \ntransactions were exchanged in a Rejected \nstate we will never run into the \nscenario of calling handle() in a \nRejected state, thus treated as final state
+
+@enduml
