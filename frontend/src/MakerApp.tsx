@@ -22,6 +22,7 @@ import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
 import CurrentPrice from "./components/CurrentPrice";
+import createErrorToast from "./components/ErrorToast";
 import useLatestEvent from "./components/Hooks";
 import OrderTile from "./components/OrderTile";
 import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
@@ -42,6 +43,7 @@ export default function App() {
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 
     const toast = useToast();
+
     let [minQuantity, setMinQuantity] = useState<string>("10");
     let [maxQuantity, setMaxQuantity] = useState<string>("100");
     let [orderPrice, setOrderPrice] = useState<string>("0");
@@ -58,15 +60,7 @@ export default function App() {
             try {
                 await postCfdSellOrderRequest(payload as CfdSellOrderPayload);
             } catch (e) {
-                const description = typeof e === "string" ? e : JSON.stringify(e);
-
-                toast({
-                    title: "Error",
-                    description,
-                    status: "error",
-                    duration: 9000,
-                    isClosable: true,
-                });
+                createErrorToast(toast, e);
             }
         },
     });
