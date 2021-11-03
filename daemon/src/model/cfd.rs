@@ -276,7 +276,7 @@ pub enum CfdState {
 
     // TODO: Can be extended with CetStatus
     /// The CFD contract's refund transaction was published but it not final yet
-    MustRefund { common: CfdStateCommon, dlc: Dlc },
+    PendingRefund { common: CfdStateCommon, dlc: Dlc },
 
     /// The Cfd was refunded and the refund transaction reached finality
     ///
@@ -328,7 +328,7 @@ impl CfdState {
     }
 
     pub fn must_refund(dlc: Dlc) -> Self {
-        Self::MustRefund {
+        Self::PendingRefund {
             common: CfdStateCommon::default(),
             dlc,
         }
@@ -455,7 +455,7 @@ impl CfdState {
             CfdState::PendingOpen { common, .. } => common,
             CfdState::Open { common, .. } => common,
             CfdState::OpenCommitted { common, .. } => common,
-            CfdState::MustRefund { common, .. } => common,
+            CfdState::PendingRefund { common, .. } => common,
             CfdState::Refunded { common, .. } => common,
             CfdState::SetupFailed { common, .. } => common,
             CfdState::PendingCommit { common, .. } => common,
@@ -511,7 +511,7 @@ impl fmt::Display for CfdState {
             CfdState::OpenCommitted { .. } => {
                 write!(f, "Open Committed")
             }
-            CfdState::MustRefund { .. } => {
+            CfdState::PendingRefund { .. } => {
                 write!(f, "Must Refund")
             }
             CfdState::Refunded { .. } => {
@@ -835,11 +835,11 @@ impl Cfd {
                     let dlc = if let OpenCommitted { dlc, .. } = self.state.clone() {
                         dlc
                     } else if let Open { dlc, .. } | PendingOpen { dlc, .. } = self.state.clone() {
-                        tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to MustRefund", self.state);
+                        tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to PendingRefund", self.state);
                         dlc
                     } else {
                         bail!(
-                            "Cannot transition to MustRefund because of unexpected state {}",
+                            "Cannot transition to PendingRefund because of unexpected state {}",
                             self.state
                         )
                     };
@@ -983,10 +983,10 @@ impl Cfd {
     }
 
     pub fn refund_tx(&self) -> Result<Transaction> {
-        let dlc = if let CfdState::MustRefund { dlc, .. } = self.state.clone() {
+        let dlc = if let CfdState::PendingRefund { dlc, .. } = self.state.clone() {
             dlc
         } else {
-            bail!("Refund transaction can only be constructed when in state MustRefund, but we are currently in {}", self.state.clone())
+            bail!("Refund transaction can only be constructed when in state PendingRefund, but we are currently in {}", self.state.clone())
         };
 
         let sig_hash = spending_tx_sighash(
@@ -1132,7 +1132,7 @@ impl Cfd {
     }
 
     pub fn is_must_refund(&self) -> bool {
-        matches!(self.state.clone(), CfdState::MustRefund { .. })
+        matches!(self.state.clone(), CfdState::PendingRefund { .. })
     }
 
     pub fn is_pending_commit(&self) -> bool {
@@ -1171,7 +1171,7 @@ impl Cfd {
             | CfdState::Rejected { .. }
             | CfdState::ContractSetup { .. }
             | CfdState::Closed { .. }
-            | CfdState::MustRefund { .. }
+            | CfdState::PendingRefund { .. }
             | CfdState::Refunded { .. }
             | CfdState::SetupFailed { .. } => None,
         }
@@ -1211,7 +1211,7 @@ impl Cfd {
             | CfdState::PendingCommit { .. }
             | CfdState::Closed { .. }
             | CfdState::OpenCommitted { .. }
-            | CfdState::MustRefund { .. }
+            | CfdState::PendingRefund { .. }
             | CfdState::Refunded { .. }
             | CfdState::SetupFailed { .. } => None,
         }
@@ -1239,7 +1239,7 @@ impl Cfd {
             | CfdState::PendingCet { .. }
             | CfdState::Closed { .. }
             | CfdState::OpenCommitted { .. }
-            | CfdState::MustRefund { .. }
+            | CfdState::PendingRefund { .. }
             | CfdState::Refunded { .. }
             | CfdState::SetupFailed { .. } => None,
         }
@@ -1252,7 +1252,7 @@ impl Cfd {
     /// undecided
     pub fn payout(&self) -> Option<Amount> {
         // early exit in case of refund scenario
-        if let CfdState::MustRefund { dlc, .. } | CfdState::Refunded { dlc, .. } =
+        if let CfdState::PendingRefund { dlc, .. } | CfdState::Refunded { dlc, .. } =
             self.state.clone()
         {
             return Some(dlc.refund_amount(self.role()));

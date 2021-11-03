@@ -95,7 +95,7 @@ export class State {
                 return "Rollover Proposed";
             case StateKey.OUTGOING_ROLL_OVER_PROPOSAL:
                 return "Rollover Proposed";
-            case StateKey.MUST_REFUND:
+            case StateKey.PENDING_REFUND:
                 return "Refunding";
             case StateKey.REFUNDED:
                 return "Refunded";
@@ -124,7 +124,7 @@ export class State {
 
             case StateKey.PENDING_COMMIT:
             case StateKey.OPEN_COMMITTED:
-            case StateKey.MUST_REFUND:
+            case StateKey.PENDING_REFUND:
             case StateKey.PENDING_CET:
             case StateKey.PENDING_CLOSE:
                 return orange;
@@ -158,7 +158,7 @@ export class State {
             case StateKey.OPEN:
             case StateKey.PENDING_COMMIT:
             case StateKey.OPEN_COMMITTED:
-            case StateKey.MUST_REFUND:
+            case StateKey.PENDING_REFUND:
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
             case StateKey.OUTGOING_ROLL_OVER_PROPOSAL:
             case StateKey.PENDING_CET:
@@ -208,7 +208,7 @@ const enum StateKey {
     INCOMING_SETTLEMENT_PROPOSAL = "IncomingSettlementProposal",
     OUTGOING_ROLL_OVER_PROPOSAL = "OutgoingRollOverProposal",
     INCOMING_ROLL_OVER_PROPOSAL = "IncomingRollOverProposal",
-    MUST_REFUND = "MustRefund",
+    PENDING_REFUND = "PendingRefund",
     REFUNDED = "Refunded",
     SETUP_FAILED = "SetupFailed",
     CLOSED = "Closed",

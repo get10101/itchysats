@@ -208,7 +208,7 @@ pub enum CfdState {
     IncomingRollOverProposal,
     OutgoingRollOverProposal,
     Closed,
-    MustRefund,
+    PendingRefund,
     Refunded,
     SetupFailed,
 }
@@ -405,7 +405,7 @@ fn to_cfd_state(
             model::cfd::CfdState::PendingOpen { .. } => CfdState::PendingOpen,
             model::cfd::CfdState::Open { .. } => CfdState::Open,
             model::cfd::CfdState::OpenCommitted { .. } => CfdState::OpenCommitted,
-            model::cfd::CfdState::MustRefund { .. } => CfdState::MustRefund,
+            model::cfd::CfdState::PendingRefund { .. } => CfdState::PendingRefund,
             model::cfd::CfdState::Refunded { .. } => CfdState::Refunded,
             model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
             model::cfd::CfdState::PendingCommit { .. } => CfdState::PendingCommit,
@@ -454,7 +454,7 @@ fn to_tx_url_list(state: model::cfd::CfdState, network: Network) -> Vec<TxUrl> {
         } => {
             vec![tx_ub.collaborative_close(collaborative_close.tx.txid())]
         }
-        MustRefund { dlc, .. } => vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc), tx_ub.refund(&dlc)],
+        PendingRefund { dlc, .. } => vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc), tx_ub.refund(&dlc)],
         Refunded { dlc, .. } => vec![tx_ub.refund(&dlc)],
         OutgoingOrderRequest { .. }
         | IncomingOrderRequest { .. }
@@ -538,8 +538,8 @@ mod tests {
         assert_eq!(json, "\"Open\"");
         let json = serde_json::to_string(&CfdState::OpenCommitted).unwrap();
         assert_eq!(json, "\"OpenCommitted\"");
-        let json = serde_json::to_string(&CfdState::MustRefund).unwrap();
-        assert_eq!(json, "\"MustRefund\"");
+        let json = serde_json::to_string(&CfdState::PendingRefund).unwrap();
+        assert_eq!(json, "\"PendingRefund\"");
         let json = serde_json::to_string(&CfdState::Refunded).unwrap();
         assert_eq!(json, "\"Refunded\"");
         let json = serde_json::to_string(&CfdState::SetupFailed).unwrap();
