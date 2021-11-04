@@ -21,6 +21,7 @@ import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
 import useLatestEvent from "./components/Hooks";
+import { HttpError } from "./components/HttpError";
 import { Cfd, intoCfd, intoOrder, Order, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 
@@ -43,7 +44,8 @@ async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
     let res = await fetch(`/api/cfd/order`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
-        throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
+        const resp = await res.json();
+        throw new HttpError(resp);
     }
 }
 
@@ -51,7 +53,8 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
     let res = await fetch(`/api/calculate/margin`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
-        throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
+        const resp = await res.json();
+        throw new HttpError(resp);
     }
 
     return res.json();
@@ -106,10 +109,10 @@ export default function App() {
         };
         calculateMargin(payload);
     }, // Eslint demands us to include `calculateMargin` in the list of dependencies.
-     // We don't want that as we will end up in an endless loop. It is safe to ignore `calculateMargin` because
-    // nothing in `calculateMargin` depends on outside values, i.e. is guaranteed to be stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [margin, effectiveQuantity, order]);
+        // We don't want that as we will end up in an endless loop. It is safe to ignore `calculateMargin` because
+        // nothing in `calculateMargin` depends on outside values, i.e. is guaranteed to be stable.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [margin, effectiveQuantity, order]);
 
     const format = (val: any) => `$` + val;
     const parse = (val: any) => val.replace(/^\$/, "");
