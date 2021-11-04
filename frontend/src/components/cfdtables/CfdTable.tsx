@@ -31,6 +31,8 @@ import {
 import React from "react";
 import { useAsync } from "react-async";
 import { Column, Row, useExpanded, useSortBy, useTable } from "react-table";
+import createErrorToast from "../ErrorToast";
+import { HttpError } from "../HttpError";
 import Timestamp from "../Timestamp";
 import { Action, Cfd } from "../Types";
 
@@ -48,15 +50,7 @@ export function CfdTable(
             try {
                 await doPostAction(orderId, action);
             } catch (e) {
-                const description = typeof e === "string" ? e : JSON.stringify(e);
-
-                toast({
-                    title: "Error",
-                    description,
-                    status: "error",
-                    duration: 9000,
-                    isClosable: true,
-                });
+                createErrorToast(toast, e);
             }
         },
     });
@@ -400,8 +394,12 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
 }
 
 async function doPostAction(id: string, action: string) {
-    await fetch(
+    let res = await fetch(
         `/api/cfd/${id}/${action}`,
         { method: "POST", credentials: "include" },
     );
+    if (!res.status.toString().startsWith("2")) {
+        const resp = await res.json();
+        throw new HttpError(resp);
+    }
 }

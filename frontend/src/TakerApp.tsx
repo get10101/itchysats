@@ -20,7 +20,9 @@ import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
+import createErrorToast from "./components/ErrorToast";
 import useLatestEvent from "./components/Hooks";
+import { HttpError } from "./components/HttpError";
 import { Cfd, intoCfd, intoOrder, Order, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 
@@ -43,7 +45,8 @@ async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
     let res = await fetch(`/api/cfd/order`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
-        throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
+        const resp = await res.json();
+        throw new HttpError(resp);
     }
 }
 
@@ -51,7 +54,8 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
     let res = await fetch(`/api/calculate/margin`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
-        throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
+        const resp = await res.json();
+        throw new HttpError(resp);
     }
 
     return res.json();
@@ -81,15 +85,7 @@ export default function App() {
                 let res = await getMargin(payload as MarginRequestPayload);
                 setMargin(res.margin.toString());
             } catch (e) {
-                const description = typeof e === "string" ? e : JSON.stringify(e);
-
-                toast({
-                    title: "Error",
-                    description,
-                    status: "error",
-                    duration: 9000,
-                    isClosable: true,
-                });
+                createErrorToast(toast, e);
             }
         },
     });
@@ -119,15 +115,7 @@ export default function App() {
             try {
                 await postCfdOrderRequest(payload as CfdOrderRequestPayload);
             } catch (e) {
-                const description = typeof e === "string" ? e : JSON.stringify(e);
-
-                toast({
-                    title: "Error",
-                    description,
-                    status: "error",
-                    duration: 9000,
-                    isClosable: true,
-                });
+                createErrorToast(toast, e);
             }
         },
     });

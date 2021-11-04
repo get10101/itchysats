@@ -652,8 +652,8 @@ where
 
 #[async_trait]
 impl<O: 'static, M: 'static, W: 'static> Handler<TakeOffer> for Actor<O, M, W> {
-    async fn handle(&mut self, msg: TakeOffer, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_take_offer(msg.order_id, msg.quantity));
+    async fn handle(&mut self, msg: TakeOffer, _ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_take_offer(msg.order_id, msg.quantity).await
     }
 }
 
@@ -664,7 +664,7 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::BuildPartyParams>,
 {
-    async fn handle(&mut self, msg: CfdAction, _ctx: &mut Context<Self>) {
+    async fn handle(&mut self, msg: CfdAction, _ctx: &mut Context<Self>) -> Result<()> {
         use CfdAction::*;
 
         if let Err(e) = match msg {
@@ -679,7 +679,9 @@ where
             ProposeRollOver { order_id } => self.handle_propose_roll_over(order_id).await,
         } {
             tracing::error!("Message handler failed: {:#}", e);
+            anyhow::bail!(e)
         }
+        Ok(())
     }
 }
 
@@ -789,11 +791,11 @@ where
 }
 
 impl Message for TakeOffer {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl Message for CfdAction {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 // this signature is a bit different because we use `Address::attach_stream`

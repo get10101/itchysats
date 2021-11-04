@@ -11,13 +11,15 @@ jobs:
   draft-new-release:
     name: "Draft a new release"
     runs-on: ubuntu-latest
+    env:
+      RELEASE_BRANCH: release/${{ github.event.inputs.version }}
     steps:
       - uses: actions/checkout@v2.4.0
         with:
           token: ${{ secrets.BOTTY_GITHUB_TOKEN }}
 
       - name: Create release branch
-        run: git checkout -b release/${{ github.event.inputs.version }}
+        run: git checkout -b ${{ env.RELEASE_BRANCH }}
 
       - name: Initialize mandatory git config
         run: |
