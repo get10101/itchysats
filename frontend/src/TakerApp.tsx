@@ -20,6 +20,7 @@ import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
+import createErrorToast from "./components/ErrorToast";
 import useLatestEvent from "./components/Hooks";
 import { HttpError } from "./components/HttpError";
 import { Cfd, intoCfd, intoOrder, Order, StateGroupKey, WalletInfo } from "./components/Types";
@@ -84,15 +85,7 @@ export default function App() {
                 let res = await getMargin(payload as MarginRequestPayload);
                 setMargin(res.margin.toString());
             } catch (e) {
-                const description = typeof e === "string" ? e : JSON.stringify(e);
-
-                toast({
-                    title: "Error",
-                    description,
-                    status: "error",
-                    duration: 9000,
-                    isClosable: true,
-                });
+                createErrorToast(toast, e);
             }
         },
     });
@@ -109,10 +102,10 @@ export default function App() {
         };
         calculateMargin(payload);
     }, // Eslint demands us to include `calculateMargin` in the list of dependencies.
-        // We don't want that as we will end up in an endless loop. It is safe to ignore `calculateMargin` because
-        // nothing in `calculateMargin` depends on outside values, i.e. is guaranteed to be stable.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [margin, effectiveQuantity, order]);
+     // We don't want that as we will end up in an endless loop. It is safe to ignore `calculateMargin` because
+    // nothing in `calculateMargin` depends on outside values, i.e. is guaranteed to be stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [margin, effectiveQuantity, order]);
 
     const format = (val: any) => `$` + val;
     const parse = (val: any) => val.replace(/^\$/, "");
@@ -122,15 +115,7 @@ export default function App() {
             try {
                 await postCfdOrderRequest(payload as CfdOrderRequestPayload);
             } catch (e) {
-                const description = typeof e === "string" ? e : JSON.stringify(e);
-
-                toast({
-                    title: "Error",
-                    description,
-                    status: "error",
-                    duration: 9000,
-                    isClosable: true,
-                });
+                createErrorToast(toast, e);
             }
         },
     });
