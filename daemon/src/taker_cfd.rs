@@ -421,7 +421,11 @@ where
         self.monitor_actor
             .do_send_async(monitor::StartMonitoring {
                 id: order_id,
-                params: MonitorParams::from_dlc_and_timelocks(dlc, cfd.refund_timelock_in_blocks()),
+                params: MonitorParams::new(
+                    dlc,
+                    cfd.refund_timelock_in_blocks(),
+                    cfd.order.oracle_event_id,
+                ),
             })
             .await?;
 
@@ -590,7 +594,11 @@ where
         self.monitor_actor
             .do_send_async(monitor::StartMonitoring {
                 id: order_id,
-                params: MonitorParams::from_dlc_and_timelocks(dlc, cfd.refund_timelock_in_blocks()),
+                params: MonitorParams::new(
+                    dlc,
+                    cfd.refund_timelock_in_blocks(),
+                    cfd.order.oracle_event_id,
+                ),
             })
             .await?;
 

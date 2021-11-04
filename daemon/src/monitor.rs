@@ -1,7 +1,7 @@
 use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId};
 use crate::model::BitMexPriceEventId;
 use crate::oracle::Attestation;
-use crate::{log_error, model, oracle};
+use crate::{log_error, model, oracle, try_continue};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::{PublicKey, Script, Txid};
@@ -36,6 +36,7 @@ pub struct MonitorParams {
     cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
     refund: (Txid, Script, u32),
     revoked_commits: Vec<(Txid, Script)>,
+    event_id: BitMexPriceEventId,
 }
 
 pub struct Sync;
@@ -77,12 +78,12 @@ impl Actor<bdk::electrum_client::Client> {
             match cfd.state.clone() {
                 // In PendingOpen we know the complete dlc setup and assume that the lock transaction will be published
                 CfdState::PendingOpen { dlc, .. } => {
-                    let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
+                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks(), cfd.order.oracle_event_id);
                     actor.cfds.insert(cfd.order.id, params.clone());
                     actor.monitor_all(&params, cfd.order.id);
                 }
                 CfdState::Open { dlc, .. } | CfdState::PendingCommit { dlc, .. } => {
-                    let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
+                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks(), cfd.order.oracle_event_id);
                     actor.cfds.insert(cfd.order.id, params.clone());
 
                     actor.monitor_commit_finality(&params, cfd.order.id);
@@ -98,7 +99,7 @@ impl Actor<bdk::electrum_client::Client> {
                     }
                 }
                 CfdState::OpenCommitted { dlc, cet_status, .. } => {
-                    let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
+                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks(), cfd.order.oracle_event_id);
                     actor.cfds.insert(cfd.order.id, params.clone());
 
                     match cet_status {
@@ -125,7 +126,7 @@ impl Actor<bdk::electrum_client::Client> {
                     }
                 }
                 CfdState::PendingCet { dlc, attestation, .. } => {
-                    let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
+                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks(), cfd.order.oracle_event_id);
                     actor.cfds.insert(cfd.order.id, params.clone());
 
                     actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.order.id)?;
@@ -133,7 +134,7 @@ impl Actor<bdk::electrum_client::Client> {
                     actor.monitor_refund_finality(&params,cfd.order.id);
                 }
                 CfdState::PendingRefund { dlc, .. } => {
-                    let params = MonitorParams::from_dlc_and_timelocks(dlc.clone(), cfd.refund_timelock_in_blocks());
+                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks(), cfd.order.oracle_event_id);
                     actor.cfds.insert(cfd.order.id, params.clone());
 
                     actor.monitor_commit_refund_timelock(&params, cfd.order.id);
@@ -225,9 +226,13 @@ where
         attestation: Attestation,
         order_id: OrderId,
     ) -> Result<()> {
-        let cets = cets
-            .get(&attestation.id)
-            .context("No CET for oracle event found")?;
+        let attestation_id = attestation.id;
+        let cets = cets.get(&attestation_id).with_context(|| {
+            format!(
+                "No CET for oracle event {} and cfd with order id {}",
+                attestation_id, order_id
+            )
+        })?;
 
         let (txid, script_pubkey) = cets
             .iter()
@@ -314,8 +319,13 @@ where
     }
 
     async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
-        for (order_id, MonitorParams { cets, .. }) in self.cfds.clone().into_iter() {
-            self.monitor_cet_finality(cets, attestation.clone(), order_id)?;
+        for (order_id, MonitorParams { cets, .. }) in self
+            .cfds
+            .clone()
+            .into_iter()
+            .filter(|(_, params)| params.event_id == attestation.id)
+        {
+            try_continue!(self.monitor_cet_finality(cets, attestation.clone(), order_id))
         }
 
         Ok(())
@@ -551,7 +561,7 @@ impl Event {
 }
 
 impl MonitorParams {
-    pub fn from_dlc_and_timelocks(dlc: Dlc, refund_timelock_in_blocks: u32) -> Self {
+    pub fn new(dlc: Dlc, refund_timelock_in_blocks: u32, event_id: BitMexPriceEventId) -> Self {
         let script_pubkey = dlc.maker_address.script_pubkey();
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
@@ -567,6 +577,7 @@ impl MonitorParams {
                 .iter()
                 .map(|rev_commit| (rev_commit.txid, rev_commit.script_pubkey.clone()))
                 .collect(),
+            event_id,
         }
     }
 }
