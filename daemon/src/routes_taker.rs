@@ -4,6 +4,7 @@ use daemon::model::{Leverage, Price, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
 use daemon::{bitmex_price_feed, taker_cfd};
+use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
 use rocket::response::{status, Responder};
@@ -15,7 +16,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
-use xtra::prelude::MessageChannel;
+use xtra::prelude::*;
 
 #[rocket::get("/feed")]
 pub async fn feed(
@@ -105,13 +106,21 @@ pub struct CfdOrderRequest {
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
     take_offer_channel: &State<Box<dyn MessageChannel<taker_cfd::TakeOffer>>>,
-) {
+) -> Result<status::Accepted<()>, HttpApiProblem> {
     take_offer_channel
-        .do_send(taker_cfd::TakeOffer {
+        .send(taker_cfd::TakeOffer {
             order_id: cfd_order_request.order_id,
             quantity: cfd_order_request.quantity,
         })
-        .expect("actor to always be available");
+        .await
+        .unwrap_or_else(|e| anyhow::bail!(e.to_string()))
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Order request failed")
+                .detail(e.to_string())
+        })?;
+
+    Ok(status::Accepted(None))
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
@@ -120,37 +129,37 @@ pub async fn post_cfd_action(
     action: CfdAction,
     cfd_action_channel: &State<Box<dyn MessageChannel<taker_cfd::CfdAction>>>,
     quote_updates: &State<watch::Receiver<bitmex_price_feed::Quote>>,
-) -> Result<status::Accepted<()>, status::BadRequest<String>> {
+) -> Result<status::Accepted<()>, HttpApiProblem> {
     use taker_cfd::CfdAction::*;
-    match action {
+    let result = match action {
         CfdAction::AcceptOrder
         | CfdAction::RejectOrder
         | CfdAction::AcceptSettlement
         | CfdAction::RejectSettlement
         | CfdAction::AcceptRollOver
         | CfdAction::RejectRollOver => {
-            return Err(status::BadRequest(None));
+            return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
+                .detail("taker cannot invoke this actions"));
         }
-        CfdAction::Commit => {
-            cfd_action_channel
-                .do_send(Commit { order_id: id })
-                .map_err(|e| status::BadRequest(Some(e.to_string())))?;
-        }
+        CfdAction::Commit => cfd_action_channel.send(Commit { order_id: id }),
         CfdAction::Settle => {
             let current_price = quote_updates.borrow().for_taker();
-            cfd_action_channel
-                .do_send(ProposeSettlement {
-                    order_id: id,
-                    current_price,
-                })
-                .expect("actor to always be available");
+            cfd_action_channel.send(ProposeSettlement {
+                order_id: id,
+                current_price,
+            })
         }
-        CfdAction::RollOver => {
-            cfd_action_channel
-                .do_send(ProposeRollOver { order_id: id })
-                .expect("actor to always be available");
-        }
-    }
+        CfdAction::RollOver => cfd_action_channel.send(ProposeRollOver { order_id: id }),
+    };
+
+    result
+        .await
+        .unwrap_or_else(|e| anyhow::bail!(e.to_string()))
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title(action.to_string() + " failed")
+                .detail(e.to_string())
+        })?;
 
     Ok(status::Accepted(None))
 }
@@ -177,7 +186,7 @@ pub struct MarginResponse {
 #[rocket::post("/calculate/margin", data = "<margin_request>")]
 pub fn margin_calc(
     margin_request: Json<MarginRequest>,
-) -> Result<status::Accepted<Json<MarginResponse>>, status::BadRequest<String>> {
+) -> Result<status::Accepted<Json<MarginResponse>>, HttpApiProblem> {
     let margin = calculate_long_margin(
         margin_request.price,
         margin_request.quantity,
