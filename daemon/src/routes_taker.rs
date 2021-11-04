@@ -139,7 +139,7 @@ pub async fn post_cfd_action(
         | CfdAction::AcceptRollOver
         | CfdAction::RejectRollOver => {
             return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
-                .detail("taker cannot invoke this actions"));
+                .detail(format!("taker cannot invoke action {}", action)));
         }
         CfdAction::Commit => cfd_action_channel.send(Commit { order_id: id }),
         CfdAction::Settle => {
