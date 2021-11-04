@@ -33,6 +33,7 @@ export default defineConfig({
     server: {
         proxy: {
             "/api": `http://localhost:${backendPorts[app]}`,
+            "/alive": `http://localhost:${backendPorts[app]}`,
         },
     },
 });

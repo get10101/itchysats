@@ -18,6 +18,7 @@ import {
 import React, { useEffect, useState } from "react";
 import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
+import { useBackendMonitor } from "./components/BackendMonitor";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
 import createErrorToast from "./components/ErrorToast";
@@ -63,6 +64,7 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
 
 export default function App() {
     const toast = useToast();
+    useBackendMonitor(toast, 5000); // 5s timeout
 
     document.title = "Hermes Taker";
 
