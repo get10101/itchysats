@@ -122,11 +122,11 @@ pub async fn post_sell_order(
             max_quantity: order.max_quantity,
         })
         .await
-        .unwrap_or_else(|_| anyhow::bail!("actor disconnected")) // TODO: is there a better way?
-        .map_err(|_| {
+        .unwrap_or_else(|e| anyhow::bail!(e))
+        .map_err(|e| {
             HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .title("Action failed")
-                .detail("failed to post a sell order")
+                .title("Posting offer failed")
+                .detail(e.to_string())
         })?;
 
     Ok(status::Accepted(None))
@@ -179,10 +179,11 @@ pub async fn post_cfd_action(
 
     result
         .await
-        .unwrap_or_else(|_| anyhow::bail!("actor disconnected")) // TODO: is there a better way?
-        .map_err(|_| {
+        .unwrap_or_else(|e| anyhow::bail!(e))
+        .map_err(|e| {
             HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .title(action.to_string() + " failed")
+                .detail(e.to_string())
         })?;
 
     Ok(status::Accepted(None))
