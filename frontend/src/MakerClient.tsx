@@ -1,3 +1,5 @@
+import { HttpError } from "./components/HttpError";
+
 export interface CfdSellOrderPayload {
     price: number;
     min_quantity: number;
@@ -16,6 +18,7 @@ export async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
 
     if (!res.status.toString().startsWith("2")) {
         console.log("Status: " + res.status + ", " + res.statusText);
-        throw new Error("failed to publish new order");
+        const resp = await res.json();
+        throw new HttpError(resp);
     }
 }
