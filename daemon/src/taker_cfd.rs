@@ -612,8 +612,6 @@ where
     ) -> Result<()> {
         tracing::info!(%order_id, "Settlement proposal got accepted");
 
-        tracing::info!(%order_id, "Roll over complete");
-
         let mut conn = self.db.acquire().await?;
 
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
