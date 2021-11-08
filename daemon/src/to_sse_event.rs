@@ -176,7 +176,6 @@ pub enum CfdAction {
     Settle,
     AcceptSettlement,
     RejectSettlement,
-    RollOver,
     AcceptRollOver,
     RejectRollOver,
 }
@@ -339,7 +338,7 @@ impl ToSseEvent for Option<model::cfd::Order> {
             liquidation_price: order.liquidation_price.into(),
             creation_timestamp: order.creation_timestamp,
             settlement_time_interval_in_secs: order
-                .settlement_time_interval_hours
+                .settlement_interval
                 .whole_seconds()
                 .try_into()
                 .expect("settlement_time_interval_hours is always positive number"),
@@ -504,7 +503,7 @@ fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
             vec![CfdAction::Commit]
         }
         (CfdState::Open { .. }, Role::Taker) => {
-            vec![CfdAction::RollOver, CfdAction::Commit, CfdAction::Settle]
+            vec![CfdAction::Commit, CfdAction::Settle]
         }
         (CfdState::Open { .. }, Role::Maker) => vec![CfdAction::Commit],
         _ => vec![],

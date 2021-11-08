@@ -149,7 +149,6 @@ pub async fn post_cfd_action(
                 current_price,
             })
         }
-        CfdAction::RollOver => cfd_action_channel.send(ProposeRollOver { order_id: id }),
     };
 
     result

@@ -4,15 +4,17 @@ use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use daemon::connection::{Connect, ConnectionStatus};
 use daemon::maker_cfd::CfdAction;
-use daemon::model::cfd::{Cfd, Order, Origin};
+use daemon::model::cfd::{Cfd, Order, Origin, UpdateCfdProposals};
 use daemon::model::{Price, Usd};
 use daemon::seed::Seed;
+use daemon::taker_cfd::RollOverParams;
 use daemon::{db, maker_cfd, maker_inc_connections, taker_cfd};
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::task::Poll;
+use time::Duration;
 use tokio::sync::watch;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
@@ -32,8 +34,18 @@ pub async fn start_both() -> (Maker, Taker) {
     )
     .unwrap();
 
-    let maker = Maker::start(oracle_pk).await;
-    let taker = Taker::start(oracle_pk, maker.listen_addr, maker.identity_pk).await;
+    let rollover_offset = 1;
+    let settlement_interval = time::Duration::seconds(1);
+
+    let maker = Maker::start(oracle_pk, settlement_interval).await;
+    let taker = Taker::start(
+        oracle_pk,
+        maker.listen_addr,
+        maker.identity_pk,
+        settlement_interval,
+        rollover_offset,
+    )
+    .await;
     (maker, taker)
 }
 
@@ -47,6 +59,7 @@ pub struct Maker {
     >,
     pub order_feed: watch::Receiver<Option<Order>>,
     pub cfd_feed: watch::Receiver<Vec<Cfd>>,
+    pub update_proposals: watch::Receiver<UpdateCfdProposals>,
     #[allow(dead_code)] // we need to keep the xtra::Address for refcounting
     pub inc_conn_actor_addr: xtra::Address<maker_inc_connections::Actor>,
     pub listen_addr: SocketAddr,
@@ -55,7 +68,7 @@ pub struct Maker {
 }
 
 impl Maker {
-    pub async fn start(oracle_pk: schnorrsig::PublicKey) -> Self {
+    pub async fn start(oracle_pk: schnorrsig::PublicKey, settlement_interval: Duration) -> Self {
         let db = in_memory_db().await;
 
         let mut mocks = mocks::Mocks::default();
@@ -63,8 +76,6 @@ impl Maker {
         mocks.mock_common_empty_handlers().await;
 
         let wallet_addr = wallet.create(None).spawn_global();
-
-        let settlement_time_interval_hours = time::Duration::hours(24);
 
         let seed = Seed::default();
         let (identity_pk, identity_sk) = seed.derive_identity();
@@ -76,7 +87,7 @@ impl Maker {
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
             |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1, identity_sk),
-            settlement_time_interval_hours,
+            settlement_interval,
             N_PAYOUTS_FOR_TEST,
         )
         .await
@@ -104,6 +115,7 @@ impl Maker {
             cfd_actor_addr: maker.cfd_actor_addr,
             order_feed: maker.order_feed_receiver,
             cfd_feed: maker.cfd_feed_receiver,
+            update_proposals: maker.update_cfd_feed_receiver,
             inc_conn_actor_addr: maker.inc_conn_addr,
             listen_addr: address,
             identity_pk,
@@ -134,6 +146,14 @@ impl Maker {
             .unwrap()
             .unwrap();
     }
+
+    pub async fn accept_rollover(&self, order: Order) {
+        self.cfd_actor_addr
+            .send(CfdAction::AcceptRollOver { order_id: order.id })
+            .await
+            .unwrap()
+            .unwrap();
+    }
 }
 
 /// Taker Test Setup
@@ -143,6 +163,7 @@ pub struct Taker {
     pub cfd_feed: watch::Receiver<Vec<Cfd>>,
     pub maker_status_feed: watch::Receiver<ConnectionStatus>,
     pub cfd_actor_addr: xtra::Address<taker_cfd::Actor<OracleActor, MonitorActor, WalletActor>>,
+    pub update_proposals: watch::Receiver<UpdateCfdProposals>,
     pub mocks: mocks::Mocks,
 }
 
@@ -151,6 +172,8 @@ impl Taker {
         oracle_pk: schnorrsig::PublicKey,
         maker_address: SocketAddr,
         maker_noise_pub_key: x25519_dalek::PublicKey,
+        settlement_interval: Duration,
+        rollover_offset: u32,
     ) -> Self {
         let seed = Seed::default();
 
@@ -171,6 +194,7 @@ impl Taker {
             identity_sk,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
+            RollOverParams::new(rollover_offset, settlement_interval).unwrap(),
             N_PAYOUTS_FOR_TEST,
         )
         .await
@@ -191,6 +215,7 @@ impl Taker {
             cfd_feed: taker.cfd_feed_receiver,
             maker_status_feed: taker.maker_online_status_feed_receiver,
             cfd_actor_addr: taker.cfd_actor_addr,
+            update_proposals: taker.update_cfd_feed_receiver,
             mocks,
         }
     }
@@ -203,6 +228,13 @@ impl Taker {
             })
             .await
             .unwrap()
+            .unwrap();
+    }
+
+    pub async fn trigger_auto_rollover(&self) {
+        self.cfd_actor_addr
+            .send(taker_cfd::AutoRollover)
+            .await
             .unwrap();
     }
 }

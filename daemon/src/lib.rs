@@ -3,6 +3,7 @@ use crate::db::load_all_cfds;
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
 use crate::oracle::Attestation;
+use crate::taker_cfd::RollOverParams;
 use anyhow::Result;
 use connection::ConnectionStatus;
 use maia::secp256k1_zkp::schnorrsig;
@@ -85,7 +86,7 @@ where
             Box<dyn MessageChannel<NewTakerOnline>>,
             Box<dyn MessageChannel<FromTaker>>,
         ) -> T,
-        settlement_time_interval_hours: time::Duration,
+        settlement_interval: time::Duration,
         n_payouts: usize,
     ) -> Result<Self>
     where
@@ -107,7 +108,7 @@ where
         let cfd_actor_addr = maker_cfd::Actor::new(
             db,
             wallet_addr,
-            settlement_time_interval_hours,
+            settlement_interval,
             oracle_pk,
             cfd_feed_sender,
             order_feed_sender,
@@ -189,6 +190,7 @@ where
         identity_sk: x25519_dalek::StaticSecret,
         oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
+        roll_over_params: RollOverParams,
         n_payouts: usize,
     ) -> Result<Self>
     where
@@ -208,9 +210,10 @@ where
 
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
-
+        let (cfd_actor_addr, cfd_context) = xtra::Context::new(None);
         let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
-        let cfd_actor_addr = taker_cfd::Actor::new(
+
+        tokio::spawn(cfd_context.run(taker_cfd::Actor::new(
             db,
             wallet_addr,
             oracle_pk,
@@ -221,9 +224,8 @@ where
             monitor_addr.clone(),
             oracle_addr,
             n_payouts,
-        )
-        .create(None)
-        .spawn_global();
+            roll_over_params,
+        )));
 
         tokio::spawn(connection_actor_ctx.run(connection::Actor::new(
             maker_online_status_feed_sender,
@@ -253,6 +255,12 @@ where
             .spawn_global();
 
         tokio::spawn(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
+
+        // TODO: Optimize initial auto-rollover to take time into account so that we don't want to
+        // trigger auto-rollover after an immediate restart
+        cfd_actor_addr
+            .do_send_async(taker_cfd::AutoRollover)
+            .await?;
 
         Ok(Self {
             cfd_actor_addr,

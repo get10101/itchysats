@@ -189,6 +189,7 @@ where
         .await
         .context("Failed to send message to wallet actor")?
         .context("Failed to sign transaction")?;
+
     sink.send(SetupMsg::Msg2(Msg2 {
         signed_lock: signed_lock_tx.clone(),
     }))
@@ -339,6 +340,7 @@ pub async fn roll_over(
                 (pk, own_punish),
             ),
         };
+
     let own_cfd_txs = renew_cfd_transactions(
         lock_tx.clone(),
         (

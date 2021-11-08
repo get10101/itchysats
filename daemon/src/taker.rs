@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use daemon::connection::ConnectionStatus;
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
+use daemon::taker_cfd::RollOverParams;
 use daemon::{
     bitmex_price_feed, connection, db, housekeeping, logger, monitor, oracle, taker_cfd, wallet,
     wallet_sync, TakerActorSystem, N_PAYOUTS,
@@ -249,6 +250,7 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(electrum, channel, cfds)
             }
         },
+        RollOverParams::new(1, time::Duration::hours(1))?,
         N_PAYOUTS,
     )
     .await?;

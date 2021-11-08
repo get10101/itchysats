@@ -1,5 +1,5 @@
 use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
-use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
+use crate::db::{insert_order, load_all_cfds, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, CollaborativeSettlement, Dlc, Order,
     OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
@@ -8,13 +8,14 @@ use crate::model::cfd::{
 use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
-use crate::{log_error, oracle, setup_contract, wallet, wire};
+use crate::{log_error, oracle, setup_contract, try_continue, wallet, wire};
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
 use std::collections::HashMap;
+use time::{Duration, OffsetDateTime};
 use tokio::sync::watch;
 use xtra::prelude::*;
 
@@ -27,9 +28,6 @@ pub enum CfdAction {
     ProposeSettlement {
         order_id: OrderId,
         current_price: Price,
-    },
-    ProposeRollOver {
-        order_id: OrderId,
     },
     Commit {
         order_id: OrderId,
@@ -46,6 +44,8 @@ pub struct CfdRollOverCompleted {
     pub dlc: Result<Dlc>,
 }
 
+pub struct AutoRollover;
+
 enum SetupState {
     Active {
         sender: mpsc::UnboundedSender<SetupMsg>,
@@ -58,6 +58,24 @@ enum RollOverState {
         sender: mpsc::UnboundedSender<RollOverMsg>,
     },
     None,
+}
+
+pub struct RollOverParams {
+    settlement_interval: Duration,
+    /// The number of settlement intervals in which an auto-rollover is triggered
+    rollover_offset: u32,
+}
+
+impl RollOverParams {
+    pub fn new(rollover_offset: u32, settlement_interval: Duration) -> Result<Self> {
+        if rollover_offset < 1 {
+            bail!("It does not make sense to rollover a cfd until at least 1 settlement interval has passed")
+        }
+        Ok(Self {
+            settlement_interval,
+            rollover_offset,
+        })
+    }
 }
 
 pub struct Actor<O, M, W> {
@@ -73,6 +91,7 @@ pub struct Actor<O, M, W> {
     roll_over_state: RollOverState,
     oracle_actor: Address<O>,
     current_pending_proposals: UpdateCfdProposals,
+    roll_over_params: RollOverParams,
     n_payouts: usize,
 }
 
@@ -82,6 +101,7 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::BuildPartyParams>,
 {
+    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
@@ -94,6 +114,7 @@ where
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
         n_payouts: usize,
+        roll_over_params: RollOverParams,
     ) -> Self {
         Self {
             db,
@@ -108,6 +129,7 @@ where
             roll_over_state: RollOverState::None,
             oracle_actor,
             current_pending_proposals: HashMap::new(),
+            roll_over_params,
             n_payouts,
         }
     }
@@ -164,6 +186,71 @@ impl<O, M, W> Actor<O, M, W> {
 
         self.send_to_maker
             .do_send(wire::TakerToMaker::TakeOrder { order_id, quantity })?;
+
+        Ok(())
+    }
+
+    async fn handle_auto_rollover(&mut self) -> Result<()> {
+        tracing::debug!("Auto rollover");
+
+        let mut conn = self.db.acquire().await?;
+        let cfds = load_all_cfds(&mut conn).await?;
+
+        // cleanup all pending proposals because auto-rollover will create a new one
+        self.current_pending_proposals.clear();
+
+        // Only cfds in state `Open` are allowed for auto-rollover proposal
+        for cfd in cfds
+            .iter()
+            .filter(|cfd| matches!(cfd.state, CfdState::Open { .. }))
+        {
+            tracing::debug!(
+                "settlement_interval: {:?}",
+                self.roll_over_params.settlement_interval
+            );
+
+            let now = OffsetDateTime::now_utc();
+            let elapsed_since_creation = now - cfd.creation_timestamp()?;
+
+            // trigger rollover if rollover window has elapsed
+            if cfd.expiry_timestamp() > now
+                && elapsed_since_creation
+                    > self.roll_over_params.rollover_offset
+                        * self.roll_over_params.settlement_interval
+            {
+                tracing::debug!("proposed roll over");
+                try_continue!(self.propose_roll_over(cfd.order.id).await)
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
+        if self.current_pending_proposals.contains_key(&order_id) {
+            anyhow::bail!("An update for order id {} is already in progress", order_id)
+        }
+
+        let proposal = RollOverProposal {
+            order_id,
+            timestamp: Timestamp::now()?,
+        };
+
+        self.current_pending_proposals.insert(
+            proposal.order_id,
+            UpdateCfdProposal::RollOverProposal {
+                proposal: proposal.clone(),
+                direction: SettlementKind::Outgoing,
+            },
+        );
+        self.send_pending_update_proposals()?;
+
+        self.send_to_maker
+            .send(wire::TakerToMaker::ProposeRollOver {
+                order_id: proposal.order_id,
+                timestamp: proposal.timestamp,
+            })
+            .await?;
 
         Ok(())
     }
@@ -355,44 +442,6 @@ where
 
 impl<O, M, W> Actor<O, M, W>
 where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
-        if self.current_pending_proposals.contains_key(&order_id) {
-            anyhow::bail!("An update for order id {} is already in progress", order_id)
-        }
-
-        let proposal = RollOverProposal {
-            order_id,
-            timestamp: Timestamp::now()?,
-        };
-
-        self.current_pending_proposals.insert(
-            proposal.order_id,
-            UpdateCfdProposal::RollOverProposal {
-                proposal: proposal.clone(),
-                direction: SettlementKind::Outgoing,
-            },
-        );
-        self.send_pending_update_proposals()?;
-
-        self.send_to_maker
-            .do_send(wire::TakerToMaker::ProposeRollOver {
-                order_id: proposal.order_id,
-                timestamp: proposal.timestamp,
-            })?;
-        Ok(())
-    }
-}
-impl<O, M, W> Actor<O, M, W> where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>
-        + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::BuildPartyParams>
-{
-}
-
-impl<O, M, W> Actor<O, M, W>
-where
     O: xtra::Handler<oracle::MonitorAttestation>,
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -542,7 +591,7 @@ where
         oracle_event_id: BitMexPriceEventId,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
-        tracing::info!(%order_id, "Roll; over request got accepted");
+        tracing::info!(%order_id, "Rollover request got accepted");
 
         let (sender, receiver) = mpsc::unbounded();
 
@@ -706,12 +755,18 @@ where
                 self.handle_propose_settlement(order_id, current_price)
                     .await
             }
-            ProposeRollOver { order_id } => self.handle_propose_roll_over(order_id).await,
         } {
             tracing::error!("Message handler failed: {:#}", e);
             anyhow::bail!(e)
         }
         Ok(())
+    }
+}
+
+#[async_trait]
+impl<O: 'static, M: 'static, W: 'static> Handler<AutoRollover> for Actor<O, M, W> {
+    async fn handle(&mut self, _msg: AutoRollover, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_auto_rollover())
     }
 }
 
@@ -823,6 +878,10 @@ impl Message for CfdSetupCompleted {
 }
 
 impl Message for CfdRollOverCompleted {
+    type Result = ();
+}
+
+impl Message for AutoRollover {
     type Result = ();
 }
 
