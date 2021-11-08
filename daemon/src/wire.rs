@@ -64,6 +64,8 @@ impl fmt::Display for TakerToMaker {
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum MakerToTaker {
+    /// Periodically broadcasted message, indicating maker's presence
+    Heartbeat,
     CurrentOrder(Option<Order>),
     ConfirmOrder(OrderId), // TODO: Include payout curve in "accept" message from maker
     RejectOrder(OrderId),
@@ -82,6 +84,7 @@ pub enum MakerToTaker {
 impl fmt::Display for MakerToTaker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            MakerToTaker::Heartbeat { .. } => write!(f, "Heartbeat"),
             MakerToTaker::CurrentOrder(_) => write!(f, "CurrentOrder"),
             MakerToTaker::ConfirmOrder(_) => write!(f, "ConfirmOrder"),
             MakerToTaker::RejectOrder(_) => write!(f, "RejectOrder"),

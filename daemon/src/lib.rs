@@ -1,6 +1,8 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
+use crate::connection_monitor::ConnectionStatus;
 use crate::db::load_all_cfds;
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
+use crate::maker_inc_connections::BroadcastHeartbeat;
 use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
 use crate::oracle::Attestation;
 use anyhow::Result;
@@ -47,6 +49,8 @@ pub mod wallet;
 pub mod wallet_sync;
 pub mod wire;
 
+const HEARTBEAT_INTERVAL: std::time::Duration = Duration::from_secs(5);
+
 pub struct MakerActorSystem<O, M, T, W> {
     pub cfd_actor_addr: Address<maker_cfd::Actor<O, M, T, W>>,
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
@@ -65,7 +69,8 @@ where
         + xtra::Handler<monitor::CollaborativeSettlement>
         + xtra::Handler<oracle::Attestation>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>,
+        + xtra::Handler<maker_inc_connections::BroadcastOrder>
+        + xtra::Handler<maker_inc_connections::BroadcastHeartbeat>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sync>
         + xtra::Handler<wallet::Sign>
@@ -97,7 +102,7 @@ where
 
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
-        let (inc_conn_addr, inc_conn_ctx) = xtra::Context::new(None);
+        let (inc_conn_addr, mut inc_conn_ctx) = xtra::Context::new(None);
 
         let cfd_actor_addr = maker_cfd::Actor::new(
             db,
@@ -113,6 +118,12 @@ where
         )
         .create(None)
         .spawn_global();
+
+        tokio::spawn(
+            inc_conn_ctx
+                .notify_interval(HEARTBEAT_INTERVAL, || BroadcastHeartbeat)
+                .map_err(|e| anyhow::anyhow!(e))?,
+        );
 
         tokio::spawn(inc_conn_ctx.run(inc_conn_constructor(
             Box::new(cfd_actor_addr.clone()),
@@ -157,6 +168,7 @@ pub struct TakerActorSystem<O, M, W> {
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
     pub order_feed_receiver: watch::Receiver<Option<Order>>,
     pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
+    pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 }
 
 impl<O, M, W> TakerActorSystem<O, M, W>
@@ -194,8 +206,17 @@ where
         let (update_cfd_feed_sender, update_cfd_feed_receiver) =
             watch::channel::<UpdateCfdProposals>(HashMap::new());
 
+        let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
+            watch::channel(ConnectionStatus::Online);
+
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
+
+        let maker_monitor_addr =
+            connection_monitor::Actor::new(maker_online_status_feed_sender, HEARTBEAT_INTERVAL * 2)
+                .await
+                .create(None)
+                .spawn_global();
 
         let cfd_actor_addr = taker_cfd::Actor::new(
             db,
@@ -207,6 +228,7 @@ where
             send_to_maker,
             monitor_addr.clone(),
             oracle_addr,
+            maker_monitor_addr,
         )
         .create(None)
         .spawn_global();
@@ -240,6 +262,7 @@ where
             cfd_feed_receiver,
             order_feed_receiver,
             update_cfd_feed_receiver,
+            maker_online_status_feed_receiver,
         })
     }
 }

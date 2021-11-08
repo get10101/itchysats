@@ -15,6 +15,8 @@ use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::{Actor as _, KeepRunning};
 use xtra_productivity::xtra_productivity;
 
+pub struct BroadcastHeartbeat;
+
 pub struct BroadcastOrder(pub Option<Order>);
 
 #[allow(clippy::large_enum_variant)]
@@ -148,14 +150,19 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
+    async fn handle_broadcast_heartbeat(&mut self, _msg: BroadcastHeartbeat) -> Result<()> {
+        for conn in self.write_connections.values() {
+            conn.do_send_async(wire::MakerToTaker::Heartbeat).await?;
+        }
+        Ok(())
+    }
+
     async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) -> Result<()> {
         let order = msg.0;
-
         for conn in self.write_connections.values() {
             conn.do_send_async(wire::MakerToTaker::CurrentOrder(order.clone()))
                 .await?;
         }
-
         Ok(())
     }
 

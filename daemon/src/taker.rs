@@ -3,6 +3,7 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::{Address, Amount};
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
+use daemon::connection_monitor::ConnectionStatus;
 use daemon::db::{self};
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
@@ -233,6 +234,7 @@ async fn main() -> Result<()> {
         cfd_feed_receiver,
         order_feed_receiver,
         update_cfd_feed_receiver,
+        mut maker_online_status_feed_receiver,
     } = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
@@ -253,7 +255,7 @@ async fn main() -> Result<()> {
     let take_offer_channel = MessageChannel::<taker_cfd::TakeOffer>::clone_channel(&cfd_actor_addr);
     let cfd_action_channel = MessageChannel::<taker_cfd::CfdAction>::clone_channel(&cfd_actor_addr);
 
-    rocket::custom(figment)
+    let rocket = rocket::custom(figment)
         .manage(order_feed_receiver)
         .manage(update_cfd_feed_receiver)
         .manage(take_offer_channel)
@@ -275,9 +277,20 @@ async fn main() -> Result<()> {
         .mount(
             "/",
             rocket::routes![routes_taker::dist, routes_taker::index],
-        )
-        .launch()
-        .await?;
+        );
+
+    let rocket = rocket.ignite().await?;
+    let shutdown_handle = rocket.shutdown();
+    rocket::tokio::spawn(rocket.launch());
+
+    // shutdown the rocket server maker if goes offline
+    tokio::spawn(async move {
+        maker_online_status_feed_receiver.changed().await.unwrap();
+        if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
+            tracing::info!("Maker is offline. Shutting down the taker");
+            rocket::Shutdown::notify(shutdown_handle);
+        }
+    });
 
     db.close().await;
 
