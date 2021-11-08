@@ -1,3 +1,4 @@
+use crate::maker_cfd::CfdSetupCompleted;
 use crate::model::{
     BitMexPriceEventId, InversePrice, Leverage, Percent, Position, Price, TakerId, Timestamp,
     TradingPair, Usd,
@@ -10,6 +11,7 @@ use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use cfd_protocol::secp256k1_zkp::{self, EcdsaAdaptorSignature, SECP256K1};
 use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash, TransactionExt};
+use rocket::http::hyper::client::connect::Connect;
 use rocket::request::FromParam;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -21,6 +23,10 @@ use std::ops::RangeInclusive;
 use time::{Duration, OffsetDateTime};
 use uuid::adapter::Hyphenated;
 use uuid::Uuid;
+
+use petgraph::graph::{Graph, NodeIndex};
+use petgraph::visit::EdgeRef;
+use petgraph::Direction;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
@@ -159,195 +165,468 @@ pub enum Error {
     Connect,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CfdStateError {
-    last_successful_state: CfdState,
-    error: Error,
+#[derive(Debug)]
+enum CfdState {
+    IncomingOrderRequest,
+    OutgoingOrderRequest,
+    ContractSetup,
+    PendingOpen,
+    Open,
+    PendingCommit,
+    OpenCommitted,
+    PendingCet,
+    PendingRefund,
+    Refunded,
+    Closed,
+    SetupFailed,
+    Rejected,
+    EntryState,
+    ExitState,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub struct CfdStateCommon {
-    pub transition_timestamp: Timestamp,
+#[derive(Debug)]
+struct Node(CfdState);
+
+#[derive(Debug, PartialEq)]
+enum CfdEvent {
+    MakerCreatesOrder,
+    TakerConsumesOrder,
+    MakerAcceptsOrder,
+    TakerOrderAccepted,
+    OrderRejected,
+    RejectOrder,
+    InvalidOrderId,
+    HousekeepingOnStartup,
+    CfdSetupCompleted,
+    OracleAttestation,
+    LockFinality,
+    ProposalSigned,
+    CetSent,
+    CommitFinality,
+    CetTimelockExpired,
+    CommitTxSent,
+    CetFinality,
+    CloseFinality,
+    RefundTimelockExpired,
+    RefundFinality,
+    IsExitState,
 }
 
-impl Default for CfdStateCommon {
-    fn default() -> Self {
-        Self {
-            transition_timestamp: Timestamp::now().expect("Unable to get current time"),
+#[derive(Debug)]
+struct Edge(CfdEvent);
+
+#[derive(Debug)]
+pub struct CfdStateMachine {
+    graph: Graph<Node, Edge>,
+    entry_node: NodeIndex,
+    exit_node: NodeIndex,
+}
+
+impl CfdStateMachine {
+    fn new() -> Self {
+        // graph defined at docs/asset/mvp_cfd_state_machine.puml
+        let mut graph = Graph::<Node, Edge>::new();
+
+        // Node list; order is unimportant
+        let entry_node = graph.add_node(Node(CfdState::EntryState));
+        let incoming_order_request = graph.add_node(Node(CfdState::IncomingOrderRequest));
+        let outgoing_order_request = graph.add_node(Node(CfdState::OutgoingOrderRequest));
+        let contract_setup = graph.add_node(Node(CfdState::ContractSetup));
+        let pending_open = graph.add_node(Node(CfdState::PendingOpen));
+        let open = graph.add_node(Node(CfdState::Open));
+        let pending_commit = graph.add_node(Node(CfdState::PendingCommit));
+        let open_committed = graph.add_node(Node(CfdState::OpenCommitted));
+        let pending_cet = graph.add_node(Node(CfdState::PendingCet));
+        let pending_refund = graph.add_node(Node(CfdState::PendingRefund));
+        let refunded = graph.add_node(Node(CfdState::Refunded));
+        let closed = graph.add_node(Node(CfdState::Closed));
+        let setup_failed = graph.add_node(Node(CfdState::SetupFailed));
+        let rejected = graph.add_node(Node(CfdState::Rejected));
+        let exit_node = graph.add_node(Node(CfdState::ExitState));
+
+        // Edge list; this is tedious but straightforward. We build up the
+        // (directed) edge collection by listing all outgoing edges from a
+        // node on a per-node basis for readability. Please avoid shuffling
+        // edges into the mix as it makes readability difficult.
+        graph.add_edge(
+            entry_node,
+            incoming_order_request,
+            Edge(CfdEvent::MakerCreatesOrder),
+        );
+        graph.add_edge(
+            entry_node,
+            outgoing_order_request,
+            Edge(CfdEvent::TakerConsumesOrder),
+        );
+
+        graph.add_edge(
+            incoming_order_request,
+            contract_setup,
+            Edge(CfdEvent::MakerAcceptsOrder),
+        );
+        graph.add_edge(
+            incoming_order_request,
+            contract_setup,
+            Edge(CfdEvent::TakerOrderAccepted),
+        );
+        graph.add_edge(
+            incoming_order_request,
+            setup_failed,
+            Edge(CfdEvent::HousekeepingOnStartup),
+        );
+        graph.add_edge(
+            incoming_order_request,
+            rejected,
+            Edge(CfdEvent::RejectOrder),
+        );
+
+        graph.add_edge(
+            outgoing_order_request,
+            setup_failed,
+            Edge(CfdEvent::HousekeepingOnStartup),
+        );
+        graph.add_edge(
+            outgoing_order_request,
+            rejected,
+            Edge(CfdEvent::OrderRejected),
+        );
+        graph.add_edge(
+            outgoing_order_request,
+            rejected,
+            Edge(CfdEvent::InvalidOrderId),
+        );
+
+        graph.add_edge(
+            contract_setup,
+            pending_open,
+            Edge(CfdEvent::CfdSetupCompleted),
+        );
+        graph.add_edge(
+            contract_setup,
+            setup_failed,
+            Edge(CfdEvent::HousekeepingOnStartup),
+        );
+
+        graph.add_edge(
+            pending_open,
+            pending_open,
+            Edge(CfdEvent::OracleAttestation),
+        );
+        graph.add_edge(pending_open, open, Edge(CfdEvent::LockFinality));
+        graph.add_edge(pending_open, pending_commit, Edge(CfdEvent::CommitTxSent));
+        graph.add_edge(pending_open, pending_cet, Edge(CfdEvent::CetSent));
+        graph.add_edge(pending_open, open_committed, Edge(CfdEvent::CommitFinality));
+        graph.add_edge(
+            pending_open,
+            open_committed,
+            Edge(CfdEvent::CetTimelockExpired),
+        );
+        graph.add_edge(
+            pending_open,
+            pending_refund,
+            Edge(CfdEvent::RefundTimelockExpired),
+        );
+        graph.add_edge(pending_open, closed, Edge(CfdEvent::CloseFinality));
+        graph.add_edge(pending_open, closed, Edge(CfdEvent::CetFinality));
+        graph.add_edge(pending_open, refunded, Edge(CfdEvent::RefundFinality));
+
+        graph.add_edge(open, open, Edge(CfdEvent::LockFinality));
+        graph.add_edge(open, open, Edge(CfdEvent::OracleAttestation));
+        graph.add_edge(open, open, Edge(CfdEvent::ProposalSigned));
+        graph.add_edge(open, pending_commit, Edge(CfdEvent::CommitTxSent));
+        graph.add_edge(open, pending_cet, Edge(CfdEvent::CetSent));
+        graph.add_edge(open, open_committed, Edge(CfdEvent::CommitFinality));
+        graph.add_edge(open, open_committed, Edge(CfdEvent::CetTimelockExpired));
+        graph.add_edge(open, open_committed, Edge(CfdEvent::CommitFinality));
+        graph.add_edge(open, pending_refund, Edge(CfdEvent::RefundTimelockExpired));
+        graph.add_edge(open, closed, Edge(CfdEvent::CloseFinality));
+        graph.add_edge(open, closed, Edge(CfdEvent::CetFinality));
+        graph.add_edge(open, refunded, Edge(CfdEvent::RefundFinality));
+
+        graph.add_edge(
+            pending_commit,
+            pending_commit,
+            Edge(CfdEvent::OracleAttestation),
+        );
+        graph.add_edge(pending_commit, pending_cet, Edge(CfdEvent::CetSent));
+        graph.add_edge(
+            pending_commit,
+            open_committed,
+            Edge(CfdEvent::CommitFinality),
+        );
+        graph.add_edge(
+            pending_commit,
+            open_committed,
+            Edge(CfdEvent::CetTimelockExpired),
+        );
+        graph.add_edge(pending_commit, closed, Edge(CfdEvent::CloseFinality));
+        graph.add_edge(pending_commit, closed, Edge(CfdEvent::CetFinality));
+        graph.add_edge(pending_commit, refunded, Edge(CfdEvent::RefundFinality));
+
+        graph.add_edge(pending_cet, pending_cet, Edge(CfdEvent::CetSent));
+        graph.add_edge(pending_cet, closed, Edge(CfdEvent::CloseFinality));
+        graph.add_edge(pending_cet, closed, Edge(CfdEvent::CetFinality));
+        graph.add_edge(pending_cet, refunded, Edge(CfdEvent::RefundFinality));
+
+        graph.add_edge(
+            open_committed,
+            open_committed,
+            Edge(CfdEvent::CetTimelockExpired),
+        );
+        graph.add_edge(
+            open_committed,
+            open_committed,
+            Edge(CfdEvent::OracleAttestation),
+        );
+        graph.add_edge(open_committed, pending_cet, Edge(CfdEvent::CetSent));
+        graph.add_edge(
+            open_committed,
+            pending_refund,
+            Edge(CfdEvent::RefundTimelockExpired),
+        );
+        graph.add_edge(open_committed, closed, Edge(CfdEvent::CloseFinality));
+        graph.add_edge(open_committed, closed, Edge(CfdEvent::CetFinality));
+        graph.add_edge(open_committed, refunded, Edge(CfdEvent::RefundFinality));
+
+        graph.add_edge(pending_refund, closed, Edge(CfdEvent::CloseFinality));
+        graph.add_edge(pending_refund, closed, Edge(CfdEvent::CetFinality));
+        graph.add_edge(pending_refund, refunded, Edge(CfdEvent::RefundFinality));
+
+        graph.add_edge(closed, exit_node, Edge(CfdEvent::IsExitState));
+
+        graph.add_edge(refunded, exit_node, Edge(CfdEvent::IsExitState));
+
+        graph.add_edge(setup_failed, exit_node, Edge(CfdEvent::IsExitState));
+
+        graph.add_edge(rejected, exit_node, Edge(CfdEvent::IsExitState));
+
+        CfdStateMachine {
+            graph,
+            entry_node,
+            exit_node,
         }
+    }
+
+    pub fn get_state_from_event_history(
+        &self,
+        event_history: Vec<CfdEvent>,
+    ) -> Result<(CfdState, Option<Vec<CfdEvent>>)> {
+        let mut node = self.entry_node.clone();
+        let mut event_choices;
+
+        for event in event_history.iter() {
+            let mut event_options = self.graph.edges_directed(node, Direction::Outgoing);
+
+            for option in event_options {
+                match option.weight().0 {
+                    event => node = option.target(),
+                    CfdEvent::IsExitState => {
+                        return Ok((self.graph.node_weight(self.exit_node).unwrap().0, None))
+                    }
+                    _ => return Result::Err(Error::InvalidState),
+                }
+            }
+        }
+
+        let event_options = self
+            .graph
+            .edges_directed(node, Direction::Outgoing)
+            .map(|e| e.weight().0)
+            .collect::<Vec<_>>();
+
+        Ok((self.graph.node_weight(node).unwrap().0, Some(event_options)))
     }
 }
 
-// Note: De-/Serialize with type tag to make handling on UI easier
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", content = "payload")]
-pub enum CfdState {
-    /// The taker sent an order to the maker to open the CFD but doesn't have a response yet.
-    ///
-    /// This state applies to taker only.
-    OutgoingOrderRequest { common: CfdStateCommon },
+// #[derive(Debug, Clone, Serialize, Deserialize)]
+// pub struct CfdStateError {
+//     last_successful_state: CfdState,
+//     error: Error,
+// }
 
-    /// The maker received an order from the taker to open the CFD but doesn't have a response yet.
-    ///
-    /// This state applies to the maker only.
-    IncomingOrderRequest {
-        common: CfdStateCommon,
-        taker_id: TakerId,
-    },
+// #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+// pub struct CfdStateCommon {
+//     pub transition_timestamp: Timestamp,
+// }
 
-    /// The maker has accepted the CFD take request, but the contract is not set up on chain yet.
-    ///
-    /// This state applies to taker and maker.
-    Accepted { common: CfdStateCommon },
+// impl Default for CfdStateCommon {
+//     fn default() -> Self {
+//         Self {
+//             transition_timestamp: Timestamp::now().expect("Unable to get current time"),
+//         }
+//     }
+// }
 
-    /// The maker rejected the CFD order.
-    ///
-    /// This state applies to taker and maker.
-    /// This is a final state.
-    Rejected { common: CfdStateCommon },
+// // Note: De-/Serialize with type tag to make handling on UI easier
+// #[allow(clippy::large_enum_variant)]
+// #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+// #[serde(tag = "type", content = "payload")]
+// pub enum CfdState {
+//     /// The taker sent an order to the maker to open the CFD but doesn't have a response yet.
+//     ///
+//     /// This state applies to taker only.
+//     OutgoingOrderRequest { common: CfdStateCommon },
 
-    /// State used during contract setup.
-    ///
-    /// This state applies to taker and maker.
-    /// All contract setup messages between taker and maker are expected to be sent in on scope.
-    ContractSetup { common: CfdStateCommon },
+//     /// The maker received an order from the taker to open the CFD but doesn't have a response
+// yet.     ///
+//     /// This state applies to the maker only.
+//     IncomingOrderRequest {
+//         common: CfdStateCommon,
+//         taker_id: TakerId,
+//     },
 
-    PendingOpen {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        attestation: Option<Attestation>,
-    },
+//     /// The maker has accepted the CFD take request, but the contract is not set up on chain yet.
+//     ///
+//     /// This state applies to taker and maker.
+//     Accepted { common: CfdStateCommon },
 
-    /// The CFD contract is set up on chain.
-    ///
-    /// This state applies to taker and maker.
-    Open {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        attestation: Option<Attestation>,
-        collaborative_close: Option<CollaborativeSettlement>,
-    },
+//     /// The maker rejected the CFD order.
+//     ///
+//     /// This state applies to taker and maker.
+//     /// This is a final state.
+//     Rejected { common: CfdStateCommon },
 
-    /// The commit transaction was published but it not final yet
-    ///
-    /// This state applies to taker and maker.
-    /// This state is needed, because otherwise the user does not get any feedback.
-    PendingCommit {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        attestation: Option<Attestation>,
-    },
+//     /// State used during contract setup.
+//     ///
+//     /// This state applies to taker and maker.
+//     /// All contract setup messages between taker and maker are expected to be sent in on scope.
+//     ContractSetup { common: CfdStateCommon },
 
-    // TODO: At the moment we are appending to this state. The way this is handled internally is
-    //  by inserting the same state with more information in the database. We could consider
-    //  changing this to insert different states or update the stae instead of inserting again.
-    /// The CFD contract's commit transaction reached finality on chain
-    ///
-    /// This means that the commit transaction was detected on chain and reached finality
-    /// confirmations and the contract will be forced to close.
-    OpenCommitted {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        cet_status: CetStatus,
-    },
+//     PendingOpen {
+//         common: CfdStateCommon,
+//         dlc: Dlc,
+//         attestation: Option<Attestation>,
+//     },
 
-    /// The CET was published on chain but is not final yet
-    ///
-    /// This state applies to taker and maker.
-    /// This state is needed, because otherwise the user does not get any feedback.
-    PendingCet {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        attestation: Attestation,
-    },
+//     /// The CFD contract is set up on chain.
+//     ///
+//     /// This state applies to taker and maker.
+//     Open {
+//         common: CfdStateCommon,
+//         dlc: Dlc,
+//         attestation: Option<Attestation>,
+//         collaborative_close: Option<CollaborativeSettlement>,
+//     },
 
-    /// The position was closed collaboratively or non-collaboratively
-    ///
-    /// This state applies to taker and maker.
-    /// This is a final state.
-    /// This is the final state for all happy-path scenarios where we had an open position and then
-    /// "settled" it. Settlement can be collaboratively or non-collaboratively (by publishing
-    /// commit + cet).
-    Closed {
-        common: CfdStateCommon,
-        payout: Payout,
-    },
+//     /// The commit transaction was published but it not final yet
+//     ///
+//     /// This state applies to taker and maker.
+//     /// This state is needed, because otherwise the user does not get any feedback.
+//     PendingCommit {
+//         common: CfdStateCommon,
+//         dlc: Dlc,
+//         attestation: Option<Attestation>,
+//     },
 
-    // TODO: Can be extended with CetStatus
-    /// The CFD contract's refund transaction was published but it not final yet
-    PendingRefund { common: CfdStateCommon, dlc: Dlc },
+//     // TODO: At the moment we are appending to this state. The way this is handled internally is
+//     //  by inserting the same state with more information in the database. We could consider
+//     //  changing this to insert different states or update the stae instead of inserting again.
+//     /// The CFD contract's commit transaction reached finality on chain
+//     ///
+//     /// This means that the commit transaction was detected on chain and reached finality
+//     /// confirmations and the contract will be forced to close.
+//     OpenCommitted {
+//         common: CfdStateCommon,
+//         dlc: Dlc,
+//         cet_status: CetStatus,
+//     },
 
-    /// The Cfd was refunded and the refund transaction reached finality
-    ///
-    /// This state applies to taker and maker.
-    /// This is a final state.
-    Refunded { common: CfdStateCommon, dlc: Dlc },
+//     /// The CET was published on chain but is not final yet
+//     ///
+//     /// This state applies to taker and maker.
+//     /// This state is needed, because otherwise the user does not get any feedback.
+//     PendingCet {
+//         common: CfdStateCommon,
+//         dlc: Dlc,
+//         attestation: Attestation,
+//     },
 
-    /// The Cfd was in a state that could not be continued after the application got interrupted
-    ///
-    /// This state applies to taker and maker.
-    /// This is a final state.
-    /// It is safe to remove Cfds in this state from the database.
-    SetupFailed {
-        common: CfdStateCommon,
-        info: String,
-    },
-}
+//     /// The position was closed collaboratively or non-collaboratively
+//     ///
+//     /// This state applies to taker and maker.
+//     /// This is a final state.
+//     /// This is the final state for all happy-path scenarios where we had an open position and
+// then     /// "settled" it. Settlement can be collaboratively or non-collaboratively (by
+// publishing     /// commit + cet).
+//     Closed {
+//         common: CfdStateCommon,
+//         payout: Payout,
+//     },
 
-impl CfdState {
-    pub fn outgoing_order_request() -> Self {
-        Self::OutgoingOrderRequest {
-            common: CfdStateCommon::default(),
-        }
-    }
+//     // TODO: Can be extended with CetStatus
+//     /// The CFD contract's refund transaction was published but it not final yet
+//     PendingRefund { common: CfdStateCommon, dlc: Dlc },
 
-    pub fn accepted() -> Self {
-        Self::Accepted {
-            common: CfdStateCommon::default(),
-        }
-    }
+//     /// The Cfd was refunded and the refund transaction reached finality
+//     ///
+//     /// This state applies to taker and maker.
+//     /// This is a final state.
+//     Refunded { common: CfdStateCommon, dlc: Dlc },
 
-    pub fn rejected() -> Self {
-        Self::Rejected {
-            common: CfdStateCommon::default(),
-        }
-    }
+//     /// The Cfd was in a state that could not be continued after the application got interrupted
+//     ///
+//     /// This state applies to taker and maker.
+//     /// This is a final state.
+//     /// It is safe to remove Cfds in this state from the database.
+//     SetupFailed {
+//         common: CfdStateCommon,
+//         info: String,
+//     },
+// }
 
-    pub fn contract_setup() -> Self {
-        Self::ContractSetup {
-            common: CfdStateCommon::default(),
-        }
-    }
+// impl CfdState {
+//     pub fn outgoing_order_request() -> Self {
+//         Self::OutgoingOrderRequest {
+//             common: CfdStateCommon::default(),
+//         }
+//     }
 
-    pub fn closed(payout: Payout) -> Self {
-        Self::Closed {
-            common: CfdStateCommon::default(),
-            payout,
-        }
-    }
+//     pub fn accepted() -> Self {
+//         Self::Accepted {
+//             common: CfdStateCommon::default(),
+//         }
+//     }
 
-    pub fn must_refund(dlc: Dlc) -> Self {
-        Self::PendingRefund {
-            common: CfdStateCommon::default(),
-            dlc,
-        }
-    }
+//     pub fn rejected() -> Self {
+//         Self::Rejected {
+//             common: CfdStateCommon::default(),
+//         }
+//     }
 
-    pub fn refunded(dlc: Dlc) -> Self {
-        Self::Refunded {
-            common: CfdStateCommon::default(),
-            dlc,
-        }
-    }
+//     pub fn contract_setup() -> Self {
+//         Self::ContractSetup {
+//             common: CfdStateCommon::default(),
+//         }
+//     }
 
-    pub fn setup_failed(info: String) -> Self {
-        Self::SetupFailed {
-            common: CfdStateCommon::default(),
-            info,
-        }
-    }
-}
+//     pub fn closed(payout: Payout) -> Self {
+//         Self::Closed {
+//             common: CfdStateCommon::default(),
+//             payout,
+//         }
+//     }
+
+//     pub fn must_refund(dlc: Dlc) -> Self {
+//         Self::PendingRefund {
+//             common: CfdStateCommon::default(),
+//             dlc,
+//         }
+//     }
+
+//     pub fn refunded(dlc: Dlc) -> Self {
+//         Self::Refunded {
+//             common: CfdStateCommon::default(),
+//             dlc,
+//         }
+//     }
+
+//     pub fn setup_failed(info: String) -> Self {
+//         Self::SetupFailed {
+//             common: CfdStateCommon::default(),
+//             info,
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Payout {
