@@ -395,12 +395,26 @@ where
         dlc: Result<Dlc>,
     ) -> Result<()> {
         self.setup_state = SetupState::None;
-        let dlc = dlc.context("Failed to setup contract with maker")?;
-
-        tracing::info!("Setup complete, publishing on chain now");
 
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+
+        let dlc = match dlc {
+            Ok(dlc) => dlc,
+            Err(e) => {
+                cfd.state = CfdState::SetupFailed {
+                    common: CfdStateCommon::default(),
+                    info: e.to_string(),
+                };
+
+                append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+
+                return Err(e);
+            }
+        };
+
+        tracing::info!("Setup complete, publishing on chain now");
+
         cfd.state = CfdState::PendingOpen {
             common: CfdStateCommon::default(),
             dlc: dlc.clone(),
