@@ -6,7 +6,7 @@ use self::monitor::MonitorActor;
 use self::oracle::OracleActor;
 use self::wallet::WalletActor;
 
-use super::bdk::{dummy_partially_signed_transaction, dummy_tx_id};
+use super::bdk::dummy_tx_id;
 
 pub mod monitor;
 pub mod oracle;
@@ -38,7 +38,11 @@ impl Mocks {
         // Sync methods need to be mocked before actors start
         self.oracle().await.expect_sync().return_const(());
         self.monitor().await.expect_sync().return_const(());
-        self.mock_monitor_oracle_attestation().await;
+        self.mock_oracle_attestation().await;
+        self.mock_oracle_annoucement().await;
+        self.mock_party_params().await;
+        self.mock_monitor_attestation().await;
+        self.mock_start_monitoring().await;
     }
 
     // Helper function setting up a "happy path" wallet mock
@@ -48,7 +52,7 @@ impl Mocks {
             .await
             .expect_sign()
             .times(1)
-            .returning(|_| Ok(dummy_partially_signed_transaction()))
+            .returning(|sign| Ok(sign.psbt))
             .in_sequence(&mut seq);
         self.wallet()
             .await
@@ -73,10 +77,24 @@ impl Mocks {
             .returning(|msg| wallet::build_party_params(msg));
     }
 
-    pub async fn mock_monitor_oracle_attestation(&mut self) {
+    async fn mock_oracle_attestation(&mut self) {
         self.monitor()
             .await
             .expect_oracle_attestation()
+            .return_const(());
+    }
+
+    async fn mock_monitor_attestation(&mut self) {
+        self.oracle()
+            .await
+            .expect_monitor_attestation()
+            .return_const(());
+    }
+
+    async fn mock_start_monitoring(&mut self) {
+        self.monitor()
+            .await
+            .expect_start_monitoring()
             .return_const(());
     }
 }

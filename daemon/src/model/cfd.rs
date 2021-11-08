@@ -2,7 +2,7 @@ use crate::model::{
     BitMexPriceEventId, InversePrice, Leverage, Percent, Position, Price, TakerId, Timestamp,
     TradingPair, Usd,
 };
-use crate::{monitor, oracle, payout_curve};
+use crate::{monitor, oracle, payout_curve, SETTLEMENT_INTERVAL};
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, Script, SignedAmount, Transaction, Txid};
@@ -132,7 +132,7 @@ impl Order {
         max_quantity: Usd,
         origin: Origin,
         oracle_event_id: BitMexPriceEventId,
-        settlement_time_interval_hours: Duration,
+        settlement_time_interval_hours: Duration
     ) -> Result<Self> {
         let leverage = Leverage::new(2)?;
         let liquidation_price = calculate_long_liquidation_price(leverage, price);
@@ -680,20 +680,20 @@ impl Cfd {
         self.order.oracle_event_id.timestamp()
     }
 
-    /// A factor to be added to the CFD order settlement_time_interval_hours for calculating the
+    /// A factor to be added to the CFD order settlement_interval for calculating the
     /// refund timelock.
     ///
     /// The refund timelock is important in case the oracle disappears or never publishes a
     /// signature. Ideally, both users collaboratively settle in the refund scenario. This
     /// factor is important if the users do not settle collaboratively.
-    /// `1.5` times the settlement_time_interval_hours as defined in CFD order should be safe in the
+    /// `1.5` times the settlement_interval as defined in CFD order should be safe in the
     /// extreme case where a user publishes the commit transaction right after the contract was
     /// initialized. In this case, the oracle still has `1.0 *
-    /// cfdorder.settlement_time_interval_hours` time to attest and no one can publish the refund
+    /// cfdorder.settlement_interval` time to attest and no one can publish the refund
     /// transaction.
     /// The downside is that if the oracle disappears: the users would only notice at the end
-    /// of the cfd settlement_time_interval_hours. In this case the users has to wait for another
-    /// `1.5` times of the settlement_time_interval_hours to get his funds back.
+    /// of the cfd settlement_interval. In this case the users has to wait for another
+    /// `1.5` times of the settlement_interval to get his funds back.
     const REFUND_THRESHOLD: f32 = 1.5;
 
     pub const CET_TIMELOCK: u32 = 12;
@@ -1159,6 +1159,11 @@ impl Cfd {
                 | CfdState::Accepted { .. }
                 | CfdState::ContractSetup { .. }
         )
+    }
+
+    pub fn is_elligble_for_rollover(&self, open_until_rollover: Duration) -> bool {
+        let cfd_time_since_open =  OffsetDateTime::now_utc() -(self.expiry_timestamp() - SETTLEMENT_INTERVAL);
+        matches!(self.state, CfdState::Open {attestation: None, ..}) &&  (open_until_rollover >= cfd_time_since_open)
     }
 
     pub fn role(&self) -> Role {
