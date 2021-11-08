@@ -17,7 +17,6 @@ use futures::{future, SinkExt};
 use std::collections::HashMap;
 use tokio::sync::watch;
 use xtra::prelude::*;
-use xtra::KeepRunning;
 
 pub struct TakeOffer {
     pub order_id: OrderId,
@@ -35,10 +34,6 @@ pub enum CfdAction {
     Commit {
         order_id: OrderId,
     },
-}
-
-pub struct MakerStreamMessage {
-    pub item: Result<wire::MakerToTaker>,
 }
 
 pub struct CfdSetupCompleted {
@@ -721,7 +716,7 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, W: 'static> Handler<MakerStreamMessage> for Actor<O, M, W>
+impl<O: 'static, M: 'static, W: 'static> Handler<wire::MakerToTaker> for Actor<O, M, W>
 where
     Self: xtra::Handler<CfdSetupCompleted> + xtra::Handler<CfdRollOverCompleted>,
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
@@ -730,22 +725,12 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::BuildPartyParams>,
 {
-    async fn handle(
-        &mut self,
-        message: MakerStreamMessage,
-        ctx: &mut Context<Self>,
-    ) -> KeepRunning {
-        let msg = match message.item {
-            Ok(msg) => msg,
-            Err(e) => {
-                tracing::warn!("Error while receiving message from maker: {:#}", e);
-                return KeepRunning::Yes;
-            }
-        };
-
+    async fn handle(&mut self, msg: wire::MakerToTaker, ctx: &mut Context<Self>) {
         tracing::trace!("message from maker: {:?}", msg);
-
         match msg {
+            wire::MakerToTaker::Heartbeat => {
+                unreachable!("Heartbeats should be handled somewhere else")
+            }
             wire::MakerToTaker::CurrentOrder(current_order) => {
                 log_error!(self.handle_new_order(current_order))
             }
@@ -780,8 +765,6 @@ where
                 log_error!(self.handle_inc_roll_over_msg(roll_over_msg))
             }
         }
-
-        KeepRunning::Yes
     }
 }
 
@@ -833,11 +816,6 @@ impl Message for TakeOffer {
 
 impl Message for CfdAction {
     type Result = Result<()>;
-}
-
-// this signature is a bit different because we use `Address::attach_stream`
-impl Message for MakerStreamMessage {
-    type Result = KeepRunning;
 }
 
 impl Message for CfdSetupCompleted {

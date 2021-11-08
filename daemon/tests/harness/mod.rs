@@ -2,11 +2,12 @@ use crate::harness::mocks::monitor::MonitorActor;
 use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
+use daemon::connection::{Connect, ConnectionStatus};
 use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, Order, Origin};
 use daemon::model::{Price, Usd};
 use daemon::seed::Seed;
-use daemon::{connection, db, maker_cfd, maker_inc_connections, taker_cfd};
+use daemon::{db, maker_cfd, maker_inc_connections, taker_cfd};
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -144,6 +145,7 @@ impl Maker {
 pub struct Taker {
     pub order_feed: watch::Receiver<Option<Order>>,
     pub cfd_feed: watch::Receiver<Vec<Cfd>>,
+    pub maker_status_feed: watch::Receiver<ConnectionStatus>,
     pub cfd_actor_addr: xtra::Address<taker_cfd::Actor<OracleActor, MonitorActor, WalletActor>>,
     pub mocks: mocks::Mocks,
 }
@@ -158,13 +160,6 @@ impl Taker {
 
         let noise_static_sk = seed.derive_noise_static_secret();
 
-        let connection::Actor {
-            send_to_maker,
-            read_from_maker,
-        } = connection::Actor::new(maker_address, maker_noise_pub_key, noise_static_sk)
-            .await
-            .expect("Connected to maker");
-
         let db = in_memory_db().await;
 
         let mut mocks = mocks::Mocks::default();
@@ -177,8 +172,7 @@ impl Taker {
             db,
             wallet_addr,
             oracle_pk,
-            send_to_maker,
-            read_from_maker,
+            noise_static_sk,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
             N_PAYOUTS_FOR_TEST,
@@ -186,9 +180,20 @@ impl Taker {
         .await
         .unwrap();
 
+        taker
+            .connection_actor_addr
+            .send(Connect {
+                maker_noise_static_pk: maker_noise_pub_key,
+                maker_addr: maker_address,
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
         Self {
             order_feed: taker.order_feed_receiver,
             cfd_feed: taker.cfd_feed_receiver,
+            maker_status_feed: taker.maker_online_status_feed_receiver,
             cfd_actor_addr: taker.cfd_actor_addr,
             mocks,
         }
