@@ -4,7 +4,8 @@ use anyhow::Result;
 use futures::channel::mpsc;
 use futures::future::{AbortHandle, Abortable};
 use futures::{SinkExt, StreamExt};
-use tokio::{sync::watch, time::sleep};
+use tokio::sync::watch;
+use tokio::time::sleep;
 use xtra_productivity::xtra_productivity;
 
 /// Actor encapsulating monitoring of a "connection".
