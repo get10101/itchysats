@@ -28,38 +28,64 @@ jobs:
       - uses: Swatinem/rust-cache@v1.3.0
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
-  check_frontend:
+  check_maker_frontend:
     defaults:
       run:
-        working-directory: frontend
+        working-directory: maker-frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2.4.0
       - uses: actions/setup-node@v2
         with:
           cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
+          cache-dependency-path: maker-frontend/yarn.lock
       - run: yarn install
       - run: yarn run eslint
       - run: yarn run tsc
 
-  build_and_test_frontend:
-    strategy:
-      matrix:
-        app: [ maker, taker ]
+  check_taker_frontend:
     defaults:
       run:
-        working-directory: frontend
+        working-directory: taker-frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2.4.0
       - uses: actions/setup-node@v2
         with:
           cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
+          cache-dependency-path: taker-frontend/yarn.lock
       - run: yarn install
-      - run: APP=${{ matrix.app }} yarn test
-      - run: APP=${{ matrix.app }} yarn build
+      - run: yarn run eslint
+      - run: yarn run tsc
+
+  build_and_test_maker_frontend:
+    defaults:
+      run:
+        working-directory: maker-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2.4.0
+      - uses: actions/setup-node@v2
+        with:
+          cache: 'yarn'
+          cache-dependency-path: maker-frontend/yarn.lock
+      - run: yarn install
+      - run: APP=maker yarn test
+      - run: APP=maker yarn build
+
+  build_and_test_taker_frontend:
+    defaults:
+      run:
+        working-directory: taker-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2.4.0
+      - uses: actions/setup-node@v2
+        with:
+          cache: 'yarn'
+          cache-dependency-path: taker-frontend/yarn.lock
+      - run: yarn install
+      - run: yarn build
 
   test_daemons:
     strategy:

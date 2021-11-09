@@ -193,7 +193,7 @@ pub async fn post_cfd_action(
 pub fn get_health_check() {}
 
 #[derive(RustEmbed)]
-#[folder = "../frontend/dist/maker"]
+#[folder = "../maker-frontend/dist/maker"]
 struct Asset;
 
 #[rocket::get("/assets/<file..>")]

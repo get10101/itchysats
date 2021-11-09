@@ -1,9 +1,9 @@
 status = [
   "formatting",
   "clippy",
-  "check_frontend",
-  "build_and_test_frontend (maker)",
-  "build_and_test_frontend (taker)",
+  "check_maker_frontend",
+  "build_and_test_taker_frontend",
+  "build_and_test_maker_frontend",
   "test_daemons (ubuntu-latest)",
   "test_daemons (macos-latest)",
   "test_daemons (windows-latest)",

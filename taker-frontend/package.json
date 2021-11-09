@@ -1,0 +1,67 @@
+{
+  "name": "itchysats",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview",
+    "eslint": "eslint src/**/*.{ts,tsx}",
+    "tsc": "tsc"
+  },
+  "dependencies": {
+    "@chakra-ui/icons": "^1.0.16",
+    "@chakra-ui/react": "^1.6.10",
+    "@emotion/react": "^11",
+    "@emotion/styled": "^11",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "@testing-library/jest-dom": "^5.9.0",
+    "@testing-library/react": "^10.2.1",
+    "@testing-library/user-event": "^12.0.2",
+    "@types/jest": "^25.0.0",
+    "@types/node": "^12.0.0",
+    "@types/react": "^17.0.34",
+    "@types/react-dom": "^17.0.11",
+    "@types/react-router-dom": "5.3.1",
+    "framer-motion": "^4",
+    "react-async": "^10.0.1",
+    "react-icons": "^3.0.0",
+    "react-refresh": "^0.10.0",
+    "react-router-dom": "5.3.0",
+    "react-scripts": "4.0.3",
+    "react-sse-hooks": "^1.0.5",
+    "web-vitals": "^0.2.2",
+    "@vitejs/plugin-react": "^1.0.0",
+    "typescript": "^4.4.4",
+    "vite": "^2.6.13"
+  },
+  "devDependencies": {
+    "@types/eslint": "^7",
+    "@types/react": "^17.0.34",
+    "@types/react-dom": "^17.0.11",
+    "typescript": "^4.4.4",
+    "vite": "^2.6.13"
+  },
+  "eslintConfig": {
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+      "@typescript-eslint"
+    ],
+    "parserOptions": {
+      "project": "./tsconfig.json"
+    },
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ],
+    "rules": {
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/promise-function-async": "error",
+      "require-await": "off",
+      "@typescript-eslint/require-await": "error",
+      "@typescript-eslint/no-use-before-define": "off",
+      "@typescript-eslint/no-unused-vars": "error",
+      "react-hooks/exhaustive-deps": "error"
+    }
+  }
+}
