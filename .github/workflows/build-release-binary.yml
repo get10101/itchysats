@@ -89,7 +89,7 @@ jobs:
         run: |
           cd maker-frontend;
           yarn
-          APP=maker yarn build
+          yarn build
 
       # Overwrite taker frontend with our new fancy UI
       - name: Build taker frontend

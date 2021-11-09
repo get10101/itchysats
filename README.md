@@ -14,8 +14,8 @@ All the components can be started at once by running the following script:
 ./start_all.sh
 ```
 
-Note: Before first run, you need to run `cd frontend; yarn install` command to
-ensure that all dependencies get installed.
+Note: Before first run, you need to run `cd maker-frontend; yarn install` and `cd taker-frontend; yarn install` command
+to ensure that all dependencies get installed.
 
 The script combines the logs from all binaries inside a single terminal so it
 might not be ideal for all cases, but it is convenient for quick regression testing.
@@ -46,15 +46,22 @@ Note: The sqlite databases for maker and taker are currently created in the proj
 
 ## Starting the maker and taker frontend
 
-We use a single react project for hosting both the taker and the maker frontends.
-However, the development environment still needs to be start twice!
-Which frontend to start is configured via the `APP` environment variable.
+We use a different react project for hosting the taker and the maker frontend.
+
+To start the maker frontend
 
 ```bash
-cd frontend
+cd maker-frontend
 yarn install
-APP=taker yarn dev
-APP=maker yarn dev
+yarn dev
+```
+
+To start the taker frontend
+
+```bash
+cd taker-frontend
+yarn install
+yarn dev
 ```
 
 Bundling the web frontend and serving it from the respective daemon is yet to be configured.

@@ -1,39 +1,20 @@
-import reactRefresh from "@vitejs/plugin-react-refresh";
+import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 import { defineConfig } from "vite";
-import dynamicApp from "./dynamicApp";
-
-const app = process.env.APP;
-
-if (!app || (app !== "maker" && app !== "taker")) {
-    throw new Error("APP environment variable needs to be set to `maker` `taker`");
-}
-
-const backendPorts = {
-    "taker": 8000,
-    "maker": 8001,
-};
 
 // https://vitejs.dev/config/
 export default defineConfig({
-    plugins: [
-        (
-            process.env.NODE_ENV !== "test"
-                ? [reactRefresh()]
-                : []
-        ),
-        dynamicApp(app),
-    ],
+    plugins: [react()],
     build: {
         rollupOptions: {
             input: resolve(__dirname, `index.html`),
         },
-        outDir: `dist/${app}`,
+        outDir: `dist`,
     },
     server: {
         proxy: {
-            "/api": `http://localhost:${backendPorts[app]}`,
-            "/alive": `http://localhost:${backendPorts[app]}`,
+            "/api": "http://localhost:8001",
+            "/alive": `http://localhost:8001`,
         },
     },
 });
