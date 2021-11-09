@@ -11,6 +11,9 @@ jobs:
   draft-new-release:
     name: "Draft a new release"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     env:
       RELEASE_BRANCH: release/${{ github.event.inputs.version }}
     steps:
