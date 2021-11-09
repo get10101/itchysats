@@ -1,6 +1,6 @@
-# Project Hermes
+# Itchy Sats
 
-[![Bors enabled](https://bors.tech/images/badge_small.svg)](https://app.bors.tech/repositories/38091)
+[![Bors enabled](https://bors.tech/images/badge_small.svg)](https://app.bors.tech/repositories/39253)
 
 CFD trading on Bitcoin.
 
