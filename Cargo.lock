@@ -264,7 +264,6 @@ dependencies = [
  "base64-compat",
  "bech32",
  "bitcoin_hashes 0.10.0",
- "bitcoinconsensus",
  "secp256k1",
  "serde",
 ]
@@ -282,16 +281,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "006cc91e1a1d99819bc5b8214be3555c1f0611b169f527a1fdc54ed1f2b745b0"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "bitcoinconsensus"
-version = "0.19.0-3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a8aa43b5cd02f856cb126a9af819e77b8910fdd74dd1407be649f2f5fe3a1b5"
-dependencies = [
- "cc",
- "libc",
 ]
 
 [[package]]
@@ -366,21 +355,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d26a6ce4b6a484fa3edb70f7efa6fc430fd2b87285fe8b84304fd0936faa0dc0"
 dependencies = [
  "jobserver",
-]
-
-[[package]]
-name = "cfd_protocol"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bdk",
- "bit-vec",
- "bitcoin",
- "itertools",
- "proptest",
- "rand 0.6.5",
- "secp256k1-zkp",
- "thiserror",
 ]
 
 [[package]]
@@ -634,7 +608,6 @@ dependencies = [
  "atty",
  "bdk",
  "bytes",
- "cfd_protocol",
  "chrono",
  "clap",
  "derive_more",
@@ -643,6 +616,7 @@ dependencies = [
  "hkdf",
  "http-api-problem",
  "itertools",
+ "maia",
  "mockall",
  "mockall_derive",
  "nalgebra",
@@ -1471,6 +1445,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "maia"
+version = "0.1.0"
+source = "git+https://github.com/comit-network/maia?rev=70fc548da0fe4f34478fb34ec437fa9a434c7ee3#70fc548da0fe4f34478fb34ec437fa9a434c7ee3"
+dependencies = [
+ "anyhow",
+ "bdk",
+ "bit-vec",
+ "itertools",
+ "rand 0.6.5",
+ "secp256k1-zkp",
+ "thiserror",
+]
+
+[[package]]
 name = "matchers"
 version = "0.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2022,29 +2010,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "proptest"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e0d9cc07f18492d879586c92b485def06bc850da3118075cd45d50e9c95b0e5"
-dependencies = [
- "bitflags",
- "byteorder",
- "lazy_static",
- "num-traits",
- "quick-error",
- "rand 0.8.4",
- "rand_chacha 0.3.1",
- "rand_xorshift 0.3.0",
- "regex-syntax",
-]
-
-[[package]]
-name = "quick-error"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
-
-[[package]]
 name = "quote"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2068,7 +2033,7 @@ dependencies = [
  "rand_jitter",
  "rand_os",
  "rand_pcg",
- "rand_xorshift 0.1.1",
+ "rand_xorshift",
  "winapi 0.3.9",
 ]
 
@@ -2238,15 +2203,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cbf7e9e623549b0e21f6e97cf8ecf247c1a8fd2e8a992ae265314300b2455d5c"
 dependencies = [
  "rand_core 0.3.1",
-]
-
-[[package]]
-name = "rand_xorshift"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
-dependencies = [
- "rand_core 0.6.3",
 ]
 
 [[package]]

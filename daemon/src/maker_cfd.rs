@@ -12,9 +12,9 @@ use crate::{log_error, maker_inc_connections, monitor, oracle, setup_contract, w
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use cfd_protocol::secp256k1_zkp::Signature;
 use futures::channel::mpsc;
 use futures::{future, SinkExt};
+use maia::secp256k1_zkp::Signature;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 use std::collections::HashMap;

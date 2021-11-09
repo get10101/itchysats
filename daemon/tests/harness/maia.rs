@@ -2,9 +2,9 @@ use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::{Amount, Network};
-use cfd_protocol::secp256k1_zkp::rand::{CryptoRng, RngCore};
-use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
-use cfd_protocol::Announcement;
+use maia::secp256k1_zkp::rand::{CryptoRng, RngCore};
+use maia::secp256k1_zkp::{schnorrsig, SecretKey};
+use maia::Announcement;
 use std::str::FromStr;
 
 pub fn dummy_wallet(

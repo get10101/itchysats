@@ -1,4 +1,4 @@
-use crate::harness::cfd_protocol::OliviaData;
+use crate::harness::maia::OliviaData;
 use daemon::model::BitMexPriceEventId;
 use daemon::oracle;
 use mockall::*;

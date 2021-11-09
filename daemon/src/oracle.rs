@@ -3,7 +3,7 @@ use crate::model::BitMexPriceEventId;
 use crate::{log_error, tokio_ext, try_continue};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
+use maia::secp256k1_zkp::{schnorrsig, SecretKey};
 use rocket::time::{OffsetDateTime, Time};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -278,9 +278,9 @@ pub struct Announcement {
     pub nonce_pks: Vec<schnorrsig::PublicKey>,
 }
 
-impl From<Announcement> for cfd_protocol::Announcement {
+impl From<Announcement> for maia::Announcement {
     fn from(announcement: Announcement) -> Self {
-        cfd_protocol::Announcement {
+        maia::Announcement {
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks,
         }
@@ -300,7 +300,7 @@ impl xtra::Message for NewAttestationFetched {
 mod olivia_api {
     use crate::model::BitMexPriceEventId;
     use anyhow::Context;
-    use cfd_protocol::secp256k1_zkp::{schnorrsig, SecretKey};
+    use maia::secp256k1_zkp::{schnorrsig, SecretKey};
     use std::convert::TryFrom;
     use time::OffsetDateTime;
 

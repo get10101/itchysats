@@ -1,11 +1,11 @@
-use crate::harness::cfd_protocol::dummy_wallet;
+use crate::harness::maia::dummy_wallet;
 use anyhow::Result;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{ecdsa, Amount, Txid};
-use cfd_protocol::secp256k1_zkp::Secp256k1;
-use cfd_protocol::{PartyParams, WalletExt};
 use daemon::model::{Timestamp, WalletInfo};
 use daemon::wallet::{self};
+use maia::secp256k1_zkp::Secp256k1;
+use maia::{PartyParams, WalletExt};
 use mockall::*;
 use rand::thread_rng;
 use std::sync::Arc;

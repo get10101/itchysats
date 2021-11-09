@@ -8,8 +8,8 @@ use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, Script, SignedAmount, Transaction, Txid};
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
-use cfd_protocol::secp256k1_zkp::{self, EcdsaAdaptorSignature, SECP256K1};
-use cfd_protocol::{finalize_spend_transaction, spending_tx_sighash, TransactionExt};
+use maia::secp256k1_zkp::{self, EcdsaAdaptorSignature, SECP256K1};
+use maia::{finalize_spend_transaction, spending_tx_sighash, TransactionExt};
 use rocket::request::FromParam;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -1715,7 +1715,7 @@ impl Dlc {
 
             (outpoint, amount)
         };
-        let (tx, sighash) = cfd_protocol::close_transaction(
+        let (tx, sighash) = maia::close_transaction(
             lock_desc,
             lock_outpoint,
             lock_amount,
@@ -1740,7 +1740,7 @@ impl Dlc {
         ));
 
         let (_, lock_desc) = &self.lock;
-        let spend_tx = cfd_protocol::finalize_spend_transaction(
+        let spend_tx = maia::finalize_spend_transaction(
             close_tx,
             lock_desc,
             (own_pk, own_sig),

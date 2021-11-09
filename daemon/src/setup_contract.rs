@@ -10,14 +10,14 @@ use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Amount, PublicKey, Transaction};
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
-use cfd_protocol::secp256k1_zkp::EcdsaAdaptorSignature;
-use cfd_protocol::{
+use futures::stream::FusedStream;
+use futures::{Sink, SinkExt, StreamExt};
+use maia::secp256k1_zkp::EcdsaAdaptorSignature;
+use maia::{
     commit_descriptor, compute_adaptor_pk, create_cfd_transactions, interval, lock_descriptor,
     renew_cfd_transactions, secp256k1_zkp, spending_tx_sighash, Announcement, PartyParams,
     PunishParams,
 };
-use futures::stream::FusedStream;
-use futures::{Sink, SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::ops::RangeInclusive;

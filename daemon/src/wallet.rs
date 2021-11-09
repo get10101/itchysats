@@ -7,8 +7,9 @@ use bdk::bitcoin::{Address, Amount, PublicKey, Script, Transaction, Txid};
 use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
 use bdk::wallet::AddressIndex;
 use bdk::{electrum_client, FeeRate, KeychainKind, SignOptions};
-use cfd_protocol::{PartyParams, WalletExt};
+use maia::{PartyParams, WalletExt};
 use rocket::serde::json::Value;
+
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
