@@ -12,6 +12,9 @@ jobs:
   build_docker_image:
     name: Build docker images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
