@@ -3,15 +3,20 @@ use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use daemon::maker_cfd::CfdAction;
-use daemon::model::cfd::{Cfd, Order};
-use daemon::model::Usd;
+use daemon::model::cfd::{Cfd, Order, Origin};
+use daemon::model::{Price, Usd};
 use daemon::seed::Seed;
 use daemon::{connection, db, maker_cfd, maker_inc_connections, taker_cfd};
+use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::task::Poll;
 use tokio::sync::watch;
+use tracing::subscriber::DefaultGuard;
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 
@@ -207,4 +212,49 @@ async fn in_memory_db() -> SqlitePool {
     db::run_migrations(&pool).await.unwrap();
 
     pool
+}
+
+/// The order cannot be directly compared in tests as the origin is different,
+/// therefore wrap the assertion macro in a code that unifies the 'Origin'
+pub fn assert_is_same_order(a: &Order, b: &Order) {
+    // Assume the same origin
+    let mut a = a.clone();
+    let mut b = b.clone();
+    a.origin = Origin::Ours;
+    b.origin = Origin::Ours;
+
+    assert_eq!(a, b);
+}
+
+pub fn dummy_new_order() -> maker_cfd::NewOrder {
+    maker_cfd::NewOrder {
+        price: Price::new(dec!(50_000)).expect("unexpected failure"),
+        min_quantity: Usd::new(dec!(5)),
+        max_quantity: Usd::new(dec!(100)),
+    }
+}
+
+pub fn init_tracing() -> DefaultGuard {
+    let filter = EnvFilter::from_default_env()
+        // apply warning level globally
+        .add_directive(format!("{}", LevelFilter::WARN).parse().unwrap())
+        // log traces from test itself
+        .add_directive(
+            format!("happy_path={}", LevelFilter::DEBUG)
+                .parse()
+                .unwrap(),
+        )
+        .add_directive(format!("taker={}", LevelFilter::DEBUG).parse().unwrap())
+        .add_directive(format!("maker={}", LevelFilter::DEBUG).parse().unwrap())
+        .add_directive(format!("daemon={}", LevelFilter::DEBUG).parse().unwrap())
+        .add_directive(format!("rocket={}", LevelFilter::WARN).parse().unwrap());
+
+    let guard = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_test_writer()
+        .set_default();
+
+    tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
+
+    guard
 }
