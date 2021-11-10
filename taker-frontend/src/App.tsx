@@ -120,6 +120,9 @@ export const App = () => {
             <Nav walletInfo={walletInfo} />
             <Box textAlign="center" padding={3}>
                 <Switch>
+                    <Route path="/wallet">
+                        <Wallet walletInfo={walletInfo} />
+                    </Route>
                     <Route path="/">
                         <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
                             <Trade
@@ -157,9 +160,6 @@ export const App = () => {
                                 title={"Closed Positions"}
                             />
                         </VStack>
-                    </Route>
-                    <Route path="/wallet">
-                        <Wallet walletInfo={walletInfo} />
                     </Route>
                 </Switch>
             </Box>
