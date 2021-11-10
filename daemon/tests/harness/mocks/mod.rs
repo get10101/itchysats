@@ -6,6 +6,8 @@ use self::monitor::MonitorActor;
 use self::oracle::OracleActor;
 use self::wallet::WalletActor;
 
+use super::bdk::{dummy_partially_signed_transaction, dummy_tx_id};
+
 pub mod monitor;
 pub mod oracle;
 pub mod wallet;
@@ -29,6 +31,38 @@ impl Mocks {
 
     pub async fn oracle(&mut self) -> MutexGuard<'_, oracle::MockOracle> {
         self.oracle.lock().await
+    }
+
+    // Helper function setting up a "happy path" wallet mock
+    pub async fn mock_wallet_sign_and_broadcast(&mut self) {
+        let mut seq = mockall::Sequence::new();
+        self.wallet()
+            .await
+            .expect_sign()
+            .times(1)
+            .returning(|_| Ok(dummy_partially_signed_transaction()))
+            .in_sequence(&mut seq);
+        self.wallet()
+            .await
+            .expect_broadcast()
+            .times(1)
+            .returning(|_| Ok(dummy_tx_id()))
+            .in_sequence(&mut seq);
+    }
+
+    pub async fn mock_oracle_annoucement(&mut self) {
+        self.oracle()
+            .await
+            .expect_get_announcement()
+            .return_const(Some(oracle::dummy_announcement()));
+    }
+
+    pub async fn mock_party_params(&mut self) {
+        #[allow(clippy::redundant_closure)] // clippy is in the wrong here
+        self.wallet()
+            .await
+            .expect_build_party_params()
+            .returning(|msg| wallet::build_party_params(msg));
     }
 }
 
