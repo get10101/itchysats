@@ -4,7 +4,6 @@ import {
     Button,
     ButtonGroup,
     Center,
-    Checkbox,
     Circle,
     FormControl,
     FormHelperText,
@@ -163,7 +162,9 @@ const Trade = (
                             <Modal isOpen={isOpen} onClose={onClose}>
                                 <ModalOverlay />
                                 <ModalContent>
-                                    <ModalHeader>Market buy <b>{quantity}</b> of BTC/USD @ <b>{price}</b></ModalHeader>
+                                    <ModalHeader>
+                                        Market buy <b>{quantity}</b> of BTC/USD @ <b>{price}</b>
+                                    </ModalHeader>
                                     <ModalCloseButton />
                                     <ModalBody>
                                         <Table variant="striped" colorScheme="gray" size="sm">
@@ -192,7 +193,6 @@ const Trade = (
                                             <Button colorScheme="teal" isLoading={isSubmitting} onClick={goLong}>
                                                 Confirm
                                             </Button>
-                                            <Checkbox defaultIsChecked>Always show this dialog</Checkbox>
                                         </HStack>
                                     </ModalFooter>
                                 </ModalContent>
