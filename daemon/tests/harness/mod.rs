@@ -16,6 +16,7 @@ use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 
 pub mod bdk;
+pub mod flow;
 pub mod maia;
 pub mod mocks;
 
