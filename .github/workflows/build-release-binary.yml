@@ -180,10 +180,12 @@ jobs:
           username:  ${{ github.repository }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish docker images
+      - name: Download release from github
         run: |
           gh release download ${{ github.event.release.tag_name }} -p '*Linux_x86_64*' -p '*aarch64*' -p '*armv7*'
 
+      - name: Unpack archives
+        run: |
           # We need to extract into sub folders to so that our dockerimage can fine the binaries.
           #
           # By providing `platform` to `docker buildx` the variable `TARGETPLATFORM` will be available
@@ -199,6 +201,8 @@ jobs:
           7z x maker_${{ github.event.release.tag_name }}_Linux_armv7.tar -olinux/arm/v7
           7z x taker_${{ github.event.release.tag_name }}_Linux_armv7.tar -olinux/arm/v7
 
+      - name: Build maker docker image
+        run: |
           docker buildx build \
               --push \
               --platform linux/amd64,linux/arm64,linux/arm/v7 \
@@ -207,6 +211,9 @@ jobs:
               --build-arg BINARY_PATH=maker \
               .
 
+
+      - name: Build taker docker image
+        run: |
           docker buildx build \
               --push \
               --platform linux/amd64,linux/arm64,linux/arm/v7 \
@@ -214,6 +221,7 @@ jobs:
               --tag ghcr.io/${{ github.repository }}/taker:${{ github.event.release.tag_name }} \
               --build-arg BINARY_PATH=taker \
               .
+
 
 
 
