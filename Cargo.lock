@@ -3392,20 +3392,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
 
 [[package]]
-name = "trybuild"
-version = "1.0.52"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "150e726dc059e6fbd4fce3288f5bb3cf70128cf63b0dde23b938a3cad810fb23"
-dependencies = [
- "glob",
- "lazy_static",
- "serde",
- "serde_json",
- "termcolor",
- "toml",
-]
-
-[[package]]
 name = "tungstenite"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3846,13 +3832,10 @@ dependencies = [
 [[package]]
 name = "xtra_productivity"
 version = "0.1.0"
+source = "git+https://github.com/comit-network/xtra-productivity?rev=eda11a682dbbf16a9004cfe5e30baa1c60062a67#eda11a682dbbf16a9004cfe5e30baa1c60062a67"
 dependencies = [
- "async-trait",
  "quote",
  "syn",
- "tokio",
- "trybuild",
- "xtra",
 ]
 
 [[package]]
