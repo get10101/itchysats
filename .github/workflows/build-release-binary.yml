@@ -197,21 +197,33 @@ jobs:
 
       - name: Build maker docker image
         run: |
+          VERSION=${{ github.event.release.tag_name }}
+
+          if [ "$VERSION" = "preview" ]; then
+              VERSION=latest
+          fi
+
           docker buildx build \
               --push \
               --platform linux/amd64,linux/arm64,linux/arm/v7 \
               --label "org.opencontainers.image.source https://github.com/${{ github.repository }}" \
-              --tag ghcr.io/${{ github.repository }}/maker:${{ github.event.release.tag_name }} \
+              --tag ghcr.io/${{ github.repository }}/maker:${VERSION} \
               --build-arg BINARY_PATH=maker \
               .
 
 
       - name: Build taker docker image
         run: |
+          VERSION=${{ github.event.release.tag_name }}
+
+          if [ "$VERSION" = "preview" ]; then
+              VERSION=latest
+          fi
+
           docker buildx build \
               --push \
               --platform linux/amd64,linux/arm64,linux/arm/v7 \
               --label "org.opencontainers.image.source https://github.com/${{ github.repository }}" \
-              --tag ghcr.io/${{ github.repository }}/taker:${{ github.event.release.tag_name }} \
+              --tag ghcr.io/${{ github.repository }}/taker:${VERSION} \
               --build-arg BINARY_PATH=taker \
               .
