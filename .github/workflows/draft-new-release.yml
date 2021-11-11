@@ -19,15 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v2.4.0
         with:
-          token: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+          token: ${{ secrets.ITCHY_GITHUB_TOKEN }}
 
       - name: Create release branch
         run: git checkout -b ${{ env.RELEASE_BRANCH }}
 
       - name: Initialize mandatory git config
         run: |
-          git config user.name "${{ secrets.BOTTY_NAME }}"
-          git config user.email ${{ secrets.BOTTY_EMAIL }}
+          git config user.name "${{ secrets.ITCHY_NAME }}"
+          git config user.email ${{ secrets.ITCHY_EMAIL }}
 
       - name: Bump version in Cargo.toml
         uses: thomaseizinger/set-crate-version@1.0.0
@@ -66,4 +66,4 @@ jobs:
         env:
           # Using a bot account is important to trigger subsequent workflows.
           # See https://devopsdirective.com/posts/2020/07/stupid-github-actions/#2----recursive-action.
-          GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.ITCHY_GITHUB_TOKEN }}

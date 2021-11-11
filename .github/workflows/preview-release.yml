@@ -10,7 +10,7 @@ jobs:
     name: Create preview release
     runs-on: ubuntu-latest
     env:
-      GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.ITCHY_GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v2.4.0
 

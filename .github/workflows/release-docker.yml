@@ -16,7 +16,7 @@ jobs:
       contents: read
       packages: write
     env:
-      GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.ITCHY_GITHUB_TOKEN }}
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@v2.4.0
