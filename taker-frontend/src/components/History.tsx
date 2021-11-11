@@ -4,7 +4,6 @@ import {
     Box,
     Button,
     Center,
-    Checkbox,
     Divider,
     GridItem,
     Heading,
@@ -223,7 +222,6 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
                                         >
                                             Close
                                         </Button>
-                                        <Checkbox defaultIsChecked>Don't show this again</Checkbox>
                                     </PopoverFooter>
                                 </PopoverContent>
                             </>)}
