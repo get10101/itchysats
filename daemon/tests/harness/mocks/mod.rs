@@ -32,6 +32,15 @@ impl Mocks {
         self.oracle.lock().await
     }
 
+    /// Mock message handlers that are not important for the test, but the cfd
+    /// actor still sends messages
+    pub async fn mock_common_empty_handlers(&mut self) {
+        // Sync methods need to be mocked before actors start
+        self.oracle().await.expect_sync().return_const(());
+        self.monitor().await.expect_sync().return_const(());
+        self.mock_monitor_oracle_attestation().await;
+    }
+
     // Helper function setting up a "happy path" wallet mock
     pub async fn mock_wallet_sign_and_broadcast(&mut self) {
         let mut seq = mockall::Sequence::new();

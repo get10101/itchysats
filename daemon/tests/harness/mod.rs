@@ -55,13 +55,9 @@ impl Maker {
     pub async fn start(oracle_pk: schnorrsig::PublicKey) -> Self {
         let db = in_memory_db().await;
 
-        let mocks = mocks::Mocks::default();
-
+        let mut mocks = mocks::Mocks::default();
         let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
-
-        // Sync method need to be mocked before the actors start
-        mocks.oracle.lock().await.expect_sync().return_const(());
-        mocks.monitor.lock().await.expect_sync().return_const(());
+        mocks.mock_common_empty_handlers().await;
 
         let wallet_addr = wallet.create(None).spawn_global();
 
@@ -168,12 +164,9 @@ impl Taker {
 
         let db = in_memory_db().await;
 
-        let mocks = mocks::Mocks::default();
+        let mut mocks = mocks::Mocks::default();
         let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
-
-        // Sync method need to be mocked before the actors start
-        mocks.oracle.lock().await.expect_sync().return_const(());
-        mocks.monitor.lock().await.expect_sync().return_const(());
+        mocks.mock_common_empty_handlers().await;
 
         let wallet_addr = wallet.create(None).spawn_global();
 
