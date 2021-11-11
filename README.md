@@ -14,8 +14,8 @@ All the components can be started at once by running the following script:
 ./start_all.sh
 ```
 
-Note: Before first run, you need to run `cd frontend; yarn install` command to
-ensure that all dependencies get installed.
+Note: Before first run, you need to run `cd maker-frontend; yarn install; cd../taker-frontend; yarn install` command to ensure that all dependencies get
+installed.
 
 The script combines the logs from all binaries inside a single terminal so it
 might not be ideal for all cases, but it is convenient for quick regression testing.
@@ -46,24 +46,31 @@ Note: The sqlite databases for maker and taker are currently created in the proj
 
 ## Starting the maker and taker frontend
 
-We use a single react project for hosting both the taker and the maker frontends.
-However, the development environment still needs to be start twice!
-Which frontend to start is configured via the `APP` environment variable.
+We use a separate react projects for hosting taker and maker frontends.
+
+At the moment you will need a browser extension to allow CORS headers like `CORS Everywhere` ([Firefox Extension](https://addons.mozilla.org/en-US/firefox/addon/cors-everywhere/)) to use the frontends.
+
+### Taker
 
 ```bash
-cd frontend
+cd taker-frontend
 yarn install
-APP=taker yarn dev
-APP=maker yarn dev
+yarn dev
 ```
 
-Bundling the web frontend and serving it from the respective daemon is yet to be configured.
-At the moment you will need a browser extension to allow CORS headers like `CORS Everywhere` ([Firefox Extension](https://addons.mozilla.org/en-US/firefox/addon/cors-everywhere/)) to use the frontends.
+### Maker
+
+```bash
+cd maker-frontend
+yarn install
+yarn dev
+```
 
 ### Linting
 
 To run eslint, use:
 
 ```bash
-cd frontend && yarn run eslint
+cd maker-frontend && yarn run eslint
+cd taker-frontend && yarn run eslint
 ```
