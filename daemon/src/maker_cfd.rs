@@ -442,7 +442,17 @@ where
             }
         };
 
-        // 2. Insert CFD in DB
+        // 2. Remove current order
+        // The order is removed before we update the state, because the maker might react on the
+        // state change. Once we know that we go for either an accept/reject scenario we
+        // have to remove the current order.
+        self.current_order_id = None;
+        self.takers
+            .do_send_async(maker_inc_connections::BroadcastOrder(None))
+            .await?;
+        self.order_feed_sender.send(None)?;
+
+        // 3. Insert CFD in DB
         let cfd = Cfd::new(
             current_order.clone(),
             quantity,
@@ -455,7 +465,9 @@ where
         );
         insert_cfd_and_send_to_feed(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
-        // 3. check if order has acceptable amounts
+        // 4. check if order has acceptable amounts and if not reject the cfd
+        // Since rejection is tied to the cfd state at the moment we can only do this after creating
+        // a cfd.
         if quantity < current_order.min_quantity || quantity > current_order.max_quantity {
             tracing::warn!(
                 "Order rejected because quantity {} was out of bounds. It was either <{} or >{}",
@@ -465,16 +477,7 @@ where
             );
 
             self.reject_order(taker_id, cfd, conn).await?;
-
-            return Ok(());
         }
-
-        // 4. Remove current order
-        self.current_order_id = None;
-        self.takers
-            .do_send_async(maker_inc_connections::BroadcastOrder(None))
-            .await?;
-        self.order_feed_sender.send(None)?;
 
         Ok(())
     }
@@ -500,11 +503,6 @@ where
         Ok(())
     }
 
-    /// Reject an order
-    ///
-    /// Rejection includes removing the order and saving in the db that it was rejected.
-    /// In the current model it is essential to remove the order because a taker
-    /// that received a rejection cannot communicate with the maker until a new order is published.
     async fn reject_order(
         &mut self,
         taker_id: TakerId,
@@ -521,13 +519,6 @@ where
                 command: TakerCommand::NotifyOrderRejected { id: cfd.order.id },
             })
             .await?;
-
-        // Remove order for all
-        self.current_order_id = None;
-        self.takers
-            .do_send_async(maker_inc_connections::BroadcastOrder(None))
-            .await?;
-        self.order_feed_sender.send(None)?;
 
         Ok(())
     }
