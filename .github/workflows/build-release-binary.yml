@@ -89,7 +89,7 @@ jobs:
         run: |
           cd maker-frontend;
           yarn
-          APP=maker yarn build
+          yarn build
 
       # Overwrite taker frontend with our new fancy UI
       - name: Build taker frontend
@@ -224,7 +224,3 @@ jobs:
               --tag ghcr.io/${{ github.repository }}/taker:${{ github.event.release.tag_name }} \
               --build-arg BINARY_PATH=taker \
               .
-
-
-
-
