@@ -6,7 +6,7 @@ use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, Order, Origin};
 use daemon::model::{Price, Usd};
 use daemon::seed::Seed;
-use daemon::{connection, db, maker_cfd, maker_inc_connections, taker_cfd};
+use daemon::{connection, db, dead_man_switch, maker_cfd, maker_inc_connections, taker_cfd};
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -19,6 +19,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
+use xtra_productivity::xtra_productivity;
 
 pub mod bdk;
 pub mod flow;
@@ -178,6 +179,7 @@ impl Taker {
             read_from_maker,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
+            Box::new(DoNothingOnConnectionLoss.create(None).spawn_global()),
         )
         .await
         .unwrap();
@@ -200,6 +202,16 @@ impl Taker {
             .unwrap()
             .unwrap();
     }
+}
+
+/// Dummy actor that does nothing when we lose the connection to the maker.
+struct DoNothingOnConnectionLoss;
+
+impl xtra::Actor for DoNothingOnConnectionLoss {}
+
+#[xtra_productivity(message_impl = false)]
+impl DoNothingOnConnectionLoss {
+    fn handle_died(&mut self, _: dead_man_switch::Died) {}
 }
 
 async fn in_memory_db() -> SqlitePool {

@@ -1,15 +1,14 @@
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::{Address, Amount};
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
-use daemon::connection_monitor::ConnectionStatus;
-use daemon::db::{self};
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::{
-    bitmex_price_feed, connection, housekeeping, logger, monitor, oracle, taker_cfd, wallet,
-    wallet_sync, TakerActorSystem,
+    bitmex_price_feed, connection, db, dead_man_switch, housekeeping, logger, monitor, oracle,
+    taker_cfd, wallet, wallet_sync, TakerActorSystem,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
@@ -21,6 +20,7 @@ use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::MessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
+use xtra_productivity::xtra_productivity;
 
 mod routes_taker;
 
@@ -229,12 +229,13 @@ async fn main() -> Result<()> {
         read_from_maker,
     } = connection::Actor::new(opts.maker, opts.maker_id, noise_static_sk).await?;
 
+    let (shutdown_rocket_actor_address, shutdown_rocket_actor_context) = xtra::Context::new(None);
+
     let TakerActorSystem {
         cfd_actor_addr,
         cfd_feed_receiver,
         order_feed_receiver,
         update_cfd_feed_receiver,
-        mut maker_online_status_feed_receiver,
     } = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
@@ -248,6 +249,7 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(electrum, channel, cfds)
             }
         },
+        Box::new(shutdown_rocket_actor_address),
     )
     .await?;
 
@@ -280,19 +282,33 @@ async fn main() -> Result<()> {
         );
 
     let rocket = rocket.ignite().await?;
-    let shutdown_handle = rocket.shutdown();
-    rocket::tokio::spawn(rocket.launch());
 
-    // shutdown the rocket server maker if goes offline
-    tokio::spawn(async move {
-        maker_online_status_feed_receiver.changed().await.unwrap();
-        if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
-            tracing::info!("Maker is offline. Shutting down the taker");
-            rocket::Shutdown::notify(shutdown_handle);
-        }
-    });
+    tokio::spawn(shutdown_rocket_actor_context.run(ShutdownRocketActor {
+        handle: rocket.shutdown(),
+    }));
+
+    rocket::tokio::spawn(rocket.launch());
 
     db.close().await;
 
     Ok(())
+}
+
+struct ShutdownRocketActor {
+    handle: rocket::Shutdown,
+}
+
+#[async_trait]
+impl xtra::Actor for ShutdownRocketActor {
+    async fn stopped(self) {
+        self.handle.notify(); // use lifecycle method for stopping because `notify` requires
+                              // ownership of `Shutdown`
+    }
+}
+
+#[xtra_productivity(message_impl = false)]
+impl ShutdownRocketActor {
+    fn on_dead_connection(&mut self, _: dead_man_switch::Died, ctx: &mut xtra::Context<Self>) {
+        ctx.stop();
+    }
 }

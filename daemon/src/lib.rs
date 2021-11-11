@@ -1,5 +1,4 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
-use crate::connection_monitor::ConnectionStatus;
 use crate::db::load_all_cfds;
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::maker_inc_connections::BroadcastHeartbeat;
@@ -22,8 +21,8 @@ pub mod auth;
 pub mod bitmex_price_feed;
 pub mod cfd_actors;
 pub mod connection;
-pub mod connection_monitor;
 pub mod db;
+pub mod dead_man_switch;
 pub mod fan_out;
 pub mod forward_only_ok;
 pub mod housekeeping;
@@ -168,7 +167,6 @@ pub struct TakerActorSystem<O, M, W> {
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
     pub order_feed_receiver: watch::Receiver<Option<Order>>,
     pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
-    pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 }
 
 impl<O, M, W> TakerActorSystem<O, M, W>
@@ -193,6 +191,7 @@ where
         read_from_maker: Box<dyn Stream<Item = taker_cfd::MakerStreamMessage> + Unpin + Send>,
         oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
+        on_maker_connection_loss: Box<dyn MessageChannel<dead_man_switch::Died>>,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
@@ -206,15 +205,11 @@ where
         let (update_cfd_feed_sender, update_cfd_feed_receiver) =
             watch::channel::<UpdateCfdProposals>(HashMap::new());
 
-        let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
-            watch::channel(ConnectionStatus::Online);
-
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
 
-        let maker_monitor_addr =
-            connection_monitor::Actor::new(maker_online_status_feed_sender, HEARTBEAT_INTERVAL * 2)
-                .await
+        let maker_connection_dead_man_switch =
+            dead_man_switch::Actor::new(on_maker_connection_loss, HEARTBEAT_INTERVAL * 2)
                 .create(None)
                 .spawn_global();
 
@@ -228,7 +223,7 @@ where
             send_to_maker,
             monitor_addr.clone(),
             oracle_addr,
-            maker_monitor_addr,
+            maker_connection_dead_man_switch,
         )
         .create(None)
         .spawn_global();
@@ -262,7 +257,6 @@ where
             cfd_feed_receiver,
             order_feed_receiver,
             update_cfd_feed_receiver,
-            maker_online_status_feed_receiver,
         })
     }
 }

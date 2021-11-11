@@ -8,7 +8,7 @@ use crate::model::cfd::{
 use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
-use crate::{connection_monitor, log_error, oracle, setup_contract, wallet, wire};
+use crate::{dead_man_switch, log_error, oracle, setup_contract, wallet, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -78,7 +78,7 @@ pub struct Actor<O, M, W> {
     roll_over_state: RollOverState,
     oracle_actor: Address<O>,
     current_pending_proposals: UpdateCfdProposals,
-    maker_monitor_inbox: Address<connection_monitor::Actor>,
+    maker_connection_dead_man_switch: Address<dead_man_switch::Actor>,
 }
 
 impl<O, M, W> Actor<O, M, W>
@@ -98,7 +98,7 @@ where
         send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
-        maker_monitor_inbox: Address<connection_monitor::Actor>,
+        maker_connection_dead_man_switch: Address<dead_man_switch::Actor>,
     ) -> Self {
         Self {
             db,
@@ -113,7 +113,7 @@ where
             roll_over_state: RollOverState::None,
             oracle_actor,
             current_pending_proposals: HashMap::new(),
-            maker_monitor_inbox,
+            maker_connection_dead_man_switch,
         }
     }
 }
@@ -302,14 +302,6 @@ where
 }
 
 impl<O: 'static, M: 'static, W: 'static> Actor<O, M, W> {
-    async fn handle_heartbeat(&mut self) -> Result<()> {
-        self.maker_monitor_inbox
-            .do_send_async(connection_monitor::Heartbeat)
-            .await?;
-
-        Ok(())
-    }
-
     async fn handle_new_order(&mut self, order: Option<Order>) -> Result<()> {
         match order {
             Some(mut order) => {
@@ -741,7 +733,10 @@ where
 
         match msg {
             wire::MakerToTaker::Heartbeat => {
-                log_error!(self.handle_heartbeat())
+                let _ = self
+                    .maker_connection_dead_man_switch
+                    .send(dead_man_switch::Heartbeat)
+                    .await;
             }
             wire::MakerToTaker::CurrentOrder(current_order) => {
                 log_error!(self.handle_new_order(current_order))
