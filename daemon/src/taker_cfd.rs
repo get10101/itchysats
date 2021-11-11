@@ -9,7 +9,7 @@ use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
 use crate::{log_error, oracle, setup_contract, wallet, wire};
-use anyhow::{Context as _, Result};
+use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
@@ -305,7 +305,16 @@ impl<O, M, W> Actor<O, M, W> {
                 order.origin = Origin::Theirs;
 
                 let mut conn = self.db.acquire().await?;
-                insert_order(&order, &mut conn).await?;
+
+                if load_cfd_by_order_id(order.id, &mut conn).await.is_ok() {
+                    bail!("Received order {} from maker, but already have a cfd in the database for that order. The maker did not properly remove the order.", order.id)
+                }
+
+                if load_order_by_id(order.id, &mut conn).await.is_err() {
+                    // only insert the order if we don't know it yet
+                    insert_order(&order, &mut conn).await?;
+                }
+
                 self.order_feed_actor_inbox.send(Some(order))?;
             }
             None => {
