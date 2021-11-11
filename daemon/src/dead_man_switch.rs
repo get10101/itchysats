@@ -27,7 +27,7 @@ struct MeasurePulse;
 
 impl Actor {
     /// It is expected that receiver of the watch channel outlives the actor
-    pub fn new(rx: Box<dyn MessageChannel<Died>>, timeout: Duration) -> Self {
+    pub fn new(rx: Box<dyn MessageChannel<Died>>, max_pulse: Duration) -> Self {
         Self {
             rx,
             max_pulse: timeout,
