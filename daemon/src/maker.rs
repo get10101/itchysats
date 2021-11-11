@@ -44,10 +44,6 @@ struct Opts {
     #[clap(long)]
     data_dir: Option<PathBuf>,
 
-    /// Generate a seed file within the data directory.
-    #[clap(long)]
-    generate_seed: bool,
-
     /// If enabled logs will be in json format
     #[clap(short, long)]
     json: bool,
@@ -160,7 +156,7 @@ async fn main() -> Result<()> {
         tokio::fs::create_dir_all(&data_dir).await?;
     }
 
-    let seed = Seed::initialize(&data_dir.join("maker_seed"), opts.generate_seed).await?;
+    let seed = Seed::initialize(&data_dir.join("maker_seed")).await?;
 
     let bitcoin_network = opts.network.bitcoin_network();
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;

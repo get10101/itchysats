@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::Network;
 use hkdf::Hkdf;
@@ -11,23 +11,16 @@ pub struct Seed([u8; 256]);
 
 impl Seed {
     /// Initialize a [`Seed`] from a path.
-    ///
-    /// Fails if the file does not exist or it exists but would be overwritten.
-    pub async fn initialize(seed_file: &Path, generate: bool) -> Result<Seed> {
-        let exists = seed_file.exists();
-
-        let seed = match (exists, generate) {
-            (true, false) => Seed::read_from(seed_file).await?,
-            (false, true) => {
-                let seed = Seed::default();
-                seed.write_to(seed_file).await?;
-
-                seed
-            }
-            (true, true) => bail!("Refusing to overwrite seed at {}", seed_file.display()),
-            (false, false) => bail!("Seed file at {} does not exist", seed_file.display()),
+    /// Generates new seed if there was no seed found in the given path
+    pub async fn initialize(seed_file: &Path) -> Result<Seed> {
+        let seed = if !seed_file.exists() {
+            tracing::info!("No seed found. Generating new seed");
+            let seed = Seed::default();
+            seed.write_to(seed_file).await?;
+            seed
+        } else {
+            Seed::read_from(seed_file).await?
         };
-
         Ok(seed)
     }
 
