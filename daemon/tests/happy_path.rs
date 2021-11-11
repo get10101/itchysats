@@ -76,8 +76,6 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     maker.mocks.mock_oracle_annoucement().await;
     taker.mocks.mock_oracle_annoucement().await;
 
-    maker.mocks.mock_monitor_oracle_attestation().await;
-
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
 
