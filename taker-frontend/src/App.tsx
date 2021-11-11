@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { useAsync } from "react-async";
 import { Route, Switch } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
+import useWebSocket from "react-use-websocket";
 import History from "./components/History";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
 import {
+    BXBTData,
     Cfd,
     CfdOrderRequestPayload,
     intoCfd,
@@ -42,6 +44,22 @@ async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
 export const App = () => {
     const toast = useToast();
 
+    const {
+        lastMessage,
+        readyState,
+    } = useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
+        // Will attempt to reconnect on all close events, such as server shutting down
+        shouldReconnect: () => true,
+    });
+
+    let referencePrice;
+    if (readyState === 1 && lastMessage) {
+        const data: BXBTData[] = JSON.parse(lastMessage.data).data;
+        if (data && data[0]?.markPrice) {
+            referencePrice = data[0].markPrice;
+        }
+    }
+
     let source = useEventSource({ source: "/api/feed" });
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const order = useLatestEvent<Order>(source, "order", intoOrder);
@@ -53,7 +71,7 @@ export const App = () => {
     let [margin, setMargin] = useState("0");
     let [userHasEdited, setUserHasEdited] = useState(false);
 
-    const { price, min_quantity, max_quantity, leverage, liquidation_price: liquidationPrice } = order || {};
+    const { price: askPrice, min_quantity, max_quantity, leverage, liquidation_price: liquidationPrice } = order || {};
 
     let effectiveQuantity = userHasEdited ? quantity : (min_quantity?.toString() || "0");
 
@@ -130,7 +148,8 @@ export const App = () => {
                                 quantity={format(effectiveQuantity)}
                                 max_quantity={max_quantity || 0}
                                 min_quantity={min_quantity || 0}
-                                price={price}
+                                referencePrice={referencePrice}
+                                askPrice={askPrice}
                                 margin={margin}
                                 leverage={leverage}
                                 liquidationPrice={liquidationPrice}

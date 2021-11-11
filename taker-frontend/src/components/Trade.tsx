@@ -49,7 +49,8 @@ interface TradeProps {
     order_id?: string;
     min_quantity: number;
     max_quantity: number;
-    price?: number;
+    referencePrice?: number;
+    askPrice?: number;
     margin?: string;
     leverage?: number;
     quantity: string;
@@ -63,7 +64,8 @@ const Trade = (
     {
         min_quantity,
         max_quantity,
-        price: priceAsNumber,
+        referencePrice: referencePriceAsNumber,
+        askPrice: askPriceAsNumber,
         quantity,
         onQuantityChange,
         margin: marginAsNumber,
@@ -76,7 +78,8 @@ const Trade = (
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
 
-    const price = `$${priceAsNumber?.toLocaleString() || "0.0"}`;
+    const referencePrice = `$${referencePriceAsNumber?.toLocaleString() || "0.0"}`;
+    const askPrice = `$${askPriceAsNumber?.toLocaleString() || "0.0"}`;
     const liquidationPrice = `$${liquidationPriceAsNumber?.toLocaleString() || "0.0"}`;
     const margin = `₿${marginAsNumber?.toLocaleString() || "0.0"}`;
 
@@ -122,8 +125,8 @@ const Trade = (
                             <Circle size="256px" bg={outerCircleBg}>
                                 <Circle size="180px" bg={innerCircleBg}>
                                     <MotionBox>
-                                        <Skeleton isLoaded={!!price}>
-                                            <Text fontSize={"4xl"} as="b">{price}</Text>
+                                        <Skeleton isLoaded={!!referencePriceAsNumber && referencePriceAsNumber > 0}>
+                                            <Text fontSize={"4xl"} as="b">{referencePrice}</Text>
                                         </Skeleton>
                                     </MotionBox>
                                 </Circle>
@@ -149,13 +152,13 @@ const Trade = (
                             <Button colorScheme="red" size="lg" disabled h={16}>
                                 <VStack>
                                     <Text as="b">Short</Text>
-                                    <Text fontSize={"sm"}>{quantity.replace("$", "")}@{price}</Text>
+                                    <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
                                 </VStack>
                             </Button>
                             <Button colorScheme="green" size="lg" onClick={onOpen} h={16}>
                                 <VStack>
                                     <Text as="b">Long</Text>
-                                    <Text fontSize={"sm"}>{quantity.replace("$", "")}@{price}</Text>
+                                    <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
                                 </VStack>
                             </Button>
 
@@ -163,7 +166,7 @@ const Trade = (
                                 <ModalOverlay />
                                 <ModalContent>
                                     <ModalHeader>
-                                        Market buy <b>{quantity}</b> of BTC/USD @ <b>{price}</b>
+                                        Market buy <b>{quantity}</b> of BTC/USD @ <b>{askPrice}</b>
                                     </ModalHeader>
                                     <ModalCloseButton />
                                     <ModalBody>
