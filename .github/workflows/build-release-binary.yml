@@ -83,22 +83,13 @@ jobs:
           cache: yarn
           cache-dependency-path: '**/yarn.lock'
 
-      - name: Build maker frontend
-        if: matrix.bin == 'maker'
+      - name: Build frontends
         shell: bash
         run: |
-          cd maker-frontend;
+          cd ${{ matrix.bin }}-frontend;
           yarn
           yarn build
 
-      # Overwrite taker frontend with our new fancy UI
-      - name: Build taker frontend
-        if: matrix.bin == 'taker'
-        shell: bash
-        run: |
-          cd taker-frontend;
-          yarn
-          yarn build
 
       - name: Build ${{ matrix.target }} ${{ matrix.bin }} release binary
         run: cargo build --target=${{ matrix.target }} --release --bin ${{ matrix.bin }}
