@@ -123,15 +123,19 @@ impl Maker {
             .unwrap();
     }
 
-    pub fn reject_take_request(&self, order: Order) {
+    pub async fn reject_take_request(&self, order: Order) {
         self.cfd_actor_addr
-            .do_send(CfdAction::RejectOrder { order_id: order.id })
+            .send(CfdAction::RejectOrder { order_id: order.id })
+            .await
+            .unwrap()
             .unwrap();
     }
 
-    pub fn accept_take_request(&self, order: Order) {
+    pub async fn accept_take_request(&self, order: Order) {
         self.cfd_actor_addr
-            .do_send(CfdAction::AcceptOrder { order_id: order.id })
+            .send(CfdAction::AcceptOrder { order_id: order.id })
+            .await
+            .unwrap()
             .unwrap();
     }
 }
@@ -193,12 +197,14 @@ impl Taker {
         }
     }
 
-    pub fn take_order(&self, order: Order, quantity: Usd) {
+    pub async fn take_order(&self, order: Order, quantity: Usd) {
         self.cfd_actor_addr
-            .do_send(taker_cfd::TakeOffer {
+            .send(taker_cfd::TakeOffer {
                 order_id: order.id,
                 quantity,
             })
+            .await
+            .unwrap()
             .unwrap();
     }
 }

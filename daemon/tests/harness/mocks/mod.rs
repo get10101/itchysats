@@ -24,7 +24,6 @@ impl Mocks {
         self.wallet.lock().await
     }
 
-    #[allow(dead_code)] // will be used soon
     pub async fn monitor(&mut self) -> MutexGuard<'_, monitor::MockMonitor> {
         self.monitor.lock().await
     }
@@ -63,6 +62,13 @@ impl Mocks {
             .await
             .expect_build_party_params()
             .returning(|msg| wallet::build_party_params(msg));
+    }
+
+    pub async fn mock_monitor_oracle_attestation(&mut self) {
+        self.monitor()
+            .await
+            .expect_oracle_attestation()
+            .return_const(());
     }
 }
 

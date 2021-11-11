@@ -35,7 +35,7 @@ async fn taker_takes_order_and_maker_rejects() {
 
     let (_, received) = next_order(&mut maker.order_feed, &mut taker.order_feed).await;
 
-    taker.take_order(received.clone(), Usd::new(dec!(10)));
+    taker.take_order(received.clone(), Usd::new(dec!(10))).await;
 
     let (taker_cfd, maker_cfd) = next_cfd(&mut taker.cfd_feed, &mut maker.cfd_feed).await;
     assert_is_same_order(&taker_cfd.order, &received);
@@ -49,7 +49,7 @@ async fn taker_takes_order_and_maker_rejects() {
         CfdState::IncomingOrderRequest { .. }
     ));
 
-    maker.reject_take_request(received.clone());
+    maker.reject_take_request(received.clone()).await;
 
     let (taker_cfd, maker_cfd) = next_cfd(&mut taker.cfd_feed, &mut maker.cfd_feed).await;
     // TODO: More elaborate Cfd assertions
@@ -70,16 +70,18 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 
     let (_, received) = next_order(&mut maker.order_feed, &mut taker.order_feed).await;
 
-    taker.take_order(received.clone(), Usd::new(dec!(5)));
+    taker.take_order(received.clone(), Usd::new(dec!(5))).await;
     let (_, _) = next_cfd(&mut taker.cfd_feed, &mut maker.cfd_feed).await;
 
     maker.mocks.mock_oracle_annoucement().await;
     taker.mocks.mock_oracle_annoucement().await;
 
-    maker.accept_take_request(received.clone());
+    maker.mocks.mock_monitor_oracle_attestation().await;
 
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
+
+    maker.accept_take_request(received.clone()).await;
 
     let (taker_cfd, maker_cfd) = next_cfd(&mut taker.cfd_feed, &mut maker.cfd_feed).await;
     // TODO: More elaborate Cfd assertions
