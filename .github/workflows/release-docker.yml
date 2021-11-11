@@ -3,7 +3,7 @@ name: "Release docker images from release"
 on:
   workflow_dispatch:
     inputs:
-      realease_tag:
+      release_tag:
         description: 'The release tag to build containers for (preview or x.y.z)'
         required: true
 
@@ -36,7 +36,7 @@ jobs:
 
       - name: Download release
         run: |
-          gh release download ${{ github.event.inputs.realease_tag }} -p '*Linux_x86_64*' -p '*aarch64*' -p '*armv7*'
+          gh release download ${{ github.event.inputs.release_tag }} -p '*Linux_x86_64*' -p '*aarch64*' -p '*armv7*'
 
       - name: Unpack archives
         run: |
@@ -46,14 +46,14 @@ jobs:
           # when building the image. This variable is either
           # `linux/amd64/`, `linux/arm64/` or `linux/arm/v7`. Hence we need to extract into subfolders.
 
-          7z x maker_${{ github.event.inputs.realease_tag }}_Linux_aarch64.tar -olinux/arm64/
-          7z x taker_${{ github.event.inputs.realease_tag }}_Linux_aarch64.tar -olinux/arm64/
+          7z x maker_${{ github.event.inputs.release_tag }}_Linux_aarch64.tar -olinux/arm64/
+          7z x taker_${{ github.event.inputs.release_tag }}_Linux_aarch64.tar -olinux/arm64/
 
-          7z x maker_${{ github.event.inputs.realease_tag }}_Linux_x86_64.tar -olinux/amd64/
-          7z x taker_${{ github.event.inputs.realease_tag }}_Linux_x86_64.tar -olinux/amd64/
+          7z x maker_${{ github.event.inputs.release_tag }}_Linux_x86_64.tar -olinux/amd64/
+          7z x taker_${{ github.event.inputs.release_tag }}_Linux_x86_64.tar -olinux/amd64/
 
-          7z x maker_${{ github.event.inputs.realease_tag }}_Linux_armv7.tar -olinux/arm/v7
-          7z x taker_${{ github.event.inputs.realease_tag }}_Linux_armv7.tar -olinux/arm/v7
+          7z x maker_${{ github.event.inputs.release_tag }}_Linux_armv7.tar -olinux/arm/v7
+          7z x taker_${{ github.event.inputs.release_tag }}_Linux_armv7.tar -olinux/arm/v7
 
       - name: Build maker docker image
         run: |
@@ -61,7 +61,7 @@ jobs:
               --push \
               --platform linux/amd64,linux/arm64,linux/arm/v7 \
               --label "org.opencontainers.image.source https://github.com/${{ github.repository }}" \
-              --tag ghcr.io/${{ github.repository }}/maker:${{ github.event.inputs.realease_tag }} \
+              --tag ghcr.io/${{ github.repository }}/maker:${{ github.event.inputs.release_tag }} \
               --build-arg BINARY_PATH=maker \
               .
 
@@ -72,7 +72,7 @@ jobs:
               --push \
               --platform linux/amd64,linux/arm64,linux/arm/v7 \
               --label "org.opencontainers.image.source https://github.com/${{ github.repository }}" \
-              --tag ghcr.io/${{ github.repository }}/taker:${{ github.event.inputs.realease_tag }} \
+              --tag ghcr.io/${{ github.repository }}/taker:${{ github.event.inputs.release_tag }} \
               --build-arg BINARY_PATH=taker \
               .
 
