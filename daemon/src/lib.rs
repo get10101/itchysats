@@ -183,6 +183,7 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>,
 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new<F>(
         db: SqlitePool,
         wallet_addr: Address<W>,

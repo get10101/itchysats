@@ -30,7 +30,7 @@ impl Actor {
     pub fn new(rx: Box<dyn MessageChannel<Died>>, max_pulse: Duration) -> Self {
         Self {
             rx,
-            max_pulse: timeout,
+            max_pulse,
             last_heartbeat: SystemTime::now(),
         }
     }
