@@ -70,8 +70,8 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: maker-frontend/yarn.lock
       - run: yarn install
-      - run: APP=maker yarn test
-      - run: APP=maker yarn build
+      - run: yarn test
+      - run: yarn build
 
   build_and_test_taker_frontend:
     defaults:

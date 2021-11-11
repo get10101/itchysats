@@ -83,22 +83,13 @@ jobs:
           cache: yarn
           cache-dependency-path: '**/yarn.lock'
 
-      - name: Build maker frontend
-        if: matrix.bin == 'maker'
+      - name: Build frontends
         shell: bash
         run: |
-          cd maker-frontend;
-          yarn
-          APP=maker yarn build
-
-      # Overwrite taker frontend with our new fancy UI
-      - name: Build taker frontend
-        if: matrix.bin == 'taker'
-        shell: bash
-        run: |
-          cd taker-frontend;
+          cd ${{ matrix.bin }}-frontend;
           yarn
           yarn build
+
 
       - name: Build ${{ matrix.target }} ${{ matrix.bin }} release binary
         run: cargo build --target=${{ matrix.target }} --release --bin ${{ matrix.bin }}
@@ -224,7 +215,3 @@ jobs:
               --tag ghcr.io/${{ github.repository }}/taker:${{ github.event.release.tag_name }} \
               --build-arg BINARY_PATH=taker \
               .
-
-
-
-
