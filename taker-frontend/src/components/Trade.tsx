@@ -172,7 +172,7 @@ const Trade = (
                                     <ModalBody>
                                         <Table variant="striped" colorScheme="gray" size="sm">
                                             <TableCaption>
-                                                By submitting {margin} will be locked on-chain in a contract.
+                                                By submitting, {margin} will be locked on-chain in a contract.
                                             </TableCaption>
                                             <Tbody>
                                                 <Tr>
