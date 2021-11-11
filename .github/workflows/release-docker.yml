@@ -20,7 +20,8 @@ jobs:
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@v2.4.0
-      # TODO: checkout the tag and not master
+        with:
+          ref: ${{ github.event.inputs.release_tag }}
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
 
