@@ -6,7 +6,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 use tokio::sync::watch;
 
-pub async fn insert_cfd(
+pub async fn insert_cfd_and_send_to_feed(
     cfd: &Cfd,
     conn: &mut PoolConnection<Sqlite>,
     update_sender: &watch::Sender<Vec<Cfd>>,

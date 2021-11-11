@@ -569,7 +569,7 @@ mod tests {
 
         let cfd_1 = Cfd::dummy();
         db::insert_order(&cfd_1.order, &mut conn).await.unwrap();
-        cfd_actors::insert_cfd(&cfd_1, &mut conn, &cfd_feed_sender)
+        cfd_actors::insert_cfd_and_send_to_feed(&cfd_1, &mut conn, &cfd_feed_sender)
             .await
             .unwrap();
 
@@ -577,7 +577,7 @@ mod tests {
 
         let cfd_2 = Cfd::dummy();
         db::insert_order(&cfd_2.order, &mut conn).await.unwrap();
-        cfd_actors::insert_cfd(&cfd_2, &mut conn, &cfd_feed_sender)
+        cfd_actors::insert_cfd_and_send_to_feed(&cfd_2, &mut conn, &cfd_feed_sender)
             .await
             .unwrap();
         assert_eq!(cfd_feed_receiver.borrow().clone(), vec![cfd_1, cfd_2]);

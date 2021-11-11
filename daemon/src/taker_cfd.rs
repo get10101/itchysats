@@ -1,4 +1,4 @@
-use crate::cfd_actors::{self, append_cfd_state, insert_cfd};
+use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, CollaborativeSettlement, Dlc, Order,
@@ -157,7 +157,7 @@ impl<O, M, W> Actor<O, M, W> {
             CfdState::outgoing_order_request(),
         );
 
-        insert_cfd(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        insert_cfd_and_send_to_feed(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         // Cleanup own order feed, after inserting the cfd.
         // Due to the 1:1 relationship between order and cfd we can never create another cfd for the

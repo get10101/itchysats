@@ -1,4 +1,4 @@
-use crate::cfd_actors::{self, append_cfd_state, insert_cfd};
+use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
@@ -453,7 +453,7 @@ where
                 taker_id,
             },
         );
-        insert_cfd(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        insert_cfd_and_send_to_feed(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         // 3. check if order has acceptable amounts
         if quantity < current_order.min_quantity || quantity > current_order.max_quantity {
