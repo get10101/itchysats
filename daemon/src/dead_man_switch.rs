@@ -6,7 +6,8 @@ use xtra_productivity::xtra_productivity;
 /// An actor that dies once its heart stops beating.
 pub struct Actor {
     rx: Box<dyn MessageChannel<Died>>,
-    max_pulse: Duration,
+    /// Max duration since the last heartbeat until we die.
+    timeout: Duration,
     last_heartbeat: SystemTime,
 }
 
@@ -26,11 +27,10 @@ impl xtra::Message for Died {
 struct MeasurePulse;
 
 impl Actor {
-    /// It is expected that receiver of the watch channel outlives the actor
-    pub fn new(rx: Box<dyn MessageChannel<Died>>, max_pulse: Duration) -> Self {
+    pub fn new(rx: Box<dyn MessageChannel<Died>>, timeout: Duration) -> Self {
         Self {
             rx,
-            max_pulse,
+            timeout,
             last_heartbeat: SystemTime::now(),
         }
     }
@@ -43,11 +43,11 @@ impl Actor {
     }
 
     fn handle_measure_pulse(&mut self, _: MeasurePulse, ctx: &mut xtra::Context<Self>) {
-        let current_pulse = SystemTime::now()
+        let time_since_last_heartbeat = SystemTime::now()
             .duration_since(self.last_heartbeat)
             .expect("now is always later than heartbeat");
 
-        if current_pulse > self.max_pulse {
+        if time_since_last_heartbeat > self.timeout {
             ctx.stop();
         }
     }
@@ -57,7 +57,7 @@ impl Actor {
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let future = ctx
-            .notify_interval(self.max_pulse, || MeasurePulse)
+            .notify_interval(self.timeout, || MeasurePulse)
             .expect("we just started");
 
         tokio::spawn(future);
