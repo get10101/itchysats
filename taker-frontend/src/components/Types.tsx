@@ -265,3 +265,9 @@ export function intoCfd(key: string, value: any): any {
             return value;
     }
 }
+
+export interface BXBTData {
+    symbol: string;
+    markPrice: number;
+    timestamp: string;
+}
