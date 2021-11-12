@@ -55,6 +55,7 @@ interface TradeProps {
     leverage?: number;
     quantity: string;
     liquidationPrice?: number;
+    canSubmit: boolean;
     isSubmitting: boolean;
     onQuantityChange: any;
     onLongSubmit: (payload: CfdOrderRequestPayload) => void;
@@ -71,6 +72,7 @@ const Trade = (
         margin: marginAsNumber,
         leverage,
         liquidationPrice: liquidationPriceAsNumber,
+        canSubmit,
         onLongSubmit,
         order_id,
     }: TradeProps,
@@ -148,14 +150,18 @@ const Trade = (
                 </GridItem>
                 <GridItem colSpan={1}>
                     <Center>
-                        <ButtonGroup variant="solid" padding="3" spacing="6">
+                        <ButtonGroup
+                            variant="solid"
+                            padding="3"
+                            spacing="6"
+                        >
                             <Button colorScheme="red" size="lg" disabled h={16}>
                                 <VStack>
                                     <Text as="b">Short</Text>
                                     <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
                                 </VStack>
                             </Button>
-                            <Button colorScheme="green" size="lg" onClick={onOpen} h={16}>
+                            <Button disabled={!canSubmit} colorScheme="green" size="lg" onClick={onOpen} h={16}>
                                 <VStack>
                                     <Text as="b">Long</Text>
                                     <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>

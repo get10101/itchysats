@@ -167,6 +167,7 @@ export const App = () => {
                                     };
                                     calculateMargin(payload);
                                 }}
+                                canSubmit={order != null && !isCreatingNewOrderRequest}
                                 onLongSubmit={makeNewOrderRequest}
                                 isSubmitting={isCreatingNewOrderRequest}
                             />
