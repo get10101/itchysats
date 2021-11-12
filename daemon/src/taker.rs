@@ -7,7 +7,7 @@ use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::{
     bitmex_price_feed, connection, db, housekeeping, logger, monitor, oracle, taker_cfd, wallet,
-    wallet_sync, TakerActorSystem,
+    wallet_sync, TakerActorSystem, N_PAYOUTS,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
@@ -245,6 +245,7 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(electrum, channel, cfds)
             }
         },
+        N_PAYOUTS,
     )
     .await?;
 

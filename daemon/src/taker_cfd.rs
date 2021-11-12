@@ -78,6 +78,7 @@ pub struct Actor<O, M, W> {
     roll_over_state: RollOverState,
     oracle_actor: Address<O>,
     current_pending_proposals: UpdateCfdProposals,
+    n_payouts: usize,
 }
 
 impl<O, M, W> Actor<O, M, W>
@@ -97,6 +98,7 @@ where
         send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
+        n_payouts: usize,
     ) -> Self {
         Self {
             db,
@@ -111,6 +113,7 @@ where
             roll_over_state: RollOverState::None,
             oracle_actor,
             current_pending_proposals: HashMap::new(),
+            n_payouts,
         }
     }
 }
@@ -197,7 +200,7 @@ where
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        let proposal = cfd.calculate_settlement(current_price)?;
+        let proposal = cfd.calculate_settlement(current_price, self.n_payouts)?;
 
         if self
             .current_pending_proposals
@@ -509,6 +512,7 @@ where
             cfd,
             self.wallet.clone(),
             Role::Taker,
+            self.n_payouts,
         );
 
         let this = ctx
@@ -570,6 +574,7 @@ where
             cfd,
             Role::Taker,
             dlc,
+            self.n_payouts,
         );
 
         let this = ctx

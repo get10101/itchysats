@@ -8,7 +8,7 @@ use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::{
     bitmex_price_feed, db, housekeeping, logger, maker_cfd, maker_inc_connections, monitor, oracle,
-    wallet, wallet_sync, MakerActorSystem,
+    wallet, wallet_sync, MakerActorSystem, N_PAYOUTS,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
@@ -260,6 +260,7 @@ async fn main() -> Result<()> {
         },
         |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1, noise_static_sk),
         time::Duration::hours(opts.settlement_time_interval_hours as i64),
+        N_PAYOUTS,
     )
     .await?;
 

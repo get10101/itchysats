@@ -74,6 +74,7 @@ pub struct Actor<O, M, T, W> {
     // Maker needs to also store TakerId to be able to send a reply back
     current_pending_proposals: HashMap<OrderId, (UpdateCfdProposal, TakerId)>,
     current_agreed_proposals: HashMap<OrderId, (SettlementProposal, TakerId)>,
+    n_payouts: usize,
 }
 
 enum SetupState {
@@ -105,6 +106,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         takers: Address<T>,
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
+        n_payouts: usize,
     ) -> Self {
         Self {
             db,
@@ -122,6 +124,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             oracle_actor,
             current_pending_proposals: HashMap::new(),
             current_agreed_proposals: HashMap::new(),
+            n_payouts,
         }
     }
 
@@ -593,6 +596,7 @@ where
             cfd,
             self.wallet.clone(),
             Role::Maker,
+            self.n_payouts,
         );
 
         let this = ctx
@@ -795,6 +799,7 @@ where
             cfd,
             Role::Maker,
             dlc,
+            self.n_payouts,
         );
 
         let this = ctx

@@ -58,8 +58,8 @@ async fn taker_takes_order_and_maker_rejects() {
     assert!(matches!(taker_cfd.state, CfdState::Rejected { .. }));
     assert!(matches!(maker_cfd.state, CfdState::Rejected { .. }));
 }
+
 #[tokio::test]
-#[cfg_attr(not(feature = "expensive_tests"), ignore)]
 async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;

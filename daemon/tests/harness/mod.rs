@@ -36,6 +36,8 @@ pub async fn start_both() -> (Maker, Taker) {
     (maker, taker)
 }
 
+const N_PAYOUTS_FOR_TEST: usize = 5;
+
 /// Maker Test Setup
 #[derive(Clone)]
 pub struct Maker {
@@ -78,6 +80,7 @@ impl Maker {
                 maker_inc_connections::Actor::new(channel0, channel1, noise_static_sk)
             },
             settlement_time_interval_hours,
+            N_PAYOUTS_FOR_TEST,
         )
         .await
         .unwrap();
@@ -178,6 +181,7 @@ impl Taker {
             read_from_maker,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
+            N_PAYOUTS_FOR_TEST,
         )
         .await
         .unwrap();

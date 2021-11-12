@@ -33,6 +33,7 @@ pub async fn new<W>(
     cfd: Cfd,
     wallet: Address<W>,
     role: Role,
+    n_payouts: usize,
 ) -> Result<Dlc>
 where
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
@@ -83,7 +84,12 @@ where
 
     let payouts = HashMap::from_iter([(
         announcement.into(),
-        payout_curve::calculate(cfd.order.price, cfd.quantity_usd, cfd.order.leverage)?,
+        payout_curve::calculate(
+            cfd.order.price,
+            cfd.quantity_usd,
+            cfd.order.leverage,
+            n_payouts,
+        )?,
     )]);
 
     let own_cfd_txs = create_cfd_transactions(
@@ -267,6 +273,7 @@ pub async fn roll_over(
     cfd: Cfd,
     our_role: Role,
     dlc: Dlc,
+    n_payouts: usize,
 ) -> Result<Dlc> {
     let sk = dlc.identity;
     let pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk));
@@ -301,7 +308,12 @@ pub async fn roll_over(
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
         },
-        payout_curve::calculate(cfd.order.price, cfd.quantity_usd, cfd.order.leverage)?,
+        payout_curve::calculate(
+            cfd.order.price,
+            cfd.quantity_usd,
+            cfd.order.leverage,
+            n_payouts,
+        )?,
     )]);
 
     // unsign lock tx because PartiallySignedTransaction needs an unsigned tx

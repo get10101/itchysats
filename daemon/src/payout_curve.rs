@@ -43,8 +43,13 @@ mod utils;
 /// ### Returns
 ///
 /// The list of [`Payout`]s for the given price, quantity and leverage.
-pub fn calculate(price: Price, quantity: Usd, leverage: Leverage) -> Result<Vec<Payout>> {
-    let payouts = calculate_payout_parameters(price, quantity, leverage)?
+pub fn calculate(
+    price: Price,
+    quantity: Usd,
+    leverage: Leverage,
+    n_payouts: usize,
+) -> Result<Vec<Payout>> {
+    let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts)?
         .into_iter()
         .map(PayoutParameter::into_payouts)
         .flatten_ok()
@@ -54,7 +59,6 @@ pub fn calculate(price: Price, quantity: Usd, leverage: Leverage) -> Result<Vec<
 }
 
 const CONTRACT_VALUE: f64 = 1.;
-const N_PAYOUTS: usize = 200;
 const SHORT_LEVERAGE: usize = 1;
 
 /// Internal calculate function for the payout curve.
@@ -65,6 +69,7 @@ fn calculate_payout_parameters(
     price: Price,
     quantity: Usd,
     long_leverage: Leverage,
+    n_payouts: usize,
 ) -> Result<Vec<PayoutParameter>> {
     let initial_rate = price
         .try_into_f64()
@@ -83,7 +88,7 @@ fn calculate_payout_parameters(
     )?;
 
     let payout_parameters = payout_curve
-        .generate_payout_scheme(N_PAYOUTS)?
+        .generate_payout_scheme(n_payouts)?
         .rows()
         .into_iter()
         .map(|row| {
@@ -509,6 +514,7 @@ mod tests {
             Price::new(dec!(54000.00)).unwrap(),
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
+            200,
         )
         .unwrap();
 
@@ -725,6 +731,7 @@ mod tests {
             Price::new(dec!(54000.00)).unwrap(),
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
+            200,
         )
         .unwrap();
 
