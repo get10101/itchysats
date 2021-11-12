@@ -151,7 +151,8 @@ impl Actor {
     async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) -> Result<()> {
         let order = msg.0;
 
-        for conn in self.write_connections.values() {
+        for (taker_id, conn) in self.write_connections.clone() {
+            tracing::trace!(%taker_id, "sending new order for broadcast to connection: {:?}", order);
             conn.do_send_async(wire::MakerToTaker::CurrentOrder(order.clone()))
                 .await?;
         }

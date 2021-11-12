@@ -33,6 +33,8 @@ where
     async fn handle(&mut self, message: T, ctx: &mut xtra::Context<Self>) {
         let message_name = message.to_string(); // send consumes the message, avoid a clone just in case it errors by getting the name here
 
+        tracing::trace!(%message_name, "send to socket message");
+
         if let Err(e) = self.write.send(message).await {
             tracing::error!("Failed to write message {} to socket: {}", message_name, e);
             ctx.stop();

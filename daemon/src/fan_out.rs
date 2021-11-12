@@ -23,7 +23,11 @@ where
     async fn handle(&mut self, message: M, _: &mut xtra::Context<Self>) {
         for receiver in &self.receivers {
             // Not sure why here is no `do_send_async` ...
-            let _ = receiver.do_send(message.clone());
+            if receiver.do_send(message.clone()).is_err() {
+                tracing::error!(
+                    "Fan out actor was unable to send to other actor - we should never see this."
+                )
+            }
         }
     }
 }
