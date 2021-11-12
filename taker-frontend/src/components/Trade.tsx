@@ -33,6 +33,7 @@ import {
     Tbody,
     Td,
     Text,
+    Tooltip,
     Tr,
     useColorModeValue,
     useDisclosure,
@@ -178,7 +179,7 @@ const Trade = (
                                     <ModalBody>
                                         <Table variant="striped" colorScheme="gray" size="sm">
                                             <TableCaption>
-                                                By submitting {margin} will be locked on-chain in a contract.
+                                                By submitting, {margin} will be locked on-chain in a contract.
                                             </TableCaption>
                                             <Tbody>
                                                 <Tr>
@@ -251,16 +252,18 @@ interface LeverageProps {
 function Leverage({ leverage }: LeverageProps) {
     return (
         <FormControl id="leverage">
-            <FormLabel>Leverage (fixed to 2 atm)</FormLabel>
-            <Slider isReadOnly defaultValue={leverage} min={1} max={5} step={1}>
-                <SliderTrack>
-                    <Box position="relative" right={10} />
-                    <SliderFilledTrack />
-                </SliderTrack>
-                <SliderThumb boxSize={6}>
-                    <Text color="black">{leverage}</Text>
-                </SliderThumb>
-            </Slider>
+            <FormLabel>Leverage</FormLabel>
+            <Tooltip label="Configurable leverage is in the making." shouldWrapChildren hasArrow>
+                <Slider disabled value={leverage} min={1} max={5} step={1}>
+                    <SliderTrack>
+                        <Box position="relative" right={10} />
+                        <SliderFilledTrack />
+                    </SliderTrack>
+                    <SliderThumb boxSize={6}>
+                        <Text color="black">{leverage}</Text>
+                    </SliderThumb>
+                </Slider>
+            </Tooltip>
             <FormHelperText>
                 How much do you want to leverage your position?
             </FormHelperText>
