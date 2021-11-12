@@ -1,26 +1,20 @@
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::schnorrsig;
+use bdk::bitcoin::Amount;
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::auth::{self, MAKER_USERNAME};
-use daemon::db::{self};
-
 use daemon::model::WalletInfo;
-
 use daemon::seed::Seed;
 use daemon::{
-    bitmex_price_feed, housekeeping, logger, maker_cfd, maker_inc_connections, monitor, oracle,
+    bitmex_price_feed, db, housekeeping, logger, maker_cfd, maker_inc_connections, monitor, oracle,
     wallet, wallet_sync, MakerActorSystem,
 };
-
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
-
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-
-use bdk::bitcoin::Amount;
 use std::task::Poll;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;

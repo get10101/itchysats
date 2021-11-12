@@ -3,11 +3,10 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::{Address, Amount};
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
-use daemon::db::{self};
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::{
-    bitmex_price_feed, connection, housekeeping, logger, monitor, oracle, taker_cfd, wallet,
+    bitmex_price_feed, connection, db, housekeeping, logger, monitor, oracle, taker_cfd, wallet,
     wallet_sync, TakerActorSystem,
 };
 use sqlx::sqlite::SqliteConnectOptions;
