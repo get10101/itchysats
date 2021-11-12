@@ -300,6 +300,7 @@ where
 
 impl<O, M, W> Actor<O, M, W> {
     async fn handle_new_order(&mut self, order: Option<Order>) -> Result<()> {
+        tracing::trace!("new order {:?}", order);
         match order {
             Some(mut order) => {
                 order.origin = Origin::Theirs;
@@ -736,6 +737,8 @@ where
                 return KeepRunning::Yes;
             }
         };
+
+        tracing::trace!("message from maker: {:?}", msg);
 
         match msg {
             wire::MakerToTaker::CurrentOrder(current_order) => {

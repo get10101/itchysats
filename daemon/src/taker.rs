@@ -47,6 +47,10 @@ struct Opts {
     #[clap(short, long)]
     json: bool,
 
+    /// Configure the log level, e.g.: one of Error, Warn, Info, Debug, Trace
+    #[clap(short, long, default_value = "Debug")]
+    log_level: LevelFilter,
+
     #[clap(subcommand)]
     network: Network,
 }
@@ -141,7 +145,7 @@ impl Network {
 async fn main() -> Result<()> {
     let opts = Opts::parse();
 
-    logger::init(LevelFilter::DEBUG, opts.json).context("initialize logger")?;
+    logger::init(opts.log_level, opts.json).context("initialize logger")?;
     tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
 
     let data_dir = opts

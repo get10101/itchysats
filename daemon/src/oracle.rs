@@ -112,7 +112,6 @@ impl Actor {
             ));
 
             if self.announcements.get(&event_id).is_some() {
-                tracing::trace!("Announcement already known: {}", event_id,);
                 continue;
             }
             let this = ctx.address().expect("self to be alive");
