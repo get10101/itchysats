@@ -627,9 +627,17 @@ impl Cfd {
         Ok((p_n_l, p_n_l_percent))
     }
 
-    pub fn calculate_settlement(&self, current_price: Price) -> Result<SettlementProposal> {
-        let payout_curve =
-            payout_curve::calculate(self.order.price, self.quantity_usd, self.order.leverage)?;
+    pub fn calculate_settlement(
+        &self,
+        current_price: Price,
+        n_payouts: usize,
+    ) -> Result<SettlementProposal> {
+        let payout_curve = payout_curve::calculate(
+            self.order.price,
+            self.quantity_usd,
+            self.order.leverage,
+            n_payouts,
+        )?;
 
         let payout = {
             let current_price = current_price.try_into_u64()?;

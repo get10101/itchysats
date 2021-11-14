@@ -46,6 +46,8 @@ pub mod wallet;
 pub mod wallet_sync;
 pub mod wire;
 
+pub const N_PAYOUTS: usize = 200;
+
 pub struct MakerActorSystem<O, M, T, W> {
     pub cfd_actor_addr: Address<maker_cfd::Actor<O, M, T, W>>,
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
@@ -70,6 +72,7 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>,
 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new<F>(
         db: SqlitePool,
         wallet_addr: Address<W>,
@@ -81,6 +84,7 @@ where
             Box<dyn MessageChannel<FromTaker>>,
         ) -> T,
         settlement_time_interval_hours: time::Duration,
+        n_payouts: usize,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
@@ -109,6 +113,7 @@ where
             inc_conn_addr.clone(),
             monitor_addr.clone(),
             oracle_addr.clone(),
+            n_payouts,
         )
         .create(None)
         .spawn_global();
@@ -172,6 +177,7 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>,
 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new<F>(
         db: SqlitePool,
         wallet_addr: Address<W>,
@@ -180,6 +186,7 @@ where
         read_from_maker: Box<dyn Stream<Item = taker_cfd::MakerStreamMessage> + Unpin + Send>,
         oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
+        n_payouts: usize,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
@@ -206,6 +213,7 @@ where
             send_to_maker,
             monitor_addr.clone(),
             oracle_addr,
+            n_payouts,
         )
         .create(None)
         .spawn_global();
