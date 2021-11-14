@@ -1,7 +1,7 @@
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
-use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire};
+use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire, HEARTBEAT_INTERVAL};
 use anyhow::{Context as AnyhowContext, Result};
 use futures::{StreamExt, TryStreamExt};
 use std::collections::HashMap;
@@ -125,6 +125,12 @@ impl Actor {
         tokio::spawn(async move {
             let mut actor = send_to_socket::Actor::new(write, noise.clone());
 
+            tokio::spawn(
+                out_msg_actor_context
+                    .notify_interval(HEARTBEAT_INTERVAL, || wire::MakerToTaker::Heartbeat)
+                    .expect("actor not to shutdown"),
+            );
+
             out_msg_actor_context
                 .handle_while(&mut actor, forward_to_cfd.attach_stream(read))
                 .await;
@@ -150,13 +156,11 @@ impl Actor {
 impl Actor {
     async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) -> Result<()> {
         let order = msg.0;
-
         for (taker_id, conn) in self.write_connections.clone() {
             tracing::trace!(%taker_id, "sending new order for broadcast to connection: {:?}", order);
             conn.do_send_async(wire::MakerToTaker::CurrentOrder(order.clone()))
                 .await?;
         }
-
         Ok(())
     }
 

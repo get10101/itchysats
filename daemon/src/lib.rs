@@ -4,7 +4,7 @@ use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
 use crate::oracle::Attestation;
 use anyhow::Result;
-use futures::Stream;
+use connection::ConnectionStatus;
 use maia::secp256k1_zkp::schnorrsig;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -45,6 +45,8 @@ pub mod try_continue;
 pub mod wallet;
 pub mod wallet_sync;
 pub mod wire;
+
+const HEARTBEAT_INTERVAL: std::time::Duration = Duration::from_secs(5);
 
 pub const N_PAYOUTS: usize = 200;
 
@@ -158,9 +160,11 @@ where
 
 pub struct TakerActorSystem<O, M, W> {
     pub cfd_actor_addr: Address<taker_cfd::Actor<O, M, W>>,
+    pub connection_actor_addr: Address<connection::Actor>,
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
     pub order_feed_receiver: watch::Receiver<Option<Order>>,
     pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
+    pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 }
 
 impl<O, M, W> TakerActorSystem<O, M, W>
@@ -182,8 +186,7 @@ where
         db: SqlitePool,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
-        read_from_maker: Box<dyn Stream<Item = taker_cfd::MakerStreamMessage> + Unpin + Send>,
+        noise_static_sk: x25519_dalek::StaticSecret,
         oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
         n_payouts: usize,
@@ -200,9 +203,13 @@ where
         let (update_cfd_feed_sender, update_cfd_feed_receiver) =
             watch::channel::<UpdateCfdProposals>(HashMap::new());
 
+        let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
+            watch::channel(ConnectionStatus::Offline);
+
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
 
+        let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
         let cfd_actor_addr = taker_cfd::Actor::new(
             db,
             wallet_addr,
@@ -210,7 +217,7 @@ where
             cfd_feed_sender,
             order_feed_sender,
             update_cfd_feed_sender,
-            send_to_maker,
+            Box::new(connection_actor_addr.clone()),
             monitor_addr.clone(),
             oracle_addr,
             n_payouts,
@@ -218,7 +225,12 @@ where
         .create(None)
         .spawn_global();
 
-        tokio::spawn(cfd_actor_addr.clone().attach_stream(read_from_maker));
+        tokio::spawn(connection_actor_ctx.run(connection::Actor::new(
+            maker_online_status_feed_sender,
+            Box::new(cfd_actor_addr.clone()),
+            noise_static_sk,
+            HEARTBEAT_INTERVAL * 2,
+        )));
 
         tokio::spawn(
             monitor_ctx
@@ -244,9 +256,11 @@ where
 
         Ok(Self {
             cfd_actor_addr,
+            connection_actor_addr,
             cfd_feed_receiver,
             order_feed_receiver,
             update_cfd_feed_receiver,
+            maker_online_status_feed_receiver,
         })
     }
 }

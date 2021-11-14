@@ -3,6 +3,7 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::{Address, Amount};
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
+use daemon::connection::ConnectionStatus;
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::{
@@ -14,7 +15,9 @@ use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 use tokio::sync::watch;
+use tokio::time::sleep;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::MessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -23,6 +26,7 @@ use xtra::Actor;
 mod routes_taker;
 
 pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
+const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Parser)]
 struct Opts {
@@ -226,22 +230,18 @@ async fn main() -> Result<()> {
     housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn).await?;
     housekeeping::rebroadcast_transactions(&mut conn, &wallet).await?;
 
-    let connection::Actor {
-        send_to_maker,
-        read_from_maker,
-    } = connection::Actor::new(opts.maker, opts.maker_id, noise_static_sk).await?;
-
     let TakerActorSystem {
         cfd_actor_addr,
+        connection_actor_addr,
         cfd_feed_receiver,
         order_feed_receiver,
         update_cfd_feed_receiver,
+        mut maker_online_status_feed_receiver,
     } = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
         oracle,
-        send_to_maker,
-        read_from_maker,
+        noise_static_sk,
         |cfds, channel| oracle::Actor::new(cfds, channel, ANNOUNCEMENT_LOOKAHEAD),
         {
             |channel, cfds| {
@@ -253,11 +253,26 @@ async fn main() -> Result<()> {
     )
     .await?;
 
+    while connection_actor_addr
+        .send(connection::Connect {
+            maker_noise_static_pk: opts.maker_id,
+            maker_addr: opts.maker,
+        })
+        .await?
+        .is_err()
+    {
+        sleep(CONNECTION_RETRY_INTERVAL).await;
+        tracing::debug!(
+            "Couldn't connect to the maker, retrying in {}...",
+            CONNECTION_RETRY_INTERVAL.as_secs()
+        );
+    }
+
     tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
     let take_offer_channel = MessageChannel::<taker_cfd::TakeOffer>::clone_channel(&cfd_actor_addr);
     let cfd_action_channel = MessageChannel::<taker_cfd::CfdAction>::clone_channel(&cfd_actor_addr);
 
-    rocket::custom(figment)
+    let rocket = rocket::custom(figment)
         .manage(order_feed_receiver)
         .manage(update_cfd_feed_receiver)
         .manage(take_offer_channel)
@@ -279,9 +294,23 @@ async fn main() -> Result<()> {
         .mount(
             "/",
             rocket::routes![routes_taker::dist, routes_taker::index],
-        )
-        .launch()
-        .await?;
+        );
+
+    let rocket = rocket.ignite().await?;
+    let shutdown_handle = rocket.shutdown();
+
+    // shutdown the rocket server maker if goes offline
+    tokio::spawn(async move {
+        loop {
+            maker_online_status_feed_receiver.changed().await.unwrap();
+            if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
+                tracing::info!("Maker is offline. Shutting down the taker");
+                rocket::Shutdown::notify(shutdown_handle);
+                return;
+            }
+        }
+    });
+    rocket.launch().await?;
 
     db.close().await;
 
