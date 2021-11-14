@@ -1,12 +1,12 @@
 # Architecture
 
 This document outlines the architecture of this software and the rationale that went into it.
-Architectural invariants more often than not defines the _absence_ of something.
+Architectural invariants more often than not define the _absence_ of something.
 Seeing something that is not there is hard, which is why we make an effort to document these things in here.
 
 We define _components_ as software elements that talk to each other at runtime.
 The component split does not necessarily reflect the source code split of the software.
-For example, the library is embedded in both daemon but only exists once as a source code element.
+For example, a library is embedded in two daemons but only exists once as a source code element.
 
 ## Overview
 
@@ -45,6 +45,9 @@ Instead, we maintain a cycle of:
 As a result of this invariant, we can be sure that any state change is accurately reflected in the frontend, regardless of how it was triggered.
 It also makes the frontend very thin and therefore more predictable.
 
+The state changes triggered by the POST requests should still be synchronous and may return errors to the frontend if the action within the backend fails.
+This makes it easy to achieve things like disabling a button while an action is being performed or triggering a toast with an error message.
+
 ### Update local state first
 
 To keep our UI stateless and responsive, we always update the local state of our daemon first (and emit an event for it).
@@ -52,6 +55,14 @@ Only once the local state is updated, we engage with other systems like the make
 
 Applying state changes locally first allows us to record the user's intention and provide instant (UI) feedback that we are working on making it happen.
 Even if the user restarts the entire application, we can pick up where we left of and finish what we were meant to be doing.
+
+### Testing the actor system
+
+A downside of an actor system is that it is composed at runtime rather than compile-time.
+In other words, it is fairly easy to write code that compiles and sends messages to actors but does not actually work at runtime because the required actor is not alive.
+Thus, the primary risk we need to eliminate with our tests is the wiring of our actors, i.e. do all the individual actors send the correct messages at the right point in time?
+We deliberately write these tests against the actor system.
+Any component not tested as part of this (like projections for the frontend) either need to be so simple that they don't require testing or should be moved into the actor system.
 
 ### Append only database
 
