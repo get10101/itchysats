@@ -66,14 +66,15 @@ impl Seed {
         P::from(password)
     }
 
-    pub fn derive_noise_static_secret(&self) -> x25519_dalek::StaticSecret {
+    pub fn derive_identity(&self) -> (x25519_dalek::PublicKey, x25519_dalek::StaticSecret) {
         let mut secret = [0u8; 32];
 
         Hkdf::<Sha256>::new(None, &self.0)
             .expand(b"NOISE_STATIC_SECRET", &mut secret)
             .expect("okm array is of correct length");
 
-        x25519_dalek::StaticSecret::from(secret)
+        let identity_sk = x25519_dalek::StaticSecret::from(secret);
+        (x25519_dalek::PublicKey::from(&identity_sk), identity_sk)
     }
 }
 

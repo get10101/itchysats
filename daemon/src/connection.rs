@@ -20,7 +20,7 @@ pub struct Actor {
     status_sender: watch::Sender<ConnectionStatus>,
     send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
     send_to_maker_ctx: xtra::Context<send_to_socket::Actor<wire::TakerToMaker>>,
-    noise_static_sk: x25519_dalek::StaticSecret,
+    identity_sk: x25519_dalek::StaticSecret,
     maker_to_taker: Box<dyn MessageChannel<wire::MakerToTaker>>,
     /// Max duration since the last heartbeat until we die.
     timeout: Duration,
@@ -28,7 +28,7 @@ pub struct Actor {
 }
 
 pub struct Connect {
-    pub maker_noise_static_pk: x25519_dalek::PublicKey,
+    pub maker_identity_pk: x25519_dalek::PublicKey,
     pub maker_addr: SocketAddr,
 }
 
@@ -49,7 +49,7 @@ impl Actor {
     pub fn new(
         status_sender: watch::Sender<ConnectionStatus>,
         maker_to_taker: Box<dyn MessageChannel<wire::MakerToTaker>>,
-        noise_static_sk: x25519_dalek::StaticSecret,
+        identity_sk: x25519_dalek::StaticSecret,
         timeout: Duration,
     ) -> Self {
         let (send_to_maker_addr, send_to_maker_ctx) = xtra::Context::new(None);
@@ -58,7 +58,7 @@ impl Actor {
             status_sender,
             send_to_maker: Box::new(send_to_maker_addr),
             send_to_maker_ctx,
-            noise_static_sk,
+            identity_sk,
             maker_to_taker,
             timeout,
             connected_state: None,
@@ -79,19 +79,16 @@ impl Actor {
         &mut self,
         Connect {
             maker_addr,
-            maker_noise_static_pk,
+            maker_identity_pk,
         }: Connect,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
         let (read, write, noise) = {
             let socket = tokio::net::TcpSocket::new_v4().expect("Be able to create a socket");
             let mut connection = socket.connect(maker_addr).await?;
-            let noise = noise::initiator_handshake(
-                &mut connection,
-                &self.noise_static_sk,
-                &maker_noise_static_pk,
-            )
-            .await?;
+            let noise =
+                noise::initiator_handshake(&mut connection, &self.identity_sk, &maker_identity_pk)
+                    .await?;
             let (read, write) = connection.into_split();
             (read, write, Arc::new(Mutex::new(noise)))
         };
