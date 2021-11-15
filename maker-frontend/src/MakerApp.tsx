@@ -19,7 +19,6 @@ import {
 import React, { useEffect, useState } from "react";
 import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
-import { useBackendMonitor } from "./components/BackendMonitor";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
 import CurrentPrice from "./components/CurrentPrice";
@@ -44,7 +43,6 @@ export default function App() {
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 
     const toast = useToast();
-    useBackendMonitor(toast, 5000); // 5s timeout
 
     let [minQuantity, setMinQuantity] = useState<string>("10");
     let [maxQuantity, setMaxQuantity] = useState<string>("100");

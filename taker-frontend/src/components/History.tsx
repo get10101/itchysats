@@ -30,6 +30,7 @@ import {
 } from "@chakra-ui/react";
 import * as React from "react";
 import { useAsync } from "react-async";
+import createErrorToast from "./ErrorToast";
 import { Cfd, StateGroupKey, StateKey, Tx, TxLabel } from "./Types";
 
 interface HistoryProps {
@@ -90,15 +91,7 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
                 console.log(`Closing: ${orderId} ${action}`);
                 await doPostAction(orderId, action);
             } catch (e) {
-                const description = typeof e === "string" ? e : JSON.stringify(e);
-
-                toast({
-                    title: "Error",
-                    description,
-                    status: "error",
-                    duration: 9000,
-                    isClosable: true,
-                });
+                createErrorToast(toast, e);
             }
         },
     });
