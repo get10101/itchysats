@@ -444,18 +444,18 @@ where
                 load_order_by_id(current_order_id, &mut conn).await?
             }
             _ => {
-                self.takers
-                    .do_send_async(maker_inc_connections::TakerMessage {
-                        taker_id,
-                        command: TakerCommand::NotifyInvalidOrderId { id: order_id },
-                    })
-                    .await?;
-
                 // An outdated order on the taker side does not require any state change on the
                 // maker. notifying the taker with a specific message should be sufficient.
                 // Since this is a scenario that we should rarely see we log
                 // a warning to be sure we don't trigger this code path frequently.
                 tracing::warn!("Taker tried to take order with outdated id {}", order_id);
+
+                self.takers
+                    .send(maker_inc_connections::TakerMessage {
+                        taker_id,
+                        command: TakerCommand::NotifyInvalidOrderId { id: order_id },
+                    })
+                    .await??;
 
                 return Ok(());
             }
