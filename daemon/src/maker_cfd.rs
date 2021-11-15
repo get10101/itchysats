@@ -329,6 +329,9 @@ where
             None => None,
         };
 
+        // Need to use `do_send_async` here because we are being invoked from the
+        // `maker_inc_connections::Actor`. Using `send` would result in a deadlock.
+        #[allow(clippy::disallowed_method)]
         self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id,

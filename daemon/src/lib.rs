@@ -1,4 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
+#![warn(clippy::disallowed_method)]
+
 use crate::db::load_all_cfds;
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
