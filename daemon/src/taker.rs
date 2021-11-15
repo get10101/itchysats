@@ -30,9 +30,9 @@ const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Parser)]
 struct Opts {
-    /// The IP address of the other party (i.e. the maker).
+    /// The IP address or hostname of the other party (i.e. the maker).
     #[clap(long)]
-    maker: SocketAddr,
+    maker: String,
 
     /// The public key of the maker as a 32 byte hex string.
     #[clap(long, parse(try_from_str = parse_x25519_pubkey))]
@@ -307,22 +307,41 @@ async fn main() -> Result<()> {
 async fn connect(
     connection_actor_addr: xtra::Address<connection::Actor>,
     maker_identity_pk: x25519_dalek::PublicKey,
-    maker_addr: SocketAddr,
+    maker_addr: String,
 ) -> Result<()> {
-    while connection_actor_addr
-        .send(connection::Connect {
-            maker_identity_pk,
-            maker_addr,
-        })
+    let possible_addresses = tokio::net::lookup_host(&maker_addr)
         .await?
-        .is_err()
-    {
-        sleep(CONNECTION_RETRY_INTERVAL).await;
+        .collect::<Vec<_>>();
+
+    tracing::debug!(
+        "Resolved {} to [{}]",
+        maker_addr,
+        itertools::join(possible_addresses.iter(), ",")
+    );
+
+    loop {
+        for address in &possible_addresses {
+            tracing::trace!("Connecting to {}", address);
+
+            let connect_msg = connection::Connect {
+                maker_identity_pk,
+                maker_addr: *address,
+            };
+
+            if let Err(e) = connection_actor_addr.send(connect_msg).await? {
+                tracing::debug!(%address, "Failed to establish connection: {:#}", e);
+                continue;
+            }
+
+            return Ok(());
+        }
+
         tracing::debug!(
-            "Couldn't connect to the maker, retrying in {}...",
+            "Tried connecting to {} addresses without success, retrying in {} seconds",
+            possible_addresses.len(),
             CONNECTION_RETRY_INTERVAL.as_secs()
         );
-    }
 
-    Ok(())
+        sleep(CONNECTION_RETRY_INTERVAL).await;
+    }
 }
