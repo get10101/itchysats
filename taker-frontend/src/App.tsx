@@ -6,6 +6,7 @@ import { Route, Switch } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import useWebSocket from "react-use-websocket";
 import { useBackendMonitor } from "./components/BackendMonitor";
+import createErrorToast from "./components/ErrorToast";
 import History from "./components/History";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
@@ -83,15 +84,7 @@ export const App = () => {
                 let res = await getMargin(payload as MarginRequestPayload);
                 setMargin(res.margin.toString());
             } catch (e) {
-                const description = typeof e === "string" ? e : JSON.stringify(e);
-
-                toast({
-                    title: "Error",
-                    description,
-                    status: "error",
-                    duration: 9000,
-                    isClosable: true,
-                });
+                createErrorToast(toast, e);
             }
         },
     });
@@ -101,16 +94,7 @@ export const App = () => {
             try {
                 await postCfdOrderRequest(payload as CfdOrderRequestPayload);
             } catch (e) {
-                console.error(`Error received: ${JSON.stringify(e)}`);
-                const description = typeof e === "string" ? e : JSON.stringify(e);
-
-                toast({
-                    title: "Error",
-                    description,
-                    status: "error",
-                    duration: 9000,
-                    isClosable: true,
-                });
+                createErrorToast(toast, e);
             }
         },
     });
