@@ -31,7 +31,7 @@ const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 #[derive(Parser)]
 struct Opts {
     /// The IP address of the other party (i.e. the maker).
-    #[clap(long, default_value = "127.0.0.1:9999")]
+    #[clap(long)]
     maker: SocketAddr,
 
     /// The public key of the maker as a 32 byte hex string.
