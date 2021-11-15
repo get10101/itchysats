@@ -346,17 +346,27 @@ where
 
         let taker_id = self.get_taker_id_of_proposal(&order_id)?;
 
-        self.takers
-            .do_send_async(maker_inc_connections::TakerMessage {
+        match self
+            .takers
+            .send(maker_inc_connections::TakerMessage {
                 taker_id,
                 command: TakerCommand::NotifySettlementAccepted { id: order_id },
             })
-            .await?;
+            .await?
+        {
+            Ok(_) => {
+                self.current_agreed_proposals
+                    .insert(order_id, self.get_settlement_proposal(order_id)?);
+                self.remove_pending_proposal(&order_id)
+                    .context("accepted settlement")?;
+            }
+            Err(e) => {
+                tracing::warn!("Failed to notify taker of accepted settlement: {}", e);
+                self.remove_pending_proposal(&order_id)
+                    .context("accepted settlement")?;
+            }
+        }
 
-        self.current_agreed_proposals
-            .insert(order_id, self.get_settlement_proposal(order_id)?);
-        self.remove_pending_proposal(&order_id)
-            .context("accepted settlement")?;
         Ok(())
     }
 
