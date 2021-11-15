@@ -45,7 +45,7 @@ async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
 
 export const App = () => {
     const toast = useToast();
-    useBackendMonitor(toast, 5000); // 5s timeout
+    useBackendMonitor(toast, 5000, "Please start the taker again to reconnect..."); // 5s timeout
 
     const {
         lastMessage,

@@ -304,7 +304,7 @@ async fn main() -> Result<()> {
         loop {
             maker_online_status_feed_receiver.changed().await.unwrap();
             if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
-                tracing::info!("Maker is offline. Shutting down the taker");
+                tracing::info!("Lost connection to maker, shutting down. Please restart the daemon to reconnect");
                 rocket::Shutdown::notify(shutdown_handle);
                 return;
             }
