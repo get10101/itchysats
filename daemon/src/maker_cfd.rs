@@ -622,8 +622,9 @@ where
         tokio::spawn(async move {
             let dlc = contract_future.await;
 
-            this.do_send_async(CfdSetupCompleted { order_id, dlc })
+            this.send(CfdSetupCompleted { order_id, dlc })
                 .await
+                .expect("always connected to ourselves");
         });
 
         // 6. Record that we are in an active contract setup
@@ -789,8 +790,9 @@ where
         tokio::spawn(async move {
             let dlc = contract_future.await;
 
-            this.do_send_async(CfdRollOverCompleted { order_id, dlc })
+            this.send(CfdRollOverCompleted { order_id, dlc })
                 .await
+                .expect("always connected to ourselves")
         });
 
         self.remove_pending_proposal(&order_id)
