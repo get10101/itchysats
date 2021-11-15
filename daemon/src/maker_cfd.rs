@@ -467,7 +467,7 @@ where
         // have to remove the current order.
         self.current_order_id = None;
         self.takers
-            .do_send_async(maker_inc_connections::BroadcastOrder(None))
+            .send(maker_inc_connections::BroadcastOrder(None))
             .await?;
         self.order_feed_sender.send(None)?;
 
