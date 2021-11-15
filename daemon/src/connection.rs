@@ -118,6 +118,8 @@ impl Actor {
             .send(ConnectionStatus::Online)
             .expect("receiver to outlive the actor");
 
+        tracing::info!(address = %maker_addr, "Established connection to maker");
+
         Ok(())
     }
 
