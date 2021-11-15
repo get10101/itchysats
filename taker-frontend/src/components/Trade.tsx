@@ -147,9 +147,6 @@ const Trade = (
                     <Margin margin={margin} />
                 </GridItem>
                 <GridItem colSpan={1}>
-                    <Liquidation value={liquidationPrice} />
-                </GridItem>
-                <GridItem colSpan={1}>
                     <Center>
                         <ButtonGroup
                             variant="solid"
@@ -283,24 +280,6 @@ function Margin({ margin }: MarginProps) {
                 <Text>{margin}</Text>
             </HStack>
             <Text fontSize={"sm"} color={"darkgrey"}>The collateral you will need to provide</Text>
-        </VStack>
-    );
-}
-
-interface LiquidationProps {
-    value?: string;
-}
-
-function Liquidation({ value }: LiquidationProps) {
-    return (
-        <VStack>
-            <HStack>
-                <Text as={"b"}>Liquidation price:</Text>
-                <Text>{value || "0.0"}</Text>
-            </HStack>
-            <Text fontSize={"sm"} color={"darkgrey"}>
-                You will lose your collateral if the price drops below this value
-            </Text>
         </VStack>
     );
 }
