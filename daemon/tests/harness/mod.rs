@@ -33,7 +33,7 @@ pub async fn start_both() -> (Maker, Taker) {
     .unwrap();
 
     let maker = Maker::start(oracle_pk).await;
-    let taker = Taker::start(oracle_pk, maker.listen_addr, maker.noise_static_pk).await;
+    let taker = Taker::start(oracle_pk, maker.listen_addr, maker.identity_pk).await;
     (maker, taker)
 }
 
@@ -51,7 +51,7 @@ pub struct Maker {
     pub inc_conn_actor_addr: xtra::Address<maker_inc_connections::Actor>,
     pub listen_addr: SocketAddr,
     pub mocks: mocks::Mocks,
-    pub noise_static_pk: x25519_dalek::PublicKey,
+    pub identity_pk: x25519_dalek::PublicKey,
 }
 
 impl Maker {
@@ -67,9 +67,7 @@ impl Maker {
         let settlement_time_interval_hours = time::Duration::hours(24);
 
         let seed = Seed::default();
-
-        let noise_static_sk = seed.derive_noise_static_secret();
-        let noise_static_pk = x25519_dalek::PublicKey::from(&noise_static_sk);
+        let (identity_pk, identity_sk) = seed.derive_identity();
 
         let maker = daemon::MakerActorSystem::new(
             db,
@@ -77,9 +75,7 @@ impl Maker {
             oracle_pk,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
-            |channel0, channel1| {
-                maker_inc_connections::Actor::new(channel0, channel1, noise_static_sk)
-            },
+            |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1, identity_sk),
             settlement_time_interval_hours,
             N_PAYOUTS_FOR_TEST,
         )
@@ -110,7 +106,7 @@ impl Maker {
             cfd_feed: maker.cfd_feed_receiver,
             inc_conn_actor_addr: maker.inc_conn_addr,
             listen_addr: address,
-            noise_static_pk,
+            identity_pk,
             mocks,
         }
     }
@@ -158,7 +154,7 @@ impl Taker {
     ) -> Self {
         let seed = Seed::default();
 
-        let noise_static_sk = seed.derive_noise_static_secret();
+        let (_, identity_sk) = seed.derive_identity();
 
         let db = in_memory_db().await;
 
@@ -172,7 +168,7 @@ impl Taker {
             db,
             wallet_addr,
             oracle_pk,
-            noise_static_sk,
+            identity_sk,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
             N_PAYOUTS_FOR_TEST,
@@ -183,7 +179,7 @@ impl Taker {
         taker
             .connection_actor_addr
             .send(Connect {
-                maker_noise_static_pk: maker_noise_pub_key,
+                maker_identity_pk: maker_noise_pub_key,
                 maker_addr: maker_address,
             })
             .await

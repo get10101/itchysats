@@ -186,7 +186,7 @@ where
         db: SqlitePool,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        noise_static_sk: x25519_dalek::StaticSecret,
+        identity_sk: x25519_dalek::StaticSecret,
         oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
         n_payouts: usize,
@@ -228,7 +228,7 @@ where
         tokio::spawn(connection_actor_ctx.run(connection::Actor::new(
             maker_online_status_feed_sender,
             Box::new(cfd_actor_addr.clone()),
-            noise_static_sk,
+            identity_sk,
             HEARTBEAT_INTERVAL * 2,
         )));
 

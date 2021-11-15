@@ -166,7 +166,7 @@ async fn main() -> Result<()> {
 
     let bitcoin_network = opts.network.bitcoin_network();
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
-    let noise_static_sk = seed.derive_noise_static_secret();
+    let (_, identity_sk) = seed.derive_identity();
 
     let wallet = wallet::Actor::new(
         opts.network.electrum(),
@@ -241,7 +241,7 @@ async fn main() -> Result<()> {
         db.clone(),
         wallet.clone(),
         oracle,
-        noise_static_sk,
+        identity_sk,
         |cfds, channel| oracle::Actor::new(cfds, channel, ANNOUNCEMENT_LOOKAHEAD),
         {
             |channel, cfds| {
@@ -255,7 +255,7 @@ async fn main() -> Result<()> {
 
     while connection_actor_addr
         .send(connection::Connect {
-            maker_noise_static_pk: opts.maker_id,
+            maker_identity_pk: opts.maker_id,
             maker_addr: opts.maker,
         })
         .await?
