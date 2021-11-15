@@ -157,9 +157,16 @@ impl Actor {
     async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) -> Result<()> {
         let order = msg.0;
         for (taker_id, conn) in self.write_connections.clone() {
-            tracing::trace!(%taker_id, "sending new order for broadcast to connection: {:?}", order);
-            conn.do_send_async(wire::MakerToTaker::CurrentOrder(order.clone()))
-                .await?;
+            if conn
+                .do_send_async(wire::MakerToTaker::CurrentOrder(order.clone()))
+                .await
+                .is_err()
+            {
+                tracing::trace!(%taker_id, "removing outdated connection to taker because unable to send order: {:?}", order);
+                self.write_connections.remove(&taker_id);
+            } else {
+                tracing::trace!(%taker_id, "sent new order: {:?}", order);
+            }
         }
         Ok(())
     }
