@@ -375,15 +375,18 @@ where
 
         let taker_id = self.get_taker_id_of_proposal(&order_id)?;
 
+        // clean-up state ahead of sending to ensure consistency in case we fail to deliver the
+        // message
+        self.remove_pending_proposal(&order_id)
+            .context("rejected settlement")?;
+
         self.takers
-            .do_send_async(maker_inc_connections::TakerMessage {
+            .send(maker_inc_connections::TakerMessage {
                 taker_id,
                 command: TakerCommand::NotifySettlementRejected { id: order_id },
             })
-            .await?;
+            .await??;
 
-        self.remove_pending_proposal(&order_id)
-            .context("rejected settlement")?;
         Ok(())
     }
 
@@ -404,15 +407,18 @@ where
             }
         };
 
+        // clean-up state ahead of sending to ensure consistency in case we fail to deliver the
+        // message
+        self.remove_pending_proposal(&order_id)
+            .context("rejected roll_over")?;
+
         self.takers
-            .do_send_async(maker_inc_connections::TakerMessage {
+            .send(maker_inc_connections::TakerMessage {
                 taker_id,
                 command: TakerCommand::NotifyRollOverRejected { id: order_id },
             })
-            .await?;
+            .await??;
 
-        self.remove_pending_proposal(&order_id)
-            .context("rejected roll_over")?;
         Ok(())
     }
 }
