@@ -135,7 +135,7 @@ impl Actor {
 
         match msg {
             wire::MakerToTaker::Heartbeat => {
-                tracing::info!("got the heartbeat");
+                tracing::trace!("received a heartbeat message from maker");
                 self.connected_state
                     .as_mut()
                     .expect("wire messages only to arrive in connected state")

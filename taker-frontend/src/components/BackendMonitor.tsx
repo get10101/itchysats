@@ -13,7 +13,8 @@ async function fetchWithTimeout(resource: any, timeout: number) {
 // Check for backend's presence by sending a request to '/alive' endpoint.
 // When the backend's not there, the request is likely to timeout, triggering a
 // persistent toast notification that goes away when the daemon is back online.
-export function useBackendMonitor(toast: any, timeout_ms: number): void {
+// `description` is a user-facing string describing problem/possible action.
+export function useBackendMonitor(toast: any, timeout_ms: number, description: string): void {
     const toastIdRef = useRef();
 
     const checkForBackend: () => void = async () => {
@@ -31,7 +32,7 @@ export function useBackendMonitor(toast: any, timeout_ms: number): void {
             if (!toastIdRef.current) {
                 toastIdRef.current = toast({
                     title: "Connection Error",
-                    description: "Daemon process is not running",
+                    description,
                     status: "error",
                     position: "top",
                     duration: timeout_ms * 100000, // we don't want this to be closed
