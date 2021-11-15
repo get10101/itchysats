@@ -685,7 +685,7 @@ where
         tracing::info!("Lock transaction published with txid {}", txid);
 
         self.monitor_actor
-            .do_send_async(monitor::StartMonitoring {
+            .send(monitor::StartMonitoring {
                 id: order_id,
                 params: MonitorParams::new(
                     dlc,
@@ -696,7 +696,7 @@ where
             .await?;
 
         self.oracle_actor
-            .do_send_async(oracle::MonitorAttestation {
+            .send(oracle::MonitorAttestation {
                 event_id: cfd.order.oracle_event_id,
             })
             .await?;
@@ -757,7 +757,7 @@ where
             .await??;
 
         self.oracle_actor
-            .do_send_async(oracle::MonitorAttestation {
+            .send(oracle::MonitorAttestation {
                 event_id: announcement.id,
             })
             .await?;
@@ -824,7 +824,7 @@ where
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.monitor_actor
-            .do_send_async(monitor::StartMonitoring {
+            .send(monitor::StartMonitoring {
                 id: order_id,
                 params: MonitorParams::new(
                     dlc,
@@ -893,7 +893,7 @@ where
         tracing::info!("Close transaction published with txid {}", txid);
 
         self.monitor_actor
-            .do_send_async(monitor::CollaborativeSettlement {
+            .send(monitor::CollaborativeSettlement {
                 order_id,
                 tx: (txid, own_script_pubkey),
             })
