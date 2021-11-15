@@ -165,7 +165,7 @@ impl Actor {
                 tracing::trace!(%taker_id, "removing outdated connection to taker because unable to send order: {:?}", order);
                 self.write_connections.remove(&taker_id);
             } else {
-                tracing::trace!(%taker_id, "sent new order: {:?}", order);
+                tracing::trace!(%taker_id, "sent new order: {:?}", order.as_ref().map(|o| o.id));
             }
         }
         Ok(())
