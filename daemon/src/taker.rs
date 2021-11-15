@@ -253,20 +253,7 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    while connection_actor_addr
-        .send(connection::Connect {
-            maker_identity_pk: opts.maker_id,
-            maker_addr: opts.maker,
-        })
-        .await?
-        .is_err()
-    {
-        sleep(CONNECTION_RETRY_INTERVAL).await;
-        tracing::debug!(
-            "Couldn't connect to the maker, retrying in {}...",
-            CONNECTION_RETRY_INTERVAL.as_secs()
-        );
-    }
+    connect(connection_actor_addr, opts.maker_id, opts.maker).await?;
 
     tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
     let take_offer_channel = MessageChannel::<taker_cfd::TakeOffer>::clone_channel(&cfd_actor_addr);
@@ -313,6 +300,29 @@ async fn main() -> Result<()> {
     rocket.launch().await?;
 
     db.close().await;
+
+    Ok(())
+}
+
+async fn connect(
+    connection_actor_addr: xtra::Address<connection::Actor>,
+    maker_identity_pk: x25519_dalek::PublicKey,
+    maker_addr: SocketAddr,
+) -> Result<()> {
+    while connection_actor_addr
+        .send(connection::Connect {
+            maker_identity_pk,
+            maker_addr,
+        })
+        .await?
+        .is_err()
+    {
+        sleep(CONNECTION_RETRY_INTERVAL).await;
+        tracing::debug!(
+            "Couldn't connect to the maker, retrying in {}...",
+            CONNECTION_RETRY_INTERVAL.as_secs()
+        );
+    }
 
     Ok(())
 }
