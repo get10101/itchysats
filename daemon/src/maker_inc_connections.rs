@@ -158,14 +158,12 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) -> Result<()> {
+    async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) {
         let order = msg.0;
         for taker_id in self.write_connections.clone().keys() {
             self.send_to_taker(taker_id, wire::MakerToTaker::CurrentOrder(order.clone())).await.expect("send_to_taker only fails on missing hashmap entry and we are iterating over those entries");
             tracing::trace!(%taker_id, "sent new order: {:?}", order.as_ref().map(|o| o.id));
         }
-
-        Ok(())
     }
 
     async fn handle_taker_message(&mut self, msg: TakerMessage) -> Result<()> {
