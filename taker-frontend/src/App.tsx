@@ -5,6 +5,7 @@ import { useAsync } from "react-async";
 import { Route, Switch } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import useWebSocket from "react-use-websocket";
+import { useBackendMonitor } from "./components/BackendMonitor";
 import History from "./components/History";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
@@ -43,6 +44,7 @@ async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
 
 export const App = () => {
     const toast = useToast();
+    useBackendMonitor(toast, 5000); // 5s timeout
 
     const {
         lastMessage,
