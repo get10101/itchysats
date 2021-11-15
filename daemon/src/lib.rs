@@ -170,7 +170,7 @@ where
                 .spawn_with_handle(),
         );
 
-        oracle_addr.do_send_async(oracle::Sync).await?;
+        oracle_addr.send(oracle::Sync).await?;
 
         tracing::debug!("Maker actor system ready");
 
