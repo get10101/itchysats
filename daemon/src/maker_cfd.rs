@@ -972,7 +972,7 @@ where
 
         // 4. Inform connected takers
         self.takers
-            .do_send_async(maker_inc_connections::BroadcastOrder(Some(order)))
+            .send(maker_inc_connections::BroadcastOrder(Some(order)))
             .await?;
 
         Ok(())
