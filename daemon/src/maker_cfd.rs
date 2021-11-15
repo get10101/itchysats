@@ -533,11 +533,11 @@ where
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.takers
-            .do_send_async(maker_inc_connections::TakerMessage {
+            .send(maker_inc_connections::TakerMessage {
                 taker_id,
                 command: TakerCommand::NotifyOrderRejected { id: cfd.order.id },
             })
-            .await?;
+            .await??;
 
         Ok(())
     }
