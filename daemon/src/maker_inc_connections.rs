@@ -1,8 +1,10 @@
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
+use crate::tokio_ext::FutureExt;
 use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire, HEARTBEAT_INTERVAL};
 use anyhow::Result;
+use futures::future::RemoteHandle;
 use futures::{StreamExt, TryStreamExt};
 use std::collections::HashMap;
 use std::io;
@@ -11,7 +13,6 @@ use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
 use tokio_util::codec::FramedRead;
 use xtra::prelude::*;
-use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::{Actor as _, KeepRunning};
 use xtra_productivity::xtra_productivity;
 
@@ -68,6 +69,7 @@ pub struct Actor {
     new_taker_channel: Box<dyn MessageChannel<NewTakerOnline>>,
     taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
     noise_priv_key: x25519_dalek::StaticSecret,
+    tasks: Vec<RemoteHandle<()>>,
 }
 
 impl Actor {
@@ -81,6 +83,7 @@ impl Actor {
             new_taker_channel: new_taker_channel.clone_channel(),
             taker_msg_channel: taker_msg_channel.clone_channel(),
             noise_priv_key,
+            tasks: Vec::new(),
         }
     }
 
@@ -125,28 +128,32 @@ impl Actor {
 
         let (out_msg_actor_address, mut out_msg_actor_context) = xtra::Context::new(None);
 
-        let forward_to_cfd = forward_only_ok::Actor::new(self.taker_msg_channel.clone_channel())
-            .create(None)
-            .spawn_global();
+        let (forward_to_cfd, forward_to_cfd_fut) =
+            forward_only_ok::Actor::new(self.taker_msg_channel.clone_channel())
+                .create(None)
+                .run();
+        self.tasks.push(forward_to_cfd_fut.spawn_with_handle());
 
         // only allow outgoing messages while we are successfully reading incoming ones
-        tokio::spawn(async move {
-            let mut actor = send_to_socket::Actor::new(write, noise.clone());
+        self.tasks.push(
+            async move {
+                let mut actor = send_to_socket::Actor::new(write, noise.clone());
 
-            tokio::spawn(
-                out_msg_actor_context
+                let _heartbeat_handle = out_msg_actor_context
                     .notify_interval(HEARTBEAT_INTERVAL, || wire::MakerToTaker::Heartbeat)
-                    .expect("actor not to shutdown"),
-            );
+                    .expect("actor not to shutdown")
+                    .spawn_with_handle();
 
-            out_msg_actor_context
-                .handle_while(&mut actor, forward_to_cfd.attach_stream(read))
-                .await;
+                out_msg_actor_context
+                    .handle_while(&mut actor, forward_to_cfd.attach_stream(read))
+                    .await;
 
-            tracing::error!("Closing connection to taker {}", taker_id);
+                tracing::error!("Closing connection to taker {}", taker_id);
 
-            actor.shutdown().await;
-        });
+                actor.shutdown().await;
+            }
+            .spawn_with_handle(),
+        );
 
         self.write_connections
             .insert(taker_id, out_msg_actor_address);
