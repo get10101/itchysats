@@ -1,6 +1,7 @@
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
+use crate::noise::TransportStateExt;
 use crate::tokio_ext::FutureExt;
 use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire};
 use anyhow::Result;
@@ -117,11 +118,11 @@ impl Actor {
         taker_address: SocketAddr,
         _: &mut Context<Self>,
     ) -> Result<()> {
-        let taker_id = TakerId::default();
+        let transport_state = noise::responder_handshake(&mut stream, &self.noise_priv_key).await?;
+        let taker_id = TakerId::new(transport_state.get_remote_public_key()?);
 
         tracing::info!(%taker_id, address = %taker_address, "New taker connected");
 
-        let transport_state = noise::responder_handshake(&mut stream, &self.noise_priv_key).await?;
         let transport_state = Arc::new(Mutex::new(transport_state));
 
         let (read, write) = stream.into_split();
