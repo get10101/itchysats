@@ -152,6 +152,10 @@ impl Taker {
         &mut self.system.order_feed_receiver
     }
 
+    pub fn maker_status_feed(&mut self) -> &mut watch::Receiver<ConnectionStatus> {
+        &mut self.system.maker_online_status_feed_receiver
+    }
+
     pub async fn start(
         oracle_pk: schnorrsig::PublicKey,
         maker_address: SocketAddr,
