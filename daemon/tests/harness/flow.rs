@@ -58,9 +58,8 @@ pub async fn next<T>(rx: &mut watch::Receiver<T>) -> T
 where
     T: Clone,
 {
-    // TODO: Make timeout configurable, only contract setup can take up to 2 min on CI
     rx.changed()
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(10))
         .await
         .context("Waiting for next element in channel is taking too long, aborting")
         .unwrap()
