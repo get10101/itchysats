@@ -2,12 +2,12 @@ use crate::harness::mocks::monitor::MonitorActor;
 use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
-use daemon::connection::{Connect, ConnectionStatus};
+use daemon::connection::Connect;
 use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, Order, Origin};
 use daemon::model::{Price, Usd};
 use daemon::seed::Seed;
-use daemon::{db, maker_cfd, maker_inc_connections, taker_cfd};
+use daemon::{db, maker_cfd, maker_inc_connections, taker_cfd, MakerActorSystem};
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -40,21 +40,23 @@ pub async fn start_both() -> (Maker, Taker) {
 const N_PAYOUTS_FOR_TEST: usize = 5;
 
 /// Maker Test Setup
-#[derive(Clone)]
 pub struct Maker {
-    pub cfd_actor_addr: xtra::Address<
-        maker_cfd::Actor<OracleActor, MonitorActor, maker_inc_connections::Actor, WalletActor>,
-    >,
-    pub order_feed: watch::Receiver<Option<Order>>,
-    pub cfd_feed: watch::Receiver<Vec<Cfd>>,
-    #[allow(dead_code)] // we need to keep the xtra::Address for refcounting
-    pub inc_conn_actor_addr: xtra::Address<maker_inc_connections::Actor>,
-    pub listen_addr: SocketAddr,
+    pub system:
+        MakerActorSystem<OracleActor, MonitorActor, maker_inc_connections::Actor, WalletActor>,
     pub mocks: mocks::Mocks,
+    pub listen_addr: SocketAddr,
     pub identity_pk: x25519_dalek::PublicKey,
 }
 
 impl Maker {
+    pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Vec<Cfd>> {
+        &mut self.system.cfd_feed_receiver
+    }
+
+    pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<Order>> {
+        &mut self.system.order_feed_receiver
+    }
+
     pub async fn start(oracle_pk: schnorrsig::PublicKey) -> Self {
         let db = in_memory_db().await;
 
@@ -101,18 +103,16 @@ impl Maker {
         tokio::spawn(maker.inc_conn_addr.clone().attach_stream(listener_stream));
 
         Self {
-            cfd_actor_addr: maker.cfd_actor_addr,
-            order_feed: maker.order_feed_receiver,
-            cfd_feed: maker.cfd_feed_receiver,
-            inc_conn_actor_addr: maker.inc_conn_addr,
-            listen_addr: address,
+            system: maker,
             identity_pk,
+            listen_addr: address,
             mocks,
         }
     }
 
     pub async fn publish_order(&mut self, new_order_params: maker_cfd::NewOrder) {
-        self.cfd_actor_addr
+        self.system
+            .cfd_actor_addr
             .send(new_order_params)
             .await
             .unwrap()
@@ -120,7 +120,8 @@ impl Maker {
     }
 
     pub async fn reject_take_request(&self, order: Order) {
-        self.cfd_actor_addr
+        self.system
+            .cfd_actor_addr
             .send(CfdAction::RejectOrder { order_id: order.id })
             .await
             .unwrap()
@@ -128,7 +129,8 @@ impl Maker {
     }
 
     pub async fn accept_take_request(&self, order: Order) {
-        self.cfd_actor_addr
+        self.system
+            .cfd_actor_addr
             .send(CfdAction::AcceptOrder { order_id: order.id })
             .await
             .unwrap()
@@ -137,16 +139,20 @@ impl Maker {
 }
 
 /// Taker Test Setup
-#[derive(Clone)]
 pub struct Taker {
-    pub order_feed: watch::Receiver<Option<Order>>,
-    pub cfd_feed: watch::Receiver<Vec<Cfd>>,
-    pub maker_status_feed: watch::Receiver<ConnectionStatus>,
-    pub cfd_actor_addr: xtra::Address<taker_cfd::Actor<OracleActor, MonitorActor, WalletActor>>,
+    pub system: daemon::TakerActorSystem<OracleActor, MonitorActor, WalletActor>,
     pub mocks: mocks::Mocks,
 }
 
 impl Taker {
+    pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Vec<Cfd>> {
+        &mut self.system.cfd_feed_receiver
+    }
+
+    pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<Order>> {
+        &mut self.system.order_feed_receiver
+    }
+
     pub async fn start(
         oracle_pk: schnorrsig::PublicKey,
         maker_address: SocketAddr,
@@ -187,16 +193,14 @@ impl Taker {
             .unwrap();
 
         Self {
-            order_feed: taker.order_feed_receiver,
-            cfd_feed: taker.cfd_feed_receiver,
-            maker_status_feed: taker.maker_online_status_feed_receiver,
-            cfd_actor_addr: taker.cfd_actor_addr,
+            system: taker,
             mocks,
         }
     }
 
     pub async fn take_order(&self, order: Order, quantity: Usd) {
-        self.cfd_actor_addr
+        self.system
+            .cfd_actor_addr
             .send(taker_cfd::TakeOffer {
                 order_id: order.id,
                 quantity,
