@@ -5,6 +5,7 @@ use futures::{FutureExt, StreamExt};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
+use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio_util::codec::FramedRead;
 use xtra::prelude::MessageChannel;
@@ -84,11 +85,11 @@ impl Actor {
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
         let (read, write, noise) = {
-            let socket = tokio::net::TcpSocket::new_v4().expect("Be able to create a socket");
-            let mut connection = socket.connect(maker_addr).await?;
+            let mut connection = TcpStream::connect(&maker_addr).await?;
             let noise =
                 noise::initiator_handshake(&mut connection, &self.identity_sk, &maker_identity_pk)
                     .await?;
+
             let (read, write) = connection.into_split();
             (read, write, Arc::new(Mutex::new(noise)))
         };
@@ -116,6 +117,8 @@ impl Actor {
         self.status_sender
             .send(ConnectionStatus::Online)
             .expect("receiver to outlive the actor");
+
+        tracing::info!(address = %maker_addr, "Established connection to maker");
 
         Ok(())
     }

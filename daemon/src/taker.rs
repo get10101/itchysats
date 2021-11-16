@@ -30,9 +30,9 @@ const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Parser)]
 struct Opts {
-    /// The IP address of the other party (i.e. the maker).
-    #[clap(long, default_value = "127.0.0.1:9999")]
-    maker: SocketAddr,
+    /// The IP address or hostname of the other party (i.e. the maker).
+    #[clap(long)]
+    maker: String,
 
     /// The public key of the maker as a 32 byte hex string.
     #[clap(long, parse(try_from_str = parse_x25519_pubkey))]
@@ -253,20 +253,7 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    while connection_actor_addr
-        .send(connection::Connect {
-            maker_identity_pk: opts.maker_id,
-            maker_addr: opts.maker,
-        })
-        .await?
-        .is_err()
-    {
-        sleep(CONNECTION_RETRY_INTERVAL).await;
-        tracing::debug!(
-            "Couldn't connect to the maker, retrying in {}...",
-            CONNECTION_RETRY_INTERVAL.as_secs()
-        );
-    }
+    connect(connection_actor_addr, opts.maker_id, opts.maker).await?;
 
     tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
     let take_offer_channel = MessageChannel::<taker_cfd::TakeOffer>::clone_channel(&cfd_actor_addr);
@@ -315,4 +302,46 @@ async fn main() -> Result<()> {
     db.close().await;
 
     Ok(())
+}
+
+async fn connect(
+    connection_actor_addr: xtra::Address<connection::Actor>,
+    maker_identity_pk: x25519_dalek::PublicKey,
+    maker_addr: String,
+) -> Result<()> {
+    let possible_addresses = tokio::net::lookup_host(&maker_addr)
+        .await?
+        .collect::<Vec<_>>();
+
+    tracing::debug!(
+        "Resolved {} to [{}]",
+        maker_addr,
+        itertools::join(possible_addresses.iter(), ",")
+    );
+
+    loop {
+        for address in &possible_addresses {
+            tracing::trace!("Connecting to {}", address);
+
+            let connect_msg = connection::Connect {
+                maker_identity_pk,
+                maker_addr: *address,
+            };
+
+            if let Err(e) = connection_actor_addr.send(connect_msg).await? {
+                tracing::debug!(%address, "Failed to establish connection: {:#}", e);
+                continue;
+            }
+
+            return Ok(());
+        }
+
+        tracing::debug!(
+            "Tried connecting to {} addresses without success, retrying in {} seconds",
+            possible_addresses.len(),
+            CONNECTION_RETRY_INTERVAL.as_secs()
+        );
+
+        sleep(CONNECTION_RETRY_INTERVAL).await;
+    }
 }
