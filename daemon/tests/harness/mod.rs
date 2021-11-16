@@ -91,7 +91,6 @@ impl Maker {
         let listener_stream = futures::stream::poll_fn(move |ctx| {
             let message = match futures::ready!(listener.poll_accept(ctx)) {
                 Ok((stream, address)) => {
-                    dbg!("new connection");
                     maker_inc_connections::ListenerMessage::NewConnection { stream, address }
                 }
                 Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
