@@ -622,47 +622,6 @@ where
 
 impl<O, M, T, W> Actor<O, M, T, W>
 where
-    T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
-{
-    async fn handle_new_order(
-        &mut self,
-        price: Price,
-        min_quantity: Usd,
-        max_quantity: Usd,
-    ) -> Result<()> {
-        let oracle_event_id = oracle::next_announcement_after(
-            time::OffsetDateTime::now_utc() + self.settlement_time_interval_hours,
-        )?;
-
-        let order = Order::new(
-            price,
-            min_quantity,
-            max_quantity,
-            Origin::Ours,
-            oracle_event_id,
-            self.settlement_time_interval_hours,
-        )?;
-
-        // 1. Save to DB
-        let mut conn = self.db.acquire().await?;
-        insert_order(&order, &mut conn).await?;
-
-        // 2. Update actor state to current order
-        self.current_order_id.replace(order.id);
-
-        // 3. Notify UI via feed
-        self.order_feed_sender.send(Some(order.clone()))?;
-
-        // 4. Inform connected takers
-        self.takers
-            .do_send_async(maker_inc_connections::BroadcastOrder(Some(order)))
-            .await?;
-        Ok(())
-    }
-}
-
-impl<O, M, T, W> Actor<O, M, T, W>
-where
     O: xtra::Handler<oracle::MonitorAttestation>,
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -964,8 +923,41 @@ where
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
 {
     async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) -> Result<()> {
-        self.handle_new_order(msg.price, msg.min_quantity, msg.max_quantity)
-            .await
+        let NewOrder {
+            price,
+            min_quantity,
+            max_quantity,
+        } = msg;
+
+        let oracle_event_id = oracle::next_announcement_after(
+            time::OffsetDateTime::now_utc() + self.settlement_time_interval_hours,
+        )?;
+
+        let order = Order::new(
+            price,
+            min_quantity,
+            max_quantity,
+            Origin::Ours,
+            oracle_event_id,
+            self.settlement_time_interval_hours,
+        )?;
+
+        // 1. Save to DB
+        let mut conn = self.db.acquire().await?;
+        insert_order(&order, &mut conn).await?;
+
+        // 2. Update actor state to current order
+        self.current_order_id.replace(order.id);
+
+        // 3. Notify UI via feed
+        self.order_feed_sender.send(Some(order.clone()))?;
+
+        // 4. Inform connected takers
+        self.takers
+            .do_send_async(maker_inc_connections::BroadcastOrder(Some(order)))
+            .await?;
+
+        Ok(())
     }
 }
 
