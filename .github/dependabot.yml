@@ -16,6 +16,11 @@ updates:
       interval: "daily"
 
   - package-ecosystem: "npm"
-    directory: "/"
+    directory: "/maker-frontend"
+    schedule:
+      interval: "daily"
+ 
+  - package-ecosystem: "npm"
+    directory: "/taker-frontend"
     schedule:
       interval: "daily"
