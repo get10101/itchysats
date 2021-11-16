@@ -119,7 +119,7 @@ impl Actor {
     ) -> Result<()> {
         let taker_id = TakerId::default();
 
-        tracing::info!("New taker {} connected on {}", taker_id, taker_address);
+        tracing::info!(%taker_id, address = %taker_address, "New taker connected");
 
         let noise = Arc::new(Mutex::new(
             noise::responder_handshake(&mut stream, &self.noise_priv_key).await?,
