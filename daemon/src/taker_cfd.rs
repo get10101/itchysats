@@ -188,6 +188,14 @@ where
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
+        if !cfd.is_collaborative_settle_possible() {
+            anyhow::bail!(
+                "Settlement proposal not possible because for cfd {} is in state {} which cannot be collaboratively settled",
+                order_id,
+                cfd.state
+            )
+        }
+
         let proposal = cfd.calculate_settlement(current_price, self.n_payouts)?;
 
         if self

@@ -1221,6 +1221,10 @@ impl Cfd {
         )
     }
 
+    pub fn is_collaborative_settle_possible(&self) -> bool {
+        matches!(self.state.clone(), CfdState::Open { .. })
+    }
+
     pub fn role(&self) -> Role {
         self.order.origin.into()
     }
