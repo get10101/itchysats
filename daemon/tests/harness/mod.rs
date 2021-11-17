@@ -13,6 +13,7 @@ use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::task::Poll;
+use std::time::Duration;
 use tokio::sync::watch;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
@@ -25,6 +26,7 @@ pub mod flow;
 pub mod maia;
 pub mod mocks;
 
+pub const HEARTBEAT_INTERVAL_FOR_TEST: Duration = Duration::from_secs(2);
 const N_PAYOUTS_FOR_TEST: usize = 5;
 
 pub async fn start_both() -> (Maker, Taker) {
@@ -77,7 +79,14 @@ impl Maker {
             oracle_pk,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
-            |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1, identity_sk),
+            |channel0, channel1| {
+                maker_inc_connections::Actor::new(
+                    channel0,
+                    channel1,
+                    identity_sk,
+                    HEARTBEAT_INTERVAL_FOR_TEST,
+                )
+            },
             settlement_time_interval_hours,
             N_PAYOUTS_FOR_TEST,
         )
@@ -182,6 +191,7 @@ impl Taker {
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
             N_PAYOUTS_FOR_TEST,
+            HEARTBEAT_INTERVAL_FOR_TEST * 2,
         )
         .await
         .unwrap();
