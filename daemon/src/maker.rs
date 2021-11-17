@@ -224,7 +224,7 @@ async fn main() -> Result<()> {
     tracing::info!("Listening on {}", local_addr);
 
     let (task, quote_updates) = bitmex_price_feed::new().await?;
-    tokio::spawn(task);
+    let _task = task.spawn_with_handle();
 
     let db = SqlitePool::connect_with(
         SqliteConnectOptions::new()
@@ -282,9 +282,11 @@ async fn main() -> Result<()> {
         Poll::Ready(Some(message))
     });
 
-    tokio::spawn(incoming_connection_addr.attach_stream(listener_stream));
+    let _listener_task = incoming_connection_addr
+        .attach_stream(listener_stream)
+        .spawn_with_handle();
 
-    tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
+    let _wallet_sync_task = wallet_sync::new(wallet, wallet_feed_sender).spawn_with_handle();
 
     let cfd_action_channel = MessageChannel::<maker_cfd::CfdAction>::clone_channel(&cfd_actor_addr);
     let new_order_channel = MessageChannel::<maker_cfd::NewOrder>::clone_channel(&cfd_actor_addr);

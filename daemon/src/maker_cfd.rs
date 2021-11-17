@@ -8,11 +8,13 @@ use crate::model::cfd::{
 };
 use crate::model::{Price, TakerId, Timestamp, Usd};
 use crate::monitor::MonitorParams;
+use crate::tokio_ext::FutureExt;
 use crate::{log_error, maker_inc_connections, monitor, oracle, setup_contract, wallet, wire};
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
+use futures::future::RemoteHandle;
 use futures::{future, SinkExt};
 use maia::secp256k1_zkp::Signature;
 use sqlx::pool::PoolConnection;
@@ -81,6 +83,7 @@ enum SetupState {
     Active {
         taker: TakerId,
         sender: mpsc::UnboundedSender<wire::SetupMsg>,
+        _task: RemoteHandle<()>,
     },
     None,
 }
@@ -89,6 +92,7 @@ enum RollOverState {
     Active {
         taker: TakerId,
         sender: mpsc::UnboundedSender<wire::RollOverMsg>,
+        _task: RemoteHandle<()>,
     },
     None,
 }
@@ -198,7 +202,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         msg: wire::SetupMsg,
     ) -> Result<()> {
         match &mut self.setup_state {
-            SetupState::Active { taker, sender } if taker_id == *taker => {
+            SetupState::Active { taker, sender, .. } if taker_id == *taker => {
                 sender.send(msg).await?;
             }
             SetupState::Active { taker, .. } => {
@@ -218,7 +222,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         msg: wire::RollOverMsg,
     ) -> Result<()> {
         match &mut self.roll_over_state {
-            RollOverState::Active { taker, sender } if taker_id == *taker => {
+            RollOverState::Active { taker, sender, .. } if taker_id == *taker => {
                 sender.send(msg).await?;
             }
             RollOverState::Active { taker, .. } => {
@@ -622,18 +626,20 @@ where
             .address()
             .expect("actor to be able to give address to itself");
 
-        tokio::spawn(async move {
+        let task = async move {
             let dlc = contract_future.await;
 
             this.send(CfdSetupCompleted { order_id, dlc })
                 .await
                 .expect("always connected to ourselves");
-        });
+        }
+        .spawn_with_handle();
 
         // 6. Record that we are in an active contract setup
         self.setup_state = SetupState::Active {
             sender,
             taker: taker_id,
+            _task: task,
         };
 
         Ok(())
@@ -785,18 +791,20 @@ where
             .address()
             .expect("actor to be able to give address to itself");
 
-        self.roll_over_state = RollOverState::Active {
-            sender,
-            taker: taker_id,
-        };
-
-        tokio::spawn(async move {
+        let task = async move {
             let dlc = contract_future.await;
 
             this.send(CfdRollOverCompleted { order_id, dlc })
                 .await
                 .expect("always connected to ourselves")
-        });
+        }
+        .spawn_with_handle();
+
+        self.roll_over_state = RollOverState::Active {
+            sender,
+            taker: taker_id,
+            _task: task,
+        };
 
         self.remove_pending_proposal(&order_id)
             .context("accepted roll_over")?;

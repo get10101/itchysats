@@ -208,7 +208,7 @@ async fn main() -> Result<()> {
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
 
     let (task, quote_updates) = bitmex_price_feed::new().await?;
-    tokio::spawn(task);
+    let _task = task.spawn_with_handle();
 
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
@@ -258,7 +258,7 @@ async fn main() -> Result<()> {
 
     connect(connection_actor_addr, opts.maker_id, opts.maker).await?;
 
-    tokio::spawn(wallet_sync::new(wallet, wallet_feed_sender));
+    let _wallet_sync_task = wallet_sync::new(wallet, wallet_feed_sender).spawn_with_handle();
     let take_offer_channel = MessageChannel::<taker_cfd::TakeOffer>::clone_channel(&cfd_actor_addr);
     let cfd_action_channel = MessageChannel::<taker_cfd::CfdAction>::clone_channel(&cfd_actor_addr);
 
@@ -290,7 +290,7 @@ async fn main() -> Result<()> {
     let shutdown_handle = rocket.shutdown();
 
     // shutdown the rocket server maker if goes offline
-    tokio::spawn(async move {
+    let _rocket_shutdown_task = (async move {
         loop {
             maker_online_status_feed_receiver.changed().await.unwrap();
             if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
@@ -299,7 +299,7 @@ async fn main() -> Result<()> {
                 return;
             }
         }
-    });
+    }).spawn_with_handle();
     rocket.launch().await?;
 
     db.close().await;
