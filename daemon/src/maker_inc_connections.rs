@@ -2,7 +2,7 @@ use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
 use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire, HEARTBEAT_INTERVAL};
-use anyhow::{Context as AnyhowContext, Result};
+use anyhow::Result;
 use futures::{StreamExt, TryStreamExt};
 use std::collections::HashMap;
 use std::io;
@@ -84,11 +84,15 @@ impl Actor {
         }
     }
 
-    async fn send_to_taker(&mut self, taker_id: &TakerId, msg: wire::MakerToTaker) -> Result<()> {
+    async fn send_to_taker(
+        &mut self,
+        taker_id: &TakerId,
+        msg: wire::MakerToTaker,
+    ) -> Result<(), NoConnection> {
         let conn = self
             .write_connections
             .get(taker_id)
-            .context("no connection to taker_id")?;
+            .ok_or_else(|| NoConnection(*taker_id))?;
 
         let msg_str = msg.to_string();
 
@@ -156,19 +160,21 @@ impl Actor {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("No connection to taker {0}")]
+pub struct NoConnection(TakerId);
+
 #[xtra_productivity]
 impl Actor {
-    async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) -> Result<()> {
+    async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) {
         let order = msg.0;
         for taker_id in self.write_connections.clone().keys() {
             self.send_to_taker(taker_id, wire::MakerToTaker::CurrentOrder(order.clone())).await.expect("send_to_taker only fails on missing hashmap entry and we are iterating over those entries");
             tracing::trace!(%taker_id, "sent new order: {:?}", order.as_ref().map(|o| o.id));
         }
-
-        Ok(())
     }
 
-    async fn handle_taker_message(&mut self, msg: TakerMessage) -> Result<()> {
+    async fn handle_taker_message(&mut self, msg: TakerMessage) -> Result<(), NoConnection> {
         match msg.command {
             TakerCommand::SendOrder { order } => {
                 self.send_to_taker(&msg.taker_id, wire::MakerToTaker::CurrentOrder(order))
@@ -223,6 +229,7 @@ impl Actor {
                 .await?;
             }
         }
+
         Ok(())
     }
 

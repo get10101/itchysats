@@ -148,6 +148,8 @@ where
 
         oracle_addr.do_send_async(oracle::Sync).await?;
 
+        tracing::debug!("Maker actor system ready");
+
         Ok(Self {
             cfd_actor_addr,
             cfd_feed_receiver,
@@ -253,6 +255,8 @@ where
             .spawn_global();
 
         tokio::spawn(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
+
+        tracing::debug!("Taker actor system ready");
 
         Ok(Self {
             cfd_actor_addr,
