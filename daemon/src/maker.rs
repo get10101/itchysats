@@ -9,7 +9,7 @@ use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
     bitmex_price_feed, db, housekeeping, logger, maker_cfd, maker_inc_connections, monitor, oracle,
-    wallet, wallet_sync, MakerActorSystem, HEARTBEAT_INTERVAL, N_PAYOUTS,
+    wallet, wallet_sync, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
@@ -223,8 +223,10 @@ async fn main() -> Result<()> {
 
     tracing::info!("Listening on {}", local_addr);
 
+    let mut tasks = Tasks::default();
+
     let (task, quote_updates) = bitmex_price_feed::new().await?;
-    let _task = task.spawn_with_handle();
+    tasks.add(task);
 
     let db = SqlitePool::connect_with(
         SqliteConnectOptions::new()
@@ -282,11 +284,9 @@ async fn main() -> Result<()> {
         Poll::Ready(Some(message))
     });
 
-    let _listener_task = incoming_connection_addr
-        .attach_stream(listener_stream)
-        .spawn_with_handle();
+    tasks.add(incoming_connection_addr.attach_stream(listener_stream));
 
-    let _wallet_sync_task = wallet_sync::new(wallet, wallet_feed_sender).spawn_with_handle();
+    tasks.add(wallet_sync::new(wallet, wallet_feed_sender));
 
     let cfd_action_channel = MessageChannel::<maker_cfd::CfdAction>::clone_channel(&cfd_actor_addr);
     let new_order_channel = MessageChannel::<maker_cfd::NewOrder>::clone_channel(&cfd_actor_addr);

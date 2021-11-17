@@ -1,7 +1,5 @@
-use crate::tokio_ext::FutureExt;
-use crate::{log_error, noise, send_to_socket, wire};
+use crate::{log_error, noise, send_to_socket, wire, Tasks};
 use anyhow::Result;
-use futures::future::RemoteHandle;
 use futures::StreamExt;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -15,7 +13,7 @@ use xtra_productivity::xtra_productivity;
 
 struct ConnectedState {
     last_heartbeat: SystemTime,
-    _tasks: Vec<RemoteHandle<()>>,
+    _tasks: Tasks,
 }
 
 pub struct Actor {
@@ -97,21 +95,18 @@ impl Actor {
 
         let send_to_socket = send_to_socket::Actor::new(write, noise.clone());
 
-        let mut tasks = vec![self
-            .send_to_maker_ctx
-            .attach(send_to_socket)
-            .spawn_with_handle()];
+        let mut tasks = Tasks::default();
+        tasks.add(self.send_to_maker_ctx.attach(send_to_socket));
 
         let read = FramedRead::new(read, wire::EncryptedJsonCodec::new(noise))
             .map(move |item| MakerStreamMessage { item });
 
         let this = ctx.address().expect("self to be alive");
-        tasks.push(this.attach_stream(read).spawn_with_handle());
+        tasks.add(this.attach_stream(read));
 
-        tasks.push(
+        tasks.add(
             ctx.notify_interval(self.timeout, || MeasurePulse)
-                .expect("we just started")
-                .spawn_with_handle(),
+                .expect("we just started"),
         );
 
         self.connected_state = Some(ConnectedState {
