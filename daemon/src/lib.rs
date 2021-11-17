@@ -57,6 +57,22 @@ pub const N_PAYOUTS: usize = 200;
 /// If it gets dropped, all tasks are cancelled.
 pub struct Tasks(Vec<RemoteHandle<()>>);
 
+impl Tasks {
+    /// Spawn the task on the runtime and remembers the handle
+    /// NOTE: Do *not* call spawn_with_handle() before calling `add`,
+    /// such calls  will trigger panic in debug mode.
+    pub fn add(&mut self, f: impl Future<Output = ()> + Send + 'static) {
+        let handle = f.spawn_with_handle();
+        self.0.push(handle);
+    }
+}
+
+impl Default for Tasks {
+    fn default() -> Self {
+        Tasks(vec![])
+    }
+}
+
 pub struct MakerActorSystem<O, M, T, W> {
     pub cfd_actor_addr: Address<maker_cfd::Actor<O, M, T, W>>,
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
@@ -112,7 +128,7 @@ where
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
         let (inc_conn_addr, inc_conn_ctx) = xtra::Context::new(None);
 
-        let mut tasks = vec![];
+        let mut tasks = Tasks::default();
 
         let (cfd_actor_addr, cfd_actor_fut) = maker_cfd::Actor::new(
             db,
@@ -130,46 +146,35 @@ where
         .create(None)
         .run();
 
-        tasks.push(cfd_actor_fut.spawn_with_handle());
+        tasks.add(cfd_actor_fut);
 
-        tasks.push(
-            inc_conn_ctx
-                .run(inc_conn_constructor(
-                    Box::new(cfd_actor_addr.clone()),
-                    Box::new(cfd_actor_addr.clone()),
-                ))
-                .spawn_with_handle(),
-        );
+        tasks.add(inc_conn_ctx.run(inc_conn_constructor(
+            Box::new(cfd_actor_addr.clone()),
+            Box::new(cfd_actor_addr.clone()),
+        )));
 
-        tasks.push(
+        tasks.add(
             monitor_ctx
                 .notify_interval(Duration::from_secs(20), || monitor::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?
-                .spawn_with_handle(),
+                .map_err(|e| anyhow::anyhow!(e))?,
         );
-        tasks.push(
+        tasks.add(
             monitor_ctx
-                .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?)
-                .spawn_with_handle(),
+                .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?),
         );
 
-        tasks.push(
+        tasks.add(
             oracle_ctx
                 .notify_interval(Duration::from_secs(5), || oracle::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?
-                .spawn_with_handle(),
+                .map_err(|e| anyhow::anyhow!(e))?,
         );
         let (fan_out_actor, fan_out_actor_fut) =
             fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
                 .create(None)
                 .run();
-        tasks.push(fan_out_actor_fut.spawn_with_handle());
+        tasks.add(fan_out_actor_fut);
 
-        tasks.push(
-            oracle_ctx
-                .run(oracle_constructor(cfds, Box::new(fan_out_actor)))
-                .spawn_with_handle(),
-        );
+        tasks.add(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
 
         oracle_addr.send(oracle::Sync).await?;
 
@@ -181,7 +186,7 @@ where
             order_feed_receiver,
             update_cfd_feed_receiver,
             inc_conn_addr,
-            tasks: Tasks(tasks),
+            tasks,
         })
     }
 }
@@ -239,7 +244,7 @@ where
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
 
-        let mut tasks = vec![];
+        let mut tasks = Tasks::default();
 
         let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
         let (cfd_actor_addr, cfd_actor_fut) = taker_cfd::Actor::new(
@@ -257,36 +262,29 @@ where
         .create(None)
         .run();
 
-        tasks.push(cfd_actor_fut.spawn_with_handle());
+        tasks.add(cfd_actor_fut);
 
-        tasks.push(
-            connection_actor_ctx
-                .run(connection::Actor::new(
-                    maker_online_status_feed_sender,
-                    Box::new(cfd_actor_addr.clone()),
-                    identity_sk,
-                    maker_heartbeat_interval,
-                ))
-                .spawn_with_handle(),
-        );
+        tasks.add(connection_actor_ctx.run(connection::Actor::new(
+            maker_online_status_feed_sender,
+            Box::new(cfd_actor_addr.clone()),
+            identity_sk,
+            maker_heartbeat_interval,
+        )));
 
-        tasks.push(
+        tasks.add(
             monitor_ctx
                 .notify_interval(Duration::from_secs(20), || monitor::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?
-                .spawn_with_handle(),
+                .map_err(|e| anyhow::anyhow!(e))?,
         );
-        tasks.push(
+        tasks.add(
             monitor_ctx
-                .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?)
-                .spawn_with_handle(),
+                .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?),
         );
 
-        tasks.push(
+        tasks.add(
             oracle_ctx
                 .notify_interval(Duration::from_secs(5), || oracle::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?
-                .spawn_with_handle(),
+                .map_err(|e| anyhow::anyhow!(e))?,
         );
 
         let (fan_out_actor, fan_out_actor_fut) =
@@ -294,13 +292,9 @@ where
                 .create(None)
                 .run();
 
-        tasks.push(fan_out_actor_fut.spawn_with_handle());
+        tasks.add(fan_out_actor_fut);
 
-        tasks.push(
-            oracle_ctx
-                .run(oracle_constructor(cfds, Box::new(fan_out_actor)))
-                .spawn_with_handle(),
-        );
+        tasks.add(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
 
         tracing::debug!("Taker actor system ready");
 
@@ -311,7 +305,7 @@ where
             order_feed_receiver,
             update_cfd_feed_receiver,
             maker_online_status_feed_receiver,
-            tasks: Tasks(tasks),
+            tasks,
         })
     }
 }

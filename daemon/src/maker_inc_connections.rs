@@ -3,9 +3,8 @@ use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
 use crate::noise::TransportStateExt;
 use crate::tokio_ext::FutureExt;
-use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire};
+use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire, Tasks};
 use anyhow::Result;
-use futures::future::RemoteHandle;
 use futures::{StreamExt, TryStreamExt};
 use std::collections::HashMap;
 use std::io;
@@ -72,7 +71,7 @@ pub struct Actor {
     taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
-    tasks: Vec<RemoteHandle<()>>,
+    tasks: Tasks,
 }
 
 impl Actor {
@@ -88,7 +87,7 @@ impl Actor {
             taker_msg_channel: taker_msg_channel.clone_channel(),
             noise_priv_key,
             heartbeat_interval,
-            tasks: Vec::new(),
+            tasks: Tasks::default(),
         }
     }
 
@@ -136,29 +135,26 @@ impl Actor {
             forward_only_ok::Actor::new(self.taker_msg_channel.clone_channel())
                 .create(None)
                 .run();
-        self.tasks.push(forward_to_cfd_fut.spawn_with_handle());
+        self.tasks.add(forward_to_cfd_fut);
 
         // only allow outgoing messages while we are successfully reading incoming ones
         let heartbeat_interval = self.heartbeat_interval;
-        self.tasks.push(
-            async move {
-                let mut actor = send_to_socket::Actor::new(write, transport_state.clone());
+        self.tasks.add(async move {
+            let mut actor = send_to_socket::Actor::new(write, transport_state.clone());
 
-                let _heartbeat_handle = out_msg_actor_context
-                    .notify_interval(heartbeat_interval, || wire::MakerToTaker::Heartbeat)
-                    .expect("actor not to shutdown")
-                    .spawn_with_handle();
+            let _heartbeat_handle = out_msg_actor_context
+                .notify_interval(heartbeat_interval, || wire::MakerToTaker::Heartbeat)
+                .expect("actor not to shutdown")
+                .spawn_with_handle();
 
-                out_msg_actor_context
-                    .handle_while(&mut actor, forward_to_cfd.attach_stream(read))
-                    .await;
+            out_msg_actor_context
+                .handle_while(&mut actor, forward_to_cfd.attach_stream(read))
+                .await;
 
-                tracing::error!("Closing connection to taker {}", taker_id);
+            tracing::error!("Closing connection to taker {}", taker_id);
 
-                actor.shutdown().await;
-            }
-            .spawn_with_handle(),
-        );
+            actor.shutdown().await;
+        });
 
         self.write_connections
             .insert(taker_id, out_msg_actor_address);
