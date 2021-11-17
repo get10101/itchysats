@@ -7,6 +7,7 @@ import { useEventSource } from "react-sse-hooks";
 import useWebSocket from "react-use-websocket";
 import { useBackendMonitor } from "./components/BackendMonitor";
 import createErrorToast from "./components/ErrorToast";
+import Footer from "./components/Footer";
 import History from "./components/History";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
@@ -169,6 +170,7 @@ export const App = () => {
                     </Route>
                 </Switch>
             </Box>
+            <Footer />
         </>
     );
 };
