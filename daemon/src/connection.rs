@@ -15,7 +15,7 @@ use xtra_productivity::xtra_productivity;
 
 struct ConnectedState {
     last_heartbeat: SystemTime,
-    _pulse_handle: RemoteHandle<()>,
+    _tasks: Vec<RemoteHandle<()>>,
 }
 
 pub struct Actor {
@@ -97,22 +97,26 @@ impl Actor {
 
         let send_to_socket = send_to_socket::Actor::new(write, noise.clone());
 
-        tokio::spawn(self.send_to_maker_ctx.attach(send_to_socket));
+        let mut tasks = vec![self
+            .send_to_maker_ctx
+            .attach(send_to_socket)
+            .spawn_with_handle()];
 
         let read = FramedRead::new(read, wire::EncryptedJsonCodec::new(noise))
             .map(move |item| MakerStreamMessage { item });
 
         let this = ctx.address().expect("self to be alive");
-        tokio::spawn(this.attach_stream(read));
+        tasks.push(this.attach_stream(read).spawn_with_handle());
 
-        let pulse_remote_handle = ctx
-            .notify_interval(self.timeout, || MeasurePulse)
-            .expect("we just started")
-            .spawn_with_handle();
+        tasks.push(
+            ctx.notify_interval(self.timeout, || MeasurePulse)
+                .expect("we just started")
+                .spawn_with_handle(),
+        );
 
         self.connected_state = Some(ConnectedState {
             last_heartbeat: SystemTime::now(),
-            _pulse_handle: pulse_remote_handle,
+            _tasks: tasks,
         });
         self.status_sender
             .send(ConnectionStatus::Online)

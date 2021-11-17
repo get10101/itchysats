@@ -7,12 +7,14 @@ use crate::model::cfd::{
 };
 use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
+use crate::tokio_ext::FutureExt;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
 use crate::{log_error, oracle, setup_contract, wallet, wire};
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
+use futures::future::RemoteHandle;
 use futures::{future, SinkExt};
 use std::collections::HashMap;
 use tokio::sync::watch;
@@ -49,6 +51,7 @@ pub struct CfdRollOverCompleted {
 enum SetupState {
     Active {
         sender: mpsc::UnboundedSender<SetupMsg>,
+        _task: RemoteHandle<()>,
     },
     None,
 }
@@ -56,6 +59,7 @@ enum SetupState {
 enum RollOverState {
     Active {
         sender: mpsc::UnboundedSender<RollOverMsg>,
+        _task: RemoteHandle<()>,
     },
     None,
 }
@@ -254,7 +258,7 @@ where
 
     async fn handle_inc_protocol_msg(&mut self, msg: SetupMsg) -> Result<()> {
         match &mut self.setup_state {
-            SetupState::Active { sender } => {
+            SetupState::Active { sender, .. } => {
                 sender.send(msg).await?;
             }
             SetupState::None => {
@@ -267,7 +271,7 @@ where
 
     async fn handle_inc_roll_over_msg(&mut self, msg: RollOverMsg) -> Result<()> {
         match &mut self.roll_over_state {
-            RollOverState::Active { sender } => {
+            RollOverState::Active { sender, .. } => {
                 sender.send(msg).await?;
             }
             RollOverState::None => {
@@ -518,15 +522,19 @@ where
             .address()
             .expect("actor to be able to give address to itself");
 
-        tokio::spawn(async move {
+        let task = async move {
             let dlc = contract_future.await;
 
             this.send(CfdSetupCompleted { order_id, dlc })
                 .await
                 .expect("always connected to ourselves")
-        });
+        }
+        .spawn_with_handle();
 
-        self.setup_state = SetupState::Active { sender };
+        self.setup_state = SetupState::Active {
+            sender,
+            _task: task,
+        };
 
         Ok(())
     }
@@ -581,15 +589,19 @@ where
             .address()
             .expect("actor to be able to give address to itself");
 
-        self.roll_over_state = RollOverState::Active { sender };
-
-        tokio::spawn(async move {
+        let task = async move {
             let dlc = contract_future.await;
 
             this.send(CfdRollOverCompleted { order_id, dlc })
                 .await
                 .expect("always connected to ourselves")
-        });
+        }
+        .spawn_with_handle();
+
+        self.roll_over_state = RollOverState::Active {
+            sender,
+            _task: task,
+        };
 
         self.remove_pending_proposal(&order_id)
             .context("Could not remove accepted roll over")?;
