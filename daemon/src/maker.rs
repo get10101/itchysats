@@ -9,7 +9,7 @@ use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
     bitmex_price_feed, db, housekeeping, logger, maker_cfd, maker_inc_connections, monitor, oracle,
-    wallet, wallet_sync, MakerActorSystem, N_PAYOUTS,
+    wallet, wallet_sync, MakerActorSystem, HEARTBEAT_INTERVAL, N_PAYOUTS,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
@@ -263,7 +263,9 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(electrum, channel, cfds)
             }
         },
-        |channel0, channel1| maker_inc_connections::Actor::new(channel0, channel1, identity_sk),
+        |channel0, channel1| {
+            maker_inc_connections::Actor::new(channel0, channel1, identity_sk, HEARTBEAT_INTERVAL)
+        },
         time::Duration::hours(opts.settlement_time_interval_hours as i64),
         N_PAYOUTS,
     )

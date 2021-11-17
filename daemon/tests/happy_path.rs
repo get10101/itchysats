@@ -1,11 +1,12 @@
 use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
-use crate::harness::{assert_is_same_order, dummy_new_order, init_tracing, start_both};
+use crate::harness::{
+    assert_is_same_order, dummy_new_order, init_tracing, start_both, HEARTBEAT_INTERVAL_FOR_TEST,
+};
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::CfdState;
 use daemon::model::Usd;
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
-use std::time::Duration;
 use tokio::time::sleep;
 mod harness;
 
@@ -116,8 +117,7 @@ async fn taker_notices_lack_of_maker() {
 
     std::mem::drop(maker);
 
-    // TODO: shorten this sleep by specifying different heartbeat interval for tests
-    sleep(Duration::from_secs(12)).await;
+    sleep(HEARTBEAT_INTERVAL_FOR_TEST * 3).await;
 
     assert_eq!(
         ConnectionStatus::Offline,

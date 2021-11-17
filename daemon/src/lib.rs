@@ -47,7 +47,7 @@ pub mod wallet;
 pub mod wallet_sync;
 pub mod wire;
 
-const HEARTBEAT_INTERVAL: std::time::Duration = Duration::from_secs(5);
+pub const HEARTBEAT_INTERVAL: std::time::Duration = Duration::from_secs(5);
 
 pub const N_PAYOUTS: usize = 200;
 
@@ -218,6 +218,7 @@ where
         oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
         n_payouts: usize,
+        maker_heartbeat_interval: Duration,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
@@ -263,7 +264,7 @@ where
                     maker_online_status_feed_sender,
                     Box::new(cfd_actor_addr.clone()),
                     identity_sk,
-                    HEARTBEAT_INTERVAL * 2,
+                    maker_heartbeat_interval,
                 ))
                 .spawn_with_handle(),
         );
