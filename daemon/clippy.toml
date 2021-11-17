@@ -1,0 +1,3 @@
+disallowed-methods = [
+  "tokio::spawn", # tasks can outlive the actor system, prefer spawn_with_handle()
+]
