@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use snow::{Builder, TransportState};
 use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -74,4 +74,23 @@ async fn send(stream: &mut TcpStream, buf: &[u8]) -> Result<()> {
     stream.write_all(&msg_len_buf).await?;
     stream.write_all(buf).await?;
     Ok(())
+}
+
+pub trait TransportStateExt {
+    /// Extract the remote's public key from this transport state.
+    fn get_remote_public_key(&self) -> Result<x25519_dalek::PublicKey>;
+}
+
+impl TransportStateExt for TransportState {
+    fn get_remote_public_key(&self) -> Result<x25519_dalek::PublicKey> {
+        let public_key: [u8; 32] = self
+            .get_remote_static()
+            .context("No public key for remote connection")?
+            .to_vec()
+            .try_into()
+            .map_err(|_| anyhow!("Expected public key to be 32 bytes"))?;
+        let public_key = x25519_dalek::PublicKey::from(public_key);
+
+        Ok(public_key)
+    }
 }

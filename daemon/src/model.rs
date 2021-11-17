@@ -5,6 +5,7 @@ use chrono::DateTime;
 use reqwest::Url;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::convert::TryInto;
@@ -13,7 +14,6 @@ use std::ops::{Add, Div, Mul, Sub};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fmt, str};
 use time::{OffsetDateTime, PrimitiveDateTime, Time};
-use uuid::Uuid;
 
 pub mod cfd;
 
@@ -383,18 +383,41 @@ pub enum Position {
     Short,
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct TakerId(Uuid);
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct TakerId(x25519_dalek::PublicKey);
 
-impl Default for TakerId {
-    fn default() -> Self {
-        Self(Uuid::new_v4())
+impl TakerId {
+    pub fn new(key: x25519_dalek::PublicKey) -> Self {
+        Self(key)
+    }
+}
+
+impl Serialize for TakerId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for TakerId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let hex = String::deserialize(deserializer)?;
+
+        let mut bytes = [0u8; 32];
+        hex::decode_to_slice(&hex, &mut bytes).map_err(D::Error::custom)?;
+
+        Ok(Self(x25519_dalek::PublicKey::from(bytes)))
     }
 }
 
 impl fmt::Display for TakerId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        write!(f, "{}", hex::encode(self.0.as_bytes()))
     }
 }
 
@@ -631,5 +654,17 @@ mod tests {
         let ts_b = Timestamp::parse_from_rfc3339(datetime_str_b).unwrap();
 
         assert_eq!(ts_b.seconds() - ts_a.seconds(), -36000);
+    }
+
+    #[test]
+    fn roundtrip_taker_id_serde() {
+        let id = TakerId::new(x25519_dalek::PublicKey::from([42u8; 32]));
+
+        serde_test::assert_tokens(
+            &id,
+            &[serde_test::Token::String(
+                "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+            )],
+        );
     }
 }

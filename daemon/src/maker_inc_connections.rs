@@ -1,6 +1,7 @@
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Order, OrderId};
 use crate::model::{BitMexPriceEventId, TakerId};
+use crate::noise::TransportStateExt;
 use crate::tokio_ext::FutureExt;
 use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire};
 use anyhow::Result;
@@ -117,16 +118,15 @@ impl Actor {
         taker_address: SocketAddr,
         _: &mut Context<Self>,
     ) -> Result<()> {
-        let taker_id = TakerId::default();
+        let transport_state = noise::responder_handshake(&mut stream, &self.noise_priv_key).await?;
+        let taker_id = TakerId::new(transport_state.get_remote_public_key()?);
 
-        tracing::info!("New taker {} connected on {}", taker_id, taker_address);
+        tracing::info!(%taker_id, address = %taker_address, "New taker connected");
 
-        let noise = Arc::new(Mutex::new(
-            noise::responder_handshake(&mut stream, &self.noise_priv_key).await?,
-        ));
+        let transport_state = Arc::new(Mutex::new(transport_state));
 
         let (read, write) = stream.into_split();
-        let read = FramedRead::new(read, wire::EncryptedJsonCodec::new(noise.clone()))
+        let read = FramedRead::new(read, wire::EncryptedJsonCodec::new(transport_state.clone()))
             .map_ok(move |msg| FromTaker { taker_id, msg })
             .map(forward_only_ok::Message);
 
@@ -142,7 +142,7 @@ impl Actor {
         let heartbeat_interval = self.heartbeat_interval;
         self.tasks.push(
             async move {
-                let mut actor = send_to_socket::Actor::new(write, noise.clone());
+                let mut actor = send_to_socket::Actor::new(write, transport_state.clone());
 
                 let _heartbeat_handle = out_msg_actor_context
                     .notify_interval(heartbeat_interval, || wire::MakerToTaker::Heartbeat)
