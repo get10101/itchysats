@@ -10,6 +10,8 @@ where
     F: Future<Output = Result<(), E>> + Send + 'static,
     E: fmt::Display,
 {
+    // we want to disallow calls to tokio::spawn outside FutureExt
+    #[allow(clippy::disallowed_method)]
     tokio::spawn(async move {
         if let Err(e) = future.await {
             tracing::warn!("Task failed: {:#}", e);
@@ -40,6 +42,8 @@ where
         Self: Future<Output = ()> + Send + 'static,
     {
         let (future, handle) = self.remote_handle();
+        // we want to disallow calls to tokio::spawn outside FutureExt
+        #[allow(clippy::disallowed_method)]
         tokio::spawn(future);
         handle
     }
