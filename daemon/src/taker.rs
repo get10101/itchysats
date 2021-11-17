@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use daemon::connection::ConnectionStatus;
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
+use daemon::tokio_ext::FutureExt;
 use daemon::{
     bitmex_price_feed, connection, db, housekeeping, logger, monitor, oracle, taker_cfd, wallet,
     wallet_sync, TakerActorSystem, N_PAYOUTS,
@@ -20,7 +21,6 @@ use tokio::sync::watch;
 use tokio::time::sleep;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::MessageChannel;
-use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 
 mod routes_taker;
@@ -168,14 +168,15 @@ async fn main() -> Result<()> {
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
     let (_, identity_sk) = seed.derive_identity();
 
-    let wallet = wallet::Actor::new(
+    let (wallet, wallet_fut) = wallet::Actor::new(
         opts.network.electrum(),
         &data_dir.join("taker_wallet.sqlite"),
         ext_priv_key,
     )
     .await?
     .create(None)
-    .spawn_global();
+    .run();
+    let _wallet_handle = wallet_fut.spawn_with_handle();
 
     // do this before withdraw to ensure the wallet is synced
     let wallet_info = wallet.send(wallet::Sync).await??;
@@ -237,6 +238,7 @@ async fn main() -> Result<()> {
         order_feed_receiver,
         update_cfd_feed_receiver,
         mut maker_online_status_feed_receiver,
+        tasks: _tasks,
     } = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),

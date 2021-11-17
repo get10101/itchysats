@@ -1,7 +1,8 @@
+use crate::tokio_ext::FutureExt;
 use crate::{log_error, noise, send_to_socket, wire};
 use anyhow::Result;
 use futures::future::RemoteHandle;
-use futures::{FutureExt, StreamExt};
+use futures::StreamExt;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -104,11 +105,10 @@ impl Actor {
         let this = ctx.address().expect("self to be alive");
         tokio::spawn(this.attach_stream(read));
 
-        let (pulse_future, pulse_remote_handle) = ctx
+        let pulse_remote_handle = ctx
             .notify_interval(self.timeout, || MeasurePulse)
             .expect("we just started")
-            .remote_handle();
-        tokio::spawn(pulse_future);
+            .spawn_with_handle();
 
         self.connected_state = Some(ConnectedState {
             last_heartbeat: SystemTime::now(),

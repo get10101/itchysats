@@ -2,7 +2,7 @@ use crate::harness::mocks::monitor::MonitorActor;
 use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
-use daemon::connection::Connect;
+use daemon::connection::{Connect, ConnectionStatus};
 use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, Order, Origin};
 use daemon::model::{Price, Usd};
@@ -18,13 +18,14 @@ use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
-use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 
 pub mod bdk;
 pub mod flow;
 pub mod maia;
 pub mod mocks;
+
+const N_PAYOUTS_FOR_TEST: usize = 5;
 
 pub async fn start_both() -> (Maker, Taker) {
     let oracle_pk: schnorrsig::PublicKey = schnorrsig::PublicKey::from_str(
@@ -36,8 +37,6 @@ pub async fn start_both() -> (Maker, Taker) {
     let taker = Taker::start(oracle_pk, maker.listen_addr, maker.identity_pk).await;
     (maker, taker)
 }
-
-const N_PAYOUTS_FOR_TEST: usize = 5;
 
 /// Maker Test Setup
 pub struct Maker {
@@ -64,7 +63,8 @@ impl Maker {
         let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
         mocks.mock_common_empty_handlers().await;
 
-        let wallet_addr = wallet.create(None).spawn_global();
+        let (wallet_addr, wallet_fut) = wallet.create(None).run();
+        tokio::spawn(wallet_fut);
 
         let settlement_time_interval_hours = time::Duration::hours(24);
 
@@ -152,6 +152,10 @@ impl Taker {
         &mut self.system.order_feed_receiver
     }
 
+    pub fn maker_status_feed(&mut self) -> &mut watch::Receiver<ConnectionStatus> {
+        &mut self.system.maker_online_status_feed_receiver
+    }
+
     pub async fn start(
         oracle_pk: schnorrsig::PublicKey,
         maker_address: SocketAddr,
@@ -167,7 +171,8 @@ impl Taker {
         let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
         mocks.mock_common_empty_handlers().await;
 
-        let wallet_addr = wallet.create(None).spawn_global();
+        let (wallet_addr, wallet_fut) = wallet.create(None).run();
+        tokio::spawn(wallet_fut);
 
         let taker = daemon::TakerActorSystem::new(
             db,

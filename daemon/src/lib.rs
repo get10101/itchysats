@@ -3,8 +3,10 @@ use crate::db::load_all_cfds;
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
 use crate::oracle::Attestation;
+use crate::tokio_ext::FutureExt;
 use anyhow::Result;
 use connection::ConnectionStatus;
+use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -12,7 +14,6 @@ use std::future::Future;
 use std::time::Duration;
 use tokio::sync::watch;
 use xtra::message_channel::{MessageChannel, StrongMessageChannel};
-use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::{Actor, Address};
 
 pub mod actors;
@@ -50,12 +51,18 @@ const HEARTBEAT_INTERVAL: std::time::Duration = Duration::from_secs(5);
 
 pub const N_PAYOUTS: usize = 200;
 
+/// Struct controlling the lifetime of the async tasks,
+/// such as running actors and periodic notifications.
+/// If it gets dropped, all tasks are cancelled.
+pub struct Tasks(Vec<RemoteHandle<()>>);
+
 pub struct MakerActorSystem<O, M, T, W> {
     pub cfd_actor_addr: Address<maker_cfd::Actor<O, M, T, W>>,
     pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
     pub order_feed_receiver: watch::Receiver<Option<Order>>,
     pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
     pub inc_conn_addr: Address<T>,
+    pub tasks: Tasks,
 }
 
 impl<O, M, T, W> MakerActorSystem<O, M, T, W>
@@ -104,7 +111,9 @@ where
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
         let (inc_conn_addr, inc_conn_ctx) = xtra::Context::new(None);
 
-        let cfd_actor_addr = maker_cfd::Actor::new(
+        let mut tasks = vec![];
+
+        let (cfd_actor_addr, cfd_actor_fut) = maker_cfd::Actor::new(
             db,
             wallet_addr,
             settlement_time_interval_hours,
@@ -118,33 +127,48 @@ where
             n_payouts,
         )
         .create(None)
-        .spawn_global();
+        .run();
 
-        tokio::spawn(inc_conn_ctx.run(inc_conn_constructor(
-            Box::new(cfd_actor_addr.clone()),
-            Box::new(cfd_actor_addr.clone()),
-        )));
+        tasks.push(cfd_actor_fut.spawn_with_handle());
 
-        tokio::spawn(
+        tasks.push(
+            inc_conn_ctx
+                .run(inc_conn_constructor(
+                    Box::new(cfd_actor_addr.clone()),
+                    Box::new(cfd_actor_addr.clone()),
+                ))
+                .spawn_with_handle(),
+        );
+
+        tasks.push(
             monitor_ctx
                 .notify_interval(Duration::from_secs(20), || monitor::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?,
+                .map_err(|e| anyhow::anyhow!(e))?
+                .spawn_with_handle(),
         );
-        tokio::spawn(
+        tasks.push(
             monitor_ctx
-                .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?),
+                .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?)
+                .spawn_with_handle(),
         );
 
-        tokio::spawn(
+        tasks.push(
             oracle_ctx
                 .notify_interval(Duration::from_secs(5), || oracle::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?,
+                .map_err(|e| anyhow::anyhow!(e))?
+                .spawn_with_handle(),
         );
-        let fan_out_actor = fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
-            .create(None)
-            .spawn_global();
+        let (fan_out_actor, fan_out_actor_fut) =
+            fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
+                .create(None)
+                .run();
+        tasks.push(fan_out_actor_fut.spawn_with_handle());
 
-        tokio::spawn(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
+        tasks.push(
+            oracle_ctx
+                .run(oracle_constructor(cfds, Box::new(fan_out_actor)))
+                .spawn_with_handle(),
+        );
 
         oracle_addr.do_send_async(oracle::Sync).await?;
 
@@ -156,6 +180,7 @@ where
             order_feed_receiver,
             update_cfd_feed_receiver,
             inc_conn_addr,
+            tasks: Tasks(tasks),
         })
     }
 }
@@ -167,6 +192,7 @@ pub struct TakerActorSystem<O, M, W> {
     pub order_feed_receiver: watch::Receiver<Option<Order>>,
     pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
+    pub tasks: Tasks,
 }
 
 impl<O, M, W> TakerActorSystem<O, M, W>
@@ -211,8 +237,10 @@ where
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
 
+        let mut tasks = vec![];
+
         let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
-        let cfd_actor_addr = taker_cfd::Actor::new(
+        let (cfd_actor_addr, cfd_actor_fut) = taker_cfd::Actor::new(
             db,
             wallet_addr,
             oracle_pk,
@@ -225,36 +253,52 @@ where
             n_payouts,
         )
         .create(None)
-        .spawn_global();
+        .run();
 
-        tokio::spawn(connection_actor_ctx.run(connection::Actor::new(
-            maker_online_status_feed_sender,
-            Box::new(cfd_actor_addr.clone()),
-            identity_sk,
-            HEARTBEAT_INTERVAL * 2,
-        )));
+        tasks.push(cfd_actor_fut.spawn_with_handle());
 
-        tokio::spawn(
+        tasks.push(
+            connection_actor_ctx
+                .run(connection::Actor::new(
+                    maker_online_status_feed_sender,
+                    Box::new(cfd_actor_addr.clone()),
+                    identity_sk,
+                    HEARTBEAT_INTERVAL * 2,
+                ))
+                .spawn_with_handle(),
+        );
+
+        tasks.push(
             monitor_ctx
                 .notify_interval(Duration::from_secs(20), || monitor::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?,
+                .map_err(|e| anyhow::anyhow!(e))?
+                .spawn_with_handle(),
         );
-        tokio::spawn(
+        tasks.push(
             monitor_ctx
-                .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?),
+                .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?)
+                .spawn_with_handle(),
         );
 
-        tokio::spawn(
+        tasks.push(
             oracle_ctx
                 .notify_interval(Duration::from_secs(5), || oracle::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?,
+                .map_err(|e| anyhow::anyhow!(e))?
+                .spawn_with_handle(),
         );
 
-        let fan_out_actor = fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
-            .create(None)
-            .spawn_global();
+        let (fan_out_actor, fan_out_actor_fut) =
+            fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
+                .create(None)
+                .run();
 
-        tokio::spawn(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
+        tasks.push(fan_out_actor_fut.spawn_with_handle());
+
+        tasks.push(
+            oracle_ctx
+                .run(oracle_constructor(cfds, Box::new(fan_out_actor)))
+                .spawn_with_handle(),
+        );
 
         tracing::debug!("Taker actor system ready");
 
@@ -265,6 +309,7 @@ where
             order_feed_receiver,
             update_cfd_feed_receiver,
             maker_online_status_feed_receiver,
+            tasks: Tasks(tasks),
         })
     }
 }

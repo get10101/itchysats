@@ -1,3 +1,5 @@
+use futures::future::RemoteHandle;
+use futures::FutureExt as _;
 use std::fmt;
 use std::future::Future;
 use std::time::Duration;
@@ -17,6 +19,12 @@ where
 
 pub trait FutureExt: Future + Sized {
     fn timeout(self, duration: Duration) -> Timeout<Self>;
+
+    /// Spawn the future on a task in the runtime and return a RemoteHandle to it.
+    /// The task will be stopped when the handle gets dropped.
+    fn spawn_with_handle(self) -> RemoteHandle<Self::Output>
+    where
+        Self: Future<Output = ()> + Send + 'static;
 }
 
 impl<F> FutureExt for F
@@ -25,5 +33,14 @@ where
 {
     fn timeout(self, duration: Duration) -> Timeout<F> {
         timeout(duration, self)
+    }
+
+    fn spawn_with_handle(self) -> RemoteHandle<()>
+    where
+        Self: Future<Output = ()> + Send + 'static,
+    {
+        let (future, handle) = self.remote_handle();
+        tokio::spawn(future);
+        handle
     }
 }

@@ -1,9 +1,12 @@
-use crate::harness::flow::{is_next_none, next_cfd, next_order, next_some};
+use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
 use crate::harness::{assert_is_same_order, dummy_new_order, init_tracing, start_both};
+use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::CfdState;
 use daemon::model::Usd;
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
+use std::time::Duration;
+use tokio::time::sleep;
 mod harness;
 
 #[tokio::test]
@@ -99,4 +102,25 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     assert_eq!(maker_cfd.order.id, received.id);
     assert!(matches!(taker_cfd.state, CfdState::PendingOpen { .. }));
     assert!(matches!(maker_cfd.state, CfdState::PendingOpen { .. }));
+}
+
+#[tokio::test]
+async fn taker_notices_lack_of_maker() {
+    let _guard = init_tracing();
+
+    let (maker, mut taker) = start_both().await;
+    assert_eq!(
+        ConnectionStatus::Online,
+        next(taker.maker_status_feed()).await.unwrap()
+    );
+
+    std::mem::drop(maker);
+
+    // TODO: shorten this sleep by specifying different heartbeat interval for tests
+    sleep(Duration::from_secs(12)).await;
+
+    assert_eq!(
+        ConnectionStatus::Offline,
+        next(taker.maker_status_feed()).await.unwrap(),
+    );
 }
