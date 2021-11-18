@@ -740,7 +740,6 @@ where
         + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle(&mut self, msg: wire::MakerToTaker, ctx: &mut Context<Self>) {
-        tracing::trace!("message from maker: {:?}", msg);
         match msg {
             wire::MakerToTaker::Heartbeat => {
                 unreachable!("Heartbeats should be handled somewhere else")
