@@ -3,11 +3,9 @@ import {
     Badge,
     Button,
     Center,
-    Divider,
     Grid,
     GridItem,
     Heading,
-    HStack,
     Link,
     Popover,
     PopoverArrow,
@@ -106,12 +104,11 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
             bg={useColorModeValue("gray.100", "gray.700")}
             rounded={5}
             w={"100%"}
-            h="200px"
             templateRows="repeat(2, 1fr)"
             templateColumns="repeat(2, 1fr)"
-            gap={4}
         >
-            <GridItem rounded={5} h={"100%"} bg={useColorModeValue("gray.200", "gray.800")} rowSpan={3}>
+            <GridItem rounded={5} bg={useColorModeValue("gray.200", "gray.600")} rowSpan={5}>
+                <Center>
                 <Table size="sm">
                     <Tbody>
                         <Tr>
@@ -140,50 +137,39 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
                         </Tr>
                     </Tbody>
                 </Table>
+                </Center>
             </GridItem>
-            <GridItem>
+            <GridItem rowSpan={1}>
                 <Badge colorScheme={cfd.state.getColorScheme()}>{cfd.state.getLabel()}</Badge>
             </GridItem>
-            <GridItem w={"90%"}>
-                <HStack>
-                    <VStack>
-                        <TxIcon tx={txLock} />
-                        <Text>Lock</Text>
-                    </VStack>
-                    {txSettled
-                        ? <>
-                            <Divider variant={txSettled ? "solid" : "dashed"} />
-                            <VStack>
-                                <TxIcon tx={txSettled} />
-                                <Text>Payout</Text>
-                            </VStack>
-                        </>
-                        : <>
-                            <Divider variant={txCommit ? "solid" : "dashed"} />
-                            <VStack>
-                                <TxIcon tx={txCommit} />
-                                <Text>Commit</Text>
-                            </VStack>
-
-                            {txRefund
-                                ? <>
-                                    <Divider variant={txRefund ? "solid" : "dashed"} />
-                                    <VStack>
-                                        <TxIcon tx={txRefund} />
-                                        <Text>Refund</Text>
-                                    </VStack>
-                                </>
-                                : <>
-                                    <Divider variant={txCet ? "solid" : "dashed"} />
-                                    <VStack>
-                                        <TxIcon tx={txCet} />
-                                        <Text>Payout</Text>
-                                    </VStack>
-                                </>}
-                        </>}
-                </HStack>
+            <GridItem rowSpan={!txCommit ? 1 : (!txCet ? 2 : 3)}>
+                <Table size="sm">
+                    <Tbody>
+                        <Tr>
+                            <Td><Text as={"b"}>Lock</Text></Td>
+                            <Td isNumeric><TxIcon tx={txLock} /></Td>
+                        </Tr>
+                        {txSettled
+                            && <Tr>
+                                <Td><Text as={"b"}>Payout</Text></Td>
+                                <Td isNumeric><TxIcon tx={txSettled} /></Td>
+                            </Tr>}
+                        {txCommit
+                            && <Tr>
+                                <Td><Text as={"b"}>Payout</Text></Td>
+                                {!txCet
+                                    ? <Td><TxIcon tx={txCommit} /></Td>
+                                    : <Td><TxIcon tx={txCommit} />-<TxIcon tx={txCet} /></Td>}
+                            </Tr>}
+                        {txRefund
+                            && <Tr>
+                                <Td><Text as={"b"}>Refund</Text></Td>
+                                <Td><TxIcon tx={txCommit} />-<TxIcon tx={txRefund} /></Td>
+                            </Tr>}
+                    </Tbody>
+                </Table>
             </GridItem>
-            <GridItem w={"90%"}>
+            <GridItem rowSpan={1}>
                 <Center>
                     <Popover
                         placement="bottom"
@@ -253,7 +239,7 @@ const TxIcon = ({ tx }: TxIconProps) => {
     const iconColor = useColorModeValue("white.200", "white.600");
 
     if (!tx) {
-        return (<CircleIcon boxSize={5} color={iconColor} />);
+        return (<CircleIcon boxSize={5} color={"iconColor"} />);
     } else if (tx && !tx.url) {
         return (<Spinner mx="2px" color={iconColor} speed="1.65s" />);
     } else {
