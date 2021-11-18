@@ -326,6 +326,33 @@ impl<O, M, W> Actor<O, M, W> {
         }
         Ok(())
     }
+
+    async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
+        if self.current_pending_proposals.contains_key(&order_id) {
+            anyhow::bail!("An update for order id {} is already in progress", order_id)
+        }
+
+        let proposal = RollOverProposal {
+            order_id,
+            timestamp: Timestamp::now()?,
+        };
+
+        self.current_pending_proposals.insert(
+            proposal.order_id,
+            UpdateCfdProposal::RollOverProposal {
+                proposal: proposal.clone(),
+                direction: SettlementKind::Outgoing,
+            },
+        );
+        self.send_pending_update_proposals()?;
+
+        self.send_to_maker
+            .do_send(wire::TakerToMaker::ProposeRollOver {
+                order_id: proposal.order_id,
+                timestamp: proposal.timestamp,
+            })?;
+        Ok(())
+    }
 }
 
 impl<O, M, W> Actor<O, M, W>
@@ -355,44 +382,6 @@ where
         .await?;
         Ok(())
     }
-}
-
-impl<O, M, W> Actor<O, M, W>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
-        if self.current_pending_proposals.contains_key(&order_id) {
-            anyhow::bail!("An update for order id {} is already in progress", order_id)
-        }
-
-        let proposal = RollOverProposal {
-            order_id,
-            timestamp: Timestamp::now()?,
-        };
-
-        self.current_pending_proposals.insert(
-            proposal.order_id,
-            UpdateCfdProposal::RollOverProposal {
-                proposal: proposal.clone(),
-                direction: SettlementKind::Outgoing,
-            },
-        );
-        self.send_pending_update_proposals()?;
-
-        self.send_to_maker
-            .do_send(wire::TakerToMaker::ProposeRollOver {
-                order_id: proposal.order_id,
-                timestamp: proposal.timestamp,
-            })?;
-        Ok(())
-    }
-}
-impl<O, M, W> Actor<O, M, W> where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>
-        + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::BuildPartyParams>
-{
 }
 
 impl<O, M, W> Actor<O, M, W>
