@@ -130,6 +130,14 @@ export const App = () => {
     const format = (val: any) => `$` + val;
     const parse = (val: any) => val.replace(/^\$/, "");
 
+    const balanceTooLow = walletInfo && walletInfo.balance < parse(margin);
+    const quantityTooHigh = order && order.max_quantity < parse(effectiveQuantity);
+    const quantityTooLow = order && order.min_quantity > parse(effectiveQuantity);
+    const quantityGreaterZero = parse(effectiveQuantity) > 0;
+
+    const canSubmit = order != null && !isCreatingNewOrderRequest && walletInfo != null && !balanceTooLow
+        && !quantityTooHigh && !quantityTooLow && quantityGreaterZero;
+
     return (
         <>
             <Nav walletInfo={walletInfo} />
@@ -164,7 +172,7 @@ export const App = () => {
                                     };
                                     calculateMargin(payload);
                                 }}
-                                canSubmit={order != null && !isCreatingNewOrderRequest}
+                                canSubmit={canSubmit}
                                 onLongSubmit={makeNewOrderRequest}
                                 isSubmitting={isCreatingNewOrderRequest}
                             />
