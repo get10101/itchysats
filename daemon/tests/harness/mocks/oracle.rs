@@ -18,7 +18,10 @@ impl Oracle for OracleActor {}
 
 #[xtra_productivity(message_impl = false)]
 impl OracleActor {
-    async fn handle(&mut self, msg: oracle::GetAnnouncement) -> Option<oracle::Announcement> {
+    async fn handle(
+        &mut self,
+        msg: oracle::GetAnnouncement,
+    ) -> Result<oracle::Announcement, oracle::NoAnnouncement> {
         self.mock.lock().await.get_announcement(msg)
     }
 
@@ -33,7 +36,10 @@ impl OracleActor {
 
 #[automock]
 pub trait Oracle {
-    fn get_announcement(&mut self, _msg: oracle::GetAnnouncement) -> Option<oracle::Announcement> {
+    fn get_announcement(
+        &mut self,
+        _msg: oracle::GetAnnouncement,
+    ) -> Result<oracle::Announcement, oracle::NoAnnouncement> {
         unreachable!("mockall will reimplement this method")
     }
 

@@ -58,7 +58,7 @@ impl Mocks {
         self.oracle()
             .await
             .expect_get_announcement()
-            .return_const(Some(oracle::dummy_announcement()));
+            .return_const(Ok(oracle::dummy_announcement()));
     }
 
     pub async fn mock_oracle_monitor_attestation(&mut self) {

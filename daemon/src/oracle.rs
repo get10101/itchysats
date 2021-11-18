@@ -218,7 +218,7 @@ impl Actor {
         &mut self,
         msg: GetAnnouncement,
         _ctx: &mut xtra::Context<Self>,
-    ) -> Option<Announcement> {
+    ) -> Result<Announcement, NoAnnouncement> {
         self.announcements
             .get_key_value(&msg.0)
             .map(|(id, (time, nonce_pks))| Announcement {
@@ -226,6 +226,7 @@ impl Actor {
                 expected_outcome_time: *time,
                 nonce_pks: nonce_pks.clone(),
             })
+            .ok_or(NoAnnouncement(msg.0))
     }
 
     fn handle_new_announcement_fetched(
@@ -242,6 +243,10 @@ impl Actor {
         self.update_pending_attestations(ctx);
     }
 }
+
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("Announcement {0} not found")]
+pub struct NoAnnouncement(pub BitMexPriceEventId);
 
 #[async_trait]
 impl xtra::Handler<NewAttestationFetched> for Actor {

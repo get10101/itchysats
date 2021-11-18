@@ -580,8 +580,7 @@ where
         let offer_announcement = self
             .oracle_actor
             .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
-            .await?
-            .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
+            .await??;
 
         // 3. Notify the taker that we are ready for contract setup
         // Use `.send` here to ensure we only continue once the message has been sent
