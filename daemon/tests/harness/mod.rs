@@ -7,7 +7,7 @@ use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, Order, Origin};
 use daemon::model::{Price, Usd};
 use daemon::seed::Seed;
-use daemon::{db, maker_cfd, maker_inc_connections, taker_cfd, MakerActorSystem};
+use daemon::{db, maker_cfd, maker_inc_connections, taker_cfd, MakerActorSystem, Tasks};
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -47,6 +47,7 @@ pub struct Maker {
     pub mocks: mocks::Mocks,
     pub listen_addr: SocketAddr,
     pub identity_pk: x25519_dalek::PublicKey,
+    _tasks: Tasks,
 }
 
 impl Maker {
@@ -64,8 +65,10 @@ impl Maker {
         let mut mocks = mocks::Mocks::default();
         let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
 
+        let mut tasks = Tasks::default();
+
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
-        tokio::spawn(wallet_fut);
+        tasks.add(wallet_fut);
 
         let settlement_time_interval_hours = time::Duration::hours(24);
 
@@ -109,13 +112,14 @@ impl Maker {
             Poll::Ready(Some(message))
         });
 
-        tokio::spawn(maker.inc_conn_addr.clone().attach_stream(listener_stream));
+        tasks.add(maker.inc_conn_addr.clone().attach_stream(listener_stream));
 
         Self {
             system: maker,
             identity_pk,
             listen_addr: address,
             mocks,
+            _tasks: tasks,
         }
     }
 
@@ -153,6 +157,7 @@ impl Maker {
 pub struct Taker {
     pub system: daemon::TakerActorSystem<OracleActor, MonitorActor, WalletActor>,
     pub mocks: mocks::Mocks,
+    _tasks: Tasks,
 }
 
 impl Taker {
@@ -182,8 +187,10 @@ impl Taker {
         let mut mocks = mocks::Mocks::default();
         let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
 
+        let mut tasks = Tasks::default();
+
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
-        tokio::spawn(wallet_fut);
+        tasks.add(wallet_fut);
 
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
@@ -213,6 +220,7 @@ impl Taker {
         Self {
             system: taker,
             mocks,
+            _tasks: tasks,
         }
     }
 

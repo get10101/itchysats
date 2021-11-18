@@ -45,7 +45,7 @@ tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.2", default-features = false, features = ["fmt", "ansi", "env-filter", "chrono", "tracing-log", "json"] }
 uuid = { version = "0.8", features = ["serde", "v4"] }
 x25519-dalek = { version = "1.1" }
-xtra = { version = "0.6", features = ["with-tokio-1"] }
+xtra = { version = "0.6" }
 xtra_productivity = { version = "0.1.0" }
 
 [[bin]]

@@ -3826,7 +3826,6 @@ dependencies = [
  "futures-timer",
  "futures-util",
  "pollster",
- "tokio",
 ]
 
 [[package]]
