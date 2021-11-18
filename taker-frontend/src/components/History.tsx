@@ -1,10 +1,10 @@
 import { ExternalLinkIcon, Icon } from "@chakra-ui/icons";
 import {
     Badge,
-    Box,
     Button,
     Center,
     Divider,
+    Grid,
     GridItem,
     Heading,
     HStack,
@@ -102,8 +102,16 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
         );
 
     return (
-        <HStack bg={useColorModeValue("gray.100", "gray.700")} rounded={5} w={"100%"}>
-            <Center rounded={5} h={"100%"}>
+        <Grid
+            bg={useColorModeValue("gray.100", "gray.700")}
+            rounded={5}
+            w={"100%"}
+            h="200px"
+            templateRows="repeat(2, 1fr)"
+            templateColumns="repeat(2, 1fr)"
+            gap={4}
+        >
+            <GridItem rounded={5} h={"100%"} bg={useColorModeValue("gray.200", "gray.800")} rowSpan={3}>
                 <Table size="sm">
                     <Tbody>
                         <Tr>
@@ -132,9 +140,11 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
                         </Tr>
                     </Tbody>
                 </Table>
-            </Center>
-            <VStack w={"80%"}>
+            </GridItem>
+            <GridItem>
                 <Badge colorScheme={cfd.state.getColorScheme()}>{cfd.state.getLabel()}</Badge>
+            </GridItem>
+            <GridItem w={"90%"}>
                 <HStack>
                     <VStack>
                         <TxIcon tx={txLock} />
@@ -172,56 +182,56 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
                                 </>}
                         </>}
                 </HStack>
-                <HStack>
-                    <Box w={"45%"}>
-                        <Popover
-                            placement="bottom"
-                            closeOnBlur={true}
-                        >
-                            {({ onClose }) => (<>
-                                <PopoverTrigger>
-                                    <Button colorScheme={"blue"} disabled={disableCloseButton}>Close</Button>
-                                </PopoverTrigger>
-                                <PopoverContent color="white" bg="blue.800" borderColor="blue.800">
-                                    <PopoverHeader pt={4} fontWeight="bold" border="0">
-                                        Close your position
-                                    </PopoverHeader>
-                                    <PopoverArrow />
-                                    <PopoverCloseButton />
-                                    <PopoverBody>
-                                        <Text>
-                                            This will force-close your position if your counterparty cannot be reached.
-                                            The exchange rate at {expiry}
-                                            will determine your profit/losses. It is likely that the rate will change
-                                            until then.
-                                        </Text>
-                                    </PopoverBody>
-                                    <PopoverFooter
-                                        border="0"
-                                        d="flex"
-                                        alignItems="center"
-                                        justifyContent="space-between"
-                                        pb={4}
+            </GridItem>
+            <GridItem w={"90%"}>
+                <Center>
+                    <Popover
+                        placement="bottom"
+                        closeOnBlur={true}
+                    >
+                        {({ onClose }) => (<>
+                            <PopoverTrigger>
+                                <Button colorScheme={"blue"} disabled={disableCloseButton}>Close</Button>
+                            </PopoverTrigger>
+                            <PopoverContent color="white" bg="blue.800" borderColor="blue.800">
+                                <PopoverHeader pt={4} fontWeight="bold" border="0">
+                                    Close your position
+                                </PopoverHeader>
+                                <PopoverArrow />
+                                <PopoverCloseButton />
+                                <PopoverBody>
+                                    <Text>
+                                        This will force-close your position if your counterparty cannot be reached. The
+                                        exchange rate at {expiry}
+                                        will determine your profit/losses. It is likely that the rate will change until
+                                        then.
+                                    </Text>
+                                </PopoverBody>
+                                <PopoverFooter
+                                    border="0"
+                                    d="flex"
+                                    alignItems="center"
+                                    justifyContent="space-between"
+                                    pb={4}
+                                >
+                                    <Button
+                                        size="sm"
+                                        colorScheme="red"
+                                        onClick={async () => {
+                                            await postAction(cfd.order_id, "settle");
+                                            onClose();
+                                        }}
+                                        isLoading={isActioning}
                                     >
-                                        <Button
-                                            size="sm"
-                                            colorScheme="red"
-                                            onClick={async () => {
-                                                await postAction(cfd.order_id, "settle");
-                                                onClose();
-                                            }}
-                                            isLoading={isActioning}
-                                        >
-                                            Close
-                                        </Button>
-                                    </PopoverFooter>
-                                </PopoverContent>
-                            </>)}
-                        </Popover>
-                    </Box>
-                </HStack>
-            </VStack>
-        </HStack>
+                                        Close
+                                    </Button>
+                                </PopoverFooter>
+                            </PopoverContent>
+                        </>)}
+                    </Popover>
+                </Center>
+            </GridItem>
+        </Grid>
     );
 };
 
