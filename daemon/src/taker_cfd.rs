@@ -561,7 +561,7 @@ where
         oracle_event_id: BitMexPriceEventId,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
-        tracing::info!(%order_id, "Roll; over request got accepted");
+        tracing::info!(%order_id, "Roll over request got accepted");
 
         let (sender, receiver) = mpsc::unbounded();
 
