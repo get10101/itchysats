@@ -52,6 +52,18 @@ pub const HEARTBEAT_INTERVAL: std::time::Duration = Duration::from_secs(5);
 
 pub const N_PAYOUTS: usize = 200;
 
+/// The interval until the cfd gets settled, i.e. the attestation happens
+///
+/// This variable defines at what point in time the oracle event id will be chose to settle the cfd.
+/// Hence, this constant defines how long a cfd is open (until it gets either settled or rolled
+/// over).
+///
+/// Multiple code parts align on this constant:
+/// - How the oracle event id is chosen when creating an order (maker)
+/// - The sliding window of cached oracle announcements (maker, taker)
+/// - The auto-rollover time-window (taker)
+pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
+
 /// Struct controlling the lifetime of the async tasks,
 /// such as running actors and periodic notifications.
 /// If it gets dropped, all tasks are cancelled.
@@ -106,7 +118,7 @@ where
             Box<dyn MessageChannel<NewTakerOnline>>,
             Box<dyn MessageChannel<FromTaker>>,
         ) -> T,
-        settlement_time_interval_hours: time::Duration,
+        settlement_interval: time::Duration,
         n_payouts: usize,
         projection_actor: Address<projection::Actor>,
     ) -> Result<Self>
@@ -126,7 +138,7 @@ where
         let (cfd_actor_addr, cfd_actor_fut) = maker_cfd::Actor::new(
             db,
             wallet_addr,
-            settlement_time_interval_hours,
+            settlement_interval,
             oracle_pk,
             projection_actor,
             inc_conn_addr.clone(),

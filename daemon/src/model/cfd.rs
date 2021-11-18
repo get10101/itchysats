@@ -115,7 +115,7 @@ pub struct Order {
     pub creation_timestamp: Timestamp,
 
     /// The duration that will be used for calculating the settlement timestamp
-    pub settlement_time_interval_hours: Duration,
+    pub settlement_interval: Duration,
 
     pub origin: Origin,
 
@@ -132,7 +132,7 @@ impl Order {
         max_quantity: Usd,
         origin: Origin,
         oracle_event_id: BitMexPriceEventId,
-        settlement_time_interval_hours: Duration,
+        settlement_interval: Duration,
     ) -> Result<Self> {
         let leverage = Leverage::new(2)?;
         let liquidation_price = calculate_long_liquidation_price(leverage, price);
@@ -147,7 +147,7 @@ impl Order {
             liquidation_price,
             position: Position::Short,
             creation_timestamp: Timestamp::now(),
-            settlement_time_interval_hours,
+            settlement_interval,
             origin,
             oracle_event_id,
         })
@@ -671,7 +671,7 @@ impl Cfd {
     }
 
     pub fn refund_timelock_in_blocks(&self) -> u32 {
-        (self.order.settlement_time_interval_hours * Cfd::REFUND_THRESHOLD)
+        (self.order.settlement_interval * Cfd::REFUND_THRESHOLD)
             .as_blocks()
             .ceil() as u32
     }
@@ -680,20 +680,20 @@ impl Cfd {
         self.order.oracle_event_id.timestamp()
     }
 
-    /// A factor to be added to the CFD order settlement_time_interval_hours for calculating the
+    /// A factor to be added to the CFD order settlement_interval for calculating the
     /// refund timelock.
     ///
     /// The refund timelock is important in case the oracle disappears or never publishes a
     /// signature. Ideally, both users collaboratively settle in the refund scenario. This
     /// factor is important if the users do not settle collaboratively.
-    /// `1.5` times the settlement_time_interval_hours as defined in CFD order should be safe in the
+    /// `1.5` times the settlement_interval as defined in CFD order should be safe in the
     /// extreme case where a user publishes the commit transaction right after the contract was
     /// initialized. In this case, the oracle still has `1.0 *
-    /// cfdorder.settlement_time_interval_hours` time to attest and no one can publish the refund
+    /// cfdorder.settlement_interval` time to attest and no one can publish the refund
     /// transaction.
     /// The downside is that if the oracle disappears: the users would only notice at the end
-    /// of the cfd settlement_time_interval_hours. In this case the users has to wait for another
-    /// `1.5` times of the settlement_time_interval_hours to get his funds back.
+    /// of the cfd settlement_interval. In this case the users has to wait for another
+    /// `1.5` times of the settlement_interval to get his funds back.
     const REFUND_THRESHOLD: f32 = 1.5;
 
     pub const CET_TIMELOCK: u32 = 12;
