@@ -36,7 +36,7 @@ pub enum CfdAction {
 }
 
 pub struct ProposeRollOver {
-    proposal: RollOverProposal,
+    pub proposal: RollOverProposal,
 }
 
 pub struct AutoRollover;

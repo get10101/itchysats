@@ -1,13 +1,17 @@
 use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
 use crate::harness::{
-    assert_is_same_order, dummy_new_order, init_tracing, start_both, HEARTBEAT_INTERVAL_FOR_TEST,
+    assert_is_same_order, dummy_new_order, init_open_cfd, init_tracing, start_both,
+    HEARTBEAT_INTERVAL_FOR_TEST,
 };
+use anyhow::Result;
 use daemon::connection::ConnectionStatus;
-use daemon::model::cfd::CfdState;
+use daemon::model::cfd::{CfdState, UpdateCfdProposal};
 use daemon::model::Usd;
+use daemon::monitor;
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
 use tokio::time::sleep;
+
 mod harness;
 
 #[tokio::test]

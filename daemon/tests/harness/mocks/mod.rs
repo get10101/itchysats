@@ -6,7 +6,7 @@ use self::monitor::MonitorActor;
 use self::oracle::OracleActor;
 use self::wallet::WalletActor;
 
-use super::bdk::{dummy_partially_signed_transaction, dummy_tx_id};
+use super::bdk::dummy_tx_id;
 
 pub mod monitor;
 pub mod oracle;
@@ -37,6 +37,13 @@ impl Mocks {
         self.monitor().await.expect_sync().return_const(());
     }
 
+    pub async fn mock_rollover_handlers(&mut self) {
+        self.mock_oracle_annoucement().await;
+        self.mock_oracle_monitor_attestation().await;
+        self.mock_party_params().await;
+        self.mock_monitor_start_monitoring().await;
+    }
+
     // Helper function setting up a "happy path" wallet mock
     pub async fn mock_wallet_sign_and_broadcast(&mut self) {
         let mut seq = mockall::Sequence::new();
@@ -44,7 +51,7 @@ impl Mocks {
             .await
             .expect_sign()
             .times(1)
-            .returning(|_| Ok(dummy_partially_signed_transaction()))
+            .returning(|sign| Ok(sign.psbt))
             .in_sequence(&mut seq);
         self.wallet()
             .await
@@ -68,19 +75,19 @@ impl Mocks {
             .return_const(());
     }
 
+    pub async fn mock_monitor_oracle_attestation(&mut self) {
+        self.monitor()
+            .await
+            .expect_oracle_attestation()
+            .return_const(());
+    }
+
     pub async fn mock_party_params(&mut self) {
         #[allow(clippy::redundant_closure)] // clippy is in the wrong here
         self.wallet()
             .await
             .expect_build_party_params()
             .returning(|msg| wallet::build_party_params(msg));
-    }
-
-    pub async fn mock_monitor_oracle_attestation(&mut self) {
-        self.monitor()
-            .await
-            .expect_oracle_attestation()
-            .return_const(());
     }
 
     pub async fn mock_monitor_start_monitoring(&mut self) {

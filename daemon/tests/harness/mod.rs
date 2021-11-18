@@ -1,13 +1,15 @@
+use crate::harness::flow::{is_next_none, next, next_cfd, next_order};
 use crate::harness::mocks::monitor::MonitorActor;
 use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
+use anyhow::Result;
 use daemon::connection::{Connect, ConnectionStatus};
 use daemon::maker_cfd::CfdAction;
-use daemon::model::cfd::{Cfd, Order, Origin};
-use daemon::model::{Price, Usd};
+use daemon::model::cfd::{Cfd, Order, OrderId, Origin, RollOverProposal, UpdateCfdProposal};
+use daemon::model::{Price, Timestamp, Usd};
 use daemon::seed::Seed;
-use daemon::{db, maker_cfd, maker_inc_connections, taker_cfd, MakerActorSystem, Tasks};
+use daemon::{db, maker_cfd, maker_inc_connections, monitor, taker_cfd, MakerActorSystem, Tasks};
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -38,6 +40,43 @@ pub async fn start_both() -> (Maker, Taker) {
     let maker = Maker::start(oracle_pk).await;
     let taker = Taker::start(oracle_pk, maker.listen_addr, maker.identity_pk).await;
     (maker, taker)
+}
+
+pub async fn init_open_cfd(maker: &mut Maker, taker: &mut Taker) -> Result<(Cfd, Cfd)> {
+    is_next_none(taker.order_feed()).await.unwrap();
+
+    maker.publish_order(dummy_new_order()).await;
+
+    let (_, received) = next_order(maker.order_feed(), taker.order_feed())
+        .await
+        .unwrap();
+
+    taker.take_order(received.clone(), Usd::new(dec!(5))).await;
+    let (_, _) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+
+    maker.accept_take_request(received.clone()).await;
+
+    next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+
+    maker.mocks.mock_wallet_sign_and_broadcast().await;
+    taker.mocks.mock_wallet_sign_and_broadcast().await;
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+
+    maker
+        .system
+        .cfd_actor_addr
+        .send(monitor::Event::LockFinality(maker_cfd.order.id))
+        .await
+        .unwrap();
+    taker
+        .system
+        .cfd_actor_addr
+        .send(monitor::Event::LockFinality(taker_cfd.order.id))
+        .await
+        .unwrap();
+
+    Ok(next_cfd(&mut taker.cfd_feed(), &mut maker.cfd_feed()).await?)
 }
 
 /// Maker Test Setup
@@ -77,6 +116,8 @@ impl Maker {
 
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
+        mocks.mock_rollover_handlers().await;
+
         let maker = daemon::MakerActorSystem::new(
             db,
             wallet_addr,
@@ -151,6 +192,30 @@ impl Maker {
             .unwrap()
             .unwrap();
     }
+
+    pub async fn accept_rollover(&self, order: Order) {
+        self.system
+            .cfd_actor_addr
+            .send(CfdAction::AcceptRollOver { order_id: order.id })
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    pub async fn get_update_cfd_proposal(
+        &mut self,
+        order_id: &OrderId,
+    ) -> Result<UpdateCfdProposal> {
+        tokio::time::timeout(tokio::time::Duration::from_secs(1), async {
+            loop {
+                let update_proposals = next(&mut self.system.update_cfd_feed_receiver).await?;
+                if let Some(update_proposal) = update_proposals.get(order_id) {
+                    return Ok(update_proposal.clone());
+                }
+            }
+        })
+        .await?
+    }
 }
 
 /// Taker Test Setup
@@ -194,6 +259,8 @@ impl Taker {
 
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
+        mocks.mock_rollover_handlers().await;
+
         let taker = daemon::TakerActorSystem::new(
             db,
             wallet_addr,
@@ -233,6 +300,19 @@ impl Taker {
             })
             .await
             .unwrap()
+            .unwrap();
+    }
+
+    pub async fn trigger_propose_rollover(&self, order_id: OrderId) {
+        self.system
+            .cfd_actor_addr
+            .send(taker_cfd::ProposeRollOver {
+                proposal: RollOverProposal {
+                    order_id,
+                    timestamp: Timestamp::now().expect("able to get current timestamp"),
+                },
+            })
+            .await
             .unwrap();
     }
 }
