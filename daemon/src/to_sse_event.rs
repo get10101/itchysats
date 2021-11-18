@@ -101,11 +101,11 @@ pub struct Cfd {
     pub expiry_timestamp: OffsetDateTime,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct CfdDetails {
-    tx_url_list: Vec<TxUrl>,
+    pub tx_url_list: Vec<TxUrl>,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
-    payout: Option<Amount>,
+    pub payout: Option<Amount>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -369,7 +369,7 @@ impl ToSseEvent for model::WalletInfo {
     }
 }
 
-fn to_cfd_state(
+pub fn to_cfd_state(
     cfd_state: &model::cfd::CfdState,
     proposal_status: Option<&UpdateCfdProposal>,
 ) -> CfdState {
@@ -415,7 +415,7 @@ fn to_cfd_state(
     }
 }
 
-fn to_tx_url_list(state: model::cfd::CfdState, network: Network) -> Vec<TxUrl> {
+pub fn to_tx_url_list(state: model::cfd::CfdState, network: Network) -> Vec<TxUrl> {
     use model::cfd::CfdState::*;
 
     let tx_ub = TxUrlBuilder::new(network);
@@ -483,7 +483,7 @@ impl ToSseEvent for bitmex_price_feed::Quote {
     }
 }
 
-fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
+pub fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
     match (state, role) {
         (CfdState::IncomingOrderRequest { .. }, Role::Maker) => {
             vec![CfdAction::AcceptOrder, CfdAction::RejectOrder]

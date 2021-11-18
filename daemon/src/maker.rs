@@ -299,13 +299,15 @@ async fn main() -> Result<()> {
         .manage(auth_password)
         .manage(quote_updates)
         .manage(bitcoin_network)
+        .manage(db.clone())
         .mount(
             "/api",
             rocket::routes![
                 routes_maker::maker_feed,
                 routes_maker::post_sell_order,
                 routes_maker::post_cfd_action,
-                routes_maker::get_health_check
+                routes_maker::get_health_check,
+                routes_maker::get_cfds
             ],
         )
         .register("/api", rocket::catchers![routes_maker::unauthorized])

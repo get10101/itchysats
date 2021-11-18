@@ -1,19 +1,26 @@
+use crate::bitcoin::SignedAmount;
 use anyhow::Result;
 use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
-use daemon::model::cfd::{Cfd, Order, OrderId, Role, UpdateCfdProposals};
-use daemon::model::{Price, Usd, WalletInfo};
+use daemon::db::load_all_cfds;
+use daemon::model::cfd::{Order, OrderId, Role, UpdateCfdProposals};
+use daemon::model::{cfd, Price, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
-use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
-use daemon::{bitmex_price_feed, maker_cfd};
+use daemon::to_sse_event::{
+    available_actions, to_cfd_state, to_tx_url_list, CfdAction, CfdDetails, CfdsWithAuxData,
+    ToSseEvent,
+};
+use daemon::{bitmex_price_feed, maker_cfd, to_sse_event};
 use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Header, Status};
 use rocket::response::stream::EventStream;
 use rocket::response::{status, Responder};
 use rocket::serde::json::Json;
 use rocket::State;
+use rust_decimal::Decimal;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
+use sqlx::{Pool, Sqlite};
 use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
@@ -22,7 +29,7 @@ use xtra::prelude::*;
 
 #[rocket::get("/feed")]
 pub async fn maker_feed(
-    rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
+    rx_cfds: &State<watch::Receiver<Vec<cfd::Cfd>>>,
     rx_order: &State<watch::Receiver<Option<Order>>>,
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
     rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
@@ -187,6 +194,72 @@ pub async fn post_cfd_action(
         })?;
 
     Ok(status::Accepted(None))
+}
+
+#[rocket::get("/cfds")]
+pub async fn get_cfds<'r>(
+    db: &State<Pool<Sqlite>>,
+    // TODO: for calculating profit we should use a price based on BXBT
+    rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
+    _auth: Authenticated,
+    network: &State<Network>,
+) -> Result<Json<Vec<to_sse_event::Cfd>>, HttpApiProblem> {
+    let mut conn = db.acquire().await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Could acquire DB lock")
+            .detail(e.to_string())
+    })?;
+    let cfds = load_all_cfds(&mut conn).await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Could not get CFDs")
+            .detail(e.to_string())
+    })?;
+
+    let rx_quote = rx_quote.inner().clone();
+    let quote = rx_quote.borrow().clone();
+    let current_price = quote.for_maker();
+    let network = *network.inner();
+
+    let cfds = cfds
+        .iter()
+        .map(|cfd| {
+            let (profit_btc, profit_in_percent) =
+                cfd.profit(current_price).unwrap_or_else(|error| {
+                    tracing::warn!(
+                        "Calculating profit/loss failed. Falling back to 0. {:#}",
+                        error
+                    );
+                    (SignedAmount::ZERO, Decimal::ZERO.into())
+                });
+
+            let details = CfdDetails {
+                tx_url_list: to_tx_url_list(cfd.state.clone(), network),
+                payout: cfd.payout(),
+            };
+
+            let state = to_cfd_state(&cfd.state, None);
+            to_sse_event::Cfd {
+                order_id: cfd.order.id,
+                initial_price: cfd.order.price.into(),
+                leverage: cfd.order.leverage,
+                trading_pair: cfd.order.trading_pair.clone(),
+                position: cfd.position(),
+                liquidation_price: cfd.order.liquidation_price.into(),
+                quantity_usd: cfd.quantity_usd.into(),
+                margin: cfd.margin().expect("margin to be available"),
+                margin_counterparty: cfd.counterparty_margin().expect("margin to be available"),
+                profit_btc,
+                profit_in_percent: profit_in_percent.round_dp(1).to_string(),
+                state: state.clone(),
+                actions: available_actions(state, cfd.role()),
+                state_transition_timestamp: cfd.state.get_transition_timestamp().seconds(),
+                details,
+                expiry_timestamp: cfd.expiry_timestamp(),
+            }
+        })
+        .collect::<Vec<to_sse_event::Cfd>>();
+
+    Ok(Json(cfds))
 }
 
 #[rocket::get("/alive")]
