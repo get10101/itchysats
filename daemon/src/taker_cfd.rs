@@ -331,6 +331,7 @@ impl<O, M, W> Actor<O, M, W> {
     }
 
     async fn handle_propose_roll_over(&mut self, proposal: RollOverProposal) -> Result<()> {
+        tracing::trace!(order_id=%proposal.order_id, "Propose rollover message received");
         self.current_pending_proposals.insert(
             proposal.order_id,
             UpdateCfdProposal::RollOverProposal {
@@ -340,6 +341,7 @@ impl<O, M, W> Actor<O, M, W> {
         );
         self.send_pending_update_proposals()?;
 
+        tracing::info!(order_id=%proposal.order_id, "Sending rollover proposal to maker");
         self.send_to_maker
             .do_send(wire::TakerToMaker::ProposeRollOver {
                 order_id: proposal.order_id,
@@ -351,7 +353,7 @@ impl<O, M, W> Actor<O, M, W> {
 
 impl<O: 'static, M: 'static, W: 'static> Actor<O, M, W> {
     async fn handle_auto_rollover(&mut self, ctx: &mut Context<Self>) -> Result<()> {
-        tracing::debug!("Auto rollover");
+        tracing::trace!("Auto rollover message received");
 
         let mut conn = self.db.acquire().await?;
         let cfds = load_all_cfds(&mut conn).await?;
@@ -369,6 +371,7 @@ impl<O: 'static, M: 'static, W: 'static> Actor<O, M, W> {
             .expect("actor to be able to retrieve own address");
 
         for proposal in proposals {
+            tracing::trace!(order_id=%proposal.order_id, "Sending rollover proposal message");
             try_continue!(address.send(ProposeRollOver { proposal }).await)
         }
 
