@@ -170,11 +170,6 @@ pub async fn post_cfd_action(
             tracing::error!(msg);
             return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST).detail(msg));
         }
-        CfdAction::RollOver => {
-            let msg = "RollOver proposal can only be triggered by taker";
-            tracing::error!(msg);
-            return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST).detail(msg));
-        }
     };
 
     result

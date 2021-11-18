@@ -185,7 +185,6 @@ export enum Action {
     REJECT_ORDER = "rejectOrder",
     COMMIT = "commit",
     SETTLE = "settle",
-    ROLL_OVER = "rollOver",
     ACCEPT_SETTLEMENT = "acceptSettlement",
     REJECT_SETTLEMENT = "rejectSettlement",
     ACCEPT_ROLL_OVER = "acceptRollOver",
