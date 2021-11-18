@@ -339,7 +339,7 @@ impl ToSseEvent for Option<model::cfd::Order> {
             liquidation_price: order.liquidation_price.into(),
             creation_timestamp: order.creation_timestamp,
             settlement_time_interval_in_secs: order
-                .settlement_time_interval_hours
+                .settlement_interval
                 .whole_seconds()
                 .try_into()
                 .expect("settlement_time_interval_hours is always positive number"),

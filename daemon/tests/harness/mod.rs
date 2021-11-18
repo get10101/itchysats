@@ -70,7 +70,7 @@ impl Maker {
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tasks.add(wallet_fut);
 
-        let settlement_time_interval_hours = time::Duration::hours(24);
+        let settlement_interval = time::Duration::hours(24);
 
         let seed = Seed::default();
         let (identity_pk, identity_sk) = seed.derive_identity();
@@ -91,7 +91,7 @@ impl Maker {
                     HEARTBEAT_INTERVAL_FOR_TEST,
                 )
             },
-            settlement_time_interval_hours,
+            settlement_interval,
             N_PAYOUTS_FOR_TEST,
         )
         .await

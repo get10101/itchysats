@@ -52,6 +52,8 @@ pub const HEARTBEAT_INTERVAL: std::time::Duration = Duration::from_secs(5);
 
 pub const N_PAYOUTS: usize = 200;
 
+pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
+
 /// Struct controlling the lifetime of the async tasks,
 /// such as running actors and periodic notifications.
 /// If it gets dropped, all tasks are cancelled.
@@ -109,7 +111,7 @@ where
             Box<dyn MessageChannel<NewTakerOnline>>,
             Box<dyn MessageChannel<FromTaker>>,
         ) -> T,
-        settlement_time_interval_hours: time::Duration,
+        settlement_interval: time::Duration,
         n_payouts: usize,
     ) -> Result<Self>
     where
@@ -133,7 +135,7 @@ where
         let (cfd_actor_addr, cfd_actor_fut) = maker_cfd::Actor::new(
             db,
             wallet_addr,
-            settlement_time_interval_hours,
+            settlement_interval,
             oracle_pk,
             cfd_feed_sender,
             order_feed_sender,

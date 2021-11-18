@@ -39,7 +39,7 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
     .bind(order.leverage.get())
     .bind(&order.liquidation_price.to_string())
     .bind(&order.creation_timestamp.seconds())
-    .bind(&order.settlement_time_interval_hours.whole_seconds())
+    .bind(&order.settlement_interval.whole_seconds())
     .bind(&order.origin)
     .bind(&order.oracle_event_id.to_string())
     .execute(conn)
@@ -90,7 +90,7 @@ pub async fn load_order_by_id(
         leverage: row.leverage,
         liquidation_price: row.liquidation_price.parse()?,
         creation_timestamp: row.ts_secs,
-        settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
+        settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
         origin: row.origin,
         oracle_event_id: row.oracle_event_id.parse()?,
     })
@@ -300,7 +300,7 @@ pub async fn load_cfd_by_order_id(
         leverage: row.leverage,
         liquidation_price: row.liquidation_price.parse()?,
         creation_timestamp: row.ts_secs,
-        settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
+        settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
         origin: row.origin,
         oracle_event_id: row.oracle_event_id.parse()?,
     };
@@ -398,7 +398,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 leverage: row.leverage,
                 liquidation_price: row.liquidation_price.parse()?,
                 creation_timestamp: row.ts_secs,
-                settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
+                settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
                 origin: row.origin,
                 oracle_event_id: row.oracle_event_id.parse()?,
             };
@@ -504,7 +504,7 @@ pub async fn load_cfds_by_oracle_event_id(
                 leverage: row.leverage,
                 liquidation_price: row.liquidation_price.parse()?,
                 creation_timestamp: row.ts_secs,
-                settlement_time_interval_hours: Duration::new(row.settlement_time_interval_secs, 0),
+                settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
                 origin: row.origin,
                 oracle_event_id: row.oracle_event_id.parse()?,
             };

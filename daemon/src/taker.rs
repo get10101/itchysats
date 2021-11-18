@@ -9,7 +9,7 @@ use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
     bitmex_price_feed, connection, db, housekeeping, logger, monitor, oracle, taker_cfd, wallet,
-    wallet_sync, TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
+    wallet_sync, TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS, SETTLEMENT_INTERVAL,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
@@ -25,7 +25,6 @@ use xtra::Actor;
 
 mod routes_taker;
 
-pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Parser)]
@@ -246,7 +245,7 @@ async fn main() -> Result<()> {
         wallet.clone(),
         oracle,
         identity_sk,
-        |cfds, channel| oracle::Actor::new(cfds, channel, ANNOUNCEMENT_LOOKAHEAD),
+        |cfds, channel| oracle::Actor::new(cfds, channel, SETTLEMENT_INTERVAL),
         {
             |channel, cfds| {
                 let electrum = opts.network.electrum().to_string();
