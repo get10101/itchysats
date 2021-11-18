@@ -319,36 +319,7 @@ impl<O, M, W> Actor<O, M, W> {
         }
         Ok(())
     }
-}
 
-impl<O, M, W> Actor<O, M, W>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_oracle_attestation(
-            attestation,
-            &mut conn,
-            &self.wallet,
-            &self.projection_actor,
-        )
-        .await?;
-        Ok(())
-    }
-
-    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_monitoring_event(event, &mut conn, &self.wallet, &self.projection_actor)
-            .await?;
-        Ok(())
-    }
-}
-
-impl<O, M, W> Actor<O, M, W>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
     async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
         if self.current_pending_proposals.contains_key(&order_id) {
             anyhow::bail!("An update for order id {} is already in progress", order_id)
@@ -377,11 +348,29 @@ where
         Ok(())
     }
 }
-impl<O, M, W> Actor<O, M, W> where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>
-        + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::BuildPartyParams>
+
+impl<O, M, W> Actor<O, M, W>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
+    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_oracle_attestation(
+            attestation,
+            &mut conn,
+            &self.wallet,
+            &self.projection_actor,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_monitoring_event(event, &mut conn, &self.wallet, &self.projection_actor)
+            .await?;
+        Ok(())
+    }
 }
 
 impl<O, M, W> Actor<O, M, W>
