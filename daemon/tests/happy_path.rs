@@ -85,6 +85,15 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
 
+    maker.mocks.mock_monitor_oracle_attestation().await;
+    taker.mocks.mock_monitor_oracle_attestation().await;
+
+    maker.mocks.mock_oracle_monitor_attestation().await;
+    taker.mocks.mock_oracle_monitor_attestation().await;
+
+    maker.mocks.mock_monitor_start_monitoring().await;
+    taker.mocks.mock_monitor_start_monitoring().await;
+
     maker.accept_take_request(received.clone()).await;
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
