@@ -330,28 +330,6 @@ impl<O, M, W> Actor<O, M, W> {
         Ok(())
     }
 
-    async fn handle_auto_rollover(&mut self) -> Result<()> {
-        tracing::debug!("Auto rollover");
-
-        let mut conn = self.db.acquire().await?;
-        let cfds = load_all_cfds(&mut conn).await?;
-
-        // cleanup all pending proposals because auto-rollover will create a new one
-        self.current_pending_proposals.clear();
-
-        let proposals = cfds
-            .iter()
-            .filter_map(|cfd| cfd.rollover_proposal())
-            .collect::<Vec<RollOverProposal>>();
-
-        // TODO: Consider send message to ourselves
-        for proposal in proposals {
-            try_continue!(self.handle_propose_roll_over(proposal).await)
-        }
-
-        Ok(())
-    }
-
     async fn handle_propose_roll_over(&mut self, proposal: RollOverProposal) -> Result<()> {
         self.current_pending_proposals.insert(
             proposal.order_id,
@@ -367,6 +345,33 @@ impl<O, M, W> Actor<O, M, W> {
                 order_id: proposal.order_id,
                 timestamp: proposal.timestamp,
             })?;
+        Ok(())
+    }
+}
+
+impl<O: 'static, M: 'static, W: 'static> Actor<O, M, W> {
+    async fn handle_auto_rollover(&mut self, ctx: &mut Context<Self>) -> Result<()> {
+        tracing::debug!("Auto rollover");
+
+        let mut conn = self.db.acquire().await?;
+        let cfds = load_all_cfds(&mut conn).await?;
+
+        // cleanup all pending proposals because auto-rollover will create a new one
+        self.current_pending_proposals.clear();
+
+        let proposals = cfds
+            .iter()
+            .filter_map(|cfd| cfd.rollover_proposal())
+            .collect::<Vec<RollOverProposal>>();
+
+        let address = ctx
+            .address()
+            .expect("actor to be able to retrieve own address");
+
+        for proposal in proposals {
+            try_continue!(address.send(ProposeRollOver { proposal }).await)
+        }
+
         Ok(())
     }
 }
@@ -837,8 +842,8 @@ impl<O: 'static, M: 'static, W: 'static> Handler<ProposeRollOver> for Actor<O, M
 
 #[async_trait]
 impl<O: 'static, M: 'static, W: 'static> Handler<AutoRollover> for Actor<O, M, W> {
-    async fn handle(&mut self, _msg: AutoRollover, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_auto_rollover())
+    async fn handle(&mut self, _msg: AutoRollover, ctx: &mut Context<Self>) {
+        log_error!(self.handle_auto_rollover(ctx))
     }
 }
 
