@@ -163,7 +163,8 @@ impl<O, M, W> Actor<O, M, W> {
         self.order_feed_actor_inbox.send(None)?;
 
         self.send_to_maker
-            .do_send(wire::TakerToMaker::TakeOrder { order_id, quantity })?;
+            .send(wire::TakerToMaker::TakeOrder { order_id, quantity })
+            .await?;
 
         Ok(())
     }
@@ -217,13 +218,14 @@ where
         self.send_pending_update_proposals()?;
 
         self.send_to_maker
-            .do_send(wire::TakerToMaker::ProposeSettlement {
+            .send(wire::TakerToMaker::ProposeSettlement {
                 order_id: proposal.order_id,
                 timestamp: proposal.timestamp,
                 taker: proposal.taker,
                 maker: proposal.maker,
                 price: proposal.price,
-            })?;
+            })
+            .await?;
         Ok(())
     }
 
@@ -377,10 +379,11 @@ where
         self.send_pending_update_proposals()?;
 
         self.send_to_maker
-            .do_send(wire::TakerToMaker::ProposeRollOver {
+            .send(wire::TakerToMaker::ProposeRollOver {
                 order_id: proposal.order_id,
                 timestamp: proposal.timestamp,
-            })?;
+            })
+            .await?;
         Ok(())
     }
 }
@@ -655,10 +658,11 @@ where
         let (tx, sig_taker) = dlc.close_transaction(proposal)?;
 
         self.send_to_maker
-            .do_send(wire::TakerToMaker::InitiateSettlement {
+            .send(wire::TakerToMaker::InitiateSettlement {
                 order_id,
                 sig_taker,
-            })?;
+            })
+            .await?;
 
         cfd.handle(CfdStateChangeEvent::ProposalSigned(
             CollaborativeSettlement::new(
