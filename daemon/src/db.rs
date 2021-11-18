@@ -541,7 +541,7 @@ mod tests {
     async fn test_insert_and_load_order() {
         let mut conn = setup_test_db().await;
 
-        let order = Order::dummy().insert(&mut conn).await;
+        let order = Order::dummy_db().insert(&mut conn).await;
         let loaded = load_order_by_id(order.id, &mut conn).await.unwrap();
 
         assert_eq!(order, loaded);
@@ -551,7 +551,7 @@ mod tests {
     async fn test_insert_and_load_cfd() {
         let mut conn = setup_test_db().await;
 
-        let cfd = Cfd::dummy().insert(&mut conn).await;
+        let cfd = Cfd::dummy_db().insert(&mut conn).await;
         let loaded = load_all_cfds(&mut conn).await.unwrap();
 
         assert_eq!(vec![cfd], loaded);
@@ -567,7 +567,7 @@ mod tests {
 
         assert_eq!(cfd_feed_receiver.borrow().clone(), vec![]);
 
-        let cfd_1 = Cfd::dummy();
+        let cfd_1 = Cfd::dummy_db();
         db::insert_order(&cfd_1.order, &mut conn).await.unwrap();
         cfd_actors::insert_cfd_and_send_to_feed(&cfd_1, &mut conn, &cfd_feed_sender)
             .await
@@ -575,7 +575,7 @@ mod tests {
 
         assert_eq!(cfd_feed_receiver.borrow().clone(), vec![cfd_1.clone()]);
 
-        let cfd_2 = Cfd::dummy();
+        let cfd_2 = Cfd::dummy_db();
         db::insert_order(&cfd_2.order, &mut conn).await.unwrap();
         cfd_actors::insert_cfd_and_send_to_feed(&cfd_2, &mut conn, &cfd_feed_sender)
             .await
@@ -587,7 +587,7 @@ mod tests {
     async fn test_insert_and_load_cfd_by_order_id() {
         let mut conn = setup_test_db().await;
 
-        let cfd = Cfd::dummy().insert(&mut conn).await;
+        let cfd = Cfd::dummy_db().insert(&mut conn).await;
         let loaded = load_cfd_by_order_id(cfd.order.id, &mut conn).await.unwrap();
 
         assert_eq!(cfd, loaded)
@@ -597,8 +597,8 @@ mod tests {
     async fn test_insert_and_load_cfd_by_order_id_multiple() {
         let mut conn = setup_test_db().await;
 
-        let cfd1 = Cfd::dummy().insert(&mut conn).await;
-        let cfd2 = Cfd::dummy().insert(&mut conn).await;
+        let cfd1 = Cfd::dummy_db().insert(&mut conn).await;
+        let cfd2 = Cfd::dummy_db().insert(&mut conn).await;
 
         let loaded_1 = load_cfd_by_order_id(cfd1.order.id, &mut conn)
             .await
@@ -615,15 +615,15 @@ mod tests {
     async fn test_insert_and_load_cfd_by_oracle_event_id() {
         let mut conn = setup_test_db().await;
 
-        let cfd_1 = Cfd::dummy()
+        let cfd_1 = Cfd::dummy_db()
             .with_event_id(BitMexPriceEventId::event1())
             .insert(&mut conn)
             .await;
-        let cfd_2 = Cfd::dummy()
+        let cfd_2 = Cfd::dummy_db()
             .with_event_id(BitMexPriceEventId::event1())
             .insert(&mut conn)
             .await;
-        let cfd_3 = Cfd::dummy()
+        let cfd_3 = Cfd::dummy_db()
             .with_event_id(BitMexPriceEventId::event2())
             .insert(&mut conn)
             .await;
@@ -644,7 +644,7 @@ mod tests {
     async fn test_insert_new_cfd_state_and_load_with_multiple_cfd() {
         let mut conn = setup_test_db().await;
 
-        let mut cfd_1 = Cfd::dummy().insert(&mut conn).await;
+        let mut cfd_1 = Cfd::dummy_db().insert(&mut conn).await;
 
         cfd_1.state = CfdState::accepted();
         append_cfd_state(&cfd_1, &mut conn).await.unwrap();
@@ -652,7 +652,7 @@ mod tests {
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         assert_eq!(vec![cfd_1.clone()], cfds_from_db);
 
-        let mut cfd_2 = Cfd::dummy().insert(&mut conn).await;
+        let mut cfd_2 = Cfd::dummy_db().insert(&mut conn).await;
 
         let cfds_from_db = load_all_cfds(&mut conn).await.unwrap();
         assert_eq!(vec![cfd_1.clone(), cfd_2.clone()], cfds_from_db);
@@ -669,10 +669,10 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         // Insert an order without a CFD
-        let _order_1 = Order::dummy().insert(&mut conn).await;
+        let _order_1 = Order::dummy_db().insert(&mut conn).await;
 
         // Insert a CFD (this also inserts an order)
-        let cfd_1 = Cfd::dummy().insert(&mut conn).await;
+        let cfd_1 = Cfd::dummy_db().insert(&mut conn).await;
 
         let all_cfds = load_all_cfds(&mut conn).await.unwrap();
 
@@ -686,7 +686,7 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         for i in 0..100 {
-            let mut cfd = Cfd::dummy()
+            let mut cfd = Cfd::dummy_db()
                 .with_event_id(BitMexPriceEventId::event1())
                 .insert(&mut conn)
                 .await;
@@ -745,9 +745,9 @@ mod tests {
     }
 
     impl Cfd {
-        fn dummy() -> Self {
+        fn dummy_db() -> Self {
             Cfd::new(
-                Order::dummy(),
+                Order::dummy_db(),
                 Usd::new(dec!(1000)),
                 CfdState::outgoing_order_request(),
             )
@@ -760,15 +760,10 @@ mod tests {
 
             self
         }
-
-        fn with_event_id(mut self, id: BitMexPriceEventId) -> Self {
-            self.order.oracle_event_id = id;
-            self
-        }
     }
 
     impl Order {
-        fn dummy() -> Self {
+        fn dummy_db() -> Self {
             Order::new(
                 Price::new(dec!(1000)).unwrap(),
                 Usd::new(dec!(100)),

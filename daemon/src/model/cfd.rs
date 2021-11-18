@@ -1274,6 +1274,31 @@ impl Cfd {
             (None, None) => None,
         }
     }
+
+    /// Only cfds in state `Open` that have not received an attestation and are within 23 hours
+    /// until expiry are eligible for rollover
+    pub fn rollover_proposal(&self) -> Option<RollOverProposal> {
+        let now = OffsetDateTime::now_utc();
+        let remaining_till_expiry = self.expiry_timestamp() - now;
+        let rollover_window = Duration::hours(1);
+
+        if matches!(
+            self.state.clone(),
+            CfdState::Open {
+                attestation: None,
+                ..
+            }
+        ) && remaining_till_expiry > rollover_window
+            && remaining_till_expiry > Duration::ZERO
+        {
+            Some(RollOverProposal {
+                order_id: self.order.id,
+                timestamp: Timestamp::now().expect("the timestamp not to fail"),
+            })
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug, Clone)]
@@ -1594,7 +1619,10 @@ impl CollaborativeSettlement {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bdk::bitcoin::util::psbt::{Global, PartiallySignedTransaction};
     use rust_decimal_macros::dec;
+    use std::collections::BTreeMap;
+    use std::str::FromStr;
 
     #[test]
     fn given_default_values_then_expected_liquidation_price() {
@@ -1840,5 +1868,197 @@ mod tests {
         let deserialized = serde_json::from_str(&serde_json::to_string(&id).unwrap()).unwrap();
 
         assert_eq!(id, deserialized);
+    }
+
+    #[tokio::test]
+    async fn given_cfd_rollover_window_lower_bound_then_rollover_proposal() {
+        let now = OffsetDateTime::now_utc();
+        let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
+            now + Duration::hours(1) + Duration::seconds(1),
+        ));
+
+        assert!(cfd.rollover_proposal().is_some());
+    }
+
+    #[tokio::test]
+    async fn given_cfd_rollover_window_upper_bound_then_rollover_proposal() {
+        let now = OffsetDateTime::now_utc();
+        let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
+            now + Duration::hours(23) + Duration::seconds(59),
+        ));
+
+        assert!(cfd.rollover_proposal().is_some());
+    }
+
+    #[tokio::test]
+    async fn given_cfd_past_expiry_time_then_no_rollover_proposal() {
+        let now = OffsetDateTime::now_utc();
+        let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
+            now - Duration::seconds(1),
+        ));
+
+        assert!(cfd.rollover_proposal().is_none())
+    }
+
+    #[tokio::test]
+    async fn given_cfd_was_just_renewed_then_no_rollover_proposal() {
+        let now = OffsetDateTime::now_utc();
+        let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
+            now + Duration::hours(1) - Duration::seconds(1),
+        ));
+
+        assert!(cfd.rollover_proposal().is_none())
+    }
+
+    #[tokio::test]
+    async fn given_cfd_has_attestation_then_no_rollover_proposal() {
+        let cfd = Cfd::dummy_open_with_attestation();
+        assert!(cfd.rollover_proposal().is_none())
+    }
+
+    #[tokio::test]
+    async fn given_cfd_not_in_open_then_no_rollover_proposal() {
+        let cfd = Cfd::dummy_not_open();
+        assert!(cfd.rollover_proposal().is_none())
+    }
+
+    impl Cfd {
+        fn dummy_open() -> Self {
+            Cfd::new(
+                Order::dummy_model(),
+                Usd::new(dec!(1000)),
+                CfdState::Open {
+                    common: Default::default(),
+                    dlc: Dlc::dummy(),
+                    attestation: None,
+                    collaborative_close: None,
+                },
+            )
+        }
+
+        fn dummy_open_with_attestation() -> Self {
+            Cfd::new(
+                Order::dummy_model(),
+                Usd::new(dec!(1000)),
+                CfdState::Open {
+                    common: Default::default(),
+                    dlc: Dlc::dummy(),
+                    // the dummy_dlc contains a dummy range [0, 1]
+                    attestation: Some(
+                        Attestation::new(
+                            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
+                            0,
+                            vec![],
+                            Dlc::dummy(),
+                            Role::Taker,
+                        )
+                        .unwrap(),
+                    ),
+                    collaborative_close: None,
+                },
+            )
+        }
+
+        fn dummy_not_open() -> Self {
+            Cfd::new(
+                Order::dummy_model(),
+                Usd::new(dec!(1000)),
+                CfdState::outgoing_order_request(),
+            )
+        }
+
+        pub fn with_event_id(mut self, id: BitMexPriceEventId) -> Self {
+            self.order.oracle_event_id = id;
+            self
+        }
+    }
+
+    impl Order {
+        fn dummy_model() -> Self {
+            Order::new(
+                Price::new(dec!(1000)).unwrap(),
+                Usd::new(dec!(100)),
+                Usd::new(dec!(1000)),
+                Origin::Theirs,
+                BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
+                time::Duration::hours(24),
+            )
+            .unwrap()
+        }
+    }
+
+    impl Dlc {
+        fn dummy() -> Self {
+            let dummy_sk = SecretKey::from_slice(&[1; 32]).unwrap();
+            let dummy_pk = PublicKey::from_slice(&[
+                3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51,
+                41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
+            ])
+            .unwrap();
+
+            let dummy_addr = Address::from_str("132F25rTsvBdp9JzLLBHP5mvGY66i1xdiM").unwrap();
+
+            let dummy_tx = dummy_partially_signed_transaction().extract_tx();
+            let dummy_adapter_sig = "03424d14a5471c048ab87b3b83f6085d125d5864249ae4297a57c84e74710bb6730223f325042fce535d040fee52ec13231bf709ccd84233c6944b90317e62528b2527dff9d659a96db4c99f9750168308633c1867b70f3a18fb0f4539a1aecedcd1fc0148fc22f36b6303083ece3f872b18e35d368b3958efe5fb081f7716736ccb598d269aa3084d57e1855e1ea9a45efc10463bbf32ae378029f5763ceb40173f"
+                .parse()
+                .unwrap();
+
+            let dummy_sig = Signature::from_str("3046022100839c1fbc5304de944f697c9f4b1d01d1faeba32d751c0f7acb21ac8a0f436a72022100e89bd46bb3a5a62adc679f659b7ce876d83ee297c7a5587b2011c4fcc72eab45").unwrap();
+
+            let mut dummy_cet_with_zero_price_range = HashMap::new();
+            dummy_cet_with_zero_price_range.insert(
+                BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
+                vec![Cet {
+                    tx: dummy_tx.clone(),
+                    adaptor_sig: dummy_adapter_sig,
+                    range: RangeInclusive::new(0, 1),
+                    n_bits: 0,
+                }],
+            );
+
+            Dlc {
+                identity: dummy_sk,
+                identity_counterparty: dummy_pk,
+                revocation: dummy_sk,
+                revocation_pk_counterparty: dummy_pk,
+                publish: dummy_sk,
+                publish_pk_counterparty: dummy_pk,
+                maker_address: dummy_addr.clone(),
+                taker_address: dummy_addr,
+                lock: (dummy_tx.clone(), Descriptor::new_pk(dummy_pk)),
+                commit: (
+                    dummy_tx.clone(),
+                    dummy_adapter_sig,
+                    Descriptor::new_pk(dummy_pk),
+                ),
+                cets: dummy_cet_with_zero_price_range,
+                refund: (dummy_tx, dummy_sig),
+                maker_lock_amount: Default::default(),
+                taker_lock_amount: Default::default(),
+                revoked_commit: vec![],
+            }
+        }
+    }
+
+    pub fn dummy_partially_signed_transaction() -> PartiallySignedTransaction {
+        // very simple dummy psbt that does not contain anything
+        // pulled in from github.com-1ecc6299db9ec823/bitcoin-0.27.1/src/util/psbt/mod.rs:238
+
+        PartiallySignedTransaction {
+            global: Global {
+                unsigned_tx: Transaction {
+                    version: 2,
+                    lock_time: 0,
+                    input: vec![],
+                    output: vec![],
+                },
+                xpub: Default::default(),
+                version: 0,
+                proprietary: BTreeMap::new(),
+                unknown: BTreeMap::new(),
+            },
+            inputs: vec![],
+            outputs: vec![],
+        }
     }
 }
