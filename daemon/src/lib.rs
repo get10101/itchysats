@@ -245,11 +245,20 @@ where
 
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
+        let (cfd_actor_addr, mut cfd_context) = xtra::Context::new(None);
+        let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
 
         let mut tasks = Tasks::default();
 
-        let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
-        let (cfd_actor_addr, cfd_actor_fut) = taker_cfd::Actor::new(
+        // Trigger auto-rollover every 5 minutes, the actor decides if an actual proposal is to be
+        // sent out
+        tasks.add(
+            cfd_context
+                .notify_interval(Duration::from_secs(60 * 5), || taker_cfd::AutoRollover)
+                .map_err(|e| anyhow::anyhow!(e))?,
+        );
+
+        tasks.add(cfd_context.run(taker_cfd::Actor::new(
             db,
             wallet_addr,
             oracle_pk,
@@ -260,11 +269,7 @@ where
             monitor_addr.clone(),
             oracle_addr,
             n_payouts,
-        )
-        .create(None)
-        .run();
-
-        tasks.add(cfd_actor_fut);
+        )));
 
         tasks.add(connection_actor_ctx.run(connection::Actor::new(
             maker_online_status_feed_sender,
@@ -297,6 +302,10 @@ where
         tasks.add(fan_out_actor_fut);
 
         tasks.add(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
+
+        cfd_actor_addr
+            .do_send_async(taker_cfd::AutoRollover)
+            .await?;
 
         tracing::debug!("Taker actor system ready");
 

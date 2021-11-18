@@ -1,15 +1,15 @@
 use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
-use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
+use crate::db::{insert_order, load_all_cfds, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, CollaborativeSettlement, Dlc, Order,
     OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
     UpdateCfdProposals,
 };
-use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
+use crate::model::{BitMexPriceEventId, Price, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::tokio_ext::FutureExt;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
-use crate::{log_error, oracle, setup_contract, wallet, wire};
+use crate::{log_error, oracle, setup_contract, try_continue, wallet, wire};
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -36,8 +36,10 @@ pub enum CfdAction {
 }
 
 pub struct ProposeRollOver {
-    order_id: OrderId,
+    proposal: RollOverProposal,
 }
+
+pub struct AutoRollover;
 
 pub struct CfdSetupCompleted {
     pub order_id: OrderId,
@@ -328,16 +330,29 @@ impl<O, M, W> Actor<O, M, W> {
         Ok(())
     }
 
-    async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
-        if self.current_pending_proposals.contains_key(&order_id) {
-            anyhow::bail!("An update for order id {} is already in progress", order_id)
+    async fn handle_auto_rollover(&mut self) -> Result<()> {
+        tracing::debug!("Auto rollover");
+
+        let mut conn = self.db.acquire().await?;
+        let cfds = load_all_cfds(&mut conn).await?;
+
+        // cleanup all pending proposals because auto-rollover will create a new one
+        self.current_pending_proposals.clear();
+
+        let proposals = cfds
+            .iter()
+            .filter_map(|cfd| cfd.rollover_proposal())
+            .collect::<Vec<RollOverProposal>>();
+
+        // TODO: Consider send message to ourselves
+        for proposal in proposals {
+            try_continue!(self.handle_propose_roll_over(proposal).await)
         }
 
-        let proposal = RollOverProposal {
-            order_id,
-            timestamp: Timestamp::now()?,
-        };
+        Ok(())
+    }
 
+    async fn handle_propose_roll_over(&mut self, proposal: RollOverProposal) -> Result<()> {
         self.current_pending_proposals.insert(
             proposal.order_id,
             UpdateCfdProposal::RollOverProposal {
@@ -816,7 +831,14 @@ where
 #[async_trait]
 impl<O: 'static, M: 'static, W: 'static> Handler<ProposeRollOver> for Actor<O, M, W> {
     async fn handle(&mut self, msg: ProposeRollOver, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_propose_roll_over(msg.order_id))
+        log_error!(self.handle_propose_roll_over(msg.proposal))
+    }
+}
+
+#[async_trait]
+impl<O: 'static, M: 'static, W: 'static> Handler<AutoRollover> for Actor<O, M, W> {
+    async fn handle(&mut self, _msg: AutoRollover, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_auto_rollover())
     }
 }
 
@@ -837,6 +859,10 @@ impl Message for CfdRollOverCompleted {
 }
 
 impl Message for ProposeRollOver {
+    type Result = ();
+}
+
+impl Message for AutoRollover {
     type Result = ();
 }
 
