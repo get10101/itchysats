@@ -30,12 +30,13 @@ pub enum CfdAction {
         order_id: OrderId,
         current_price: Price,
     },
-    ProposeRollOver {
-        order_id: OrderId,
-    },
     Commit {
         order_id: OrderId,
     },
+}
+
+pub struct ProposeRollOver {
+    order_id: OrderId,
 }
 
 pub struct CfdSetupCompleted {
@@ -713,7 +714,6 @@ where
                 self.handle_propose_settlement(order_id, current_price)
                     .await
             }
-            ProposeRollOver { order_id } => self.handle_propose_roll_over(order_id).await,
         } {
             tracing::error!("Message handler failed: {:#}", e);
             anyhow::bail!(e)
@@ -816,6 +816,13 @@ where
     }
 }
 
+#[async_trait]
+impl<O: 'static, M: 'static, W: 'static> Handler<ProposeRollOver> for Actor<O, M, W> {
+    async fn handle(&mut self, msg: ProposeRollOver, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_propose_roll_over(msg.order_id))
+    }
+}
+
 impl Message for TakeOffer {
     type Result = Result<()>;
 }
@@ -829,6 +836,10 @@ impl Message for CfdSetupCompleted {
 }
 
 impl Message for CfdRollOverCompleted {
+    type Result = ();
+}
+
+impl Message for ProposeRollOver {
     type Result = ();
 }
 

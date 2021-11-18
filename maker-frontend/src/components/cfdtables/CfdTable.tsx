@@ -5,7 +5,6 @@ import {
     ChevronUpIcon,
     CloseIcon,
     ExternalLinkIcon,
-    RepeatIcon,
     TriangleDownIcon,
     TriangleUpIcon,
     WarningIcon,
@@ -225,8 +224,6 @@ function iconForAction(action: Action): any {
             return <CheckIcon />;
         case Action.REJECT_SETTLEMENT:
             return <CloseIcon />;
-        case Action.ROLL_OVER:
-            return <RepeatIcon />;
         case Action.ACCEPT_ROLL_OVER:
             return <CheckIcon />;
         case Action.REJECT_ROLL_OVER:
@@ -243,8 +240,6 @@ function colorSchemaForAction(action: Action): string {
         case Action.COMMIT:
             return "red";
         case Action.SETTLE:
-            return "green";
-        case Action.ROLL_OVER:
             return "green";
         case Action.ACCEPT_SETTLEMENT:
             return "green";
