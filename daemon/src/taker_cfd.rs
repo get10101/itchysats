@@ -441,7 +441,7 @@ where
         tracing::info!("Lock transaction published with txid {}", txid);
 
         self.monitor_actor
-            .do_send_async(monitor::StartMonitoring {
+            .send(monitor::StartMonitoring {
                 id: order_id,
                 params: MonitorParams::new(
                     dlc,
@@ -452,7 +452,7 @@ where
             .await?;
 
         self.oracle_actor
-            .do_send_async(oracle::MonitorAttestation {
+            .send(oracle::MonitorAttestation {
                 event_id: cfd.order.oracle_event_id,
             })
             .await?;
@@ -493,7 +493,7 @@ where
             .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
 
         self.oracle_actor
-            .do_send_async(oracle::MonitorAttestation {
+            .send(oracle::MonitorAttestation {
                 event_id: offer_announcement.id,
             })
             .await?;
@@ -518,8 +518,9 @@ where
         tokio::spawn(async move {
             let dlc = contract_future.await;
 
-            this.do_send_async(CfdSetupCompleted { order_id, dlc })
+            this.send(CfdSetupCompleted { order_id, dlc })
                 .await
+                .expect("always connected to ourselves")
         });
 
         self.setup_state = SetupState::Active { sender };
@@ -582,8 +583,9 @@ where
         tokio::spawn(async move {
             let dlc = contract_future.await;
 
-            this.do_send_async(CfdRollOverCompleted { order_id, dlc })
+            this.send(CfdRollOverCompleted { order_id, dlc })
                 .await
+                .expect("always connected to ourselves")
         });
 
         self.remove_pending_proposal(&order_id)
@@ -616,7 +618,7 @@ where
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         self.monitor_actor
-            .do_send_async(monitor::StartMonitoring {
+            .send(monitor::StartMonitoring {
                 id: order_id,
                 params: MonitorParams::new(
                     dlc,
@@ -670,7 +672,7 @@ where
         self.remove_pending_proposal(&order_id)?;
 
         self.monitor_actor
-            .do_send_async(monitor::CollaborativeSettlement {
+            .send(monitor::CollaborativeSettlement {
                 order_id,
                 tx: (tx.txid(), dlc.script_pubkey_for(Role::Taker)),
             })

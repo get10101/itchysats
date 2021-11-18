@@ -63,7 +63,6 @@ impl Maker {
 
         let mut mocks = mocks::Mocks::default();
         let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
-        mocks.mock_common_empty_handlers().await;
 
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tokio::spawn(wallet_fut);
@@ -73,6 +72,8 @@ impl Maker {
         let seed = Seed::default();
         let (identity_pk, identity_sk) = seed.derive_identity();
 
+        // system startup sends sync messages, mock them
+        mocks.mock_sync_handlers().await;
         let maker = daemon::MakerActorSystem::new(
             db,
             wallet_addr,
@@ -119,6 +120,8 @@ impl Maker {
     }
 
     pub async fn publish_order(&mut self, new_order_params: maker_cfd::NewOrder) {
+        self.mocks.mock_monitor_oracle_attestation().await;
+
         self.system
             .cfd_actor_addr
             .send(new_order_params)
@@ -178,11 +181,12 @@ impl Taker {
 
         let mut mocks = mocks::Mocks::default();
         let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
-        mocks.mock_common_empty_handlers().await;
 
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tokio::spawn(wallet_fut);
 
+        // system startup sends sync messages, mock them
+        mocks.mock_sync_handlers().await;
         let taker = daemon::TakerActorSystem::new(
             db,
             wallet_addr,

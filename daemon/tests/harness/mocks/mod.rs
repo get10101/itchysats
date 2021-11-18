@@ -32,13 +32,9 @@ impl Mocks {
         self.oracle.lock().await
     }
 
-    /// Mock message handlers that are not important for the test, but the cfd
-    /// actor still sends messages
-    pub async fn mock_common_empty_handlers(&mut self) {
-        // Sync methods need to be mocked before actors start
+    pub async fn mock_sync_handlers(&mut self) {
         self.oracle().await.expect_sync().return_const(());
         self.monitor().await.expect_sync().return_const(());
-        self.mock_monitor_oracle_attestation().await;
     }
 
     // Helper function setting up a "happy path" wallet mock
@@ -65,6 +61,13 @@ impl Mocks {
             .return_const(Some(oracle::dummy_announcement()));
     }
 
+    pub async fn mock_oracle_monitor_attestation(&mut self) {
+        self.oracle()
+            .await
+            .expect_monitor_attestation()
+            .return_const(());
+    }
+
     pub async fn mock_party_params(&mut self) {
         #[allow(clippy::redundant_closure)] // clippy is in the wrong here
         self.wallet()
@@ -77,6 +80,13 @@ impl Mocks {
         self.monitor()
             .await
             .expect_oracle_attestation()
+            .return_const(());
+    }
+
+    pub async fn mock_monitor_start_monitoring(&mut self) {
+        self.monitor()
+            .await
+            .expect_start_monitoring()
             .return_const(());
     }
 }

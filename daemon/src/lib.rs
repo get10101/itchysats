@@ -1,4 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
+#![warn(clippy::disallowed_method)]
+
 use crate::db::load_all_cfds;
 use crate::maker_cfd::{FromTaker, NewTakerOnline};
 use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
@@ -170,7 +172,7 @@ where
                 .spawn_with_handle(),
         );
 
-        oracle_addr.do_send_async(oracle::Sync).await?;
+        oracle_addr.send(oracle::Sync).await?;
 
         tracing::debug!("Maker actor system ready");
 
