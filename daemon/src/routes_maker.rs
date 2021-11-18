@@ -1,23 +1,19 @@
-use crate::bitcoin::SignedAmount;
 use anyhow::Result;
 use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
 use daemon::db::load_all_cfds;
+use daemon::dto::{to_dto_cfd, CfdAction, CfdsWithAuxData};
 use daemon::model::cfd::{Order, OrderId, Role, UpdateCfdProposals};
 use daemon::model::{cfd, Price, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
-use daemon::to_sse_event::{
-    available_actions, to_cfd_state, to_tx_url_list, CfdAction, CfdDetails, CfdsWithAuxData,
-    ToSseEvent,
-};
-use daemon::{bitmex_price_feed, maker_cfd, to_sse_event};
+use daemon::to_sse_event::ToSseEvent;
+use daemon::{bitmex_price_feed, dto, maker_cfd};
 use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Header, Status};
 use rocket::response::stream::EventStream;
 use rocket::response::{status, Responder};
 use rocket::serde::json::Json;
 use rocket::State;
-use rust_decimal::Decimal;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
@@ -203,7 +199,7 @@ pub async fn get_cfds<'r>(
     rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
     _auth: Authenticated,
     network: &State<Network>,
-) -> Result<Json<Vec<to_sse_event::Cfd>>, HttpApiProblem> {
+) -> Result<Json<Vec<dto::Cfd>>, HttpApiProblem> {
     let mut conn = db.acquire().await.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title("Could acquire DB lock")
@@ -223,41 +219,10 @@ pub async fn get_cfds<'r>(
     let cfds = cfds
         .iter()
         .map(|cfd| {
-            let (profit_btc, profit_in_percent) =
-                cfd.profit(current_price).unwrap_or_else(|error| {
-                    tracing::warn!(
-                        "Calculating profit/loss failed. Falling back to 0. {:#}",
-                        error
-                    );
-                    (SignedAmount::ZERO, Decimal::ZERO.into())
-                });
-
-            let details = CfdDetails {
-                tx_url_list: to_tx_url_list(cfd.state.clone(), network),
-                payout: cfd.payout(),
-            };
-
-            let state = to_cfd_state(&cfd.state, None);
-            to_sse_event::Cfd {
-                order_id: cfd.order.id,
-                initial_price: cfd.order.price.into(),
-                leverage: cfd.order.leverage,
-                trading_pair: cfd.order.trading_pair.clone(),
-                position: cfd.position(),
-                liquidation_price: cfd.order.liquidation_price.into(),
-                quantity_usd: cfd.quantity_usd.into(),
-                margin: cfd.margin().expect("margin to be available"),
-                margin_counterparty: cfd.counterparty_margin().expect("margin to be available"),
-                profit_btc,
-                profit_in_percent: profit_in_percent.round_dp(1).to_string(),
-                state: state.clone(),
-                actions: available_actions(state, cfd.role()),
-                state_transition_timestamp: cfd.state.get_transition_timestamp().seconds(),
-                details,
-                expiry_timestamp: cfd.expiry_timestamp(),
-            }
+            // TODO: pending proposals
+            to_dto_cfd(cfd, None, current_price, network)
         })
-        .collect::<Vec<to_sse_event::Cfd>>();
+        .collect::<Vec<dto::Cfd>>();
 
     Ok(Json(cfds))
 }

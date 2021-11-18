@@ -22,6 +22,7 @@ pub mod bitmex_price_feed;
 pub mod cfd_actors;
 pub mod connection;
 pub mod db;
+pub mod dto;
 pub mod fan_out;
 pub mod forward_only_ok;
 pub mod housekeeping;

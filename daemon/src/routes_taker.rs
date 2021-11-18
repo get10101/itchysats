@@ -1,8 +1,9 @@
 use bdk::bitcoin::{Amount, Network};
+use daemon::dto::{CfdAction, CfdsWithAuxData};
 use daemon::model::cfd::{calculate_long_margin, Cfd, Order, OrderId, Role, UpdateCfdProposals};
 use daemon::model::{Leverage, Price, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
-use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
+use daemon::to_sse_event::ToSseEvent;
 use daemon::{bitmex_price_feed, taker_cfd};
 use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Status};
