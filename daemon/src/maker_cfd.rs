@@ -1,9 +1,8 @@
 use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
-    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, CollaborativeSettlement, Dlc, Order,
-    OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
-    UpdateCfdProposals,
+    Cfd, CfdState, CfdStateCommon, CollaborativeSettlement, Dlc, Order, OrderId, Origin, Role,
+    RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{Price, TakerId, Timestamp, Usd};
 use crate::monitor::MonitorParams;
@@ -875,9 +874,11 @@ where
         let (tx, sig_maker) = dlc.close_transaction(proposal)?;
 
         let own_script_pubkey = dlc.script_pubkey_for(cfd.role());
-        cfd.handle(CfdStateChangeEvent::ProposalSigned(
-            CollaborativeSettlement::new(tx.clone(), own_script_pubkey.clone(), proposal.price)?,
-        ))?;
+        cfd.handle_proposal_signed(CollaborativeSettlement::new(
+            tx.clone(),
+            own_script_pubkey.clone(),
+            proposal.price,
+        )?)?;
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
