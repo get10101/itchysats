@@ -565,32 +565,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_insert_like_cfd_actor() {
-        let mut conn = setup_test_db().await;
-
-        let cfds = load_all_cfds(&mut conn).await.unwrap();
-
-        let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
-
-        assert_eq!(cfd_feed_receiver.borrow().clone(), vec![]);
-
-        let cfd_1 = Cfd::dummy();
-        db::insert_order(&cfd_1.order, &mut conn).await.unwrap();
-        cfd_actors::insert_cfd_and_send_to_feed(&cfd_1, &mut conn, &cfd_feed_sender)
-            .await
-            .unwrap();
-
-        assert_eq!(cfd_feed_receiver.borrow().clone(), vec![cfd_1.clone()]);
-
-        let cfd_2 = Cfd::dummy();
-        db::insert_order(&cfd_2.order, &mut conn).await.unwrap();
-        cfd_actors::insert_cfd_and_send_to_feed(&cfd_2, &mut conn, &cfd_feed_sender)
-            .await
-            .unwrap();
-        assert_eq!(cfd_feed_receiver.borrow().clone(), vec![cfd_1, cfd_2]);
-    }
-
-    #[tokio::test]
     async fn test_insert_and_load_cfd_by_order_id() {
         let mut conn = setup_test_db().await;
 
