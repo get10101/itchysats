@@ -17,6 +17,7 @@ use futures::channel::mpsc;
 use futures::future::RemoteHandle;
 use futures::{future, SinkExt};
 use std::collections::HashMap;
+use time::OffsetDateTime;
 use tokio::sync::watch;
 use xtra::prelude::*;
 
@@ -364,9 +365,10 @@ impl<O: 'static, M: 'static, W: 'static> Actor<O, M, W> {
         // cleanup all pending proposals because auto-rollover will create a new one
         self.current_pending_proposals.clear();
 
+        let now = OffsetDateTime::now_utc();
         let proposals = cfds
             .iter()
-            .filter_map(|cfd| cfd.rollover_proposal())
+            .filter_map(|cfd| cfd.rollover_proposal(now))
             .collect::<Vec<RollOverProposal>>();
 
         let address = ctx
