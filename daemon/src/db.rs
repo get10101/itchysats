@@ -1,6 +1,6 @@
 use crate::model::cfd::{Cfd, CfdState, Order, OrderId};
 use crate::model::{BitMexPriceEventId, Usd};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use rust_decimal::Decimal;
 use sqlx::pool::PoolConnection;
 use sqlx::{Sqlite, SqlitePool};
@@ -97,6 +97,13 @@ pub async fn load_order_by_id(
 }
 
 pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
+    if load_cfd_by_order_id(cfd.order.id, conn).await.is_ok() {
+        bail!(
+            "Cannot insert cfd because there is already a cfd for order id {}",
+            cfd.order.id
+        )
+    }
+
     let state = serde_json::to_string(&cfd.state)?;
     let query_result = sqlx::query(
         r#"
@@ -714,6 +721,22 @@ mod tests {
         let data = load_all_cfds(&mut conn).await.unwrap();
 
         assert_eq!(data.len(), 100);
+    }
+
+    #[tokio::test]
+    async fn inserting_two_cfds_with_same_order_id_should_fail() {
+        let mut conn = setup_test_db().await;
+
+        let cfd = Cfd::dummy().insert(&mut conn).await;
+
+        let error = insert_cfd(&cfd, &mut conn).await.err().unwrap();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Cannot insert cfd because there is already a cfd for order id {}",
+                cfd.order.id
+            )
+        );
     }
 
     fn random_simple_state() -> CfdState {
