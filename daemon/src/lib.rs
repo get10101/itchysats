@@ -313,9 +313,7 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
 
-        cfd_actor_addr
-            .do_send_async(taker_cfd::AutoRollover)
-            .await?;
+        cfd_actor_addr.send(taker_cfd::AutoRollover).await?;
 
         tracing::debug!("Taker actor system ready");
 
