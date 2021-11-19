@@ -2,7 +2,7 @@ use crate::model::{
     BitMexPriceEventId, InversePrice, Leverage, Percent, Position, Price, TakerId, Timestamp,
     TradingPair, Usd,
 };
-use crate::{monitor, oracle, payout_curve};
+use crate::{monitor, oracle, payout_curve, SETTLEMENT_INTERVAL};
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::secp256k1::{SecretKey, Signature};
 use bdk::bitcoin::{Address, Amount, PublicKey, Script, SignedAmount, Transaction, Txid};
@@ -1277,27 +1277,40 @@ impl Cfd {
 
     /// Only cfds in state `Open` that have not received an attestation and are within 23 hours
     /// until expiry are eligible for rollover
-    pub fn rollover_proposal(&self) -> Option<RollOverProposal> {
-        let now = OffsetDateTime::now_utc();
-        let remaining_till_expiry = self.expiry_timestamp() - now;
-        let rollover_window = Duration::hours(1);
+    ///
+    /// --|-------------------------------------------------|--------|--> time
+    ///   now                                               23h      24h
+    /// --|<--------------------rollover------------------->|--------|--
+    pub fn rollover_proposal(&self, now: OffsetDateTime) -> Option<RollOverProposal> {
+        // already expired
+        if now > self.expiry_timestamp() {
+            return None;
+        }
 
-        if matches!(
+        let one_hour = Duration::hours(1);
+        let time_until_expiry = self.expiry_timestamp() - now;
+
+        // was just rolled over
+        if time_until_expiry > SETTLEMENT_INTERVAL - one_hour {
+            return None;
+        }
+
+        // state does not match
+        // only state open with no attestation is acceptable for rollover
+        if !matches!(
             self.state.clone(),
             CfdState::Open {
                 attestation: None,
                 ..
             }
-        ) && remaining_till_expiry > rollover_window
-            && remaining_till_expiry > Duration::ZERO
-        {
-            Some(RollOverProposal {
-                order_id: self.order.id,
-                timestamp: Timestamp::now().expect("the timestamp not to fail"),
-            })
-        } else {
-            None
+        ) {
+            return None;
         }
+
+        Some(RollOverProposal {
+            order_id: self.order.id,
+            timestamp: Timestamp::now().expect("the timestamp not to fail"),
+        })
     }
 }
 
@@ -1623,6 +1636,7 @@ mod tests {
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
     use std::str::FromStr;
+    use time::macros::datetime;
 
     #[test]
     fn given_default_values_then_expected_liquidation_price() {
@@ -1871,55 +1885,107 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn given_cfd_rollover_window_lower_bound_then_rollover_proposal() {
-        let now = OffsetDateTime::now_utc();
-        let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
-            now + Duration::hours(1) + Duration::seconds(1),
-        ));
+    async fn given_cfd_cfd_expires_now_then_rollover_proposal() {
+        // --|-------------------------------------------------|--------|--> time
+        //   now                                               23h      24h
+        // --|<--------------------rollover------------------->|--------|--
+        //   X
 
-        assert!(cfd.rollover_proposal().is_some());
+        let now = datetime!(2021-11-19 10:00:00).assume_utc();
+        let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(now));
+
+        assert!(cfd.rollover_proposal(now).is_some());
     }
 
     #[tokio::test]
-    async fn given_cfd_rollover_window_upper_bound_then_rollover_proposal() {
-        let now = OffsetDateTime::now_utc();
+    async fn given_cfd_cfd_expires_within_23hours_then_rollover_proposal() {
+        // --|-------------------------------------------------|--------|--> time
+        //   now                                               23h      24h
+        // --|<--------------------rollover------------------->|--------|--
+        //                                                     X
+
+        let now = datetime!(2021-11-19 10:00:00).assume_utc();
         let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
-            now + Duration::hours(23) + Duration::seconds(59),
+            now + Duration::hours(23),
         ));
 
-        assert!(cfd.rollover_proposal().is_some());
+        assert!(cfd.rollover_proposal(now).is_some());
     }
 
     #[tokio::test]
     async fn given_cfd_past_expiry_time_then_no_rollover_proposal() {
-        let now = OffsetDateTime::now_utc();
+        // --|-------------------------------------------------|--------|--> time
+        //   now                                               23h      24h
+        // --|<--------------------rollover------------------->|--------|--
+        //  X
+
+        let now = datetime!(2021-11-19 10:00:00).assume_utc();
         let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
             now - Duration::seconds(1),
         ));
 
-        assert!(cfd.rollover_proposal().is_none())
+        assert!(cfd.rollover_proposal(now).is_none())
     }
 
     #[tokio::test]
     async fn given_cfd_was_just_renewed_then_no_rollover_proposal() {
-        let now = OffsetDateTime::now_utc();
+        // --|-------------------------------------------------|--------|--> time
+        //   now                                               23h      24h
+        // --|<--------------------rollover------------------->|--------|--
+        //                                                             X
+
+        let now = datetime!(2021-11-19 10:00:00).assume_utc();
         let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
-            now + Duration::hours(1) - Duration::seconds(1),
+            now + Duration::hours(24) - Duration::seconds(1),
         ));
 
-        assert!(cfd.rollover_proposal().is_none())
+        assert!(cfd.rollover_proposal(now).is_none())
+    }
+
+    #[tokio::test]
+    async fn given_cfd_out_of_bounds_renewal_then_no_rollover_proposal() {
+        // --|-------------------------------------------------|--------|--> time
+        //   now                                               23h      24h
+        // --|<--------------------rollover------------------->|--------|--
+        //                                                               X
+
+        let now = datetime!(2021-11-19 10:00:00).assume_utc();
+        let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
+            now + Duration::hours(24) + Duration::seconds(1),
+        ));
+
+        assert!(cfd.rollover_proposal(now).is_none())
+    }
+
+    #[tokio::test]
+    async fn given_cfd_was_renewed_less_than_1h_ago_then_no_rollover_proposal() {
+        // --|-------------------------------------------------|--------|--> time
+        //   now                                               23h      24h
+        // --|<--------------------rollover------------------->|--------|--
+        //                                                      X
+
+        let now = datetime!(2021-11-19 10:00:00).assume_utc();
+        let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
+            now + Duration::hours(23) + Duration::seconds(1),
+        ));
+
+        assert!(cfd.rollover_proposal(now).is_none())
     }
 
     #[tokio::test]
     async fn given_cfd_has_attestation_then_no_rollover_proposal() {
         let cfd = Cfd::dummy_open_with_attestation();
-        assert!(cfd.rollover_proposal().is_none())
+        assert!(cfd
+            .rollover_proposal(datetime!(2021-11-19 10:00:00).assume_utc())
+            .is_none())
     }
 
     #[tokio::test]
     async fn given_cfd_not_in_open_then_no_rollover_proposal() {
         let cfd = Cfd::dummy_not_open();
-        assert!(cfd.rollover_proposal().is_none())
+        assert!(cfd
+            .rollover_proposal(datetime!(2021-11-19 10:00:00).assume_utc())
+            .is_none())
     }
 
     impl Cfd {
