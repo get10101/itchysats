@@ -47,7 +47,10 @@ pub enum TakerCommand {
         id: OrderId,
     },
     Protocol(wire::SetupMsg),
-    RollOverProtocol(wire::RollOverMsg),
+    RollOverProtocol {
+        id: OrderId,
+        msg: wire::RollOverMsg,
+    },
 }
 
 pub struct TakerMessage {
@@ -229,10 +232,16 @@ impl Actor {
                 self.send_to_taker(&msg.taker_id, wire::MakerToTaker::RejectRollOver(id))
                     .await?;
             }
-            TakerCommand::RollOverProtocol(roll_over_msg) => {
+            TakerCommand::RollOverProtocol {
+                id,
+                msg: roll_over_msg,
+            } => {
                 self.send_to_taker(
                     &msg.taker_id,
-                    wire::MakerToTaker::RollOverProtocol(roll_over_msg),
+                    wire::MakerToTaker::RollOverProtocol {
+                        order_id: id,
+                        msg: roll_over_msg,
+                    },
                 )
                 .await?;
             }

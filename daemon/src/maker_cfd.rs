@@ -776,7 +776,7 @@ where
             self.takers.clone().into_sink().with(move |msg| {
                 future::ok(maker_inc_connections::TakerMessage {
                     taker_id,
-                    command: TakerCommand::RollOverProtocol(msg),
+                    command: TakerCommand::RollOverProtocol { id: order_id, msg },
                 })
             }),
             receiver,
@@ -1087,7 +1087,7 @@ where
                 ))
             }
 
-            wire::TakerToMaker::RollOverProtocol(msg) => {
+            wire::TakerToMaker::RollOverProtocol { msg, .. } => {
                 log_error!(self.handle_inc_roll_over_protocol_msg(taker_id, msg))
             }
         }

@@ -44,7 +44,10 @@ pub enum TakerToMaker {
         timestamp: Timestamp,
     },
     Protocol(SetupMsg),
-    RollOverProtocol(RollOverMsg),
+    RollOverProtocol {
+        order_id: OrderId,
+        msg: RollOverMsg,
+    },
 }
 
 impl fmt::Display for TakerToMaker {
@@ -55,7 +58,7 @@ impl fmt::Display for TakerToMaker {
             TakerToMaker::InitiateSettlement { .. } => write!(f, "InitiateSettlement"),
             TakerToMaker::Protocol(_) => write!(f, "Protocol"),
             TakerToMaker::ProposeRollOver { .. } => write!(f, "ProposeRollOver"),
-            TakerToMaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
+            TakerToMaker::RollOverProtocol { .. } => write!(f, "RollOverProtocol"),
         }
     }
 }
@@ -73,7 +76,10 @@ pub enum MakerToTaker {
     RejectSettlement(OrderId),
     InvalidOrderId(OrderId),
     Protocol(SetupMsg),
-    RollOverProtocol(RollOverMsg),
+    RollOverProtocol {
+        order_id: OrderId,
+        msg: RollOverMsg,
+    },
     ConfirmRollOver {
         order_id: OrderId,
         oracle_event_id: BitMexPriceEventId,
@@ -94,7 +100,7 @@ impl fmt::Display for MakerToTaker {
             MakerToTaker::Protocol(_) => write!(f, "Protocol"),
             MakerToTaker::ConfirmRollOver { .. } => write!(f, "ConfirmRollOver"),
             MakerToTaker::RejectRollOver(_) => write!(f, "RejectRollOver"),
-            MakerToTaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
+            MakerToTaker::RollOverProtocol { .. } => write!(f, "RollOverProtocol"),
         }
     }
 }

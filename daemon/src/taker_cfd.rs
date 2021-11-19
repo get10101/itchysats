@@ -571,9 +571,9 @@ where
             .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
 
         let contract_future = setup_contract::roll_over(
-            self.send_to_maker
-                .sink()
-                .with(|msg| future::ok(wire::TakerToMaker::RollOverProtocol(msg))),
+            self.send_to_maker.sink().with(move |msg| {
+                future::ok(wire::TakerToMaker::RollOverProtocol { order_id, msg })
+            }),
             receiver,
             (self.oracle_pk, announcement),
             cfd,
@@ -775,8 +775,8 @@ where
             wire::MakerToTaker::RejectRollOver(order_id) => {
                 log_error!(self.handle_roll_over_rejected(order_id))
             }
-            MakerToTaker::RollOverProtocol(roll_over_msg) => {
-                log_error!(self.handle_inc_roll_over_msg(roll_over_msg))
+            MakerToTaker::RollOverProtocol { msg, .. } => {
+                log_error!(self.handle_inc_roll_over_msg(msg))
             }
         }
     }
