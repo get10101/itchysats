@@ -1,4 +1,5 @@
 disallowed-methods = [
+  "tokio::spawn", # tasks can outlive the actor system, prefer spawn_with_handle()
   "xtra::Address::do_send_async", # discards the return value, possibly swallowing an error
   "xtra::Address::do_send", # discards the return value, possibly swallowing an error
   "xtra::message_channel::MessageChannel::do_send", # discards the return value, possibly swallowing an error
