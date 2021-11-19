@@ -1283,15 +1283,17 @@ impl Cfd {
     /// --|<--------------------rollover------------------->|--------|--
     pub fn rollover_proposal(&self, now: OffsetDateTime) -> Option<RollOverProposal> {
         // already expired
-        if now > self.expiry_timestamp() {
+        if now > self.expiry_timestamp() - Self::TOO_CLOSE_TO_EXPIRY {
             return None;
         }
 
-        let one_hour = Duration::hours(1);
+        // duration that we wait until we propose another rollover
+        let just_rolled_over = Duration::hours(1);
+
         let time_until_expiry = self.expiry_timestamp() - now;
 
         // was just rolled over
-        if time_until_expiry > SETTLEMENT_INTERVAL - one_hour {
+        if time_until_expiry > SETTLEMENT_INTERVAL - just_rolled_over {
             return None;
         }
 
@@ -1312,6 +1314,9 @@ impl Cfd {
             timestamp: Timestamp::now().expect("the timestamp not to fail"),
         })
     }
+
+    /// duration that defines that we are too close to the expiry time to roll over
+    const TOO_CLOSE_TO_EXPIRY: Duration = Duration::minutes(5);
 }
 
 #[derive(thiserror::Error, Debug, Clone)]
@@ -1885,16 +1890,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn given_cfd_cfd_expires_now_then_rollover_proposal() {
-        // --|-------------------------------------------------|--------|--> time
-        //   now                                               23h      24h
-        // --|<--------------------rollover------------------->|--------|--
+    async fn given_cfd_cfd_expires_within_bounds_then_rollover_proposal() {
+        // --|---|----------------------------------------------|--------|--> time
+        //   now too_late                                       23h      24h
+        // --|---|<-----------------rollover------------------->|--------|--
+        //       X
+
+        let now = datetime!(2021-11-19 10:00:00).assume_utc();
+        let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
+            now + Cfd::TOO_CLOSE_TO_EXPIRY,
+        ));
+
+        assert!(cfd.rollover_proposal(now).is_some());
+    }
+
+    #[tokio::test]
+    async fn given_cfd_expires_now_then_no_rollover_proposal() {
+        // --|---|----------------------------------------------|--------|--> time
+        //   now too_late                                       23h      24h
+        // --|---|<-----------------rollover------------------->|--------|--
         //   X
 
         let now = datetime!(2021-11-19 10:00:00).assume_utc();
         let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(now));
 
-        assert!(cfd.rollover_proposal(now).is_some());
+        assert!(cfd.rollover_proposal(now).is_none());
+    }
+
+    #[tokio::test]
+    async fn given_too_late_then_no_rollover_proposal() {
+        // --|---|----------------------------------------------|--------|--> time
+        //   now too_late                                       23h      24h
+        // --|---|<-----------------rollover------------------->|--------|--
+        //      X
+
+        let now = datetime!(2021-11-19 10:00:00).assume_utc();
+        let cfd = Cfd::dummy_open().with_event_id(BitMexPriceEventId::with_20_digits(
+            now + Cfd::TOO_CLOSE_TO_EXPIRY - Duration::seconds(1),
+        ));
+
+        assert!(cfd.rollover_proposal(now).is_none());
     }
 
     #[tokio::test]
