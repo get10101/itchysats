@@ -9,7 +9,7 @@ use crate::model::{BitMexPriceEventId, Price, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::tokio_ext::FutureExt;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
-use crate::{log_error, oracle, setup_contract, try_continue, wallet, wire};
+use crate::{log_error, oracle, setup_contract, wallet, wire};
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -375,7 +375,10 @@ impl<O: 'static, M: 'static, W: 'static> Actor<O, M, W> {
 
         for proposal in proposals {
             tracing::trace!(order_id=%proposal.order_id, "Sending rollover proposal message");
-            try_continue!(address.send(ProposeRollOver { proposal }).await)
+
+            // avoid deadlock sending message to actor itself
+            #[allow(clippy::disallowed_method)]
+            address.do_send_async(ProposeRollOver { proposal }).await?;
         }
 
         Ok(())
