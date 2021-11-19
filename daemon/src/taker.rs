@@ -290,6 +290,9 @@ async fn main() -> Result<()> {
     let rocket = rocket.ignite().await?;
     let shutdown_handle = rocket.shutdown();
 
+    // has to be done after connection is established, otherwise blocks
+    cfd_actor_addr.send(taker_cfd::AutoRollover).await?;
+
     // shutdown the rocket server maker if goes offline
     tasks.add(async move {
         loop {
