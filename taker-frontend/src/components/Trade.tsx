@@ -47,9 +47,9 @@ import { CfdOrderRequestPayload } from "./Types";
 const MotionBox = motion<BoxProps>(Box);
 
 interface TradeProps {
-    order_id?: string;
-    min_quantity: number;
-    max_quantity: number;
+    orderId?: string;
+    minQuantity: number;
+    maxQuantity: number;
     referencePrice?: number;
     askPrice?: number;
     margin?: string;
@@ -64,8 +64,8 @@ interface TradeProps {
 
 const Trade = (
     {
-        min_quantity,
-        max_quantity,
+        minQuantity,
+        maxQuantity,
         referencePrice: referencePriceAsNumber,
         askPrice: askPriceAsNumber,
         quantity,
@@ -75,7 +75,7 @@ const Trade = (
         liquidationPrice: liquidationPriceAsNumber,
         canSubmit,
         onLongSubmit,
-        order_id,
+        orderId,
     }: TradeProps,
 ) => {
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
@@ -93,7 +93,7 @@ const Trade = (
             const quantityAsNumber = quantity.replace("$", "");
 
             let payload: CfdOrderRequestPayload = {
-                order_id: order_id!,
+                order_id: orderId!,
                 quantity: Number.parseFloat(quantityAsNumber),
             };
             await onLongSubmit(payload);
@@ -138,7 +138,7 @@ const Trade = (
                     </Center>
                 </GridItem>
                 <GridItem colSpan={1}>
-                    <Quantity min={min_quantity} max={max_quantity} quantity={quantity} onChange={onQuantityChange} />
+                    <Quantity min={minQuantity} max={maxQuantity} quantity={quantity} onChange={onQuantityChange} />
                 </GridItem>
                 <GridItem colSpan={1}>
                     <Leverage leverage={leverage} />
