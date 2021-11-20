@@ -11666,6 +11666,11 @@ slash@^3.0.0:
   resolved "https://registry.yarnpkg.com/slash/-/slash-3.0.0.tgz#6539be870c165adbd5240220dbe361f1bc4d4634"
   integrity sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q==
 
+slash@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/slash/-/slash-4.0.0.tgz#2422372176c4c6c5addb5e2ada885af984b396a7"
+  integrity sha512-3dOsAHXXUkQTpOYcoAxLIorMTp4gIQr5IW3iVb7A7lFIp0VHhnynm9izx6TssdrIcVIESAlVjtnO2K8bg+Coew==
+
 slice-ansi@^4.0.0:
   version "4.0.0"
   resolved "https://registry.yarnpkg.com/slice-ansi/-/slice-ansi-4.0.0.tgz#500e8dd0fd55b05815086255b3195adf2a45fe6b"
@@ -12789,15 +12794,16 @@ vendors@^1.0.0:
   resolved "https://registry.yarnpkg.com/vendors/-/vendors-1.0.4.tgz#e2b800a53e7a29b93506c3cf41100d16c4c4ad8e"
   integrity sha512-/juG65kTL4Cy2su4P8HjtkTxk6VmJDiOPBufWniqQ6wknac6jNiXS9vU+hO3wgusiyqWlzTbVHi0dyJqRONg3w==
 
-vite-jest@^0.0.3:
-  version "0.0.3"
-  resolved "https://registry.yarnpkg.com/vite-jest/-/vite-jest-0.0.3.tgz#87e726816031bd119c5729b2863edf298bbfbee9"
-  integrity sha512-XR4SLQlELWTkDmgO12tTMuEfeVdtMiPE/4/+L7qmcad1RIReMZK8IMljt17zsfTzO8uFl308KaI03qTf7FeHsw==
+vite-jest@^0.0.4:
+  version "0.0.4"
+  resolved "https://registry.yarnpkg.com/vite-jest/-/vite-jest-0.0.4.tgz#89a03d96cb10012ab09050b37a3aad78c8e99194"
+  integrity sha512-5lreGYqfNOIjuIaNog+z+X09k6DEFdPvcg2TQYQ9oPvFZ3Cy/dNN6MyBvMc1PopUDiC749Uhmo3uCNEkbXkiMw==
   dependencies:
     es-module-lexer "^0.6.0"
     execa "^5.1.1"
     jest-transform-stub "^2.0.0"
     magic-string "^0.25.7"
+    slash "^4.0.0"
 
 vite@^2.6.14:
   version "2.6.14"
