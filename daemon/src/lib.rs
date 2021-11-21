@@ -36,6 +36,7 @@ mod noise;
 pub mod olivia;
 pub mod oracle;
 pub mod payout_curve;
+pub mod rollover;
 pub mod routes;
 pub mod seed;
 pub mod send_to_socket;

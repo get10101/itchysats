@@ -1,6 +1,8 @@
-use crate::{log_error, noise, send_to_socket, wire, Tasks};
+use crate::model::cfd::{OrderId, RollOverProposal};
+use crate::{log_error, noise, rollover, send_to_socket, wire, Tasks};
 use anyhow::Result;
 use futures::StreamExt;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -25,11 +27,19 @@ pub struct Actor {
     /// Max duration since the last heartbeat until we die.
     timeout: Duration,
     connected_state: Option<ConnectedState>,
+
+    rollover_actors: HashMap<OrderId, xtra::Address<rollover::Actor>>,
 }
 
 pub struct Connect {
     pub maker_identity_pk: x25519_dalek::PublicKey,
     pub maker_addr: SocketAddr,
+}
+
+pub struct ProposeRollOver {
+    /// The actor's address to which all rollover messages need to be routed.
+    pub actor: xtra::Address<rollover::Actor>,
+    pub proposal: RollOverProposal,
 }
 
 pub struct MakerStreamMessage {
@@ -62,6 +72,22 @@ impl Actor {
             maker_to_taker,
             timeout,
             connected_state: None,
+            rollover_actors: HashMap::new(),
+        }
+    }
+
+    async fn send_to_rollover_actor<M>(&self, order_id: &OrderId, msg: M)
+    where
+        rollover::Actor: xtra::Handler<M>,
+        M: xtra::Message,
+    {
+        match self.rollover_actors.get(order_id) {
+            Some(addr) => {
+                let _ = addr.send(msg).await;
+            }
+            None => {
+                tracing::warn!(%order_id, "No active rollover");
+            }
         }
     }
 }
@@ -144,6 +170,20 @@ impl Actor {
                     .expect("wire messages only to arrive in connected state")
                     .last_heartbeat = SystemTime::now();
             }
+            wire::MakerToTaker::RollOverProtocol { order_id, msg } => {
+                self.send_to_rollover_actor(&order_id, msg).await;
+            }
+            wire::MakerToTaker::RejectRollOver(order_id) => {
+                self.send_to_rollover_actor(&order_id, rollover::Rejected)
+                    .await;
+            }
+            wire::MakerToTaker::ConfirmRollOver {
+                order_id,
+                oracle_event_id,
+            } => {
+                self.send_to_rollover_actor(&order_id, rollover::Confirmed { oracle_event_id })
+                    .await;
+            }
             other => {
                 // this one should go to the taker cfd actor
                 log_error!(self.maker_to_taker.send(other));
@@ -168,6 +208,20 @@ impl Actor {
                 .expect("watch receiver to outlive the actor");
             self.connected_state = None;
         }
+    }
+
+    fn handle_propose_roll_over(&mut self, msg: ProposeRollOver) -> Result<()> {
+        self.rollover_actors
+            .insert(msg.proposal.order_id, msg.actor);
+
+        self.send_to_maker
+            .send(wire::TakerToMaker::ProposeRollOver {
+                order_id: msg.proposal.order_id,
+                timestamp: msg.proposal.timestamp,
+            })
+            .await?;
+
+        Ok(())
     }
 }
 

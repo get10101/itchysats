@@ -9,16 +9,18 @@ use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::tokio_ext::FutureExt;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
-use crate::{log_error, oracle, setup_contract, wallet, wire};
+use crate::{log_error, oracle, rollover, setup_contract, wallet, wire, Tasks};
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::future::RemoteHandle;
 use futures::{future, SinkExt};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use tokio::sync::watch;
 use xtra::prelude::*;
+use xtra::Actor as _;
 
 pub struct TakeOffer {
     pub order_id: OrderId,
@@ -43,22 +45,9 @@ pub struct CfdSetupCompleted {
     pub dlc: Result<Dlc>,
 }
 
-pub struct CfdRollOverCompleted {
-    pub order_id: OrderId,
-    pub dlc: Result<Dlc>,
-}
-
 enum SetupState {
     Active {
         sender: mpsc::UnboundedSender<SetupMsg>,
-        _task: RemoteHandle<()>,
-    },
-    None,
-}
-
-enum RollOverState {
-    Active {
-        sender: mpsc::UnboundedSender<RollOverMsg>,
         _task: RemoteHandle<()>,
     },
     None,
@@ -73,11 +62,13 @@ pub struct Actor<O, M, W> {
     update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
     send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
     monitor_actor: Address<M>,
+    /// Tracks the addresses of all rollover actors.
+    rollover_actors: HashMap<OrderId, xtra::Address<rollover::Actor>>,
     setup_state: SetupState,
-    roll_over_state: RollOverState,
     oracle_actor: Address<O>,
     current_pending_proposals: UpdateCfdProposals,
     n_payouts: usize,
+    tasks: Tasks,
 }
 
 impl<O, M, W> Actor<O, M, W>
@@ -109,10 +100,11 @@ where
             send_to_maker,
             monitor_actor,
             setup_state: SetupState::None,
-            roll_over_state: RollOverState::None,
+            rollover_actors: HashMap::new(),
             oracle_actor,
             current_pending_proposals: HashMap::new(),
             n_payouts,
+            tasks: Tasks::default(),
         }
     }
 }
@@ -362,29 +354,29 @@ where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
-        if self.current_pending_proposals.contains_key(&order_id) {
-            anyhow::bail!("An update for order id {} is already in progress", order_id)
+        match self.rollover_actors.entry(order_id) {
+            Entry::Occupied(occupied) => {
+                if occupied.get().is_connected() {
+                    anyhow::bail!("An update for order id {} is already in progress", order_id)
+                }
+
+                let actor = rollover::Actor::new(order_id);
+
+                let (addr, fut) = actor.create(None).run();
+                self.tasks.add(fut);
+
+                let _ = occupied.insert(addr);
+            }
+            Entry::Vacant(vacant) => {
+                let actor = rollover::Actor::new(order_id);
+
+                let (addr, fut) = actor.create(None).run();
+                self.tasks.add(fut);
+
+                vacant.insert(addr);
+            }
         }
 
-        let proposal = RollOverProposal {
-            order_id,
-            timestamp: Timestamp::now()?,
-        };
-
-        self.current_pending_proposals.insert(
-            proposal.order_id,
-            UpdateCfdProposal::RollOverProposal {
-                proposal: proposal.clone(),
-                direction: SettlementKind::Outgoing,
-            },
-        );
-        self.send_pending_update_proposals()?;
-
-        self.send_to_maker
-            .do_send(wire::TakerToMaker::ProposeRollOver {
-                order_id: proposal.order_id,
-                timestamp: proposal.timestamp,
-            })?;
         Ok(())
     }
 }
