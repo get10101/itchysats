@@ -1,5 +1,9 @@
 import { BoxProps } from "@chakra-ui/layout";
 import {
+    Alert,
+    AlertDescription,
+    AlertIcon,
+    AlertTitle,
     Box,
     Button,
     ButtonGroup,
@@ -56,10 +60,23 @@ interface TradeProps {
     leverage?: number;
     quantity: string;
     liquidationPrice?: number;
-    canSubmit: boolean;
     isSubmitting: boolean;
     onQuantityChange: any;
+    walletBalance?: number;
     onLongSubmit: (payload: CfdOrderRequestPayload) => void;
+}
+
+interface AlertBoxProps {
+    title: string;
+    description: string;
+}
+
+function AlertBox({ title, description }: AlertBoxProps) {
+    return (<Alert status="error">
+        <AlertIcon />
+        <AlertTitle mr={2}>{title}</AlertTitle>
+        <AlertDescription>{description}</AlertDescription>
+    </Alert>);
 }
 
 const Trade = (
@@ -73,9 +90,9 @@ const Trade = (
         margin: marginAsNumber,
         leverage,
         liquidationPrice: liquidationPriceAsNumber,
-        canSubmit,
         onLongSubmit,
         orderId,
+        walletBalance,
     }: TradeProps,
 ) => {
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
@@ -100,6 +117,34 @@ const Trade = (
             onClose();
         },
     });
+
+    const parse = (val: any) => Number.parseInt(val.replace(/^\$/, ""));
+
+    const balanceTooLow = walletBalance && walletBalance < parse(margin);
+    const quantityTooHigh = maxQuantity < parse(quantity);
+    const quantityTooLow = minQuantity > parse(quantity);
+    const quantityGreaterZero = parse(quantity) > 0;
+
+    const canSubmit = orderId && !isSubmitting && !balanceTooLow
+        && !quantityTooHigh && !quantityTooLow && quantityGreaterZero;
+
+    let alertBox;
+
+    if (balanceTooLow) {
+        alertBox = <AlertBox title={"Your balance is too low!"} description={"Pleas deposit more into you wallet."} />;
+    }
+    if (quantityTooHigh) {
+        alertBox = <AlertBox title={"Quantity too high!"} description={`Max available liquidity is ${maxQuantity}`} />;
+    }
+    if (quantityTooLow || !quantityGreaterZero) {
+        alertBox = <AlertBox title={"Quantity too low!"} description={`Min quantity is ${minQuantity}`} />;
+    }
+    if (!orderId) {
+        alertBox = <AlertBox
+            title={"No liquidity!"}
+            description={"The maker you are connected has not create any offers"}
+        />;
+    }
 
     return (
         <Center>
@@ -206,6 +251,7 @@ const Trade = (
                             </Modal>
                         </ButtonGroup>
                     </Center>
+                    {alertBox}
                 </GridItem>
             </Grid>
         </Center>
