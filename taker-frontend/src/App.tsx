@@ -141,10 +141,10 @@ export const App = () => {
                     <Route path="/">
                         <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
                             <Trade
-                                order_id={order?.id}
+                                orderId={order?.id}
                                 quantity={format(effectiveQuantity)}
-                                max_quantity={max_quantity || 0}
-                                min_quantity={min_quantity || 0}
+                                maxQuantity={max_quantity || 0}
+                                minQuantity={min_quantity || 0}
                                 referencePrice={referencePrice}
                                 askPrice={askPrice}
                                 margin={margin}
@@ -164,7 +164,6 @@ export const App = () => {
                                     };
                                     calculateMargin(payload);
                                 }}
-                                canSubmit={order != null && !isCreatingNewOrderRequest}
                                 onLongSubmit={makeNewOrderRequest}
                                 isSubmitting={isCreatingNewOrderRequest}
                             />
