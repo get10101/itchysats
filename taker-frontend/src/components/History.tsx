@@ -35,13 +35,14 @@ import { Cfd, StateGroupKey, StateKey, Tx, TxLabel } from "./Types";
 
 interface HistoryProps {
     cfds: Cfd[];
-    title: string;
+    title?: string;
 }
 
 const History = ({ cfds, title }: HistoryProps) => {
     return (
         <VStack spacing={3}>
-            <Heading size={"lg"} padding={2}>{title}</Heading>
+            {title
+                && <Heading size={"lg"} padding={2}>{title}</Heading>}
             <SimpleGrid
                 columns={{ sm: 2, md: 4 }}
                 gap={4}

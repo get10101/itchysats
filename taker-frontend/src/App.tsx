@@ -1,4 +1,14 @@
-import { Box, StackDivider, useToast, VStack } from "@chakra-ui/react";
+import {
+    Accordion,
+    AccordionButton,
+    AccordionIcon,
+    AccordionItem,
+    AccordionPanel,
+    Box,
+    StackDivider,
+    useToast,
+    VStack,
+} from "@chakra-ui/react";
 import * as React from "react";
 import { useEffect, useState } from "react";
 import { useAsync } from "react-async";
@@ -162,10 +172,25 @@ export const App = () => {
                                 cfds={cfds.filter((cfd) => cfd.state.getGroup() !== StateGroupKey.CLOSED)}
                                 title={"Open Positions"}
                             />
-                            <History
-                                cfds={cfds.filter((cfd) => cfd.state.getGroup() === StateGroupKey.CLOSED)}
-                                title={"Closed Positions"}
-                            />
+
+                            <Accordion allowToggle width={"100%"}>
+                                <AccordionItem>
+                                    <h2>
+                                        <AccordionButton>
+                                            <AccordionIcon />
+                                            <Box w={"100%"} textAlign="center">
+                                                Show Closed Positions
+                                            </Box>
+                                            <AccordionIcon />
+                                        </AccordionButton>
+                                    </h2>
+                                    <AccordionPanel pb={4}>
+                                        <History
+                                            cfds={cfds.filter((cfd) => cfd.state.getGroup() === StateGroupKey.CLOSED)}
+                                        />
+                                    </AccordionPanel>
+                                </AccordionItem>
+                            </Accordion>
                         </VStack>
                     </Route>
                 </Switch>
