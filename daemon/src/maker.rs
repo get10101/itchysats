@@ -304,7 +304,7 @@ async fn main() -> Result<()> {
 
     tasks.add(incoming_connection_addr.attach_stream(listener_stream));
 
-    tasks.add(wallet_sync::new(wallet, wallet_feed_sender));
+    tasks.add(wallet_sync::new(wallet.clone(), wallet_feed_sender));
 
     let cfd_action_channel = MessageChannel::<maker_cfd::CfdAction>::clone_channel(&cfd_actor_addr);
     let new_order_channel = MessageChannel::<maker_cfd::NewOrder>::clone_channel(&cfd_actor_addr);
@@ -319,13 +319,15 @@ async fn main() -> Result<()> {
         .manage(auth_password)
         .manage(quote_receiver)
         .manage(bitcoin_network)
+        .manage(wallet)
         .mount(
             "/api",
             rocket::routes![
                 routes_maker::maker_feed,
                 routes_maker::post_sell_order,
                 routes_maker::post_cfd_action,
-                routes_maker::get_health_check
+                routes_maker::get_health_check,
+                routes_maker::post_withdraw_request
             ],
         )
         .register("/api", rocket::catchers![routes_maker::unauthorized])

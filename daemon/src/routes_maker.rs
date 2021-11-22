@@ -5,7 +5,7 @@ use daemon::model::cfd::{Cfd, Order, OrderId, Role, UpdateCfdProposals};
 use daemon::model::{Price, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
-use daemon::{bitmex_price_feed, maker_cfd};
+use daemon::{bitmex_price_feed, maker_cfd, wallet};
 use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Header, Status};
 use rocket::response::stream::EventStream;
@@ -206,6 +206,52 @@ pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'stat
 pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
     Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WithdrawRequest {
+    address: bdk::bitcoin::Address,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    amount: bdk::bitcoin::Amount,
+    fee: f32,
+}
+
+#[rocket::post("/withdraw", data = "<withdraw_request>")]
+pub async fn post_withdraw_request(
+    withdraw_request: Json<WithdrawRequest>,
+    wallet: &State<Address<wallet::Actor>>,
+    network: &State<Network>,
+    _auth: Authenticated,
+) -> Result<String, HttpApiProblem> {
+    let amount =
+        (withdraw_request.amount != bdk::bitcoin::Amount::ZERO).then(|| withdraw_request.amount);
+
+    let txid = wallet
+        .send(wallet::Withdraw {
+            amount,
+            address: withdraw_request.address.clone(),
+            fee: Some(bdk::FeeRate::from_sat_per_vb(withdraw_request.fee)),
+        })
+        .await
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Could not proceed with withdraw request")
+                .detail(e.to_string())
+        })?
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::BAD_REQUEST)
+                .title("Could not withdraw funds")
+                .detail(e.to_string())
+        })?;
+
+    let url = match network.inner() {
+        Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
+        Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
+        Network::Signet => format!("https://mempool.space/signet/tx/{}", txid),
+        Network::Regtest => txid.to_string(),
+    };
+
+    Ok(url)
 }
 
 #[cfg(test)]

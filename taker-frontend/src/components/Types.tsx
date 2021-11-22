@@ -271,3 +271,9 @@ export interface BXBTData {
     markPrice: number;
     timestamp: string;
 }
+
+export interface WithdrawRequest {
+    address: string;
+    amount?: number;
+    fee: number;
+}

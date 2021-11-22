@@ -20,6 +20,7 @@ import { useBackendMonitor } from "./components/BackendMonitor";
 import createErrorToast from "./components/ErrorToast";
 import Footer from "./components/Footer";
 import History from "./components/History";
+import { HttpError } from "./components/HttpError";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
 import {
@@ -33,6 +34,7 @@ import {
     Order,
     StateGroupKey,
     WalletInfo,
+    WithdrawRequest,
 } from "./components/Types";
 import { Wallet, WalletInfoBar } from "./components/Wallet";
 import useLatestEvent from "./Hooks";
@@ -54,6 +56,15 @@ async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
         const resp = await res.json();
         throw new HttpError(resp);
     }
+}
+
+export async function postWithdraw(payload: WithdrawRequest) {
+    let res = await fetch(`/api/withdraw`, { method: "POST", body: JSON.stringify(payload) });
+    if (!res.status.toString().startsWith("2")) {
+        const resp = await res.json();
+        throw new HttpError(resp);
+    }
+    return res.text();
 }
 
 export const App = () => {
