@@ -2,16 +2,16 @@ import { Box, BoxProps } from "@chakra-ui/layout";
 import { Center, Image, Text, VStack } from "@chakra-ui/react";
 import { motion } from "framer-motion";
 import React from "react";
-import { useHistory } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import logo from "../images/logo.svg";
 
 const MotionBox = motion<BoxProps>(Box);
 
 export const Logo = () => {
-    const history = useHistory();
+    const navigate = useNavigate();
 
     function handleClick() {
-        history.push("/trade");
+        navigate("/");
     }
 
     return (

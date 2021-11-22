@@ -12,7 +12,7 @@ import {
 import * as React from "react";
 import { useEffect, useState } from "react";
 import { useAsync } from "react-async";
-import { Route, Switch } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import useWebSocket from "react-use-websocket";
 import { useBackendMonitor } from "./components/BackendMonitor";
@@ -134,12 +134,11 @@ export const App = () => {
         <>
             <Nav walletInfo={walletInfo} />
             <Box textAlign="center" padding={3}>
-                <Switch>
-                    <Route path="/wallet">
-                        <Wallet walletInfo={walletInfo} />
-                    </Route>
-                    <Route path="/">
-                        <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
+                <Routes>
+                    <Route path="/wallet" element={<Wallet walletInfo={walletInfo} />} />
+                    <Route
+                        path="/"
+                        element={<VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
                             <Trade
                                 orderId={order?.id}
                                 quantity={format(effectiveQuantity)}
@@ -190,9 +189,9 @@ export const App = () => {
                                     </AccordionPanel>
                                 </AccordionItem>
                             </Accordion>
-                        </VStack>
-                    </Route>
-                </Switch>
+                        </VStack>}
+                    />
+                </Routes>
             </Box>
             <Footer />
         </>
