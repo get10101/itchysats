@@ -24,7 +24,7 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import { useAsync } from "react-async";
 import { useNavigate } from "react-router-dom";
 import { postWithdraw } from "../App";
@@ -50,7 +50,8 @@ export default function Wallet(
     const [withdrawAddress, setWithdrawAddress] = useState("");
 
     let { run: runWithdraw, isLoading: isWithdrawing } = useAsync({
-        deferFn: async () => {
+        deferFn: async ([event]: FormEvent<HTMLFormElement>[]) => {
+            event.preventDefault();
             try {
                 const url = await postWithdraw({
                     amount: withdrawAmount,
@@ -68,7 +69,6 @@ export default function Wallet(
                     isClosable: true,
                 });
             } catch (e) {
-                console.log(`Caught an error: ${e}`);
                 createErrorToast(toast, e);
             }
         },
