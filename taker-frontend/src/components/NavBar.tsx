@@ -13,7 +13,7 @@ import {
     useColorModeValue,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { useHistory } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
 import { WalletInfo } from "./Types";
@@ -24,7 +24,7 @@ interface NavProps {
 }
 
 export default function Nav({ walletInfo }: NavProps) {
-    const history = useHistory();
+    const navigate = useNavigate();
 
     const { toggleColorMode } = useColorMode();
     const navBarLog = useColorModeValue(
@@ -51,8 +51,8 @@ export default function Nav({ walletInfo }: NavProps) {
                             <HamburgerIcon w={"32px"} />
                         </MenuButton>
                         <MenuList alignItems={"center"}>
-                            <MenuItem onClick={() => history.push("/trade")}>Home</MenuItem>
-                            <MenuItem onClick={() => history.push("/wallet")}>Wallet</MenuItem>
+                            <MenuItem onClick={() => navigate("/")}>Home</MenuItem>
+                            <MenuItem onClick={() => navigate("/wallet")}>Wallet</MenuItem>
                             <MenuItem>Settings</MenuItem>
                         </MenuList>
                     </Menu>
@@ -65,7 +65,7 @@ export default function Nav({ walletInfo }: NavProps) {
                                 {toggleIcon}
                             </Button>
                             <Box>
-                                <Button bg={"transparent"} onClick={() => history.push("/trade")}>
+                                <Button bg={"transparent"} onClick={() => navigate("/")}>
                                     {navBarLog}
                                 </Button>
                             </Box>
