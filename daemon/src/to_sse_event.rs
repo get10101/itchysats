@@ -2,7 +2,7 @@ use crate::connection::ConnectionStatus;
 use crate::model::cfd::{
     Dlc, OrderId, Payout, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
 };
-use crate::model::{Leverage, Position, Timestamp, TradingPair};
+use crate::model::{Leverage, Position, TakerId, Timestamp, TradingPair};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::{Amount, Network, SignedAmount, Txid};
 use rocket::request::FromParam;
@@ -324,6 +324,13 @@ impl ToSseEvent for CfdsWithAuxData {
             .collect::<Vec<Cfd>>();
 
         Event::json(&cfds).event("cfds")
+    }
+}
+
+impl ToSseEvent for Vec<TakerId> {
+    fn to_sse_event(&self) -> Event {
+        let takers = self.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        Event::json(&takers).event("takers")
     }
 }
 

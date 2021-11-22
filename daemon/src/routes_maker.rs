@@ -2,7 +2,7 @@ use anyhow::Result;
 use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
 use daemon::model::cfd::{Cfd, Order, OrderId, Role, UpdateCfdProposals};
-use daemon::model::{Price, Usd, WalletInfo};
+use daemon::model::{Price, TakerId, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
 use daemon::{bitmex_price_feed, maker_cfd, wallet};
@@ -20,6 +20,7 @@ use tokio::select;
 use tokio::sync::watch;
 use xtra::prelude::*;
 
+#[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]
 pub async fn maker_feed(
     rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
@@ -27,6 +28,7 @@ pub async fn maker_feed(
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
     rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
     rx_settlements: &State<watch::Receiver<UpdateCfdProposals>>,
+    rx_connected_takers: &State<watch::Receiver<Vec<TakerId>>>,
     network: &State<Network>,
     _auth: Authenticated,
 ) -> EventStream![] {
@@ -35,6 +37,7 @@ pub async fn maker_feed(
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_quote = rx_quote.inner().clone();
     let mut rx_settlements = rx_settlements.inner().clone();
+    let mut rx_connected_takers = rx_connected_takers.inner().clone();
     let network = *network.inner();
 
     EventStream! {
@@ -54,6 +57,9 @@ pub async fn maker_feed(
             Role::Maker, network
         ).to_sse_event();
 
+        let takers = rx_connected_takers.borrow().clone();
+        yield takers.to_sse_event();
+
         loop{
             select! {
                 Ok(()) = rx_wallet.changed() => {
@@ -63,6 +69,10 @@ pub async fn maker_feed(
                 Ok(()) = rx_order.changed() => {
                     let order = rx_order.borrow().clone();
                     yield order.to_sse_event();
+                }
+                Ok(()) = rx_connected_takers.changed() => {
+                    let takers = rx_connected_takers.borrow().clone();
+                    yield takers.to_sse_event();
                 }
                 Ok(()) = rx_cfds.changed() => {
                     yield CfdsWithAuxData::new(

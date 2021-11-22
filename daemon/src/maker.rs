@@ -246,6 +246,7 @@ async fn main() -> Result<()> {
 
     let MakerActorSystem {
         cfd_actor_addr,
+        connected_takers_feed_receiver,
         inc_conn_addr: incoming_connection_addr,
         tasks: _tasks,
     } = MakerActorSystem::new(
@@ -259,8 +260,14 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(electrum, channel, cfds)
             }
         },
-        |channel0, channel1| {
-            maker_inc_connections::Actor::new(channel0, channel1, identity_sk, HEARTBEAT_INTERVAL)
+        |channel0, channel1, channel2| {
+            maker_inc_connections::Actor::new(
+                channel0,
+                channel1,
+                channel2,
+                identity_sk,
+                HEARTBEAT_INTERVAL,
+            )
         },
         SETTLEMENT_INTERVAL,
         N_PAYOUTS,
@@ -309,6 +316,7 @@ async fn main() -> Result<()> {
         .manage(cfd_action_channel)
         .manage(new_order_channel)
         .manage(cfd_feed_receiver)
+        .manage(connected_takers_feed_receiver)
         .manage(wallet_feed_receiver)
         .manage(auth_password)
         .manage(quote_receiver)

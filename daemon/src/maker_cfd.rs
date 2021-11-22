@@ -21,8 +21,9 @@ use futures::{future, SinkExt};
 use maia::secp256k1_zkp::Signature;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use time::Duration;
+use tokio::sync::watch;
 use xtra::prelude::*;
 
 pub enum CfdAction {
@@ -41,7 +42,11 @@ pub struct NewOrder {
     pub max_quantity: Usd,
 }
 
-pub struct NewTakerOnline {
+pub struct TakerConnected {
+    pub id: TakerId,
+}
+
+pub struct TakerDisconnected {
     pub id: TakerId,
 }
 
@@ -66,6 +71,7 @@ pub struct Actor<O, M, T, W> {
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: Address<projection::Actor>,
+    connected_takers_feed_sender: watch::Sender<Vec<TakerId>>,
     takers: Address<T>,
     current_order_id: Option<OrderId>,
     monitor_actor: Address<M>,
@@ -75,6 +81,8 @@ pub struct Actor<O, M, T, W> {
     // Maker needs to also store TakerId to be able to send a reply back
     current_pending_proposals: HashMap<OrderId, (UpdateCfdProposal, TakerId)>,
     current_agreed_proposals: HashMap<OrderId, (SettlementProposal, TakerId)>,
+    // TODO: Keep in projection actor
+    connected_takers: HashSet<TakerId>,
     n_payouts: usize,
 }
 
@@ -104,6 +112,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         settlement_interval: Duration,
         oracle_pk: schnorrsig::PublicKey,
         projection_actor: Address<projection::Actor>,
+        connected_takers_feed_sender: watch::Sender<Vec<TakerId>>,
         takers: Address<T>,
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
@@ -115,6 +124,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             settlement_interval,
             oracle_pk,
             projection_actor,
+            connected_takers_feed_sender,
             takers,
             current_order_id: None,
             monitor_actor,
@@ -124,6 +134,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             current_pending_proposals: HashMap::new(),
             current_agreed_proposals: HashMap::new(),
             n_payouts,
+            connected_takers: HashSet::new(),
         }
     }
 
@@ -314,7 +325,7 @@ impl<O, M, T, W> Actor<O, M, T, W>
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
-    async fn handle_new_taker_online(&mut self, taker_id: TakerId) -> Result<()> {
+    async fn handle_taker_connected(&mut self, taker_id: TakerId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
 
         let current_order = match self.current_order_id {
@@ -332,6 +343,21 @@ where
             })
             .await?;
 
+        if !self.connected_takers.insert(taker_id) {
+            tracing::warn!("Taker already connected: {:?}", &taker_id);
+        }
+        self.connected_takers_feed_sender
+            .send(self.connected_takers.clone().into_iter().collect())?;
+
+        Ok(())
+    }
+
+    async fn handle_taker_disconnected(&mut self, taker_id: TakerId) -> Result<()> {
+        if !self.connected_takers.remove(&taker_id) {
+            tracing::warn!("Removed unknown taker: {:?}", &taker_id);
+        }
+        self.connected_takers_feed_sender
+            .send(self.connected_takers.clone().into_iter().collect())?;
         Ok(())
     }
 
@@ -998,12 +1024,23 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<NewTakerOnline> for Actor<O, M, T, W>
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<TakerConnected> for Actor<O, M, T, W>
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
-    async fn handle(&mut self, msg: NewTakerOnline, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_new_taker_online(msg.id));
+    async fn handle(&mut self, msg: TakerConnected, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_taker_connected(msg.id));
+    }
+}
+
+#[async_trait]
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<TakerDisconnected>
+    for Actor<O, M, T, W>
+where
+    T: xtra::Handler<maker_inc_connections::TakerMessage>,
+{
+    async fn handle(&mut self, msg: TakerDisconnected, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_taker_disconnected(msg.id));
     }
 }
 
@@ -1116,7 +1153,11 @@ impl Message for NewOrder {
     type Result = Result<()>;
 }
 
-impl Message for NewTakerOnline {
+impl Message for TakerConnected {
+    type Result = ();
+}
+
+impl Message for TakerDisconnected {
     type Result = ();
 }
 

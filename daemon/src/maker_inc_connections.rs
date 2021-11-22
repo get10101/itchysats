@@ -1,4 +1,4 @@
-use crate::maker_cfd::{FromTaker, NewTakerOnline};
+use crate::maker_cfd::{FromTaker, TakerConnected, TakerDisconnected};
 use crate::model::cfd::Order;
 use crate::model::TakerId;
 use crate::noise::TransportStateExt;
@@ -36,7 +36,8 @@ pub enum ListenerMessage {
 
 pub struct Actor {
     write_connections: HashMap<TakerId, Address<send_to_socket::Actor<wire::MakerToTaker>>>,
-    new_taker_channel: Box<dyn MessageChannel<NewTakerOnline>>,
+    taker_connected_channel: Box<dyn MessageChannel<TakerConnected>>,
+    taker_disconnected_channel: Box<dyn MessageChannel<TakerDisconnected>>,
     taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
@@ -45,14 +46,16 @@ pub struct Actor {
 
 impl Actor {
     pub fn new(
-        new_taker_channel: Box<dyn MessageChannel<NewTakerOnline>>,
+        taker_connected_channel: Box<dyn MessageChannel<TakerConnected>>,
+        taker_disconnected_channel: Box<dyn MessageChannel<TakerDisconnected>>,
         taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
         noise_priv_key: x25519_dalek::StaticSecret,
         heartbeat_interval: Duration,
     ) -> Self {
         Self {
             write_connections: HashMap::new(),
-            new_taker_channel: new_taker_channel.clone_channel(),
+            taker_connected_channel: taker_connected_channel.clone_channel(),
+            taker_disconnected_channel: taker_disconnected_channel.clone_channel(),
             taker_msg_channel: taker_msg_channel.clone_channel(),
             noise_priv_key,
             heartbeat_interval,
@@ -74,7 +77,12 @@ impl Actor {
 
         if conn.send(msg).await.is_err() {
             tracing::info!(%taker_id, "Failed to send {} to taker, removing connection", msg_str);
-            self.write_connections.remove(taker_id);
+            if self.write_connections.remove(taker_id).is_some() {
+                let _ = self
+                    .taker_disconnected_channel
+                    .send(maker_cfd::TakerDisconnected { id: *taker_id })
+                    .await;
+            }
         }
 
         Ok(())
@@ -108,6 +116,7 @@ impl Actor {
 
         // only allow outgoing messages while we are successfully reading incoming ones
         let heartbeat_interval = self.heartbeat_interval;
+        let taker_disconnected_channel = self.taker_disconnected_channel.clone_channel();
         self.tasks.add(async move {
             let mut actor = send_to_socket::Actor::new(write, transport_state.clone());
 
@@ -121,6 +130,9 @@ impl Actor {
                 .await;
 
             tracing::error!("Closing connection to taker {}", taker_id);
+            let _ = taker_disconnected_channel
+                .send(maker_cfd::TakerDisconnected { id: taker_id })
+                .await;
 
             actor.shutdown().await;
         });
@@ -129,8 +141,8 @@ impl Actor {
             .insert(taker_id, out_msg_actor_address);
 
         let _ = self
-            .new_taker_channel
-            .send(maker_cfd::NewTakerOnline { id: taker_id })
+            .taker_connected_channel
+            .send(maker_cfd::TakerConnected { id: taker_id })
             .await;
 
         Ok(())

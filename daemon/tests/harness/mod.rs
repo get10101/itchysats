@@ -6,7 +6,7 @@ use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{connect, ConnectionStatus};
 use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, Order, Origin, UpdateCfdProposals};
-use daemon::model::{Price, Timestamp, Usd};
+use daemon::model::{Price, TakerId, Timestamp, Usd};
 use daemon::seed::Seed;
 use daemon::{
     db, maker_cfd, maker_inc_connections, projection, taker_cfd, MakerActorSystem, Tasks,
@@ -71,6 +71,10 @@ impl Maker {
         &mut self.order_feed_receiver
     }
 
+    pub fn connected_takers_feed(&mut self) -> &mut watch::Receiver<Vec<TakerId>> {
+        &mut self.system.connected_takers_feed_receiver
+    }
+
     pub async fn start(
         oracle_pk: schnorrsig::PublicKey,
         seed: Seed,
@@ -100,10 +104,11 @@ impl Maker {
             oracle_pk,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
-            |channel0, channel1| {
+            |channel0, channel1, channel2| {
                 maker_inc_connections::Actor::new(
                     channel0,
                     channel1,
+                    channel2,
                     identity_sk,
                     HEARTBEAT_INTERVAL_FOR_TEST,
                 )
@@ -192,6 +197,7 @@ impl Maker {
 
 /// Taker Test Setup
 pub struct Taker {
+    pub id: TakerId,
     pub system: daemon::TakerActorSystem<OracleActor, MonitorActor, WalletActor>,
     pub mocks: mocks::Mocks,
     cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
@@ -219,7 +225,7 @@ impl Taker {
     ) -> Self {
         let seed = Seed::default();
 
-        let (_, identity_sk) = seed.derive_identity();
+        let (identity_pk, identity_sk) = seed.derive_identity();
 
         let db = in_memory_db().await;
 
@@ -275,6 +281,7 @@ impl Taker {
         ));
 
         Self {
+            id: TakerId::new(identity_pk),
             system: taker,
             mocks,
             _tasks: tasks,
