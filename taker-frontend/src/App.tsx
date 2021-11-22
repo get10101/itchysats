@@ -37,7 +37,7 @@ import {
     WithdrawRequest,
 } from "./components/Types";
 import { Wallet, WalletInfoBar } from "./components/Wallet";
-import useLatestEvent from "./Hooks";
+import useLatestEvent from "./useLatestEvent";
 
 async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse> {
     let res = await fetch(`/api/calculate/margin`, { method: "POST", body: JSON.stringify(payload) });
