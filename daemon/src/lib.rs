@@ -10,7 +10,6 @@ use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
 use std::future::Future;
 use std::time::Duration;
 use tokio::sync::watch;
@@ -36,6 +35,7 @@ mod noise;
 pub mod olivia;
 pub mod oracle;
 pub mod payout_curve;
+pub mod projection;
 pub mod routes;
 pub mod seed;
 pub mod send_to_socket;
@@ -75,9 +75,6 @@ impl Default for Tasks {
 
 pub struct MakerActorSystem<O, M, T, W> {
     pub cfd_actor_addr: Address<maker_cfd::Actor<O, M, T, W>>,
-    pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
-    pub order_feed_receiver: watch::Receiver<Option<Order>>,
-    pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
     pub inc_conn_addr: Address<T>,
     pub tasks: Tasks,
 }
@@ -111,6 +108,7 @@ where
         ) -> T,
         settlement_time_interval_hours: time::Duration,
         n_payouts: usize,
+        projection_actor: Address<projection::Actor>,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
@@ -118,11 +116,6 @@ where
         let mut conn = db.acquire().await?;
 
         let cfds = load_all_cfds(&mut conn).await?;
-
-        let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
-        let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
-        let (update_cfd_feed_sender, update_cfd_feed_receiver) =
-            watch::channel::<UpdateCfdProposals>(HashMap::new());
 
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
@@ -135,9 +128,7 @@ where
             wallet_addr,
             settlement_time_interval_hours,
             oracle_pk,
-            cfd_feed_sender,
-            order_feed_sender,
-            update_cfd_feed_sender,
+            projection_actor,
             inc_conn_addr.clone(),
             monitor_addr.clone(),
             oracle_addr.clone(),
@@ -182,9 +173,6 @@ where
 
         Ok(Self {
             cfd_actor_addr,
-            cfd_feed_receiver,
-            order_feed_receiver,
-            update_cfd_feed_receiver,
             inc_conn_addr,
             tasks,
         })
@@ -194,9 +182,6 @@ where
 pub struct TakerActorSystem<O, M, W> {
     pub cfd_actor_addr: Address<taker_cfd::Actor<O, M, W>>,
     pub connection_actor_addr: Address<connection::Actor>,
-    pub cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
-    pub order_feed_receiver: watch::Receiver<Option<Order>>,
-    pub update_cfd_feed_receiver: watch::Receiver<UpdateCfdProposals>,
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     pub tasks: Tasks,
 }
@@ -225,6 +210,7 @@ where
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
         n_payouts: usize,
         maker_heartbeat_interval: Duration,
+        projection_actor: Address<projection::Actor>,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
@@ -232,11 +218,6 @@ where
         let mut conn = db.acquire().await?;
 
         let cfds = load_all_cfds(&mut conn).await?;
-
-        let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
-        let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
-        let (update_cfd_feed_sender, update_cfd_feed_receiver) =
-            watch::channel::<UpdateCfdProposals>(HashMap::new());
 
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
             watch::channel(ConnectionStatus::Offline);
@@ -251,9 +232,7 @@ where
             db,
             wallet_addr,
             oracle_pk,
-            cfd_feed_sender,
-            order_feed_sender,
-            update_cfd_feed_sender,
+            projection_actor,
             Box::new(connection_actor_addr.clone()),
             monitor_addr.clone(),
             oracle_addr,
@@ -301,9 +280,6 @@ where
         Ok(Self {
             cfd_actor_addr,
             connection_actor_addr,
-            cfd_feed_receiver,
-            order_feed_receiver,
-            update_cfd_feed_receiver,
             maker_online_status_feed_receiver,
             tasks,
         })

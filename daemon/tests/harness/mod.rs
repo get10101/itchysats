@@ -2,19 +2,24 @@ use crate::harness::mocks::monitor::MonitorActor;
 use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
+use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{Connect, ConnectionStatus};
 use daemon::maker_cfd::CfdAction;
-use daemon::model::cfd::{Cfd, Order, Origin};
-use daemon::model::{Price, Usd};
+use daemon::model::cfd::{Cfd, Order, Origin, UpdateCfdProposals};
+use daemon::model::{Price, Timestamp, Usd};
 use daemon::seed::Seed;
-use daemon::{db, maker_cfd, maker_inc_connections, taker_cfd, MakerActorSystem, Tasks};
+use daemon::{
+    db, maker_cfd, maker_inc_connections, projection, taker_cfd, MakerActorSystem, Tasks,
+};
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::task::Poll;
 use std::time::Duration;
 use tokio::sync::watch;
+use tokio::sync::watch::channel;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -47,16 +52,18 @@ pub struct Maker {
     pub mocks: mocks::Mocks,
     pub listen_addr: SocketAddr,
     pub identity_pk: x25519_dalek::PublicKey,
+    cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
+    order_feed_receiver: watch::Receiver<Option<Order>>,
     _tasks: Tasks,
 }
 
 impl Maker {
     pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Vec<Cfd>> {
-        &mut self.system.cfd_feed_receiver
+        &mut self.cfd_feed_receiver
     }
 
     pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<Order>> {
-        &mut self.system.order_feed_receiver
+        &mut self.order_feed_receiver
     }
 
     pub async fn start(oracle_pk: schnorrsig::PublicKey) -> Self {
@@ -74,6 +81,8 @@ impl Maker {
 
         let seed = Seed::default();
         let (identity_pk, identity_sk) = seed.derive_identity();
+
+        let (projection_actor, projection_context) = xtra::Context::new(None);
 
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
@@ -93,9 +102,29 @@ impl Maker {
             },
             settlement_time_interval_hours,
             N_PAYOUTS_FOR_TEST,
+            projection_actor.clone(),
         )
         .await
         .unwrap();
+
+        let dummy_quote = Quote {
+            timestamp: Timestamp::now().unwrap(),
+            bid: Price::new(dec!(10000)).unwrap(),
+            ask: Price::new(dec!(10000)).unwrap(),
+        };
+
+        let (cfd_feed_sender, cfd_feed_receiver) = channel(vec![]);
+        let (order_feed_sender, order_feed_receiver) = channel::<Option<Order>>(None);
+        let (update_cfd_feed_sender, _update_cfd_feed_receiver) =
+            channel::<UpdateCfdProposals>(HashMap::new());
+        let (quote_sender, _) = channel::<Quote>(dummy_quote);
+
+        tasks.add(projection_context.run(projection::Actor::new(
+            cfd_feed_sender,
+            order_feed_sender,
+            quote_sender,
+            update_cfd_feed_sender,
+        )));
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 
@@ -120,6 +149,8 @@ impl Maker {
             listen_addr: address,
             mocks,
             _tasks: tasks,
+            cfd_feed_receiver,
+            order_feed_receiver,
         }
     }
 
@@ -157,16 +188,18 @@ impl Maker {
 pub struct Taker {
     pub system: daemon::TakerActorSystem<OracleActor, MonitorActor, WalletActor>,
     pub mocks: mocks::Mocks,
+    cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
+    order_feed_receiver: watch::Receiver<Option<Order>>,
     _tasks: Tasks,
 }
 
 impl Taker {
     pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Vec<Cfd>> {
-        &mut self.system.cfd_feed_receiver
+        &mut self.cfd_feed_receiver
     }
 
     pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<Order>> {
-        &mut self.system.order_feed_receiver
+        &mut self.order_feed_receiver
     }
 
     pub fn maker_status_feed(&mut self) -> &mut watch::Receiver<ConnectionStatus> {
@@ -192,6 +225,8 @@ impl Taker {
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tasks.add(wallet_fut);
 
+        let (projection_actor, projection_context) = xtra::Context::new(None);
+
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
         let taker = daemon::TakerActorSystem::new(
@@ -203,9 +238,28 @@ impl Taker {
             |_, _| async { Ok(monitor) },
             N_PAYOUTS_FOR_TEST,
             HEARTBEAT_INTERVAL_FOR_TEST * 2,
+            projection_actor,
         )
         .await
         .unwrap();
+
+        let dummy_quote = Quote {
+            timestamp: Timestamp::now().unwrap(),
+            bid: Price::new(dec!(10000)).unwrap(),
+            ask: Price::new(dec!(10000)).unwrap(),
+        };
+
+        let (cfd_feed_sender, cfd_feed_receiver) = channel(vec![]);
+        let (order_feed_sender, order_feed_receiver) = channel::<Option<Order>>(None);
+        let (update_cfd_feed_sender, _) = channel::<UpdateCfdProposals>(HashMap::new());
+        let (quote_sender, _) = channel::<Quote>(dummy_quote);
+
+        tasks.add(projection_context.run(projection::Actor::new(
+            cfd_feed_sender,
+            order_feed_sender,
+            quote_sender,
+            update_cfd_feed_sender,
+        )));
 
         taker
             .connection_actor_addr
@@ -221,6 +275,8 @@ impl Taker {
             system: taker,
             mocks,
             _tasks: tasks,
+            order_feed_receiver,
+            cfd_feed_receiver,
         }
     }
 

@@ -529,16 +529,14 @@ pub async fn load_cfds_by_oracle_event_id(
 
 #[cfg(test)]
 mod tests {
-    use crate::cfd_actors;
     use pretty_assertions::assert_eq;
     use rand::Rng;
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;
     use time::macros::datetime;
     use time::OffsetDateTime;
-    use tokio::sync::watch;
 
-    use crate::db::{self, insert_order};
+    use crate::db::insert_order;
     use crate::model::cfd::{Cfd, CfdState, Order, Origin};
     use crate::model::{Price, Usd};
 

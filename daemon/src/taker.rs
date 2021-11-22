@@ -3,16 +3,20 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::{Address, Amount};
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
+use daemon::bitmex_price_feed::Quote;
 use daemon::connection::ConnectionStatus;
+use daemon::db::load_all_cfds;
+use daemon::model::cfd::{Order, UpdateCfdProposals};
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
-    bitmex_price_feed, connection, db, housekeeping, logger, monitor, oracle, taker_cfd, wallet,
-    wallet_sync, TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
+    bitmex_price_feed, connection, db, housekeeping, logger, monitor, oracle, projection,
+    taker_cfd, wallet, wallet_sync, TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -20,6 +24,7 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio::time::sleep;
 use tracing_subscriber::filter::LevelFilter;
+use watch::channel;
 use xtra::prelude::MessageChannel;
 use xtra::Actor;
 
@@ -209,9 +214,6 @@ async fn main() -> Result<()> {
 
     let mut tasks = Tasks::default();
 
-    let (task, quote_updates) = bitmex_price_feed::new().await?;
-    tasks.add(task);
-
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()));
@@ -233,12 +235,11 @@ async fn main() -> Result<()> {
     housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn).await?;
     housekeeping::rebroadcast_transactions(&mut conn, &wallet).await?;
 
+    let (projection_actor, projection_context) = xtra::Context::new(None);
+
     let TakerActorSystem {
         cfd_actor_addr,
         connection_actor_addr,
-        cfd_feed_receiver,
-        order_feed_receiver,
-        update_cfd_feed_receiver,
         mut maker_online_status_feed_receiver,
         tasks: _tasks,
     } = TakerActorSystem::new(
@@ -255,8 +256,25 @@ async fn main() -> Result<()> {
         },
         N_PAYOUTS,
         HEARTBEAT_INTERVAL * 2,
+        projection_actor.clone(),
     )
     .await?;
+    let (task, init_quote) = bitmex_price_feed::new(projection_actor).await?;
+    tasks.add(task);
+
+    let cfds = load_all_cfds(&mut conn).await?;
+    let (cfd_feed_sender, cfd_feed_receiver) = channel(cfds.clone());
+    let (order_feed_sender, order_feed_receiver) = channel::<Option<Order>>(None);
+    let (update_cfd_feed_sender, update_cfd_feed_receiver) =
+        channel::<UpdateCfdProposals>(HashMap::new());
+    let (quote_sender, quote_receiver) = channel::<Quote>(init_quote);
+
+    tasks.add(projection_context.run(projection::Actor::new(
+        cfd_feed_sender,
+        order_feed_sender,
+        quote_sender,
+        update_cfd_feed_sender,
+    )));
 
     connect(connection_actor_addr, opts.maker_id, opts.maker).await?;
 
@@ -271,7 +289,7 @@ async fn main() -> Result<()> {
         .manage(cfd_action_channel)
         .manage(cfd_feed_receiver)
         .manage(wallet_feed_receiver)
-        .manage(quote_updates)
+        .manage(quote_receiver)
         .manage(bitcoin_network)
         .mount(
             "/api",
