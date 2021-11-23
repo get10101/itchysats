@@ -177,6 +177,17 @@ impl Actor {
     }
 
     pub async fn handle_withdraw(&self, msg: Withdraw) -> Result<Txid> {
+        {
+            let wallet = self.wallet.lock().await;
+            if msg.address.network != wallet.network() {
+                bail!(
+                    "Address has invalid network. It was {} but the wallet is connected to {}",
+                    msg.address.network,
+                    wallet.network()
+                )
+            }
+        }
+
         let fee_rate = msg.fee.unwrap_or_else(FeeRate::default_min_relay_fee);
         let address = msg.address;
 
@@ -191,6 +202,7 @@ impl Actor {
         tracing::info!(%amount, %address, "Amount to be sent to address");
 
         let wallet = self.wallet.lock().await;
+
         let mut tx_builder = wallet.build_tx();
 
         tx_builder
