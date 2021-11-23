@@ -356,7 +356,7 @@ where
 
         let proposal = RollOverProposal {
             order_id,
-            timestamp: Timestamp::now()?,
+            timestamp: Timestamp::now(),
         };
 
         self.current_pending_proposals.insert(

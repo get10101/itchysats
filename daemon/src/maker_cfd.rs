@@ -474,7 +474,7 @@ where
             quantity,
             CfdState::IncomingOrderRequest {
                 common: CfdStateCommon {
-                    transition_timestamp: Timestamp::now()?,
+                    transition_timestamp: Timestamp::now(),
                 },
                 taker_id,
             },

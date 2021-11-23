@@ -108,7 +108,7 @@ impl Maker {
         .unwrap();
 
         let dummy_quote = Quote {
-            timestamp: Timestamp::now().unwrap(),
+            timestamp: Timestamp::now(),
             bid: Price::new(dec!(10000)).unwrap(),
             ask: Price::new(dec!(10000)).unwrap(),
         };
@@ -244,7 +244,7 @@ impl Taker {
         .unwrap();
 
         let dummy_quote = Quote {
-            timestamp: Timestamp::now().unwrap(),
+            timestamp: Timestamp::now(),
             bid: Price::new(dec!(10000)).unwrap(),
             ask: Price::new(dec!(10000)).unwrap(),
         };

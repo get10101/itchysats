@@ -105,7 +105,7 @@ impl Actor {
         let wallet_info = WalletInfo {
             balance: Amount::from_sat(balance),
             address,
-            last_updated_at: Timestamp::now()?,
+            last_updated_at: Timestamp::now(),
         };
 
         Ok(wallet_info)

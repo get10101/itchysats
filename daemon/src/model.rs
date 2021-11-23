@@ -515,15 +515,15 @@ impl Timestamp {
         Self(seconds)
     }
 
-    pub fn now() -> Result<Self> {
+    pub fn now() -> Self {
         let seconds: i64 = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .context("time has gone backwards!")?
+            .expect("time not to go backwards")
             .as_secs()
             .try_into()
-            .context("Unable to convert u64 to i64")?;
+            .expect("seconds of system time to fit into i64");
 
-        Ok(Self(seconds))
+        Self(seconds)
     }
 
     pub fn parse_from_rfc3339(datetime_str: &str) -> Result<Self> {
