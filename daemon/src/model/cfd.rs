@@ -115,7 +115,7 @@ pub struct Order {
     pub creation_timestamp: Timestamp,
 
     /// The duration that will be used for calculating the settlement timestamp
-    pub settlement_time_interval_hours: Duration,
+    pub settlement_interval: Duration,
 
     pub origin: Origin,
 
@@ -132,7 +132,7 @@ impl Order {
         max_quantity: Usd,
         origin: Origin,
         oracle_event_id: BitMexPriceEventId,
-        settlement_time_interval_hours: Duration,
+        settlement_interval: Duration,
     ) -> Result<Self> {
         let leverage = Leverage::new(2)?;
         let liquidation_price = calculate_long_liquidation_price(leverage, price);
@@ -147,7 +147,7 @@ impl Order {
             liquidation_price,
             position: Position::Short,
             creation_timestamp: Timestamp::now(),
-            settlement_time_interval_hours,
+            settlement_interval,
             origin,
             oracle_event_id,
         })
@@ -671,7 +671,7 @@ impl Cfd {
     }
 
     pub fn refund_timelock_in_blocks(&self) -> u32 {
-        (self.order.settlement_time_interval_hours * Cfd::REFUND_THRESHOLD)
+        (self.order.settlement_interval * Cfd::REFUND_THRESHOLD)
             .as_blocks()
             .ceil() as u32
     }
@@ -680,20 +680,20 @@ impl Cfd {
         self.order.oracle_event_id.timestamp()
     }
 
-    /// A factor to be added to the CFD order settlement_time_interval_hours for calculating the
+    /// A factor to be added to the CFD order settlement_interval for calculating the
     /// refund timelock.
     ///
     /// The refund timelock is important in case the oracle disappears or never publishes a
     /// signature. Ideally, both users collaboratively settle in the refund scenario. This
     /// factor is important if the users do not settle collaboratively.
-    /// `1.5` times the settlement_time_interval_hours as defined in CFD order should be safe in the
+    /// `1.5` times the settlement_interval as defined in CFD order should be safe in the
     /// extreme case where a user publishes the commit transaction right after the contract was
     /// initialized. In this case, the oracle still has `1.0 *
-    /// cfdorder.settlement_time_interval_hours` time to attest and no one can publish the refund
+    /// cfdorder.settlement_interval` time to attest and no one can publish the refund
     /// transaction.
     /// The downside is that if the oracle disappears: the users would only notice at the end
-    /// of the cfd settlement_time_interval_hours. In this case the users has to wait for another
-    /// `1.5` times of the settlement_time_interval_hours to get his funds back.
+    /// of the cfd settlement_interval. In this case the users has to wait for another
+    /// `1.5` times of the settlement_interval to get his funds back.
     const REFUND_THRESHOLD: f32 = 1.5;
 
     pub const CET_TIMELOCK: u32 = 12;
@@ -1464,6 +1464,181 @@ fn calculate_profit(
     Ok((profit, Percent(percent)))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Cet {
+    pub tx: Transaction,
+    pub adaptor_sig: EcdsaAdaptorSignature,
+
+    // TODO: Range + number of digits (usize) could be represented as Digits similar to what we do
+    // in the protocol lib
+    pub range: RangeInclusive<u64>,
+    pub n_bits: usize,
+}
+
+/// Contains all data we've assembled about the CFD through the setup protocol.
+///
+/// All contained signatures are the signatures of THE OTHER PARTY.
+/// To use any of these transactions, we need to re-sign them with the correct secret key.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Dlc {
+    pub identity: SecretKey,
+    pub identity_counterparty: PublicKey,
+    pub revocation: SecretKey,
+    pub revocation_pk_counterparty: PublicKey,
+    pub publish: SecretKey,
+    pub publish_pk_counterparty: PublicKey,
+    pub maker_address: Address,
+    pub taker_address: Address,
+
+    /// The fully signed lock transaction ready to be published on chain
+    pub lock: (Transaction, Descriptor<PublicKey>),
+    pub commit: (Transaction, EcdsaAdaptorSignature, Descriptor<PublicKey>),
+    pub cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
+    pub refund: (Transaction, Signature),
+
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
+    pub maker_lock_amount: Amount,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
+    pub taker_lock_amount: Amount,
+
+    pub revoked_commit: Vec<RevokedCommit>,
+}
+
+impl Dlc {
+    /// Create a close transaction based on the current contract and a settlement proposals
+    pub fn close_transaction(
+        &self,
+        proposal: &crate::model::cfd::SettlementProposal,
+    ) -> Result<(Transaction, Signature)> {
+        let (lock_tx, lock_desc) = &self.lock;
+        let (lock_outpoint, lock_amount) = {
+            let outpoint = lock_tx
+                .outpoint(&lock_desc.script_pubkey())
+                .expect("lock script to be in lock tx");
+            let amount = Amount::from_sat(lock_tx.output[outpoint.vout as usize].value);
+
+            (outpoint, amount)
+        };
+        let (tx, sighash) = maia::close_transaction(
+            lock_desc,
+            lock_outpoint,
+            lock_amount,
+            (&self.maker_address, proposal.maker),
+            (&self.taker_address, proposal.taker),
+        )
+        .context("Unable to collaborative close transaction")?;
+
+        let sig = SECP256K1.sign(&sighash, &self.identity);
+
+        Ok((tx, sig))
+    }
+
+    pub fn finalize_spend_transaction(
+        &self,
+        (close_tx, own_sig): (Transaction, Signature),
+        counterparty_sig: Signature,
+    ) -> Result<Transaction> {
+        let own_pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
+            SECP256K1,
+            &self.identity,
+        ));
+
+        let (_, lock_desc) = &self.lock;
+        let spend_tx = maia::finalize_spend_transaction(
+            close_tx,
+            lock_desc,
+            (own_pk, own_sig),
+            (self.identity_counterparty, counterparty_sig),
+        )?;
+
+        Ok(spend_tx)
+    }
+
+    pub fn refund_amount(&self, role: Role) -> Amount {
+        let our_script_pubkey = match role {
+            Role::Taker => self.taker_address.script_pubkey(),
+            Role::Maker => self.maker_address.script_pubkey(),
+        };
+
+        self.refund
+            .0
+            .output
+            .iter()
+            .find(|output| output.script_pubkey == our_script_pubkey)
+            .map(|output| Amount::from_sat(output.value))
+            .unwrap_or_default()
+    }
+
+    pub fn script_pubkey_for(&self, role: Role) -> Script {
+        match role {
+            Role::Maker => self.maker_address.script_pubkey(),
+            Role::Taker => self.taker_address.script_pubkey(),
+        }
+    }
+}
+
+/// Information which we need to remember in order to construct a
+/// punishment transaction in case the counterparty publishes a
+/// revoked commit transaction.
+///
+/// It also includes the information needed to monitor for the
+/// publication of the revoked commit transaction.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RevokedCommit {
+    // To build punish transaction
+    pub encsig_ours: EcdsaAdaptorSignature,
+    pub revocation_sk_theirs: SecretKey,
+    pub publication_pk_theirs: PublicKey,
+    // To monitor revoked commit transaction
+    pub txid: Txid,
+    pub script_pubkey: Script,
+}
+
+/// Used when transactions (e.g. collaborative close) are recorded as a part of
+/// CfdState in the cases when we can't solely rely on state transition
+/// timestamp as it could have occured for different reasons (like a new
+/// attestation in Open state)
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CollaborativeSettlement {
+    pub tx: Transaction,
+    pub timestamp: Timestamp,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
+    payout: Amount,
+    price: Price,
+}
+
+impl CollaborativeSettlement {
+    pub fn new(tx: Transaction, own_script_pubkey: Script, price: Price) -> Result<Self> {
+        // Falls back to Amount::ZERO in case we don't find an output that matches out script pubkey
+        // The assumption is, that this can happen for cases where we were liuqidated
+        let payout = match tx
+            .output
+            .iter()
+            .find(|output| output.script_pubkey == own_script_pubkey)
+            .map(|output| Amount::from_sat(output.value))
+        {
+            Some(payout) => payout,
+            None => {
+                tracing::error!(
+                    "Collaborative settlement with a zero amount, this should really not happen!"
+                );
+                Amount::ZERO
+            }
+        };
+
+        Ok(Self {
+            tx,
+            timestamp: Timestamp::now(),
+            payout,
+            price,
+        })
+    }
+
+    pub fn payout(&self) -> Amount {
+        self.payout
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1713,180 +1888,5 @@ mod tests {
         let deserialized = serde_json::from_str(&serde_json::to_string(&id).unwrap()).unwrap();
 
         assert_eq!(id, deserialized);
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Cet {
-    pub tx: Transaction,
-    pub adaptor_sig: EcdsaAdaptorSignature,
-
-    // TODO: Range + number of digits (usize) could be represented as Digits similar to what we do
-    // in the protocol lib
-    pub range: RangeInclusive<u64>,
-    pub n_bits: usize,
-}
-
-/// Contains all data we've assembled about the CFD through the setup protocol.
-///
-/// All contained signatures are the signatures of THE OTHER PARTY.
-/// To use any of these transactions, we need to re-sign them with the correct secret key.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Dlc {
-    pub identity: SecretKey,
-    pub identity_counterparty: PublicKey,
-    pub revocation: SecretKey,
-    pub revocation_pk_counterparty: PublicKey,
-    pub publish: SecretKey,
-    pub publish_pk_counterparty: PublicKey,
-    pub maker_address: Address,
-    pub taker_address: Address,
-
-    /// The fully signed lock transaction ready to be published on chain
-    pub lock: (Transaction, Descriptor<PublicKey>),
-    pub commit: (Transaction, EcdsaAdaptorSignature, Descriptor<PublicKey>),
-    pub cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
-    pub refund: (Transaction, Signature),
-
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
-    pub maker_lock_amount: Amount,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
-    pub taker_lock_amount: Amount,
-
-    pub revoked_commit: Vec<RevokedCommit>,
-}
-
-impl Dlc {
-    /// Create a close transaction based on the current contract and a settlement proposals
-    pub fn close_transaction(
-        &self,
-        proposal: &crate::model::cfd::SettlementProposal,
-    ) -> Result<(Transaction, Signature)> {
-        let (lock_tx, lock_desc) = &self.lock;
-        let (lock_outpoint, lock_amount) = {
-            let outpoint = lock_tx
-                .outpoint(&lock_desc.script_pubkey())
-                .expect("lock script to be in lock tx");
-            let amount = Amount::from_sat(lock_tx.output[outpoint.vout as usize].value);
-
-            (outpoint, amount)
-        };
-        let (tx, sighash) = maia::close_transaction(
-            lock_desc,
-            lock_outpoint,
-            lock_amount,
-            (&self.maker_address, proposal.maker),
-            (&self.taker_address, proposal.taker),
-        )
-        .context("Unable to collaborative close transaction")?;
-
-        let sig = SECP256K1.sign(&sighash, &self.identity);
-
-        Ok((tx, sig))
-    }
-
-    pub fn finalize_spend_transaction(
-        &self,
-        (close_tx, own_sig): (Transaction, Signature),
-        counterparty_sig: Signature,
-    ) -> Result<Transaction> {
-        let own_pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
-            SECP256K1,
-            &self.identity,
-        ));
-
-        let (_, lock_desc) = &self.lock;
-        let spend_tx = maia::finalize_spend_transaction(
-            close_tx,
-            lock_desc,
-            (own_pk, own_sig),
-            (self.identity_counterparty, counterparty_sig),
-        )?;
-
-        Ok(spend_tx)
-    }
-
-    pub fn refund_amount(&self, role: Role) -> Amount {
-        let our_script_pubkey = match role {
-            Role::Taker => self.taker_address.script_pubkey(),
-            Role::Maker => self.maker_address.script_pubkey(),
-        };
-
-        self.refund
-            .0
-            .output
-            .iter()
-            .find(|output| output.script_pubkey == our_script_pubkey)
-            .map(|output| Amount::from_sat(output.value))
-            .unwrap_or_default()
-    }
-
-    pub fn script_pubkey_for(&self, role: Role) -> Script {
-        match role {
-            Role::Maker => self.maker_address.script_pubkey(),
-            Role::Taker => self.taker_address.script_pubkey(),
-        }
-    }
-}
-
-/// Information which we need to remember in order to construct a
-/// punishment transaction in case the counterparty publishes a
-/// revoked commit transaction.
-///
-/// It also includes the information needed to monitor for the
-/// publication of the revoked commit transaction.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RevokedCommit {
-    // To build punish transaction
-    pub encsig_ours: EcdsaAdaptorSignature,
-    pub revocation_sk_theirs: SecretKey,
-    pub publication_pk_theirs: PublicKey,
-    // To monitor revoked commit transaction
-    pub txid: Txid,
-    pub script_pubkey: Script,
-}
-
-/// Used when transactions (e.g. collaborative close) are recorded as a part of
-/// CfdState in the cases when we can't solely rely on state transition
-/// timestamp as it could have occured for different reasons (like a new
-/// attestation in Open state)
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct CollaborativeSettlement {
-    pub tx: Transaction,
-    pub timestamp: Timestamp,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
-    payout: Amount,
-    price: Price,
-}
-
-impl CollaborativeSettlement {
-    pub fn new(tx: Transaction, own_script_pubkey: Script, price: Price) -> Result<Self> {
-        // Falls back to Amount::ZERO in case we don't find an output that matches out script pubkey
-        // The assumption is, that this can happen for cases where we were liuqidated
-        let payout = match tx
-            .output
-            .iter()
-            .find(|output| output.script_pubkey == own_script_pubkey)
-            .map(|output| Amount::from_sat(output.value))
-        {
-            Some(payout) => payout,
-            None => {
-                tracing::error!(
-                    "Collaborative settlement with a zero amount, this should really not happen!"
-                );
-                Amount::ZERO
-            }
-        };
-
-        Ok(Self {
-            tx,
-            timestamp: Timestamp::now(),
-            payout,
-            price,
-        })
-    }
-
-    pub fn payout(&self) -> Amount {
-        self.payout
     }
 }
