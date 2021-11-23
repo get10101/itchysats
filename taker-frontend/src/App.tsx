@@ -93,6 +93,8 @@ export const App = () => {
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
     cfds.sort((a, b) => a.order_id.localeCompare(b.order_id));
+    const connectedToMakerOrUndefined = useLatestEvent<boolean>(source, "maker_status");
+    const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined! : false;
 
     let [quantity, setQuantity] = useState("0");
     let [margin, setMargin] = useState("0");
@@ -145,7 +147,7 @@ export const App = () => {
 
     return (
         <>
-            <Nav walletInfo={walletInfo} />
+            <Nav walletInfo={walletInfo} connectedToMaker={connectedToMaker} />
             <Box textAlign="center" padding={3}>
                 <Routes>
                     <Route path="/wallet" element={<Wallet walletInfo={walletInfo} />} />
@@ -157,6 +159,7 @@ export const App = () => {
                             </Center>
                             <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
                                 <Trade
+                                    connectedToMaker={connectedToMaker}
                                     orderId={order?.id}
                                     quantity={format(effectiveQuantity)}
                                     maxQuantity={max_quantity || 0}

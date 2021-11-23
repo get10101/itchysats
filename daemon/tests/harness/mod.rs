@@ -3,7 +3,7 @@ use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use daemon::bitmex_price_feed::Quote;
-use daemon::connection::{Connect, ConnectionStatus};
+use daemon::connection::{connect, ConnectionStatus};
 use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, Order, Origin, UpdateCfdProposals};
 use daemon::model::{Price, Timestamp, Usd};
@@ -18,6 +18,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::task::Poll;
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::sync::watch::channel;
 use tracing::subscriber::DefaultGuard;
@@ -34,14 +35,18 @@ pub mod mocks;
 pub const HEARTBEAT_INTERVAL_FOR_TEST: Duration = Duration::from_secs(2);
 const N_PAYOUTS_FOR_TEST: usize = 5;
 
-pub async fn start_both() -> (Maker, Taker) {
-    let oracle_pk: schnorrsig::PublicKey = schnorrsig::PublicKey::from_str(
+pub fn oracle_pk() -> schnorrsig::PublicKey {
+    schnorrsig::PublicKey::from_str(
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )
-    .unwrap();
+    .unwrap()
+}
 
-    let maker = Maker::start(oracle_pk).await;
-    let taker = Taker::start(oracle_pk, maker.listen_addr, maker.identity_pk).await;
+pub async fn start_both() -> (Maker, Taker) {
+    let maker_seed = Seed::default();
+    let maker_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let maker = Maker::start(oracle_pk(), maker_seed, maker_listener).await;
+    let taker = Taker::start(oracle_pk(), maker.listen_addr, maker.identity_pk).await;
     (maker, taker)
 }
 
@@ -66,7 +71,11 @@ impl Maker {
         &mut self.order_feed_receiver
     }
 
-    pub async fn start(oracle_pk: schnorrsig::PublicKey) -> Self {
+    pub async fn start(
+        oracle_pk: schnorrsig::PublicKey,
+        seed: Seed,
+        listener: TcpListener,
+    ) -> Self {
         let db = in_memory_db().await;
 
         let mut mocks = mocks::Mocks::default();
@@ -79,7 +88,6 @@ impl Maker {
 
         let settlement_interval = time::Duration::hours(24);
 
-        let seed = Seed::default();
         let (identity_pk, identity_sk) = seed.derive_identity();
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
@@ -125,8 +133,6 @@ impl Maker {
             quote_sender,
             update_cfd_feed_sender,
         )));
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 
         let address = listener.local_addr().unwrap();
 
@@ -261,15 +267,12 @@ impl Taker {
             update_cfd_feed_sender,
         )));
 
-        taker
-            .connection_actor_addr
-            .send(Connect {
-                maker_identity_pk: maker_noise_pub_key,
-                maker_addr: maker_address,
-            })
-            .await
-            .unwrap()
-            .unwrap();
+        tasks.add(connect(
+            taker.maker_online_status_feed_receiver.clone(),
+            taker.connection_actor_addr.clone(),
+            maker_noise_pub_key,
+            vec![maker_address],
+        ));
 
         Self {
             system: taker,

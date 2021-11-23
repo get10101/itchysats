@@ -4,16 +4,15 @@ use bdk::bitcoin::{Address, Amount};
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::bitmex_price_feed::Quote;
-use daemon::connection::ConnectionStatus;
+use daemon::connection::connect;
 use daemon::db::load_all_cfds;
 use daemon::model::cfd::{Order, UpdateCfdProposals};
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
-    bitmex_price_feed, connection, db, housekeeping, logger, monitor, oracle, projection,
-    taker_cfd, wallet, wallet_sync, TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
-    SETTLEMENT_INTERVAL,
+    bitmex_price_feed, db, housekeeping, logger, monitor, oracle, projection, taker_cfd, wallet,
+    wallet_sync, TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS, SETTLEMENT_INTERVAL,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
@@ -21,9 +20,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::time::Duration;
 use tokio::sync::watch;
-use tokio::time::sleep;
 use tracing_subscriber::filter::LevelFilter;
 use watch::channel;
 use xtra::prelude::MessageChannel;
@@ -31,7 +28,7 @@ use xtra::Actor;
 
 mod routes_taker;
 
-const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
+pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 
 #[derive(Parser)]
 struct Opts {
@@ -238,7 +235,7 @@ async fn main() -> Result<()> {
     let TakerActorSystem {
         cfd_actor_addr,
         connection_actor_addr,
-        mut maker_online_status_feed_receiver,
+        maker_online_status_feed_receiver,
         tasks: _tasks,
     } = TakerActorSystem::new(
         db.clone(),
@@ -274,7 +271,14 @@ async fn main() -> Result<()> {
         update_cfd_feed_sender,
     )));
 
-    connect(connection_actor_addr, opts.maker_id, opts.maker).await?;
+    let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
+
+    tasks.add(connect(
+        maker_online_status_feed_receiver.clone(),
+        connection_actor_addr,
+        opts.maker_id,
+        possible_addresses,
+    ));
 
     tasks.add(wallet_sync::new(wallet.clone(), wallet_feed_sender));
     let take_offer_channel = MessageChannel::<taker_cfd::TakeOffer>::clone_channel(&cfd_actor_addr);
@@ -290,6 +294,7 @@ async fn main() -> Result<()> {
         .manage(quote_receiver)
         .manage(bitcoin_network)
         .manage(wallet)
+        .manage(maker_online_status_feed_receiver)
         .mount(
             "/api",
             rocket::routes![
@@ -307,19 +312,6 @@ async fn main() -> Result<()> {
         );
 
     let rocket = rocket.ignite().await?;
-    let shutdown_handle = rocket.shutdown();
-
-    // shutdown the rocket server maker if goes offline
-    tasks.add(async move {
-        loop {
-            maker_online_status_feed_receiver.changed().await.unwrap();
-            if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
-                tracing::info!("Lost connection to maker, shutting down. Please restart the daemon to reconnect");
-                rocket::Shutdown::notify(shutdown_handle);
-                return;
-            }
-        }
-    });
     rocket.launch().await?;
 
     db.close().await;
@@ -327,12 +319,8 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn connect(
-    connection_actor_addr: xtra::Address<connection::Actor>,
-    maker_identity_pk: x25519_dalek::PublicKey,
-    maker_addr: String,
-) -> Result<()> {
-    let possible_addresses = tokio::net::lookup_host(&maker_addr)
+async fn resolve_maker_addresses(maker_addr: &str) -> Result<Vec<SocketAddr>> {
+    let possible_addresses = tokio::net::lookup_host(maker_addr)
         .await?
         .collect::<Vec<_>>();
 
@@ -341,30 +329,5 @@ async fn connect(
         maker_addr,
         itertools::join(possible_addresses.iter(), ",")
     );
-
-    loop {
-        for address in &possible_addresses {
-            tracing::trace!("Connecting to {}", address);
-
-            let connect_msg = connection::Connect {
-                maker_identity_pk,
-                maker_addr: *address,
-            };
-
-            if let Err(e) = connection_actor_addr.send(connect_msg).await? {
-                tracing::debug!(%address, "Failed to establish connection: {:#}", e);
-                continue;
-            }
-
-            return Ok(());
-        }
-
-        tracing::debug!(
-            "Tried connecting to {} addresses without success, retrying in {} seconds",
-            possible_addresses.len(),
-            CONNECTION_RETRY_INTERVAL.as_secs()
-        );
-
-        sleep(CONNECTION_RETRY_INTERVAL).await;
-    }
+    Ok(possible_addresses)
 }

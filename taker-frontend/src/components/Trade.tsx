@@ -51,6 +51,7 @@ import { CfdOrderRequestPayload } from "./Types";
 const MotionBox = motion<BoxProps>(Box);
 
 interface TradeProps {
+    connectedToMaker: boolean;
     orderId?: string;
     minQuantity: number;
     maxQuantity: number;
@@ -81,6 +82,7 @@ function AlertBox({ title, description }: AlertBoxProps) {
 
 const Trade = (
     {
+        connectedToMaker,
         minQuantity,
         maxQuantity,
         referencePrice: referencePriceAsNumber,
@@ -130,20 +132,33 @@ const Trade = (
 
     let alertBox;
 
-    if (balanceTooLow) {
-        alertBox = <AlertBox title={"Your balance is too low!"} description={"Pleas deposit more into you wallet."} />;
-    }
-    if (quantityTooHigh) {
-        alertBox = <AlertBox title={"Quantity too high!"} description={`Max available liquidity is ${maxQuantity}`} />;
-    }
-    if (quantityTooLow || !quantityGreaterZero) {
-        alertBox = <AlertBox title={"Quantity too low!"} description={`Min quantity is ${minQuantity}`} />;
-    }
-    if (!orderId) {
+    if (!connectedToMaker) {
         alertBox = <AlertBox
-            title={"No liquidity!"}
-            description={"The maker you are connected has not create any offers"}
+            title={"No maker!"}
+            description={"You are not connected to any maker. Functionality may be limited"}
         />;
+    } else {
+        if (balanceTooLow) {
+            alertBox = <AlertBox
+                title={"Your balance is too low!"}
+                description={"Pleas deposit more into you wallet."}
+            />;
+        }
+        if (quantityTooHigh) {
+            alertBox = <AlertBox
+                title={"Quantity too high!"}
+                description={`Max available liquidity is ${maxQuantity}`}
+            />;
+        }
+        if (quantityTooLow || !quantityGreaterZero) {
+            alertBox = <AlertBox title={"Quantity too low!"} description={`Min quantity is ${minQuantity}`} />;
+        }
+        if (!orderId) {
+            alertBox = <AlertBox
+                title={"No liquidity!"}
+                description={"The maker you are connected has not create any offers"}
+            />;
+        }
     }
 
     return (

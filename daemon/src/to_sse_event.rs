@@ -1,3 +1,4 @@
+use crate::connection::ConnectionStatus;
 use crate::model::cfd::{
     Dlc, OrderId, Payout, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
 };
@@ -366,6 +367,17 @@ impl ToSseEvent for model::WalletInfo {
         };
 
         Event::json(&wallet_info).event("wallet")
+    }
+}
+
+impl ToSseEvent for ConnectionStatus {
+    fn to_sse_event(&self) -> Event {
+        let connected = match self {
+            ConnectionStatus::Online => true,
+            ConnectionStatus::Offline => false,
+        };
+
+        Event::json(&connected).event("maker_status")
     }
 }
 

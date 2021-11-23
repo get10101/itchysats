@@ -7,6 +7,7 @@ use sha2::Sha256;
 use std::convert::TryInto;
 use std::path::Path;
 
+#[derive(Copy, Clone)]
 pub struct Seed([u8; 256]);
 
 impl Seed {
