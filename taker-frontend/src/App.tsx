@@ -184,7 +184,7 @@ export const App = () => {
                                         calculateMargin(payload);
                                     }}
                                     onLongSubmit={makeNewOrderRequest}
-                                    isSubmitting={isCreatingNewOrderRequest}
+                                    isLongSubmitting={isCreatingNewOrderRequest}
                                 />
                                 <History
                                     cfds={cfds.filter((cfd) => cfd.state.getGroup() !== StateGroupKey.CLOSED)}
