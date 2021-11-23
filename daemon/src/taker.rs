@@ -192,15 +192,13 @@ async fn main() -> Result<()> {
         fee,
     }) = opts.network.withdraw()
     {
-        let txid = wallet
+        wallet
             .send(wallet::Withdraw {
                 amount: *amount,
                 address: address.clone(),
                 fee: fee.map(FeeRate::from_sat_per_vb),
             })
             .await??;
-
-        tracing::info!(%txid, "Withdraw successful");
 
         return Ok(());
     }

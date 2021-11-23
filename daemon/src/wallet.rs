@@ -217,6 +217,8 @@ impl Actor {
 
         let txid = wallet.broadcast(psbt.extract_tx())?;
 
+        tracing::info!(%txid, "Withdraw successful");
+
         Ok(txid)
     }
 }
