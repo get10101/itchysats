@@ -25,12 +25,10 @@ import {
     Text,
     Tr,
     useColorModeValue,
-    useToast,
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { useAsync } from "react-async";
-import createErrorToast from "./ErrorToast";
+import usePostRequest from "../usePostRequest";
 import { Cfd, StateGroupKey, StateKey, Tx, TxLabel } from "./Types";
 
 interface HistoryProps {
@@ -63,15 +61,7 @@ interface CfdDetailsProps {
     cfd: Cfd;
 }
 
-async function doPostAction(id: string, action: string) {
-    await fetch(
-        `/api/cfd/${id}/${action}`,
-        { method: "POST", credentials: "include" },
-    );
-}
-
 const CfdDetails = ({ cfd }: CfdDetailsProps) => {
-    const toast = useToast();
     const initialPrice = `$${cfd.initial_price.toLocaleString()}`;
     const quantity = `$${cfd.quantity_usd}`;
     const margin = `₿${Math.round((cfd.margin) * 1_000_000) / 1_000_000}`;
@@ -86,16 +76,7 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
     const txCet = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Cet);
     const txSettled = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Collaborative);
 
-    let { run: postAction, isLoading: isActioning } = useAsync({
-        deferFn: async ([orderId, action]: any[]) => {
-            try {
-                console.log(`Closing: ${orderId} ${action}`);
-                await doPostAction(orderId, action);
-            } catch (e) {
-                createErrorToast(toast, e);
-            }
-        },
-    });
+    let [settle, isSettling] = usePostRequest(`/api/cfd/${cfd.order_id}/settle`);
 
     const disableCloseButton = cfd.state.getGroup() === StateGroupKey.CLOSED
         || !(cfd.state.key === StateKey.OPEN);
@@ -206,11 +187,12 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
                                         <Button
                                             size="sm"
                                             colorScheme="red"
-                                            onClick={async () => {
-                                                await postAction(cfd.order_id, "settle");
+                                            onClick={() => {
+                                                console.log(`Settling CFD ${cfd.order_id}`);
+                                                settle({});
                                                 onClose();
                                             }}
-                                            isLoading={isActioning}
+                                            isLoading={isSettling}
                                         >
                                             Close
                                         </Button>
