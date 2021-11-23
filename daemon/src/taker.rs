@@ -192,15 +192,13 @@ async fn main() -> Result<()> {
         fee,
     }) = opts.network.withdraw()
     {
-        let txid = wallet
+        wallet
             .send(wallet::Withdraw {
                 amount: *amount,
                 address: address.clone(),
                 fee: fee.map(FeeRate::from_sat_per_vb),
             })
             .await??;
-
-        tracing::info!(%txid, "Withdraw successful");
 
         return Ok(());
     }
@@ -278,7 +276,7 @@ async fn main() -> Result<()> {
 
     connect(connection_actor_addr, opts.maker_id, opts.maker).await?;
 
-    tasks.add(wallet_sync::new(wallet, wallet_feed_sender));
+    tasks.add(wallet_sync::new(wallet.clone(), wallet_feed_sender));
     let take_offer_channel = MessageChannel::<taker_cfd::TakeOffer>::clone_channel(&cfd_actor_addr);
     let cfd_action_channel = MessageChannel::<taker_cfd::CfdAction>::clone_channel(&cfd_actor_addr);
 
@@ -291,6 +289,7 @@ async fn main() -> Result<()> {
         .manage(wallet_feed_receiver)
         .manage(quote_receiver)
         .manage(bitcoin_network)
+        .manage(wallet)
         .mount(
             "/api",
             rocket::routes![
@@ -299,6 +298,7 @@ async fn main() -> Result<()> {
                 routes_taker::get_health_check,
                 routes_taker::margin_calc,
                 routes_taker::post_cfd_action,
+                routes_taker::post_withdraw_request,
             ],
         )
         .mount(
