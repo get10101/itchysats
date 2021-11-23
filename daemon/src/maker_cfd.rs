@@ -6,6 +6,7 @@ use crate::model::cfd::{
 };
 use crate::model::{Price, TakerId, Timestamp, Usd};
 use crate::monitor::MonitorParams;
+use crate::setup_contract::{RolloverParams, SetupParams};
 use crate::tokio_ext::FutureExt;
 use crate::{
     log_error, maker_inc_connections, monitor, oracle, projection, setup_contract, wallet, wire,
@@ -605,7 +606,14 @@ where
             }),
             receiver,
             (self.oracle_pk, offer_announcement),
-            cfd,
+            SetupParams::new(
+                cfd.margin()?,
+                cfd.counterparty_margin()?,
+                cfd.order.price,
+                cfd.quantity_usd,
+                cfd.order.leverage,
+                cfd.refund_timelock_in_blocks(),
+            ),
             self.wallet.clone(),
             Role::Maker,
             self.n_payouts,
@@ -770,7 +778,12 @@ where
             }),
             receiver,
             (self.oracle_pk, announcement),
-            cfd,
+            RolloverParams::new(
+                cfd.order.price,
+                cfd.quantity_usd,
+                cfd.order.leverage,
+                cfd.refund_timelock_in_blocks(),
+            ),
             Role::Maker,
             dlc,
             self.n_payouts,

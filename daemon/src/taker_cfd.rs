@@ -6,6 +6,7 @@ use crate::model::cfd::{
 };
 use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
+use crate::setup_contract::{RolloverParams, SetupParams};
 use crate::tokio_ext::FutureExt;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
 use crate::{log_error, oracle, projection, setup_contract, wallet, wire};
@@ -495,7 +496,14 @@ where
                 .with(|msg| future::ok(wire::TakerToMaker::Protocol(msg))),
             receiver,
             (self.oracle_pk, offer_announcement),
-            cfd,
+            SetupParams::new(
+                cfd.margin()?,
+                cfd.counterparty_margin()?,
+                cfd.order.price,
+                cfd.quantity_usd,
+                cfd.order.leverage,
+                cfd.refund_timelock_in_blocks(),
+            ),
             self.wallet.clone(),
             Role::Taker,
             self.n_payouts,
@@ -562,7 +570,12 @@ where
                 .with(|msg| future::ok(wire::TakerToMaker::RollOverProtocol(msg))),
             receiver,
             (self.oracle_pk, announcement),
-            cfd,
+            RolloverParams::new(
+                cfd.order.price,
+                cfd.quantity_usd,
+                cfd.order.leverage,
+                cfd.refund_timelock_in_blocks(),
+            ),
             Role::Taker,
             dlc,
             self.n_payouts,
