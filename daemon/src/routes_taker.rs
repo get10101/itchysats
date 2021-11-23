@@ -58,6 +58,10 @@ pub async fn feed(
                     let wallet_info = rx_wallet.borrow().clone();
                     yield wallet_info.to_sse_event();
                 },
+                // Ok(()) = rx_connections.changed() => {
+                //     let wallet_info = rx_wallet.borrow().clone();
+                //     yield wallet_info.to_sse_event();
+                // },
                 Ok(()) = rx_order.changed() => {
                     let order = rx_order.borrow().clone();
                     yield order.to_sse_event();

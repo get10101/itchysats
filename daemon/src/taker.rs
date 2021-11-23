@@ -4,15 +4,15 @@ use bdk::bitcoin::{Address, Amount};
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::bitmex_price_feed::Quote;
-use daemon::connection::ConnectionStatus;
+use daemon::connection::connect;
 use daemon::db::load_all_cfds;
 use daemon::model::cfd::{Order, UpdateCfdProposals};
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
-    bitmex_price_feed, connection, db, housekeeping, logger, monitor, oracle, projection,
-    taker_cfd, wallet, wallet_sync, TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
+    bitmex_price_feed, db, housekeeping, logger, monitor, oracle, projection, taker_cfd, wallet,
+    wallet_sync, TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
@@ -20,9 +20,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::time::Duration;
 use tokio::sync::watch;
-use tokio::time::sleep;
 use tracing_subscriber::filter::LevelFilter;
 use watch::channel;
 use xtra::prelude::MessageChannel;
@@ -31,7 +29,6 @@ use xtra::Actor;
 mod routes_taker;
 
 pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
-const CONNECTION_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Parser)]
 struct Opts {
@@ -332,47 +329,4 @@ async fn resolve_maker_addresses(maker_addr: &str) -> Result<Vec<SocketAddr>> {
         itertools::join(possible_addresses.iter(), ",")
     );
     Ok(possible_addresses)
-}
-
-async fn connect(
-    mut maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
-    connection_actor_addr: xtra::Address<connection::Actor>,
-    maker_identity_pk: x25519_dalek::PublicKey,
-    maker_addresses: Vec<SocketAddr>,
-) {
-    loop {
-        if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
-            tracing::info!("No connection to the maker, attempting to connect:");
-            'reconnect: loop {
-                for address in &maker_addresses {
-                    tracing::trace!("Connecting to {}", address);
-
-                    let connect_msg = connection::Connect {
-                        maker_identity_pk,
-                        maker_addr: *address,
-                    };
-
-                    if let Err(e) = connection_actor_addr
-                        .send(connect_msg)
-                        .await
-                        .expect("Taker actor to be present")
-                    {
-                        tracing::debug!(%address, "Failed to establish connection: {:#}", e);
-                        continue;
-                    }
-                    break 'reconnect;
-                }
-
-                tracing::debug!(
-                    "Tried connecting to {} addresses without success, retrying in {} seconds",
-                    maker_addresses.len(),
-                    CONNECTION_RETRY_INTERVAL.as_secs()
-                );
-
-                sleep(CONNECTION_RETRY_INTERVAL).await;
-            }
-        }
-        tracing::debug!("Connection established");
-        maker_online_status_feed_receiver.changed().await.unwrap();
-    }
 }
