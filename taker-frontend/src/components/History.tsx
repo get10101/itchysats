@@ -98,9 +98,7 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
     });
 
     const disableCloseButton = cfd.state.getGroup() === StateGroupKey.CLOSED
-        || [StateKey.OPEN_COMMITTED, StateKey.OUTGOING_SETTLEMENT_PROPOSAL, StateKey.PENDING_CLOSE].includes(
-            cfd.state.key,
-        );
+        || !(cfd.state.key === StateKey.OPEN);
 
     return (
         <HStack bg={useColorModeValue("gray.100", "gray.700")} rounded={5}>
