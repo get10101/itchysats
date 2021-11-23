@@ -17,7 +17,6 @@ import { useNavigate } from "react-router-dom";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
 import { WalletInfo } from "./Types";
-import { WalletNavBar } from "./Wallet";
 
 interface NavProps {
     walletInfo: WalletInfo | null;
@@ -56,8 +55,6 @@ export default function Nav({ walletInfo }: NavProps) {
                             <MenuItem>Settings</MenuItem>
                         </MenuList>
                     </Menu>
-
-                    <WalletNavBar walletInfo={walletInfo} />
 
                     <Flex alignItems={"center"}>
                         <Stack direction={"row"} spacing={7}>

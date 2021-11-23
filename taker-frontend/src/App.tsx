@@ -5,6 +5,7 @@ import {
     AccordionItem,
     AccordionPanel,
     Box,
+    Center,
     StackDivider,
     useToast,
     VStack,
@@ -33,7 +34,7 @@ import {
     StateGroupKey,
     WalletInfo,
 } from "./components/Types";
-import { Wallet } from "./components/Wallet";
+import { Wallet, WalletInfoBar } from "./components/Wallet";
 import useLatestEvent from "./Hooks";
 
 async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse> {
@@ -138,58 +139,65 @@ export const App = () => {
                     <Route path="/wallet" element={<Wallet walletInfo={walletInfo} />} />
                     <Route
                         path="/"
-                        element={<VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
-                            <Trade
-                                orderId={order?.id}
-                                quantity={format(effectiveQuantity)}
-                                maxQuantity={max_quantity || 0}
-                                minQuantity={min_quantity || 0}
-                                referencePrice={referencePrice}
-                                askPrice={askPrice}
-                                margin={margin}
-                                leverage={leverage}
-                                liquidationPrice={liquidationPrice}
-                                onQuantityChange={(valueString: string) => {
-                                    setUserHasEdited(true);
-                                    setQuantity(parse(valueString));
-                                    if (!order) {
-                                        return;
-                                    }
-                                    let quantity = valueString ? Number.parseFloat(valueString) : 0;
-                                    let payload: MarginRequestPayload = {
-                                        leverage: order.leverage,
-                                        price: order.price,
-                                        quantity,
-                                    };
-                                    calculateMargin(payload);
-                                }}
-                                onLongSubmit={makeNewOrderRequest}
-                                isSubmitting={isCreatingNewOrderRequest}
-                            />
-                            <History
-                                cfds={cfds.filter((cfd) => cfd.state.getGroup() !== StateGroupKey.CLOSED)}
-                                title={"Open Positions"}
-                            />
+                        element={<>
+                            <Center>
+                                <WalletInfoBar walletInfo={walletInfo} />
+                            </Center>
+                            <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
+                                <Trade
+                                    orderId={order?.id}
+                                    quantity={format(effectiveQuantity)}
+                                    maxQuantity={max_quantity || 0}
+                                    minQuantity={min_quantity || 0}
+                                    referencePrice={referencePrice}
+                                    askPrice={askPrice}
+                                    margin={margin}
+                                    leverage={leverage}
+                                    liquidationPrice={liquidationPrice}
+                                    onQuantityChange={(valueString: string) => {
+                                        setUserHasEdited(true);
+                                        setQuantity(parse(valueString));
+                                        if (!order) {
+                                            return;
+                                        }
+                                        let quantity = valueString ? Number.parseFloat(valueString) : 0;
+                                        let payload: MarginRequestPayload = {
+                                            leverage: order.leverage,
+                                            price: order.price,
+                                            quantity,
+                                        };
+                                        calculateMargin(payload);
+                                    }}
+                                    onLongSubmit={makeNewOrderRequest}
+                                    isSubmitting={isCreatingNewOrderRequest}
+                                />
+                                <History
+                                    cfds={cfds.filter((cfd) => cfd.state.getGroup() !== StateGroupKey.CLOSED)}
+                                    title={"Open Positions"}
+                                />
 
-                            <Accordion allowToggle width={"100%"}>
-                                <AccordionItem>
-                                    <h2>
-                                        <AccordionButton>
-                                            <AccordionIcon />
-                                            <Box w={"100%"} textAlign="center">
-                                                Show Closed Positions
-                                            </Box>
-                                            <AccordionIcon />
-                                        </AccordionButton>
-                                    </h2>
-                                    <AccordionPanel pb={4}>
-                                        <History
-                                            cfds={cfds.filter((cfd) => cfd.state.getGroup() === StateGroupKey.CLOSED)}
-                                        />
-                                    </AccordionPanel>
-                                </AccordionItem>
-                            </Accordion>
-                        </VStack>}
+                                <Accordion allowToggle width={"100%"}>
+                                    <AccordionItem>
+                                        <h2>
+                                            <AccordionButton>
+                                                <AccordionIcon />
+                                                <Box w={"100%"} textAlign="center">
+                                                    Show Closed Positions
+                                                </Box>
+                                                <AccordionIcon />
+                                            </AccordionButton>
+                                        </h2>
+                                        <AccordionPanel pb={4}>
+                                            <History
+                                                cfds={cfds.filter((cfd) =>
+                                                    cfd.state.getGroup() === StateGroupKey.CLOSED
+                                                )}
+                                            />
+                                        </AccordionPanel>
+                                    </AccordionItem>
+                                </Accordion>
+                            </VStack>
+                        </>}
                     />
                 </Routes>
             </Box>
