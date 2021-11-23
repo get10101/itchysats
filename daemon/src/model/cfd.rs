@@ -660,7 +660,7 @@ impl Cfd {
 
     pub fn position(&self) -> Position {
         match self.order.origin {
-            Origin::Ours => self.order.position.clone(),
+            Origin::Ours => self.order.position,
 
             // If the order is not our own we take the counter-position in the CFD
             Origin::Theirs => match self.order.position {

@@ -1,4 +1,4 @@
-use crate::olivia;
+use crate::{impl_sqlx_type_display_from_str, olivia};
 use anyhow::{Context, Result};
 use bdk::bitcoin::{Address, Amount, Denomination};
 use chrono::DateTime;
@@ -62,8 +62,12 @@ impl str::FromStr for Usd {
     }
 }
 
+impl_sqlx_type_display_from_str!(Usd);
+
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Price(Decimal);
+
+impl_sqlx_type_display_from_str!(Price);
 
 impl Price {
     pub fn new(value: Decimal) -> Result<Self, Error> {
@@ -133,6 +137,7 @@ impl InversePrice {
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[sqlx(transparent)]
 pub struct Leverage(u8);
 
 impl Leverage {
@@ -377,7 +382,7 @@ pub enum TradingPair {
     BtcUsd,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub enum Position {
     Long,
     Short,
@@ -506,6 +511,8 @@ impl str::FromStr for BitMexPriceEventId {
         })
     }
 }
+
+impl_sqlx_type_display_from_str!(BitMexPriceEventId);
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub struct Timestamp(i64);
