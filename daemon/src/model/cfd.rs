@@ -698,18 +698,15 @@ impl Cfd {
 
     pub const CET_TIMELOCK: u32 = 12;
 
-    pub fn handle(&mut self, event: CfdStateChangeEvent) -> Result<Option<CfdState>> {
+    pub fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<Option<CfdState>> {
         use CfdState::*;
-
-        // TODO: Display impl
-        tracing::info!("Cfd state change event {:?}", event);
 
         let order_id = self.order.id;
 
         // early exit if already final
         if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
             tracing::trace!(
-                "Ignoring event {:?} because cfd already in state {}",
+                "Ignoring monitoring event {:?} because cfd already in state {}",
                 event,
                 self.state
             );
@@ -717,213 +714,80 @@ impl Cfd {
         }
 
         let new_state = match event {
-            CfdStateChangeEvent::Monitor(event) => match event {
-                monitor::Event::LockFinality(_) => {
-                    if let PendingOpen { dlc, .. } = self.state.clone() {
-                        CfdState::Open {
-                            common: CfdStateCommon {
-                                transition_timestamp: Timestamp::now()?,
-                            },
-                            dlc,
-                            attestation: None,
-                            collaborative_close: None,
-                        }
-                    } else if let Open {
+            monitor::Event::LockFinality(_) => {
+                if let PendingOpen { dlc, .. } = self.state.clone() {
+                    CfdState::Open {
+                        common: CfdStateCommon {
+                            transition_timestamp: Timestamp::now()?,
+                        },
+                        dlc,
+                        attestation: None,
+                        collaborative_close: None,
+                    }
+                } else if let Open {
+                    dlc,
+                    attestation,
+                    collaborative_close,
+                    ..
+                } = self.state.clone()
+                {
+                    CfdState::Open {
+                        common: CfdStateCommon {
+                            transition_timestamp: Timestamp::now()?,
+                        },
                         dlc,
                         attestation,
                         collaborative_close,
-                        ..
-                    } = self.state.clone()
-                    {
-                        CfdState::Open {
-                            common: CfdStateCommon {
-                                transition_timestamp: Timestamp::now()?,
-                            },
-                            dlc,
-                            attestation,
-                            collaborative_close,
-                        }
-                    } else {
-                        bail!(
-                            "Cannot transition to Open because of unexpected state {}",
-                            self.state
-                        )
                     }
-                }
-                monitor::Event::CommitFinality(_) => {
-                    let (dlc, attestation) = if let PendingCommit {
-                        dlc, attestation, ..
-                    } = self.state.clone()
-                    {
-                        (dlc, attestation)
-                    } else if let PendingOpen {
-                        dlc, attestation, ..
-                    }
-                    | Open {
-                        dlc, attestation, ..
-                    } = self.state.clone()
-                    {
-                        tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
-                        (dlc, attestation)
-                    } else {
-                        bail!(
-                            "Cannot transition to OpenCommitted because of unexpected state {}",
-                            self.state
-                        )
-                    };
-
-                    OpenCommitted {
-                        common: CfdStateCommon {
-                            transition_timestamp: Timestamp::now()?,
-                        },
-                        dlc,
-                        cet_status: if let Some(attestation) = attestation {
-                            CetStatus::OracleSigned(attestation)
-                        } else {
-                            CetStatus::Unprepared
-                        },
-                    }
-                }
-                monitor::Event::CloseFinality(_) => {
-                    let collaborative_close = self.collaborative_close().context("No collaborative close after reaching collaborative close finality")?;
-
-                    CfdState::closed(Payout::CollaborativeClose(collaborative_close))
-
-                },
-                monitor::Event::CetTimelockExpired(_) => match self.state.clone() {
-                    CfdState::OpenCommitted {
-                        dlc,
-                        cet_status: CetStatus::Unprepared,
-                        ..
-                    } => CfdState::OpenCommitted {
-                        common: CfdStateCommon {
-                            transition_timestamp: Timestamp::now()?,
-                        },
-                        dlc,
-                        cet_status: CetStatus::TimelockExpired,
-                    },
-                    CfdState::OpenCommitted {
-                        dlc,
-                        cet_status: CetStatus::OracleSigned(attestation),
-                        ..
-                    } => CfdState::OpenCommitted {
-                        common: CfdStateCommon {
-                            transition_timestamp: Timestamp::now()?,
-                        },
-                        dlc,
-                        cet_status: CetStatus::Ready(attestation),
-                    },
-                    PendingOpen {
-                        dlc, attestation, ..
-                    }
-                    | Open {
-                        dlc, attestation, ..
-                    }
-                    | PendingCommit {
-                        dlc, attestation, ..
-                    } => {
-                        tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
-                        CfdState::OpenCommitted {
-                            common: CfdStateCommon {
-                                transition_timestamp: Timestamp::now()?,
-                            },
-                            dlc,
-                            cet_status: match attestation {
-                                None => CetStatus::TimelockExpired,
-                                Some(attestation) => CetStatus::Ready(attestation),
-                            },
-                        }
-                    }
-                    _ => bail!(
-                        "Cannot transition to OpenCommitted because of unexpected state {}",
+                } else {
+                    bail!(
+                        "Cannot transition to Open because of unexpected state {}",
                         self.state
-                    ),
-                },
-                monitor::Event::RefundTimelockExpired(_) => {
-                    let dlc = if let OpenCommitted { dlc, .. } = self.state.clone() {
-                        dlc
-                    } else if let Open { dlc, .. } | PendingOpen { dlc, .. } = self.state.clone() {
-                        tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to PendingRefund", self.state);
-                        dlc
-                    } else {
-                        bail!(
-                            "Cannot transition to PendingRefund because of unexpected state {}",
-                            self.state
-                        )
-                    };
-
-                    CfdState::must_refund(dlc)
-                }
-                monitor::Event::RefundFinality(_) => {
-                    let dlc = self
-                        .dlc()
-                        .context("No dlc available when reaching refund finality")?;
-
-                    CfdState::refunded(dlc)
-                }
-                monitor::Event::CetFinality(_) => {
-                    let attestation = self
-                        .attestation()
-                        .context("No attestation available when reaching CET finality")?;
-
-                    CfdState::closed(Payout::Cet(attestation))
-                }
-                monitor::Event::RevokedTransactionFound(_) => {
-                    todo!("Punish bad counterparty")
-                }
-            },
-            CfdStateChangeEvent::CommitTxSent => {
-                let (dlc, attestation ) = match self.state.clone() {
-                    PendingOpen {
-                        dlc, attestation, ..
-                    } => (dlc, attestation),
-                    Open {
-                        dlc,
-                        attestation,
-                        ..
-                    } => (dlc, attestation),
-                    _ => {
-                        bail!(
-                            "Cannot transition to PendingCommit because of unexpected state {}",
-                            self.state
-                        )
-                    }
-                };
-
-                PendingCommit {
-                    common: CfdStateCommon {
-                        transition_timestamp: Timestamp::now()?,
-                    },
-                    dlc,
-                    attestation,
+                    )
                 }
             }
-            CfdStateChangeEvent::OracleAttestation(attestation) => match self.state.clone() {
-                CfdState::PendingOpen { dlc, .. } => CfdState::PendingOpen {
+            monitor::Event::CommitFinality(_) => {
+                let (dlc, attestation) = if let PendingCommit {
+                    dlc, attestation, ..
+                } = self.state.clone()
+                {
+                    (dlc, attestation)
+                } else if let PendingOpen {
+                    dlc, attestation, ..
+                }
+                | Open {
+                    dlc, attestation, ..
+                } = self.state.clone()
+                {
+                    tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
+                    (dlc, attestation)
+                } else {
+                    bail!(
+                        "Cannot transition to OpenCommitted because of unexpected state {}",
+                        self.state
+                    )
+                };
+
+                OpenCommitted {
                     common: CfdStateCommon {
                         transition_timestamp: Timestamp::now()?,
                     },
                     dlc,
-                    attestation: Some(attestation),
-                },
-                CfdState::Open { dlc, .. } => CfdState::Open {
-                    common: CfdStateCommon {
-                        transition_timestamp: Timestamp::now()?,
+                    cet_status: if let Some(attestation) = attestation {
+                        CetStatus::OracleSigned(attestation)
+                    } else {
+                        CetStatus::Unprepared
                     },
-                    dlc,
-                    attestation: Some(attestation),
-                    collaborative_close: None,
-                },
-                CfdState::PendingCommit {
-                    dlc,
-                    ..
-                } => CfdState::PendingCommit {
-                    common: CfdStateCommon {
-                        transition_timestamp: Timestamp::now()?,
-                    },
-                    dlc,
-                    attestation: Some(attestation),
-                },
+                }
+            }
+            monitor::Event::CloseFinality(_) => {
+                let collaborative_close = self.collaborative_close().context(
+                    "No collaborative close after reaching collaborative close finality",
+                )?;
+
+                CfdState::closed(Payout::CollaborativeClose(collaborative_close))
+            }
+            monitor::Event::CetTimelockExpired(_) => match self.state.clone() {
                 CfdState::OpenCommitted {
                     dlc,
                     cet_status: CetStatus::Unprepared,
@@ -933,11 +797,11 @@ impl Cfd {
                         transition_timestamp: Timestamp::now()?,
                     },
                     dlc,
-                    cet_status: CetStatus::OracleSigned(attestation),
+                    cet_status: CetStatus::TimelockExpired,
                 },
                 CfdState::OpenCommitted {
                     dlc,
-                    cet_status: CetStatus::TimelockExpired,
+                    cet_status: CetStatus::OracleSigned(attestation),
                     ..
                 } => CfdState::OpenCommitted {
                     common: CfdStateCommon {
@@ -946,43 +810,239 @@ impl Cfd {
                     dlc,
                     cet_status: CetStatus::Ready(attestation),
                 },
+                PendingOpen {
+                    dlc, attestation, ..
+                }
+                | Open {
+                    dlc, attestation, ..
+                }
+                | PendingCommit {
+                    dlc, attestation, ..
+                } => {
+                    tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
+                    CfdState::OpenCommitted {
+                        common: CfdStateCommon {
+                            transition_timestamp: Timestamp::now()?,
+                        },
+                        dlc,
+                        cet_status: match attestation {
+                            None => CetStatus::TimelockExpired,
+                            Some(attestation) => CetStatus::Ready(attestation),
+                        },
+                    }
+                }
                 _ => bail!(
                     "Cannot transition to OpenCommitted because of unexpected state {}",
                     self.state
                 ),
             },
-            CfdStateChangeEvent::CetSent => {
-                let dlc = self.dlc().context("No DLC available after CET was sent")?;
+            monitor::Event::RefundTimelockExpired(_) => {
+                let dlc = if let OpenCommitted { dlc, .. } = self.state.clone() {
+                    dlc
+                } else if let Open { dlc, .. } | PendingOpen { dlc, .. } = self.state.clone() {
+                    tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to PendingRefund", self.state);
+                    dlc
+                } else {
+                    bail!(
+                        "Cannot transition to PendingRefund because of unexpected state {}",
+                        self.state
+                    )
+                };
+
+                CfdState::must_refund(dlc)
+            }
+            monitor::Event::RefundFinality(_) => {
+                let dlc = self
+                    .dlc()
+                    .context("No dlc available when reaching refund finality")?;
+
+                CfdState::refunded(dlc)
+            }
+            monitor::Event::CetFinality(_) => {
                 let attestation = self
                     .attestation()
-                    .context("No attestation available after CET was sent")?;
+                    .context("No attestation available when reaching CET finality")?;
 
-                CfdState::PendingCet {
-                    common: CfdStateCommon {
-                        transition_timestamp: Timestamp::now()?,
-                    },
-                    dlc,
-                    attestation,
-                }
+                CfdState::closed(Payout::Cet(attestation))
+            }
+            monitor::Event::RevokedTransactionFound(_) => {
+                todo!("Punish bad counterparty")
+            }
+        };
 
-            },
-            CfdStateChangeEvent::ProposalSigned(collaborative_close) => match self.state.clone() {
-                CfdState::Open {
-                    common,
-                    dlc,
-                    attestation,
-                    ..
-                } => CfdState::Open {
-                    common,
-                    dlc,
-                    attestation,
-                    collaborative_close: Some(collaborative_close),
-                },
-                _ => bail!(
-                    "Cannot add proposed settlement details to state because of unexpected state {}",
+        self.state = new_state.clone();
+
+        Ok(Some(new_state))
+    }
+
+    pub fn handle_commit_tx_sent(&mut self) -> Result<Option<CfdState>> {
+        use CfdState::*;
+
+        // early exit if already final
+        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
+            tracing::trace!(
+                "Ignoring sent commit transaction because cfd already in state {}",
+                self.state
+            );
+            return Ok(None);
+        }
+
+        let (dlc, attestation) = match self.state.clone() {
+            PendingOpen {
+                dlc, attestation, ..
+            } => (dlc, attestation),
+            Open {
+                dlc, attestation, ..
+            } => (dlc, attestation),
+            _ => {
+                bail!(
+                    "Cannot transition to PendingCommit because of unexpected state {}",
                     self.state
-                ),
+                )
+            }
+        };
+
+        self.state = PendingCommit {
+            common: CfdStateCommon {
+                transition_timestamp: Timestamp::now()?,
             },
+            dlc,
+            attestation,
+        };
+
+        Ok(Some(self.state.clone()))
+    }
+
+    pub fn handle_oracle_attestation(
+        &mut self,
+        attestation: Attestation,
+    ) -> Result<Option<CfdState>> {
+        use CfdState::*;
+
+        // early exit if already final
+        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
+            tracing::trace!(
+                "Ignoring oracle attestation because cfd already in state {}",
+                self.state
+            );
+            return Ok(None);
+        }
+
+        let new_state = match self.state.clone() {
+            CfdState::PendingOpen { dlc, .. } => CfdState::PendingOpen {
+                common: CfdStateCommon {
+                    transition_timestamp: Timestamp::now()?,
+                },
+                dlc,
+                attestation: Some(attestation),
+            },
+            CfdState::Open { dlc, .. } => CfdState::Open {
+                common: CfdStateCommon {
+                    transition_timestamp: Timestamp::now()?,
+                },
+                dlc,
+                attestation: Some(attestation),
+                collaborative_close: None,
+            },
+            CfdState::PendingCommit { dlc, .. } => CfdState::PendingCommit {
+                common: CfdStateCommon {
+                    transition_timestamp: Timestamp::now()?,
+                },
+                dlc,
+                attestation: Some(attestation),
+            },
+            CfdState::OpenCommitted {
+                dlc,
+                cet_status: CetStatus::Unprepared,
+                ..
+            } => CfdState::OpenCommitted {
+                common: CfdStateCommon {
+                    transition_timestamp: Timestamp::now()?,
+                },
+                dlc,
+                cet_status: CetStatus::OracleSigned(attestation),
+            },
+            CfdState::OpenCommitted {
+                dlc,
+                cet_status: CetStatus::TimelockExpired,
+                ..
+            } => CfdState::OpenCommitted {
+                common: CfdStateCommon {
+                    transition_timestamp: Timestamp::now()?,
+                },
+                dlc,
+                cet_status: CetStatus::Ready(attestation),
+            },
+            _ => bail!(
+                "Cannot transition to OpenCommitted because of unexpected state {}",
+                self.state
+            ),
+        };
+
+        self.state = new_state.clone();
+
+        Ok(Some(new_state))
+    }
+
+    pub fn handle_cet_sent(&mut self) -> Result<Option<CfdState>> {
+        use CfdState::*;
+
+        // early exit if already final
+        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
+            tracing::trace!(
+                "Ignoring pending CET because cfd already in state {}",
+                self.state
+            );
+            return Ok(None);
+        }
+
+        let dlc = self.dlc().context("No DLC available after CET was sent")?;
+        let attestation = self
+            .attestation()
+            .context("No attestation available after CET was sent")?;
+
+        self.state = CfdState::PendingCet {
+            common: CfdStateCommon {
+                transition_timestamp: Timestamp::now()?,
+            },
+            dlc,
+            attestation,
+        };
+
+        Ok(Some(self.state.clone()))
+    }
+
+    pub fn handle_proposal_signed(
+        &mut self,
+        collaborative_close: CollaborativeSettlement,
+    ) -> Result<Option<CfdState>> {
+        use CfdState::*;
+
+        // early exit if already final
+        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
+            tracing::trace!(
+                "Ignoring collaborative settlement because cfd already in state {}",
+                self.state
+            );
+            return Ok(None);
+        }
+
+        let new_state = match self.state.clone() {
+            CfdState::Open {
+                common,
+                dlc,
+                attestation,
+                ..
+            } => CfdState::Open {
+                common,
+                dlc,
+                attestation,
+                collaborative_close: Some(collaborative_close),
+            },
+            _ => bail!(
+                "Cannot add proposed settlement details to state because of unexpected state {}",
+                self.state
+            ),
         };
 
         self.state = new_state.clone();
@@ -1280,18 +1340,6 @@ impl Cfd {
 #[error("The cfd is not ready for CET publication yet: {cet_status}")]
 pub struct NotReadyYet {
     cet_status: CetStatus,
-}
-
-#[derive(Debug, Clone)]
-pub enum CfdStateChangeEvent {
-    // TODO: group other events by actors into enums and add them here so we can bundle all
-    // transitions into cfd.transition_to(...)
-    Monitor(monitor::Event),
-    CommitTxSent,
-    OracleAttestation(Attestation),
-    CetSent,
-    /// Settlement proposal was signed by the taker and sent to the maker
-    ProposalSigned(CollaborativeSettlement),
 }
 
 pub trait AsBlocks {

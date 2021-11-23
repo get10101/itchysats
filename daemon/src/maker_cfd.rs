@@ -1,10 +1,8 @@
 use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
-use crate::maker_inc_connections::TakerCommand;
 use crate::model::cfd::{
-    Cfd, CfdState, CfdStateChangeEvent, CfdStateCommon, CollaborativeSettlement, Dlc, Order,
-    OrderId, Origin, Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
-    UpdateCfdProposals,
+    Cfd, CfdState, CfdStateCommon, CollaborativeSettlement, Dlc, Order, OrderId, Origin, Role,
+    RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{Price, TakerId, Timestamp, Usd};
 use crate::monitor::MonitorParams;
@@ -339,9 +337,7 @@ where
         self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id,
-                command: TakerCommand::SendOrder {
-                    order: current_order,
-                },
+                msg: wire::MakerToTaker::CurrentOrder(current_order),
             })
             .await?;
 
@@ -357,7 +353,7 @@ where
             .takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                command: TakerCommand::NotifySettlementAccepted { id: order_id },
+                msg: wire::MakerToTaker::ConfirmSettlement(order_id),
             })
             .await?
         {
@@ -390,7 +386,7 @@ where
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                command: TakerCommand::NotifySettlementRejected { id: order_id },
+                msg: wire::MakerToTaker::RejectSettlement(order_id),
             })
             .await??;
 
@@ -422,7 +418,7 @@ where
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                command: TakerCommand::NotifyRollOverRejected { id: order_id },
+                msg: wire::MakerToTaker::RejectRollOver(order_id),
             })
             .await??;
 
@@ -460,7 +456,7 @@ where
                 self.takers
                     .send(maker_inc_connections::TakerMessage {
                         taker_id,
-                        command: TakerCommand::NotifyInvalidOrderId { id: order_id },
+                        msg: wire::MakerToTaker::InvalidOrderId(order_id),
                     })
                     .await??;
 
@@ -542,7 +538,7 @@ where
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                command: TakerCommand::NotifyOrderRejected { id: cfd.order.id },
+                msg: wire::MakerToTaker::RejectOrder(cfd.order.id),
             })
             .await??;
 
@@ -587,8 +583,7 @@ where
         let offer_announcement = self
             .oracle_actor
             .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
-            .await?
-            .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
+            .await??;
 
         // 3. Notify the taker that we are ready for contract setup
         // Use `.send` here to ensure we only continue once the message has been sent
@@ -597,7 +592,7 @@ where
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                command: TakerCommand::NotifyOrderAccepted { id: order_id },
+                msg: wire::MakerToTaker::ConfirmOrder(cfd.order.id),
             })
             .await??;
 
@@ -611,7 +606,7 @@ where
             self.takers.clone().into_sink().with(move |msg| {
                 future::ok(maker_inc_connections::TakerMessage {
                     taker_id,
-                    command: TakerCommand::Protocol(msg),
+                    msg: wire::MakerToTaker::Protocol(msg),
                 })
             }),
             receiver,
@@ -758,8 +753,8 @@ where
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                command: TakerCommand::NotifyRollOverAccepted {
-                    id: proposal.order_id,
+                msg: wire::MakerToTaker::ConfirmRollOver {
+                    order_id: proposal.order_id,
                     oracle_event_id,
                 },
             })
@@ -776,7 +771,7 @@ where
             self.takers.clone().into_sink().with(move |msg| {
                 future::ok(maker_inc_connections::TakerMessage {
                     taker_id,
-                    command: TakerCommand::RollOverProtocol(msg),
+                    msg: wire::MakerToTaker::RollOverProtocol(msg),
                 })
             }),
             receiver,
@@ -887,9 +882,11 @@ where
         let (tx, sig_maker) = dlc.close_transaction(proposal)?;
 
         let own_script_pubkey = dlc.script_pubkey_for(cfd.role());
-        cfd.handle(CfdStateChangeEvent::ProposalSigned(
-            CollaborativeSettlement::new(tx.clone(), own_script_pubkey.clone(), proposal.price)?,
-        ))?;
+        cfd.handle_proposal_signed(CollaborativeSettlement::new(
+            tx.clone(),
+            own_script_pubkey.clone(),
+            proposal.price,
+        )?)?;
         append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
 
         let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;

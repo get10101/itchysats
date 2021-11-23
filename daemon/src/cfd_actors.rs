@@ -1,5 +1,5 @@
 use crate::db::load_cfd_by_order_id;
-use crate::model::cfd::{Attestation, Cfd, CfdState, CfdStateChangeEvent, OrderId};
+use crate::model::cfd::{Attestation, Cfd, CfdState, OrderId};
 use crate::{db, monitor, oracle, try_continue, wallet};
 use anyhow::{bail, Context, Result};
 use sqlx::pool::PoolConnection;
@@ -50,7 +50,7 @@ where
                 .context("Failed to send transaction")?;
             tracing::info!("CET published with txid {}", txid);
 
-            if cfd.handle(CfdStateChangeEvent::CetSent)?.is_none() {
+            if cfd.handle_cet_sent()?.is_none() {
                 bail!("If we can get the CET we should be able to transition")
             }
 
@@ -78,7 +78,7 @@ where
 
     let mut cfd = db::load_cfd_by_order_id(order_id, conn).await?;
 
-    if cfd.handle(CfdStateChangeEvent::Monitor(event))?.is_none() {
+    if cfd.handle_monitoring_event(event)?.is_none() {
         // early exit if there was not state change
         // this is for cases where we are already in a final state
         return Ok(());
@@ -122,7 +122,7 @@ where
         .await?
         .context("Failed to publish commit tx")?;
 
-    if cfd.handle(CfdStateChangeEvent::CommitTxSent)?.is_none() {
+    if cfd.handle_commit_tx_sent()?.is_none() {
         bail!("If we can get the commit tx we should be able to transition")
     }
 
@@ -160,8 +160,7 @@ where
             cfd.role(),
         ));
 
-        let new_state =
-            try_continue!(cfd.handle(CfdStateChangeEvent::OracleAttestation(attestation)));
+        let new_state = try_continue!(cfd.handle_oracle_attestation(attestation));
 
         if new_state.is_none() {
             // if we don't transition to a new state after oracle attestation we ignore the cfd
