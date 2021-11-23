@@ -1,35 +1,30 @@
-use crate::db::load_cfd_by_order_id;
 use crate::model::cfd::{Attestation, Cfd, CfdState, OrderId};
-use crate::{db, monitor, oracle, try_continue, wallet};
+use crate::{db, monitor, oracle, projection, try_continue, wallet};
 use anyhow::{bail, Context, Result};
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
-use tokio::sync::watch;
 
 pub async fn insert_cfd_and_send_to_feed(
     cfd: &Cfd,
     conn: &mut PoolConnection<Sqlite>,
-    update_sender: &watch::Sender<Vec<Cfd>>,
+    projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()> {
-    if load_cfd_by_order_id(cfd.order.id, conn).await.is_ok() {
-        bail!(
-            "Cannot insert cfd because there is already a cfd for order id {}",
-            cfd.order.id
-        )
-    }
-
     db::insert_cfd(cfd, conn).await?;
-    update_sender.send(db::load_all_cfds(conn).await?)?;
+    projection_address
+        .send(projection::Update(db::load_all_cfds(conn).await?))
+        .await?;
     Ok(())
 }
 
 pub async fn append_cfd_state(
     cfd: &Cfd,
     conn: &mut PoolConnection<Sqlite>,
-    update_sender: &watch::Sender<Vec<Cfd>>,
+    projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()> {
     db::append_cfd_state(cfd, conn).await?;
-    update_sender.send(db::load_all_cfds(conn).await?)?;
+    projection_address
+        .send(projection::Update(db::load_all_cfds(conn).await?))
+        .await?;
     Ok(())
 }
 
@@ -37,7 +32,7 @@ pub async fn try_cet_publication<W>(
     cfd: &mut Cfd,
     conn: &mut PoolConnection<Sqlite>,
     wallet: &xtra::Address<W>,
-    update_sender: &watch::Sender<Vec<Cfd>>,
+    projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -54,7 +49,7 @@ where
                 bail!("If we can get the CET we should be able to transition")
             }
 
-            append_cfd_state(cfd, conn, update_sender).await?;
+            append_cfd_state(cfd, conn, projection_address).await?;
         }
         Err(not_ready_yet) => {
             tracing::debug!("{:#}", not_ready_yet);
@@ -69,7 +64,7 @@ pub async fn handle_monitoring_event<W>(
     event: monitor::Event,
     conn: &mut PoolConnection<Sqlite>,
     wallet: &xtra::Address<W>,
-    update_sender: &watch::Sender<Vec<Cfd>>,
+    projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -84,10 +79,10 @@ where
         return Ok(());
     }
 
-    append_cfd_state(&cfd, conn, update_sender).await?;
+    append_cfd_state(&cfd, conn, projection_address).await?;
 
     if let CfdState::OpenCommitted { .. } = cfd.state {
-        try_cet_publication(&mut cfd, conn, wallet, update_sender).await?;
+        try_cet_publication(&mut cfd, conn, wallet, projection_address).await?;
     } else if let CfdState::PendingRefund { .. } = cfd.state {
         let signed_refund_tx = cfd.refund_tx()?;
         let txid = wallet
@@ -106,7 +101,7 @@ pub async fn handle_commit<W>(
     order_id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
     wallet: &xtra::Address<W>,
-    update_sender: &watch::Sender<Vec<Cfd>>,
+    projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -126,7 +121,7 @@ where
         bail!("If we can get the commit tx we should be able to transition")
     }
 
-    append_cfd_state(&cfd, conn, update_sender).await?;
+    append_cfd_state(&cfd, conn, projection_address).await?;
     tracing::info!("Commit transaction published on chain: {}", txid);
 
     Ok(())
@@ -136,7 +131,7 @@ pub async fn handle_oracle_attestation<W>(
     attestation: oracle::Attestation,
     conn: &mut PoolConnection<Sqlite>,
     wallet: &xtra::Address<W>,
-    update_sender: &watch::Sender<Vec<Cfd>>,
+    projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -169,8 +164,8 @@ where
             continue;
         }
 
-        try_continue!(append_cfd_state(cfd, conn, update_sender).await);
-        try_continue!(try_cet_publication(cfd, conn, wallet, update_sender)
+        try_continue!(append_cfd_state(cfd, conn, projection_address).await);
+        try_continue!(try_cet_publication(cfd, conn, wallet, projection_address)
             .await
             .context("Error when trying to publish CET"));
     }

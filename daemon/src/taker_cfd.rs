@@ -8,7 +8,7 @@ use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::tokio_ext::FutureExt;
 use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
-use crate::{log_error, oracle, setup_contract, wallet, wire};
+use crate::{log_error, oracle, projection, setup_contract, wallet, wire};
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -16,7 +16,6 @@ use futures::channel::mpsc;
 use futures::future::RemoteHandle;
 use futures::{future, SinkExt};
 use std::collections::HashMap;
-use tokio::sync::watch;
 use xtra::prelude::*;
 
 pub struct TakeOffer {
@@ -67,9 +66,7 @@ pub struct Actor<O, M, W> {
     db: sqlx::SqlitePool,
     wallet: Address<W>,
     oracle_pk: schnorrsig::PublicKey,
-    cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
-    order_feed_actor_inbox: watch::Sender<Option<Order>>,
-    update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
+    projection_actor: Address<projection::Actor>,
     send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
     monitor_actor: Address<M>,
     setup_state: SetupState,
@@ -90,9 +87,7 @@ where
         db: sqlx::SqlitePool,
         wallet: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        cfd_feed_actor_inbox: watch::Sender<Vec<Cfd>>,
-        order_feed_actor_inbox: watch::Sender<Option<Order>>,
-        update_cfd_feed_sender: watch::Sender<UpdateCfdProposals>,
+        projection_actor: Address<projection::Actor>,
         send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
@@ -102,9 +97,7 @@ where
             db,
             wallet,
             oracle_pk,
-            cfd_feed_actor_inbox,
-            order_feed_actor_inbox,
-            update_cfd_feed_sender,
+            projection_actor,
             send_to_maker,
             monitor_actor,
             setup_state: SetupState::None,
@@ -117,18 +110,19 @@ where
 }
 
 impl<O, M, W> Actor<O, M, W> {
-    fn send_pending_update_proposals(&self) -> Result<()> {
+    async fn send_pending_update_proposals(&self) -> Result<()> {
         Ok(self
-            .update_cfd_feed_sender
-            .send(self.current_pending_proposals.clone())?)
+            .projection_actor
+            .send(projection::Update(self.current_pending_proposals.clone()))
+            .await?)
     }
 
     /// Removes a proposal and updates the update cfd proposals' feed
-    fn remove_pending_proposal(&mut self, order_id: &OrderId) -> Result<()> {
+    async fn remove_pending_proposal(&mut self, order_id: &OrderId) -> Result<()> {
         if self.current_pending_proposals.remove(order_id).is_none() {
             anyhow::bail!("Could not find proposal with order id: {}", &order_id)
         }
-        self.send_pending_update_proposals()?;
+        self.send_pending_update_proposals().await?;
         Ok(())
     }
 
@@ -158,12 +152,12 @@ impl<O, M, W> Actor<O, M, W> {
             CfdState::outgoing_order_request(),
         );
 
-        insert_cfd_and_send_to_feed(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        insert_cfd_and_send_to_feed(&cfd, &mut conn, &self.projection_actor).await?;
 
         // Cleanup own order feed, after inserting the cfd.
         // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
         // same order id.
-        self.order_feed_actor_inbox.send(None)?;
+        self.projection_actor.send(projection::Update(None)).await?;
 
         self.send_to_maker
             .send(wire::TakerToMaker::TakeOrder { order_id, quantity })
@@ -181,13 +175,8 @@ where
 {
     async fn handle_commit(&mut self, order_id: OrderId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_commit(
-            order_id,
-            &mut conn,
-            &self.wallet,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        cfd_actors::handle_commit(order_id, &mut conn, &self.wallet, &self.projection_actor)
+            .await?;
         Ok(())
     }
 
@@ -218,7 +207,7 @@ where
                 direction: SettlementKind::Outgoing,
             },
         );
-        self.send_pending_update_proposals()?;
+        self.send_pending_update_proposals().await?;
 
         self.send_to_maker
             .send(wire::TakerToMaker::ProposeSettlement {
@@ -241,7 +230,7 @@ where
     async fn handle_settlement_rejected(&mut self, order_id: OrderId) -> Result<()> {
         tracing::info!(%order_id, "Settlement proposal got rejected");
 
-        self.remove_pending_proposal(&order_id)?;
+        self.remove_pending_proposal(&order_id).await?;
 
         Ok(())
     }
@@ -250,6 +239,7 @@ where
         tracing::info!(%order_id, "Roll over proposal got rejected");
 
         self.remove_pending_proposal(&order_id)
+            .await
             .context("rejected settlement")?;
 
         Ok(())
@@ -295,7 +285,7 @@ where
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         cfd.state = CfdState::rejected();
-        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         Ok(())
     }
@@ -319,10 +309,12 @@ impl<O, M, W> Actor<O, M, W> {
                     insert_order(&order, &mut conn).await?;
                 }
 
-                self.order_feed_actor_inbox.send(Some(order))?;
+                self.projection_actor
+                    .send(projection::Update(Some(order)))
+                    .await?;
             }
             None => {
-                self.order_feed_actor_inbox.send(None)?;
+                self.projection_actor.send(projection::Update(None)).await?;
             }
         }
         Ok(())
@@ -339,7 +331,7 @@ where
             attestation,
             &mut conn,
             &self.wallet,
-            &self.cfd_feed_actor_inbox,
+            &self.projection_actor,
         )
         .await?;
         Ok(())
@@ -347,13 +339,8 @@ where
 
     async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
         let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_monitoring_event(
-            event,
-            &mut conn,
-            &self.wallet,
-            &self.cfd_feed_actor_inbox,
-        )
-        .await?;
+        cfd_actors::handle_monitoring_event(event, &mut conn, &self.wallet, &self.projection_actor)
+            .await?;
         Ok(())
     }
 }
@@ -379,7 +366,7 @@ where
                 direction: SettlementKind::Outgoing,
             },
         );
-        self.send_pending_update_proposals()?;
+        self.send_pending_update_proposals().await?;
 
         self.send_to_maker
             .send(wire::TakerToMaker::ProposeRollOver {
@@ -421,7 +408,7 @@ where
                     info: e.to_string(),
                 };
 
-                append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+                append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
                 return Err(e);
             }
@@ -435,7 +422,7 @@ where
             attestation: None,
         };
 
-        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         let txid = self
             .wallet
@@ -490,7 +477,7 @@ where
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         cfd.state = CfdState::contract_setup();
 
-        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         let offer_announcement = self
             .oracle_actor
@@ -603,6 +590,7 @@ where
         };
 
         self.remove_pending_proposal(&order_id)
+            .await
             .context("Could not remove accepted roll over")?;
         Ok(())
     }
@@ -629,7 +617,7 @@ where
             collaborative_close: None,
         };
 
-        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         self.monitor_actor
             .send(monitor::StartMonitoring {
@@ -680,9 +668,9 @@ where
             dlc.script_pubkey_for(cfd.role()),
             proposal.price,
         )?)?;
-        append_cfd_state(&cfd, &mut conn, &self.cfd_feed_actor_inbox).await?;
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
-        self.remove_pending_proposal(&order_id)?;
+        self.remove_pending_proposal(&order_id).await?;
 
         self.monitor_actor
             .send(monitor::CollaborativeSettlement {

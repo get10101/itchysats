@@ -1,6 +1,6 @@
 use crate::model::cfd::{Cfd, CfdState, Order, OrderId};
 use crate::model::{BitMexPriceEventId, Usd};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use rust_decimal::Decimal;
 use sqlx::pool::PoolConnection;
 use sqlx::{Sqlite, SqlitePool};
@@ -97,6 +97,13 @@ pub async fn load_order_by_id(
 }
 
 pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
+    if load_cfd_by_order_id(cfd.order.id, conn).await.is_ok() {
+        bail!(
+            "Cannot insert cfd because there is already a cfd for order id {}",
+            cfd.order.id
+        )
+    }
+
     let state = serde_json::to_string(&cfd.state)?;
     let query_result = sqlx::query(
         r#"
@@ -522,16 +529,14 @@ pub async fn load_cfds_by_oracle_event_id(
 
 #[cfg(test)]
 mod tests {
-    use crate::cfd_actors;
     use pretty_assertions::assert_eq;
     use rand::Rng;
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;
     use time::macros::datetime;
     use time::OffsetDateTime;
-    use tokio::sync::watch;
 
-    use crate::db::{self, insert_order};
+    use crate::db::insert_order;
     use crate::model::cfd::{Cfd, CfdState, Order, Origin};
     use crate::model::{Price, Usd};
 
@@ -555,32 +560,6 @@ mod tests {
         let loaded = load_all_cfds(&mut conn).await.unwrap();
 
         assert_eq!(vec![cfd], loaded);
-    }
-
-    #[tokio::test]
-    async fn test_insert_like_cfd_actor() {
-        let mut conn = setup_test_db().await;
-
-        let cfds = load_all_cfds(&mut conn).await.unwrap();
-
-        let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
-
-        assert_eq!(cfd_feed_receiver.borrow().clone(), vec![]);
-
-        let cfd_1 = Cfd::dummy();
-        db::insert_order(&cfd_1.order, &mut conn).await.unwrap();
-        cfd_actors::insert_cfd_and_send_to_feed(&cfd_1, &mut conn, &cfd_feed_sender)
-            .await
-            .unwrap();
-
-        assert_eq!(cfd_feed_receiver.borrow().clone(), vec![cfd_1.clone()]);
-
-        let cfd_2 = Cfd::dummy();
-        db::insert_order(&cfd_2.order, &mut conn).await.unwrap();
-        cfd_actors::insert_cfd_and_send_to_feed(&cfd_2, &mut conn, &cfd_feed_sender)
-            .await
-            .unwrap();
-        assert_eq!(cfd_feed_receiver.borrow().clone(), vec![cfd_1, cfd_2]);
     }
 
     #[tokio::test]
@@ -714,6 +693,22 @@ mod tests {
         let data = load_all_cfds(&mut conn).await.unwrap();
 
         assert_eq!(data.len(), 100);
+    }
+
+    #[tokio::test]
+    async fn inserting_two_cfds_with_same_order_id_should_fail() {
+        let mut conn = setup_test_db().await;
+
+        let cfd = Cfd::dummy().insert(&mut conn).await;
+
+        let error = insert_cfd(&cfd, &mut conn).await.err().unwrap();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Cannot insert cfd because there is already a cfd for order id {}",
+                cfd.order.id
+            )
+        );
     }
 
     fn random_simple_state() -> CfdState {

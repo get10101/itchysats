@@ -4,20 +4,25 @@ use bdk::bitcoin::Amount;
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::auth::{self, MAKER_USERNAME};
+use daemon::bitmex_price_feed::Quote;
+use daemon::db::load_all_cfds;
+use daemon::model::cfd::{Order, UpdateCfdProposals};
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
     bitmex_price_feed, db, housekeeping, logger, maker_cfd, maker_inc_connections, monitor, oracle,
-    wallet, wallet_sync, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
+    projection, wallet, wallet_sync, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::task::Poll;
 use tokio::sync::watch;
+use tokio::sync::watch::channel;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
 use xtra::Actor;
@@ -225,9 +230,6 @@ async fn main() -> Result<()> {
 
     let mut tasks = Tasks::default();
 
-    let (task, quote_updates) = bitmex_price_feed::new().await?;
-    tasks.add(task);
-
     let db = SqlitePool::connect_with(
         SqliteConnectOptions::new()
             .create_if_missing(true)
@@ -247,11 +249,11 @@ async fn main() -> Result<()> {
 
     let settlement_time_interval_hours =
         time::Duration::hours(opts.settlement_time_interval_hours as i64);
+
+    let (projection_actor, projection_context) = xtra::Context::new(None);
+
     let MakerActorSystem {
         cfd_actor_addr,
-        cfd_feed_receiver,
-        order_feed_receiver,
-        update_cfd_feed_receiver,
         inc_conn_addr: incoming_connection_addr,
         tasks: _tasks,
     } = MakerActorSystem::new(
@@ -270,8 +272,26 @@ async fn main() -> Result<()> {
         },
         time::Duration::hours(opts.settlement_time_interval_hours as i64),
         N_PAYOUTS,
+        projection_actor.clone(),
     )
     .await?;
+
+    let (task, init_quote) = bitmex_price_feed::new(projection_actor).await?;
+    tasks.add(task);
+
+    let cfds = load_all_cfds(&mut conn).await?;
+    let (cfd_feed_sender, cfd_feed_receiver) = channel(cfds.clone());
+    let (order_feed_sender, order_feed_receiver) = channel::<Option<Order>>(None);
+    let (update_cfd_feed_sender, update_cfd_feed_receiver) =
+        channel::<UpdateCfdProposals>(HashMap::new());
+    let (quote_sender, quote_receiver) = channel::<Quote>(init_quote);
+
+    tasks.add(projection_context.run(projection::Actor::new(
+        cfd_feed_sender,
+        order_feed_sender,
+        quote_sender,
+        update_cfd_feed_sender,
+    )));
 
     let listener_stream = futures::stream::poll_fn(move |ctx| {
         let message = match futures::ready!(listener.poll_accept(ctx)) {
@@ -299,7 +319,7 @@ async fn main() -> Result<()> {
         .manage(cfd_feed_receiver)
         .manage(wallet_feed_receiver)
         .manage(auth_password)
-        .manage(quote_updates)
+        .manage(quote_receiver)
         .manage(bitcoin_network)
         .mount(
             "/api",

@@ -1,15 +1,18 @@
 use crate::model::{Price, Timestamp};
+use crate::projection;
 use anyhow::Result;
 use futures::{StreamExt, TryStreamExt};
 use rust_decimal::Decimal;
 use std::convert::TryFrom;
 use std::future::Future;
-use tokio::sync::watch;
 use tokio_tungstenite::tungstenite;
+use xtra::prelude::MessageChannel;
 
 /// Connects to the BitMex price feed, returning the polling task and a watch channel that will
 /// always hold the last quote.
-pub async fn new() -> Result<(impl Future<Output = ()>, watch::Receiver<Quote>)> {
+pub async fn new(
+    msg_channel: impl MessageChannel<projection::Update<Quote>>,
+) -> Result<(impl Future<Output = ()>, Quote)> {
     let (connection, _) = tokio_tungstenite::connect_async(
         "wss://www.bitmex.com/realtime?subscribe=quoteBin1m:XBTUSD",
     )
@@ -24,11 +27,10 @@ pub async fn new() -> Result<(impl Future<Output = ()>, watch::Receiver<Quote>)>
     tracing::info!("Connected to BitMex realtime API");
 
     let first_quote = quotes.select_next_some().await?;
-    let (sender, receiver) = watch::channel(first_quote);
 
     let task = async move {
         while let Ok(Some(quote)) = quotes.try_next().await {
-            if sender.send(quote).is_err() {
+            if msg_channel.send(projection::Update(quote)).await.is_err() {
                 break; // If the receiver dies, we can exit the loop.
             }
         }
@@ -36,7 +38,7 @@ pub async fn new() -> Result<(impl Future<Output = ()>, watch::Receiver<Quote>)>
         tracing::warn!("Failed to read quote from websocket");
     };
 
-    Ok((task, receiver))
+    Ok((task, first_quote))
 }
 
 #[derive(Clone, Debug)]
