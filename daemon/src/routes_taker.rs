@@ -1,4 +1,5 @@
 use bdk::bitcoin::{Amount, Network};
+use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::{calculate_long_margin, Cfd, Order, OrderId, Role, UpdateCfdProposals};
 use daemon::model::{Leverage, Price, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
@@ -25,6 +26,7 @@ pub async fn feed(
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
     rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
     rx_settlements: &State<watch::Receiver<UpdateCfdProposals>>,
+    rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
     network: &State<Network>,
 ) -> EventStream![] {
     let mut rx_cfds = rx_cfds.inner().clone();
@@ -32,11 +34,15 @@ pub async fn feed(
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_quote = rx_quote.inner().clone();
     let mut rx_settlements = rx_settlements.inner().clone();
+    let mut rx_maker_status = rx_maker_status.inner().clone();
     let network = *network.inner();
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
         yield wallet_info.to_sse_event();
+
+        let maker_status = rx_maker_status.borrow().clone();
+        yield maker_status.to_sse_event();
 
         let order = rx_order.borrow().clone();
         yield order.to_sse_event();
@@ -58,10 +64,10 @@ pub async fn feed(
                     let wallet_info = rx_wallet.borrow().clone();
                     yield wallet_info.to_sse_event();
                 },
-                // Ok(()) = rx_connections.changed() => {
-                //     let wallet_info = rx_wallet.borrow().clone();
-                //     yield wallet_info.to_sse_event();
-                // },
+                Ok(()) = rx_maker_status.changed() => {
+                    let maker_status = rx_maker_status.borrow().clone();
+                    yield maker_status.to_sse_event();
+                },
                 Ok(()) = rx_order.changed() => {
                     let order = rx_order.borrow().clone();
                     yield order.to_sse_event();

@@ -295,6 +295,7 @@ async fn main() -> Result<()> {
         .manage(wallet_feed_receiver)
         .manage(quote_receiver)
         .manage(bitcoin_network)
+        .manage(maker_online_status_feed_receiver)
         .mount(
             "/api",
             rocket::routes![
