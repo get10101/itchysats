@@ -66,7 +66,7 @@ fn dummy_wallet_info() -> Result<WalletInfo> {
     Ok(WalletInfo {
         balance: bdk::bitcoin::Amount::ONE_BTC,
         address,
-        last_updated_at: Timestamp::now()?,
+        last_updated_at: Timestamp::now(),
     })
 }
 
