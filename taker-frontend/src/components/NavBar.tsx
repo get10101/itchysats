@@ -3,6 +3,7 @@ import {
     Box,
     Button,
     Flex,
+    Heading,
     Image,
     Menu,
     MenuButton,
@@ -20,9 +21,10 @@ import { WalletInfo } from "./Types";
 
 interface NavProps {
     walletInfo: WalletInfo | null;
+    connectedToMaker: boolean;
 }
 
-export default function Nav({ walletInfo }: NavProps) {
+export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
     const navigate = useNavigate();
 
     const { toggleColorMode } = useColorMode();
@@ -55,7 +57,7 @@ export default function Nav({ walletInfo }: NavProps) {
                             <MenuItem>Settings</MenuItem>
                         </MenuList>
                     </Menu>
-
+                    <Heading size={"sm"}>{"Maker status: " + (connectedToMaker ? "Online" : "Offline")}</Heading>
                     <Flex alignItems={"center"}>
                         <Stack direction={"row"} spacing={7}>
                             <Button onClick={toggleColorMode} bg={"transparent"}>
