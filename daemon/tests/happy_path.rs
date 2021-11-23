@@ -1,6 +1,7 @@
 use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
 use crate::harness::{
-    assert_is_same_order, dummy_new_order, init_tracing, start_both, HEARTBEAT_INTERVAL_FOR_TEST,
+    assert_is_same_order, dummy_new_order, init_tracing, oracle_pk, start_both, Maker,
+    HEARTBEAT_INTERVAL_FOR_TEST,
 };
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::CfdState;
@@ -132,4 +133,14 @@ async fn taker_notices_lack_of_maker() {
         ConnectionStatus::Offline,
         next(taker.maker_status_feed()).await.unwrap(),
     );
+
+    // TODO: Finish off the test (somehow it doesn't seem to work)
+    // let _maker = Maker::start(oracle_pk()).await;
+
+    // sleep(HEARTBEAT_INTERVAL_FOR_TEST * 3).await;
+
+    // assert_eq!(
+    //     ConnectionStatus::Online,
+    //     next(taker.maker_status_feed()).await.unwrap(),
+    // );
 }

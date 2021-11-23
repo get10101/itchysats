@@ -34,14 +34,16 @@ pub mod mocks;
 pub const HEARTBEAT_INTERVAL_FOR_TEST: Duration = Duration::from_secs(2);
 const N_PAYOUTS_FOR_TEST: usize = 5;
 
-pub async fn start_both() -> (Maker, Taker) {
-    let oracle_pk: schnorrsig::PublicKey = schnorrsig::PublicKey::from_str(
+pub fn oracle_pk() -> schnorrsig::PublicKey {
+    schnorrsig::PublicKey::from_str(
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )
-    .unwrap();
+    .unwrap()
+}
 
-    let maker = Maker::start(oracle_pk).await;
-    let taker = Taker::start(oracle_pk, maker.listen_addr, maker.identity_pk).await;
+pub async fn start_both() -> (Maker, Taker) {
+    let maker = Maker::start(oracle_pk()).await;
+    let taker = Taker::start(oracle_pk(), maker.listen_addr, maker.identity_pk).await;
     (maker, taker)
 }
 

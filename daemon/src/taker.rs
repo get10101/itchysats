@@ -240,7 +240,7 @@ async fn main() -> Result<()> {
     let TakerActorSystem {
         cfd_actor_addr,
         connection_actor_addr,
-        mut maker_online_status_feed_receiver,
+        maker_online_status_feed_receiver,
         tasks: _tasks,
     } = TakerActorSystem::new(
         db.clone(),
@@ -276,7 +276,14 @@ async fn main() -> Result<()> {
         update_cfd_feed_sender,
     )));
 
-    connect(connection_actor_addr, opts.maker_id, opts.maker).await?;
+    let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
+
+    tasks.add(connect(
+        maker_online_status_feed_receiver.clone(),
+        connection_actor_addr,
+        opts.maker_id,
+        possible_addresses,
+    ));
 
     tasks.add(wallet_sync::new(wallet, wallet_feed_sender));
     let take_offer_channel = MessageChannel::<taker_cfd::TakeOffer>::clone_channel(&cfd_actor_addr);
@@ -307,19 +314,6 @@ async fn main() -> Result<()> {
         );
 
     let rocket = rocket.ignite().await?;
-    let shutdown_handle = rocket.shutdown();
-
-    // shutdown the rocket server maker if goes offline
-    tasks.add(async move {
-        loop {
-            maker_online_status_feed_receiver.changed().await.unwrap();
-            if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
-                tracing::info!("Lost connection to maker, shutting down. Please restart the daemon to reconnect");
-                rocket::Shutdown::notify(shutdown_handle);
-                return;
-            }
-        }
-    });
     rocket.launch().await?;
 
     db.close().await;
@@ -327,12 +321,8 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn connect(
-    connection_actor_addr: xtra::Address<connection::Actor>,
-    maker_identity_pk: x25519_dalek::PublicKey,
-    maker_addr: String,
-) -> Result<()> {
-    let possible_addresses = tokio::net::lookup_host(&maker_addr)
+async fn resolve_maker_addresses(maker_addr: &str) -> Result<Vec<SocketAddr>> {
+    let possible_addresses = tokio::net::lookup_host(maker_addr)
         .await?
         .collect::<Vec<_>>();
 
@@ -341,30 +331,48 @@ async fn connect(
         maker_addr,
         itertools::join(possible_addresses.iter(), ",")
     );
+    Ok(possible_addresses)
+}
 
+async fn connect(
+    mut maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
+    connection_actor_addr: xtra::Address<connection::Actor>,
+    maker_identity_pk: x25519_dalek::PublicKey,
+    maker_addresses: Vec<SocketAddr>,
+) {
     loop {
-        for address in &possible_addresses {
-            tracing::trace!("Connecting to {}", address);
+        if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
+            tracing::info!("No connection to the maker, attempting to connect:");
+            'reconnect: loop {
+                for address in &maker_addresses {
+                    tracing::trace!("Connecting to {}", address);
 
-            let connect_msg = connection::Connect {
-                maker_identity_pk,
-                maker_addr: *address,
-            };
+                    let connect_msg = connection::Connect {
+                        maker_identity_pk,
+                        maker_addr: *address,
+                    };
 
-            if let Err(e) = connection_actor_addr.send(connect_msg).await? {
-                tracing::debug!(%address, "Failed to establish connection: {:#}", e);
-                continue;
+                    if let Err(e) = connection_actor_addr
+                        .send(connect_msg)
+                        .await
+                        .expect("Taker actor to be present")
+                    {
+                        tracing::debug!(%address, "Failed to establish connection: {:#}", e);
+                        continue;
+                    }
+                    break 'reconnect;
+                }
+
+                tracing::debug!(
+                    "Tried connecting to {} addresses without success, retrying in {} seconds",
+                    maker_addresses.len(),
+                    CONNECTION_RETRY_INTERVAL.as_secs()
+                );
+
+                sleep(CONNECTION_RETRY_INTERVAL).await;
             }
-
-            return Ok(());
         }
-
-        tracing::debug!(
-            "Tried connecting to {} addresses without success, retrying in {} seconds",
-            possible_addresses.len(),
-            CONNECTION_RETRY_INTERVAL.as_secs()
-        );
-
-        sleep(CONNECTION_RETRY_INTERVAL).await;
+        tracing::debug!("Connection established");
+        maker_online_status_feed_receiver.changed().await.unwrap();
     }
 }
