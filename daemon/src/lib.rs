@@ -43,6 +43,7 @@ pub mod routes;
 pub mod seed;
 pub mod send_to_socket;
 pub mod setup_contract;
+pub mod setup_taker;
 pub mod taker_cfd;
 pub mod to_sse_event;
 pub mod tokio_ext;
@@ -250,7 +251,7 @@ where
             wallet_addr,
             oracle_pk,
             projection_actor,
-            Box::new(connection_actor_addr.clone()),
+            connection_actor_addr.clone(),
             monitor_addr.clone(),
             oracle_addr,
             n_payouts,

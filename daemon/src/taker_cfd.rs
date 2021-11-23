@@ -6,18 +6,22 @@ use crate::model::cfd::{
 };
 use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
-use crate::setup_contract::{RolloverParams, SetupParams};
+use crate::setup_contract::RolloverParams;
 use crate::tokio_ext::FutureExt;
-use crate::wire::{MakerToTaker, RollOverMsg, SetupMsg};
-use crate::{log_error, oracle, projection, setup_contract, wallet, wire};
+use crate::wire::RollOverMsg;
+use crate::{
+    connection, log_error, oracle, projection, setup_contract, setup_taker, wallet, wire, Tasks,
+};
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::future::RemoteHandle;
 use futures::{future, SinkExt};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use xtra::prelude::*;
+use xtra::Actor as _;
 
 pub struct TakeOffer {
     pub order_id: OrderId,
@@ -37,22 +41,9 @@ pub enum CfdAction {
     },
 }
 
-pub struct CfdSetupCompleted {
-    pub order_id: OrderId,
-    pub dlc: Result<Dlc>,
-}
-
 pub struct CfdRollOverCompleted {
     pub order_id: OrderId,
     pub dlc: Result<Dlc>,
-}
-
-enum SetupState {
-    Active {
-        sender: mpsc::UnboundedSender<SetupMsg>,
-        _task: RemoteHandle<()>,
-    },
-    None,
 }
 
 enum RollOverState {
@@ -68,13 +59,14 @@ pub struct Actor<O, M, W> {
     wallet: Address<W>,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: Address<projection::Actor>,
-    send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
+    conn_actor: Address<connection::Actor>,
     monitor_actor: Address<M>,
-    setup_state: SetupState,
+    setup_actors: HashMap<OrderId, xtra::Address<setup_taker::Actor>>,
     roll_over_state: RollOverState,
     oracle_actor: Address<O>,
     current_pending_proposals: UpdateCfdProposals,
     n_payouts: usize,
+    tasks: Tasks,
 }
 
 impl<O, M, W> Actor<O, M, W>
@@ -89,7 +81,7 @@ where
         wallet: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         projection_actor: Address<projection::Actor>,
-        send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
+        conn_actor: Address<connection::Actor>,
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
         n_payouts: usize,
@@ -99,13 +91,14 @@ where
             wallet,
             oracle_pk,
             projection_actor,
-            send_to_maker,
+            conn_actor,
             monitor_actor,
-            setup_state: SetupState::None,
             roll_over_state: RollOverState::None,
             oracle_actor,
             current_pending_proposals: HashMap::new(),
             n_payouts,
+            setup_actors: HashMap::new(),
+            tasks: Tasks::default(),
         }
     }
 }
@@ -138,33 +131,6 @@ impl<O, M, W> Actor<O, M, W> {
                 anyhow::bail!("did not expect a rollover proposal");
             }
         }
-    }
-
-    async fn handle_take_offer(&mut self, order_id: OrderId, quantity: Usd) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-
-        let current_order = load_order_by_id(order_id, &mut conn).await?;
-
-        tracing::info!("Taking current order: {:?}", &current_order);
-
-        let cfd = Cfd::new(
-            current_order.clone(),
-            quantity,
-            CfdState::outgoing_order_request(),
-        );
-
-        insert_cfd_and_send_to_feed(&cfd, &mut conn, &self.projection_actor).await?;
-
-        // Cleanup own order feed, after inserting the cfd.
-        // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
-        // same order id.
-        self.projection_actor.send(projection::Update(None)).await?;
-
-        self.send_to_maker
-            .send(wire::TakerToMaker::TakeOrder { order_id, quantity })
-            .await?;
-
-        Ok(())
     }
 }
 
@@ -218,7 +184,7 @@ where
         );
         self.send_pending_update_proposals().await?;
 
-        self.send_to_maker
+        self.conn_actor
             .send(wire::TakerToMaker::ProposeSettlement {
                 order_id: proposal.order_id,
                 timestamp: proposal.timestamp,
@@ -227,12 +193,6 @@ where
                 price: proposal.price,
             })
             .await?;
-        Ok(())
-    }
-
-    async fn handle_order_rejected(&mut self, order_id: OrderId) -> Result<()> {
-        self.append_cfd_state_rejected(order_id).await?;
-
         Ok(())
     }
 
@@ -254,19 +214,6 @@ where
         Ok(())
     }
 
-    async fn handle_inc_protocol_msg(&mut self, msg: SetupMsg) -> Result<()> {
-        match &mut self.setup_state {
-            SetupState::Active { sender, .. } => {
-                sender.send(msg).await?;
-            }
-            SetupState::None => {
-                anyhow::bail!("Received setup message without an active contract setup")
-            }
-        }
-
-        Ok(())
-    }
-
     async fn handle_inc_roll_over_msg(&mut self, msg: RollOverMsg) -> Result<()> {
         match &mut self.roll_over_state {
             RollOverState::Active { sender, .. } => {
@@ -284,17 +231,6 @@ where
         tracing::debug!(%order_id, "Invalid order ID");
 
         self.append_cfd_state_rejected(order_id).await?;
-
-        Ok(())
-    }
-
-    async fn append_cfd_state_rejected(&mut self, order_id: OrderId) -> Result<()> {
-        tracing::debug!(%order_id, "Order rejected");
-
-        let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::rejected();
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         Ok(())
     }
@@ -329,6 +265,73 @@ impl<O, M, W> Actor<O, M, W> {
         Ok(())
     }
 
+    async fn handle_order_rejected(&mut self, order_id: OrderId) -> Result<()> {
+        self.append_cfd_state_rejected(order_id).await?;
+
+        Ok(())
+    }
+
+    async fn append_cfd_state_rejected(&mut self, order_id: OrderId) -> Result<()> {
+        tracing::debug!(%order_id, "Order rejected");
+
+        let mut conn = self.db.acquire().await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::rejected();
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+
+        Ok(())
+    }
+
+    async fn handle_contract_setup_failed(
+        &mut self,
+        order_id: OrderId,
+        error: anyhow::Error,
+    ) -> Result<()> {
+        tracing::error!(%order_id, "Contract setup failed: {:#?}", error);
+
+        let mut conn = self.db.acquire().await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::setup_failed(error.to_string());
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+
+        Ok(())
+    }
+
+    /// Set the state of the CFD in the database to `ContractSetup`
+    /// and update the corresponding projection.
+    async fn handle_setup_started(&mut self, order_id: OrderId) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        cfd.state = CfdState::contract_setup();
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+
+        Ok(())
+    }
+}
+
+impl<O, M, W> Actor<O, M, W>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
+    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_monitoring_event(event, &mut conn, &self.wallet, &self.projection_actor)
+            .await?;
+        Ok(())
+    }
+
+    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_oracle_attestation(
+            attestation,
+            &mut conn,
+            &self.wallet,
+            &self.projection_actor,
+        )
+        .await?;
+        Ok(())
+    }
+
     async fn handle_propose_roll_over(&mut self, order_id: OrderId) -> Result<()> {
         if self.current_pending_proposals.contains_key(&order_id) {
             anyhow::bail!("An update for order id {} is already in progress", order_id)
@@ -348,7 +351,7 @@ impl<O, M, W> Actor<O, M, W> {
         );
         self.send_pending_update_proposals().await?;
 
-        self.send_to_maker
+        self.conn_actor
             .send(wire::TakerToMaker::ProposeRollOver {
                 order_id: proposal.order_id,
                 timestamp: proposal.timestamp,
@@ -360,24 +363,75 @@ impl<O, M, W> Actor<O, M, W> {
 
 impl<O, M, W> Actor<O, M, W>
 where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+    Self: xtra::Handler<setup_taker::Completed>,
+    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
+    W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
 {
-    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_oracle_attestation(
-            attestation,
-            &mut conn,
-            &self.wallet,
-            &self.projection_actor,
-        )
-        .await?;
-        Ok(())
-    }
+    async fn handle_take_offer(
+        &mut self,
+        order_id: OrderId,
+        quantity: Usd,
+        ctx: &mut Context<Self>,
+    ) -> Result<()> {
+        let entry = self.setup_actors.entry(order_id);
+        if matches!(entry, Entry::Occupied(ref occupied) if occupied.get().is_connected()) {
+            bail!(
+                "A contract setup for order id {} is already in progress",
+                order_id
+            )
+        }
 
-    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
         let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_monitoring_event(event, &mut conn, &self.wallet, &self.projection_actor)
-            .await?;
+
+        let current_order = load_order_by_id(order_id, &mut conn).await?;
+
+        tracing::info!("Taking current order: {:?}", &current_order);
+
+        let cfd = Cfd::new(
+            current_order.clone(),
+            quantity,
+            CfdState::outgoing_order_request(),
+        );
+
+        insert_cfd_and_send_to_feed(&cfd, &mut conn, &self.projection_actor).await?;
+
+        // Cleanup own order feed, after inserting the cfd.
+        // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
+        // same order id.
+        self.projection_actor.send(projection::Update(None)).await?;
+
+        let announcement = self
+            .oracle_actor
+            .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
+            .await?
+            .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
+
+        let this = ctx
+            .address()
+            .expect("actor to be able to give address to itself");
+        let (addr, fut) = setup_taker::Actor::new(
+            (current_order, quantity, self.n_payouts),
+            (self.oracle_pk, announcement),
+            &self.wallet,
+            &self.wallet,
+            self.conn_actor.clone(),
+            &this,
+            &this,
+        )
+        .create(None)
+        .run();
+
+        match entry {
+            Entry::Occupied(mut disconnected) => {
+                disconnected.insert(addr);
+            }
+            Entry::Vacant(vacant) => {
+                vacant.insert(addr);
+            }
+        }
+
+        self.tasks.add(fut);
+
         Ok(())
     }
 }
@@ -388,29 +442,9 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle_cfd_setup_completed(
-        &mut self,
-        order_id: OrderId,
-        dlc: Result<Dlc>,
-    ) -> Result<()> {
-        self.setup_state = SetupState::None;
-
+    async fn handle_new_contract(&mut self, order_id: OrderId, dlc: Dlc) -> Result<()> {
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-
-        let dlc = match dlc {
-            Ok(dlc) => dlc,
-            Err(e) => {
-                cfd.state = CfdState::SetupFailed {
-                    common: CfdStateCommon::default(),
-                    info: e.to_string(),
-                };
-
-                append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-                return Err(e);
-            }
-        };
 
         tracing::info!("Setup complete, publishing on chain now");
 
@@ -450,80 +484,6 @@ where
 
 impl<O: 'static, M: 'static, W: 'static> Actor<O, M, W>
 where
-    Self: xtra::Handler<CfdSetupCompleted>,
-    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
-{
-    async fn handle_order_accepted(
-        &mut self,
-        order_id: OrderId,
-        ctx: &mut Context<Self>,
-    ) -> Result<()> {
-        tracing::info!(%order_id, "Order got accepted");
-
-        let (sender, receiver) = mpsc::unbounded();
-
-        if let SetupState::Active { .. } = self.setup_state {
-            anyhow::bail!("Already setting up a contract!")
-        }
-
-        let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::contract_setup();
-
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-        let offer_announcement = self
-            .oracle_actor
-            .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
-            .await?
-            .with_context(|| format!("Announcement {} not found", cfd.order.oracle_event_id))?;
-
-        let contract_future = setup_contract::new(
-            self.send_to_maker
-                .sink()
-                .clone_message_sink()
-                .with(move |msg| future::ok(wire::TakerToMaker::Protocol { order_id, msg })),
-            receiver,
-            (self.oracle_pk, offer_announcement),
-            SetupParams::new(
-                cfd.margin()?,
-                cfd.counterparty_margin()?,
-                cfd.order.price,
-                cfd.quantity_usd,
-                cfd.order.leverage,
-                cfd.refund_timelock_in_blocks(),
-            ),
-            self.wallet.clone(),
-            self.wallet.clone(),
-            Role::Taker,
-            self.n_payouts,
-        );
-
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
-
-        let task = async move {
-            let dlc = contract_future.await;
-
-            this.send(CfdSetupCompleted { order_id, dlc })
-                .await
-                .expect("always connected to ourselves")
-        }
-        .spawn_with_handle();
-
-        self.setup_state = SetupState::Active {
-            sender,
-            _task: task,
-        };
-
-        Ok(())
-    }
-}
-
-impl<O: 'static, M: 'static, W: 'static> Actor<O, M, W>
-where
     Self: xtra::Handler<CfdRollOverCompleted>,
     O: xtra::Handler<oracle::GetAnnouncement>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>
@@ -556,8 +516,7 @@ where
             .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
 
         let contract_future = setup_contract::roll_over(
-            self.send_to_maker
-                .sink()
+            xtra::message_channel::MessageChannel::sink(&self.conn_actor)
                 .with(|msg| future::ok(wire::TakerToMaker::RollOverProtocol(msg))),
             receiver,
             (self.oracle_pk, announcement),
@@ -660,7 +619,7 @@ where
         let proposal = self.get_settlement_proposal(order_id)?;
         let (tx, sig_taker) = dlc.close_transaction(proposal)?;
 
-        self.send_to_maker
+        self.conn_actor
             .send(wire::TakerToMaker::InitiateSettlement {
                 order_id,
                 sig_taker,
@@ -688,9 +647,15 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, W: 'static> Handler<TakeOffer> for Actor<O, M, W> {
-    async fn handle(&mut self, msg: TakeOffer, _ctx: &mut Context<Self>) -> Result<()> {
-        self.handle_take_offer(msg.order_id, msg.quantity).await
+impl<O: 'static, M: 'static, W: 'static> Handler<TakeOffer> for Actor<O, M, W>
+where
+    Self: xtra::Handler<setup_taker::Completed>,
+    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
+    W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
+{
+    async fn handle(&mut self, msg: TakeOffer, ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_take_offer(msg.order_id, msg.quantity, ctx)
+            .await
     }
 }
 
@@ -725,7 +690,7 @@ where
 #[async_trait]
 impl<O: 'static, M: 'static, W: 'static> Handler<wire::MakerToTaker> for Actor<O, M, W>
 where
-    Self: xtra::Handler<CfdSetupCompleted> + xtra::Handler<CfdRollOverCompleted>,
+    Self: xtra::Handler<CfdRollOverCompleted>,
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     M: xtra::Handler<monitor::CollaborativeSettlement>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>
@@ -734,17 +699,8 @@ where
 {
     async fn handle(&mut self, msg: wire::MakerToTaker, ctx: &mut Context<Self>) {
         match msg {
-            wire::MakerToTaker::Heartbeat => {
-                unreachable!("Heartbeats should be handled somewhere else")
-            }
             wire::MakerToTaker::CurrentOrder(current_order) => {
                 log_error!(self.handle_new_order(current_order))
-            }
-            wire::MakerToTaker::ConfirmOrder(order_id) => {
-                log_error!(self.handle_order_accepted(order_id, ctx))
-            }
-            wire::MakerToTaker::RejectOrder(order_id) => {
-                log_error!(self.handle_order_rejected(order_id))
             }
             wire::MakerToTaker::ConfirmSettlement(order_id) => {
                 log_error!(self.handle_settlement_accepted(order_id, ctx))
@@ -755,9 +711,6 @@ where
             wire::MakerToTaker::InvalidOrderId(order_id) => {
                 log_error!(self.handle_invalid_order_id(order_id))
             }
-            wire::MakerToTaker::Protocol { msg, .. } => {
-                log_error!(self.handle_inc_protocol_msg(msg))
-            }
             wire::MakerToTaker::ConfirmRollOver {
                 order_id,
                 oracle_event_id,
@@ -767,22 +720,39 @@ where
             wire::MakerToTaker::RejectRollOver(order_id) => {
                 log_error!(self.handle_roll_over_rejected(order_id))
             }
-            MakerToTaker::RollOverProtocol(roll_over_msg) => {
+            wire::MakerToTaker::RollOverProtocol(roll_over_msg) => {
                 log_error!(self.handle_inc_roll_over_msg(roll_over_msg))
+            }
+            wire::MakerToTaker::Heartbeat => {
+                unreachable!("Heartbeats should be handled somewhere else")
+            }
+            wire::MakerToTaker::ConfirmOrder(_)
+            | wire::MakerToTaker::RejectOrder(_)
+            | wire::MakerToTaker::Protocol { .. } => {
+                unreachable!("These messages should be sent to the `setup_taker::Actor`")
             }
         }
     }
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, W: 'static> Handler<CfdSetupCompleted> for Actor<O, M, W>
+impl<O: 'static, M: 'static, W: 'static> Handler<setup_taker::Completed> for Actor<O, M, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle(&mut self, msg: CfdSetupCompleted, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_cfd_setup_completed(msg.order_id, msg.dlc));
+    async fn handle(&mut self, msg: setup_taker::Completed, _ctx: &mut Context<Self>) {
+        use setup_taker::Completed::*;
+        match msg {
+            NewContract { order_id, dlc } => {
+                log_error!(self.handle_new_contract(order_id, dlc))
+            }
+            Rejected { order_id } => log_error!(self.handle_order_rejected(order_id)),
+            Failed { order_id, error } => {
+                log_error!(self.handle_contract_setup_failed(order_id, error))
+            }
+        }
     }
 }
 
@@ -817,16 +787,19 @@ where
     }
 }
 
+#[async_trait]
+impl<O: 'static, M: 'static, W: 'static> Handler<setup_taker::Started> for Actor<O, M, W> {
+    async fn handle(&mut self, msg: setup_taker::Started, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_setup_started(msg.0))
+    }
+}
+
 impl Message for TakeOffer {
     type Result = Result<()>;
 }
 
 impl Message for CfdAction {
     type Result = Result<()>;
-}
-
-impl Message for CfdSetupCompleted {
-    type Result = ();
 }
 
 impl Message for CfdRollOverCompleted {

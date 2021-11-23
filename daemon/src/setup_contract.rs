@@ -62,8 +62,8 @@ pub async fn new(
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
     setup_params: SetupParams,
-    build_party_params_channel: impl MessageChannel<wallet::BuildPartyParams>,
-    sign_channel: impl MessageChannel<wallet::Sign>,
+    build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
+    sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
     role: Role,
     n_payouts: usize,
 ) -> Result<Dlc> {

@@ -551,8 +551,8 @@ where
                 cfd.order.leverage,
                 cfd.refund_timelock_in_blocks(),
             ),
-            self.wallet.clone(),
-            self.wallet.clone(),
+            Box::new(self.wallet.clone()),
+            Box::new(self.wallet.clone()),
             Role::Maker,
             self.n_payouts,
         );
