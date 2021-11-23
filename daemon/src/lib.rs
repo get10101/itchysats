@@ -16,6 +16,8 @@ use tokio::sync::watch;
 use xtra::message_channel::{MessageChannel, StrongMessageChannel};
 use xtra::{Actor, Address};
 
+pub mod sqlx_ext; // Must come first because it is a macro.
+
 pub mod actors;
 pub mod auth;
 pub mod bitmex_price_feed;
