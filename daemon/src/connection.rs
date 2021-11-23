@@ -11,6 +11,9 @@ use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 
+/// Time between reconnection attempts
+const CONNECT_TO_MAKER_INTERVAL: Duration = Duration::from_secs(5);
+
 struct ConnectedState {
     last_heartbeat: SystemTime,
     _tasks: Tasks,
@@ -172,3 +175,51 @@ impl Actor {
 }
 
 impl xtra::Actor for Actor {}
+
+// TODO: Move the reconnection logic inside the connection::Actor instead of
+// depending on a watch channel
+pub async fn connect(
+    mut maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
+    connection_actor_addr: xtra::Address<Actor>,
+    maker_identity_pk: x25519_dalek::PublicKey,
+    maker_addresses: Vec<SocketAddr>,
+) {
+    loop {
+        if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
+            tracing::info!("No connection to the maker, attempting to connect:");
+            'connect: loop {
+                for address in &maker_addresses {
+                    tracing::trace!("Connecting to {}", address);
+
+                    let connect_msg = Connect {
+                        maker_identity_pk,
+                        maker_addr: *address,
+                    };
+
+                    if let Err(e) = connection_actor_addr
+                        .send(connect_msg)
+                        .await
+                        .expect("Taker actor to be present")
+                    {
+                        tracing::trace!(%address, "Failed to establish connection: {:#}", e);
+                        continue;
+                    }
+                    tracing::debug!("Connection established");
+                    break 'connect;
+                }
+
+                tracing::debug!(
+                    "Tried connecting to {} addresses without success, retrying in {} seconds",
+                    maker_addresses.len(),
+                    CONNECT_TO_MAKER_INTERVAL.as_secs()
+                );
+
+                tokio::time::sleep(CONNECT_TO_MAKER_INTERVAL).await;
+            }
+        }
+        maker_online_status_feed_receiver
+            .changed()
+            .await
+            .expect("watch channel should outlive the future");
+    }
+}
