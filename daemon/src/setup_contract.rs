@@ -1,4 +1,5 @@
-use crate::model::cfd::{Cet, Cfd, Dlc, RevokedCommit, Role};
+use crate::model::cfd::{Cet, Dlc, RevokedCommit, Role};
+use crate::model::{Leverage, Price, Usd};
 use crate::tokio_ext::FutureExt;
 use crate::wire::{
     Msg0, Msg1, Msg2, RollOverMsg, RollOverMsg0, RollOverMsg1, RollOverMsg2, SetupMsg,
@@ -24,13 +25,42 @@ use std::ops::RangeInclusive;
 use std::time::Duration;
 use xtra::Address;
 
+pub struct SetupParams {
+    margin: Amount,
+    counterparty_margin: Amount,
+    price: Price,
+    quantity: Usd,
+    leverage: Leverage,
+    refund_timelock: u32,
+}
+
+impl SetupParams {
+    pub fn new(
+        margin: Amount,
+        counterparty_margin: Amount,
+        price: Price,
+        quantity: Usd,
+        leverage: Leverage,
+        refund_timelock: u32,
+    ) -> Self {
+        Self {
+            margin,
+            counterparty_margin,
+            price,
+            quantity,
+            leverage,
+            refund_timelock,
+        }
+    }
+}
+
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
 pub async fn new<W>(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
-    cfd: Cfd,
+    setup_params: SetupParams,
     wallet: Address<W>,
     role: Role,
     n_payouts: usize,
@@ -42,10 +72,9 @@ where
     let (rev_sk, rev_pk) = crate::keypair::new(&mut rand::thread_rng());
     let (publish_sk, publish_pk) = crate::keypair::new(&mut rand::thread_rng());
 
-    let margin = cfd.margin().context("Failed to calculate margin")?;
     let own_params = wallet
         .send(wallet::BuildPartyParams {
-            amount: margin,
+            amount: setup_params.margin,
             identity_pk: pk,
         })
         .await
@@ -74,10 +103,10 @@ where
 
     let params = AllParams::new(own_params, own_punish, other, other_punish, role);
 
-    if params.other.lock_amount != cfd.counterparty_margin()? {
+    if params.other.lock_amount != setup_params.counterparty_margin {
         anyhow::bail!(
             "Amounts sent by counterparty don't add up, expected margin {} but got {}",
-            cfd.counterparty_margin()?,
+            setup_params.counterparty_margin,
             params.other.lock_amount
         )
     }
@@ -85,9 +114,9 @@ where
     let payouts = HashMap::from_iter([(
         announcement.into(),
         payout_curve::calculate(
-            cfd.order.price,
-            cfd.quantity_usd,
-            cfd.order.leverage,
+            setup_params.price,
+            setup_params.quantity,
+            setup_params.leverage,
             n_payouts,
         )?,
     )]);
@@ -96,10 +125,7 @@ where
         (params.maker().clone(), *params.maker_punish()),
         (params.taker().clone(), *params.taker_punish()),
         oracle_pk,
-        (
-            model::cfd::Cfd::CET_TIMELOCK,
-            cfd.refund_timelock_in_blocks(),
-        ),
+        (model::cfd::Cfd::CET_TIMELOCK, setup_params.refund_timelock),
         payouts,
         sk,
     )
@@ -266,11 +292,29 @@ where
     })
 }
 
+pub struct RolloverParams {
+    price: Price,
+    quantity: Usd,
+    leverage: Leverage,
+    refund_timelock: u32,
+}
+
+impl RolloverParams {
+    pub fn new(price: Price, quantity: Usd, leverage: Leverage, refund_timelock: u32) -> Self {
+        Self {
+            price,
+            quantity,
+            leverage,
+            refund_timelock,
+        }
+    }
+}
+
 pub async fn roll_over(
     mut sink: impl Sink<RollOverMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = RollOverMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
-    cfd: Cfd,
+    rollover_params: RolloverParams,
     our_role: Role,
     dlc: Dlc,
     n_payouts: usize,
@@ -309,9 +353,9 @@ pub async fn roll_over(
             nonce_pks: announcement.nonce_pks.clone(),
         },
         payout_curve::calculate(
-            cfd.order.price,
-            cfd.quantity_usd,
-            cfd.order.leverage,
+            rollover_params.price,
+            rollover_params.quantity,
+            rollover_params.leverage,
             n_payouts,
         )?,
     )]);
@@ -356,7 +400,7 @@ pub async fn roll_over(
         oracle_pk,
         (
             model::cfd::Cfd::CET_TIMELOCK,
-            cfd.refund_timelock_in_blocks(),
+            rollover_params.refund_timelock,
         ),
         payouts,
         sk,
