@@ -41,7 +41,8 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
     let res = await fetch(`/api/calculate/margin`, { method: "POST", body: JSON.stringify(payload) });
 
     if (!res.status.toString().startsWith("2")) {
-        throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
+        const resp = await res.json();
+        throw new HttpError(resp);
     }
 
     return res.json();
@@ -50,8 +51,8 @@ async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse>
 async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
     let res = await fetch(`/api/cfd/order`, { method: "POST", body: JSON.stringify(payload) });
     if (!res.status.toString().startsWith("2")) {
-        console.log(`Error${JSON.stringify(res)}`);
-        throw new Error("failed to create new CFD order request: " + res.status + ", " + res.statusText);
+        const resp = await res.json();
+        throw new HttpError(resp);
     }
 }
 
