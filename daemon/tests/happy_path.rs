@@ -5,7 +5,7 @@ use crate::harness::{
 };
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::CfdState;
-use daemon::model::Usd;
+use daemon::model::{TakerId, Usd};
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
 use tokio::time::sleep;
@@ -152,5 +152,23 @@ async fn taker_notices_lack_of_maker() {
     assert_eq!(
         ConnectionStatus::Online,
         next(taker.maker_status_feed()).await.unwrap(),
+    );
+}
+
+#[tokio::test]
+async fn maker_notices_lack_of_taker() {
+    let _guard = init_tracing();
+
+    let (mut maker, taker) = start_both().await;
+    assert_eq!(
+        vec![taker.id],
+        next(maker.connected_takers_feed()).await.unwrap()
+    );
+
+    std::mem::drop(taker);
+
+    assert_eq!(
+        Vec::<TakerId>::new(),
+        next(maker.connected_takers_feed()).await.unwrap()
     );
 }

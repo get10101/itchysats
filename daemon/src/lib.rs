@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![warn(clippy::disallowed_method)]
 use crate::db::load_all_cfds;
-use crate::maker_cfd::{FromTaker, NewTakerOnline};
+use crate::maker_cfd::{FromTaker, TakerConnected};
 use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
 use crate::oracle::Attestation;
 use crate::tokio_ext::FutureExt;
@@ -9,6 +9,7 @@ use anyhow::Result;
 use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
+use maker_cfd::TakerDisconnected;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::time::Duration;
@@ -117,7 +118,8 @@ where
         oracle_constructor: impl FnOnce(Vec<Cfd>, Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
         inc_conn_constructor: impl FnOnce(
-            Box<dyn MessageChannel<NewTakerOnline>>,
+            Box<dyn MessageChannel<TakerConnected>>,
+            Box<dyn MessageChannel<TakerDisconnected>>,
             Box<dyn MessageChannel<FromTaker>>,
         ) -> T,
         settlement_interval: time::Duration,
@@ -154,6 +156,7 @@ where
         tasks.add(cfd_actor_fut);
 
         tasks.add(inc_conn_ctx.run(inc_conn_constructor(
+            Box::new(cfd_actor_addr.clone()),
             Box::new(cfd_actor_addr.clone()),
             Box::new(cfd_actor_addr.clone()),
         )));
