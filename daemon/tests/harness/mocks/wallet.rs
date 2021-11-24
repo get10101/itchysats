@@ -3,7 +3,7 @@ use anyhow::Result;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{ecdsa, Amount, Txid};
 use daemon::model::{Timestamp, WalletInfo};
-use daemon::wallet::{self};
+use daemon::wallet;
 use maia::secp256k1_zkp::Secp256k1;
 use maia::{PartyParams, WalletExt};
 use mockall::*;

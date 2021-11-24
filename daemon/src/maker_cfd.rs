@@ -25,17 +25,29 @@ use sqlx::Sqlite;
 use std::collections::{HashMap, HashSet};
 use time::Duration;
 use xtra::prelude::*;
+use xtra_productivity::xtra_productivity;
 
-pub enum CfdAction {
-    AcceptOrder { order_id: OrderId },
-    RejectOrder { order_id: OrderId },
-    AcceptSettlement { order_id: OrderId },
-    RejectSettlement { order_id: OrderId },
-    AcceptRollOver { order_id: OrderId },
-    RejectRollOver { order_id: OrderId },
-    Commit { order_id: OrderId },
+pub struct AcceptOrder {
+    pub order_id: OrderId,
 }
-
+pub struct RejectOrder {
+    pub order_id: OrderId,
+}
+pub struct AcceptSettlement {
+    pub order_id: OrderId,
+}
+pub struct RejectSettlement {
+    pub order_id: OrderId,
+}
+pub struct AcceptRollOver {
+    pub order_id: OrderId,
+}
+pub struct RejectRollOver {
+    pub order_id: OrderId,
+}
+pub struct Commit {
+    pub order_id: OrderId,
+}
 pub struct NewOrder {
     pub price: Price,
     pub min_quantity: Usd,
@@ -65,7 +77,12 @@ pub struct FromTaker {
     pub msg: wire::TakerToMaker,
 }
 
-pub struct Actor<O, M, T, W> {
+pub struct Actor<
+    O = oracle::Actor,
+    M = monitor::Actor,
+    T = maker_inc_connections::Actor,
+    W = wallet::Actor,
+> {
     db: sqlx::SqlitePool,
     wallet: Address<W>,
     settlement_interval: Duration,
@@ -301,14 +318,6 @@ impl<O, M, T, W> Actor<O, M, T, W>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle_commit(&mut self, order_id: OrderId) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_commit(order_id, &mut conn, &self.wallet, &self.projection_actor)
-            .await?;
-
-        Ok(())
-    }
-
     async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
         let mut conn = self.db.acquire().await?;
         cfd_actors::handle_monitoring_event(event, &mut conn, &self.wallet, &self.projection_actor)
@@ -366,85 +375,20 @@ where
         Ok(())
     }
 
-    async fn handle_accept_settlement(&mut self, order_id: OrderId) -> Result<()> {
-        tracing::debug!(%order_id, "Maker accepts a settlement proposal" );
+    async fn reject_order(
+        &mut self,
+        taker_id: TakerId,
+        mut cfd: Cfd,
+        mut conn: PoolConnection<Sqlite>,
+    ) -> Result<()> {
+        cfd.state = CfdState::rejected();
 
-        let taker_id = self.get_taker_id_of_proposal(&order_id)?;
-
-        match self
-            .takers
-            .send(maker_inc_connections::TakerMessage {
-                taker_id,
-                msg: wire::MakerToTaker::ConfirmSettlement(order_id),
-            })
-            .await?
-        {
-            Ok(_) => {
-                self.current_agreed_proposals
-                    .insert(order_id, self.get_settlement_proposal(order_id)?);
-                self.remove_pending_proposal(&order_id)
-                    .await
-                    .context("accepted settlement")?;
-            }
-            Err(e) => {
-                tracing::warn!("Failed to notify taker of accepted settlement: {}", e);
-                self.remove_pending_proposal(&order_id)
-                    .await
-                    .context("accepted settlement")?;
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn handle_reject_settlement(&mut self, order_id: OrderId) -> Result<()> {
-        tracing::debug!(%order_id, "Maker rejects a settlement proposal" );
-
-        let taker_id = self.get_taker_id_of_proposal(&order_id)?;
-
-        // clean-up state ahead of sending to ensure consistency in case we fail to deliver the
-        // message
-        self.remove_pending_proposal(&order_id)
-            .await
-            .context("rejected settlement")?;
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::RejectSettlement(order_id),
-            })
-            .await??;
-
-        Ok(())
-    }
-
-    async fn handle_reject_roll_over(&mut self, order_id: OrderId) -> Result<()> {
-        tracing::debug!(%order_id, "Maker rejects a roll_over proposal" );
-
-        // Validate if order is actually being requested to be extended
-        let (_, taker_id) = match self.current_pending_proposals.get(&order_id) {
-            Some((
-                UpdateCfdProposal::RollOverProposal {
-                    proposal,
-                    direction: SettlementKind::Incoming,
-                },
-                taker_id,
-            )) => (proposal, *taker_id),
-            _ => {
-                anyhow::bail!("Order is in invalid state. Ignoring reject roll over request.")
-            }
-        };
-
-        // clean-up state ahead of sending to ensure consistency in case we fail to deliver the
-        // message
-        self.remove_pending_proposal(&order_id)
-            .await
-            .context("rejected roll_over")?;
-
-        self.takers
-            .send(maker_inc_connections::TakerMessage {
-                taker_id,
-                msg: wire::MakerToTaker::RejectRollOver(order_id),
+                msg: wire::MakerToTaker::RejectOrder(cfd.order.id),
             })
             .await??;
 
@@ -529,49 +473,9 @@ where
 
         Ok(())
     }
-
-    async fn handle_reject_order(&mut self, order_id: OrderId) -> Result<()> {
-        tracing::debug!(%order_id, "Maker rejects an order" );
-
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-
-        let taker_id = match cfd {
-            Cfd {
-                state: CfdState::IncomingOrderRequest { taker_id, .. },
-                ..
-            } => taker_id,
-            _ => {
-                anyhow::bail!("Order is in invalid state. Ignoring trying to accept it.")
-            }
-        };
-
-        self.reject_order(taker_id, cfd, conn).await?;
-
-        Ok(())
-    }
-
-    async fn reject_order(
-        &mut self,
-        taker_id: TakerId,
-        mut cfd: Cfd,
-        mut conn: PoolConnection<Sqlite>,
-    ) -> Result<()> {
-        cfd.state = CfdState::rejected();
-
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-        self.takers
-            .send(maker_inc_connections::TakerMessage {
-                taker_id,
-                msg: wire::MakerToTaker::RejectOrder(cfd.order.id),
-            })
-            .await??;
-
-        Ok(())
-    }
 }
 
+#[xtra_productivity]
 impl<O, M, T, W> Actor<O, M, T, W>
 where
     Self: xtra::Handler<CfdSetupCompleted>,
@@ -581,9 +485,11 @@ where
 {
     async fn handle_accept_order(
         &mut self,
-        order_id: OrderId,
+        msg: AcceptOrder,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
+        let AcceptOrder { order_id } = msg;
+
         if let SetupState::Active { .. } = self.setup_state {
             anyhow::bail!("Already setting up a contract!")
         }
@@ -674,81 +580,141 @@ where
     }
 }
 
+#[xtra_productivity]
 impl<O, M, T, W> Actor<O, M, T, W>
 where
-    O: xtra::Handler<oracle::MonitorAttestation>,
-    M: xtra::Handler<monitor::StartMonitoring>,
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+    T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
-    async fn handle_cfd_setup_completed(
-        &mut self,
-        order_id: OrderId,
-        dlc: Result<Dlc>,
-    ) -> Result<()> {
-        self.setup_state = SetupState::None;
+    async fn handle_reject_order(&mut self, msg: RejectOrder) -> Result<()> {
+        let RejectOrder { order_id } = msg;
+
+        tracing::debug!(%order_id, "Maker rejects an order" );
 
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        let dlc = match dlc {
-            Ok(dlc) => dlc,
-            Err(e) => {
-                cfd.state = CfdState::SetupFailed {
-                    common: CfdStateCommon::default(),
-                    info: e.to_string(),
-                };
-
-                append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-                return Err(e);
+        let taker_id = match cfd {
+            Cfd {
+                state: CfdState::IncomingOrderRequest { taker_id, .. },
+                ..
+            } => taker_id,
+            _ => {
+                anyhow::bail!("Order is in invalid state. Ignoring trying to accept it.")
             }
         };
 
-        cfd.state = CfdState::PendingOpen {
-            common: CfdStateCommon::default(),
-            dlc: dlc.clone(),
-            attestation: None,
-        };
+        self.reject_order(taker_id, cfd, conn).await?;
 
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+        Ok(())
+    }
 
-        let txid = self
-            .wallet
-            .send(wallet::TryBroadcastTransaction {
-                tx: dlc.lock.0.clone(),
+    async fn handle_accept_settlement(&mut self, msg: AcceptSettlement) -> Result<()> {
+        let AcceptSettlement { order_id } = msg;
+
+        tracing::debug!(%order_id, "Maker accepts a settlement proposal" );
+
+        let taker_id = self.get_taker_id_of_proposal(&order_id)?;
+
+        match self
+            .takers
+            .send(maker_inc_connections::TakerMessage {
+                taker_id,
+                msg: wire::MakerToTaker::ConfirmSettlement(order_id),
+            })
+            .await?
+        {
+            Ok(_) => {
+                self.current_agreed_proposals
+                    .insert(order_id, self.get_settlement_proposal(order_id)?);
+                self.remove_pending_proposal(&order_id)
+                    .await
+                    .context("accepted settlement")?;
+            }
+            Err(e) => {
+                tracing::warn!("Failed to notify taker of accepted settlement: {}", e);
+                self.remove_pending_proposal(&order_id)
+                    .await
+                    .context("accepted settlement")?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_reject_settlement(&mut self, msg: RejectSettlement) -> Result<()> {
+        let RejectSettlement { order_id } = msg;
+
+        tracing::debug!(%order_id, "Maker rejects a settlement proposal" );
+
+        let taker_id = self.get_taker_id_of_proposal(&order_id)?;
+
+        // clean-up state ahead of sending to ensure consistency in case we fail to deliver the
+        // message
+        self.remove_pending_proposal(&order_id)
+            .await
+            .context("rejected settlement")?;
+
+        self.takers
+            .send(maker_inc_connections::TakerMessage {
+                taker_id,
+                msg: wire::MakerToTaker::RejectSettlement(order_id),
             })
             .await??;
 
-        tracing::info!("Lock transaction published with txid {}", txid);
+        Ok(())
+    }
 
-        self.monitor_actor
-            .send(monitor::StartMonitoring {
-                id: order_id,
-                params: MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks()),
-            })
-            .await?;
+    async fn handle_reject_roll_over(&mut self, msg: RejectRollOver) -> Result<()> {
+        let RejectRollOver { order_id } = msg;
 
-        self.oracle_actor
-            .send(oracle::MonitorAttestation {
-                event_id: dlc.settlement_event_id,
+        tracing::debug!(%order_id, "Maker rejects a roll_over proposal" );
+
+        // Validate if order is actually being requested to be extended
+        let (_, taker_id) = match self.current_pending_proposals.get(&order_id) {
+            Some((
+                UpdateCfdProposal::RollOverProposal {
+                    proposal,
+                    direction: SettlementKind::Incoming,
+                },
+                taker_id,
+            )) => (proposal, *taker_id),
+            _ => {
+                anyhow::bail!("Order is in invalid state. Ignoring reject roll over request.")
+            }
+        };
+
+        // clean-up state ahead of sending to ensure consistency in case we fail to deliver the
+        // message
+        self.remove_pending_proposal(&order_id)
+            .await
+            .context("rejected roll_over")?;
+
+        self.takers
+            .send(maker_inc_connections::TakerMessage {
+                taker_id,
+                msg: wire::MakerToTaker::RejectRollOver(order_id),
             })
-            .await?;
+            .await??;
 
         Ok(())
     }
 }
 
+#[xtra_productivity]
 impl<O, M, T, W> Actor<O, M, T, W>
 where
     Self: xtra::Handler<CfdRollOverCompleted>,
     O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
+    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle_accept_roll_over(
         &mut self,
-        order_id: OrderId,
+        msg: AcceptRollOver,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
+        let AcceptRollOver { order_id } = msg;
+
         tracing::debug!(%order_id, "Maker accepts a roll_over proposal" );
 
         let mut conn = self.db.acquire().await?;
@@ -832,6 +798,86 @@ where
         self.remove_pending_proposal(&order_id)
             .await
             .context("accepted roll_over")?;
+        Ok(())
+    }
+}
+
+#[xtra_productivity]
+impl<O, M, T, W> Actor<O, M, T, W>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
+    async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
+        let Commit { order_id } = msg;
+
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_commit(order_id, &mut conn, &self.wallet, &self.projection_actor)
+            .await?;
+
+        Ok(())
+    }
+}
+
+impl<O, M, T, W> Actor<O, M, T, W>
+where
+    O: xtra::Handler<oracle::MonitorAttestation>,
+    M: xtra::Handler<monitor::StartMonitoring>,
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
+    async fn handle_cfd_setup_completed(
+        &mut self,
+        order_id: OrderId,
+        dlc: Result<Dlc>,
+    ) -> Result<()> {
+        self.setup_state = SetupState::None;
+
+        let mut conn = self.db.acquire().await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+
+        let dlc = match dlc {
+            Ok(dlc) => dlc,
+            Err(e) => {
+                cfd.state = CfdState::SetupFailed {
+                    common: CfdStateCommon::default(),
+                    info: e.to_string(),
+                };
+
+                append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+
+                return Err(e);
+            }
+        };
+
+        cfd.state = CfdState::PendingOpen {
+            common: CfdStateCommon::default(),
+            dlc: dlc.clone(),
+            attestation: None,
+        };
+
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+
+        let txid = self
+            .wallet
+            .send(wallet::TryBroadcastTransaction {
+                tx: dlc.lock.0.clone(),
+            })
+            .await??;
+
+        tracing::info!("Lock transaction published with txid {}", txid);
+
+        self.monitor_actor
+            .send(monitor::StartMonitoring {
+                id: order_id,
+                params: MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks()),
+            })
+            .await?;
+
+        self.oracle_actor
+            .send(oracle::MonitorAttestation {
+                event_id: dlc.settlement_event_id,
+            })
+            .await?;
+
         Ok(())
     }
 }
@@ -943,34 +989,6 @@ where
             .remove(&order_id)
             .context("remove accepted proposal after signing")?;
 
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<CfdAction> for Actor<O, M, T, W>
-where
-    Self: xtra::Handler<CfdSetupCompleted> + xtra::Handler<CfdRollOverCompleted>,
-    O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
-    T: xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>,
-    W: xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::BuildPartyParams>
-        + xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    async fn handle(&mut self, msg: CfdAction, ctx: &mut Context<Self>) -> Result<()> {
-        use CfdAction::*;
-        if let Err(e) = match msg {
-            AcceptOrder { order_id } => self.handle_accept_order(order_id, ctx).await,
-            RejectOrder { order_id } => self.handle_reject_order(order_id).await,
-            AcceptSettlement { order_id } => self.handle_accept_settlement(order_id).await,
-            RejectSettlement { order_id } => self.handle_reject_settlement(order_id).await,
-            AcceptRollOver { order_id } => self.handle_accept_roll_over(order_id, ctx).await,
-            RejectRollOver { order_id } => self.handle_reject_roll_over(order_id).await,
-            Commit { order_id } => self.handle_commit(order_id).await,
-        } {
-            anyhow::bail!("Message handler failed: {:#}", e);
-        }
         Ok(())
     }
 }
@@ -1166,10 +1184,6 @@ impl Message for CfdSetupCompleted {
 
 impl Message for CfdRollOverCompleted {
     type Result = ();
-}
-
-impl Message for CfdAction {
-    type Result = Result<()>;
 }
 
 impl Message for FromTaker {

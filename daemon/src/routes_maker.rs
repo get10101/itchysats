@@ -5,7 +5,7 @@ use daemon::model::cfd::{Cfd, Order, OrderId, Role, UpdateCfdProposals};
 use daemon::model::{Price, TakerId, Usd, WalletInfo};
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
-use daemon::{bitmex_price_feed, maker_cfd, wallet};
+use daemon::{bitmex_price_feed, maker_cfd, maker_inc_connections, monitor, oracle, wallet};
 use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Header, Status};
 use rocket::response::stream::EventStream;
@@ -19,6 +19,10 @@ use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
 use xtra::prelude::*;
+
+pub type Maker = xtra::Address<
+    maker_cfd::Actor<oracle::Actor, monitor::Actor, maker_inc_connections::Actor, wallet::Actor>,
+>;
 
 #[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]
@@ -122,10 +126,10 @@ pub struct CfdNewOrderRequest {
 #[rocket::post("/order/sell", data = "<order>")]
 pub async fn post_sell_order(
     order: Json<CfdNewOrderRequest>,
-    new_order_channel: &State<Box<dyn MessageChannel<maker_cfd::NewOrder>>>,
+    cfd_actor: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
-    new_order_channel
+    cfd_actor
         .send(maker_cfd::NewOrder {
             price: order.price,
             min_quantity: order.min_quantity,
@@ -163,18 +167,19 @@ pub struct PromptAuthentication {
 pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
-    cfd_action_channel: &State<Box<dyn MessageChannel<maker_cfd::CfdAction>>>,
+    cfd_actor: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
-    use maker_cfd::CfdAction::*;
+    use maker_cfd::*;
+
     let result = match action {
-        CfdAction::AcceptOrder => cfd_action_channel.send(AcceptOrder { order_id: id }),
-        CfdAction::RejectOrder => cfd_action_channel.send(RejectOrder { order_id: id }),
-        CfdAction::AcceptSettlement => cfd_action_channel.send(AcceptSettlement { order_id: id }),
-        CfdAction::RejectSettlement => cfd_action_channel.send(RejectSettlement { order_id: id }),
-        CfdAction::AcceptRollOver => cfd_action_channel.send(AcceptRollOver { order_id: id }),
-        CfdAction::RejectRollOver => cfd_action_channel.send(RejectRollOver { order_id: id }),
-        CfdAction::Commit => cfd_action_channel.send(Commit { order_id: id }),
+        CfdAction::AcceptOrder => cfd_actor.send(AcceptOrder { order_id: id }).await,
+        CfdAction::RejectOrder => cfd_actor.send(RejectOrder { order_id: id }).await,
+        CfdAction::AcceptSettlement => cfd_actor.send(AcceptSettlement { order_id: id }).await,
+        CfdAction::RejectSettlement => cfd_actor.send(RejectSettlement { order_id: id }).await,
+        CfdAction::AcceptRollOver => cfd_actor.send(AcceptRollOver { order_id: id }).await,
+        CfdAction::RejectRollOver => cfd_actor.send(RejectRollOver { order_id: id }).await,
+        CfdAction::Commit => cfd_actor.send(Commit { order_id: id }).await,
         CfdAction::Settle => {
             let msg = "Collaborative settlement can only be triggered by taker";
             tracing::error!(msg);
@@ -187,14 +192,11 @@ pub async fn post_cfd_action(
         }
     };
 
-    result
-        .await
-        .unwrap_or_else(|e| anyhow::bail!(e))
-        .map_err(|e| {
-            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .title(action.to_string() + " failed")
-                .detail(e.to_string())
-        })?;
+    result.unwrap_or_else(|e| anyhow::bail!(e)).map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title(action.to_string() + " failed")
+            .detail(e.to_string())
+    })?;
 
     Ok(status::Accepted(None))
 }
