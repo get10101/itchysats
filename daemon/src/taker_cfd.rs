@@ -483,7 +483,7 @@ where
             self.send_to_maker
                 .sink()
                 .clone_message_sink()
-                .with(|msg| future::ok(wire::TakerToMaker::Protocol(msg))),
+                .with(move |msg| future::ok(wire::TakerToMaker::Protocol { order_id, msg })),
             receiver,
             (self.oracle_pk, offer_announcement),
             SetupParams::new(
@@ -755,8 +755,8 @@ where
             wire::MakerToTaker::InvalidOrderId(order_id) => {
                 log_error!(self.handle_invalid_order_id(order_id))
             }
-            wire::MakerToTaker::Protocol(setup_msg) => {
-                log_error!(self.handle_inc_protocol_msg(setup_msg))
+            wire::MakerToTaker::Protocol { msg, .. } => {
+                log_error!(self.handle_inc_protocol_msg(msg))
             }
             wire::MakerToTaker::ConfirmRollOver {
                 order_id,
