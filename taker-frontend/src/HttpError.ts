@@ -1,6 +1,6 @@
 // A wrapper to parse RFC 7807
 // Pass result of `await response.json()` into the constructor.
-export class HttpError extends Error {
+export default class HttpError extends Error {
     title: string;
     detail?: string;
 

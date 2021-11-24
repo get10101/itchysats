@@ -26,9 +26,9 @@ import {
 import * as React from "react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { WalletInfo, WithdrawRequest } from "../types";
 import usePostRequest from "../usePostRequest";
 import Timestamp from "./Timestamp";
-import { WalletInfo, WithdrawRequest } from "./Types";
 
 interface WalletProps {
     walletInfo: WalletInfo | null;

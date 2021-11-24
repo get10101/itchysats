@@ -1,6 +1,6 @@
 import { Text } from "@chakra-ui/react";
 import React from "react";
-import { unixTimestampToDate } from "./Types";
+import { unixTimestampToDate } from "../types";
 
 interface Props {
     timestamp: number;

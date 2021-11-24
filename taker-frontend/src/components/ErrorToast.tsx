@@ -1,4 +1,4 @@
-import { HttpError } from "./HttpError";
+import HttpError from "../HttpError";
 
 // A generic way of creating an error toast
 // TODO: Don't use any (`toast: typeof useToast` did not work :( )

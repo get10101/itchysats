@@ -45,7 +45,7 @@ import {
 } from "@chakra-ui/react";
 import { motion } from "framer-motion";
 import * as React from "react";
-import { CfdOrderRequestPayload } from "./Types";
+import { CfdOrderRequestPayload } from "../types";
 
 const MotionBox = motion<BoxProps>(Box);
 
