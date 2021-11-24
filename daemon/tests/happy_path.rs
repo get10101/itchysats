@@ -40,7 +40,7 @@ async fn taker_takes_order_and_maker_rejects() {
         .await
         .unwrap();
 
-    taker.mocks.mock_oracle_annoucement().await;
+    taker.mocks.mock_oracle_announcement().await;
     taker.take_order(received.clone(), Usd::new(dec!(10))).await;
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
@@ -78,12 +78,12 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
         .await
         .unwrap();
 
-    taker.mocks.mock_oracle_annoucement().await;
+    taker.mocks.mock_oracle_announcement().await;
     taker.take_order(received.clone(), Usd::new(dec!(5))).await;
     let (_, _) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
 
-    maker.mocks.mock_oracle_annoucement().await;
-    taker.mocks.mock_oracle_annoucement().await;
+    maker.mocks.mock_oracle_announcement().await;
+    taker.mocks.mock_oracle_announcement().await;
 
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
