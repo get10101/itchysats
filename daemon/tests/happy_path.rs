@@ -1,7 +1,7 @@
 use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
 use crate::harness::{
-    assert_is_same_order, dummy_new_order, init_tracing, oracle_pk, start_both, Maker, Taker,
-    HEARTBEAT_INTERVAL_FOR_TEST,
+    assert_is_same_order, dummy_new_order, init_tracing, start_both, Maker, MakerConfig, Taker,
+    TakerConfig,
 };
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::CfdState;
@@ -119,15 +119,17 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 async fn taker_notices_lack_of_maker() {
     let _guard = init_tracing();
 
-    let seed = daemon::seed::Seed::default();
-
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let local_addr = listener.local_addr().unwrap();
 
-    let maker = Maker::start(oracle_pk(), seed, listener).await;
+    let maker_config = MakerConfig::default();
 
-    let mut taker = Taker::start(oracle_pk(), maker.listen_addr, maker.identity_pk).await;
+    let maker = Maker::start(&maker_config, listener).await;
+
+    let taker_config = TakerConfig::default();
+
+    let mut taker = Taker::start(&taker_config, maker.listen_addr, maker.identity_pk).await;
 
     assert_eq!(
         ConnectionStatus::Online,
@@ -136,7 +138,7 @@ async fn taker_notices_lack_of_maker() {
 
     std::mem::drop(maker);
 
-    sleep(HEARTBEAT_INTERVAL_FOR_TEST * 3).await;
+    sleep(taker_config.heartbeat_timeout).await;
 
     assert_eq!(
         ConnectionStatus::Offline,
@@ -145,9 +147,9 @@ async fn taker_notices_lack_of_maker() {
 
     let listener = tokio::net::TcpListener::bind(local_addr).await.unwrap();
 
-    let _maker = Maker::start(oracle_pk(), seed, listener).await;
+    let _maker = Maker::start(&maker_config, listener).await;
 
-    sleep(HEARTBEAT_INTERVAL_FOR_TEST * 3).await;
+    sleep(taker_config.heartbeat_timeout).await;
 
     assert_eq!(
         ConnectionStatus::Online,
