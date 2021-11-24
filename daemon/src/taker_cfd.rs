@@ -495,6 +495,7 @@ where
                 cfd.refund_timelock_in_blocks(),
             ),
             self.wallet.clone(),
+            self.wallet.clone(),
             Role::Taker,
             self.n_payouts,
         );

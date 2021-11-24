@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::ops::RangeInclusive;
 use std::time::Duration;
-use xtra::Address;
+use xtra::prelude::MessageChannel;
 
 pub struct SetupParams {
     margin: Amount,
@@ -56,23 +56,22 @@ impl SetupParams {
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
-pub async fn new<W>(
+#[allow(clippy::too_many_arguments)]
+pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
     setup_params: SetupParams,
-    wallet: Address<W>,
+    build_party_params_channel: impl MessageChannel<wallet::BuildPartyParams>,
+    sign_channel: impl MessageChannel<wallet::Sign>,
     role: Role,
     n_payouts: usize,
-) -> Result<Dlc>
-where
-    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
-{
+) -> Result<Dlc> {
     let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
     let (rev_sk, rev_pk) = crate::keypair::new(&mut rand::thread_rng());
     let (publish_sk, publish_pk) = crate::keypair::new(&mut rand::thread_rng());
 
-    let own_params = wallet
+    let own_params = build_party_params_channel
         .send(wallet::BuildPartyParams {
             amount: setup_params.margin,
             identity_pk: pk,
@@ -211,7 +210,7 @@ where
 
     tracing::info!("Verified all signatures");
 
-    let mut signed_lock_tx = wallet
+    let mut signed_lock_tx = sign_channel
         .send(wallet::Sign { psbt: lock_tx })
         .await
         .context("Failed to send message to wallet actor")?
