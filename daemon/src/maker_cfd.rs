@@ -758,12 +758,6 @@ where
             })
             .await??;
 
-        self.oracle_actor
-            .send(oracle::MonitorAttestation {
-                event_id: announcement.id,
-            })
-            .await?;
-
         let (sender, receiver) = mpsc::unbounded();
         let contract_future = setup_contract::roll_over(
             self.takers.clone().into_sink().with(move |msg| {
