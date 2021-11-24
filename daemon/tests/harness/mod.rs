@@ -33,7 +33,7 @@ pub mod mocks;
 pub const HEARTBEAT_INTERVAL_FOR_TEST: Duration = Duration::from_secs(2);
 const N_PAYOUTS_FOR_TEST: usize = 5;
 
-pub fn oracle_pk() -> schnorrsig::PublicKey {
+fn oracle_pk() -> schnorrsig::PublicKey {
     schnorrsig::PublicKey::from_str(
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )
@@ -41,11 +41,52 @@ pub fn oracle_pk() -> schnorrsig::PublicKey {
 }
 
 pub async fn start_both() -> (Maker, Taker) {
-    let maker_seed = Seed::default();
     let maker_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let maker = Maker::start(oracle_pk(), maker_seed, maker_listener).await;
-    let taker = Taker::start(oracle_pk(), maker.listen_addr, maker.identity_pk).await;
+    let maker = Maker::start(&MakerConfig::default(), maker_listener).await;
+    let taker = Taker::start(
+        &TakerConfig::default(),
+        maker.listen_addr,
+        maker.identity_pk,
+    )
+    .await;
     (maker, taker)
+}
+
+pub struct MakerConfig {
+    oracle_pk: schnorrsig::PublicKey,
+    seed: Seed,
+    pub heartbeat_interval: Duration,
+    n_payouts: usize,
+}
+
+impl Default for MakerConfig {
+    fn default() -> Self {
+        Self {
+            oracle_pk: oracle_pk(),
+            seed: Seed::default(),
+            heartbeat_interval: HEARTBEAT_INTERVAL_FOR_TEST,
+            n_payouts: N_PAYOUTS_FOR_TEST,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct TakerConfig {
+    oracle_pk: schnorrsig::PublicKey,
+    seed: Seed,
+    pub heartbeat_timeout: Duration,
+    n_payouts: usize,
+}
+
+impl Default for TakerConfig {
+    fn default() -> Self {
+        Self {
+            oracle_pk: oracle_pk(),
+            seed: Seed::default(),
+            heartbeat_timeout: HEARTBEAT_INTERVAL_FOR_TEST * 2,
+            n_payouts: N_PAYOUTS_FOR_TEST,
+        }
+    }
 }
 
 /// Maker Test Setup
@@ -74,11 +115,7 @@ impl Maker {
         &mut self.connected_takers_feed_receiver
     }
 
-    pub async fn start(
-        oracle_pk: schnorrsig::PublicKey,
-        seed: Seed,
-        listener: TcpListener,
-    ) -> Self {
+    pub async fn start(config: &MakerConfig, listener: TcpListener) -> Self {
         let db = in_memory_db().await;
 
         let mut mocks = mocks::Mocks::default();
@@ -91,7 +128,7 @@ impl Maker {
 
         let settlement_interval = time::Duration::hours(24);
 
-        let (identity_pk, identity_sk) = seed.derive_identity();
+        let (identity_pk, identity_sk) = config.seed.derive_identity();
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
@@ -100,7 +137,7 @@ impl Maker {
         let maker = daemon::MakerActorSystem::new(
             db,
             wallet_addr,
-            oracle_pk,
+            config.oracle_pk,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
             |channel0, channel1, channel2| {
@@ -109,11 +146,11 @@ impl Maker {
                     channel1,
                     channel2,
                     identity_sk,
-                    HEARTBEAT_INTERVAL_FOR_TEST,
+                    config.heartbeat_interval,
                 )
             },
             settlement_interval,
-            N_PAYOUTS_FOR_TEST,
+            config.n_payouts,
             projection_actor.clone(),
         )
         .await
@@ -222,13 +259,11 @@ impl Taker {
     }
 
     pub async fn start(
-        oracle_pk: schnorrsig::PublicKey,
+        config: &TakerConfig,
         maker_address: SocketAddr,
         maker_noise_pub_key: x25519_dalek::PublicKey,
     ) -> Self {
-        let seed = Seed::default();
-
-        let (identity_pk, identity_sk) = seed.derive_identity();
+        let (identity_pk, identity_sk) = config.seed.derive_identity();
 
         let db = in_memory_db().await;
 
@@ -247,12 +282,12 @@ impl Taker {
         let taker = daemon::TakerActorSystem::new(
             db,
             wallet_addr,
-            oracle_pk,
+            config.oracle_pk,
             identity_sk,
             |_, _| oracle,
             |_, _| async { Ok(monitor) },
-            N_PAYOUTS_FOR_TEST,
-            HEARTBEAT_INTERVAL_FOR_TEST * 2,
+            config.n_payouts,
+            config.heartbeat_timeout,
             projection_actor,
         )
         .await
