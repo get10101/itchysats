@@ -20,7 +20,6 @@ use std::task::Poll;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tokio::sync::watch::channel;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -59,6 +58,7 @@ pub struct Maker {
     pub identity_pk: x25519_dalek::PublicKey,
     cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
     order_feed_receiver: watch::Receiver<Option<Order>>,
+    connected_takers_feed_receiver: watch::Receiver<Vec<TakerId>>,
     _tasks: Tasks,
 }
 
@@ -72,7 +72,7 @@ impl Maker {
     }
 
     pub fn connected_takers_feed(&mut self) -> &mut watch::Receiver<Vec<TakerId>> {
-        &mut self.system.connected_takers_feed_receiver
+        &mut self.connected_takers_feed_receiver
     }
 
     pub async fn start(
@@ -126,17 +126,20 @@ impl Maker {
             ask: Price::new(dec!(10000)).unwrap(),
         };
 
-        let (cfd_feed_sender, cfd_feed_receiver) = channel(vec![]);
-        let (order_feed_sender, order_feed_receiver) = channel::<Option<Order>>(None);
+        let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(vec![]);
+        let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
         let (update_cfd_feed_sender, _update_cfd_feed_receiver) =
-            channel::<UpdateCfdProposals>(HashMap::new());
-        let (quote_sender, _) = channel::<Quote>(dummy_quote);
+            watch::channel::<UpdateCfdProposals>(HashMap::new());
+        let (quote_sender, _) = watch::channel::<Quote>(dummy_quote);
+        let (connected_takers_feed_sender, connected_takers_feed_receiver) =
+            watch::channel::<Vec<TakerId>>(vec![]);
 
         tasks.add(projection_context.run(projection::Actor::new(
             cfd_feed_sender,
             order_feed_sender,
             quote_sender,
             update_cfd_feed_sender,
+            connected_takers_feed_sender,
         )));
 
         let address = listener.local_addr().unwrap();
@@ -162,6 +165,7 @@ impl Maker {
             _tasks: tasks,
             cfd_feed_receiver,
             order_feed_receiver,
+            connected_takers_feed_receiver,
         }
     }
 
@@ -261,16 +265,20 @@ impl Taker {
             ask: Price::new(dec!(10000)).unwrap(),
         };
 
-        let (cfd_feed_sender, cfd_feed_receiver) = channel(vec![]);
-        let (order_feed_sender, order_feed_receiver) = channel::<Option<Order>>(None);
-        let (update_cfd_feed_sender, _) = channel::<UpdateCfdProposals>(HashMap::new());
-        let (quote_sender, _) = channel::<Quote>(dummy_quote);
+        let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(vec![]);
+        let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
+        let (update_cfd_feed_sender, _) = watch::channel::<UpdateCfdProposals>(HashMap::new());
+        let (quote_sender, _) = watch::channel::<Quote>(dummy_quote);
+
+        let (connected_takers_feed_sender, _connected_takers_feed_receiver) =
+            watch::channel::<Vec<TakerId>>(vec![]);
 
         tasks.add(projection_context.run(projection::Actor::new(
             cfd_feed_sender,
             order_feed_sender,
             quote_sender,
             update_cfd_feed_sender,
+            connected_takers_feed_sender,
         )));
 
         tasks.add(connect(

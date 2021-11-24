@@ -10,7 +10,6 @@ use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use maker_cfd::TakerDisconnected;
-use model::TakerId;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::time::Duration;
@@ -91,7 +90,6 @@ impl Default for Tasks {
 
 pub struct MakerActorSystem<O, M, T, W> {
     pub cfd_actor_addr: Address<maker_cfd::Actor<O, M, T, W>>,
-    pub connected_takers_feed_receiver: watch::Receiver<Vec<TakerId>>,
     pub inc_conn_addr: Address<T>,
     pub tasks: Tasks,
 }
@@ -135,9 +133,6 @@ where
 
         let cfds = load_all_cfds(&mut conn).await?;
 
-        let (connected_takers_feed_sender, connected_takers_feed_receiver) =
-            watch::channel::<Vec<TakerId>>(Vec::new());
-
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
         let (inc_conn_addr, inc_conn_ctx) = xtra::Context::new(None);
@@ -150,7 +145,6 @@ where
             settlement_interval,
             oracle_pk,
             projection_actor,
-            connected_takers_feed_sender,
             inc_conn_addr.clone(),
             monitor_addr.clone(),
             oracle_addr.clone(),
@@ -196,7 +190,6 @@ where
 
         Ok(Self {
             cfd_actor_addr,
-            connected_takers_feed_receiver,
             inc_conn_addr,
             tasks,
         })

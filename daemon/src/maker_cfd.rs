@@ -6,6 +6,7 @@ use crate::model::cfd::{
 };
 use crate::model::{Price, TakerId, Timestamp, Usd};
 use crate::monitor::MonitorParams;
+use crate::projection::Update;
 use crate::setup_contract::{RolloverParams, SetupParams};
 use crate::tokio_ext::FutureExt;
 use crate::{
@@ -23,7 +24,6 @@ use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 use std::collections::{HashMap, HashSet};
 use time::Duration;
-use tokio::sync::watch;
 use xtra::prelude::*;
 
 pub enum CfdAction {
@@ -71,7 +71,6 @@ pub struct Actor<O, M, T, W> {
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: Address<projection::Actor>,
-    connected_takers_feed_sender: watch::Sender<Vec<TakerId>>,
     takers: Address<T>,
     current_order_id: Option<OrderId>,
     monitor_actor: Address<M>,
@@ -81,7 +80,6 @@ pub struct Actor<O, M, T, W> {
     // Maker needs to also store TakerId to be able to send a reply back
     current_pending_proposals: HashMap<OrderId, (UpdateCfdProposal, TakerId)>,
     current_agreed_proposals: HashMap<OrderId, (SettlementProposal, TakerId)>,
-    // TODO: Keep in projection actor
     connected_takers: HashSet<TakerId>,
     n_payouts: usize,
 }
@@ -112,7 +110,6 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         settlement_interval: Duration,
         oracle_pk: schnorrsig::PublicKey,
         projection_actor: Address<projection::Actor>,
-        connected_takers_feed_sender: watch::Sender<Vec<TakerId>>,
         takers: Address<T>,
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
@@ -124,7 +121,6 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             settlement_interval,
             oracle_pk,
             projection_actor,
-            connected_takers_feed_sender,
             takers,
             current_order_id: None,
             monitor_actor,
@@ -287,6 +283,18 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         };
         Ok((proposal.clone(), *taker_id))
     }
+
+    async fn update_connected_takers(&mut self) -> Result<()> {
+        self.projection_actor
+            .send(Update(
+                self.connected_takers
+                    .clone()
+                    .into_iter()
+                    .collect::<Vec<TakerId>>(),
+            ))
+            .await?;
+        Ok(())
+    }
 }
 
 impl<O, M, T, W> Actor<O, M, T, W>
@@ -346,9 +354,7 @@ where
         if !self.connected_takers.insert(taker_id) {
             tracing::warn!("Taker already connected: {:?}", &taker_id);
         }
-        self.connected_takers_feed_sender
-            .send(self.connected_takers.clone().into_iter().collect())?;
-
+        self.update_connected_takers().await?;
         Ok(())
     }
 
@@ -356,8 +362,7 @@ where
         if !self.connected_takers.remove(&taker_id) {
             tracing::warn!("Removed unknown taker: {:?}", &taker_id);
         }
-        self.connected_takers_feed_sender
-            .send(self.connected_takers.clone().into_iter().collect())?;
+        self.update_connected_takers().await?;
         Ok(())
     }
 

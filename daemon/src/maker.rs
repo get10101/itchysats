@@ -7,7 +7,7 @@ use daemon::auth::{self, MAKER_USERNAME};
 use daemon::bitmex_price_feed::Quote;
 use daemon::db::load_all_cfds;
 use daemon::model::cfd::{Order, UpdateCfdProposals};
-use daemon::model::WalletInfo;
+use daemon::model::{TakerId, WalletInfo};
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
@@ -23,7 +23,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::task::Poll;
 use tokio::sync::watch;
-use tokio::sync::watch::channel;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::prelude::*;
 use xtra::Actor;
@@ -246,7 +245,6 @@ async fn main() -> Result<()> {
 
     let MakerActorSystem {
         cfd_actor_addr,
-        connected_takers_feed_receiver,
         inc_conn_addr: incoming_connection_addr,
         tasks: _tasks,
     } = MakerActorSystem::new(
@@ -279,17 +277,20 @@ async fn main() -> Result<()> {
     tasks.add(task);
 
     let cfds = load_all_cfds(&mut conn).await?;
-    let (cfd_feed_sender, cfd_feed_receiver) = channel(cfds.clone());
-    let (order_feed_sender, order_feed_receiver) = channel::<Option<Order>>(None);
+    let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
+    let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
     let (update_cfd_feed_sender, update_cfd_feed_receiver) =
-        channel::<UpdateCfdProposals>(HashMap::new());
-    let (quote_sender, quote_receiver) = channel::<Quote>(init_quote);
+        watch::channel::<UpdateCfdProposals>(HashMap::new());
+    let (quote_sender, quote_receiver) = watch::channel::<Quote>(init_quote);
+    let (connected_takers_feed_sender, connected_takers_feed_receiver) =
+        watch::channel::<Vec<TakerId>>(Vec::new());
 
     tasks.add(projection_context.run(projection::Actor::new(
         cfd_feed_sender,
         order_feed_sender,
         quote_sender,
         update_cfd_feed_sender,
+        connected_takers_feed_sender,
     )));
 
     let listener_stream = futures::stream::poll_fn(move |ctx| {

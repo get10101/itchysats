@@ -7,7 +7,7 @@ use daemon::bitmex_price_feed::Quote;
 use daemon::connection::connect;
 use daemon::db::load_all_cfds;
 use daemon::model::cfd::{Order, UpdateCfdProposals};
-use daemon::model::WalletInfo;
+use daemon::model::{TakerId, WalletInfo};
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
@@ -264,11 +264,18 @@ async fn main() -> Result<()> {
         channel::<UpdateCfdProposals>(HashMap::new());
     let (quote_sender, quote_receiver) = channel::<Quote>(init_quote);
 
+    // TODO: Use this channel to convey maker status.
+    // For now, the receiver is dropped instead of managed by Rocket to
+    // highlight that we're not using it
+    let (connected_takers_feed_sender, _connected_takers_feed_receiver) =
+        watch::channel::<Vec<TakerId>>(vec![]);
+
     tasks.add(projection_context.run(projection::Actor::new(
         cfd_feed_sender,
         order_feed_sender,
         quote_sender,
         update_cfd_feed_sender,
+        connected_takers_feed_sender,
     )));
 
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
