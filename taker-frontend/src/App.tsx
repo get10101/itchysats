@@ -12,15 +12,12 @@ import {
 } from "@chakra-ui/react";
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { useAsync } from "react-async";
 import { Route, Routes } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import useWebSocket from "react-use-websocket";
 import { useBackendMonitor } from "./components/BackendMonitor";
-import createErrorToast from "./components/ErrorToast";
 import Footer from "./components/Footer";
 import History from "./components/History";
-import { HttpError } from "./components/HttpError";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
 import {
@@ -34,38 +31,10 @@ import {
     Order,
     StateGroupKey,
     WalletInfo,
-    WithdrawRequest,
 } from "./components/Types";
 import { Wallet, WalletInfoBar } from "./components/Wallet";
-import useLatestEvent from "./Hooks";
-
-async function getMargin(payload: MarginRequestPayload): Promise<MarginResponse> {
-    let res = await fetch(`/api/calculate/margin`, { method: "POST", body: JSON.stringify(payload) });
-
-    if (!res.status.toString().startsWith("2")) {
-        const resp = await res.json();
-        throw new HttpError(resp);
-    }
-
-    return res.json();
-}
-
-async function postCfdOrderRequest(payload: CfdOrderRequestPayload) {
-    let res = await fetch(`/api/cfd/order`, { method: "POST", body: JSON.stringify(payload) });
-    if (!res.status.toString().startsWith("2")) {
-        const resp = await res.json();
-        throw new HttpError(resp);
-    }
-}
-
-export async function postWithdraw(payload: WithdrawRequest) {
-    let res = await fetch(`/api/withdraw`, { method: "POST", body: JSON.stringify(payload) });
-    if (!res.status.toString().startsWith("2")) {
-        const resp = await res.json();
-        throw new HttpError(resp);
-    }
-    return res.text();
-}
+import useLatestEvent from "./useLatestEvent";
+import usePostRequest from "./usePostRequest";
 
 export const App = () => {
     const toast = useToast();
@@ -104,26 +73,13 @@ export const App = () => {
 
     let effectiveQuantity = userHasEdited ? quantity : (min_quantity?.toString() || "0");
 
-    let { run: calculateMargin } = useAsync({
-        deferFn: async ([payload]: any[]) => {
-            try {
-                let res = await getMargin(payload as MarginRequestPayload);
-                setMargin(res.margin.toString());
-            } catch (e) {
-                createErrorToast(toast, e);
-            }
+    let [calculateMargin] = usePostRequest<MarginRequestPayload, MarginResponse>(
+        "/api/calculate/margin",
+        (response) => {
+            setMargin(response.margin.toString());
         },
-    });
-
-    let { run: makeNewOrderRequest, isLoading: isCreatingNewOrderRequest } = useAsync({
-        deferFn: async ([payload]: any[]) => {
-            try {
-                await postCfdOrderRequest(payload as CfdOrderRequestPayload);
-            } catch (e) {
-                createErrorToast(toast, e);
-            }
-        },
-    });
+    );
+    let [makeNewOrderRequest, isCreatingNewOrderRequest] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
 
     useEffect(() => {
         if (!order) {
@@ -184,7 +140,7 @@ export const App = () => {
                                         calculateMargin(payload);
                                     }}
                                     onLongSubmit={makeNewOrderRequest}
-                                    isSubmitting={isCreatingNewOrderRequest}
+                                    isLongSubmitting={isCreatingNewOrderRequest}
                                 />
                                 <History
                                     cfds={cfds.filter((cfd) => cfd.state.getGroup() !== StateGroupKey.CLOSED)}

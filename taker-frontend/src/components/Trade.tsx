@@ -45,7 +45,6 @@ import {
 } from "@chakra-ui/react";
 import { motion } from "framer-motion";
 import * as React from "react";
-import { useAsync } from "react-async";
 import { CfdOrderRequestPayload } from "./Types";
 
 const MotionBox = motion<BoxProps>(Box);
@@ -61,10 +60,10 @@ interface TradeProps {
     leverage?: number;
     quantity: string;
     liquidationPrice?: number;
-    isSubmitting: boolean;
     onQuantityChange: any;
     walletBalance?: number;
     onLongSubmit: (payload: CfdOrderRequestPayload) => void;
+    isLongSubmitting: boolean;
 }
 
 interface AlertBoxProps {
@@ -93,6 +92,7 @@ const Trade = (
         leverage,
         liquidationPrice: liquidationPriceAsNumber,
         onLongSubmit,
+        isLongSubmitting,
         orderId,
         walletBalance,
     }: TradeProps,
@@ -107,19 +107,6 @@ const Trade = (
 
     const { isOpen, onOpen, onClose } = useDisclosure();
 
-    let { run: goLong, isLoading: isSubmitting } = useAsync({
-        deferFn: async () => {
-            const quantityAsNumber = quantity.replace("$", "");
-
-            let payload: CfdOrderRequestPayload = {
-                order_id: orderId!,
-                quantity: Number.parseFloat(quantityAsNumber),
-            };
-            await onLongSubmit(payload);
-            onClose();
-        },
-    });
-
     const parse = (val: any) => Number.parseInt(val.replace(/^\$/, ""));
 
     const balanceTooLow = walletBalance && walletBalance < parse(margin);
@@ -127,7 +114,7 @@ const Trade = (
     const quantityTooLow = minQuantity > parse(quantity);
     const quantityGreaterZero = parse(quantity) > 0;
 
-    const canSubmit = orderId && !isSubmitting && !balanceTooLow
+    const canSubmit = orderId && !isLongSubmitting && !balanceTooLow
         && !quantityTooHigh && !quantityTooLow && quantityGreaterZero;
 
     let alertBox;
@@ -257,7 +244,20 @@ const Trade = (
 
                                     <ModalFooter>
                                         <HStack>
-                                            <Button colorScheme="teal" isLoading={isSubmitting} onClick={goLong}>
+                                            <Button
+                                                colorScheme="teal"
+                                                isLoading={isLongSubmitting}
+                                                onClick={() => {
+                                                    const quantityAsNumber = quantity.replace("$", "");
+
+                                                    let payload: CfdOrderRequestPayload = {
+                                                        order_id: orderId!,
+                                                        quantity: Number.parseFloat(quantityAsNumber),
+                                                    };
+                                                    onLongSubmit(payload);
+                                                    onClose();
+                                                }}
+                                            >
                                                 Confirm
                                             </Button>
                                         </HStack>

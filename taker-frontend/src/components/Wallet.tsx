@@ -24,13 +24,11 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { FormEvent, useState } from "react";
-import { useAsync } from "react-async";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { postWithdraw } from "../App";
-import createErrorToast from "./ErrorToast";
+import usePostRequest from "../usePostRequest";
 import Timestamp from "./Timestamp";
-import { WalletInfo } from "./Types";
+import { WalletInfo, WithdrawRequest } from "./Types";
 
 interface WalletProps {
     walletInfo: WalletInfo | null;
@@ -48,30 +46,17 @@ export default function Wallet(
     const [withdrawAmount, setWithdrawAmount] = useState(0);
     const [fee, setFee] = useState(1);
     const [withdrawAddress, setWithdrawAddress] = useState("");
-
-    let { run: runWithdraw, isLoading: isWithdrawing } = useAsync({
-        deferFn: async ([event]: FormEvent<HTMLFormElement>[]) => {
-            event.preventDefault();
-            try {
-                const url = await postWithdraw({
-                    amount: withdrawAmount,
-                    fee,
-                    address: withdrawAddress,
-                });
-                window.open(url, "_blank");
-                toast({
-                    title: "Withdraw successful",
-                    description: <Link href={url} isExternal>
-                        {url}
-                    </Link>,
-                    status: "info",
-                    duration: 10000,
-                    isClosable: true,
-                });
-            } catch (e) {
-                createErrorToast(toast, e);
-            }
-        },
+    const [runWithdraw, isWithdrawing] = usePostRequest<WithdrawRequest, string>("/api/withdraw", (url) => {
+        window.open(url, "_blank");
+        toast({
+            title: "Withdraw successful",
+            description: <Link href={url} isExternal>
+                {url}
+            </Link>,
+            status: "info",
+            duration: 10000,
+            isClosable: true,
+        });
     });
 
     return (
@@ -108,7 +93,17 @@ export default function Wallet(
                 <Divider marginTop={2} marginBottom={2} />
 
                 <VStack padding={2}>
-                    <form onSubmit={runWithdraw}>
+                    <form
+                        onSubmit={(event) => {
+                            event.preventDefault();
+
+                            runWithdraw({
+                                amount: withdrawAmount,
+                                fee,
+                                address: withdrawAddress,
+                            });
+                        }}
+                    >
                         <Heading as="h3" size="sm">Withdraw</Heading>
                         <FormControl id="address">
                             <FormLabel>Address</FormLabel>
