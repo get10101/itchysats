@@ -111,6 +111,7 @@ where
         )
     }
 
+    let settlement_event_id = announcement.id;
     let payouts = HashMap::from_iter([(
         announcement.into(),
         payout_curve::calculate(
@@ -289,6 +290,7 @@ where
         maker_lock_amount: params.maker().lock_amount,
         taker_lock_amount: params.taker().lock_amount,
         revoked_commit: Vec::new(),
+        settlement_event_id,
     })
 }
 
@@ -575,6 +577,7 @@ pub async fn roll_over(
         maker_lock_amount,
         taker_lock_amount,
         revoked_commit,
+        settlement_event_id: announcement.id,
     })
 }
 

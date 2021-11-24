@@ -676,8 +676,8 @@ impl Cfd {
             .ceil() as u32
     }
 
-    pub fn expiry_timestamp(&self) -> OffsetDateTime {
-        self.order.oracle_event_id.timestamp()
+    pub fn expiry_timestamp(&self) -> Option<OffsetDateTime> {
+        self.dlc().map(|dlc| dlc.settlement_event_id.timestamp)
     }
 
     /// A factor to be added to the CFD order settlement_interval for calculating the
@@ -1506,6 +1506,12 @@ pub struct Dlc {
     pub taker_lock_amount: Amount,
 
     pub revoked_commit: Vec<RevokedCommit>,
+
+    // TODO: For now we store this seperately - it is a duplicate of what is stored in the cets
+    // hashmap. The cet hashmap allows storing cets for event-ids with different concern
+    // (settlement and liquidation-point). We should NOT make these fields public on the Dlc
+    // and create an internal structure that depicts this properly and avoids duplication.
+    pub settlement_event_id: BitMexPriceEventId,
 }
 
 impl Dlc {

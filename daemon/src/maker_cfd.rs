@@ -693,17 +693,13 @@ where
         self.monitor_actor
             .send(monitor::StartMonitoring {
                 id: order_id,
-                params: MonitorParams::new(
-                    dlc,
-                    cfd.refund_timelock_in_blocks(),
-                    cfd.order.oracle_event_id,
-                ),
+                params: MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks()),
             })
             .await?;
 
         self.oracle_actor
             .send(oracle::MonitorAttestation {
-                event_id: cfd.order.oracle_event_id,
+                event_id: dlc.settlement_event_id,
             })
             .await?;
 
@@ -818,8 +814,9 @@ where
 impl<O, M, T, W> Actor<O, M, T, W>
 where
     M: xtra::Handler<monitor::StartMonitoring>,
+    O: xtra::Handler<oracle::MonitorAttestation>,
 {
-    async fn handle_cfd_roll_over_completed(
+    async fn handle_roll_over_completed(
         &mut self,
         order_id: OrderId,
         dlc: Result<Dlc>,
@@ -840,11 +837,13 @@ where
         self.monitor_actor
             .send(monitor::StartMonitoring {
                 id: order_id,
-                params: MonitorParams::new(
-                    dlc,
-                    cfd.refund_timelock_in_blocks(),
-                    cfd.order.oracle_event_id,
-                ),
+                params: MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks()),
+            })
+            .await?;
+
+        self.oracle_actor
+            .send(oracle::MonitorAttestation {
+                event_id: dlc.settlement_event_id,
             })
             .await?;
 
@@ -1025,9 +1024,10 @@ impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<CfdRollOverComplete
     for Actor<O, M, T, W>
 where
     M: xtra::Handler<monitor::StartMonitoring>,
+    O: xtra::Handler<oracle::MonitorAttestation>,
 {
     async fn handle(&mut self, msg: CfdRollOverCompleted, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_cfd_roll_over_completed(msg.order_id, msg.dlc));
+        log_error!(self.handle_roll_over_completed(msg.order_id, msg.dlc));
     }
 }
 
