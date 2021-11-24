@@ -3,10 +3,19 @@ use crate::model::cfd::{Cfd, CfdState};
 use crate::{try_continue, wallet};
 use anyhow::Result;
 use sqlx::pool::PoolConnection;
-use sqlx::Sqlite;
+use sqlx::{Sqlite, SqlitePool};
 use xtra::Address;
 
-pub async fn transition_non_continue_cfds_to_setup_failed(
+/// Perform necessary housekeeping before actor system startup
+pub async fn new(db: &SqlitePool, wallet: &Address<wallet::Actor>) -> Result<()> {
+    let mut conn = db.acquire().await?;
+
+    transition_non_continue_cfds_to_setup_failed(&mut conn).await?;
+    rebroadcast_transactions(&mut conn, wallet).await?;
+    Ok(())
+}
+
+async fn transition_non_continue_cfds_to_setup_failed(
     conn: &mut PoolConnection<Sqlite>,
 ) -> Result<()> {
     let mut cfds = load_all_cfds(conn).await?;
@@ -23,7 +32,7 @@ pub async fn transition_non_continue_cfds_to_setup_failed(
     Ok(())
 }
 
-pub async fn rebroadcast_transactions(
+async fn rebroadcast_transactions(
     conn: &mut PoolConnection<Sqlite>,
     wallet: &Address<wallet::Actor>,
 ) -> Result<()> {
