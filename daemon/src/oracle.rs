@@ -68,13 +68,13 @@ impl Actor {
 
         for cfd in cfds {
             match cfd.state.clone() {
-                CfdState::PendingOpen { .. }
-                | CfdState::Open { .. }
-                | CfdState::PendingCommit { .. }
-                | CfdState::OpenCommitted { .. }
-                | CfdState::PendingCet { .. } =>
+                CfdState::PendingOpen { dlc, ..}
+                | CfdState::Open { dlc, .. }
+                | CfdState::PendingCommit { dlc, .. }
+                | CfdState::OpenCommitted { dlc, .. }
+                | CfdState::PendingCet { dlc, .. } =>
                 {
-                    pending_attestations.insert(cfd.order.oracle_event_id);
+                    pending_attestations.insert(dlc.settlement_event_id);
                 }
 
                 // Irrelevant for restart

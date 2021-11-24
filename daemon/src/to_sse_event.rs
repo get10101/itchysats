@@ -318,7 +318,10 @@ impl ToSseEvent for CfdsWithAuxData {
                     margin: cfd.margin().expect("margin to be available"),
                     margin_counterparty: cfd.counterparty_margin().expect("margin to be available"),
                     details,
-                    expiry_timestamp: cfd.expiry_timestamp(),
+                    expiry_timestamp: match cfd.expiry_timestamp() {
+                        None => cfd.order.oracle_event_id.timestamp(),
+                        Some(timestamp) => timestamp,
+                    },
                 }
             })
             .collect::<Vec<Cfd>>();

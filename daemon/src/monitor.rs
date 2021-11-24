@@ -78,12 +78,12 @@ impl Actor<bdk::electrum_client::Client> {
             match cfd.state.clone() {
                 // In PendingOpen we know the complete dlc setup and assume that the lock transaction will be published
                 CfdState::PendingOpen { dlc, .. } => {
-                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks(), cfd.order.oracle_event_id);
+                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
                     actor.cfds.insert(cfd.order.id, params.clone());
                     actor.monitor_all(&params, cfd.order.id);
                 }
                 CfdState::Open { dlc, .. } | CfdState::PendingCommit { dlc, .. } => {
-                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks(), cfd.order.oracle_event_id);
+                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
                     actor.cfds.insert(cfd.order.id, params.clone());
 
                     actor.monitor_commit_finality(&params, cfd.order.id);
@@ -99,7 +99,7 @@ impl Actor<bdk::electrum_client::Client> {
                     }
                 }
                 CfdState::OpenCommitted { dlc, cet_status, .. } => {
-                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks(), cfd.order.oracle_event_id);
+                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
                     actor.cfds.insert(cfd.order.id, params.clone());
 
                     match cet_status {
@@ -126,7 +126,7 @@ impl Actor<bdk::electrum_client::Client> {
                     }
                 }
                 CfdState::PendingCet { dlc, attestation, .. } => {
-                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks(), cfd.order.oracle_event_id);
+                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
                     actor.cfds.insert(cfd.order.id, params.clone());
 
                     actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.order.id)?;
@@ -134,7 +134,7 @@ impl Actor<bdk::electrum_client::Client> {
                     actor.monitor_refund_finality(&params,cfd.order.id);
                 }
                 CfdState::PendingRefund { dlc, .. } => {
-                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks(), cfd.order.oracle_event_id);
+                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
                     actor.cfds.insert(cfd.order.id, params.clone());
 
                     actor.monitor_commit_refund_timelock(&params, cfd.order.id);
@@ -561,7 +561,7 @@ impl Event {
 }
 
 impl MonitorParams {
-    pub fn new(dlc: Dlc, refund_timelock_in_blocks: u32, event_id: BitMexPriceEventId) -> Self {
+    pub fn new(dlc: Dlc, refund_timelock_in_blocks: u32) -> Self {
         let script_pubkey = dlc.maker_address.script_pubkey();
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
@@ -577,7 +577,7 @@ impl MonitorParams {
                 .iter()
                 .map(|rev_commit| (rev_commit.txid, rev_commit.script_pubkey.clone()))
                 .collect(),
-            event_id,
+            event_id: dlc.settlement_event_id,
         }
     }
 }
