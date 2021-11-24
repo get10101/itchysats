@@ -1,5 +1,5 @@
 use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
-use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
+use crate::db::load_cfd_by_order_id;
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateCommon, CollaborativeSettlement, Dlc, Order, OrderId, Origin, Role,
     RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal, UpdateCfdProposals,
@@ -75,6 +75,7 @@ pub struct Actor<O, M, W> {
     oracle_actor: Address<O>,
     current_pending_proposals: UpdateCfdProposals,
     n_payouts: usize,
+    current_maker_order: Option<Order>,
 }
 
 impl<O, M, W> Actor<O, M, W>
@@ -106,6 +107,7 @@ where
             oracle_actor,
             current_pending_proposals: HashMap::new(),
             n_payouts,
+            current_maker_order: None,
         }
     }
 }
@@ -143,7 +145,11 @@ impl<O, M, W> Actor<O, M, W> {
     async fn handle_take_offer(&mut self, order_id: OrderId, quantity: Usd) -> Result<()> {
         let mut conn = self.db.acquire().await?;
 
-        let current_order = load_order_by_id(order_id, &mut conn).await?;
+        let current_order = self
+            .current_maker_order
+            .as_ref()
+            .context("No order present that can be taken")?
+            .clone();
 
         tracing::info!("Taking current order: {:?}", &current_order);
 
@@ -308,15 +314,11 @@ impl<O, M, W> Actor<O, M, W> {
                 order.origin = Origin::Theirs;
 
                 let mut conn = self.db.acquire().await?;
-
                 if load_cfd_by_order_id(order.id, &mut conn).await.is_ok() {
                     bail!("Received order {} from maker, but already have a cfd in the database for that order. The maker did not properly remove the order.", order.id)
                 }
 
-                if load_order_by_id(order.id, &mut conn).await.is_err() {
-                    // only insert the order if we don't know it yet
-                    insert_order(&order, &mut conn).await?;
-                }
+                self.current_maker_order = Some(order.clone());
 
                 self.projection_actor
                     .send(projection::Update(Some(order)))
