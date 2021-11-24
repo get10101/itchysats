@@ -11,7 +11,7 @@ use daemon::model::{TakerId, WalletInfo};
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
-    bitmex_price_feed, db, housekeeping, logger, maker_cfd, maker_inc_connections, monitor, oracle,
+    bitmex_price_feed, db, housekeeping, logger, maker_inc_connections, monitor, oracle,
     projection, wallet, wallet_sync, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
     SETTLEMENT_INTERVAL,
 };
@@ -24,7 +24,6 @@ use std::str::FromStr;
 use std::task::Poll;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
-use xtra::prelude::*;
 use xtra::Actor;
 
 mod routes_maker;
@@ -305,17 +304,12 @@ async fn main() -> Result<()> {
     });
 
     tasks.add(incoming_connection_addr.attach_stream(listener_stream));
-
     tasks.add(wallet_sync::new(wallet.clone(), wallet_feed_sender));
-
-    let cfd_action_channel = MessageChannel::<maker_cfd::CfdAction>::clone_channel(&cfd_actor_addr);
-    let new_order_channel = MessageChannel::<maker_cfd::NewOrder>::clone_channel(&cfd_actor_addr);
 
     rocket::custom(figment)
         .manage(order_feed_receiver)
         .manage(update_cfd_feed_receiver)
-        .manage(cfd_action_channel)
-        .manage(new_order_channel)
+        .manage(cfd_actor_addr)
         .manage(cfd_feed_receiver)
         .manage(connected_takers_feed_receiver)
         .manage(wallet_feed_receiver)

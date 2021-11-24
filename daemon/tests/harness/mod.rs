@@ -4,7 +4,6 @@ use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{connect, ConnectionStatus};
-use daemon::maker_cfd::CfdAction;
 use daemon::model::cfd::{Cfd, Order, Origin, UpdateCfdProposals};
 use daemon::model::{Price, TakerId, Timestamp, Usd};
 use daemon::seed::Seed;
@@ -183,7 +182,7 @@ impl Maker {
     pub async fn reject_take_request(&self, order: Order) {
         self.system
             .cfd_actor_addr
-            .send(CfdAction::RejectOrder { order_id: order.id })
+            .send(maker_cfd::RejectOrder { order_id: order.id })
             .await
             .unwrap()
             .unwrap();
@@ -192,7 +191,7 @@ impl Maker {
     pub async fn accept_take_request(&self, order: Order) {
         self.system
             .cfd_actor_addr
-            .send(CfdAction::AcceptOrder { order_id: order.id })
+            .send(maker_cfd::AcceptOrder { order_id: order.id })
             .await
             .unwrap()
             .unwrap();
