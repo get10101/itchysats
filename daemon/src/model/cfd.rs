@@ -1097,48 +1097,7 @@ impl Cfd {
             _ => bail!("Cannot publish CET in state {}", self.state.clone()),
         };
 
-        let cets = dlc
-            .cets
-            .get(&attestation.id)
-            .context("Unable to find oracle event id within the cets of the dlc")?;
-
-        let Cet {
-            tx: cet,
-            adaptor_sig: encsig,
-            n_bits,
-            ..
-        } = cets
-            .iter()
-            .find(|Cet { range, .. }| range.contains(&attestation.price))
-            .context("Price out of range of cets")?;
-
-        let oracle_attestations = attestation.scalars;
-
-        let mut decryption_sk = oracle_attestations[0];
-        for oracle_attestation in oracle_attestations[1..*n_bits].iter() {
-            decryption_sk.add_assign(oracle_attestation.as_ref())?;
-        }
-
-        let sig_hash = spending_tx_sighash(
-            cet,
-            &dlc.commit.2,
-            Amount::from_sat(dlc.commit.0.output[0].value),
-        );
-        let our_sig = SECP256K1.sign(&sig_hash, &dlc.identity);
-        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
-            SECP256K1,
-            &dlc.identity,
-        ));
-
-        let counterparty_sig = encsig.decrypt(&decryption_sk)?;
-        let counterparty_pubkey = dlc.identity_counterparty;
-
-        let signed_cet = finalize_spend_transaction(
-            cet.clone(),
-            &dlc.commit.2,
-            (our_pubkey, our_sig),
-            (counterparty_pubkey, counterparty_sig),
-        )?;
+        let signed_cet = dlc.signed_cet(&attestation)?;
 
         Ok(Ok(signed_cet))
     }
@@ -1592,6 +1551,51 @@ impl Dlc {
         )?;
 
         Ok(signed_commit_tx)
+    }
+
+    pub fn signed_cet(&self, attestation: &Attestation) -> Result<Transaction> {
+        let cets = self
+            .cets
+            .get(&attestation.id)
+            .context("Unable to find oracle event id within the cets of the self")?;
+
+        let Cet {
+            tx: cet,
+            adaptor_sig: encsig,
+            n_bits,
+            ..
+        } = cets
+            .iter()
+            .find(|Cet { range, .. }| range.contains(&attestation.price))
+            .context("Price out of range of cets")?;
+
+        let mut decryption_sk = attestation.scalars[0];
+        for oracle_attestation in attestation.scalars[1..*n_bits].iter() {
+            decryption_sk.add_assign(oracle_attestation.as_ref())?;
+        }
+
+        let sig_hash = spending_tx_sighash(
+            cet,
+            &self.commit.2,
+            Amount::from_sat(self.commit.0.output[0].value),
+        );
+        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
+        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
+            SECP256K1,
+            &self.identity,
+        ));
+
+        let counterparty_sig = encsig.decrypt(&decryption_sk)?;
+        let counterparty_pubkey = self.identity_counterparty;
+
+        let signed_cet = finalize_spend_transaction(
+            cet.clone(),
+            &self.commit.2,
+            (our_pubkey, our_sig),
+            (counterparty_pubkey, counterparty_sig),
+        )?;
+
+        Ok(signed_cet)
     }
 }
 
