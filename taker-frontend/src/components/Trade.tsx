@@ -189,7 +189,7 @@ export default function Trade({
                     <Leverage leverage={leverage} />
                 </GridItem>
                 <GridItem colSpan={1}>
-                    <Margin margin={margin} />
+                    <Margin margin={marginAsNumber} />
                 </GridItem>
                 <GridItem colSpan={1}>
                     <Center>
@@ -221,12 +221,12 @@ export default function Trade({
                                     <ModalBody>
                                         <Table variant="striped" colorScheme="gray" size="sm">
                                             <TableCaption>
-                                                By submitting, {margin} will be locked on-chain in a contract.
+                                                By submitting, ₿{marginAsNumber} will be locked on-chain in a contract.
                                             </TableCaption>
                                             <Tbody>
                                                 <Tr>
                                                     <Td><Text as={"b"}>Margin</Text></Td>
-                                                    <Td>{margin}</Td>
+                                                    <Td>₿{marginAsNumber}</Td>
                                                 </Tr>
                                                 <Tr>
                                                     <Td><Text as={"b"}>Leverage</Text></Td>
@@ -327,7 +327,7 @@ function Leverage({ leverage }: LeverageProps) {
 }
 
 interface MarginProps {
-    margin?: string;
+    margin: number;
 }
 
 function Margin({ margin }: MarginProps) {
@@ -335,7 +335,7 @@ function Margin({ margin }: MarginProps) {
         <VStack>
             <HStack>
                 <Text as={"b"}>Required margin:</Text>
-                <Text>{margin}</Text>
+                <Text>₿{margin}</Text>
             </HStack>
             <Text fontSize={"sm"} color={"darkgrey"}>The collateral you will need to provide</Text>
         </VStack>
