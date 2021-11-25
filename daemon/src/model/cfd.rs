@@ -1073,28 +1073,7 @@ impl Cfd {
             )
         };
 
-        let sig_hash = spending_tx_sighash(
-            &dlc.commit.0,
-            &dlc.lock.1,
-            Amount::from_sat(dlc.lock.0.output[0].value),
-        );
-        let our_sig = SECP256K1.sign(&sig_hash, &dlc.identity);
-        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
-            SECP256K1,
-            &dlc.identity,
-        ));
-
-        let counterparty_sig = dlc.commit.1.decrypt(&dlc.publish)?;
-        let counterparty_pubkey = dlc.identity_counterparty;
-
-        let signed_commit_tx = finalize_spend_transaction(
-            dlc.commit.0,
-            &dlc.lock.1,
-            (our_pubkey, our_sig),
-            (counterparty_pubkey, counterparty_sig),
-        )?;
-
-        Ok(signed_commit_tx)
+        dlc.signed_commit_tx()
     }
 
     pub fn cet(&self) -> Result<Result<Transaction, NotReadyYet>> {
@@ -1588,6 +1567,31 @@ impl Dlc {
         )?;
 
         Ok(signed_refund_tx)
+    }
+
+    pub fn signed_commit_tx(&self) -> Result<Transaction> {
+        let sig_hash = spending_tx_sighash(
+            &self.commit.0,
+            &self.lock.1,
+            Amount::from_sat(self.lock.0.output[0].value),
+        );
+        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
+        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
+            SECP256K1,
+            &self.identity,
+        ));
+
+        let counterparty_sig = self.commit.1.decrypt(&self.publish)?;
+        let counterparty_pubkey = self.identity_counterparty;
+
+        let signed_commit_tx = finalize_spend_transaction(
+            self.commit.0.clone(),
+            &self.lock.1,
+            (our_pubkey, our_sig),
+            (counterparty_pubkey, counterparty_sig),
+        )?;
+
+        Ok(signed_commit_tx)
     }
 }
 
