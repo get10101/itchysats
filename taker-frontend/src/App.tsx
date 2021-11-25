@@ -66,7 +66,7 @@ export const App = () => {
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined! : false;
 
     let [quantity, setQuantity] = useState("0");
-    let [margin, setMargin] = useState("0");
+    let [margin, setMargin] = useState(0);
     let [userHasEdited, setUserHasEdited] = useState(false);
 
     const { price: askPrice, min_quantity, max_quantity, leverage, liquidation_price: liquidationPrice } = order || {};
@@ -76,7 +76,7 @@ export const App = () => {
     let [calculateMargin] = usePostRequest<MarginRequestPayload, MarginResponse>(
         "/api/calculate/margin",
         (response) => {
-            setMargin(response.margin.toString());
+            setMargin(response.margin);
         },
     );
     let [makeNewOrderRequest, isCreatingNewOrderRequest] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");

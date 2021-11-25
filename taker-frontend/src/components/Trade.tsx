@@ -56,7 +56,7 @@ interface TradeProps {
     maxQuantity: number;
     referencePrice?: number;
     askPrice?: number;
-    margin: string;
+    margin: number;
     leverage?: number;
     quantity: string;
     liquidationPrice?: number;
