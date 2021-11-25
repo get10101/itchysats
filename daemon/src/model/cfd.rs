@@ -1057,26 +1057,7 @@ impl Cfd {
             bail!("Refund transaction can only be constructed when in state PendingRefund, but we are currently in {}", self.state.clone())
         };
 
-        let sig_hash = spending_tx_sighash(
-            &dlc.refund.0,
-            &dlc.commit.2,
-            Amount::from_sat(dlc.commit.0.output[0].value),
-        );
-        let our_sig = SECP256K1.sign(&sig_hash, &dlc.identity);
-        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
-            SECP256K1,
-            &dlc.identity,
-        ));
-        let counterparty_sig = dlc.refund.1;
-        let counterparty_pubkey = dlc.identity_counterparty;
-        let signed_refund_tx = finalize_spend_transaction(
-            dlc.refund.0,
-            &dlc.commit.2,
-            (our_pubkey, our_sig),
-            (counterparty_pubkey, counterparty_sig),
-        )?;
-
-        Ok(signed_refund_tx)
+        dlc.signed_refund_tx()
     }
 
     pub fn commit_tx(&self) -> Result<Transaction> {
@@ -1584,6 +1565,29 @@ impl Dlc {
             Role::Maker => self.maker_address.script_pubkey(),
             Role::Taker => self.taker_address.script_pubkey(),
         }
+    }
+
+    pub fn signed_refund_tx(&self) -> Result<Transaction> {
+        let sig_hash = spending_tx_sighash(
+            &self.refund.0,
+            &self.commit.2,
+            Amount::from_sat(self.commit.0.output[0].value),
+        );
+        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
+        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
+            SECP256K1,
+            &self.identity,
+        ));
+        let counterparty_sig = self.refund.1;
+        let counterparty_pubkey = self.identity_counterparty;
+        let signed_refund_tx = finalize_spend_transaction(
+            self.refund.0.clone(),
+            &self.commit.2,
+            (our_pubkey, our_sig),
+            (counterparty_pubkey, counterparty_sig),
+        )?;
+
+        Ok(signed_refund_tx)
     }
 }
 
