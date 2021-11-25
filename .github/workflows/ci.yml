@@ -99,6 +99,8 @@ jobs:
       - uses: Swatinem/rust-cache@v1.3.0
       - run: cargo build --bins --tests
       - run: cargo test --workspace
+      # Ignored tests should be run on the CI
+      - run: cargo test --workspace -- --ignored
       - name: Smoke test ${{ matrix.os }} binary
         shell: bash
         run: |
