@@ -1,11 +1,12 @@
 use anyhow::Result;
 use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
-use daemon::model::cfd::{Cfd, Order, OrderId, Role, UpdateCfdProposals};
-use daemon::model::{Price, TakerId, Usd, WalletInfo};
+use daemon::model::cfd::{OrderId, Role};
+use daemon::model::{Price, Usd, WalletInfo};
+use daemon::projection::Feeds;
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
-use daemon::{bitmex_price_feed, maker_cfd, maker_inc_connections, monitor, oracle, wallet};
+use daemon::{maker_cfd, maker_inc_connections, monitor, oracle, wallet};
 use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Header, Status};
 use rocket::response::stream::EventStream;
@@ -27,21 +28,18 @@ pub type Maker = xtra::Address<
 #[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]
 pub async fn maker_feed(
-    rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
-    rx_order: &State<watch::Receiver<Option<Order>>>,
+    rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
-    rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
-    rx_settlements: &State<watch::Receiver<UpdateCfdProposals>>,
-    rx_connected_takers: &State<watch::Receiver<Vec<TakerId>>>,
     network: &State<Network>,
     _auth: Authenticated,
 ) -> EventStream![] {
-    let mut rx_cfds = rx_cfds.inner().clone();
-    let mut rx_order = rx_order.inner().clone();
+    let rx = rx.inner();
+    let mut rx_cfds = rx.cfds.clone();
+    let mut rx_order = rx.order.clone();
     let mut rx_wallet = rx_wallet.inner().clone();
-    let mut rx_quote = rx_quote.inner().clone();
-    let mut rx_settlements = rx_settlements.inner().clone();
-    let mut rx_connected_takers = rx_connected_takers.inner().clone();
+    let mut rx_quote = rx.quote.clone();
+    let mut rx_settlements = rx.settlements.clone();
+    let mut rx_connected_takers = rx.connected_takers.clone();
     let network = *network.inner();
 
     EventStream! {

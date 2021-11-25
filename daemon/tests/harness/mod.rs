@@ -4,8 +4,9 @@ use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{connect, ConnectionStatus};
-use daemon::model::cfd::{Cfd, Order, Origin, UpdateCfdProposals};
+use daemon::model::cfd::{Cfd, Order, Origin};
 use daemon::model::{Price, TakerId, Timestamp, Usd};
+use daemon::projection::Feeds;
 use daemon::seed::Seed;
 use daemon::{
     db, maker_cfd, maker_inc_connections, projection, taker_cfd, MakerActorSystem, Tasks,
@@ -13,7 +14,6 @@ use daemon::{
 };
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::task::Poll;
@@ -113,25 +113,23 @@ pub struct Maker {
     pub system:
         MakerActorSystem<OracleActor, MonitorActor, maker_inc_connections::Actor, WalletActor>,
     pub mocks: mocks::Mocks,
+    pub feeds: Feeds,
     pub listen_addr: SocketAddr,
     pub identity_pk: x25519_dalek::PublicKey,
-    cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
-    order_feed_receiver: watch::Receiver<Option<Order>>,
-    connected_takers_feed_receiver: watch::Receiver<Vec<TakerId>>,
     _tasks: Tasks,
 }
 
 impl Maker {
     pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Vec<Cfd>> {
-        &mut self.cfd_feed_receiver
+        &mut self.feeds.cfds
     }
 
     pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<Order>> {
-        &mut self.order_feed_receiver
+        &mut self.feeds.order
     }
 
     pub fn connected_takers_feed(&mut self) -> &mut watch::Receiver<Vec<TakerId>> {
-        &mut self.connected_takers_feed_receiver
+        &mut self.feeds.connected_takers
     }
 
     pub async fn start(config: &MakerConfig, listener: TcpListener) -> Self {
@@ -181,21 +179,8 @@ impl Maker {
             ask: Price::new(dec!(10000)).unwrap(),
         };
 
-        let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(vec![]);
-        let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
-        let (update_cfd_feed_sender, _update_cfd_feed_receiver) =
-            watch::channel::<UpdateCfdProposals>(HashMap::new());
-        let (quote_sender, _) = watch::channel::<Quote>(dummy_quote);
-        let (connected_takers_feed_sender, connected_takers_feed_receiver) =
-            watch::channel::<Vec<TakerId>>(vec![]);
-
-        tasks.add(projection_context.run(projection::Actor::new(
-            cfd_feed_sender,
-            order_feed_sender,
-            quote_sender,
-            update_cfd_feed_sender,
-            connected_takers_feed_sender,
-        )));
+        let (proj_actor, feeds) = projection::Actor::new(vec![], dummy_quote);
+        tasks.add(projection_context.run(proj_actor));
 
         let address = listener.local_addr().unwrap();
 
@@ -214,13 +199,11 @@ impl Maker {
 
         Self {
             system: maker,
+            feeds,
             identity_pk,
             listen_addr: address,
             mocks,
             _tasks: tasks,
-            cfd_feed_receiver,
-            order_feed_receiver,
-            connected_takers_feed_receiver,
         }
     }
 
@@ -259,18 +242,17 @@ pub struct Taker {
     pub id: TakerId,
     pub system: daemon::TakerActorSystem<OracleActor, MonitorActor, WalletActor>,
     pub mocks: mocks::Mocks,
-    cfd_feed_receiver: watch::Receiver<Vec<Cfd>>,
-    order_feed_receiver: watch::Receiver<Option<Order>>,
+    pub feeds: Feeds,
     _tasks: Tasks,
 }
 
 impl Taker {
     pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Vec<Cfd>> {
-        &mut self.cfd_feed_receiver
+        &mut self.feeds.cfds
     }
 
     pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<Order>> {
-        &mut self.order_feed_receiver
+        &mut self.feeds.order
     }
 
     pub fn maker_status_feed(&mut self) -> &mut watch::Receiver<ConnectionStatus> {
@@ -318,21 +300,8 @@ impl Taker {
             ask: Price::new(dec!(10000)).unwrap(),
         };
 
-        let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(vec![]);
-        let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
-        let (update_cfd_feed_sender, _) = watch::channel::<UpdateCfdProposals>(HashMap::new());
-        let (quote_sender, _) = watch::channel::<Quote>(dummy_quote);
-
-        let (connected_takers_feed_sender, _connected_takers_feed_receiver) =
-            watch::channel::<Vec<TakerId>>(vec![]);
-
-        tasks.add(projection_context.run(projection::Actor::new(
-            cfd_feed_sender,
-            order_feed_sender,
-            quote_sender,
-            update_cfd_feed_sender,
-            connected_takers_feed_sender,
-        )));
+        let (proj_actor, feeds) = projection::Actor::new(vec![], dummy_quote);
+        tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(
             taker.maker_online_status_feed_receiver.clone(),
@@ -344,10 +313,9 @@ impl Taker {
         Self {
             id: TakerId::new(identity_pk),
             system: taker,
+            feeds,
             mocks,
             _tasks: tasks,
-            order_feed_receiver,
-            cfd_feed_receiver,
         }
     }
 

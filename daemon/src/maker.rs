@@ -4,10 +4,8 @@ use bdk::bitcoin::Amount;
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::auth::{self, MAKER_USERNAME};
-use daemon::bitmex_price_feed::Quote;
 use daemon::db::load_all_cfds;
-use daemon::model::cfd::{Order, UpdateCfdProposals};
-use daemon::model::{TakerId, WalletInfo};
+use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
@@ -17,7 +15,6 @@ use daemon::{
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -272,27 +269,14 @@ async fn main() -> Result<()> {
     let (task, init_quote) = bitmex_price_feed::new(projection_actor).await?;
     tasks.add(task);
 
-    // TODO: Move to projection actor
     let cfds = {
         let mut conn = db.acquire().await?;
 
         load_all_cfds(&mut conn).await?
     };
-    let (cfd_feed_sender, cfd_feed_receiver) = watch::channel(cfds.clone());
-    let (order_feed_sender, order_feed_receiver) = watch::channel::<Option<Order>>(None);
-    let (update_cfd_feed_sender, update_cfd_feed_receiver) =
-        watch::channel::<UpdateCfdProposals>(HashMap::new());
-    let (quote_sender, quote_receiver) = watch::channel::<Quote>(init_quote);
-    let (connected_takers_feed_sender, connected_takers_feed_receiver) =
-        watch::channel::<Vec<TakerId>>(Vec::new());
 
-    tasks.add(projection_context.run(projection::Actor::new(
-        cfd_feed_sender,
-        order_feed_sender,
-        quote_sender,
-        update_cfd_feed_sender,
-        connected_takers_feed_sender,
-    )));
+    let (proj_actor, projection_feeds) = projection::Actor::new(cfds, init_quote);
+    tasks.add(projection_context.run(proj_actor));
 
     let listener_stream = futures::stream::poll_fn(move |ctx| {
         let message = match futures::ready!(listener.poll_accept(ctx)) {
@@ -309,14 +293,10 @@ async fn main() -> Result<()> {
     tasks.add(wallet_sync::new(wallet.clone(), wallet_feed_sender));
 
     rocket::custom(figment)
-        .manage(order_feed_receiver)
-        .manage(update_cfd_feed_receiver)
+        .manage(projection_feeds)
         .manage(cfd_actor_addr)
-        .manage(cfd_feed_receiver)
-        .manage(connected_takers_feed_receiver)
         .manage(wallet_feed_receiver)
         .manage(auth_password)
-        .manage(quote_receiver)
         .manage(bitcoin_network)
         .manage(wallet)
         .mount(
