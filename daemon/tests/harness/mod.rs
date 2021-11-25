@@ -9,6 +9,7 @@ use daemon::model::{Price, TakerId, Timestamp, Usd};
 use daemon::seed::Seed;
 use daemon::{
     db, maker_cfd, maker_inc_connections, projection, taker_cfd, MakerActorSystem, Tasks,
+    HEARTBEAT_INTERVAL, N_PAYOUTS,
 };
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
@@ -30,8 +31,8 @@ pub mod flow;
 pub mod maia;
 pub mod mocks;
 
-pub const HEARTBEAT_INTERVAL_FOR_TEST: Duration = Duration::from_secs(2);
-const N_PAYOUTS_FOR_TEST: usize = 5;
+pub const HEARTBEAT_INTERVAL_FOR_TEST: Duration = HEARTBEAT_INTERVAL;
+const N_PAYOUTS_FOR_TEST: usize = N_PAYOUTS;
 
 fn oracle_pk() -> schnorrsig::PublicKey {
     schnorrsig::PublicKey::from_str(
