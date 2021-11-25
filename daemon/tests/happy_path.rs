@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
 use crate::harness::{
     assert_is_same_order, dummy_new_order, init_tracing, start_both, Maker, MakerConfig, Taker,
@@ -120,17 +122,19 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 
 #[tokio::test]
 async fn taker_notices_lack_of_maker() {
+    let short_interval = Duration::from_secs(1);
+
     let _guard = init_tracing();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let local_addr = listener.local_addr().unwrap();
 
-    let maker_config = MakerConfig::default();
+    let maker_config = MakerConfig::default().with_heartbeat_interval(short_interval);
 
     let maker = Maker::start(&maker_config, listener).await;
 
-    let taker_config = TakerConfig::default();
+    let taker_config = TakerConfig::default().with_heartbeat_timeout(short_interval * 2);
 
     let mut taker = Taker::start(&taker_config, maker.listen_addr, maker.identity_pk).await;
 

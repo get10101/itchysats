@@ -60,6 +60,15 @@ pub struct MakerConfig {
     n_payouts: usize,
 }
 
+impl MakerConfig {
+    pub fn with_heartbeat_interval(self, interval: Duration) -> Self {
+        Self {
+            heartbeat_interval: interval,
+            ..self
+        }
+    }
+}
+
 impl Default for MakerConfig {
     fn default() -> Self {
         Self {
@@ -77,6 +86,15 @@ pub struct TakerConfig {
     seed: Seed,
     pub heartbeat_timeout: Duration,
     n_payouts: usize,
+}
+
+impl TakerConfig {
+    pub fn with_heartbeat_timeout(self, timeout: Duration) -> Self {
+        Self {
+            heartbeat_timeout: timeout,
+            ..self
+        }
+    }
 }
 
 impl Default for TakerConfig {
