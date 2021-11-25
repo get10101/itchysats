@@ -1,10 +1,11 @@
 use bdk::bitcoin::{Amount, Network};
 use daemon::connection::ConnectionStatus;
-use daemon::model::cfd::{calculate_long_margin, Cfd, Order, OrderId, Role, UpdateCfdProposals};
+use daemon::model::cfd::{calculate_long_margin, OrderId, Role};
 use daemon::model::{Leverage, Price, Usd, WalletInfo};
+use daemon::projection::Feeds;
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
-use daemon::{bitmex_price_feed, taker_cfd, wallet};
+use daemon::{taker_cfd, wallet};
 use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
@@ -21,19 +22,17 @@ use xtra::prelude::*;
 
 #[rocket::get("/feed")]
 pub async fn feed(
-    rx_cfds: &State<watch::Receiver<Vec<Cfd>>>,
-    rx_order: &State<watch::Receiver<Option<Order>>>,
+    rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<WalletInfo>>,
-    rx_quote: &State<watch::Receiver<bitmex_price_feed::Quote>>,
-    rx_settlements: &State<watch::Receiver<UpdateCfdProposals>>,
     rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
     network: &State<Network>,
 ) -> EventStream![] {
-    let mut rx_cfds = rx_cfds.inner().clone();
-    let mut rx_order = rx_order.inner().clone();
+    let rx = rx.inner();
+    let mut rx_cfds = rx.cfds.clone();
+    let mut rx_order = rx.order.clone();
+    let mut rx_quote = rx.quote.clone();
+    let mut rx_settlements = rx.settlements.clone();
     let mut rx_wallet = rx_wallet.inner().clone();
-    let mut rx_quote = rx_quote.inner().clone();
-    let mut rx_settlements = rx_settlements.inner().clone();
     let mut rx_maker_status = rx_maker_status.inner().clone();
     let network = *network.inner();
 
@@ -138,7 +137,7 @@ pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
     cfd_action_channel: &State<Box<dyn MessageChannel<taker_cfd::CfdAction>>>,
-    quote_updates: &State<watch::Receiver<bitmex_price_feed::Quote>>,
+    feeds: &State<Feeds>,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
     use taker_cfd::CfdAction::*;
     let result = match action {
@@ -153,7 +152,7 @@ pub async fn post_cfd_action(
         }
         CfdAction::Commit => cfd_action_channel.send(Commit { order_id: id }),
         CfdAction::Settle => {
-            let current_price = quote_updates.borrow().for_taker();
+            let current_price = feeds.quote.borrow().for_taker();
             cfd_action_channel.send(ProposeSettlement {
                 order_id: id,
                 current_price,

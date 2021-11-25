@@ -3,11 +3,9 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::{Address, Amount};
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
-use daemon::bitmex_price_feed::Quote;
 use daemon::connection::connect;
 use daemon::db::load_all_cfds;
-use daemon::model::cfd::{Order, UpdateCfdProposals};
-use daemon::model::{TakerId, WalletInfo};
+use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
@@ -16,13 +14,11 @@ use daemon::{
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
-use watch::channel;
 use xtra::prelude::MessageChannel;
 use xtra::Actor;
 
@@ -254,31 +250,14 @@ async fn main() -> Result<()> {
     let (task, init_quote) = bitmex_price_feed::new(projection_actor).await?;
     tasks.add(task);
 
-    // TODO: Move to projection actor
     let cfds = {
         let mut conn = db.acquire().await?;
 
         load_all_cfds(&mut conn).await?
     };
-    let (cfd_feed_sender, cfd_feed_receiver) = channel(cfds.clone());
-    let (order_feed_sender, order_feed_receiver) = channel::<Option<Order>>(None);
-    let (update_cfd_feed_sender, update_cfd_feed_receiver) =
-        channel::<UpdateCfdProposals>(HashMap::new());
-    let (quote_sender, quote_receiver) = channel::<Quote>(init_quote);
 
-    // TODO: Use this channel to convey maker status.
-    // For now, the receiver is dropped instead of managed by Rocket to
-    // highlight that we're not using it
-    let (connected_takers_feed_sender, _connected_takers_feed_receiver) =
-        watch::channel::<Vec<TakerId>>(vec![]);
-
-    tasks.add(projection_context.run(projection::Actor::new(
-        cfd_feed_sender,
-        order_feed_sender,
-        quote_sender,
-        update_cfd_feed_sender,
-        connected_takers_feed_sender,
-    )));
+    let (proj_actor, projection_feeds) = projection::Actor::new(cfds, init_quote);
+    tasks.add(projection_context.run(proj_actor));
 
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
 
@@ -294,13 +273,10 @@ async fn main() -> Result<()> {
     let cfd_action_channel = MessageChannel::<taker_cfd::CfdAction>::clone_channel(&cfd_actor_addr);
 
     let rocket = rocket::custom(figment)
-        .manage(order_feed_receiver)
-        .manage(update_cfd_feed_receiver)
+        .manage(projection_feeds)
         .manage(take_offer_channel)
         .manage(cfd_action_channel)
-        .manage(cfd_feed_receiver)
         .manage(wallet_feed_receiver)
-        .manage(quote_receiver)
         .manage(bitcoin_network)
         .manage(wallet)
         .manage(maker_online_status_feed_receiver)
