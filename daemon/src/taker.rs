@@ -225,10 +225,7 @@ async fn main() -> Result<()> {
         .context("Db migrations failed")?;
 
     // Create actors
-    let mut conn = db.acquire().await?;
-
-    housekeeping::transition_non_continue_cfds_to_setup_failed(&mut conn).await?;
-    housekeeping::rebroadcast_transactions(&mut conn, &wallet).await?;
+    housekeeping::new(&db, &wallet).await?;
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
@@ -257,7 +254,12 @@ async fn main() -> Result<()> {
     let (task, init_quote) = bitmex_price_feed::new(projection_actor).await?;
     tasks.add(task);
 
-    let cfds = load_all_cfds(&mut conn).await?;
+    // TODO: Move to projection actor
+    let cfds = {
+        let mut conn = db.acquire().await?;
+
+        load_all_cfds(&mut conn).await?
+    };
     let (cfd_feed_sender, cfd_feed_receiver) = channel(cfds.clone());
     let (order_feed_sender, order_feed_receiver) = channel::<Option<Order>>(None);
     let (update_cfd_feed_sender, update_cfd_feed_receiver) =
