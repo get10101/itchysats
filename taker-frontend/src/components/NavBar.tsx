@@ -54,7 +54,6 @@ export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
                         <MenuList alignItems={"center"}>
                             <MenuItem onClick={() => navigate("/")}>Home</MenuItem>
                             <MenuItem onClick={() => navigate("/wallet")}>Wallet</MenuItem>
-                            <MenuItem>Settings</MenuItem>
                         </MenuList>
                     </Menu>
                     <Heading size={"sm"}>{"Maker status: " + (connectedToMaker ? "Online" : "Offline")}</Heading>
