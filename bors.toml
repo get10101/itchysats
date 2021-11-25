@@ -6,6 +6,5 @@ status = [
   "build_and_test_maker_frontend",
   "test_daemons (ubuntu-latest)",
   "test_daemons (macos-latest)",
-  "daemons_arm_build (armv7-unknown-linux-gnueabihf)",
-  "daemons_arm_build (aarch64-unknown-linux-gnu)",
+  "daemons_arm_build",
 ]

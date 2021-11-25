@@ -40,7 +40,7 @@ jobs:
 
       - name: Download release
         run: |
-          gh release download ${{ github.event.inputs.release_tag }} -p '${{matrix.bin}}*Linux_x86_64*' -p '${{matrix.bin}}*aarch64*' -p '${{matrix.bin}}*armv7*'
+          gh release download ${{ github.event.inputs.release_tag }} -p '${{matrix.bin}}*Linux_x86_64*' -p '${{matrix.bin}}*aarch64*'
 
       - name: Unpack archives
         run: |
@@ -54,7 +54,8 @@ jobs:
 
           7z x ${{matrix.bin}}_${{ github.event.inputs.release_tag }}_Linux_x86_64.tar -olinux/amd64/
 
-          7z x ${{matrix.bin}}_${{ github.event.inputs.release_tag }}_Linux_armv7.tar -olinux/arm/v7
+          chmod a+x linux/amd64/*
+          chmod a+x linux/arm64/*
 
       - name: Build docker image for ${{matrix.bin}}
         run: |
@@ -66,7 +67,7 @@ jobs:
 
           docker buildx build \
               --push \
-              --platform linux/amd64,linux/arm64,linux/arm/v7 \
+              --platform linux/amd64,linux/arm64 \
               --label "org.opencontainers.image.source https://github.com/${{ github.repository }}" \
               --tag ghcr.io/${{ github.repository }}/${{matrix.bin}}:${VERSION} \
               --build-arg BINARY_PATH=${{matrix.bin}} \

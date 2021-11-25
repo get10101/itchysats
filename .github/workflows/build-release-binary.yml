@@ -15,10 +15,6 @@ jobs:
             os: ubuntu-latest
             archive_ext: tar
           - bin: taker
-            target: armv7-unknown-linux-gnueabihf
-            os: ubuntu-latest
-            archive_ext: tar
-          - bin: taker
             target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             archive_ext: tar
@@ -28,10 +24,6 @@ jobs:
             archive_ext: tar
           - bin: maker
             target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive_ext: tar
-          - bin: maker
-            target: armv7-unknown-linux-gnueabihf
             os: ubuntu-latest
             archive_ext: tar
           - bin: maker
@@ -57,12 +49,6 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Install compiler for armhf arch
-        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
-        run: |
-          sudo apt-get update
-          sudo apt-get install gcc-arm-linux-gnueabihf
-
       - name: Install compiler for aarch64 arch (armv8)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
@@ -87,8 +73,8 @@ jobs:
         run: cargo build --target=${{ matrix.target }} --release --bin ${{ matrix.bin }}
 
       - name: Smoke test the binary
-        # armv7-* and aarch64-* is only cross-compiled, no smoke test
-        if: matrix.target != 'armv7-unknown-linux-gnueabihf' && matrix.target != 'aarch64-unknown-linux-gnu'
+        # aarch64-* is only cross-compiled, no smoke test
+        if: matrix.target != 'aarch64-unknown-linux-gnu'
         run: target/${{ matrix.target }}/release/${{ matrix.bin }} --help
 
       # Remove once python 3 is the default
@@ -166,7 +152,7 @@ jobs:
 
       - name: Download release from github
         run: |
-          gh release download ${{ github.event.release.tag_name }} -p '${{matrix.bin}}*Linux_x86_64*' -p '${{matrix.bin}}*aarch64*' -p '${{matrix.bin}}*armv7*'
+          gh release download ${{ github.event.release.tag_name }} -p '${{matrix.bin}}*Linux_x86_64*' -p '${{matrix.bin}}*aarch64*'
 
       - name: Unpack archives
         run: |
@@ -174,13 +160,14 @@ jobs:
           #
           # By providing `platform` to `docker buildx` the variable `TARGETPLATFORM` will be available
           # when building the image. This variable is either
-          # `linux/amd64/`, `linux/arm64/` or `linux/arm/v7`. Hence we need to extract into subfolders.
+          # `linux/amd64/`, `linux/arm64/`. Hence we need to extract into subfolders.
 
           7z x ${{matrix.bin}}_${{ github.event.release.tag_name }}_Linux_aarch64.tar -olinux/arm64/
 
           7z x ${{matrix.bin}}_${{ github.event.release.tag_name }}_Linux_x86_64.tar -olinux/amd64/
 
-          7z x ${{matrix.bin}}_${{ github.event.release.tag_name }}_Linux_armv7.tar -olinux/arm/v7
+          chmod a+x linux/amd64/*
+          chmod a+x linux/arm64/*
 
       - name: Build docker image for ${{matrix.bin}}
         run: |
@@ -192,7 +179,7 @@ jobs:
 
           docker buildx build \
               --push \
-              --platform linux/amd64,linux/arm64,linux/arm/v7 \
+              --platform linux/amd64,linux/arm64 \
               --label "org.opencontainers.image.source https://github.com/${{ github.repository }}" \
               --tag ghcr.io/${{ github.repository }}/${{matrix.bin}}:${VERSION} \
               --build-arg BINARY_PATH=${{matrix.bin}} \
