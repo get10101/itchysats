@@ -1,6 +1,7 @@
 use crate::address_map::ActorName;
 use crate::address_map::Stopping;
 use crate::maker_inc_connections;
+use crate::maker_inc_connections::TakerMessage;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::Order;
@@ -9,11 +10,12 @@ use crate::model::cfd::Role;
 use crate::model::cfd::SetupCompleted;
 use crate::model::Identity;
 use crate::oracle::Announcement;
+use crate::send_async_safe::SendAsyncSafe;
 use crate::setup_contract;
-use crate::setup_contract::SetupParams;
 use crate::tokio_ext::spawn_fallible;
 use crate::wallet;
 use crate::wire;
+use crate::wire::MakerToTaker;
 use crate::wire::SetupMsg;
 use crate::xtra_ext::LogFailure;
 use anyhow::Context;
@@ -85,25 +87,18 @@ impl Actor {
         // the spawned contract setup task
         self.setup_msg_sender = Some(sender);
 
-        let taker_id = self.taker_id;
+        let (setup_params, identity) = self.cfd.start_contract_setup()?;
+
         let contract_future = setup_contract::new(
             self.taker.sink().with(move |msg| {
                 future::ok(maker_inc_connections::TakerMessage {
-                    taker_id,
+                    taker_id: identity,
                     msg: wire::MakerToTaker::Protocol { order_id, msg },
                 })
             }),
             receiver,
             (self.oracle_pk, self.announcement.clone()),
-            SetupParams::new(
-                self.cfd.margin()?,
-                self.cfd.counterparty_margin()?,
-                self.cfd.price(),
-                self.cfd.quantity_usd(),
-                self.cfd.leverage(),
-                self.cfd.refund_timelock_in_blocks(),
-                self.cfd.fee_rate(),
-            ),
+            setup_params,
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
             Role::Maker,
@@ -137,6 +132,12 @@ impl Actor {
 impl Actor {
     fn handle(&mut self, _msg: Accepted, ctx: &mut xtra::Context<Self>) {
         let order_id = self.cfd.id();
+
+        if self.setup_msg_sender.is_some() {
+            tracing::warn!(%order_id, "Contract setup already active");
+            return;
+        }
+
         tracing::info!(%order_id, "Maker accepts an order");
 
         let this = ctx
@@ -171,8 +172,23 @@ impl Actor {
     }
 
     fn handle(&mut self, _msg: Rejected, ctx: &mut xtra::Context<Self>) {
-        self.complete(SetupCompleted::rejected(self.cfd.id()), ctx)
+        let _ = self
+            .taker
+            .send(TakerMessage {
+                taker_id: self.taker_id,
+                msg: MakerToTaker::RejectOrder(self.cfd.id()),
+            })
+            .log_failure("Failed to reject order to taker")
             .await;
+
+        // We cannot use completed here because we are sending a message to ourselves and using
+        // `send` would be a deadlock!
+        let _ = self
+            .on_completed
+            .send_async_safe(SetupCompleted::rejected(self.cfd.id()))
+            .await;
+
+        ctx.stop();
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
@@ -208,8 +224,7 @@ impl Actor {
 #[async_trait]
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        let quantity = self.cfd.quantity_usd();
-        let cfd = self.cfd.clone();
+        let quantity = self.cfd.quantity();
         if quantity < self.order.min_quantity || quantity > self.order.max_quantity {
             let reason = format!(
                 "Order rejected: quantity {} not in range [{}, {}]",
@@ -221,12 +236,12 @@ impl xtra::Actor for Actor {
                 .taker
                 .send(maker_inc_connections::TakerMessage {
                     taker_id: self.taker_id,
-                    msg: wire::MakerToTaker::RejectOrder(cfd.id()),
+                    msg: wire::MakerToTaker::RejectOrder(self.cfd.id()),
                 })
                 .await;
 
             self.complete(
-                SetupCompleted::rejected_due_to(cfd.id(), anyhow::format_err!(reason)),
+                SetupCompleted::rejected_due_to(self.cfd.id(), anyhow::format_err!(reason)),
                 ctx,
             )
             .await;

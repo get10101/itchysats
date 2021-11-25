@@ -1,3 +1,4 @@
+use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
 use daemon::projection::Cfd;
@@ -5,6 +6,7 @@ use daemon::projection::CfdOrder;
 use daemon::tokio_ext::FutureExt;
 use std::time::Duration;
 use tokio::sync::watch;
+use tokio::time::sleep;
 
 /// Waiting time for the time on the watch channel before returning error
 const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 180 } else { 30 });
@@ -16,11 +18,12 @@ pub async fn next_cfd(
     rx_a: &mut watch::Receiver<Vec<Cfd>>,
     rx_b: &mut watch::Receiver<Vec<Cfd>>,
 ) -> Result<(Cfd, Cfd)> {
+    sleep(Duration::from_secs(1)).await; // TODO: Try to remove this workaround
     let (a, b) = tokio::join!(next(rx_a), next(rx_b));
     let (a, b) = (a?, b?);
 
-    assert_eq!(a.len(), 1);
-    assert_eq!(b.len(), 1);
+    ensure!(a.len() == 1, "expected 1 cfd on feed");
+    ensure!(b.len() == 1, "expected 1 cfd on feed");
 
     Ok((a.first().unwrap().clone(), b.first().unwrap().clone()))
 }

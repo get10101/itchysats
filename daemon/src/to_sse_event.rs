@@ -1,10 +1,10 @@
 use crate::connection;
 use crate::model;
+use crate::model::Identity;
 use crate::model::Timestamp;
 use crate::projection::Cfd;
 use crate::projection::CfdAction;
 use crate::projection::CfdOrder;
-use crate::projection::Identity;
 use crate::projection::Quote;
 use crate::to_sse_event::ConnectionCloseReason::MakerVersionOutdated;
 use crate::to_sse_event::ConnectionCloseReason::TakerVersionOutdated;

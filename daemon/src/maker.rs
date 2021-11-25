@@ -10,7 +10,6 @@ use daemon::auth;
 use daemon::auth::MAKER_USERNAME;
 use daemon::bitmex_price_feed;
 use daemon::db;
-use daemon::housekeeping;
 use daemon::logger;
 use daemon::maker_inc_connections;
 use daemon::model::cfd::Role;
@@ -236,7 +235,6 @@ async fn main() -> Result<()> {
         .context("Db migrations failed")?;
 
     // Create actors
-    housekeeping::new(&db, &wallet).await?;
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
@@ -275,7 +273,7 @@ async fn main() -> Result<()> {
     tasks.add(task);
 
     let (proj_actor, projection_feeds) =
-        projection::Actor::new(db.clone(), Role::Maker, bitcoin_network).await?;
+        projection::Actor::new(db.clone(), Role::Maker, bitcoin_network);
     tasks.add(projection_context.run(proj_actor));
 
     maker.listen_on(listener);

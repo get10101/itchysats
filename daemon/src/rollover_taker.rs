@@ -15,7 +15,6 @@ use crate::oracle::GetAnnouncement;
 use crate::projection;
 use crate::projection::UpdateRollOverProposal;
 use crate::setup_contract;
-use crate::setup_contract::RolloverParams;
 use crate::tokio_ext::spawn_fallible;
 use crate::wire;
 use crate::wire::RollOverMsg;
@@ -117,6 +116,7 @@ impl Actor {
 
         self.update_proposal(None).await?;
 
+        let (rollover_params, dlc, _) = self.cfd.start_rollover()?;
         let (sender, receiver) = mpsc::unbounded::<RollOverMsg>();
         // store the writing end to forward messages from the maker to
         // the spawned rollover task
@@ -128,15 +128,9 @@ impl Actor {
             }),
             receiver,
             (self.oracle_pk, announcement),
-            RolloverParams::new(
-                self.cfd.price(),
-                self.cfd.quantity_usd(),
-                self.cfd.leverage(),
-                self.cfd.refund_timelock_in_blocks(),
-                self.cfd.fee_rate(),
-            ),
+            rollover_params,
             Role::Taker,
-            self.cfd.dlc().context("No DLC in CFD")?,
+            dlc,
             self.n_payouts,
         );
 
@@ -149,15 +143,6 @@ impl Actor {
 
             Ok(())
         });
-
-        Ok(())
-    }
-
-    async fn handle_rejected(&self) -> Result<()> {
-        let order_id = self.cfd.id();
-        tracing::info!(%order_id, "Rollover proposal got rejected");
-
-        self.update_proposal(None).await?;
 
         Ok(())
     }
@@ -196,7 +181,7 @@ impl Actor {
 #[async_trait]
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        if let Err(e) = self.cfd.can_roll_over(OffsetDateTime::now_utc()) {
+        if let Err(e) = self.cfd.is_rollover_possible(OffsetDateTime::now_utc()) {
             self.complete(
                 match e {
                     CannotRollover::NoDlc => RolloverCompleted::Failed {
@@ -262,6 +247,10 @@ impl xtra::Actor for Actor {
 
         xtra::KeepRunning::StopAll
     }
+
+    async fn stopped(self) {
+        let _ = self.update_proposal(None).await;
+    }
 }
 
 #[xtra_productivity]
@@ -285,13 +274,11 @@ impl Actor {
 
     pub async fn reject_rollover(&mut self, _: RollOverRejected, ctx: &mut xtra::Context<Self>) {
         let order_id = self.cfd.id();
-        let completed = if let Err(error) = self.handle_rejected().await {
-            RolloverCompleted::Failed { order_id, error }
-        } else {
-            RolloverCompleted::rejected(order_id)
-        };
 
-        self.complete(completed, ctx).await;
+        tracing::info!(%order_id, "Rollover proposal got rejected");
+
+        self.complete(RolloverCompleted::rejected(order_id), ctx)
+            .await;
     }
 
     pub async fn handle_rollover_succeeded(

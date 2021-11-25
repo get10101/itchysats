@@ -6,16 +6,13 @@ use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementKind;
-use crate::model::cfd::UpdateCfdProposal;
 use crate::model::Identity;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
 use crate::projection;
-use crate::projection::try_into_update_rollover_proposal;
 use crate::projection::UpdateRollOverProposal;
 use crate::schnorrsig;
 use crate::setup_contract;
-use crate::setup_contract::RolloverParams;
 use crate::tokio_ext::spawn_fallible;
 use crate::wire;
 use crate::wire::MakerToTaker;
@@ -89,18 +86,13 @@ impl xtra::Actor for Actor {
     }
 
     async fn started(&mut self, _ctx: &mut Context<Self>) {
-        let new_proposal = UpdateCfdProposal::RollOverProposal {
-            proposal: self.proposal.clone(),
-            direction: SettlementKind::Incoming,
-        };
+        let _ = self
+            .update_proposal(Some((self.proposal.clone(), SettlementKind::Incoming)))
+            .await;
+    }
 
-        self.projection_actor
-            .send(
-                try_into_update_rollover_proposal(new_proposal)
-                    .expect("update cfd proposal is rollover proposal"),
-            )
-            .await
-            .expect("projection actor is running");
+    async fn stopped(self) {
+        let _ = self.update_proposal(None).await;
     }
 }
 
@@ -136,7 +128,7 @@ impl Actor {
         }
     }
 
-    async fn update_contract(&mut self, dlc: Dlc, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    async fn complete(&mut self, dlc: Dlc, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let msg = Completed {
             order_id: self.cfd.id(),
             dlc,
@@ -145,27 +137,39 @@ impl Actor {
             .send(msg)
             .log_failure("Failed to report rollover completion")
             .await?;
+
         ctx.stop();
+
+        Ok(())
+    }
+
+    async fn update_proposal(
+        &self,
+        proposal: Option<(RolloverProposal, SettlementKind)>,
+    ) -> Result<()> {
+        self.projection_actor
+            .send(UpdateRollOverProposal {
+                order: self.cfd.id(),
+                proposal,
+            })
+            .await?;
+
         Ok(())
     }
 
     async fn fail(&mut self, ctx: &mut xtra::Context<Self>, error: anyhow::Error) {
         tracing::info!(id = %self.cfd.id(), %error, "Rollover failed");
-        if let Err(err) = self
-            .projection_actor
-            .send(projection::UpdateRollOverProposal {
-                order: self.cfd.id(),
-                proposal: None,
-            })
-            .await
-        {
-            tracing::error!(%err, "projection actor unreachable when attempting to fail rollover");
-        }
+
         ctx.stop();
     }
 
     async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let order_id = self.cfd.id();
+
+        if self.sent_from_taker.is_some() {
+            tracing::warn!(%order_id, "Rollover already active");
+            return Ok(());
+        }
 
         let (sender, receiver) = mpsc::unbounded();
 
@@ -173,13 +177,10 @@ impl Actor {
 
         tracing::debug!(%order_id, "Maker accepts a roll_over proposal" );
 
-        let cfd = self.cfd.clone();
+        let (rollover_params, dlc, interval) = self.cfd.start_rollover()?;
 
-        let dlc = cfd.open_dlc().expect("CFD was in wrong state");
-
-        let oracle_event_id = oracle::next_announcement_after(
-            time::OffsetDateTime::now_utc() + cfd.settlement_interval(),
-        )?;
+        let oracle_event_id =
+            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + interval)?;
 
         let taker_id = self.taker_id;
 
@@ -193,12 +194,7 @@ impl Actor {
             })
             .await??;
 
-        self.projection_actor
-            .send(UpdateRollOverProposal {
-                order: order_id,
-                proposal: None,
-            })
-            .await?;
+        let _ = self.update_proposal(None).await;
 
         let announcement = self
             .oracle_actor
@@ -215,13 +211,7 @@ impl Actor {
             }),
             receiver,
             (self.oracle_pk, announcement),
-            RolloverParams::new(
-                cfd.price(),
-                cfd.quantity_usd(),
-                cfd.leverage(),
-                cfd.refund_timelock_in_blocks(),
-                cfd.fee_rate(),
-            ),
+            rollover_params,
             Role::Maker,
             dlc,
             self.n_payouts,
@@ -250,12 +240,7 @@ impl Actor {
                 msg: MakerToTaker::RejectRollOver(self.cfd.id()),
             })
             .await??;
-        self.projection_actor
-            .send(UpdateRollOverProposal {
-                order: self.cfd.id(),
-                proposal: None,
-            })
-            .await?;
+
         ctx.stop();
 
         Ok(())
@@ -308,7 +293,7 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        if let Err(err) = self.update_contract(msg.dlc.clone(), ctx).await {
+        if let Err(err) = self.complete(msg.dlc.clone(), ctx).await {
             self.fail(ctx, err).await;
         }
     }

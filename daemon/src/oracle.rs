@@ -1,5 +1,6 @@
 use crate::db;
-use crate::model::cfd::CfdState;
+use crate::model::cfd::CfdEvent;
+use crate::model::cfd::Event;
 use crate::model::BitMexPriceEventId;
 use crate::tokio_ext;
 use crate::try_continue;
@@ -68,39 +69,49 @@ struct NewAttestationFetched {
     attestation: Attestation,
 }
 
+#[derive(Default)]
+struct Cfd {
+    pending_attestation: Option<BitMexPriceEventId>,
+}
+
+impl Cfd {
+    fn apply(self, event: Event) -> Self {
+        let settlement_event_id = match event.event {
+            CfdEvent::ContractSetupCompleted { dlc } => dlc.settlement_event_id,
+            CfdEvent::RolloverCompleted { dlc } => dlc.settlement_event_id,
+            // TODO: There might be a few cases where we do not need to monitor the attestation,
+            // e.g. when we already agreed to collab. settle. Ignoring it for now
+            // because I don't want to think about it and it doesn't cause much harm to do the
+            // monitoring :)
+            _ => return self,
+        };
+
+        // we can comfortably overwrite what was there because events are processed in order, thus
+        // old attestations don't matter.
+        Self {
+            pending_attestation: Some(settlement_event_id),
+        }
+    }
+}
+
 impl Actor {
     pub async fn new(
         db: SqlitePool,
         attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
         announcement_lookahead: Duration,
     ) -> Result<Self> {
-        let cfds = db::load_all_cfds(&mut db.acquire().await?).await?;
-
         let mut pending_attestations = HashSet::new();
 
-        for cfd in cfds {
-            match cfd.state().clone() {
-                CfdState::PendingOpen { dlc, ..}
-                | CfdState::Open { dlc, .. }
-                | CfdState::PendingCommit { dlc, .. }
-                | CfdState::OpenCommitted { dlc, .. }
-                | CfdState::PendingCet { dlc, .. } =>
-                {
-                    pending_attestations.insert(dlc.settlement_event_id);
-                }
+        let mut conn = db.acquire().await?;
 
-                // Irrelevant for restart
-                CfdState::OutgoingOrderRequest { .. }
-                | CfdState::IncomingOrderRequest { .. }
-                | CfdState::Accepted { .. }
-                | CfdState::Rejected { .. }
-                | CfdState::ContractSetup { .. }
+        for id in db::load_all_cfd_ids(&mut conn).await? {
+            let (_, events) = db::load_cfd(id, &mut conn).await?;
+            let cfd = events
+                .into_iter()
+                .fold(Cfd::default(), |cfd, event| cfd.apply(event));
 
-                // Final states
-                | CfdState::Closed { .. }
-                | CfdState::PendingRefund { .. }
-                | CfdState::Refunded { .. }
-                | CfdState::SetupFailed { .. } => ()
+            if let Some(pending_attestation) = cfd.pending_attestation {
+                pending_attestations.insert(pending_attestation);
             }
         }
 

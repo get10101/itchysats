@@ -230,7 +230,7 @@ impl Actor {
         let this = ctx.address().expect("self to be alive");
         let read_fut = async move {
             while let Ok(Some(msg)) = read.try_next().await {
-                let res = this.send(FromTaker { taker_id, msg }).log_failure("").await;
+                let res = this.send(FromTaker { taker_id, msg }).await;
 
                 if res.is_err() {
                     break;
@@ -381,7 +381,7 @@ impl Actor {
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    async fn handle_msg_from_taker(&mut self, msg: FromTaker) -> Result<()> {
+    async fn handle_msg_from_taker(&mut self, msg: FromTaker) {
         let msg_str = msg.msg.to_string();
 
         tracing::trace!(target = "wire", taker_id = %msg.taker_id, "Received {}", msg_str);
@@ -423,8 +423,6 @@ impl Actor {
                 let _ = self.taker_msg_channel.send(msg);
             }
         }
-
-        Ok(())
     }
 
     async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {

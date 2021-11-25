@@ -86,16 +86,10 @@ export class State {
 
     public getLabel(): string {
         switch (this.key) {
-            case StateKey.INCOMING_ORDER_REQUEST:
-                return "Order Requested";
-            case StateKey.OUTGOING_ORDER_REQUEST:
-                return "Order Requested";
-            case StateKey.ACCEPTED:
-                return "Accepted";
+            case StateKey.PENDING_SETUP:
+                return "Setting up";
             case StateKey.REJECTED:
                 return "Rejected";
-            case StateKey.CONTRACT_SETUP:
-                return "Contract Setup";
             case StateKey.PENDING_OPEN:
                 return "Pending Open";
             case StateKey.OPEN:
@@ -134,7 +128,6 @@ export class State {
         const orange = "orange";
 
         switch (this.key) {
-            case StateKey.ACCEPTED:
             case StateKey.OPEN:
                 return green;
 
@@ -148,13 +141,11 @@ export class State {
             case StateKey.PENDING_CLOSE:
                 return orange;
 
-            case StateKey.OUTGOING_ORDER_REQUEST:
-            case StateKey.INCOMING_ORDER_REQUEST:
+            case StateKey.PENDING_SETUP:
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
             case StateKey.INCOMING_ROLL_OVER_PROPOSAL:
             case StateKey.OUTGOING_ROLL_OVER_PROPOSAL:
-            case StateKey.CONTRACT_SETUP:
             case StateKey.PENDING_OPEN:
             case StateKey.REFUNDED:
             case StateKey.SETUP_FAILED:
@@ -165,12 +156,7 @@ export class State {
 
     public getGroup(): StateGroupKey {
         switch (this.key) {
-            case StateKey.INCOMING_ORDER_REQUEST:
-                return StateGroupKey.PENDING_ORDER;
-
-            case StateKey.OUTGOING_ORDER_REQUEST:
-            case StateKey.ACCEPTED:
-            case StateKey.CONTRACT_SETUP:
+            case StateKey.PENDING_SETUP:
                 return StateGroupKey.OPENING;
 
             case StateKey.PENDING_OPEN:
@@ -200,11 +186,8 @@ export class State {
 }
 
 export const enum StateKey {
-    OUTGOING_ORDER_REQUEST = "OutgoingOrderRequest",
-    INCOMING_ORDER_REQUEST = "IncomingOrderRequest",
-    ACCEPTED = "Accepted",
+    PENDING_SETUP = "PendingSetup",
     REJECTED = "Rejected",
-    CONTRACT_SETUP = "ContractSetup",
     PENDING_OPEN = "PendingOpen",
     OPEN = "Open",
     PENDING_CLOSE = "PendingClose",
@@ -224,7 +207,6 @@ export const enum StateKey {
 export enum StateGroupKey {
     /// A CFD which is still being set up (not on chain yet)
     OPENING = "Opening",
-    PENDING_ORDER = "Pending Order",
     /// A CFD that is an ongoing open position (on chain)
     OPEN = "Open",
     PENDING_SETTLEMENT = "Pending Settlement",

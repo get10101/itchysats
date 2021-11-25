@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::fmt;
 
 #[async_trait]
 pub trait SendAsyncSafe<M, R>
@@ -32,7 +33,35 @@ impl<A, M, E> SendAsyncSafe<M, Result<(), E>> for xtra::Address<A>
 where
     A: xtra::Handler<M>,
     M: xtra::Message<Result = Result<(), E>>,
-    E: std::error::Error + Send,
+    E: fmt::Display + Send,
+{
+    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
+        if !self.is_connected() {
+            return Err(xtra::Disconnected);
+        }
+
+        let send_fut = self.send(msg);
+
+        #[allow(clippy::disallowed_method)]
+        tokio::spawn(async {
+            let e = match send_fut.await {
+                Ok(Err(e)) => format!("{:#}", e),
+                Err(e) => format!("{:#}", e),
+                Ok(Ok(())) => return,
+            };
+
+            tracing::warn!("Async message invocation failed: {:#}", e)
+        });
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl<M, E> SendAsyncSafe<M, Result<(), E>> for Box<dyn xtra::prelude::MessageChannel<M>>
+where
+    M: xtra::Message<Result = Result<(), E>>,
+    E: fmt::Display + Send,
 {
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
         if !self.is_connected() {

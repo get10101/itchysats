@@ -10,11 +10,11 @@ use daemon::model::Usd;
 use daemon::model::WalletInfo;
 use daemon::monitor;
 use daemon::oracle;
+use daemon::projection;
 use daemon::projection::CfdAction;
 use daemon::projection::Feeds;
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::ToSseEvent;
-use daemon::tx;
 use daemon::wallet;
 use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
@@ -258,5 +258,5 @@ pub async fn post_withdraw_request(
                 .detail(e.to_string())
         })?;
 
-    Ok(tx::to_mempool_url(txid, *network.inner()))
+    Ok(projection::to_mempool_url(txid, *network.inner()))
 }

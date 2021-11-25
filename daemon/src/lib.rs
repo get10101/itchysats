@@ -6,7 +6,6 @@ use crate::maker_cfd::TakerConnected;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
-use crate::model::cfd::UpdateCfdProposals;
 use crate::model::Identity;
 use crate::model::Price;
 use crate::model::Usd;
@@ -45,7 +44,6 @@ pub mod collab_settlement_taker;
 pub mod connection;
 pub mod db;
 pub mod fan_out;
-pub mod housekeeping;
 pub mod keypair;
 pub mod logger;
 pub mod maker_cfd;
@@ -70,7 +68,6 @@ pub mod taker_cfd;
 pub mod to_sse_event;
 pub mod tokio_ext;
 pub mod try_continue;
-pub mod tx;
 pub mod wallet;
 pub mod wire;
 pub mod xtra_ext;
@@ -375,7 +372,7 @@ where
         .create(None)
         .run();
 
-        let (_auto_rollover_address, auto_rollover_fut) = auto_rollover::Actor::new(
+        let (auto_rollover_address, auto_rollover_fut) = auto_rollover::Actor::new(
             db,
             oracle_pk,
             projection_actor,
@@ -386,6 +383,7 @@ where
         )
         .create(None)
         .run();
+        std::mem::forget(auto_rollover_address); // leak this address to avoid shutdown
 
         tasks.add(cfd_actor_fut);
         tasks.add(auto_rollover_fut);

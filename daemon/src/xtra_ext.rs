@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::fmt;
 use xtra::address;
 use xtra::message_channel;
 use xtra::Actor;
@@ -31,9 +32,10 @@ where
 }
 
 #[async_trait]
-impl<M> LogFailure for message_channel::SendFuture<M>
+impl<M, E> LogFailure for message_channel::SendFuture<M>
 where
-    M: xtra::Message<Result = anyhow::Result<()>>,
+    M: xtra::Message<Result = anyhow::Result<(), E>>,
+    E: fmt::Display + Send,
 {
     async fn log_failure(self, context: &str) -> Result<(), Disconnected> {
         if let Err(e) = self.await? {
