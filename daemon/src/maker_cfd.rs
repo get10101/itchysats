@@ -994,12 +994,12 @@ where
     }
 }
 
-#[async_trait]
-impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<NewOrder> for Actor<O, M, T, W>
+#[xtra_productivity]
+impl<O, M, T, W> Actor<O, M, T, W>
 where
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
 {
-    async fn handle(&mut self, msg: NewOrder, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle_new_order(&mut self, msg: NewOrder) -> Result<()> {
         let NewOrder {
             price,
             min_quantity,
@@ -1165,10 +1165,6 @@ where
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) {
         log_error!(self.handle_oracle_attestation(msg))
     }
-}
-
-impl Message for NewOrder {
-    type Result = Result<()>;
 }
 
 impl Message for TakerConnected {
