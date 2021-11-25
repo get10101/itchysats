@@ -79,24 +79,22 @@ function AlertBox({ title, description }: AlertBoxProps) {
     </Alert>);
 }
 
-const Trade = (
-    {
-        connectedToMaker,
-        minQuantity,
-        maxQuantity,
-        referencePrice: referencePriceAsNumber,
-        askPrice: askPriceAsNumber,
-        quantity,
-        onQuantityChange,
-        margin: marginAsNumber,
-        leverage,
-        liquidationPrice: liquidationPriceAsNumber,
-        onLongSubmit,
-        isLongSubmitting,
-        orderId,
-        walletBalance,
-    }: TradeProps,
-) => {
+export default function Trade({
+    connectedToMaker,
+    minQuantity,
+    maxQuantity,
+    referencePrice: referencePriceAsNumber,
+    askPrice: askPriceAsNumber,
+    quantity,
+    onQuantityChange,
+    margin: marginAsNumber,
+    leverage,
+    liquidationPrice: liquidationPriceAsNumber,
+    onLongSubmit,
+    isLongSubmitting,
+    orderId,
+    walletBalance,
+}: TradeProps) {
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
 
@@ -271,8 +269,7 @@ const Trade = (
             </Grid>
         </Center>
     );
-};
-export default Trade;
+}
 
 interface QuantityProps {
     min: number;
