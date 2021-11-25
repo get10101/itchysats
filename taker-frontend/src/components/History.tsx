@@ -28,8 +28,8 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
+import { Cfd, StateGroupKey, StateKey, Tx, TxLabel } from "../types";
 import usePostRequest from "../usePostRequest";
-import { Cfd, StateGroupKey, StateKey, Tx, TxLabel } from "./Types";
 
 interface HistoryProps {
     cfds: Cfd[];

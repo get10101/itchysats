@@ -20,6 +20,7 @@ import Footer from "./components/Footer";
 import History from "./components/History";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
+import { Wallet, WalletInfoBar } from "./components/Wallet";
 import {
     BXBTData,
     Cfd,
@@ -31,8 +32,7 @@ import {
     Order,
     StateGroupKey,
     WalletInfo,
-} from "./components/Types";
-import { Wallet, WalletInfoBar } from "./components/Wallet";
+} from "./types";
 import useLatestEvent from "./useLatestEvent";
 import usePostRequest from "./usePostRequest";
 

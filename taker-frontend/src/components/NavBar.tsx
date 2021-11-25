@@ -17,7 +17,7 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
-import { WalletInfo } from "./Types";
+import { WalletInfo } from "../types";
 
 interface NavProps {
     walletInfo: WalletInfo | null;
