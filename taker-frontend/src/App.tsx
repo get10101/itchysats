@@ -128,16 +128,6 @@ export const App = () => {
                                     onQuantityChange={(valueString: string) => {
                                         setUserHasEdited(true);
                                         setQuantity(parse(valueString));
-                                        if (!order) {
-                                            return;
-                                        }
-                                        let quantity = valueString ? Number.parseFloat(valueString) : 0;
-                                        let payload: MarginRequestPayload = {
-                                            leverage: order.leverage,
-                                            price: order.price,
-                                            quantity,
-                                        };
-                                        calculateMargin(payload);
                                     }}
                                     onLongSubmit={makeNewOrderRequest}
                                     isLongSubmitting={isCreatingNewOrderRequest}
