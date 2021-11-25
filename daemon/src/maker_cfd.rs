@@ -538,7 +538,7 @@ where
             self.takers.clone().into_sink().with(move |msg| {
                 future::ok(maker_inc_connections::TakerMessage {
                     taker_id,
-                    msg: wire::MakerToTaker::Protocol(msg),
+                    msg: wire::MakerToTaker::Protocol { order_id, msg },
                 })
             }),
             receiver,
@@ -551,7 +551,8 @@ where
                 cfd.order.leverage,
                 cfd.refund_timelock_in_blocks(),
             ),
-            self.wallet.clone(),
+            Box::new(self.wallet.clone()),
+            Box::new(self.wallet.clone()),
             Role::Maker,
             self.n_payouts,
         );
@@ -1132,7 +1133,7 @@ where
             } => {
                 log_error!(self.handle_initiate_settlement(taker_id, order_id, sig_taker))
             }
-            wire::TakerToMaker::Protocol(msg) => {
+            wire::TakerToMaker::Protocol { msg, .. } => {
                 log_error!(self.handle_inc_protocol_msg(taker_id, msg))
             }
             wire::TakerToMaker::ProposeRollOver {

@@ -54,7 +54,7 @@ impl Mocks {
             .in_sequence(&mut seq);
     }
 
-    pub async fn mock_oracle_annoucement(&mut self) {
+    pub async fn mock_oracle_announcement(&mut self) {
         self.oracle()
             .await
             .expect_get_announcement()

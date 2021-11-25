@@ -43,7 +43,10 @@ pub enum TakerToMaker {
         order_id: OrderId,
         timestamp: Timestamp,
     },
-    Protocol(SetupMsg),
+    Protocol {
+        order_id: OrderId,
+        msg: SetupMsg,
+    },
     RollOverProtocol(RollOverMsg),
 }
 
@@ -53,7 +56,7 @@ impl fmt::Display for TakerToMaker {
             TakerToMaker::TakeOrder { .. } => write!(f, "TakeOrder"),
             TakerToMaker::ProposeSettlement { .. } => write!(f, "ProposeSettlement"),
             TakerToMaker::InitiateSettlement { .. } => write!(f, "InitiateSettlement"),
-            TakerToMaker::Protocol(_) => write!(f, "Protocol"),
+            TakerToMaker::Protocol { .. } => write!(f, "Protocol"),
             TakerToMaker::ProposeRollOver { .. } => write!(f, "ProposeRollOver"),
             TakerToMaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
         }
@@ -72,7 +75,10 @@ pub enum MakerToTaker {
     ConfirmSettlement(OrderId),
     RejectSettlement(OrderId),
     InvalidOrderId(OrderId),
-    Protocol(SetupMsg),
+    Protocol {
+        order_id: OrderId,
+        msg: SetupMsg,
+    },
     RollOverProtocol(RollOverMsg),
     ConfirmRollOver {
         order_id: OrderId,
@@ -91,7 +97,7 @@ impl fmt::Display for MakerToTaker {
             MakerToTaker::ConfirmSettlement(_) => write!(f, "ConfirmSettlement"),
             MakerToTaker::RejectSettlement(_) => write!(f, "RejectSettlement"),
             MakerToTaker::InvalidOrderId(_) => write!(f, "InvalidOrderId"),
-            MakerToTaker::Protocol(_) => write!(f, "Protocol"),
+            MakerToTaker::Protocol { .. } => write!(f, "Protocol"),
             MakerToTaker::ConfirmRollOver { .. } => write!(f, "ConfirmRollOver"),
             MakerToTaker::RejectRollOver(_) => write!(f, "RejectRollOver"),
             MakerToTaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),

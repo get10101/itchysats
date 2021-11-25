@@ -1,6 +1,9 @@
-use crate::{log_error, noise, send_to_socket, wire, Tasks};
+use crate::model::cfd::OrderId;
+use crate::model::Usd;
+use crate::{log_error, noise, send_to_socket, setup_taker, wire, Tasks};
 use anyhow::Result;
 use futures::StreamExt;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -28,6 +31,7 @@ pub struct Actor {
     /// Max duration since the last heartbeat until we die.
     timeout: Duration,
     connected_state: Option<ConnectedState>,
+    setup_actors: HashMap<OrderId, xtra::Address<setup_taker::Actor>>,
 }
 
 pub struct Connect {
@@ -48,6 +52,19 @@ pub enum ConnectionStatus {
     Offline,
 }
 
+/// Message sent from the `setup_taker::Actor` to the
+/// `connection::Actor` so that it can forward it to the maker.
+///
+/// Additionally, the address of this instance of the
+/// `setup_taker::Actor` is included so that the `connection::Actor`
+/// knows where to forward the contract setup messages from the maker
+/// about this particular order.
+pub struct TakeOrder {
+    pub order_id: OrderId,
+    pub quantity: Usd,
+    pub address: xtra::Address<setup_taker::Actor>,
+}
+
 impl Actor {
     pub fn new(
         status_sender: watch::Sender<ConnectionStatus>,
@@ -65,6 +82,7 @@ impl Actor {
             maker_to_taker,
             timeout,
             connected_state: None,
+            setup_actors: HashMap::new(),
         }
     }
 }
@@ -73,6 +91,22 @@ impl Actor {
 impl Actor {
     async fn handle_taker_to_maker(&mut self, message: wire::TakerToMaker) {
         log_error!(self.send_to_maker.send(message));
+    }
+}
+
+#[xtra_productivity]
+impl Actor {
+    async fn handle_take_order(&mut self, msg: TakeOrder) -> Result<()> {
+        self.send_to_maker
+            .send(wire::TakerToMaker::TakeOrder {
+                order_id: msg.order_id,
+                quantity: msg.quantity,
+            })
+            .await?;
+
+        self.setup_actors.insert(msg.order_id, msg.address);
+
+        Ok(())
     }
 }
 
@@ -146,6 +180,32 @@ impl Actor {
                     .as_mut()
                     .expect("wire messages only to arrive in connected state")
                     .last_heartbeat = SystemTime::now();
+            }
+            wire::MakerToTaker::ConfirmOrder(order_id) => match self.setup_actors.get(&order_id) {
+                Some(addr) => {
+                    let _ = addr.send(setup_taker::Accepted).await;
+                }
+                None => {
+                    tracing::warn!(%order_id, "No active contract setup");
+                }
+            },
+            wire::MakerToTaker::RejectOrder(order_id) => match self.setup_actors.get(&order_id) {
+                Some(addr) => {
+                    let _ = addr.send(setup_taker::Rejected).await;
+                }
+                None => {
+                    tracing::warn!(%order_id, "No active contract setup");
+                }
+            },
+            wire::MakerToTaker::Protocol { order_id, msg } => {
+                match self.setup_actors.get(&order_id) {
+                    Some(addr) => {
+                        let _ = addr.send(msg).await;
+                    }
+                    None => {
+                        tracing::warn!(%order_id, "No active contract setup");
+                    }
+                }
             }
             other => {
                 // this one should go to the taker cfd actor
