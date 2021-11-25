@@ -265,12 +265,6 @@ impl<O, M, W> Actor<O, M, W> {
         Ok(())
     }
 
-    async fn handle_order_rejected(&mut self, order_id: OrderId) -> Result<()> {
-        self.append_cfd_state_rejected(order_id).await?;
-
-        Ok(())
-    }
-
     async fn append_cfd_state_rejected(&mut self, order_id: OrderId) -> Result<()> {
         tracing::debug!(%order_id, "Order rejected");
 
@@ -282,7 +276,7 @@ impl<O, M, W> Actor<O, M, W> {
         Ok(())
     }
 
-    async fn handle_contract_setup_failed(
+    async fn append_cfd_state_setup_failed(
         &mut self,
         order_id: OrderId,
         error: anyhow::Error,
@@ -442,7 +436,19 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle_new_contract(&mut self, order_id: OrderId, dlc: Dlc) -> Result<()> {
+    async fn handle_setup_completed(&mut self, msg: setup_taker::Completed) -> Result<()> {
+        let (order_id, dlc) = match msg {
+            setup_taker::Completed::NewContract { order_id, dlc } => (order_id, dlc),
+            setup_taker::Completed::Rejected { order_id } => {
+                self.append_cfd_state_rejected(order_id).await?;
+                return Ok(());
+            }
+            setup_taker::Completed::Failed { order_id, error } => {
+                self.append_cfd_state_setup_failed(order_id, error).await?;
+                return Ok(());
+            }
+        };
+
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
@@ -743,16 +749,7 @@ where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle(&mut self, msg: setup_taker::Completed, _ctx: &mut Context<Self>) {
-        use setup_taker::Completed::*;
-        match msg {
-            NewContract { order_id, dlc } => {
-                log_error!(self.handle_new_contract(order_id, dlc))
-            }
-            Rejected { order_id } => log_error!(self.handle_order_rejected(order_id)),
-            Failed { order_id, error } => {
-                log_error!(self.handle_contract_setup_failed(order_id, error))
-            }
-        }
+        log_error!(self.handle_setup_completed(msg))
     }
 }
 
