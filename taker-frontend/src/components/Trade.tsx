@@ -107,7 +107,7 @@ export default function Trade({
 
     const parse = (val: any) => Number.parseInt(val.replace(/^\$/, ""));
 
-    const balanceTooLow = walletBalance && walletBalance < parse(margin);
+    const balanceTooLow = walletBalance && walletBalance < marginAsNumber;
     const quantityTooHigh = maxQuantity < parse(quantity);
     const quantityTooLow = minQuantity > parse(quantity);
     const quantityGreaterZero = parse(quantity) > 0;
