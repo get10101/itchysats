@@ -26,10 +26,6 @@ jobs:
             target: x86_64-apple-darwin
             os: macos-latest
             archive_ext: tar
-          - bin: taker
-            target: x86_64-pc-windows-msvc
-            os: windows-latest
-            archive_ext: zip
           - bin: maker
             target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
@@ -46,10 +42,6 @@ jobs:
             target: x86_64-apple-darwin
             os: macos-latest
             archive_ext: tar
-          - bin: maker
-            target: x86_64-pc-windows-msvc
-            os: windows-latest
-            archive_ext: zip
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout tagged commit
@@ -105,7 +97,7 @@ jobs:
           python-version: '3.x'
 
       - id: create-archive-name
-        shell: python # Use python to have a prettier name for the archive on Windows.
+        shell: python # Use python to have a prettier name for the archive.
         run: |
           import platform
           os_info = platform.uname()
@@ -128,13 +120,6 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: tar -C ./target/${{ matrix.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ matrix.bin }}
-
-      - name: Pack windows archive
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          cp target/${{ matrix.target }}/release/${{ matrix.bin }}.exe ./${{ matrix.bin }}.exe
-          7z a -tzip ${{ steps.create-archive-name.outputs.archive }} ./${{ matrix.bin }}.exe
 
       - name: Upload archive
         uses: actions/upload-release-asset@v1.0.2
