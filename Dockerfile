@@ -1,6 +1,9 @@
-FROM debian:bullseye-slim
+FROM gcr.io/distroless/cc
 
-LABEL org.opencontainers.image.source https://github.com/itchysats/itchysats
+USER 1000
+
+LABEL "org.opencontainers.image.source"="https://github.com/itchysats/itchysats"
+LABEL "org.opencontainers.image.authors"="hello@itchysats.network"
 
 ARG TARGETPLATFORM
 ARG BINARY_PATH
