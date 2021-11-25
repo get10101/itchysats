@@ -66,9 +66,12 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
     const quantity = `$${cfd.quantity_usd}`;
     const margin = `₿${Math.round((cfd.margin) * 1_000_000) / 1_000_000}`;
     const liquidationPrice = `$${cfd.liquidation_price}`;
-    const pAndL = Math.round((cfd.profit_btc) * 1_000_000) / 1_000_000;
+
+    const pAndLNumber = Math.round((cfd.profit_btc) * 1_000_000) / 1_000_000;
+    const pAndL = pAndLNumber < 0 ? `-₿${Math.abs(pAndLNumber)}` : `₿${Math.abs(pAndLNumber)}`;
+
     const expiry = cfd.expiry_timestamp;
-    const profit = Math.round((cfd.margin + cfd.profit_btc) * 1_000_000) / 1_000_000;
+    const payout = `₿${Math.round((cfd.margin + cfd.profit_btc) * 1_000_000) / 1_000_000}`;
 
     const txLock = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Lock);
     const txCommit = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Commit);
@@ -82,36 +85,41 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
         || !(cfd.state.key === StateKey.OPEN);
 
     return (
-        <HStack bg={useColorModeValue("gray.100", "gray.700")} rounded={5}>
-            <Center h={"100%"}>
+        <HStack bg={useColorModeValue("gray.100", "gray.700")} rounded={5} padding={2}>
+            <Center>
                 <Table variant="striped" colorScheme="gray" size="sm">
                     <Tbody>
                         <Tr>
                             <Td><Text as={"b"}>Quantity</Text></Td>
-                            <Td>{quantity}</Td>
+                            {/*TODO: Fix textAlign right hacks by using a grid instead ... */}
+                            <Td textAlign="right">{quantity}</Td>
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Opening price</Text></Td>
-                            <Td>{initialPrice}</Td>
+                            <Td textAlign="right">{initialPrice}</Td>
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Liquidation</Text></Td>
-                            <Td>{liquidationPrice}</Td>
+                            <Td textAlign="right">{liquidationPrice}</Td>
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Margin</Text></Td>
-                            <Td>{margin}</Td>
+                            <Td textAlign="right">{margin}</Td>
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Unrealized P/L</Text></Td>
-                            <Td>{pAndL.toString()}</Td>
+                            <Td textAlign="right">{pAndL}</Td>
+                        </Tr>
+                        <Tr>
+                            <Td><Text as={"b"}>Payout</Text></Td>
+                            <Td textAlign="right">{payout}</Td>
                         </Tr>
                     </Tbody>
                 </Table>
             </Center>
             <VStack>
                 <Badge colorScheme={cfd.state.getColorScheme()}>{cfd.state.getLabel()}</Badge>
-                <HStack w={"95%"}>
+                <HStack>
                     <VStack>
                         <TxIcon tx={txLock} />
                         <Text>Lock</Text>
@@ -149,11 +157,6 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
                         </>}
                 </HStack>
                 <HStack>
-                    <Box w={"45%"}>
-                        <Text fontSize={"sm"} align={"left"}>
-                            At the current rate you would receive <b>₿ {profit}</b>
-                        </Text>
-                    </Box>
                     <Box w={"45%"}>
                         <Popover
                             placement="bottom"
