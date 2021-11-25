@@ -83,7 +83,7 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
 
     return (
         <HStack bg={useColorModeValue("gray.100", "gray.700")} rounded={5}>
-            <Center rounded={5} h={"100%"}>
+            <Center h={"100%"}>
                 <Table variant="striped" colorScheme="gray" size="sm">
                     <Tbody>
                         <Tr>
