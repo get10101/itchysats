@@ -1,4 +1,4 @@
-use crate::model::cfd::{Cfd, CfdState, Dlc, Order, OrderId, Role};
+use crate::model::cfd::{Cfd, CfdState, Completed, Dlc, Order, OrderId, Role};
 use crate::model::Usd;
 use crate::oracle::Announcement;
 use crate::setup_contract::{self, SetupParams};
@@ -204,22 +204,6 @@ pub struct SetupSucceeded {
 pub struct SetupFailed {
     order_id: OrderId,
     error: anyhow::Error,
-}
-
-/// Message sent from the `setup_taker::Actor` to the
-/// `taker_cfd::Actor` to notify that the contract setup has finished.
-pub enum Completed {
-    NewContract {
-        order_id: OrderId,
-        dlc: Dlc,
-    },
-    Rejected {
-        order_id: OrderId,
-    },
-    Failed {
-        order_id: OrderId,
-        error: anyhow::Error,
-    },
 }
 
 impl xtra::Message for Started {

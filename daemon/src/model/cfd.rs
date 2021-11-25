@@ -1661,6 +1661,22 @@ impl CollaborativeSettlement {
     }
 }
 
+/// Message sent from a setup actor to the
+/// cfd actor to notify that the contract setup has finished.
+pub enum Completed {
+    NewContract {
+        order_id: OrderId,
+        dlc: Dlc,
+    },
+    Rejected {
+        order_id: OrderId,
+    },
+    Failed {
+        order_id: OrderId,
+        error: anyhow::Error,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
