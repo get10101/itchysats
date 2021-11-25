@@ -56,7 +56,7 @@ interface TradeProps {
     maxQuantity: number;
     referencePrice?: number;
     askPrice?: number;
-    margin?: string;
+    margin: string;
     leverage?: number;
     quantity: string;
     liquidationPrice?: number;
@@ -101,7 +101,7 @@ export default function Trade({
     const referencePrice = `$${referencePriceAsNumber?.toLocaleString() || "0.0"}`;
     const askPrice = `$${askPriceAsNumber?.toLocaleString() || "0.0"}`;
     const liquidationPrice = `$${liquidationPriceAsNumber?.toLocaleString() || "0.0"}`;
-    const margin = `₿${marginAsNumber?.toLocaleString() || "0.0"}`;
+    const margin = `₿${marginAsNumber.toLocaleString()}`;
 
     const { isOpen, onOpen, onClose } = useDisclosure();
 
