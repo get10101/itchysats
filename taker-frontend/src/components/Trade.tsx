@@ -87,7 +87,7 @@ export default function Trade({
     askPrice: askPriceAsNumber,
     quantity,
     onQuantityChange,
-    margin: marginAsNumber,
+    margin,
     leverage,
     liquidationPrice: liquidationPriceAsNumber,
     onLongSubmit,
@@ -101,13 +101,12 @@ export default function Trade({
     const referencePrice = `$${referencePriceAsNumber?.toLocaleString() || "0.0"}`;
     const askPrice = `$${askPriceAsNumber?.toLocaleString() || "0.0"}`;
     const liquidationPrice = `$${liquidationPriceAsNumber?.toLocaleString() || "0.0"}`;
-    const margin = `₿${marginAsNumber.toLocaleString()}`;
 
     const { isOpen, onOpen, onClose } = useDisclosure();
 
     const parse = (val: any) => Number.parseInt(val.replace(/^\$/, ""));
 
-    const balanceTooLow = walletBalance && walletBalance < marginAsNumber;
+    const balanceTooLow = walletBalance && walletBalance < margin;
     const quantityTooHigh = maxQuantity < parse(quantity);
     const quantityTooLow = minQuantity > parse(quantity);
     const quantityGreaterZero = parse(quantity) > 0;
@@ -189,7 +188,7 @@ export default function Trade({
                     <Leverage leverage={leverage} />
                 </GridItem>
                 <GridItem colSpan={1}>
-                    <Margin margin={marginAsNumber} />
+                    <Margin margin={margin} />
                 </GridItem>
                 <GridItem colSpan={1}>
                     <Center>
@@ -221,12 +220,12 @@ export default function Trade({
                                     <ModalBody>
                                         <Table variant="striped" colorScheme="gray" size="sm">
                                             <TableCaption>
-                                                By submitting, ₿{marginAsNumber} will be locked on-chain in a contract.
+                                                By submitting, ₿{margin} will be locked on-chain in a contract.
                                             </TableCaption>
                                             <Tbody>
                                                 <Tr>
                                                     <Td><Text as={"b"}>Margin</Text></Td>
-                                                    <Td>₿{marginAsNumber}</Td>
+                                                    <Td>₿{margin}</Td>
                                                 </Tr>
                                                 <Tr>
                                                     <Td><Text as={"b"}>Leverage</Text></Td>
