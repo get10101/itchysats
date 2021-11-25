@@ -4,6 +4,9 @@ use daemon::tokio_ext::FutureExt;
 use std::time::Duration;
 use tokio::sync::watch;
 
+/// Waiting time for the time on the watch channel before returning error
+const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 120 } else { 30 });
+
 /// Returns the first `Cfd` from both channels
 ///
 /// Ensures that there is only one `Cfd` present in both channels.
@@ -55,9 +58,12 @@ where
     T: Clone,
 {
     rx.changed()
-        .timeout(Duration::from_secs(10))
+        .timeout(NEXT_WAIT_TIME)
         .await
-        .context("No change in channel within 10 seconds")??;
+        .context(format!(
+            "No change in channel within {} seconds",
+            NEXT_WAIT_TIME.as_secs()
+        ))??;
 
     Ok(rx.borrow().clone())
 }
