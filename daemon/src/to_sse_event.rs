@@ -3,14 +3,13 @@ use crate::model::cfd::{
     Dlc, OrderId, Payout, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{Leverage, Position, TakerId, Timestamp, TradingPair};
-use crate::projection::{Price, Quote, Usd};
+use crate::projection::{CfdOrder, Price, Quote, Usd};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::{Amount, Network, SignedAmount, Txid};
 use rocket::request::FromParam;
 use rocket::response::stream::Event;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
 use time::OffsetDateTime;
 use tokio::sync::watch;
 
@@ -157,25 +156,6 @@ pub enum CfdState {
     SetupFailed,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct CfdOrder {
-    pub id: OrderId,
-
-    pub trading_pair: TradingPair,
-    pub position: Position,
-
-    pub price: Price,
-
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
-
-    pub leverage: Leverage,
-    pub liquidation_price: Price,
-
-    pub creation_timestamp: Timestamp,
-    pub settlement_time_interval_in_secs: u64,
-}
-
 pub trait ToSseEvent {
     fn to_sse_event(&self) -> Event;
 }
@@ -280,26 +260,9 @@ impl ToSseEvent for Vec<TakerId> {
     }
 }
 
-impl ToSseEvent for Option<model::cfd::Order> {
+impl ToSseEvent for Option<CfdOrder> {
     fn to_sse_event(&self) -> Event {
-        let order = self.clone().map(|order| CfdOrder {
-            id: order.id,
-            trading_pair: order.trading_pair,
-            position: order.position,
-            price: order.price.into(),
-            min_quantity: order.min_quantity.into(),
-            max_quantity: order.max_quantity.into(),
-            leverage: order.leverage,
-            liquidation_price: order.liquidation_price.into(),
-            creation_timestamp: order.creation_timestamp,
-            settlement_time_interval_in_secs: order
-                .settlement_interval
-                .whole_seconds()
-                .try_into()
-                .expect("settlement_time_interval_hours is always positive number"),
-        });
-
-        Event::json(&order).event("order")
+        Event::json(&self).event("order")
     }
 }
 

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use daemon::model::cfd::{Cfd, Order};
+use daemon::model::cfd::Cfd;
+use daemon::projection::CfdOrder;
 use daemon::tokio_ext::FutureExt;
 use std::time::Duration;
 use tokio::sync::watch;
@@ -24,9 +25,9 @@ pub async fn next_cfd(
 }
 
 pub async fn next_order(
-    rx_a: &mut watch::Receiver<Option<Order>>,
-    rx_b: &mut watch::Receiver<Option<Order>>,
-) -> Result<(Order, Order)> {
+    rx_a: &mut watch::Receiver<Option<CfdOrder>>,
+    rx_b: &mut watch::Receiver<Option<CfdOrder>>,
+) -> Result<(CfdOrder, CfdOrder)> {
     let (a, b) = tokio::join!(next_some(rx_a), next_some(rx_b));
 
     Ok((a?, b?))

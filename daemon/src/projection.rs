@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::model::{TakerId, Timestamp};
-use crate::{bitmex_price_feed, model};
-use crate::{Cfd, Order, UpdateCfdProposals};
+use crate::model::cfd::OrderId;
+use crate::model::{Leverage, Position, TakerId, Timestamp, TradingPair};
+use crate::{bitmex_price_feed, model, Cfd, Order, UpdateCfdProposals};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use tokio::sync::watch;
@@ -13,9 +13,10 @@ pub struct Actor {
 }
 
 pub struct Feeds {
-    pub order: watch::Receiver<Option<Order>>,
-    pub cfds: watch::Receiver<Vec<Cfd>>,
     pub quote: watch::Receiver<Quote>,
+    pub order: watch::Receiver<Option<CfdOrder>>,
+    // TODO: Convert items below here into projections
+    pub cfds: watch::Receiver<Vec<Cfd>>,
     pub settlements: watch::Receiver<UpdateCfdProposals>,
     pub connected_takers: watch::Receiver<Vec<TakerId>>,
 }
@@ -52,7 +53,7 @@ impl Actor {
 /// Internal struct to keep all the senders around in one place
 struct Tx {
     pub cfds: watch::Sender<Vec<Cfd>>,
-    pub order: watch::Sender<Option<Order>>,
+    pub order: watch::Sender<Option<CfdOrder>>,
     pub quote: watch::Sender<Quote>,
     pub settlements: watch::Sender<UpdateCfdProposals>,
     // TODO: Use this channel to communicate maker status as well with generic
@@ -64,14 +65,14 @@ pub struct Update<T>(pub T);
 
 #[xtra_productivity]
 impl Actor {
-    fn handle(&mut self, msg: Update<Vec<Cfd>>) {
-        let _ = self.tx.cfds.send(msg.0);
-    }
     fn handle(&mut self, msg: Update<Option<Order>>) {
-        let _ = self.tx.order.send(msg.0);
+        let _ = self.tx.order.send(msg.0.map(|x| x.into()));
     }
     fn handle(&mut self, msg: Update<bitmex_price_feed::Quote>) {
         let _ = self.tx.quote.send(msg.0.into());
+    }
+    fn handle(&mut self, msg: Update<Vec<Cfd>>) {
+        let _ = self.tx.cfds.send(msg.0);
     }
     fn handle(&mut self, msg: Update<UpdateCfdProposals>) {
         let _ = self.tx.settlements.send(msg.0);
@@ -85,7 +86,7 @@ impl xtra::Actor for Actor {}
 
 /// Types
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Usd {
     inner: model::Usd,
 }
@@ -122,7 +123,7 @@ impl Serialize for Price {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Price {
     inner: model::Price,
 }
@@ -197,5 +198,45 @@ mod tests {
         let price = Price::new(model::Price::new(dec!(1000.12345)).unwrap());
 
         assert_ser_tokens(&price, &[Token::Str("1000.12")]);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CfdOrder {
+    pub id: OrderId,
+
+    pub trading_pair: TradingPair,
+    pub position: Position,
+
+    pub price: Price,
+
+    pub min_quantity: Usd,
+    pub max_quantity: Usd,
+
+    pub leverage: Leverage,
+    pub liquidation_price: Price,
+
+    pub creation_timestamp: Timestamp,
+    pub settlement_time_interval_in_secs: u64,
+}
+
+impl From<Order> for CfdOrder {
+    fn from(order: Order) -> Self {
+        Self {
+            id: order.id,
+            trading_pair: order.trading_pair,
+            position: order.position,
+            price: order.price.into(),
+            min_quantity: order.min_quantity.into(),
+            max_quantity: order.max_quantity.into(),
+            leverage: order.leverage,
+            liquidation_price: order.liquidation_price.into(),
+            creation_timestamp: order.creation_timestamp,
+            settlement_time_interval_in_secs: order
+                .settlement_interval
+                .whole_seconds()
+                .try_into()
+                .expect("settlement_time_interval_hours is always positive number"),
+        }
     }
 }
