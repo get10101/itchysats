@@ -1,8 +1,9 @@
+use crate::address_map::{AddressMap, Stopping};
 use crate::maker_cfd::{FromTaker, TakerConnected, TakerDisconnected};
-use crate::model::cfd::Order;
+use crate::model::cfd::{Order, OrderId};
 use crate::model::Identity;
 use crate::noise::TransportStateExt;
-use crate::{maker_cfd, noise, send_to_socket, wire, Tasks};
+use crate::{maker_cfd, noise, send_to_socket, setup_maker, wire, Tasks};
 use anyhow::Result;
 use futures::TryStreamExt;
 use std::collections::HashMap;
@@ -17,6 +18,20 @@ use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 
 pub struct BroadcastOrder(pub Option<Order>);
+
+/// Message sent from the `setup_maker::Actor` to the
+/// `maker_inc_connections::Actor` so that it can forward it to the
+/// taker.
+///
+/// Additionally, the address of this instance of the
+/// `setup_maker::Actor` is included so that the
+/// `maker_inc_connections::Actor` knows where to forward the contract
+/// setup messages from the taker about this particular order.
+pub struct ConfirmOrder {
+    pub taker_id: Identity,
+    pub order_id: OrderId,
+    pub address: xtra::Address<setup_maker::Actor>,
+}
 
 #[derive(Debug)]
 pub struct TakerMessage {
@@ -41,6 +56,7 @@ pub struct Actor {
     taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
+    setup_actors: AddressMap<OrderId, setup_maker::Actor>,
     connection_tasks: HashMap<Identity, Tasks>,
 }
 
@@ -59,6 +75,7 @@ impl Actor {
             taker_msg_channel: taker_msg_channel.clone_channel(),
             noise_priv_key,
             heartbeat_interval,
+            setup_actors: AddressMap::default(),
             connection_tasks: HashMap::new(),
         }
     }
@@ -113,10 +130,9 @@ impl Actor {
             FramedRead::new(read, wire::EncryptedJsonCodec::new(transport_state.clone()));
 
         let this = ctx.address().expect("self to be alive");
-        let taker_msg_channel = self.taker_msg_channel.clone_channel();
         let read_fut = async move {
             while let Ok(Some(msg)) = read.try_next().await {
-                let res = taker_msg_channel.send(FromTaker { taker_id, msg }).await;
+                let res = this.send(FromTaker { taker_id, msg }).await;
 
                 if res.is_err() {
                     break;
@@ -166,6 +182,18 @@ impl Actor {
         }
     }
 
+    async fn handle_confirm_order(&mut self, msg: ConfirmOrder) -> Result<()> {
+        self.send_to_taker(
+            &msg.taker_id,
+            wire::MakerToTaker::ConfirmOrder(msg.order_id),
+        )
+        .await?;
+
+        self.setup_actors.insert(msg.order_id, msg.address);
+
+        Ok(())
+    }
+
     async fn handle_taker_message(&mut self, msg: TakerMessage) -> Result<(), NoConnection> {
         self.send_to_taker(&msg.taker_id, msg.msg).await?;
 
@@ -195,6 +223,30 @@ impl Actor {
         tracing::error!(%taker_id, "Failed to read incoming messages from taker");
 
         self.drop_taker_connection(&taker_id).await;
+    }
+}
+
+#[xtra_productivity(message_impl = false)]
+impl Actor {
+    async fn handle_msg_from_taker(&mut self, msg: FromTaker) {
+        use wire::TakerToMaker::*;
+        match msg.msg {
+            Protocol { order_id, msg } => match self.setup_actors.get_connected(&order_id) {
+                Some(addr) => {
+                    let _ = addr.send(msg).await;
+                }
+                None => {
+                    tracing::error!(%order_id, "No active contract setup");
+                }
+            },
+            _ => {
+                let _ = self.taker_msg_channel.send(msg);
+            }
+        }
+    }
+
+    async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
+        self.setup_actors.gc(message);
     }
 }
 

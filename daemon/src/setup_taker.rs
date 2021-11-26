@@ -70,7 +70,7 @@ impl Actor {
         );
 
         let (sender, receiver) = mpsc::unbounded::<SetupMsg>();
-        // store the writing end to forward messages from the taker to
+        // store the writing end to forward messages from the maker to
         // the spawned contract setup task
         self.setup_msg_sender = Some(sender);
 

@@ -29,6 +29,13 @@ where
         Ok(Disconnected { entry })
     }
 
+    pub fn get_connected(&self, key: &K) -> Option<&xtra::Address<A>> {
+        match self.inner.get(key) {
+            Some(addr) if addr.is_connected() => Some(addr),
+            _ => None,
+        }
+    }
+
     /// Garbage-collect an address that is no longer active.
     pub fn gc(&mut self, stopping: Stopping<A>) {
         self.inner.retain(|_, candidate| stopping.me != *candidate);
