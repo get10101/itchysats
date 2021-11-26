@@ -209,6 +209,13 @@ pub enum SetupMsg {
     /// Upon receiving this message from the other party we merge our signature and then the lock
     /// tx is fully signed and can be published on chain.
     Msg2(Msg2),
+    /// Message acknowledging that we received everything
+    ///
+    /// Simple ACK message used at the end of the message exchange to ensure that both parties sent
+    /// and received everything and we did not run into timeouts on the other side.
+    /// This is used to avoid one party publishing the lock transaction while the other party ran
+    /// into a timeout.
+    Msg3(Msg3),
 }
 
 impl SetupMsg {
@@ -233,6 +240,14 @@ impl SetupMsg {
             Ok(v)
         } else {
             bail!("Not Msg2")
+        }
+    }
+
+    pub fn try_into_msg3(self) -> Result<Msg3> {
+        if let Self::Msg3(v) = self {
+            Ok(v)
+        } else {
+            bail!("Not Msg3")
         }
     }
 }
@@ -333,6 +348,9 @@ impl From<CfdTransactions> for Msg1 {
 pub struct Msg2 {
     pub signed_lock: PartiallySignedTransaction, // TODO: Use binary representation
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Msg3;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
