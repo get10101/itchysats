@@ -100,9 +100,6 @@ export const App = () => {
         500,
     );
 
-    const format = (val: any) => `$` + val;
-    const parse = (val: any) => val.replace(/^\$/, "");
-
     return (
         <>
             <Nav walletInfo={walletInfo} connectedToMaker={connectedToMaker} />
@@ -119,7 +116,7 @@ export const App = () => {
                                 <Trade
                                     connectedToMaker={connectedToMaker}
                                     orderId={order?.id}
-                                    quantity={format(effectiveQuantity)}
+                                    quantity={effectiveQuantity}
                                     maxQuantity={max_quantity || 0}
                                     minQuantity={min_quantity || 0}
                                     referencePrice={referencePrice}
@@ -129,7 +126,7 @@ export const App = () => {
                                     liquidationPrice={liquidationPrice}
                                     onQuantityChange={(valueString: string) => {
                                         setUserHasEdited(true);
-                                        setQuantity(parse(valueString));
+                                        setQuantity(valueString);
                                     }}
                                     onLongSubmit={makeNewOrderRequest}
                                     isLongSubmitting={isCreatingNewOrderRequest}

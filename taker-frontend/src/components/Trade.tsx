@@ -15,6 +15,8 @@ import {
     Grid,
     GridItem,
     HStack,
+    InputGroup,
+    InputLeftAddon,
     Modal,
     ModalBody,
     ModalCloseButton,
@@ -281,19 +283,22 @@ function Quantity({ min, max, onChange, quantity }: QuantityProps) {
     return (
         <FormControl id="quantity">
             <FormLabel>Quantity</FormLabel>
-            <NumberInput
-                min={min}
-                max={max}
-                default={min}
-                onChange={onChange}
-                value={quantity}
-            >
-                <NumberInputField />
-                <NumberInputStepper>
-                    <NumberIncrementStepper />
-                    <NumberDecrementStepper />
-                </NumberInputStepper>
-            </NumberInput>
+            <InputGroup>
+                <InputLeftAddon>$</InputLeftAddon>
+                <NumberInput
+                    min={min}
+                    max={max}
+                    default={min}
+                    onChange={onChange}
+                    value={quantity}
+                >
+                    <NumberInputField />
+                    <NumberInputStepper>
+                        <NumberIncrementStepper />
+                        <NumberDecrementStepper />
+                    </NumberInputStepper>
+                </NumberInput>
+            </InputGroup>
             <FormHelperText>How much do you want to buy or sell?</FormHelperText>
         </FormControl>
     );
