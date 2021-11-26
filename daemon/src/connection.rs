@@ -191,7 +191,7 @@ impl Actor {
             },
             wire::MakerToTaker::RejectOrder(order_id) => match self.setup_actors.get(&order_id) {
                 Some(addr) => {
-                    let _ = addr.send(setup_taker::Rejected).await;
+                    let _ = addr.send(setup_taker::Rejected::without_reason()).await;
                 }
                 None => {
                     tracing::warn!(%order_id, "No active contract setup");
@@ -201,6 +201,16 @@ impl Actor {
                 match self.setup_actors.get(&order_id) {
                     Some(addr) => {
                         let _ = addr.send(msg).await;
+                    }
+                    None => {
+                        tracing::warn!(%order_id, "No active contract setup");
+                    }
+                }
+            }
+            wire::MakerToTaker::InvalidOrderId(order_id) => {
+                match self.setup_actors.get(&order_id) {
+                    Some(addr) => {
+                        let _ = addr.send(setup_taker::Rejected::invalid_order_id()).await;
                     }
                     None => {
                         tracing::warn!(%order_id, "No active contract setup");

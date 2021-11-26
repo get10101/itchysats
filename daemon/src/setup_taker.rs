@@ -107,11 +107,16 @@ impl Actor {
         Ok(())
     }
 
-    fn handle(&mut self, _: Rejected, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    fn handle(&mut self, msg: Rejected, ctx: &mut xtra::Context<Self>) -> Result<()> {
+        let order_id = self.order.id;
+        tracing::info!(%order_id, "Order got rejected");
+
+        if msg.is_invalid_order {
+            tracing::error!(%order_id, "Rejection reason: Invalid order ID");
+        }
+
         self.on_completed
-            .send(Completed::Rejected {
-                order_id: self.order.id,
-            })
+            .send(Completed::Rejected { order_id })
             .await?;
 
         ctx.stop();
@@ -190,7 +195,11 @@ pub struct Started(pub OrderId);
 /// Message sent from the `connection::Actor` to the
 /// `setup_taker::Actor` to notify that the order taken was rejected
 /// by the maker.
-pub struct Rejected;
+pub struct Rejected {
+    /// Used to indicate whether the rejection stems from the order ID
+    /// not being recognised by the maker.
+    is_invalid_order: bool,
+}
 
 /// Message sent from the spawned task to `setup_taker::Actor` to
 /// notify that the contract setup has finished successfully.
@@ -204,6 +213,23 @@ pub struct SetupSucceeded {
 pub struct SetupFailed {
     order_id: OrderId,
     error: anyhow::Error,
+}
+
+impl Rejected {
+    /// Order was rejected by the maker for not specific reason.
+    pub fn without_reason() -> Self {
+        Rejected {
+            is_invalid_order: false,
+        }
+    }
+
+    /// Order was rejected by the maker because it did not recognise
+    /// the order ID provided.
+    pub fn invalid_order_id() -> Self {
+        Rejected {
+            is_invalid_order: true,
+        }
+    }
 }
 
 impl xtra::Message for Started {
