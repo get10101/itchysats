@@ -623,8 +623,12 @@ where
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
 
+        tracing::info!("DLC got loaded");
+
         let proposal = self.get_settlement_proposal(order_id)?;
         let (tx, sig_taker) = dlc.close_transaction(proposal)?;
+
+        tracing::info!("found relevant closed transaction");
 
         self.conn_actor
             .send(wire::TakerToMaker::InitiateSettlement {
@@ -633,14 +637,21 @@ where
             })
             .await?;
 
+        tracing::info!("sent initiate settlement message");
+
         cfd.handle_proposal_signed(CollaborativeSettlement::new(
             tx.clone(),
             dlc.script_pubkey_for(cfd.role()),
             proposal.price,
         )?)?;
+
+        tracing::info!("handle proposal signed");
+
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         self.remove_pending_proposal(&order_id).await?;
+
+        tracing::info!("about to monitor for collab settlement");
 
         self.monitor_actor
             .send(monitor::CollaborativeSettlement {
