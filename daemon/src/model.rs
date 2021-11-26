@@ -426,6 +426,20 @@ impl fmt::Display for Identity {
     }
 }
 
+impl str::FromStr for Identity {
+    type Err = hex::FromHexError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut key = [0u8; 32];
+
+        hex::decode_to_slice(s, &mut key)?;
+
+        Ok(Self(key.into()))
+    }
+}
+
+impl_sqlx_type_display_from_str!(Identity);
+
 #[derive(Debug, Clone)]
 pub struct WalletInfo {
     pub balance: Amount,
