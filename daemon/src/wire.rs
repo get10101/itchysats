@@ -358,6 +358,7 @@ pub enum RollOverMsg {
     Msg0(RollOverMsg0),
     Msg1(RollOverMsg1),
     Msg2(RollOverMsg2),
+    Msg3(RollOverMsg3),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -390,6 +391,14 @@ impl RollOverMsg {
             bail!("Not Msg2")
         }
     }
+
+    pub fn try_into_msg3(self) -> Result<RollOverMsg3> {
+        if let Self::Msg3(v) = self {
+            Ok(v)
+        } else {
+            bail!("Not Msg3")
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -403,6 +412,9 @@ pub struct RollOverMsg1 {
 pub struct RollOverMsg2 {
     pub revocation_sk: SecretKey,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RollOverMsg3;
 
 impl From<CfdTransactions> for RollOverMsg1 {
     fn from(txs: CfdTransactions) -> Self {
