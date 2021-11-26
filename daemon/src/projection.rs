@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::model::cfd::OrderId;
-use crate::model::{Leverage, Position, TakerId, Timestamp, TradingPair};
+use crate::model::{Identity, Leverage, Position, Timestamp, TradingPair};
 use crate::{bitmex_price_feed, model, Cfd, Order, UpdateCfdProposals};
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -18,7 +18,7 @@ pub struct Feeds {
     // TODO: Convert items below here into projections
     pub cfds: watch::Receiver<Vec<Cfd>>,
     pub settlements: watch::Receiver<UpdateCfdProposals>,
-    pub connected_takers: watch::Receiver<Vec<TakerId>>,
+    pub connected_takers: watch::Receiver<Vec<Identity>>,
 }
 
 impl Actor {
@@ -58,7 +58,7 @@ struct Tx {
     pub settlements: watch::Sender<UpdateCfdProposals>,
     // TODO: Use this channel to communicate maker status as well with generic
     // ID of connected counterparties
-    pub connected_takers: watch::Sender<Vec<TakerId>>,
+    pub connected_takers: watch::Sender<Vec<Identity>>,
 }
 
 pub struct Update<T>(pub T);
@@ -77,7 +77,7 @@ impl Actor {
     fn handle(&mut self, msg: Update<UpdateCfdProposals>) {
         let _ = self.tx.settlements.send(msg.0);
     }
-    fn handle(&mut self, msg: Update<Vec<TakerId>>) {
+    fn handle(&mut self, msg: Update<Vec<Identity>>) {
         let _ = self.tx.connected_takers.send(msg.0);
     }
 }

@@ -1,6 +1,6 @@
 use crate::maker_cfd::{FromTaker, TakerConnected, TakerDisconnected};
 use crate::model::cfd::Order;
-use crate::model::TakerId;
+use crate::model::Identity;
 use crate::noise::TransportStateExt;
 use crate::tokio_ext::FutureExt;
 use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire, Tasks};
@@ -20,7 +20,7 @@ use xtra_productivity::xtra_productivity;
 pub struct BroadcastOrder(pub Option<Order>);
 
 pub struct TakerMessage {
-    pub taker_id: TakerId,
+    pub taker_id: Identity,
     pub msg: wire::MakerToTaker,
 }
 
@@ -35,7 +35,7 @@ pub enum ListenerMessage {
 }
 
 pub struct Actor {
-    write_connections: HashMap<TakerId, Address<send_to_socket::Actor<wire::MakerToTaker>>>,
+    write_connections: HashMap<Identity, Address<send_to_socket::Actor<wire::MakerToTaker>>>,
     taker_connected_channel: Box<dyn MessageChannel<TakerConnected>>,
     taker_disconnected_channel: Box<dyn MessageChannel<TakerDisconnected>>,
     taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
@@ -65,7 +65,7 @@ impl Actor {
 
     async fn send_to_taker(
         &mut self,
-        taker_id: &TakerId,
+        taker_id: &Identity,
         msg: wire::MakerToTaker,
     ) -> Result<(), NoConnection> {
         let conn = self
@@ -95,7 +95,7 @@ impl Actor {
         _: &mut Context<Self>,
     ) -> Result<()> {
         let transport_state = noise::responder_handshake(&mut stream, &self.noise_priv_key).await?;
-        let taker_id = TakerId::new(transport_state.get_remote_public_key()?);
+        let taker_id = Identity::new(transport_state.get_remote_public_key()?);
 
         tracing::info!(%taker_id, address = %taker_address, "New taker connected");
 
@@ -151,7 +151,7 @@ impl Actor {
 
 #[derive(Debug, thiserror::Error)]
 #[error("No connection to taker {0}")]
-pub struct NoConnection(TakerId);
+pub struct NoConnection(Identity);
 
 #[xtra_productivity]
 impl Actor {

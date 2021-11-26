@@ -5,7 +5,7 @@ use crate::schnorrsig;
 use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{connect, ConnectionStatus};
 use daemon::model::cfd::Cfd;
-use daemon::model::{Price, TakerId, Timestamp, Usd};
+use daemon::model::{Identity, Price, Timestamp, Usd};
 use daemon::projection::{CfdOrder, Feeds};
 use daemon::seed::Seed;
 use daemon::{
@@ -128,7 +128,7 @@ impl Maker {
         &mut self.feeds.order
     }
 
-    pub fn connected_takers_feed(&mut self) -> &mut watch::Receiver<Vec<TakerId>> {
+    pub fn connected_takers_feed(&mut self) -> &mut watch::Receiver<Vec<Identity>> {
         &mut self.feeds.connected_takers
     }
 
@@ -239,7 +239,7 @@ impl Maker {
 
 /// Taker Test Setup
 pub struct Taker {
-    pub id: TakerId,
+    pub id: Identity,
     pub system: daemon::TakerActorSystem<OracleActor, MonitorActor, WalletActor>,
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
@@ -311,7 +311,7 @@ impl Taker {
         ));
 
         Self {
-            id: TakerId::new(identity_pk),
+            id: Identity::new(identity_pk),
             system: taker,
             feeds,
             mocks,

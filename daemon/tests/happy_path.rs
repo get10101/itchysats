@@ -7,7 +7,7 @@ use crate::harness::{
 };
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::CfdState;
-use daemon::model::{TakerId, Usd};
+use daemon::model::{Identity, Usd};
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
 use tokio::time::sleep;
@@ -177,7 +177,7 @@ async fn maker_notices_lack_of_taker() {
     std::mem::drop(taker);
 
     assert_eq!(
-        Vec::<TakerId>::new(),
+        Vec::<Identity>::new(),
         next(maker.connected_takers_feed()).await.unwrap()
     );
 }
