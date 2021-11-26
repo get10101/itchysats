@@ -1,8 +1,9 @@
 use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
-    Cfd, CfdState, CfdStateCommon, CollaborativeSettlement, Dlc, Order, OrderId, Origin, Role,
-    RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal, UpdateCfdProposals,
+    Cfd, CfdState, CfdStateCommon, CollaborativeSettlement, Completed, Dlc, Order, OrderId, Origin,
+    Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
+    UpdateCfdProposals,
 };
 use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
@@ -357,7 +358,7 @@ where
 
 impl<O, M, W> Actor<O, M, W>
 where
-    Self: xtra::Handler<setup_taker::Completed>,
+    Self: xtra::Handler<Completed>,
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
 {
@@ -436,14 +437,14 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle_setup_completed(&mut self, msg: setup_taker::Completed) -> Result<()> {
+    async fn handle_setup_completed(&mut self, msg: Completed) -> Result<()> {
         let (order_id, dlc) = match msg {
-            setup_taker::Completed::NewContract { order_id, dlc } => (order_id, dlc),
-            setup_taker::Completed::Rejected { order_id } => {
+            Completed::NewContract { order_id, dlc } => (order_id, dlc),
+            Completed::Rejected { order_id } => {
                 self.append_cfd_state_rejected(order_id).await?;
                 return Ok(());
             }
-            setup_taker::Completed::Failed { order_id, error } => {
+            Completed::Failed { order_id, error } => {
                 self.append_cfd_state_setup_failed(order_id, error).await?;
                 return Ok(());
             }
@@ -655,7 +656,7 @@ where
 #[async_trait]
 impl<O: 'static, M: 'static, W: 'static> Handler<TakeOffer> for Actor<O, M, W>
 where
-    Self: xtra::Handler<setup_taker::Completed>,
+    Self: xtra::Handler<Completed>,
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
 {
@@ -742,13 +743,13 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, W: 'static> Handler<setup_taker::Completed> for Actor<O, M, W>
+impl<O: 'static, M: 'static, W: 'static> Handler<Completed> for Actor<O, M, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle(&mut self, msg: setup_taker::Completed, _ctx: &mut Context<Self>) {
+    async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) {
         log_error!(self.handle_setup_completed(msg))
     }
 }
