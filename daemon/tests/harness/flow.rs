@@ -54,17 +54,22 @@ where
 }
 
 /// Returns watch channel value upon change
+pub async fn next_custom_time<T>(rx: &mut watch::Receiver<T>, wait_time: Duration) -> Result<T>
+where
+    T: Clone,
+{
+    rx.changed().timeout(wait_time).await.context(format!(
+        "No change in channel within {} seconds",
+        wait_time.as_secs()
+    ))??;
+
+    Ok(rx.borrow().clone())
+}
+
+/// Returns watch channel value upon change
 pub async fn next<T>(rx: &mut watch::Receiver<T>) -> Result<T>
 where
     T: Clone,
 {
-    rx.changed()
-        .timeout(NEXT_WAIT_TIME)
-        .await
-        .context(format!(
-            "No change in channel within {} seconds",
-            NEXT_WAIT_TIME.as_secs()
-        ))??;
-
-    Ok(rx.borrow().clone())
+    next_custom_time(rx, NEXT_WAIT_TIME).await
 }
