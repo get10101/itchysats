@@ -389,15 +389,15 @@ pub enum Position {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct TakerId(x25519_dalek::PublicKey);
+pub struct Identity(x25519_dalek::PublicKey);
 
-impl TakerId {
+impl Identity {
     pub fn new(key: x25519_dalek::PublicKey) -> Self {
         Self(key)
     }
 }
 
-impl Serialize for TakerId {
+impl Serialize for Identity {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -406,7 +406,7 @@ impl Serialize for TakerId {
     }
 }
 
-impl<'de> Deserialize<'de> for TakerId {
+impl<'de> Deserialize<'de> for Identity {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -420,7 +420,7 @@ impl<'de> Deserialize<'de> for TakerId {
     }
 }
 
-impl fmt::Display for TakerId {
+impl fmt::Display for Identity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", hex::encode(self.0.as_bytes()))
     }
@@ -665,7 +665,7 @@ mod tests {
 
     #[test]
     fn roundtrip_taker_id_serde() {
-        let id = TakerId::new(x25519_dalek::PublicKey::from([42u8; 32]));
+        let id = Identity::new(x25519_dalek::PublicKey::from([42u8; 32]));
 
         serde_test::assert_tokens(
             &id,

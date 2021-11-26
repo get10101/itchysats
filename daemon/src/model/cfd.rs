@@ -1,5 +1,5 @@
 use crate::model::{
-    BitMexPriceEventId, InversePrice, Leverage, Percent, Position, Price, TakerId, Timestamp,
+    BitMexPriceEventId, Identity, InversePrice, Leverage, Percent, Position, Price, Timestamp,
     TradingPair, Usd,
 };
 use crate::{monitor, oracle, payout_curve};
@@ -193,7 +193,7 @@ pub enum CfdState {
     /// This state applies to the maker only.
     IncomingOrderRequest {
         common: CfdStateCommon,
-        taker_id: TakerId,
+        taker_id: Identity,
     },
 
     /// The maker has accepted the CFD take request, but the contract is not set up on chain yet.

@@ -4,7 +4,7 @@ use crate::model::cfd::{
     Cfd, CfdState, CfdStateCommon, CollaborativeSettlement, Dlc, Order, OrderId, Origin, Role,
     RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
 };
-use crate::model::{Price, TakerId, Timestamp, Usd};
+use crate::model::{Identity, Price, Timestamp, Usd};
 use crate::monitor::MonitorParams;
 use crate::projection::Update;
 use crate::setup_contract::{RolloverParams, SetupParams};
@@ -55,11 +55,11 @@ pub struct NewOrder {
 }
 
 pub struct TakerConnected {
-    pub id: TakerId,
+    pub id: Identity,
 }
 
 pub struct TakerDisconnected {
-    pub id: TakerId,
+    pub id: Identity,
 }
 
 pub struct CfdSetupCompleted {
@@ -73,7 +73,7 @@ pub struct CfdRollOverCompleted {
 }
 
 pub struct FromTaker {
-    pub taker_id: TakerId,
+    pub taker_id: Identity,
     pub msg: wire::TakerToMaker,
 }
 
@@ -94,16 +94,16 @@ pub struct Actor<
     setup_state: SetupState,
     roll_over_state: RollOverState,
     oracle_actor: Address<O>,
-    // Maker needs to also store TakerId to be able to send a reply back
-    current_pending_proposals: HashMap<OrderId, (UpdateCfdProposal, TakerId)>,
-    current_agreed_proposals: HashMap<OrderId, (SettlementProposal, TakerId)>,
-    connected_takers: HashSet<TakerId>,
+    // Maker needs to also store Identity to be able to send a reply back
+    current_pending_proposals: HashMap<OrderId, (UpdateCfdProposal, Identity)>,
+    current_agreed_proposals: HashMap<OrderId, (SettlementProposal, Identity)>,
+    connected_takers: HashSet<Identity>,
     n_payouts: usize,
 }
 
 enum SetupState {
     Active {
-        taker: TakerId,
+        taker: Identity,
         sender: mpsc::UnboundedSender<wire::SetupMsg>,
         _task: RemoteHandle<()>,
     },
@@ -112,7 +112,7 @@ enum SetupState {
 
 enum RollOverState {
     Active {
-        taker: TakerId,
+        taker: Identity,
         sender: mpsc::UnboundedSender<wire::RollOverMsg>,
         _task: RemoteHandle<()>,
     },
@@ -154,7 +154,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
     async fn handle_propose_roll_over(
         &mut self,
         proposal: RollOverProposal,
-        taker_id: TakerId,
+        taker_id: Identity,
     ) -> Result<()> {
         tracing::info!(
             "Received proposal from the taker {}: {:?} to roll over order {}",
@@ -193,7 +193,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
 
     async fn handle_propose_settlement(
         &mut self,
-        taker_id: TakerId,
+        taker_id: Identity,
         proposal: SettlementProposal,
     ) -> Result<()> {
         tracing::info!(
@@ -217,7 +217,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
 
     async fn handle_inc_protocol_msg(
         &mut self,
-        taker_id: TakerId,
+        taker_id: Identity,
         msg: wire::SetupMsg,
     ) -> Result<()> {
         match &mut self.setup_state {
@@ -237,7 +237,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
 
     async fn handle_inc_roll_over_protocol_msg(
         &mut self,
-        taker_id: TakerId,
+        taker_id: Identity,
         msg: wire::RollOverMsg,
     ) -> Result<()> {
         match &mut self.roll_over_state {
@@ -254,7 +254,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
     }
 
     /// Send pending proposals for the purposes of UI updates.
-    /// Filters out the TakerIds, as they are an implementation detail inside of
+    /// Filters out the Identities, as they are an implementation detail inside of
     /// the actor
     async fn send_pending_proposals(&self) -> Result<()> {
         let pending_proposal = self
@@ -278,7 +278,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         Ok(())
     }
 
-    fn get_taker_id_of_proposal(&self, order_id: &OrderId) -> Result<TakerId> {
+    fn get_taker_id_of_proposal(&self, order_id: &OrderId) -> Result<Identity> {
         let (_, taker_id) = self
             .current_pending_proposals
             .get(order_id)
@@ -286,7 +286,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         Ok(*taker_id)
     }
 
-    fn get_settlement_proposal(&self, order_id: OrderId) -> Result<(SettlementProposal, TakerId)> {
+    fn get_settlement_proposal(&self, order_id: OrderId) -> Result<(SettlementProposal, Identity)> {
         let (update_proposal, taker_id) = self
             .current_pending_proposals
             .get(&order_id)
@@ -307,7 +307,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
                 self.connected_takers
                     .clone()
                     .into_iter()
-                    .collect::<Vec<TakerId>>(),
+                    .collect::<Vec<Identity>>(),
             ))
             .await?;
         Ok(())
@@ -342,7 +342,7 @@ impl<O, M, T, W> Actor<O, M, T, W>
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
-    async fn handle_taker_connected(&mut self, taker_id: TakerId) -> Result<()> {
+    async fn handle_taker_connected(&mut self, taker_id: Identity) -> Result<()> {
         let mut conn = self.db.acquire().await?;
 
         let current_order = match self.current_order_id {
@@ -367,7 +367,7 @@ where
         Ok(())
     }
 
-    async fn handle_taker_disconnected(&mut self, taker_id: TakerId) -> Result<()> {
+    async fn handle_taker_disconnected(&mut self, taker_id: Identity) -> Result<()> {
         if !self.connected_takers.remove(&taker_id) {
             tracing::warn!("Removed unknown taker: {:?}", &taker_id);
         }
@@ -377,7 +377,7 @@ where
 
     async fn reject_order(
         &mut self,
-        taker_id: TakerId,
+        taker_id: Identity,
         mut cfd: Cfd,
         mut conn: PoolConnection<Sqlite>,
     ) -> Result<()> {
@@ -403,7 +403,7 @@ where
 {
     async fn handle_take_order(
         &mut self,
-        taker_id: TakerId,
+        taker_id: Identity,
         order_id: OrderId,
         quantity: Usd,
     ) -> Result<()> {
@@ -930,7 +930,7 @@ where
 {
     async fn handle_initiate_settlement(
         &mut self,
-        taker_id: TakerId,
+        taker_id: Identity,
         order_id: OrderId,
         sig_taker: Signature,
     ) -> Result<()> {
