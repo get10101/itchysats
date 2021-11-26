@@ -57,7 +57,7 @@ pub mod wire;
 // Increasing the value for debug mode makes sure that we don't cause problems
 // when testing / CI, whilst the release can still detect status faster
 pub const HEARTBEAT_INTERVAL: std::time::Duration =
-    Duration::from_secs(if cfg!(debug_assertions) { 30 } else { 5 });
+    Duration::from_secs(if cfg!(debug_assertions) { 45 } else { 5 });
 
 pub const N_PAYOUTS: usize = 200;
 
