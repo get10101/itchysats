@@ -5,7 +5,7 @@ use daemon::model::{Leverage, Price, Usd, WalletInfo};
 use daemon::projection::Feeds;
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
-use daemon::{taker_cfd, wallet};
+use daemon::{bitmex_price_feed, taker_cfd, wallet};
 use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
@@ -152,7 +152,8 @@ pub async fn post_cfd_action(
         }
         CfdAction::Commit => cfd_action_channel.send(Commit { order_id: id }),
         CfdAction::Settle => {
-            let current_price = feeds.quote.borrow().for_taker();
+            let quote: bitmex_price_feed::Quote = feeds.quote.borrow().clone().into();
+            let current_price = quote.for_taker();
             cfd_action_channel.send(ProposeSettlement {
                 order_id: id,
                 current_price,

@@ -4,9 +4,9 @@ use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{connect, ConnectionStatus};
-use daemon::model::cfd::{Cfd, Order, Origin};
+use daemon::model::cfd::Cfd;
 use daemon::model::{Price, TakerId, Timestamp, Usd};
-use daemon::projection::Feeds;
+use daemon::projection::{CfdOrder, Feeds};
 use daemon::seed::Seed;
 use daemon::{
     db, maker_cfd, maker_inc_connections, projection, taker_cfd, MakerActorSystem, Tasks,
@@ -124,7 +124,7 @@ impl Maker {
         &mut self.feeds.cfds
     }
 
-    pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<Order>> {
+    pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<CfdOrder>> {
         &mut self.feeds.order
     }
 
@@ -218,7 +218,7 @@ impl Maker {
             .unwrap();
     }
 
-    pub async fn reject_take_request(&self, order: Order) {
+    pub async fn reject_take_request(&self, order: CfdOrder) {
         self.system
             .cfd_actor_addr
             .send(maker_cfd::RejectOrder { order_id: order.id })
@@ -227,7 +227,7 @@ impl Maker {
             .unwrap();
     }
 
-    pub async fn accept_take_request(&self, order: Order) {
+    pub async fn accept_take_request(&self, order: CfdOrder) {
         self.system
             .cfd_actor_addr
             .send(maker_cfd::AcceptOrder { order_id: order.id })
@@ -251,7 +251,7 @@ impl Taker {
         &mut self.feeds.cfds
     }
 
-    pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<Order>> {
+    pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<CfdOrder>> {
         &mut self.feeds.order
     }
 
@@ -319,7 +319,7 @@ impl Taker {
         }
     }
 
-    pub async fn take_order(&self, order: Order, quantity: Usd) {
+    pub async fn take_order(&self, order: CfdOrder, quantity: Usd) {
         self.system
             .cfd_actor_addr
             .send(taker_cfd::TakeOffer {
@@ -341,18 +341,6 @@ async fn in_memory_db() -> SqlitePool {
     db::run_migrations(&pool).await.unwrap();
 
     pool
-}
-
-/// The order cannot be directly compared in tests as the origin is different,
-/// therefore wrap the assertion macro in a code that unifies the 'Origin'
-pub fn assert_is_same_order(a: &Order, b: &Order) {
-    // Assume the same origin
-    let mut a = a.clone();
-    let mut b = b.clone();
-    a.origin = Origin::Ours;
-    b.origin = Origin::Ours;
-
-    assert_eq!(a, b);
 }
 
 pub fn dummy_new_order() -> maker_cfd::NewOrder {
@@ -386,4 +374,8 @@ pub fn init_tracing() -> DefaultGuard {
     tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
 
     guard
+}
+
+pub fn order_from_cfd(cfd: &Cfd) -> CfdOrder {
+    cfd.order.clone().into()
 }

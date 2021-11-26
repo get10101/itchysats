@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
 use crate::harness::{
-    assert_is_same_order, dummy_new_order, init_tracing, start_both, Maker, MakerConfig, Taker,
+    dummy_new_order, init_tracing, order_from_cfd, start_both, Maker, MakerConfig, Taker,
     TakerConfig,
 };
 use daemon::connection::ConnectionStatus;
@@ -25,7 +25,7 @@ async fn taker_receives_order_from_maker_on_publication() {
     let (published, received) =
         tokio::join!(next_some(maker.order_feed()), next_some(taker.order_feed()));
 
-    assert_is_same_order(&published.unwrap(), &received.unwrap());
+    assert_eq!(published.unwrap(), received.unwrap());
 }
 
 #[tokio::test]
@@ -46,8 +46,8 @@ async fn taker_takes_order_and_maker_rejects() {
     taker.take_order(received.clone(), Usd::new(dec!(10))).await;
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert_is_same_order(&taker_cfd.order, &received);
-    assert_is_same_order(&maker_cfd.order, &received);
+    assert_eq!(order_from_cfd(&taker_cfd), received);
+    assert_eq!(order_from_cfd(&maker_cfd), received);
     assert!(matches!(
         taker_cfd.state,
         CfdState::OutgoingOrderRequest { .. }
@@ -61,8 +61,8 @@ async fn taker_takes_order_and_maker_rejects() {
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
     // TODO: More elaborate Cfd assertions
-    assert_is_same_order(&taker_cfd.order, &received);
-    assert_is_same_order(&maker_cfd.order, &received);
+    assert_eq!(order_from_cfd(&taker_cfd), received);
+    assert_eq!(order_from_cfd(&maker_cfd), received);
     assert!(matches!(taker_cfd.state, CfdState::Rejected { .. }));
     assert!(matches!(maker_cfd.state, CfdState::Rejected { .. }));
 }

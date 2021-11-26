@@ -3,73 +3,15 @@ use crate::model::cfd::{
     Dlc, OrderId, Payout, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{Leverage, Position, TakerId, Timestamp, TradingPair};
+use crate::projection::{CfdOrder, Price, Quote, Usd};
 use crate::{bitmex_price_feed, model};
 use bdk::bitcoin::{Amount, Network, SignedAmount, Txid};
 use rocket::request::FromParam;
 use rocket::response::stream::Event;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
 use time::OffsetDateTime;
 use tokio::sync::watch;
-
-#[derive(Debug, Clone)]
-pub struct Usd {
-    inner: model::Usd,
-}
-
-impl Usd {
-    fn new(usd: model::Usd) -> Self {
-        Self {
-            inner: model::Usd::new(usd.into_decimal().round_dp(2)),
-        }
-    }
-}
-
-impl From<model::Usd> for Usd {
-    fn from(usd: model::Usd) -> Self {
-        Self::new(usd)
-    }
-}
-
-impl Serialize for Usd {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        <Decimal as Serialize>::serialize(&self.inner.into_decimal(), serializer)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Price {
-    inner: model::Price,
-}
-
-impl Price {
-    fn new(price: model::Price) -> Self {
-        Self {
-            inner: model::Price::new(price.into_decimal().round_dp(2)).expect(
-                "rounding a valid price to 2 decimal places should still result in a valid price",
-            ),
-        }
-    }
-}
-
-impl From<model::Price> for Price {
-    fn from(price: model::Price) -> Self {
-        Self::new(price)
-    }
-}
-
-impl Serialize for Price {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        <Decimal as Serialize>::serialize(&self.inner.into_decimal(), serializer)
-    }
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Cfd {
@@ -214,25 +156,6 @@ pub enum CfdState {
     SetupFailed,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct CfdOrder {
-    pub id: OrderId,
-
-    pub trading_pair: TradingPair,
-    pub position: Position,
-
-    pub price: Price,
-
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
-
-    pub leverage: Leverage,
-    pub liquidation_price: Price,
-
-    pub creation_timestamp: Timestamp,
-    pub settlement_time_interval_in_secs: u64,
-}
-
 pub trait ToSseEvent {
     fn to_sse_event(&self) -> Event;
 }
@@ -250,12 +173,12 @@ pub struct CfdsWithAuxData {
 impl CfdsWithAuxData {
     pub fn new(
         rx_cfds: &watch::Receiver<Vec<model::cfd::Cfd>>,
-        rx_quote: &watch::Receiver<bitmex_price_feed::Quote>,
+        rx_quote: &watch::Receiver<Quote>,
         rx_updates: &watch::Receiver<UpdateCfdProposals>,
         role: Role,
         network: Network,
     ) -> Self {
-        let quote = rx_quote.borrow().clone();
+        let quote: bitmex_price_feed::Quote = rx_quote.borrow().clone().into();
         let current_price = match role {
             Role::Maker => quote.for_maker(),
             Role::Taker => quote.for_taker(),
@@ -337,26 +260,9 @@ impl ToSseEvent for Vec<TakerId> {
     }
 }
 
-impl ToSseEvent for Option<model::cfd::Order> {
+impl ToSseEvent for Option<CfdOrder> {
     fn to_sse_event(&self) -> Event {
-        let order = self.clone().map(|order| CfdOrder {
-            id: order.id,
-            trading_pair: order.trading_pair,
-            position: order.position,
-            price: order.price.into(),
-            min_quantity: order.min_quantity.into(),
-            max_quantity: order.max_quantity.into(),
-            leverage: order.leverage,
-            liquidation_price: order.liquidation_price.into(),
-            creation_timestamp: order.creation_timestamp,
-            settlement_time_interval_in_secs: order
-                .settlement_interval
-                .whole_seconds()
-                .try_into()
-                .expect("settlement_time_interval_hours is always positive number"),
-        });
-
-        Event::json(&order).event("order")
+        Event::json(&self).event("order")
     }
 }
 
@@ -487,21 +393,9 @@ fn to_tx_url_list(state: model::cfd::CfdState, network: Network) -> Vec<TxUrl> {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct Quote {
-    bid: Price,
-    ask: Price,
-    last_updated_at: Timestamp,
-}
-
-impl ToSseEvent for bitmex_price_feed::Quote {
+impl ToSseEvent for Quote {
     fn to_sse_event(&self) -> Event {
-        let quote = Quote {
-            bid: self.bid.into(),
-            ask: self.ask.into(),
-            last_updated_at: self.timestamp,
-        };
-        Event::json(&quote).event("quote")
+        Event::json(self).event("quote")
     }
 }
 
@@ -537,9 +431,6 @@ fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
 mod tests {
     use super::*;
 
-    use rust_decimal_macros::dec;
-    use serde_test::{assert_ser_tokens, Token};
-
     #[test]
     fn state_snapshot_test() {
         // Make sure to update the UI after changing this test!
@@ -566,19 +457,5 @@ mod tests {
         assert_eq!(json, "\"Refunded\"");
         let json = serde_json::to_string(&CfdState::SetupFailed).unwrap();
         assert_eq!(json, "\"SetupFailed\"");
-    }
-
-    #[test]
-    fn usd_serializes_with_only_cents() {
-        let usd = Usd::new(model::Usd::new(dec!(1000.12345)));
-
-        assert_ser_tokens(&usd, &[Token::Str("1000.12")]);
-    }
-
-    #[test]
-    fn price_serializes_with_only_cents() {
-        let price = Price::new(model::Price::new(dec!(1000.12345)).unwrap());
-
-        assert_ser_tokens(&price, &[Token::Str("1000.12")]);
     }
 }
