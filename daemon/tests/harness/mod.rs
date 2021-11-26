@@ -5,8 +5,8 @@ use crate::schnorrsig;
 use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{connect, ConnectionStatus};
 use daemon::model::cfd::Cfd;
-use daemon::model::{Identity, Price, Timestamp, Usd};
-use daemon::projection::{CfdOrder, Feeds};
+use daemon::model::{self, Price, Timestamp, Usd};
+use daemon::projection::{CfdOrder, Feeds, Identity};
 use daemon::seed::Seed;
 use daemon::{
     db, maker_cfd, maker_inc_connections, projection, taker_cfd, MakerActorSystem, Tasks,
@@ -311,7 +311,7 @@ impl Taker {
         ));
 
         Self {
-            id: Identity::new(identity_pk),
+            id: model::Identity::new(identity_pk).into(),
             system: taker,
             feeds,
             mocks,

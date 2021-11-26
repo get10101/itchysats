@@ -7,7 +7,8 @@ use crate::harness::{
 };
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::CfdState;
-use daemon::model::{Identity, Usd};
+use daemon::model::Usd;
+use daemon::projection::Identity;
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
 use tokio::time::sleep;
@@ -170,7 +171,7 @@ async fn maker_notices_lack_of_taker() {
 
     let (mut maker, taker) = start_both().await;
     assert_eq!(
-        vec![taker.id],
+        vec![taker.id.clone()],
         next(maker.connected_takers_feed()).await.unwrap()
     );
 
