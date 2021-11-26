@@ -11,7 +11,7 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import useWebSocket from "react-use-websocket";
@@ -33,6 +33,7 @@ import {
     StateGroupKey,
     WalletInfo,
 } from "./types";
+import useDebouncedEffect from "./useDebouncedEffect";
 import useLatestEvent from "./useLatestEvent";
 import usePostRequest from "./usePostRequest";
 
@@ -66,7 +67,7 @@ export const App = () => {
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined! : false;
 
     let [quantity, setQuantity] = useState("0");
-    let [margin, setMargin] = useState("0");
+    let [margin, setMargin] = useState(0);
     let [userHasEdited, setUserHasEdited] = useState(false);
 
     const { price: askPrice, min_quantity, max_quantity, leverage, liquidation_price: liquidationPrice } = order || {};
@@ -76,30 +77,28 @@ export const App = () => {
     let [calculateMargin] = usePostRequest<MarginRequestPayload, MarginResponse>(
         "/api/calculate/margin",
         (response) => {
-            setMargin(response.margin.toString());
+            setMargin(response.margin);
         },
     );
     let [makeNewOrderRequest, isCreatingNewOrderRequest] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
 
-    useEffect(() => {
-        if (!order) {
-            return;
-        }
-        let quantity = effectiveQuantity ? Number.parseFloat(effectiveQuantity) : 0;
-        let payload: MarginRequestPayload = {
-            leverage: order.leverage,
-            price: order.price,
-            quantity,
-        };
-        calculateMargin(payload);
-    }, // Eslint demands us to include `calculateMargin` in the list of dependencies.
-     // We don't want that as we will end up in an endless loop. It is safe to ignore `calculateMargin` because
-    // nothing in `calculateMargin` depends on outside values, i.e. is guaranteed to be stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [margin, effectiveQuantity, order]);
+    useDebouncedEffect(
+        () => {
+            if (!order) {
+                return;
+            }
+            let quantity = effectiveQuantity ? Number.parseFloat(effectiveQuantity) : 0;
+            let payload: MarginRequestPayload = {
+                leverage: order.leverage,
+                price: order.price,
+                quantity,
+            };
 
-    const format = (val: any) => `$` + val;
-    const parse = (val: any) => val.replace(/^\$/, "");
+            calculateMargin(payload);
+        },
+        [margin, effectiveQuantity, order],
+        500,
+    );
 
     return (
         <>
@@ -117,7 +116,7 @@ export const App = () => {
                                 <Trade
                                     connectedToMaker={connectedToMaker}
                                     orderId={order?.id}
-                                    quantity={format(effectiveQuantity)}
+                                    quantity={effectiveQuantity}
                                     maxQuantity={max_quantity || 0}
                                     minQuantity={min_quantity || 0}
                                     referencePrice={referencePrice}
@@ -127,17 +126,7 @@ export const App = () => {
                                     liquidationPrice={liquidationPrice}
                                     onQuantityChange={(valueString: string) => {
                                         setUserHasEdited(true);
-                                        setQuantity(parse(valueString));
-                                        if (!order) {
-                                            return;
-                                        }
-                                        let quantity = valueString ? Number.parseFloat(valueString) : 0;
-                                        let payload: MarginRequestPayload = {
-                                            leverage: order.leverage,
-                                            price: order.price,
-                                            quantity,
-                                        };
-                                        calculateMargin(payload);
+                                        setQuantity(valueString);
                                     }}
                                     onLongSubmit={makeNewOrderRequest}
                                     isLongSubmitting={isCreatingNewOrderRequest}

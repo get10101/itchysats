@@ -15,6 +15,8 @@ import {
     Grid,
     GridItem,
     HStack,
+    InputGroup,
+    InputLeftAddon,
     Modal,
     ModalBody,
     ModalCloseButton,
@@ -56,7 +58,7 @@ interface TradeProps {
     maxQuantity: number;
     referencePrice?: number;
     askPrice?: number;
-    margin?: string;
+    margin: number;
     leverage?: number;
     quantity: string;
     liquidationPrice?: number;
@@ -79,37 +81,34 @@ function AlertBox({ title, description }: AlertBoxProps) {
     </Alert>);
 }
 
-const Trade = (
-    {
-        connectedToMaker,
-        minQuantity,
-        maxQuantity,
-        referencePrice: referencePriceAsNumber,
-        askPrice: askPriceAsNumber,
-        quantity,
-        onQuantityChange,
-        margin: marginAsNumber,
-        leverage,
-        liquidationPrice: liquidationPriceAsNumber,
-        onLongSubmit,
-        isLongSubmitting,
-        orderId,
-        walletBalance,
-    }: TradeProps,
-) => {
+export default function Trade({
+    connectedToMaker,
+    minQuantity,
+    maxQuantity,
+    referencePrice: referencePriceAsNumber,
+    askPrice: askPriceAsNumber,
+    quantity,
+    onQuantityChange,
+    margin,
+    leverage,
+    liquidationPrice: liquidationPriceAsNumber,
+    onLongSubmit,
+    isLongSubmitting,
+    orderId,
+    walletBalance,
+}: TradeProps) {
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
 
     const referencePrice = `$${referencePriceAsNumber?.toLocaleString() || "0.0"}`;
     const askPrice = `$${askPriceAsNumber?.toLocaleString() || "0.0"}`;
     const liquidationPrice = `$${liquidationPriceAsNumber?.toLocaleString() || "0.0"}`;
-    const margin = `₿${marginAsNumber?.toLocaleString() || "0.0"}`;
 
     const { isOpen, onOpen, onClose } = useDisclosure();
 
     const parse = (val: any) => Number.parseInt(val.replace(/^\$/, ""));
 
-    const balanceTooLow = walletBalance && walletBalance < parse(margin);
+    const balanceTooLow = walletBalance && walletBalance < margin;
     const quantityTooHigh = maxQuantity < parse(quantity);
     const quantityTooLow = minQuantity > parse(quantity);
     const quantityGreaterZero = parse(quantity) > 0;
@@ -223,12 +222,12 @@ const Trade = (
                                     <ModalBody>
                                         <Table variant="striped" colorScheme="gray" size="sm">
                                             <TableCaption>
-                                                By submitting, {margin} will be locked on-chain in a contract.
+                                                By submitting, ₿{margin} will be locked on-chain in a contract.
                                             </TableCaption>
                                             <Tbody>
                                                 <Tr>
                                                     <Td><Text as={"b"}>Margin</Text></Td>
-                                                    <Td>{margin}</Td>
+                                                    <Td>₿{margin}</Td>
                                                 </Tr>
                                                 <Tr>
                                                     <Td><Text as={"b"}>Leverage</Text></Td>
@@ -271,8 +270,7 @@ const Trade = (
             </Grid>
         </Center>
     );
-};
-export default Trade;
+}
 
 interface QuantityProps {
     min: number;
@@ -285,19 +283,22 @@ function Quantity({ min, max, onChange, quantity }: QuantityProps) {
     return (
         <FormControl id="quantity">
             <FormLabel>Quantity</FormLabel>
-            <NumberInput
-                min={min}
-                max={max}
-                default={min}
-                onChange={onChange}
-                value={quantity}
-            >
-                <NumberInputField />
-                <NumberInputStepper>
-                    <NumberIncrementStepper />
-                    <NumberDecrementStepper />
-                </NumberInputStepper>
-            </NumberInput>
+            <InputGroup>
+                <InputLeftAddon>$</InputLeftAddon>
+                <NumberInput
+                    min={min}
+                    max={max}
+                    default={min}
+                    onChange={onChange}
+                    value={quantity}
+                >
+                    <NumberInputField />
+                    <NumberInputStepper>
+                        <NumberIncrementStepper />
+                        <NumberDecrementStepper />
+                    </NumberInputStepper>
+                </NumberInput>
+            </InputGroup>
             <FormHelperText>How much do you want to buy or sell?</FormHelperText>
         </FormControl>
     );
@@ -330,7 +331,7 @@ function Leverage({ leverage }: LeverageProps) {
 }
 
 interface MarginProps {
-    margin?: string;
+    margin: number;
 }
 
 function Margin({ margin }: MarginProps) {
@@ -338,7 +339,7 @@ function Margin({ margin }: MarginProps) {
         <VStack>
             <HStack>
                 <Text as={"b"}>Required margin:</Text>
-                <Text>{margin}</Text>
+                <Text>₿{margin}</Text>
             </HStack>
             <Text fontSize={"sm"} color={"darkgrey"}>The collateral you will need to provide</Text>
         </VStack>
