@@ -1,22 +1,12 @@
 import { ExternalLinkIcon, Icon } from "@chakra-ui/icons";
 import {
     Badge,
-    Box,
-    Button,
     Center,
     Divider,
     GridItem,
     Heading,
     HStack,
     Link,
-    Popover,
-    PopoverArrow,
-    PopoverBody,
-    PopoverCloseButton,
-    PopoverContent,
-    PopoverFooter,
-    PopoverHeader,
-    PopoverTrigger,
     SimpleGrid,
     Spinner,
     Table,
@@ -28,15 +18,17 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { Cfd, StateGroupKey, StateKey, Tx, TxLabel } from "../types";
+import { Cfd, Tx, TxLabel } from "../types";
 import usePostRequest from "../usePostRequest";
+import CloseButton from "./CloseButton";
 
 interface HistoryProps {
     cfds: Cfd[];
     title?: string;
+    connectedToMaker: Boolean;
 }
 
-const History = ({ cfds, title }: HistoryProps) => {
+const History = ({ cfds, title, connectedToMaker }: HistoryProps) => {
     return (
         <VStack spacing={3}>
             {title
@@ -47,7 +39,7 @@ const History = ({ cfds, title }: HistoryProps) => {
             >
                 {cfds.map((cfd) => {
                     return (<GridItem rowSpan={1} colSpan={2} key={cfd.order_id}>
-                        <CfdDetails cfd={cfd} />
+                        <CfdDetails cfd={cfd} connectedToMaker={connectedToMaker} />
                     </GridItem>);
                 })}
             </SimpleGrid>
@@ -59,9 +51,10 @@ export default History;
 
 interface CfdDetailsProps {
     cfd: Cfd;
+    connectedToMaker: Boolean;
 }
 
-const CfdDetails = ({ cfd }: CfdDetailsProps) => {
+const CfdDetails = ({ cfd, connectedToMaker }: CfdDetailsProps) => {
     const initialPrice = `$${cfd.initial_price.toLocaleString()}`;
     const quantity = `$${cfd.quantity_usd}`;
     const margin = `₿${Math.round((cfd.margin) * 1_000_000) / 1_000_000}`;
@@ -70,7 +63,6 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
     const pAndLNumber = Math.round((cfd.profit_btc) * 1_000_000) / 1_000_000;
     const pAndL = pAndLNumber < 0 ? `-₿${Math.abs(pAndLNumber)}` : `₿${Math.abs(pAndLNumber)}`;
 
-    const expiry = cfd.expiry_timestamp;
     const payout = `₿${Math.round((cfd.margin + cfd.profit_btc) * 1_000_000) / 1_000_000}`;
 
     const txLock = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Lock);
@@ -80,9 +72,11 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
     const txSettled = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Collaborative);
 
     let [settle, isSettling] = usePostRequest(`/api/cfd/${cfd.order_id}/settle`);
+    let [commit, isCommiting] = usePostRequest(`/api/cfd/${cfd.order_id}/commit`);
 
-    const disableCloseButton = cfd.state.getGroup() === StateGroupKey.CLOSED
-        || !(cfd.state.key === StateKey.OPEN);
+    const closeButton = connectedToMaker
+        ? <CloseButton request={settle} status={isSettling} cfd={cfd} action="Close" />
+        : <CloseButton request={commit} status={isCommiting} cfd={cfd} action="Force Close" />;
 
     return (
         <HStack bg={useColorModeValue("gray.100", "gray.700")} rounded={5} padding={2}>
@@ -157,53 +151,7 @@ const CfdDetails = ({ cfd }: CfdDetailsProps) => {
                         </>}
                 </HStack>
                 <HStack>
-                    <Box w={"45%"}>
-                        <Popover
-                            placement="bottom"
-                            closeOnBlur={true}
-                        >
-                            {({ onClose }) => (<>
-                                <PopoverTrigger>
-                                    <Button colorScheme={"blue"} disabled={disableCloseButton}>Close</Button>
-                                </PopoverTrigger>
-                                <PopoverContent color="white" bg="blue.800" borderColor="blue.800">
-                                    <PopoverHeader pt={4} fontWeight="bold" border="0">
-                                        Close your position
-                                    </PopoverHeader>
-                                    <PopoverArrow />
-                                    <PopoverCloseButton />
-                                    <PopoverBody>
-                                        <Text>
-                                            This will force-close your position if your counterparty cannot be reached.
-                                            The exchange rate at {expiry}
-                                            will determine your profit/losses. It is likely that the rate will change
-                                            until then.
-                                        </Text>
-                                    </PopoverBody>
-                                    <PopoverFooter
-                                        border="0"
-                                        d="flex"
-                                        alignItems="center"
-                                        justifyContent="space-between"
-                                        pb={4}
-                                    >
-                                        <Button
-                                            size="sm"
-                                            colorScheme="red"
-                                            onClick={() => {
-                                                console.log(`Settling CFD ${cfd.order_id}`);
-                                                settle({});
-                                                onClose();
-                                            }}
-                                            isLoading={isSettling}
-                                        >
-                                            Close
-                                        </Button>
-                                    </PopoverFooter>
-                                </PopoverContent>
-                            </>)}
-                        </Popover>
-                    </Box>
+                    {closeButton}
                 </HStack>
             </VStack>
         </HStack>

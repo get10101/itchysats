@@ -132,6 +132,7 @@ export const App = () => {
                                     isLongSubmitting={isCreatingNewOrderRequest}
                                 />
                                 <History
+                                    connectedToMaker={connectedToMaker}
                                     cfds={cfds.filter((cfd) => cfd.state.getGroup() !== StateGroupKey.CLOSED)}
                                     title={"Open Positions"}
                                 />
@@ -152,6 +153,7 @@ export const App = () => {
                                                 cfds={cfds.filter((cfd) =>
                                                     cfd.state.getGroup() === StateGroupKey.CLOSED
                                                 )}
+                                                connectedToMaker
                                             />
                                         </AccordionPanel>
                                     </AccordionItem>
