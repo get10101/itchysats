@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use crate::model::cfd::OrderId;
-use crate::model::{Identity, Leverage, Position, Timestamp, TradingPair};
+use crate::model::{Leverage, Position, Timestamp, TradingPair};
 use crate::{bitmex_price_feed, model, Cfd, Order, UpdateCfdProposals};
+use itertools::Itertools;
 use rust_decimal::Decimal;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
 
@@ -15,10 +16,10 @@ pub struct Actor {
 pub struct Feeds {
     pub quote: watch::Receiver<Quote>,
     pub order: watch::Receiver<Option<CfdOrder>>,
+    pub connected_takers: watch::Receiver<Vec<Identity>>,
     // TODO: Convert items below here into projections
     pub cfds: watch::Receiver<Vec<Cfd>>,
     pub settlements: watch::Receiver<UpdateCfdProposals>,
-    pub connected_takers: watch::Receiver<Vec<Identity>>,
 }
 
 impl Actor {
@@ -77,8 +78,11 @@ impl Actor {
     fn handle(&mut self, msg: Update<UpdateCfdProposals>) {
         let _ = self.tx.settlements.send(msg.0);
     }
-    fn handle(&mut self, msg: Update<Vec<Identity>>) {
-        let _ = self.tx.connected_takers.send(msg.0);
+    fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
+        let _ = self
+            .tx
+            .connected_takers
+            .send(msg.0.iter().map(|x| x.into()).collect_vec());
     }
 }
 
@@ -238,5 +242,20 @@ impl From<Order> for CfdOrder {
                 .try_into()
                 .expect("settlement_time_interval_hours is always positive number"),
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, derive_more::Display)]
+pub struct Identity(String);
+
+impl From<&model::Identity> for Identity {
+    fn from(id: &model::Identity) -> Self {
+        Self(id.to_string())
+    }
+}
+
+impl From<model::Identity> for Identity {
+    fn from(id: model::Identity) -> Self {
+        Self(id.to_string())
     }
 }
