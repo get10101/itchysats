@@ -630,8 +630,11 @@ where
 
         tracing::info!("found relevant closed transaction");
 
+        // XXX: This is the call that does not return.
+        // Possible deadlock
+        #[allow(clippy::disallowed_method)]
         self.conn_actor
-            .send(wire::TakerToMaker::InitiateSettlement {
+            .do_send_async(wire::TakerToMaker::InitiateSettlement {
                 order_id,
                 sig_taker,
             })
