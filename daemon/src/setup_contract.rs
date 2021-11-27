@@ -2,7 +2,8 @@ use crate::model::cfd::{Cet, Dlc, RevokedCommit, Role};
 use crate::model::{Leverage, Price, Usd};
 use crate::tokio_ext::FutureExt;
 use crate::wire::{
-    Msg0, Msg1, Msg2, RollOverMsg, RollOverMsg0, RollOverMsg1, RollOverMsg2, SetupMsg,
+    Msg0, Msg1, Msg2, Msg3, RollOverMsg, RollOverMsg0, RollOverMsg1, RollOverMsg2, RollOverMsg3,
+    SetupMsg,
 };
 use crate::{model, oracle, payout_curve, wallet};
 use anyhow::{Context, Result};
@@ -231,6 +232,8 @@ pub async fn new(
         .merge(msg2.signed_lock)
         .context("Failed to merge lock PSBTs")?;
 
+    tracing::info!("Exchanged signed lock transaction");
+
     // TODO: In case we sign+send but never receive (the signed lock_tx from the other party) we
     // need some fallback handling (after x time) to spend the outputs in a different way so the
     // other party cannot hold us hostage
@@ -271,7 +274,18 @@ pub async fn new(
         })
         .collect::<Result<HashMap<_, _>>>()?;
 
-    tracing::info!("Exchanged signed lock transaction");
+    // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
+    // monitoring
+    sink.send(SetupMsg::Msg3(Msg3))
+        .await
+        .context("Failed to send Msg3")?;
+    let _ = stream
+        .select_next_some()
+        .timeout(Duration::from_secs(60))
+        .await
+        .context("Expected Msg3 within 60 seconds")?
+        .try_into_msg3()
+        .context("Failed to read Msg3")?;
 
     Ok(Dlc {
         identity: sk,
@@ -559,6 +573,19 @@ pub async fn roll_over(
         txid: dlc.commit.0.txid(),
         script_pubkey: dlc.commit.2.script_pubkey(),
     });
+
+    // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
+    // monitoring
+    sink.send(RollOverMsg::Msg3(RollOverMsg3))
+        .await
+        .context("Failed to send Msg3")?;
+    let _ = stream
+        .select_next_some()
+        .timeout(Duration::from_secs(60))
+        .await
+        .context("Expected Msg3 within 60 seconds")?
+        .try_into_msg3()
+        .context("Failed to read Msg3")?;
 
     Ok(Dlc {
         identity: sk,
