@@ -42,6 +42,9 @@ jobs:
           ref: ${{ github.event.release.target_commitish }}
           token: ${{ secrets.ITCHY_GITHUB_TOKEN }}
 
+      - name: Fetch all tags (workaround for https://github.com/actions/checkout/issues/290)
+        run: git fetch --tags --force
+
       - name: Install toolchain from `rust-toolchain.toml`
         run: rustup show
 
