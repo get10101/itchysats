@@ -49,6 +49,7 @@ pub mod taker_cfd;
 pub mod to_sse_event;
 pub mod tokio_ext;
 pub mod try_continue;
+pub mod tx;
 pub mod wallet;
 pub mod wallet_sync;
 pub mod wire;
