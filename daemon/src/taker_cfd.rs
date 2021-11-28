@@ -626,8 +626,12 @@ where
         let proposal = self.get_settlement_proposal(order_id)?;
         let (tx, sig_taker) = dlc.close_transaction(proposal)?;
 
+        // Need to use `do_send_async` here because this handler is called in
+        // context of a message arriving over the wire, and would result in a
+        // deadlock otherwise.
+        #[allow(clippy::disallowed_method)]
         self.conn_actor
-            .send(wire::TakerToMaker::InitiateSettlement {
+            .do_send_async(wire::TakerToMaker::InitiateSettlement {
                 order_id,
                 sig_taker,
             })
