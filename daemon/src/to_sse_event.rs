@@ -1,15 +1,13 @@
 use crate::connection::ConnectionStatus;
-use crate::model::cfd::{
-    Dlc, OrderId, Payout, Role, SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
-};
+use crate::model::cfd::{OrderId, Role, UpdateCfdProposals};
 use crate::model::{Leverage, Position, Timestamp, TradingPair};
-use crate::projection::{CfdOrder, Identity, Price, Quote, Usd};
+use crate::projection::{self, CfdAction, CfdOrder, CfdState, Identity, Price, Quote, Usd};
 use crate::{bitmex_price_feed, model};
-use bdk::bitcoin::{Amount, Network, SignedAmount, Txid};
+use bdk::bitcoin::{Amount, Network, SignedAmount};
 use rocket::request::FromParam;
 use rocket::response::stream::Event;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use time::OffsetDateTime;
 use tokio::sync::watch;
 
@@ -38,90 +36,10 @@ pub struct Cfd {
     pub actions: Vec<CfdAction>,
     pub state_transition_timestamp: i64,
 
-    pub details: CfdDetails,
+    pub details: projection::CfdDetails,
 
     #[serde(with = "::time::serde::timestamp")]
     pub expiry_timestamp: OffsetDateTime,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CfdDetails {
-    tx_url_list: Vec<TxUrl>,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
-    payout: Option<Amount>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TxUrl {
-    pub label: TxLabel,
-    pub url: String,
-}
-
-impl TxUrl {
-    pub fn new(txid: Txid, network: Network, label: TxLabel) -> Self {
-        Self {
-            label,
-            url: match network {
-                Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
-                Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
-                Network::Signet => format!("https://mempool.space/signet/tx/{}", txid),
-                Network::Regtest => txid.to_string(),
-            },
-        }
-    }
-}
-
-struct TxUrlBuilder {
-    network: Network,
-}
-
-impl TxUrlBuilder {
-    pub fn new(network: Network) -> Self {
-        Self { network }
-    }
-
-    pub fn lock(&self, dlc: &Dlc) -> TxUrl {
-        TxUrl::new(dlc.lock.0.txid(), self.network, TxLabel::Lock)
-    }
-
-    pub fn commit(&self, dlc: &Dlc) -> TxUrl {
-        TxUrl::new(dlc.commit.0.txid(), self.network, TxLabel::Commit)
-    }
-
-    pub fn cet(&self, txid: Txid) -> TxUrl {
-        TxUrl::new(txid, self.network, TxLabel::Cet)
-    }
-
-    pub fn collaborative_close(&self, txid: Txid) -> TxUrl {
-        TxUrl::new(txid, self.network, TxLabel::Collaborative)
-    }
-
-    pub fn refund(&self, dlc: &Dlc) -> TxUrl {
-        TxUrl::new(dlc.refund.0.txid(), self.network, TxLabel::Refund)
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub enum TxLabel {
-    Lock,
-    Commit,
-    Cet,
-    Refund,
-    Collaborative,
-}
-
-#[derive(Debug, derive_more::Display, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub enum CfdAction {
-    AcceptOrder,
-    RejectOrder,
-    Commit,
-    Settle,
-    AcceptSettlement,
-    RejectSettlement,
-    RollOver,
-    AcceptRollOver,
-    RejectRollOver,
 }
 
 impl<'v> FromParam<'v> for CfdAction {
@@ -131,29 +49,6 @@ impl<'v> FromParam<'v> for CfdAction {
         let action = serde_plain::from_str(param)?;
         Ok(action)
     }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub enum CfdState {
-    OutgoingOrderRequest,
-    IncomingOrderRequest,
-    Accepted,
-    Rejected,
-    ContractSetup,
-    PendingOpen,
-    Open,
-    PendingCommit,
-    PendingCet,
-    PendingClose,
-    OpenCommitted,
-    IncomingSettlementProposal,
-    OutgoingSettlementProposal,
-    IncomingRollOverProposal,
-    OutgoingRollOverProposal,
-    Closed,
-    PendingRefund,
-    Refunded,
-    SetupFailed,
 }
 
 pub trait ToSseEvent {
@@ -215,12 +110,7 @@ impl ToSseEvent for CfdsWithAuxData {
                     });
 
                 let pending_proposal = self.pending_proposals.get(&cfd.order.id);
-                let state = to_cfd_state(&cfd.state, pending_proposal);
-
-                let details = CfdDetails {
-                    tx_url_list: to_tx_url_list(cfd.state.clone(), network),
-                    payout: cfd.payout(),
-                };
+                let state = projection::to_cfd_state(&cfd.state, pending_proposal);
 
                 Cfd {
                     order_id: cfd.order.id,
@@ -233,14 +123,14 @@ impl ToSseEvent for CfdsWithAuxData {
                     profit_btc,
                     profit_in_percent: profit_in_percent.round_dp(1).to_string(),
                     state: state.clone(),
-                    actions: available_actions(state, cfd.role()),
+                    actions: projection::available_actions(state, cfd.role()),
                     state_transition_timestamp: cfd.state.get_transition_timestamp().seconds(),
 
                     // TODO: Depending on the state the margin might be set (i.e. in Open we save it
                     // in the DB internally) and does not have to be calculated
                     margin: cfd.margin().expect("margin to be available"),
                     margin_counterparty: cfd.counterparty_margin().expect("margin to be available"),
-                    details,
+                    details: projection::to_cfd_details(cfd, network),
                     expiry_timestamp: match cfd.expiry_timestamp() {
                         None => cfd.order.oracle_event_id.timestamp(),
                         Some(timestamp) => timestamp,
@@ -296,133 +186,9 @@ impl ToSseEvent for ConnectionStatus {
     }
 }
 
-fn to_cfd_state(
-    cfd_state: &model::cfd::CfdState,
-    proposal_status: Option<&UpdateCfdProposal>,
-) -> CfdState {
-    match proposal_status {
-        Some(UpdateCfdProposal::Settlement {
-            direction: SettlementKind::Outgoing,
-            ..
-        }) => CfdState::OutgoingSettlementProposal,
-        Some(UpdateCfdProposal::Settlement {
-            direction: SettlementKind::Incoming,
-            ..
-        }) => CfdState::IncomingSettlementProposal,
-        Some(UpdateCfdProposal::RollOverProposal {
-            direction: SettlementKind::Outgoing,
-            ..
-        }) => CfdState::OutgoingRollOverProposal,
-        Some(UpdateCfdProposal::RollOverProposal {
-            direction: SettlementKind::Incoming,
-            ..
-        }) => CfdState::IncomingRollOverProposal,
-        None => match cfd_state {
-            // Filled in collaborative close in Open means that we're awaiting
-            // a collaborative closure
-            model::cfd::CfdState::Open {
-                collaborative_close: Some(_),
-                ..
-            } => CfdState::PendingClose,
-            model::cfd::CfdState::OutgoingOrderRequest { .. } => CfdState::OutgoingOrderRequest,
-            model::cfd::CfdState::IncomingOrderRequest { .. } => CfdState::IncomingOrderRequest,
-            model::cfd::CfdState::Accepted { .. } => CfdState::Accepted,
-            model::cfd::CfdState::Rejected { .. } => CfdState::Rejected,
-            model::cfd::CfdState::ContractSetup { .. } => CfdState::ContractSetup,
-            model::cfd::CfdState::PendingOpen { .. } => CfdState::PendingOpen,
-            model::cfd::CfdState::Open { .. } => CfdState::Open,
-            model::cfd::CfdState::OpenCommitted { .. } => CfdState::OpenCommitted,
-            model::cfd::CfdState::PendingRefund { .. } => CfdState::PendingRefund,
-            model::cfd::CfdState::Refunded { .. } => CfdState::Refunded,
-            model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
-            model::cfd::CfdState::PendingCommit { .. } => CfdState::PendingCommit,
-            model::cfd::CfdState::PendingCet { .. } => CfdState::PendingCet,
-            model::cfd::CfdState::Closed { .. } => CfdState::Closed,
-        },
-    }
-}
-
-fn to_tx_url_list(state: model::cfd::CfdState, network: Network) -> Vec<TxUrl> {
-    use model::cfd::CfdState::*;
-
-    let tx_ub = TxUrlBuilder::new(network);
-
-    match state {
-        PendingOpen { dlc, .. } => {
-            vec![tx_ub.lock(&dlc)]
-        }
-        PendingCommit { dlc, .. } => vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)],
-        OpenCommitted { dlc, .. } => vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc)],
-        Open {
-            dlc,
-            collaborative_close,
-            ..
-        } => {
-            let mut tx_urls = vec![tx_ub.lock(&dlc)];
-            if let Some(collaborative_close) = collaborative_close {
-                tx_urls.push(tx_ub.collaborative_close(collaborative_close.tx.txid()));
-            }
-            tx_urls
-        }
-        PendingCet {
-            dlc, attestation, ..
-        } => vec![
-            tx_ub.lock(&dlc),
-            tx_ub.commit(&dlc),
-            tx_ub.cet(attestation.txid()),
-        ],
-        Closed {
-            payout: Payout::Cet(attestation),
-            ..
-        } => vec![tx_ub.cet(attestation.txid())],
-        Closed {
-            payout: Payout::CollaborativeClose(collaborative_close),
-            ..
-        } => {
-            vec![tx_ub.collaborative_close(collaborative_close.tx.txid())]
-        }
-        PendingRefund { dlc, .. } => vec![tx_ub.lock(&dlc), tx_ub.commit(&dlc), tx_ub.refund(&dlc)],
-        Refunded { dlc, .. } => vec![tx_ub.refund(&dlc)],
-        OutgoingOrderRequest { .. }
-        | IncomingOrderRequest { .. }
-        | Accepted { .. }
-        | Rejected { .. }
-        | ContractSetup { .. }
-        | SetupFailed { .. } => vec![],
-    }
-}
-
 impl ToSseEvent for Quote {
     fn to_sse_event(&self) -> Event {
         Event::json(self).event("quote")
-    }
-}
-
-fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
-    match (state, role) {
-        (CfdState::IncomingOrderRequest { .. }, Role::Maker) => {
-            vec![CfdAction::AcceptOrder, CfdAction::RejectOrder]
-        }
-        (CfdState::IncomingSettlementProposal { .. }, Role::Maker) => {
-            vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement]
-        }
-        (CfdState::IncomingRollOverProposal { .. }, Role::Maker) => {
-            vec![CfdAction::AcceptRollOver, CfdAction::RejectRollOver]
-        }
-        // If there is an outgoing settlement proposal already, user can't
-        // initiate new one
-        (CfdState::OutgoingSettlementProposal { .. }, Role::Maker) => {
-            vec![CfdAction::Commit]
-        }
-        // User is awaiting collaborative close, commit is left as a safeguard
-        (CfdState::PendingClose { .. }, _) => {
-            vec![CfdAction::Commit]
-        }
-        (CfdState::Open { .. }, Role::Taker) => {
-            vec![CfdAction::RollOver, CfdAction::Commit, CfdAction::Settle]
-        }
-        (CfdState::Open { .. }, Role::Maker) => vec![CfdAction::Commit],
-        _ => vec![],
     }
 }
 

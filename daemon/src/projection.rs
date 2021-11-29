@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use crate::model::cfd::OrderId;
+use crate::model::cfd::{OrderId, Role, SettlementKind, UpdateCfdProposal};
 use crate::model::{Leverage, Position, Timestamp, TradingPair};
-use crate::{bitmex_price_feed, model, Cfd, Order, UpdateCfdProposals};
+use crate::{bitmex_price_feed, model, tx, Cfd, Order, UpdateCfdProposals};
+use bdk::bitcoin::{Amount, Network};
 use itertools::Itertools;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -257,5 +258,131 @@ impl From<&model::Identity> for Identity {
 impl From<model::Identity> for Identity {
     fn from(id: model::Identity) -> Self {
         Self(id.to_string())
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum CfdState {
+    OutgoingOrderRequest,
+    IncomingOrderRequest,
+    Accepted,
+    Rejected,
+    ContractSetup,
+    PendingOpen,
+    Open,
+    PendingCommit,
+    PendingCet,
+    PendingClose,
+    OpenCommitted,
+    IncomingSettlementProposal,
+    OutgoingSettlementProposal,
+    IncomingRollOverProposal,
+    OutgoingRollOverProposal,
+    Closed,
+    PendingRefund,
+    Refunded,
+    SetupFailed,
+}
+
+pub fn to_cfd_state(
+    cfd_state: &model::cfd::CfdState,
+    proposal_status: Option<&UpdateCfdProposal>,
+) -> CfdState {
+    match proposal_status {
+        Some(UpdateCfdProposal::Settlement {
+            direction: SettlementKind::Outgoing,
+            ..
+        }) => CfdState::OutgoingSettlementProposal,
+        Some(UpdateCfdProposal::Settlement {
+            direction: SettlementKind::Incoming,
+            ..
+        }) => CfdState::IncomingSettlementProposal,
+        Some(UpdateCfdProposal::RollOverProposal {
+            direction: SettlementKind::Outgoing,
+            ..
+        }) => CfdState::OutgoingRollOverProposal,
+        Some(UpdateCfdProposal::RollOverProposal {
+            direction: SettlementKind::Incoming,
+            ..
+        }) => CfdState::IncomingRollOverProposal,
+        None => match cfd_state {
+            // Filled in collaborative close in Open means that we're awaiting
+            // a collaborative closure
+            model::cfd::CfdState::Open {
+                collaborative_close: Some(_),
+                ..
+            } => CfdState::PendingClose,
+            model::cfd::CfdState::OutgoingOrderRequest { .. } => CfdState::OutgoingOrderRequest,
+            model::cfd::CfdState::IncomingOrderRequest { .. } => CfdState::IncomingOrderRequest,
+            model::cfd::CfdState::Accepted { .. } => CfdState::Accepted,
+            model::cfd::CfdState::Rejected { .. } => CfdState::Rejected,
+            model::cfd::CfdState::ContractSetup { .. } => CfdState::ContractSetup,
+            model::cfd::CfdState::PendingOpen { .. } => CfdState::PendingOpen,
+            model::cfd::CfdState::Open { .. } => CfdState::Open,
+            model::cfd::CfdState::OpenCommitted { .. } => CfdState::OpenCommitted,
+            model::cfd::CfdState::PendingRefund { .. } => CfdState::PendingRefund,
+            model::cfd::CfdState::Refunded { .. } => CfdState::Refunded,
+            model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
+            model::cfd::CfdState::PendingCommit { .. } => CfdState::PendingCommit,
+            model::cfd::CfdState::PendingCet { .. } => CfdState::PendingCet,
+            model::cfd::CfdState::Closed { .. } => CfdState::Closed,
+        },
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CfdDetails {
+    tx_url_list: Vec<tx::TxUrl>,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
+    payout: Option<Amount>,
+}
+
+// TODO: don't expose
+pub fn to_cfd_details(cfd: &model::cfd::Cfd, network: Network) -> CfdDetails {
+    CfdDetails {
+        tx_url_list: tx::to_tx_url_list(cfd.state.clone(), network),
+        payout: cfd.payout(),
+    }
+}
+
+#[derive(Debug, derive_more::Display, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum CfdAction {
+    AcceptOrder,
+    RejectOrder,
+    Commit,
+    Settle,
+    AcceptSettlement,
+    RejectSettlement,
+    RollOver,
+    AcceptRollOver,
+    RejectRollOver,
+}
+
+pub fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
+    match (state, role) {
+        (CfdState::IncomingOrderRequest { .. }, Role::Maker) => {
+            vec![CfdAction::AcceptOrder, CfdAction::RejectOrder]
+        }
+        (CfdState::IncomingSettlementProposal { .. }, Role::Maker) => {
+            vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement]
+        }
+        (CfdState::IncomingRollOverProposal { .. }, Role::Maker) => {
+            vec![CfdAction::AcceptRollOver, CfdAction::RejectRollOver]
+        }
+        // If there is an outgoing settlement proposal already, user can't
+        // initiate new one
+        (CfdState::OutgoingSettlementProposal { .. }, Role::Maker) => {
+            vec![CfdAction::Commit]
+        }
+        // User is awaiting collaborative close, commit is left as a safeguard
+        (CfdState::PendingClose { .. }, _) => {
+            vec![CfdAction::Commit]
+        }
+        (CfdState::Open { .. }, Role::Taker) => {
+            vec![CfdAction::RollOver, CfdAction::Commit, CfdAction::Settle]
+        }
+        (CfdState::Open { .. }, Role::Maker) => vec![CfdAction::Commit],
+        _ => vec![],
     }
 }
