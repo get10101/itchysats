@@ -243,12 +243,14 @@ impl<O, M, W> Actor<O, M, W> {
             .await?;
 
         self.conn_actor
-            .send(wire::TakerToMaker::ProposeSettlement {
+            .send(wire::TakerToMaker::Settlement {
                 order_id: proposal.order_id,
-                timestamp: proposal.timestamp,
-                taker: proposal.taker,
-                maker: proposal.maker,
-                price: proposal.price,
+                msg: wire::taker_to_maker::Settlement::Propose {
+                    timestamp: proposal.timestamp,
+                    taker: proposal.taker,
+                    maker: proposal.maker,
+                    price: proposal.price,
+                },
             })
             .await?;
         Ok(())
@@ -654,9 +656,9 @@ where
         // deadlock otherwise.
         #[allow(clippy::disallowed_method)]
         self.conn_actor
-            .do_send_async(wire::TakerToMaker::InitiateSettlement {
+            .do_send_async(wire::TakerToMaker::Settlement {
                 order_id,
-                sig_taker,
+                msg: wire::taker_to_maker::Settlement::Initiate { sig_taker },
             })
             .await?;
 
@@ -708,10 +710,16 @@ where
             wire::MakerToTaker::CurrentOrder(current_order) => {
                 log_error!(self.handle_new_order(current_order))
             }
-            wire::MakerToTaker::ConfirmSettlement(order_id) => {
+            wire::MakerToTaker::Settlement {
+                order_id,
+                msg: wire::maker_to_taker::Settlement::Confirm,
+            } => {
                 log_error!(self.handle_settlement_accepted(order_id, ctx))
             }
-            wire::MakerToTaker::RejectSettlement(order_id) => {
+            wire::MakerToTaker::Settlement {
+                order_id,
+                msg: wire::maker_to_taker::Settlement::Reject,
+            } => {
                 log_error!(self.handle_settlement_rejected(order_id))
             }
             wire::MakerToTaker::ConfirmRollOver {

@@ -634,7 +634,10 @@ where
             .takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::ConfirmSettlement(order_id),
+                msg: wire::MakerToTaker::Settlement {
+                    order_id,
+                    msg: wire::maker_to_taker::Settlement::Confirm,
+                },
             })
             .await?
         {
@@ -672,7 +675,10 @@ where
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::RejectSettlement(order_id),
+                msg: wire::MakerToTaker::Settlement {
+                    order_id,
+                    msg: wire::maker_to_taker::Settlement::Reject,
+                },
             })
             .await??;
 
@@ -1123,12 +1129,15 @@ where
             wire::TakerToMaker::TakeOrder { order_id, quantity } => {
                 log_error!(self.handle_take_order(taker_id, order_id, quantity))
             }
-            wire::TakerToMaker::ProposeSettlement {
+            wire::TakerToMaker::Settlement {
                 order_id,
-                timestamp,
-                taker,
-                maker,
-                price,
+                msg:
+                    wire::taker_to_maker::Settlement::Propose {
+                        timestamp,
+                        taker,
+                        maker,
+                        price,
+                    },
             } => {
                 log_error!(self.handle_propose_settlement(
                     taker_id,
@@ -1141,9 +1150,9 @@ where
                     }
                 ))
             }
-            wire::TakerToMaker::InitiateSettlement {
+            wire::TakerToMaker::Settlement {
                 order_id,
-                sig_taker,
+                msg: wire::taker_to_maker::Settlement::Initiate { sig_taker },
             } => {
                 log_error!(self.handle_initiate_settlement(taker_id, order_id, sig_taker))
             }
