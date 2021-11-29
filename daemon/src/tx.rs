@@ -9,16 +9,21 @@ pub struct TxUrl {
     pub url: String,
 }
 
+/// Construct a mempool.space URL for a given txid
+pub fn to_mempool_url(txid: Txid, network: Network) -> String {
+    match network {
+        Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
+        Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
+        Network::Signet => format!("https://mempool.space/signet/tx/{}", txid),
+        Network::Regtest => txid.to_string(),
+    }
+}
+
 impl TxUrl {
     pub fn new(txid: Txid, network: Network, label: TxLabel) -> Self {
         Self {
             label,
-            url: match network {
-                Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
-                Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
-                Network::Signet => format!("https://mempool.space/signet/tx/{}", txid),
-                Network::Regtest => txid.to_string(),
-            },
+            url: to_mempool_url(txid, network),
         }
     }
 }
