@@ -13,7 +13,7 @@ use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
     tx: Tx,
-    _state: State,
+    state: State,
 }
 
 pub struct Feeds {
@@ -35,7 +35,7 @@ impl Actor {
         let (tx_cfds, rx_cfds) = watch::channel(init_cfds);
         let (tx_order, rx_order) = watch::channel(None);
         let (tx_update_cfd_feed, rx_update_cfd_feed) = watch::channel(HashMap::new());
-        let (tx_quote, rx_quote) = watch::channel(init_quote.into());
+        let (tx_quote, rx_quote) = watch::channel(init_quote.clone().into());
         let (tx_connected_takers, rx_connected_takers) = watch::channel(Vec::new());
 
         (
@@ -47,9 +47,12 @@ impl Actor {
                     settlements: tx_update_cfd_feed,
                     connected_takers: tx_connected_takers,
                 },
-                _state: State {
-                    _role: role,
-                    _network: network,
+                state: State {
+                    role,
+                    network,
+                    cfds: vec![],
+                    proposals: HashMap::new(),
+                    quote: init_quote,
                 },
             },
             Feeds {
@@ -76,8 +79,37 @@ struct Tx {
 
 /// Internal struct to keep state in one place
 struct State {
-    pub _role: Role,
-    pub _network: Network,
+    role: Role,
+    network: Network,
+    quote: bitmex_price_feed::Quote,
+    proposals: UpdateCfdProposals,
+    cfds: Vec<ModelCfd>,
+}
+
+impl State {
+    pub fn to_cfd(&self) -> Vec<Cfd> {
+        // FIXME: starting with the intermediate struct, only temporarily
+        let temp = CfdsWithAuxData::new(
+            self.cfds.clone(),
+            self.quote.clone(),
+            self.proposals.clone(),
+            self.role,
+            self.network,
+        );
+        temp.into()
+    }
+
+    pub fn update_proposals(&mut self, proposals: UpdateCfdProposals) {
+        let _ = std::mem::replace(&mut self.proposals, proposals);
+    }
+
+    pub fn update_quote(&mut self, quote: bitmex_price_feed::Quote) {
+        let _ = std::mem::replace(&mut self.quote, quote);
+    }
+
+    pub fn update_cfds(&mut self, cfds: Vec<ModelCfd>) {
+        let _ = std::mem::replace(&mut self.cfds, cfds);
+    }
 }
 
 pub struct Update<T>(pub T);
@@ -88,13 +120,19 @@ impl Actor {
         let _ = self.tx.order.send(msg.0.map(|x| x.into()));
     }
     fn handle(&mut self, msg: Update<bitmex_price_feed::Quote>) {
-        let _ = self.tx.quote.send(msg.0.into());
+        let quote = msg.0;
+        self.state.update_quote(quote.clone());
+        let _ = self.tx.quote.send(quote.into());
     }
     fn handle(&mut self, msg: Update<Vec<ModelCfd>>) {
-        let _ = self.tx.cfds.send(msg.0);
+        let cfds = msg.0;
+        self.state.update_cfds(cfds.clone());
+        let _ = self.tx.cfds.send(cfds);
     }
     fn handle(&mut self, msg: Update<UpdateCfdProposals>) {
-        let _ = self.tx.settlements.send(msg.0);
+        let proposals = msg.0;
+        self.state.update_proposals(proposals.clone());
+        let _ = self.tx.settlements.send(proposals);
     }
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
         let _ = self
@@ -412,8 +450,8 @@ pub struct Cfd {
     pub expiry_timestamp: OffsetDateTime,
 }
 
-impl From<&CfdsWithAuxData> for Vec<Cfd> {
-    fn from(input: &CfdsWithAuxData) -> Self {
+impl From<CfdsWithAuxData> for Vec<Cfd> {
+    fn from(input: CfdsWithAuxData) -> Self {
         let current_price = input.current_price;
         let network = input.network;
 
@@ -476,22 +514,19 @@ pub struct CfdsWithAuxData {
 
 impl CfdsWithAuxData {
     pub fn new(
-        rx_cfds: &watch::Receiver<Vec<model::cfd::Cfd>>,
-        rx_quote: &watch::Receiver<Quote>,
-        rx_updates: &watch::Receiver<UpdateCfdProposals>,
+        cfds: Vec<model::cfd::Cfd>,
+        quote: bitmex_price_feed::Quote,
+        pending_proposals: UpdateCfdProposals,
         role: Role,
         network: Network,
     ) -> Self {
-        let quote: bitmex_price_feed::Quote = rx_quote.borrow().clone().into();
         let current_price = match role {
             Role::Maker => quote.for_maker(),
             Role::Taker => quote.for_taker(),
         };
 
-        let pending_proposals = rx_updates.borrow().clone();
-
         CfdsWithAuxData {
-            cfds: rx_cfds.borrow().clone(),
+            cfds,
             current_price,
             pending_proposals,
             network,

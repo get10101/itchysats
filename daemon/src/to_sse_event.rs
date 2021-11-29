@@ -1,7 +1,7 @@
 use crate::connection::ConnectionStatus;
 use crate::model;
 use crate::model::Timestamp;
-use crate::projection::{Cfd, CfdAction, CfdOrder, CfdsWithAuxData, Identity, Quote};
+use crate::projection::{Cfd, CfdAction, CfdOrder, Identity, Quote};
 use bdk::bitcoin::Amount;
 use rocket::request::FromParam;
 use rocket::response::stream::Event;
@@ -20,11 +20,9 @@ pub trait ToSseEvent {
     fn to_sse_event(&self) -> Event;
 }
 
-impl ToSseEvent for CfdsWithAuxData {
-    // TODO: This conversion can fail, we might want to change the API
+impl ToSseEvent for Vec<Cfd> {
     fn to_sse_event(&self) -> Event {
-        let cfds: Vec<Cfd> = self.into();
-        Event::json(&cfds).event("cfds")
+        Event::json(&self).event("cfds")
     }
 }
 
