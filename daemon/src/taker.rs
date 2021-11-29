@@ -9,8 +9,8 @@ use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
-    bitmex_price_feed, db, housekeeping, logger, monitor, oracle, projection, taker_cfd, wallet,
-    wallet_sync, TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS, SETTLEMENT_INTERVAL,
+    bitmex_price_feed, db, housekeeping, logger, monitor, oracle, projection, wallet, wallet_sync,
+    TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS, SETTLEMENT_INTERVAL,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
@@ -19,7 +19,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
-use xtra::prelude::MessageChannel;
 use xtra::Actor;
 
 mod routes_taker;
@@ -269,13 +268,10 @@ async fn main() -> Result<()> {
     ));
 
     tasks.add(wallet_sync::new(wallet.clone(), wallet_feed_sender));
-    let take_offer_channel = MessageChannel::<taker_cfd::TakeOffer>::clone_channel(&cfd_actor_addr);
-    let cfd_action_channel = MessageChannel::<taker_cfd::CfdAction>::clone_channel(&cfd_actor_addr);
 
     let rocket = rocket::custom(figment)
         .manage(projection_feeds)
-        .manage(take_offer_channel)
-        .manage(cfd_action_channel)
+        .manage(cfd_actor_addr)
         .manage(wallet_feed_receiver)
         .manage(bitcoin_network)
         .manage(wallet)
