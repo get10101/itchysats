@@ -227,14 +227,6 @@ where
 
         Ok(())
     }
-
-    async fn handle_invalid_order_id(&mut self, order_id: OrderId) -> Result<()> {
-        tracing::debug!(%order_id, "Invalid order ID");
-
-        self.append_cfd_state_rejected(order_id).await?;
-
-        Ok(())
-    }
 }
 
 impl<O, M, W> Actor<O, M, W> {
@@ -719,9 +711,6 @@ where
             wire::MakerToTaker::RejectSettlement(order_id) => {
                 log_error!(self.handle_settlement_rejected(order_id))
             }
-            wire::MakerToTaker::InvalidOrderId(order_id) => {
-                log_error!(self.handle_invalid_order_id(order_id))
-            }
             wire::MakerToTaker::ConfirmRollOver {
                 order_id,
                 oracle_event_id,
@@ -739,7 +728,8 @@ where
             }
             wire::MakerToTaker::ConfirmOrder(_)
             | wire::MakerToTaker::RejectOrder(_)
-            | wire::MakerToTaker::Protocol { .. } => {
+            | wire::MakerToTaker::Protocol { .. }
+            | wire::MakerToTaker::InvalidOrderId(_) => {
                 unreachable!("These messages should be sent to the `setup_taker::Actor`")
             }
         }
