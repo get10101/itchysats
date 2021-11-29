@@ -2,9 +2,10 @@ use crate::harness::mocks::monitor::MonitorActor;
 use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
+use ::bdk::bitcoin::Network;
 use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{connect, ConnectionStatus};
-use daemon::model::cfd::Cfd;
+use daemon::model::cfd::{Cfd, Role};
 use daemon::model::{self, Price, Timestamp, Usd};
 use daemon::projection::{CfdOrder, Feeds, Identity};
 use daemon::seed::Seed;
@@ -179,7 +180,8 @@ impl Maker {
             ask: Price::new(dec!(10000)).unwrap(),
         };
 
-        let (proj_actor, feeds) = projection::Actor::new(vec![], dummy_quote);
+        let (proj_actor, feeds) =
+            projection::Actor::new(Role::Maker, Network::Testnet, vec![], dummy_quote);
         tasks.add(projection_context.run(proj_actor));
 
         let address = listener.local_addr().unwrap();
@@ -300,7 +302,8 @@ impl Taker {
             ask: Price::new(dec!(10000)).unwrap(),
         };
 
-        let (proj_actor, feeds) = projection::Actor::new(vec![], dummy_quote);
+        let (proj_actor, feeds) =
+            projection::Actor::new(Role::Taker, Network::Testnet, vec![], dummy_quote);
         tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(

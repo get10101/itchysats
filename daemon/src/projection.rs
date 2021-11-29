@@ -13,6 +13,7 @@ use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
     tx: Tx,
+    _state: State,
 }
 
 pub struct Feeds {
@@ -25,7 +26,12 @@ pub struct Feeds {
 }
 
 impl Actor {
-    pub fn new(init_cfds: Vec<ModelCfd>, init_quote: bitmex_price_feed::Quote) -> (Self, Feeds) {
+    pub fn new(
+        role: Role,
+        network: Network,
+        init_cfds: Vec<ModelCfd>,
+        init_quote: bitmex_price_feed::Quote,
+    ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(init_cfds);
         let (tx_order, rx_order) = watch::channel(None);
         let (tx_update_cfd_feed, rx_update_cfd_feed) = watch::channel(HashMap::new());
@@ -40,6 +46,10 @@ impl Actor {
                     quote: tx_quote,
                     settlements: tx_update_cfd_feed,
                     connected_takers: tx_connected_takers,
+                },
+                _state: State {
+                    _role: role,
+                    _network: network,
                 },
             },
             Feeds {
@@ -62,6 +72,12 @@ struct Tx {
     // TODO: Use this channel to communicate maker status as well with generic
     // ID of connected counterparties
     pub connected_takers: watch::Sender<Vec<Identity>>,
+}
+
+/// Internal struct to keep state in one place
+struct State {
+    pub _role: Role,
+    pub _network: Network,
 }
 
 pub struct Update<T>(pub T);
