@@ -11,7 +11,7 @@ bdk = { version = "0.13", default-features = false, features = ["sqlite", "elect
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = "3.0.0-beta.5"
-derive_more = { version = "0.99.16", default-features = false, features = ["display"] }
+derive_more = { version = "0.99.17", default-features = false, features = ["display"] }
 futures = { version = "0.3", default-features = false }
 hex = "0.4"
 hkdf = "0.11"
