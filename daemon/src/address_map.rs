@@ -1,6 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
+use xtra::{Address, Handler, Message};
 
 pub struct AddressMap<K, A> {
     inner: HashMap<K, xtra::Address<A>>,
@@ -27,6 +28,46 @@ where
 
         Ok(Disconnected { entry })
     }
+
+    /// Garbage-collect an address that is no longer active.
+    pub fn gc(&mut self, stopping: Stopping<A>) {
+        self.inner.retain(|_, candidate| stopping.me != *candidate);
+    }
+
+    pub fn insert(&mut self, key: K, address: Address<A>) {
+        self.inner.insert(key, address);
+    }
+
+    /// Sends a message to the actor stored with the given key.
+    pub async fn send<M>(&self, key: &K, msg: M) -> bool
+    where
+        M: Message<Result = ()>,
+        A: Handler<M>,
+    {
+        match self.inner.get(key) {
+            Some(addr) if addr.is_connected() => {
+                addr.send(msg)
+                    .await
+                    .expect("we checked that we are connected");
+
+                true
+            }
+            Some(_) => false,
+            None => false,
+        }
+    }
+}
+
+/// A message to notify that an actor instance is stopping.
+pub struct Stopping<A> {
+    pub me: Address<A>,
+}
+
+impl<A> Message for Stopping<A>
+where
+    A: 'static,
+{
+    type Result = ();
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -48,4 +89,28 @@ impl<'a, K, A> Disconnected<'a, K, A> {
             }
         };
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xtra::Context;
+
+    #[test]
+    fn gc_removes_address() {
+        let (addr_1, _) = Context::<Dummy>::new(None);
+        let (addr_2, _) = Context::<Dummy>::new(None);
+        let mut map = AddressMap::default();
+        map.insert("foo", addr_1);
+        map.insert("bar", addr_2.clone());
+
+        map.gc(Stopping { me: addr_2 });
+
+        assert_eq!(map.inner.len(), 1);
+        assert!(map.inner.get("foo").is_some());
+    }
+
+    struct Dummy;
+
+    impl xtra::Actor for Dummy {}
 }
