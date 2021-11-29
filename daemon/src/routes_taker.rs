@@ -2,10 +2,10 @@ use bdk::bitcoin::{Amount, Network};
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::{calculate_long_margin, OrderId, Role};
 use daemon::model::{Leverage, Price, Usd, WalletInfo};
-use daemon::projection::{CfdAction, Feeds};
+use daemon::projection::{CfdAction, CfdsWithAuxData, Feeds};
 use daemon::routes::EmbeddedFileExt;
-use daemon::to_sse_event::{CfdsWithAuxData, ToSseEvent};
-use daemon::{bitmex_price_feed, monitor, oracle, taker_cfd, wallet};
+use daemon::to_sse_event::ToSseEvent;
+use daemon::{bitmex_price_feed, monitor, oracle, taker_cfd, tx, wallet};
 use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
@@ -263,12 +263,5 @@ pub async fn post_withdraw_request(
                 .detail(e.to_string())
         })?;
 
-    let url = match network.inner() {
-        Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
-        Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
-        Network::Signet => format!("https://mempool.space/signet/tx/{}", txid),
-        Network::Regtest => txid.to_string(),
-    };
-
-    Ok(url)
+    Ok(tx::to_mempool_url(txid, *network.inner()))
 }
