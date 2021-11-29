@@ -1,3 +1,4 @@
+use crate::address_map::AddressMap;
 use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
@@ -19,7 +20,6 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
 use futures::future::RemoteHandle;
 use futures::{future, SinkExt};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use xtra::prelude::*;
 use xtra::Actor as _;
@@ -62,7 +62,7 @@ pub struct Actor<O, M, W> {
     projection_actor: Address<projection::Actor>,
     conn_actor: Address<connection::Actor>,
     monitor_actor: Address<M>,
-    setup_actors: HashMap<OrderId, xtra::Address<setup_taker::Actor>>,
+    setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     roll_over_state: RollOverState,
     oracle_actor: Address<O>,
     current_pending_proposals: UpdateCfdProposals,
@@ -98,7 +98,7 @@ where
             oracle_actor,
             current_pending_proposals: HashMap::new(),
             n_payouts,
-            setup_actors: HashMap::new(),
+            setup_actors: AddressMap::default(),
             tasks: Tasks::default(),
         }
     }
@@ -360,13 +360,15 @@ where
         quantity: Usd,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
-        let entry = self.setup_actors.entry(order_id);
-        if matches!(entry, Entry::Occupied(ref occupied) if occupied.get().is_connected()) {
-            bail!(
-                "A contract setup for order id {} is already in progress",
-                order_id
-            )
-        }
+        let disconnected = self
+            .setup_actors
+            .get_disconnected(order_id)
+            .with_context(|| {
+                format!(
+                    "Contract setup for order {} is already in progress",
+                    order_id
+                )
+            })?;
 
         let mut conn = self.db.acquire().await?;
 
@@ -408,14 +410,7 @@ where
         .create(None)
         .run();
 
-        match entry {
-            Entry::Occupied(mut disconnected) => {
-                disconnected.insert(addr);
-            }
-            Entry::Vacant(vacant) => {
-                vacant.insert(addr);
-            }
-        }
+        disconnected.insert(addr);
 
         self.tasks.add(fut);
 
