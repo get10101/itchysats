@@ -5,7 +5,7 @@ use daemon::model::{Leverage, Price, Usd, WalletInfo};
 use daemon::projection::Feeds;
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::{CfdAction, CfdsWithAuxData, ToSseEvent};
-use daemon::{bitmex_price_feed, taker_cfd, wallet};
+use daemon::{bitmex_price_feed, monitor, oracle, taker_cfd, wallet};
 use http_api_problem::{HttpApiProblem, StatusCode};
 use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
@@ -19,6 +19,8 @@ use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
 use xtra::prelude::*;
+
+type Taker = xtra::Address<taker_cfd::Actor<oracle::Actor, monitor::Actor, wallet::Actor>>;
 
 #[rocket::get("/feed")]
 pub async fn feed(
@@ -114,9 +116,9 @@ pub struct CfdOrderRequest {
 #[rocket::post("/cfd/order", data = "<cfd_order_request>")]
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
-    take_offer_channel: &State<Box<dyn MessageChannel<taker_cfd::TakeOffer>>>,
+    cfd_actor: &State<Taker>,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
-    take_offer_channel
+    cfd_actor
         .send(taker_cfd::TakeOffer {
             order_id: cfd_order_request.order_id,
             quantity: cfd_order_request.quantity,
@@ -136,10 +138,9 @@ pub async fn post_order_request(
 pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
-    cfd_action_channel: &State<Box<dyn MessageChannel<taker_cfd::CfdAction>>>,
+    cfd_actor: &State<Taker>,
     feeds: &State<Feeds>,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
-    use taker_cfd::CfdAction::*;
     let result = match action {
         CfdAction::AcceptOrder
         | CfdAction::RejectOrder
@@ -150,20 +151,25 @@ pub async fn post_cfd_action(
             return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
                 .detail(format!("taker cannot invoke action {}", action)));
         }
-        CfdAction::Commit => cfd_action_channel.send(Commit { order_id: id }),
+        CfdAction::Commit => cfd_actor.send(taker_cfd::Commit { order_id: id }).await,
         CfdAction::Settle => {
             let quote: bitmex_price_feed::Quote = feeds.quote.borrow().clone().into();
             let current_price = quote.for_taker();
-            cfd_action_channel.send(ProposeSettlement {
-                order_id: id,
-                current_price,
-            })
+            cfd_actor
+                .send(taker_cfd::ProposeSettlement {
+                    order_id: id,
+                    current_price,
+                })
+                .await
         }
-        CfdAction::RollOver => cfd_action_channel.send(ProposeRollOver { order_id: id }),
+        CfdAction::RollOver => {
+            cfd_actor
+                .send(taker_cfd::ProposeRollOver { order_id: id })
+                .await
+        }
     };
 
     result
-        .await
         .unwrap_or_else(|e| anyhow::bail!(e.to_string()))
         .map_err(|e| {
             HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
