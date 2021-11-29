@@ -26,7 +26,6 @@ pub mod cfd_actors;
 pub mod connection;
 pub mod db;
 pub mod fan_out;
-pub mod forward_only_ok;
 pub mod housekeeping;
 pub mod keypair;
 pub mod logger;
