@@ -5,9 +5,9 @@ use crate::schnorrsig;
 use ::bdk::bitcoin::Network;
 use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{connect, ConnectionStatus};
-use daemon::model::cfd::{Cfd, Role};
+use daemon::model::cfd::Role;
 use daemon::model::{self, Price, Timestamp, Usd};
-use daemon::projection::{CfdOrder, Feeds, Identity};
+use daemon::projection::{Cfd, CfdOrder, Feeds, Identity};
 use daemon::seed::Seed;
 use daemon::{
     db, maker_cfd, maker_inc_connections, projection, taker_cfd, MakerActorSystem, Tasks,
@@ -377,8 +377,4 @@ pub fn init_tracing() -> DefaultGuard {
     tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
 
     guard
-}
-
-pub fn order_from_cfd(cfd: &Cfd) -> CfdOrder {
-    cfd.order.clone().into()
 }

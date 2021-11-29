@@ -20,9 +20,7 @@ pub struct Feeds {
     pub quote: watch::Receiver<Quote>,
     pub order: watch::Receiver<Option<CfdOrder>>,
     pub connected_takers: watch::Receiver<Vec<Identity>>,
-    // TODO: Convert items below here into projections
-    pub cfds: watch::Receiver<Vec<ModelCfd>>,
-    pub settlements: watch::Receiver<UpdateCfdProposals>,
+    pub cfds: watch::Receiver<Vec<Cfd>>,
 }
 
 impl Actor {
@@ -32,10 +30,17 @@ impl Actor {
         init_cfds: Vec<ModelCfd>,
         init_quote: bitmex_price_feed::Quote,
     ) -> (Self, Feeds) {
-        let (tx_cfds, rx_cfds) = watch::channel(init_cfds);
+        let state = State {
+            role,
+            network,
+            cfds: init_cfds,
+            proposals: HashMap::new(),
+            quote: init_quote.clone(),
+        };
+
+        let (tx_cfds, rx_cfds) = watch::channel(state.to_cfds());
         let (tx_order, rx_order) = watch::channel(None);
-        let (tx_update_cfd_feed, rx_update_cfd_feed) = watch::channel(HashMap::new());
-        let (tx_quote, rx_quote) = watch::channel(init_quote.clone().into());
+        let (tx_quote, rx_quote) = watch::channel(init_quote.into());
         let (tx_connected_takers, rx_connected_takers) = watch::channel(Vec::new());
 
         (
@@ -44,22 +49,14 @@ impl Actor {
                     cfds: tx_cfds,
                     order: tx_order,
                     quote: tx_quote,
-                    settlements: tx_update_cfd_feed,
                     connected_takers: tx_connected_takers,
                 },
-                state: State {
-                    role,
-                    network,
-                    cfds: vec![],
-                    proposals: HashMap::new(),
-                    quote: init_quote,
-                },
+                state,
             },
             Feeds {
                 cfds: rx_cfds,
                 order: rx_order,
                 quote: rx_quote,
-                settlements: rx_update_cfd_feed,
                 connected_takers: rx_connected_takers,
             },
         )
@@ -68,10 +65,9 @@ impl Actor {
 
 /// Internal struct to keep all the senders around in one place
 struct Tx {
-    pub cfds: watch::Sender<Vec<ModelCfd>>,
+    pub cfds: watch::Sender<Vec<Cfd>>,
     pub order: watch::Sender<Option<CfdOrder>>,
     pub quote: watch::Sender<Quote>,
-    pub settlements: watch::Sender<UpdateCfdProposals>,
     // TODO: Use this channel to communicate maker status as well with generic
     // ID of connected counterparties
     pub connected_takers: watch::Sender<Vec<Identity>>,
@@ -87,7 +83,7 @@ struct State {
 }
 
 impl State {
-    pub fn to_cfd(&self) -> Vec<Cfd> {
+    pub fn to_cfds(&self) -> Vec<Cfd> {
         // FIXME: starting with the intermediate struct, only temporarily
         let temp = CfdsWithAuxData::new(
             self.cfds.clone(),
@@ -123,16 +119,15 @@ impl Actor {
         let quote = msg.0;
         self.state.update_quote(quote.clone());
         let _ = self.tx.quote.send(quote.into());
+        let _ = self.tx.cfds.send(self.state.to_cfds());
     }
     fn handle(&mut self, msg: Update<Vec<ModelCfd>>) {
-        let cfds = msg.0;
-        self.state.update_cfds(cfds.clone());
-        let _ = self.tx.cfds.send(cfds);
+        self.state.update_cfds(msg.0);
+        let _ = self.tx.cfds.send(self.state.to_cfds());
     }
     fn handle(&mut self, msg: Update<UpdateCfdProposals>) {
-        let proposals = msg.0;
-        self.state.update_proposals(proposals.clone());
-        let _ = self.tx.settlements.send(proposals);
+        self.state.update_proposals(msg.0);
+        let _ = self.tx.cfds.send(self.state.to_cfds());
     }
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
         let _ = self
