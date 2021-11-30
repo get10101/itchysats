@@ -20,8 +20,7 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .with_ansi(is_terminal)
-        .with_timer(ChronoLocal::with_format("%F %T".to_owned()))
-        .with_target(false);
+        .with_timer(ChronoLocal::with_format("%F %T".to_owned()));
 
     if json_format {
         builder.json().init();
