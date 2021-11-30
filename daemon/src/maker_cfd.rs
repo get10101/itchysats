@@ -439,9 +439,15 @@ where
         // state change. Once we know that we go for either an accept/reject scenario we
         // have to remove the current order.
         self.current_order_id = None;
+
+        // Need to use `do_send_async` here because invoking the
+        // corresponding handler can result in a deadlock with another
+        // invocation in `maker_inc_connections.rs`
+        #[allow(clippy::disallowed_method)]
         self.takers
-            .send(maker_inc_connections::BroadcastOrder(None))
+            .do_send_async(maker_inc_connections::BroadcastOrder(None))
             .await?;
+
         self.projection_actor.send(projection::Update(None)).await?;
 
         // 3. Insert CFD in DB

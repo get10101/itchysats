@@ -2,10 +2,9 @@ use crate::maker_cfd::{FromTaker, TakerConnected, TakerDisconnected};
 use crate::model::cfd::Order;
 use crate::model::Identity;
 use crate::noise::TransportStateExt;
-use crate::tokio_ext::FutureExt;
-use crate::{forward_only_ok, maker_cfd, noise, send_to_socket, wire, Tasks};
+use crate::{maker_cfd, noise, send_to_socket, wire, Tasks};
 use anyhow::Result;
-use futures::{StreamExt, TryStreamExt};
+use futures::TryStreamExt;
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
@@ -14,11 +13,12 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio_util::codec::FramedRead;
 use xtra::prelude::*;
-use xtra::{Actor as _, KeepRunning};
+use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 
 pub struct BroadcastOrder(pub Option<Order>);
 
+#[derive(Debug)]
 pub struct TakerMessage {
     pub taker_id: Identity,
     pub msg: wire::MakerToTaker,
@@ -41,7 +41,7 @@ pub struct Actor {
     taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
-    tasks: Tasks,
+    connection_tasks: HashMap<Identity, Tasks>,
 }
 
 impl Actor {
@@ -59,7 +59,18 @@ impl Actor {
             taker_msg_channel: taker_msg_channel.clone_channel(),
             noise_priv_key,
             heartbeat_interval,
-            tasks: Tasks::default(),
+            connection_tasks: HashMap::new(),
+        }
+    }
+
+    async fn drop_taker_connection(&mut self, taker_id: &Identity) {
+        if self.write_connections.remove(taker_id).is_some() {
+            tracing::info!(%taker_id, "Dropping connection");
+            let _ = self
+                .taker_disconnected_channel
+                .send(maker_cfd::TakerDisconnected { id: *taker_id })
+                .await;
+            let _ = self.connection_tasks.remove(taker_id);
         }
     }
 
@@ -76,13 +87,9 @@ impl Actor {
         let msg_str = msg.to_string();
 
         if conn.send(msg).await.is_err() {
-            tracing::info!(%taker_id, "Failed to send {} to taker, removing connection", msg_str);
-            if self.write_connections.remove(taker_id).is_some() {
-                let _ = self
-                    .taker_disconnected_channel
-                    .send(maker_cfd::TakerDisconnected { id: *taker_id })
-                    .await;
-            }
+            tracing::error!(%taker_id, "Failed to send message to taker: {}", msg_str);
+            self.drop_taker_connection(taker_id).await;
+            return Err(NoConnection(*taker_id));
         }
 
         Ok(())
@@ -92,7 +99,7 @@ impl Actor {
         &mut self,
         mut stream: TcpStream,
         taker_address: SocketAddr,
-        _: &mut Context<Self>,
+        ctx: &mut Context<Self>,
     ) -> Result<()> {
         let transport_state = noise::responder_handshake(&mut stream, &self.noise_priv_key).await?;
         let taker_id = Identity::new(transport_state.get_remote_public_key()?);
@@ -102,43 +109,39 @@ impl Actor {
         let transport_state = Arc::new(Mutex::new(transport_state));
 
         let (read, write) = stream.into_split();
-        let read = FramedRead::new(read, wire::EncryptedJsonCodec::new(transport_state.clone()))
-            .map_ok(move |msg| FromTaker { taker_id, msg })
-            .map(forward_only_ok::Message);
+        let mut read =
+            FramedRead::new(read, wire::EncryptedJsonCodec::new(transport_state.clone()));
 
-        let (out_msg_actor_address, mut out_msg_actor_context) = xtra::Context::new(None);
+        let this = ctx.address().expect("self to be alive");
+        let taker_msg_channel = self.taker_msg_channel.clone_channel();
+        let read_fut = async move {
+            while let Ok(Some(msg)) = read.try_next().await {
+                let res = taker_msg_channel.send(FromTaker { taker_id, msg }).await;
 
-        let (forward_to_cfd, forward_to_cfd_fut) =
-            forward_only_ok::Actor::new(self.taker_msg_channel.clone_channel())
-                .create(None)
-                .run();
-        self.tasks.add(forward_to_cfd_fut);
+                if res.is_err() {
+                    break;
+                }
+            }
 
-        // only allow outgoing messages while we are successfully reading incoming ones
-        let heartbeat_interval = self.heartbeat_interval;
-        let taker_disconnected_channel = self.taker_disconnected_channel.clone_channel();
-        self.tasks.add(async move {
-            let mut actor = send_to_socket::Actor::new(write, transport_state.clone());
+            let _ = this.send(ReadFail(taker_id)).await;
+        };
 
-            let _heartbeat_handle = out_msg_actor_context
-                .notify_interval(heartbeat_interval, || wire::MakerToTaker::Heartbeat)
-                .expect("actor not to shutdown")
-                .spawn_with_handle();
+        let (out_msg, mut out_msg_actor_context) = xtra::Context::new(None);
+        let send_to_socket_actor = send_to_socket::Actor::new(write, transport_state.clone());
 
-            out_msg_actor_context
-                .handle_while(&mut actor, forward_to_cfd.attach_stream(read))
-                .await;
+        let heartbeat_fut = out_msg_actor_context
+            .notify_interval(self.heartbeat_interval, || wire::MakerToTaker::Heartbeat)
+            .expect("actor not to shutdown");
 
-            tracing::error!("Closing connection to taker {}", taker_id);
-            let _ = taker_disconnected_channel
-                .send(maker_cfd::TakerDisconnected { id: taker_id })
-                .await;
+        let write_fut = out_msg_actor_context.run(send_to_socket_actor);
 
-            actor.shutdown().await;
-        });
+        self.write_connections.insert(taker_id, out_msg);
 
-        self.write_connections
-            .insert(taker_id, out_msg_actor_address);
+        let mut tasks = Tasks::default();
+        tasks.add(read_fut);
+        tasks.add(heartbeat_fut);
+        tasks.add(write_fut);
+        self.connection_tasks.insert(taker_id, tasks);
 
         let _ = self
             .taker_connected_channel
@@ -186,6 +189,15 @@ impl Actor {
             }
         }
     }
+
+    async fn handle_read_fail(&mut self, msg: ReadFail) {
+        let taker_id = msg.0;
+        tracing::error!(%taker_id, "Failed to read incoming messages from taker");
+
+        self.drop_taker_connection(&taker_id).await;
+    }
 }
+
+struct ReadFail(Identity);
 
 impl xtra::Actor for Actor {}
