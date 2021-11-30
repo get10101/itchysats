@@ -247,8 +247,15 @@ async fn main() -> Result<()> {
         projection_actor.clone(),
     )
     .await?;
-    let (task, init_quote) = bitmex_price_feed::new(projection_actor).await?;
+
+    let (price_feed_address, task) = bitmex_price_feed::Actor::new(projection_actor)
+        .create(None)
+        .run();
     tasks.add(task);
+
+    let init_quote = price_feed_address
+        .send(bitmex_price_feed::Connect)
+        .await??;
 
     let cfds = {
         let mut conn = db.acquire().await?;
