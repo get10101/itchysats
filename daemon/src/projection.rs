@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 
-use crate::model::cfd::{Cfd as ModelCfd, OrderId, Role, SettlementKind, UpdateCfdProposal};
+use crate::model::cfd::{
+    Cfd as ModelCfd, OrderId, Role, RollOverProposal, SettlementKind, SettlementProposal,
+    UpdateCfdProposal,
+};
 use crate::model::{Leverage, Position, Timestamp, TradingPair};
 use crate::{bitmex_price_feed, model, tx, Order, UpdateCfdProposals};
+use anyhow::Result;
 use bdk::bitcoin::{Amount, Network, SignedAmount};
 use itertools::Itertools;
 use rust_decimal::Decimal;
@@ -10,6 +14,22 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
+
+/// Amend a given settlement proposal (if `proposal.is_none()`, it should be removed)
+pub struct UpdateSettlementProposal {
+    pub order: OrderId,
+    pub proposal: Option<(SettlementProposal, SettlementKind)>,
+}
+
+/// Amend a given rollover proposal (if `proposal.is_none()`, it should be removed)
+pub struct UpdateRollOverProposal {
+    pub order: OrderId,
+    pub proposal: Option<(RollOverProposal, SettlementKind)>,
+}
+
+/// Store the latest state of `T` for display purposes
+/// (replaces previously stored values)
+pub struct Update<T>(pub T);
 
 pub struct Actor {
     tx: Tx,
@@ -95,8 +115,14 @@ impl State {
         temp.into()
     }
 
-    pub fn update_proposals(&mut self, proposals: UpdateCfdProposals) {
-        let _ = std::mem::replace(&mut self.proposals, proposals);
+    pub fn amend_settlement_proposal(&mut self, proposal: UpdateSettlementProposal) -> Result<()> {
+        let order = proposal.order;
+        self.amend_cfd_proposal(order, proposal.into())
+    }
+
+    pub fn amend_rollover_proposal(&mut self, proposal: UpdateRollOverProposal) -> Result<()> {
+        let order = proposal.order;
+        self.amend_cfd_proposal(order, proposal.into())
     }
 
     pub fn update_quote(&mut self, quote: bitmex_price_feed::Quote) {
@@ -106,9 +132,24 @@ impl State {
     pub fn update_cfds(&mut self, cfds: Vec<ModelCfd>) {
         let _ = std::mem::replace(&mut self.cfds, cfds);
     }
-}
 
-pub struct Update<T>(pub T);
+    fn amend_cfd_proposal(
+        &mut self,
+        order: OrderId,
+        proposal: Option<UpdateCfdProposal>,
+    ) -> Result<()> {
+        if let Some(proposal) = proposal {
+            self.proposals.insert(order, proposal);
+            tracing::trace!(%order, "Cfd proposal got updated");
+        } else {
+            if self.proposals.remove(&order).is_none() {
+                anyhow::bail!("Could not find proposal with order id: {}", &order)
+            }
+            tracing::trace!(%order, "Removed cfd proposal");
+        };
+        Ok(())
+    }
+}
 
 #[xtra_productivity]
 impl Actor {
@@ -125,15 +166,21 @@ impl Actor {
         self.state.update_cfds(msg.0);
         let _ = self.tx.cfds.send(self.state.to_cfds());
     }
-    fn handle(&mut self, msg: Update<UpdateCfdProposals>) {
-        self.state.update_proposals(msg.0);
-        let _ = self.tx.cfds.send(self.state.to_cfds());
-    }
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
         let _ = self
             .tx
             .connected_takers
             .send(msg.0.iter().map(|x| x.into()).collect_vec());
+    }
+    fn handle(&mut self, msg: UpdateSettlementProposal) -> Result<()> {
+        self.state.amend_settlement_proposal(msg)?;
+        let _ = self.tx.cfds.send(self.state.to_cfds());
+        Ok(())
+    }
+    fn handle(&mut self, msg: UpdateRollOverProposal) -> Result<()> {
+        self.state.amend_rollover_proposal(msg)?;
+        let _ = self.tx.cfds.send(self.state.to_cfds());
+        Ok(())
     }
 }
 
@@ -576,5 +623,67 @@ mod tests {
         assert_eq!(json, "\"Refunded\"");
         let json = serde_json::to_string(&CfdState::SetupFailed).unwrap();
         assert_eq!(json, "\"SetupFailed\"");
+    }
+}
+
+pub fn try_into_update_settlement_proposal(
+    cfd_update_proposal: UpdateCfdProposal,
+) -> Result<UpdateSettlementProposal> {
+    match cfd_update_proposal {
+        UpdateCfdProposal::Settlement {
+            proposal,
+            direction,
+        } => Ok(UpdateSettlementProposal {
+            order: proposal.order_id,
+            proposal: Some((proposal, direction)),
+        }),
+        UpdateCfdProposal::RollOverProposal { .. } => {
+            anyhow::bail!("Can't convert a RollOver proposal")
+        }
+    }
+}
+
+pub fn try_into_update_rollover_proposal(
+    cfd_update_proposal: UpdateCfdProposal,
+) -> Result<UpdateRollOverProposal> {
+    match cfd_update_proposal {
+        UpdateCfdProposal::RollOverProposal {
+            proposal,
+            direction,
+        } => Ok(UpdateRollOverProposal {
+            order: proposal.order_id,
+            proposal: Some((proposal, direction)),
+        }),
+        UpdateCfdProposal::Settlement { .. } => {
+            anyhow::bail!("Can't convert a Settlement proposal")
+        }
+    }
+}
+
+impl From<UpdateSettlementProposal> for Option<UpdateCfdProposal> {
+    fn from(proposal: UpdateSettlementProposal) -> Self {
+        let UpdateSettlementProposal { order: _, proposal } = proposal;
+        if let Some((proposal, kind)) = proposal {
+            Some(UpdateCfdProposal::Settlement {
+                proposal,
+                direction: kind,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+impl From<UpdateRollOverProposal> for Option<UpdateCfdProposal> {
+    fn from(proposal: UpdateRollOverProposal) -> Self {
+        let UpdateRollOverProposal { order: _, proposal } = proposal;
+        if let Some((proposal, kind)) = proposal {
+            Some(UpdateCfdProposal::RollOverProposal {
+                proposal,
+                direction: kind,
+            })
+        } else {
+            None
+        }
     }
 }
