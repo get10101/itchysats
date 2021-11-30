@@ -6,12 +6,14 @@ use crate::model::cfd::{
 };
 use crate::model::{Identity, Price, Timestamp, Usd};
 use crate::monitor::MonitorParams;
-use crate::projection::Update;
+use crate::projection::{
+    try_into_update_rollover_proposal, try_into_update_settlement_proposal, Update,
+    UpdateRollOverProposal, UpdateSettlementProposal,
+};
 use crate::setup_contract::{RolloverParams, SetupParams};
 use crate::tokio_ext::FutureExt;
 use crate::{
     log_error, maker_inc_connections, monitor, oracle, projection, setup_contract, wallet, wire,
-    UpdateCfdProposals,
 };
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
@@ -176,17 +178,16 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             }
         };
 
-        self.current_pending_proposals.insert(
-            proposal.order_id,
-            (
-                UpdateCfdProposal::RollOverProposal {
-                    proposal,
-                    direction: SettlementKind::Incoming,
-                },
-                taker_id,
-            ),
-        );
-        self.send_pending_proposals().await?;
+        let new_proposal = UpdateCfdProposal::RollOverProposal {
+            proposal: proposal.clone(),
+            direction: SettlementKind::Incoming,
+        };
+
+        self.current_pending_proposals
+            .insert(proposal.order_id, (new_proposal.clone(), taker_id));
+        self.projection_actor
+            .send(try_into_update_rollover_proposal(new_proposal)?)
+            .await??;
 
         Ok(())
     }
@@ -200,17 +201,17 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             "Received settlement proposal from the taker: {:?}",
             proposal
         );
-        self.current_pending_proposals.insert(
-            proposal.order_id,
-            (
-                UpdateCfdProposal::Settlement {
-                    proposal,
-                    direction: SettlementKind::Incoming,
-                },
-                taker_id,
-            ),
-        );
-        self.send_pending_proposals().await?;
+
+        let new_proposal = UpdateCfdProposal::Settlement {
+            proposal: proposal.clone(),
+            direction: SettlementKind::Incoming,
+        };
+
+        self.current_pending_proposals
+            .insert(proposal.order_id, (new_proposal.clone(), taker_id));
+        self.projection_actor
+            .send(try_into_update_settlement_proposal(new_proposal)?)
+            .await??;
 
         Ok(())
     }
@@ -253,28 +254,35 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         Ok(())
     }
 
-    /// Send pending proposals for the purposes of UI updates.
-    /// Filters out the Identities, as they are an implementation detail inside of
-    /// the actor
-    async fn send_pending_proposals(&self) -> Result<()> {
-        let pending_proposal = self
-            .current_pending_proposals
-            .iter()
-            .map(|(order_id, (update_cfd, _))| (*order_id, (update_cfd.clone())))
-            .collect::<UpdateCfdProposals>();
-        let _ = self
-            .projection_actor
-            .send(projection::Update(pending_proposal))
-            .await?;
-        Ok(())
-    }
-
     /// Removes a proposal and updates the update cfd proposals' feed
     async fn remove_pending_proposal(&mut self, order_id: &OrderId) -> Result<()> {
-        if self.current_pending_proposals.remove(order_id).is_none() {
-            anyhow::bail!("Could not find proposal with order id: {}", &order_id)
+        let removed_proposal = self.current_pending_proposals.remove(order_id);
+
+        // Strip the identity, ID doesn't care about this implementation detail
+        let removed_proposal = removed_proposal.map(|(proposal, _)| proposal);
+
+        if let Some(removed_proposal) = removed_proposal {
+            match removed_proposal {
+                UpdateCfdProposal::Settlement { .. } => {
+                    self.projection_actor
+                        .send(UpdateSettlementProposal {
+                            order: *order_id,
+                            proposal: None,
+                        })
+                        .await??
+                }
+                UpdateCfdProposal::RollOverProposal { .. } => {
+                    self.projection_actor
+                        .send(UpdateRollOverProposal {
+                            order: *order_id,
+                            proposal: None,
+                        })
+                        .await??
+                }
+            }
+        } else {
+            anyhow::bail!("Could not find proposal with order id: {}", &order_id);
         }
-        self.send_pending_proposals().await?;
         Ok(())
     }
 

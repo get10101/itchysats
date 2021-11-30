@@ -8,6 +8,10 @@ use crate::model::cfd::{
 };
 use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
+use crate::projection::{
+    try_into_update_rollover_proposal, try_into_update_settlement_proposal, UpdateRollOverProposal,
+    UpdateSettlementProposal,
+};
 use crate::setup_contract::RolloverParams;
 use crate::tokio_ext::FutureExt;
 use crate::wire::RollOverMsg;
@@ -106,19 +110,32 @@ where
 }
 
 impl<O, M, W> Actor<O, M, W> {
-    async fn send_pending_update_proposals(&self) -> Result<()> {
-        Ok(self
-            .projection_actor
-            .send(projection::Update(self.current_pending_proposals.clone()))
-            .await?)
-    }
-
     /// Removes a proposal and updates the update cfd proposals' feed
     async fn remove_pending_proposal(&mut self, order_id: &OrderId) -> Result<()> {
-        if self.current_pending_proposals.remove(order_id).is_none() {
-            anyhow::bail!("Could not find proposal with order id: {}", &order_id)
+        let removed_proposal = self.current_pending_proposals.remove(order_id);
+
+        if let Some(removed_proposal) = removed_proposal {
+            match removed_proposal {
+                UpdateCfdProposal::Settlement { .. } => {
+                    self.projection_actor
+                        .send(UpdateSettlementProposal {
+                            order: *order_id,
+                            proposal: None,
+                        })
+                        .await??
+                }
+                UpdateCfdProposal::RollOverProposal { .. } => {
+                    self.projection_actor
+                        .send(UpdateRollOverProposal {
+                            order: *order_id,
+                            proposal: None,
+                        })
+                        .await??
+                }
+            }
+        } else {
+            anyhow::bail!("Could not find proposal with order id: {}", &order_id);
         }
-        self.send_pending_update_proposals().await?;
         Ok(())
     }
 
@@ -162,14 +179,16 @@ where
             timestamp: Timestamp::now(),
         };
 
-        self.current_pending_proposals.insert(
-            proposal.order_id,
-            UpdateCfdProposal::RollOverProposal {
-                proposal: proposal.clone(),
-                direction: SettlementKind::Outgoing,
-            },
-        );
-        self.send_pending_update_proposals().await?;
+        let new_proposal = UpdateCfdProposal::RollOverProposal {
+            proposal: proposal.clone(),
+            direction: SettlementKind::Outgoing,
+        };
+
+        self.current_pending_proposals
+            .insert(proposal.order_id, new_proposal.clone());
+        self.projection_actor
+            .send(try_into_update_rollover_proposal(new_proposal)?)
+            .await??;
 
         self.conn_actor
             .send(wire::TakerToMaker::ProposeRollOver {
@@ -212,14 +231,16 @@ impl<O, M, W> Actor<O, M, W> {
             )
         }
 
-        self.current_pending_proposals.insert(
-            proposal.order_id,
-            UpdateCfdProposal::Settlement {
-                proposal: proposal.clone(),
-                direction: SettlementKind::Outgoing,
-            },
-        );
-        self.send_pending_update_proposals().await?;
+        let new_proposal = UpdateCfdProposal::Settlement {
+            proposal: proposal.clone(),
+            direction: SettlementKind::Outgoing,
+        };
+
+        self.current_pending_proposals
+            .insert(proposal.order_id, new_proposal.clone());
+        self.projection_actor
+            .send(try_into_update_settlement_proposal(new_proposal)?)
+            .await??;
 
         self.conn_actor
             .send(wire::TakerToMaker::ProposeSettlement {
