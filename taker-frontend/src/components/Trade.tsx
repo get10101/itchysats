@@ -63,7 +63,7 @@ interface TradeProps {
     quantity: string;
     liquidationPrice?: number;
     onQuantityChange: any;
-    walletBalance?: number;
+    walletBalance: number;
     onLongSubmit: (payload: CfdOrderRequestPayload) => void;
     isLongSubmitting: boolean;
 }
@@ -108,7 +108,7 @@ export default function Trade({
 
     const parse = (val: any) => Number.parseInt(val.replace(/^\$/, ""));
 
-    const balanceTooLow = walletBalance && walletBalance < margin;
+    const balanceTooLow = walletBalance < margin;
     const quantityTooHigh = maxQuantity < parse(quantity);
     const quantityTooLow = minQuantity > parse(quantity);
     const quantityGreaterZero = parse(quantity) > 0;
@@ -127,7 +127,7 @@ export default function Trade({
         if (balanceTooLow) {
             alertBox = <AlertBox
                 title={"Your balance is too low!"}
-                description={"Pleas deposit more into you wallet."}
+                description={"Please deposit more into you wallet."}
             />;
         }
         if (quantityTooHigh) {
