@@ -234,6 +234,7 @@ where
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>, Vec<Cfd>) -> F,
         n_payouts: usize,
         maker_heartbeat_interval: Duration,
+        connect_timeout: Duration,
         projection_actor: Address<projection::Actor>,
     ) -> Result<Self>
     where
@@ -272,6 +273,7 @@ where
             Box::new(cfd_actor_addr.clone()),
             identity_sk,
             maker_heartbeat_interval,
+            connect_timeout,
         )));
 
         tasks.add(
