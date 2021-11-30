@@ -120,6 +120,8 @@ impl Actor {
         }: Connect,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
+        tracing::debug!(address = %maker_addr, "Connecting to maker");
+
         let (read, write, noise) = {
             let mut connection = TcpStream::connect(&maker_addr).await?;
             let noise =
@@ -256,11 +258,9 @@ pub async fn connect(
 ) {
     loop {
         if maker_online_status_feed_receiver.borrow().clone() == ConnectionStatus::Offline {
-            tracing::info!("No connection to the maker, attempting to connect:");
+            tracing::debug!("No connection to the maker");
             'connect: loop {
                 for address in &maker_addresses {
-                    tracing::trace!("Connecting to {}", address);
-
                     let connect_msg = Connect {
                         maker_identity_pk,
                         maker_addr: *address,
@@ -274,11 +274,10 @@ pub async fn connect(
                         tracing::trace!(%address, "Failed to establish connection: {:#}", e);
                         continue;
                     }
-                    tracing::debug!("Connection established");
                     break 'connect;
                 }
 
-                tracing::debug!(
+                tracing::warn!(
                     "Tried connecting to {} addresses without success, retrying in {} seconds",
                     maker_addresses.len(),
                     CONNECT_TO_MAKER_INTERVAL.as_secs()
