@@ -18,6 +18,7 @@ use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::Actor;
@@ -244,6 +245,7 @@ async fn main() -> Result<()> {
         },
         N_PAYOUTS,
         HEARTBEAT_INTERVAL * 2,
+        Duration::from_secs(10),
         projection_actor.clone(),
     )
     .await?;

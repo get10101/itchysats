@@ -291,6 +291,7 @@ impl Taker {
             |_, _| async { Ok(monitor) },
             config.n_payouts,
             config.heartbeat_timeout,
+            Duration::from_secs(10),
             projection_actor,
         )
         .await
