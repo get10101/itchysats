@@ -124,6 +124,7 @@ export const App = () => {
                                     margin={margin}
                                     leverage={leverage}
                                     liquidationPrice={liquidationPrice}
+                                    walletBalance={walletInfo ? walletInfo.balance : 0}
                                     onQuantityChange={(valueString: string) => {
                                         setUserHasEdited(true);
                                         setQuantity(valueString);
