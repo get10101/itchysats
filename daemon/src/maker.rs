@@ -5,6 +5,7 @@ use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::auth::{self, MAKER_USERNAME};
 use daemon::db::load_all_cfds;
+use daemon::model::cfd::Role;
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
@@ -275,7 +276,8 @@ async fn main() -> Result<()> {
         load_all_cfds(&mut conn).await?
     };
 
-    let (proj_actor, projection_feeds) = projection::Actor::new(cfds, init_quote);
+    let (proj_actor, projection_feeds) =
+        projection::Actor::new(Role::Maker, bitcoin_network, cfds, init_quote);
     tasks.add(projection_context.run(proj_actor));
 
     let listener_stream = futures::stream::poll_fn(move |ctx| {

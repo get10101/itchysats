@@ -2,13 +2,11 @@ use std::time::Duration;
 
 use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
 use crate::harness::{
-    dummy_new_order, init_tracing, order_from_cfd, start_both, Maker, MakerConfig, Taker,
-    TakerConfig,
+    dummy_new_order, init_tracing, start_both, Maker, MakerConfig, Taker, TakerConfig,
 };
 use daemon::connection::ConnectionStatus;
-use daemon::model::cfd::CfdState;
 use daemon::model::Usd;
-use daemon::projection::Identity;
+use daemon::projection::{CfdState, Identity};
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
 use tokio::time::sleep;
@@ -47,8 +45,8 @@ async fn taker_takes_order_and_maker_rejects() {
     taker.take_order(received.clone(), Usd::new(dec!(10))).await;
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert_eq!(order_from_cfd(&taker_cfd), received);
-    assert_eq!(order_from_cfd(&maker_cfd), received);
+    assert_eq!(taker_cfd.order_id, received.id);
+    assert_eq!(maker_cfd.order_id, received.id);
     assert!(matches!(
         taker_cfd.state,
         CfdState::OutgoingOrderRequest { .. }
@@ -62,8 +60,8 @@ async fn taker_takes_order_and_maker_rejects() {
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
     // TODO: More elaborate Cfd assertions
-    assert_eq!(order_from_cfd(&taker_cfd), received);
-    assert_eq!(order_from_cfd(&maker_cfd), received);
+    assert_eq!(taker_cfd.order_id, received.id);
+    assert_eq!(maker_cfd.order_id, received.id);
     assert!(matches!(taker_cfd.state, CfdState::Rejected { .. }));
     assert!(matches!(maker_cfd.state, CfdState::Rejected { .. }));
 }
@@ -105,8 +103,8 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
     // TODO: More elaborate Cfd assertions
-    assert_eq!(taker_cfd.order.id, received.id);
-    assert_eq!(maker_cfd.order.id, received.id);
+    assert_eq!(taker_cfd.order_id, received.id);
+    assert_eq!(maker_cfd.order_id, received.id);
     assert!(matches!(taker_cfd.state, CfdState::ContractSetup { .. }));
     assert!(matches!(maker_cfd.state, CfdState::ContractSetup { .. }));
 
@@ -115,8 +113,8 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
     // TODO: More elaborate Cfd assertions
-    assert_eq!(taker_cfd.order.id, received.id);
-    assert_eq!(maker_cfd.order.id, received.id);
+    assert_eq!(taker_cfd.order_id, received.id);
+    assert_eq!(maker_cfd.order_id, received.id);
     assert!(matches!(taker_cfd.state, CfdState::PendingOpen { .. }));
     assert!(matches!(maker_cfd.state, CfdState::PendingOpen { .. }));
 }

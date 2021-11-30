@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
-use daemon::model::cfd::Cfd;
-use daemon::projection::CfdOrder;
+use daemon::projection::{Cfd, CfdOrder};
 use daemon::tokio_ext::FutureExt;
 use std::time::Duration;
 use tokio::sync::watch;
