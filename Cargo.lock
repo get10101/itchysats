@@ -1442,7 +1442,7 @@ dependencies = [
 [[package]]
 name = "maia"
 version = "0.1.0"
-source = "git+https://github.com/comit-network/maia?rev=70fc548da0fe4f34478fb34ec437fa9a434c7ee3#70fc548da0fe4f34478fb34ec437fa9a434c7ee3"
+source = "git+https://github.com/comit-network/maia#70fc548da0fe4f34478fb34ec437fa9a434c7ee3"
 dependencies = [
  "anyhow",
  "bdk",
@@ -3798,7 +3798,7 @@ dependencies = [
 [[package]]
 name = "xtra"
 version = "0.6.0"
-source = "git+https://github.com/Restioson/xtra#8bc69134b9204a5c247e3926f7ccc4132212dbea"
+source = "git+https://github.com/Restioson/xtra#413dc807bd70d70cfe4a02cb3fd7d49d10d827e9"
 dependencies = [
  "async-trait",
  "barrage",
@@ -3814,7 +3814,7 @@ dependencies = [
 [[package]]
 name = "xtra_productivity"
 version = "0.1.0"
-source = "git+https://github.com/comit-network/xtra-productivity?rev=eda11a682dbbf16a9004cfe5e30baa1c60062a67#eda11a682dbbf16a9004cfe5e30baa1c60062a67"
+source = "git+https://github.com/comit-network/xtra-productivity#ee789b130f2d20b38f57434fe6ed18c4fdf1db4a"
 dependencies = [
  "quote",
  "syn",
