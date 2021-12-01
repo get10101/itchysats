@@ -2,21 +2,20 @@ use crate::address_map::AddressMap;
 use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
-    Cfd, CfdState, CfdStateCommon, CollaborativeSettlement, Completed, Dlc, Order, OrderId, Origin,
-    Role, RollOverProposal, SettlementKind, SettlementProposal, UpdateCfdProposal,
-    UpdateCfdProposals,
+    Cfd, CfdState, CfdStateCommon, Completed, Dlc, Order, OrderId, Origin, Role, RollOverProposal,
+    SettlementKind, UpdateCfdProposal, UpdateCfdProposals,
 };
 use crate::model::{BitMexPriceEventId, Price, Timestamp, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::projection::{
-    try_into_update_rollover_proposal, try_into_update_settlement_proposal, UpdateRollOverProposal,
-    UpdateSettlementProposal,
+    try_into_update_rollover_proposal, UpdateRollOverProposal, UpdateSettlementProposal,
 };
 use crate::setup_contract::RolloverParams;
 use crate::tokio_ext::FutureExt;
 use crate::wire::RollOverMsg;
 use crate::{
-    connection, log_error, oracle, projection, setup_contract, setup_taker, wallet, wire, Tasks,
+    collab_settlement_taker, connection, log_error, oracle, projection, setup_contract,
+    setup_taker, wallet, wire, Tasks,
 };
 use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
@@ -68,6 +67,7 @@ pub struct Actor<O, M, W> {
     conn_actor: Address<connection::Actor>,
     monitor_actor: Address<M>,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
+    collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
     roll_over_state: RollOverState,
     oracle_actor: Address<O>,
     current_pending_proposals: UpdateCfdProposals,
@@ -104,6 +104,7 @@ where
             current_pending_proposals: HashMap::new(),
             n_payouts,
             setup_actors: AddressMap::default(),
+            collab_settlement_actors: AddressMap::default(),
             tasks: Tasks::default(),
         }
     }
@@ -122,7 +123,7 @@ impl<O, M, W> Actor<O, M, W> {
                             order: *order_id,
                             proposal: None,
                         })
-                        .await??
+                        .await?
                 }
                 UpdateCfdProposal::RollOverProposal { .. } => {
                     self.projection_actor
@@ -130,7 +131,7 @@ impl<O, M, W> Actor<O, M, W> {
                             order: *order_id,
                             proposal: None,
                         })
-                        .await??
+                        .await?
                 }
             }
         } else {
@@ -138,25 +139,13 @@ impl<O, M, W> Actor<O, M, W> {
         }
         Ok(())
     }
-
-    fn get_settlement_proposal(&self, order_id: OrderId) -> Result<&SettlementProposal> {
-        match self
-            .current_pending_proposals
-            .get(&order_id)
-            .context("have a proposal that is about to be accepted")?
-        {
-            UpdateCfdProposal::Settlement { proposal, .. } => Ok(proposal),
-            UpdateCfdProposal::RollOverProposal { .. } => {
-                anyhow::bail!("did not expect a rollover proposal");
-            }
-        }
-    }
 }
 
 #[xtra_productivity]
 impl<O, M, W> Actor<O, M, W>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
+    M: xtra::Handler<monitor::CollaborativeSettlement>,
 {
     async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
         let Commit { order_id } = msg;
@@ -188,7 +177,7 @@ where
             .insert(proposal.order_id, new_proposal.clone());
         self.projection_actor
             .send(try_into_update_rollover_proposal(new_proposal)?)
-            .await??;
+            .await?;
 
         self.conn_actor
             .send(wire::TakerToMaker::ProposeRollOver {
@@ -198,59 +187,78 @@ where
             .await?;
         Ok(())
     }
-}
 
-#[xtra_productivity]
-impl<O, M, W> Actor<O, M, W> {
-    async fn handle_propose_settlement(&mut self, msg: ProposeSettlement) -> Result<()> {
+    async fn handle_propose_settlement(
+        &mut self,
+        msg: ProposeSettlement,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
         let ProposeSettlement {
             order_id,
             current_price,
         } = msg;
 
+        let disconnected = self
+            .collab_settlement_actors
+            .get_disconnected(order_id)
+            .with_context(|| format!("Settlement for order {} is already in progress", order_id))?;
+
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        if !cfd.is_collaborative_settle_possible() {
-            anyhow::bail!(
-                "Settlement proposal not possible because for cfd {} is in state {} which cannot be collaboratively settled",
+        let this = ctx
+            .address()
+            .expect("actor to be able to give address to itself");
+        let (addr, fut) = collab_settlement_taker::Actor::new(
+            cfd,
+            self.projection_actor.clone(),
+            this,
+            current_price,
+            self.conn_actor.clone(),
+            self.n_payouts,
+        )?
+        .create(None)
+        .run();
+
+        disconnected.insert(addr);
+        self.tasks.add(fut);
+
+        Ok(())
+    }
+
+    async fn handle_settlement_completed(
+        &mut self,
+        msg: collab_settlement_taker::Completed,
+    ) -> Result<()> {
+        let (order_id, settlement) = match msg {
+            collab_settlement_taker::Completed::Confirmed {
                 order_id,
-                cfd.state
-            )
-        }
-
-        let proposal = cfd.calculate_settlement(current_price, self.n_payouts)?;
-
-        if self
-            .current_pending_proposals
-            .contains_key(&proposal.order_id)
-        {
-            anyhow::bail!(
-                "Settlement proposal for order id {} already present",
-                order_id
-            )
-        }
-
-        let new_proposal = UpdateCfdProposal::Settlement {
-            proposal: proposal.clone(),
-            direction: SettlementKind::Outgoing,
+                settlement,
+            } => (order_id, settlement),
+            collab_settlement_taker::Completed::Rejected { .. } => {
+                return Ok(());
+            }
+            collab_settlement_taker::Completed::Failed { order_id, error } => {
+                tracing::warn!(%order_id, "Collaborative settlement failed: {:#}", error);
+                return Ok(());
+            }
         };
+        let settlement_txid = settlement.tx.txid();
 
-        self.current_pending_proposals
-            .insert(proposal.order_id, new_proposal.clone());
-        self.projection_actor
-            .send(try_into_update_settlement_proposal(new_proposal)?)
-            .await??;
+        let mut conn = self.db.acquire().await?;
+        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let dlc = cfd.dlc().context("No DLC in CFD")?;
 
-        self.conn_actor
-            .send(wire::TakerToMaker::ProposeSettlement {
-                order_id: proposal.order_id,
-                timestamp: proposal.timestamp,
-                taker: proposal.taker,
-                maker: proposal.maker,
-                price: proposal.price,
+        cfd.handle_proposal_signed(settlement)?;
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+
+        self.monitor_actor
+            .send(monitor::CollaborativeSettlement {
+                order_id,
+                tx: (settlement_txid, dlc.script_pubkey_for(Role::Taker)),
             })
             .await?;
+
         Ok(())
     }
 }
@@ -261,14 +269,6 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::BuildPartyParams>,
 {
-    async fn handle_settlement_rejected(&mut self, order_id: OrderId) -> Result<()> {
-        tracing::info!(%order_id, "Settlement proposal got rejected");
-
-        self.remove_pending_proposal(&order_id).await?;
-
-        Ok(())
-    }
-
     async fn handle_roll_over_rejected(&mut self, order_id: OrderId) -> Result<()> {
         tracing::info!(%order_id, "Roll over proposal got rejected");
 
@@ -627,59 +627,6 @@ where
     }
 }
 
-impl<O: 'static, M: 'static, W: 'static> Actor<O, M, W>
-where
-    M: xtra::Handler<monitor::CollaborativeSettlement>,
-    W: xtra::Handler<wallet::TryBroadcastTransaction>
-        + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::BuildPartyParams>,
-{
-    async fn handle_settlement_accepted(
-        &mut self,
-        order_id: OrderId,
-        _ctx: &mut Context<Self>,
-    ) -> Result<()> {
-        tracing::info!(%order_id, "Settlement proposal got accepted");
-
-        let mut conn = self.db.acquire().await?;
-
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
-
-        let proposal = self.get_settlement_proposal(order_id)?;
-        let (tx, sig_taker) = dlc.close_transaction(proposal)?;
-
-        // Need to use `do_send_async` here because this handler is called in
-        // context of a message arriving over the wire, and would result in a
-        // deadlock otherwise.
-        #[allow(clippy::disallowed_method)]
-        self.conn_actor
-            .do_send_async(wire::TakerToMaker::InitiateSettlement {
-                order_id,
-                sig_taker,
-            })
-            .await?;
-
-        cfd.handle_proposal_signed(CollaborativeSettlement::new(
-            tx.clone(),
-            dlc.script_pubkey_for(cfd.role()),
-            proposal.price,
-        )?)?;
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-        self.remove_pending_proposal(&order_id).await?;
-
-        self.monitor_actor
-            .send(monitor::CollaborativeSettlement {
-                order_id,
-                tx: (tx.txid(), dlc.script_pubkey_for(Role::Taker)),
-            })
-            .await?;
-
-        Ok(())
-    }
-}
-
 #[async_trait]
 impl<O: 'static, M: 'static, W: 'static> Handler<TakeOffer> for Actor<O, M, W>
 where
@@ -698,7 +645,6 @@ impl<O: 'static, M: 'static, W: 'static> Handler<wire::MakerToTaker> for Actor<O
 where
     Self: xtra::Handler<CfdRollOverCompleted>,
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    M: xtra::Handler<monitor::CollaborativeSettlement>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::BuildPartyParams>,
@@ -707,12 +653,6 @@ where
         match msg {
             wire::MakerToTaker::CurrentOrder(current_order) => {
                 log_error!(self.handle_new_order(current_order))
-            }
-            wire::MakerToTaker::ConfirmSettlement(order_id) => {
-                log_error!(self.handle_settlement_accepted(order_id, ctx))
-            }
-            wire::MakerToTaker::RejectSettlement(order_id) => {
-                log_error!(self.handle_settlement_rejected(order_id))
             }
             wire::MakerToTaker::ConfirmRollOver {
                 order_id,
@@ -734,6 +674,9 @@ where
             | wire::MakerToTaker::Protocol { .. }
             | wire::MakerToTaker::InvalidOrderId(_) => {
                 unreachable!("These messages should be sent to the `setup_taker::Actor`")
+            }
+            wire::MakerToTaker::Settlement { .. } => {
+                unreachable!("These messages should be sent to the `collab_settlement::Actor`")
             }
         }
     }

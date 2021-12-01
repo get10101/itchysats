@@ -115,12 +115,12 @@ impl State {
         temp.into()
     }
 
-    pub fn amend_settlement_proposal(&mut self, proposal: UpdateSettlementProposal) -> Result<()> {
+    pub fn amend_settlement_proposal(&mut self, proposal: UpdateSettlementProposal) {
         let order = proposal.order;
         self.amend_cfd_proposal(order, proposal.into())
     }
 
-    pub fn amend_rollover_proposal(&mut self, proposal: UpdateRollOverProposal) -> Result<()> {
+    pub fn amend_rollover_proposal(&mut self, proposal: UpdateRollOverProposal) {
         let order = proposal.order;
         self.amend_cfd_proposal(order, proposal.into())
     }
@@ -133,21 +133,21 @@ impl State {
         let _ = std::mem::replace(&mut self.cfds, cfds);
     }
 
-    fn amend_cfd_proposal(
-        &mut self,
-        order: OrderId,
-        proposal: Option<UpdateCfdProposal>,
-    ) -> Result<()> {
+    fn amend_cfd_proposal(&mut self, order: OrderId, proposal: Option<UpdateCfdProposal>) {
         if let Some(proposal) = proposal {
             self.proposals.insert(order, proposal);
             tracing::trace!(%order, "Cfd proposal got updated");
-        } else {
-            if self.proposals.remove(&order).is_none() {
-                anyhow::bail!("Could not find proposal with order id: {}", &order)
-            }
-            tracing::trace!(%order, "Removed cfd proposal");
-        };
-        Ok(())
+
+            return;
+        }
+
+        if self.proposals.remove(&order).is_none() {
+            tracing::trace!(%order, "Cannot remove cfd proposal: unknown");
+
+            return;
+        }
+
+        tracing::trace!(%order, "Removed cfd proposal");
     }
 }
 
@@ -172,15 +172,13 @@ impl Actor {
             .connected_takers
             .send(msg.0.iter().map(|x| x.into()).collect_vec());
     }
-    fn handle(&mut self, msg: UpdateSettlementProposal) -> Result<()> {
-        self.state.amend_settlement_proposal(msg)?;
+    fn handle(&mut self, msg: UpdateSettlementProposal) {
+        self.state.amend_settlement_proposal(msg);
         let _ = self.tx.cfds.send(self.state.to_cfds());
-        Ok(())
     }
-    fn handle(&mut self, msg: UpdateRollOverProposal) -> Result<()> {
-        self.state.amend_rollover_proposal(msg)?;
+    fn handle(&mut self, msg: UpdateRollOverProposal) {
+        self.state.amend_rollover_proposal(msg);
         let _ = self.tx.cfds.send(self.state.to_cfds());
-        Ok(())
     }
 }
 

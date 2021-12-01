@@ -18,6 +18,27 @@ use std::ops::RangeInclusive;
 use std::sync::{Arc, Mutex};
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
+pub mod taker_to_maker {
+    use super::*;
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(tag = "type", content = "payload")]
+    #[allow(clippy::large_enum_variant)]
+    pub enum Settlement {
+        Propose {
+            timestamp: Timestamp,
+            #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+            taker: Amount,
+            #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+            maker: Amount,
+            price: Price,
+        },
+        Initiate {
+            sig_taker: Signature,
+        },
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
@@ -25,19 +46,6 @@ pub enum TakerToMaker {
     TakeOrder {
         order_id: OrderId,
         quantity: Usd,
-    },
-    ProposeSettlement {
-        order_id: OrderId,
-        timestamp: Timestamp,
-        #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-        taker: Amount,
-        #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-        maker: Amount,
-        price: Price,
-    },
-    InitiateSettlement {
-        order_id: OrderId,
-        sig_taker: Signature,
     },
     ProposeRollOver {
         order_id: OrderId,
@@ -48,17 +56,20 @@ pub enum TakerToMaker {
         msg: SetupMsg,
     },
     RollOverProtocol(RollOverMsg),
+    Settlement {
+        order_id: OrderId,
+        msg: taker_to_maker::Settlement,
+    },
 }
 
 impl fmt::Display for TakerToMaker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TakerToMaker::TakeOrder { .. } => write!(f, "TakeOrder"),
-            TakerToMaker::ProposeSettlement { .. } => write!(f, "ProposeSettlement"),
-            TakerToMaker::InitiateSettlement { .. } => write!(f, "InitiateSettlement"),
             TakerToMaker::Protocol { .. } => write!(f, "Protocol"),
             TakerToMaker::ProposeRollOver { .. } => write!(f, "ProposeRollOver"),
             TakerToMaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
+            TakerToMaker::Settlement { .. } => write!(f, "Settlement"),
         }
     }
 }
@@ -72,8 +83,6 @@ pub enum MakerToTaker {
     CurrentOrder(Option<Order>),
     ConfirmOrder(OrderId), // TODO: Include payout curve in "accept" message from maker
     RejectOrder(OrderId),
-    ConfirmSettlement(OrderId),
-    RejectSettlement(OrderId),
     InvalidOrderId(OrderId),
     Protocol {
         order_id: OrderId,
@@ -85,6 +94,21 @@ pub enum MakerToTaker {
         oracle_event_id: BitMexPriceEventId,
     },
     RejectRollOver(OrderId),
+    Settlement {
+        order_id: OrderId,
+        msg: maker_to_taker::Settlement,
+    },
+}
+
+pub mod maker_to_taker {
+    use super::*;
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(tag = "type", content = "payload")]
+    pub enum Settlement {
+        Confirm,
+        Reject,
+    }
 }
 
 impl fmt::Display for MakerToTaker {
@@ -94,13 +118,12 @@ impl fmt::Display for MakerToTaker {
             MakerToTaker::CurrentOrder(_) => write!(f, "CurrentOrder"),
             MakerToTaker::ConfirmOrder(_) => write!(f, "ConfirmOrder"),
             MakerToTaker::RejectOrder(_) => write!(f, "RejectOrder"),
-            MakerToTaker::ConfirmSettlement(_) => write!(f, "ConfirmSettlement"),
-            MakerToTaker::RejectSettlement(_) => write!(f, "RejectSettlement"),
             MakerToTaker::InvalidOrderId(_) => write!(f, "InvalidOrderId"),
             MakerToTaker::Protocol { .. } => write!(f, "Protocol"),
             MakerToTaker::ConfirmRollOver { .. } => write!(f, "ConfirmRollOver"),
             MakerToTaker::RejectRollOver(_) => write!(f, "RejectRollOver"),
             MakerToTaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
+            MakerToTaker::Settlement { .. } => write!(f, "Settlement"),
         }
     }
 }

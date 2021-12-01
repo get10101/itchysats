@@ -1,8 +1,10 @@
+use crate::address_map::{AddressMap, Stopping};
 use crate::model::cfd::OrderId;
-use crate::model::Usd;
+use crate::model::{Price, Timestamp, Usd};
 use crate::tokio_ext::FutureExt;
-use crate::{log_error, noise, send_to_socket, setup_taker, wire, Tasks};
+use crate::{collab_settlement_taker, log_error, noise, send_to_socket, setup_taker, wire, Tasks};
 use anyhow::{Context, Result};
+use bdk::bitcoin::Amount;
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -34,6 +36,7 @@ pub struct Actor {
     connect_timeout: Duration,
     connected_state: Option<ConnectedState>,
     setup_actors: HashMap<OrderId, xtra::Address<setup_taker::Actor>>,
+    collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
 }
 
 pub struct Connect {
@@ -67,6 +70,15 @@ pub struct TakeOrder {
     pub address: xtra::Address<setup_taker::Actor>,
 }
 
+pub struct ProposeSettlement {
+    pub order_id: OrderId,
+    pub timestamp: Timestamp,
+    pub taker: Amount,
+    pub maker: Amount,
+    pub price: Price,
+    pub address: xtra::Address<collab_settlement_taker::Actor>,
+}
+
 impl Actor {
     pub fn new(
         status_sender: watch::Sender<ConnectionStatus>,
@@ -87,6 +99,7 @@ impl Actor {
             connected_state: None,
             setup_actors: HashMap::new(),
             connect_timeout,
+            collab_settlement_actors: AddressMap::default(),
         }
     }
 }
@@ -95,6 +108,13 @@ impl Actor {
 impl Actor {
     async fn handle_taker_to_maker(&mut self, message: wire::TakerToMaker) {
         log_error!(self.send_to_maker.send(message));
+    }
+
+    async fn handle_collab_settlement_actor_stopping(
+        &mut self,
+        message: Stopping<collab_settlement_taker::Actor>,
+    ) {
+        self.collab_settlement_actors.gc(message);
     }
 }
 
@@ -109,6 +129,33 @@ impl Actor {
             .await?;
 
         self.setup_actors.insert(msg.order_id, msg.address);
+
+        Ok(())
+    }
+
+    async fn handle_propose_settlement(&mut self, msg: ProposeSettlement) -> Result<()> {
+        let ProposeSettlement {
+            order_id,
+            timestamp,
+            taker,
+            maker,
+            price,
+            address,
+        } = msg;
+
+        self.send_to_maker
+            .send(wire::TakerToMaker::Settlement {
+                order_id,
+                msg: wire::taker_to_maker::Settlement::Propose {
+                    timestamp,
+                    taker,
+                    maker,
+                    price,
+                },
+            })
+            .await?;
+
+        self.collab_settlement_actors.insert(order_id, address);
 
         Ok(())
     }
@@ -231,6 +278,11 @@ impl Actor {
                     None => {
                         tracing::warn!(%order_id, "No active contract setup");
                     }
+                }
+            }
+            wire::MakerToTaker::Settlement { order_id, msg } => {
+                if !self.collab_settlement_actors.send(&order_id, msg).await {
+                    tracing::warn!(%order_id, "No active collaborative settlement");
                 }
             }
             other => {
