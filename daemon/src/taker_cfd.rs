@@ -122,7 +122,7 @@ impl<O, M, W> Actor<O, M, W> {
                             order: *order_id,
                             proposal: None,
                         })
-                        .await??
+                        .await?
                 }
                 UpdateCfdProposal::RollOverProposal { .. } => {
                     self.projection_actor
@@ -130,7 +130,7 @@ impl<O, M, W> Actor<O, M, W> {
                             order: *order_id,
                             proposal: None,
                         })
-                        .await??
+                        .await?
                 }
             }
         } else {
@@ -188,7 +188,7 @@ where
             .insert(proposal.order_id, new_proposal.clone());
         self.projection_actor
             .send(try_into_update_rollover_proposal(new_proposal)?)
-            .await??;
+            .await?;
 
         self.conn_actor
             .send(wire::TakerToMaker::ProposeRollOver {
@@ -240,7 +240,7 @@ impl<O, M, W> Actor<O, M, W> {
             .insert(proposal.order_id, new_proposal.clone());
         self.projection_actor
             .send(try_into_update_settlement_proposal(new_proposal)?)
-            .await??;
+            .await?;
 
         self.conn_actor
             .send(wire::TakerToMaker::ProposeSettlement {

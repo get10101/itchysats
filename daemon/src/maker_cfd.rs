@@ -187,7 +187,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             .insert(proposal.order_id, (new_proposal.clone(), taker_id));
         self.projection_actor
             .send(try_into_update_rollover_proposal(new_proposal)?)
-            .await??;
+            .await?;
 
         Ok(())
     }
@@ -211,7 +211,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             .insert(proposal.order_id, (new_proposal.clone(), taker_id));
         self.projection_actor
             .send(try_into_update_settlement_proposal(new_proposal)?)
-            .await??;
+            .await?;
 
         Ok(())
     }
@@ -269,7 +269,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
                             order: *order_id,
                             proposal: None,
                         })
-                        .await??
+                        .await?
                 }
                 UpdateCfdProposal::RollOverProposal { .. } => {
                     self.projection_actor
@@ -277,7 +277,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
                             order: *order_id,
                             proposal: None,
                         })
-                        .await??
+                        .await?
                 }
             }
         } else {
