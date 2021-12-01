@@ -314,7 +314,9 @@ async fn main() -> Result<()> {
                 routes_maker::post_sell_order,
                 routes_maker::post_cfd_action,
                 routes_maker::get_health_check,
-                routes_maker::post_withdraw_request
+                routes_maker::post_withdraw_request,
+                routes_maker::get_cfds,
+                routes_maker::get_takers,
             ],
         )
         .register("/api", rocket::catchers![routes_maker::unauthorized])
