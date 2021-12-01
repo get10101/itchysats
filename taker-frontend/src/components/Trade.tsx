@@ -112,9 +112,11 @@ export default function Trade({
     const quantityTooHigh = maxQuantity < parse(quantity);
     const quantityTooLow = minQuantity > parse(quantity);
     const quantityGreaterZero = parse(quantity) > 0;
+    const quantityIncrement = 100;
+    const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(parse(quantity), quantityIncrement);
 
     const canSubmit = orderId && !isLongSubmitting && !balanceTooLow
-        && !quantityTooHigh && !quantityTooLow && quantityGreaterZero;
+        && !quantityTooHigh && !quantityTooLow && quantityGreaterZero && quantityIsEvenlyDivisibleByIncrement;
 
     let alertBox;
 
@@ -128,6 +130,12 @@ export default function Trade({
             alertBox = <AlertBox
                 title={"Your balance is too low!"}
                 description={"Please deposit more into you wallet."}
+            />;
+        }
+        if (!quantityIsEvenlyDivisibleByIncrement) {
+            alertBox = <AlertBox
+                title={`Quantity is not in increments of ${quantityIncrement}!`}
+                description={`Increment is ${quantityIncrement}`}
             />;
         }
         if (quantityTooHigh) {
@@ -184,7 +192,13 @@ export default function Trade({
                     </Center>
                 </GridItem>
                 <GridItem colSpan={1}>
-                    <Quantity min={minQuantity} max={maxQuantity} quantity={quantity} onChange={onQuantityChange} />
+                    <Quantity
+                        min={minQuantity}
+                        max={maxQuantity}
+                        quantity={quantity}
+                        onChange={onQuantityChange}
+                        quantityIncrement={quantityIncrement}
+                    />
                 </GridItem>
                 <GridItem colSpan={1}>
                     <Leverage leverage={leverage} />
@@ -276,10 +290,11 @@ interface QuantityProps {
     min: number;
     max: number;
     quantity: string;
+    quantityIncrement: number;
     onChange: any;
 }
 
-function Quantity({ min, max, onChange, quantity }: QuantityProps) {
+function Quantity({ min, max, onChange, quantity, quantityIncrement }: QuantityProps) {
     return (
         <FormControl id="quantity">
             <FormLabel>Quantity</FormLabel>
@@ -289,6 +304,7 @@ function Quantity({ min, max, onChange, quantity }: QuantityProps) {
                     min={min}
                     max={max}
                     default={min}
+                    step={quantityIncrement}
                     onChange={onChange}
                     value={quantity}
                 >
@@ -344,4 +360,8 @@ function Margin({ margin }: MarginProps) {
             <Text fontSize={"sm"} color={"darkgrey"}>The collateral you will need to provide</Text>
         </VStack>
     );
+}
+
+export function isEvenlyDivisible(numerator: number, divisor: number): boolean {
+    return (numerator % divisor === 0.0);
 }
