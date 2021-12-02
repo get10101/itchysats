@@ -5,6 +5,7 @@ use crate::maker_cfd::{FromTaker, TakerConnected};
 use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
 use crate::oracle::Attestation;
 use crate::tokio_ext::FutureExt;
+use address_map::Stopping;
 use anyhow::Result;
 use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
@@ -44,6 +45,7 @@ pub mod routes;
 pub mod seed;
 pub mod send_to_socket;
 pub mod setup_contract;
+pub mod setup_maker;
 pub mod setup_taker;
 pub mod taker_cfd;
 pub mod to_sse_event;
@@ -112,7 +114,9 @@ where
         + xtra::Handler<monitor::CollaborativeSettlement>
         + xtra::Handler<oracle::Attestation>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>,
+        + xtra::Handler<maker_inc_connections::BroadcastOrder>
+        + xtra::Handler<maker_inc_connections::ConfirmOrder>
+        + xtra::Handler<Stopping<setup_maker::Actor>>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sync>
         + xtra::Handler<wallet::Sign>
