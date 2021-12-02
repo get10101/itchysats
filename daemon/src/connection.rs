@@ -2,6 +2,7 @@ use crate::address_map::{AddressMap, Stopping};
 use crate::model::cfd::OrderId;
 use crate::model::{Price, Timestamp, Usd};
 use crate::tokio_ext::FutureExt;
+use crate::wire::EncryptedJsonCodec;
 use crate::{collab_settlement_taker, log_error, noise, send_to_socket, setup_taker, wire, Tasks};
 use anyhow::{Context, Result};
 use bdk::bitcoin::Amount;
@@ -12,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use tokio::net::TcpStream;
 use tokio::sync::watch;
-use tokio_util::codec::FramedRead;
+use tokio_util::codec::{FramedRead, FramedWrite};
 use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
@@ -193,17 +194,15 @@ impl Actor {
             (read, write, Arc::new(Mutex::new(noise)))
         };
 
-        let send_to_socket = send_to_socket::Actor::new(write, noise.clone());
+        let read = FramedRead::new(read, wire::EncryptedJsonCodec::new(noise.clone()));
+        let write = FramedWrite::new(write, EncryptedJsonCodec::new(noise));
+        let this = ctx.address().expect("self to be alive");
+
+        let send_to_socket = send_to_socket::Actor::new(write);
 
         let mut tasks = Tasks::default();
         tasks.add(self.send_to_maker_ctx.attach(send_to_socket));
-
-        let read = FramedRead::new(read, wire::EncryptedJsonCodec::new(noise))
-            .map(move |item| MakerStreamMessage { item });
-
-        let this = ctx.address().expect("self to be alive");
-        tasks.add(this.attach_stream(read));
-
+        tasks.add(this.attach_stream(read.map(move |item| MakerStreamMessage { item })));
         tasks.add(
             ctx.notify_interval(self.heartbeat_timeout, || MeasurePulse)
                 .expect("we just started"),

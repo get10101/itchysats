@@ -3,6 +3,7 @@ use crate::maker_cfd::{FromTaker, TakerConnected, TakerDisconnected};
 use crate::model::cfd::{Order, OrderId};
 use crate::model::Identity;
 use crate::noise::TransportStateExt;
+use crate::wire::EncryptedJsonCodec;
 use crate::{maker_cfd, noise, send_to_socket, setup_maker, wire, Tasks};
 use anyhow::Result;
 use futures::TryStreamExt;
@@ -12,7 +13,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio_util::codec::FramedRead;
+use tokio_util::codec::{FramedRead, FramedWrite};
 use xtra::prelude::*;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
@@ -128,7 +129,7 @@ impl Actor {
         let (read, write) = stream.into_split();
         let mut read =
             FramedRead::new(read, wire::EncryptedJsonCodec::new(transport_state.clone()));
-
+        let write = FramedWrite::new(write, EncryptedJsonCodec::new(transport_state));
         let this = ctx.address().expect("self to be alive");
         let read_fut = async move {
             while let Ok(Some(msg)) = read.try_next().await {
@@ -143,7 +144,7 @@ impl Actor {
         };
 
         let (out_msg, mut out_msg_actor_context) = xtra::Context::new(None);
-        let send_to_socket_actor = send_to_socket::Actor::new(write, transport_state.clone());
+        let send_to_socket_actor = send_to_socket::Actor::new(write);
 
         let heartbeat_fut = out_msg_actor_context
             .notify_interval(self.heartbeat_interval, || wire::MakerToTaker::Heartbeat)
