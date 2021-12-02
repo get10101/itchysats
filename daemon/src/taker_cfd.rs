@@ -384,18 +384,16 @@ where
     }
 }
 
+#[xtra_productivity]
 impl<O, M, W> Actor<O, M, W>
 where
     Self: xtra::Handler<Completed>,
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
 {
-    async fn handle_take_offer(
-        &mut self,
-        order_id: OrderId,
-        quantity: Usd,
-        ctx: &mut Context<Self>,
-    ) -> Result<()> {
+    async fn handle_take_offer(&mut self, msg: TakeOffer, ctx: &mut Context<Self>) -> Result<()> {
+        let TakeOffer { order_id, quantity } = msg;
+
         let disconnected = self
             .setup_actors
             .get_disconnected(order_id)
@@ -628,19 +626,6 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, W: 'static> Handler<TakeOffer> for Actor<O, M, W>
-where
-    Self: xtra::Handler<Completed>,
-    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
-{
-    async fn handle(&mut self, msg: TakeOffer, ctx: &mut Context<Self>) -> Result<()> {
-        self.handle_take_offer(msg.order_id, msg.quantity, ctx)
-            .await
-    }
-}
-
-#[async_trait]
 impl<O: 'static, M: 'static, W: 'static> Handler<wire::MakerToTaker> for Actor<O, M, W>
 where
     Self: xtra::Handler<CfdRollOverCompleted>,
@@ -730,10 +715,6 @@ impl<O: 'static, M: 'static, W: 'static> Handler<setup_taker::Started> for Actor
     async fn handle(&mut self, msg: setup_taker::Started, _ctx: &mut Context<Self>) {
         log_error!(self.handle_setup_started(msg.0))
     }
-}
-
-impl Message for TakeOffer {
-    type Result = Result<()>;
 }
 
 impl Message for CfdRollOverCompleted {
