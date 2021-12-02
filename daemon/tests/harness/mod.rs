@@ -44,12 +44,7 @@ fn oracle_pk() -> schnorrsig::PublicKey {
 pub async fn start_both() -> (Maker, Taker) {
     let maker_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let maker = Maker::start(&MakerConfig::default(), maker_listener).await;
-    let taker = Taker::start(
-        &TakerConfig::default(),
-        maker.listen_addr,
-        maker.identity_pk,
-    )
-    .await;
+    let taker = Taker::start(&TakerConfig::default(), maker.listen_addr, maker.identity).await;
     (maker, taker)
 }
 
@@ -115,7 +110,7 @@ pub struct Maker {
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     pub listen_addr: SocketAddr,
-    pub identity_pk: x25519_dalek::PublicKey,
+    pub identity: model::Identity,
     _tasks: Tasks,
 }
 
@@ -195,7 +190,7 @@ impl Maker {
         Self {
             system: maker,
             feeds,
-            identity_pk,
+            identity: model::Identity::new(identity_pk),
             listen_addr: address,
             mocks,
             _tasks: tasks,
@@ -266,7 +261,7 @@ impl Taker {
     pub async fn start(
         config: &TakerConfig,
         maker_address: SocketAddr,
-        maker_noise_pub_key: x25519_dalek::PublicKey,
+        maker_identity: model::Identity,
     ) -> Self {
         let (identity_pk, identity_sk) = config.seed.derive_identity();
 
@@ -306,7 +301,7 @@ impl Taker {
         tasks.add(connect(
             taker.maker_online_status_feed_receiver.clone(),
             taker.connection_actor_addr.clone(),
-            maker_noise_pub_key,
+            maker_identity,
             vec![maker_address],
         ));
 

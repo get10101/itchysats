@@ -1,6 +1,6 @@
 use crate::address_map::{AddressMap, Stopping};
 use crate::model::cfd::OrderId;
-use crate::model::{Price, Timestamp, Usd};
+use crate::model::{Identity, Price, Timestamp, Usd};
 use crate::tokio_ext::FutureExt;
 use crate::wire::EncryptedJsonCodec;
 use crate::{collab_settlement_taker, log_error, noise, send_to_socket, setup_taker, wire, Tasks};
@@ -41,7 +41,7 @@ pub struct Actor {
 }
 
 pub struct Connect {
-    pub maker_identity_pk: x25519_dalek::PublicKey,
+    pub maker_identity: Identity,
     pub maker_addr: SocketAddr,
 }
 
@@ -168,7 +168,7 @@ impl Actor {
         &mut self,
         Connect {
             maker_addr,
-            maker_identity_pk,
+            maker_identity,
         }: Connect,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
@@ -186,9 +186,12 @@ impl Actor {
                     )
                 })?
                 .with_context(|| format!("Failed to connect to {}", maker_addr))?;
-            let noise =
-                noise::initiator_handshake(&mut connection, &self.identity_sk, &maker_identity_pk)
-                    .await?;
+            let noise = noise::initiator_handshake(
+                &mut connection,
+                &self.identity_sk,
+                &maker_identity.pk(),
+            )
+            .await?;
 
             let (read, write) = connection.into_split();
             (read, write, Arc::new(Mutex::new(noise)))
@@ -318,7 +321,7 @@ impl xtra::Actor for Actor {}
 pub async fn connect(
     mut maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     connection_actor_addr: xtra::Address<Actor>,
-    maker_identity_pk: x25519_dalek::PublicKey,
+    maker_identity: Identity,
     maker_addresses: Vec<SocketAddr>,
 ) {
     loop {
@@ -327,7 +330,7 @@ pub async fn connect(
             'connect: loop {
                 for address in &maker_addresses {
                     let connect_msg = Connect {
-                        maker_identity_pk,
+                        maker_identity,
                         maker_addr: *address,
                     };
 
