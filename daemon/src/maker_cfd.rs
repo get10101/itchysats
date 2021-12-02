@@ -13,6 +13,7 @@ use crate::projection::{
 };
 use crate::setup_contract::RolloverParams;
 use crate::tokio_ext::FutureExt;
+use crate::wire::TakerToMaker;
 use crate::{
     log_error, maker_inc_connections, monitor, oracle, projection, setup_contract, setup_maker,
     wallet, wire, Tasks,
@@ -1108,6 +1109,9 @@ where
             }
             wire::TakerToMaker::Protocol { .. } => {
                 unreachable!("This kind of message should be sent to the `setup_maker::Actor`")
+            }
+            TakerToMaker::Hello(_) => {
+                unreachable!("The Hello message is not sent to the cfd actor")
             }
         }
     }

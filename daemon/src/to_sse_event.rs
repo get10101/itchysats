@@ -1,7 +1,7 @@
-use crate::connection::ConnectionStatus;
-use crate::model;
 use crate::model::Timestamp;
 use crate::projection::{Cfd, CfdAction, CfdOrder, Identity, Quote};
+use crate::to_sse_event::ConnectionCloseReason::{MakerVersionOutdated, TakerVersionOutdated};
+use crate::{connection, model};
 use bdk::bitcoin::Amount;
 use rocket::request::FromParam;
 use rocket::response::stream::Event;
@@ -58,11 +58,40 @@ impl ToSseEvent for model::WalletInfo {
     }
 }
 
-impl ToSseEvent for ConnectionStatus {
+#[derive(Debug, Clone, Serialize)]
+pub struct ConnectionStatus {
+    online: bool,
+    connection_close_reason: Option<ConnectionCloseReason>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum ConnectionCloseReason {
+    MakerVersionOutdated,
+    TakerVersionOutdated,
+}
+
+impl ToSseEvent for connection::ConnectionStatus {
     fn to_sse_event(&self) -> Event {
         let connected = match self {
-            ConnectionStatus::Online => true,
-            ConnectionStatus::Offline => false,
+            connection::ConnectionStatus::Online => ConnectionStatus {
+                online: true,
+                connection_close_reason: None,
+            },
+            connection::ConnectionStatus::Offline { reason } => ConnectionStatus {
+                online: false,
+                connection_close_reason: reason.as_ref().map(|g| match g {
+                    connection::ConnectionCloseReason::VersionMismatch {
+                        maker_version,
+                        taker_version,
+                    } => {
+                        if *maker_version < *taker_version {
+                            MakerVersionOutdated
+                        } else {
+                            TakerVersionOutdated
+                        }
+                    }
+                }),
+            },
         };
 
         Event::json(&connected).event("maker_status")

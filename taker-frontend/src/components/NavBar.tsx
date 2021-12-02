@@ -17,11 +17,11 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
-import { WalletInfo } from "../types";
+import { ConnectionCloseReason, ConnectionStatus, WalletInfo } from "../types";
 
 interface NavProps {
     walletInfo: WalletInfo | null;
-    connectedToMaker: boolean;
+    connectedToMaker: ConnectionStatus;
 }
 
 export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
@@ -37,6 +37,18 @@ export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
         <MoonIcon />,
         <SunIcon />,
     );
+
+    let connectionMessage = connectedToMaker.online ? "Online" : "Offline";
+    if (connectedToMaker.connection_close_reason) {
+        switch (connectedToMaker.connection_close_reason) {
+            case ConnectionCloseReason.MAKER_VERSION_OUTDATED:
+                connectionMessage = connectionMessage + ": the maker is running an outdated version";
+                break;
+            case ConnectionCloseReason.TAKER_VERSION_OUTDATED:
+                connectionMessage = connectionMessage + " - you are running an incompatible version, please upgrade!";
+                break;
+        }
+    }
 
     return (
         <>
@@ -56,7 +68,7 @@ export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
                             <MenuItem onClick={() => navigate("/wallet")}>Wallet</MenuItem>
                         </MenuList>
                     </Menu>
-                    <Heading size={"sm"}>{"Maker status: " + (connectedToMaker ? "Online" : "Offline")}</Heading>
+                    <Heading size={"sm"}>{"Maker status: " + connectionMessage}</Heading>
                     <Flex alignItems={"center"}>
                         <Stack direction={"row"} spacing={7}>
                             <Button onClick={toggleColorMode} bg={"transparent"}>

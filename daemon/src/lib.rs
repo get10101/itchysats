@@ -245,7 +245,7 @@ where
         let cfds = load_all_cfds(&mut conn).await?;
 
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
-            watch::channel(ConnectionStatus::Offline);
+            watch::channel(ConnectionStatus::Offline { reason: None });
 
         let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);

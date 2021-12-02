@@ -18,14 +18,14 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { Cfd, Tx, TxLabel } from "../types";
+import { Cfd, ConnectionStatus, Tx, TxLabel } from "../types";
 import usePostRequest from "../usePostRequest";
 import CloseButton from "./CloseButton";
 
 interface HistoryProps {
     cfds: Cfd[];
     title?: string;
-    connectedToMaker: Boolean;
+    connectedToMaker: ConnectionStatus;
 }
 
 const History = ({ cfds, title, connectedToMaker }: HistoryProps) => {
@@ -51,7 +51,7 @@ export default History;
 
 interface CfdDetailsProps {
     cfd: Cfd;
-    connectedToMaker: Boolean;
+    connectedToMaker: ConnectionStatus;
 }
 
 const CfdDetails = ({ cfd, connectedToMaker }: CfdDetailsProps) => {
@@ -74,7 +74,7 @@ const CfdDetails = ({ cfd, connectedToMaker }: CfdDetailsProps) => {
     let [settle, isSettling] = usePostRequest(`/api/cfd/${cfd.order_id}/settle`);
     let [commit, isCommiting] = usePostRequest(`/api/cfd/${cfd.order_id}/commit`);
 
-    const closeButton = connectedToMaker
+    const closeButton = connectedToMaker.online
         ? <CloseButton request={settle} status={isSettling} cfd={cfd} action="Close" />
         : <CloseButton request={commit} status={isCommiting} cfd={cfd} action="Force Close" />;
 

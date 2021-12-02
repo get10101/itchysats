@@ -25,6 +25,7 @@ import {
     BXBTData,
     Cfd,
     CfdOrderRequestPayload,
+    ConnectionStatus,
     intoCfd,
     intoOrder,
     MarginRequestPayload,
@@ -63,8 +64,8 @@ export const App = () => {
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
     cfds.sort((a, b) => a.order_id.localeCompare(b.order_id));
-    const connectedToMakerOrUndefined = useLatestEvent<boolean>(source, "maker_status");
-    const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined! : false;
+    const connectedToMakerOrUndefined = useLatestEvent<ConnectionStatus>(source, "maker_status");
+    const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
     let [quantity, setQuantity] = useState("0");
     let [margin, setMargin] = useState(0);
@@ -154,7 +155,7 @@ export const App = () => {
                                                 cfds={cfds.filter((cfd) =>
                                                     cfd.state.getGroup() === StateGroupKey.CLOSED
                                                 )}
-                                                connectedToMaker
+                                                connectedToMaker={connectedToMaker}
                                             />
                                         </AccordionPanel>
                                     </AccordionItem>

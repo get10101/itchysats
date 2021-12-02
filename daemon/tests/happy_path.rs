@@ -189,7 +189,7 @@ async fn taker_notices_lack_of_maker() {
     sleep(taker_config.heartbeat_timeout).await;
 
     assert_eq!(
-        ConnectionStatus::Offline,
+        ConnectionStatus::Offline { reason: None },
         next(taker.maker_status_feed()).await.unwrap(),
     );
 
