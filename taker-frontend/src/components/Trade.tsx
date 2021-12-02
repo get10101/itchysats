@@ -3,6 +3,7 @@ import {
     Alert,
     AlertDescription,
     AlertIcon,
+    AlertStatus,
     AlertTitle,
     Box,
     Button,
@@ -66,15 +67,17 @@ interface TradeProps {
     walletBalance: number;
     onLongSubmit: (payload: CfdOrderRequestPayload) => void;
     isLongSubmitting: boolean;
+    isSettingUpCfd: boolean;
 }
 
 interface AlertBoxProps {
     title: string;
     description: string;
+    status?: AlertStatus;
 }
 
-function AlertBox({ title, description }: AlertBoxProps) {
-    return (<Alert status="error">
+function AlertBox({ title, description, status = "error" }: AlertBoxProps) {
+    return (<Alert status={status}>
         <AlertIcon />
         <AlertTitle mr={2}>{title}</AlertTitle>
         <AlertDescription>{description}</AlertDescription>
@@ -96,6 +99,7 @@ export default function Trade({
     isLongSubmitting,
     orderId,
     walletBalance,
+    isSettingUpCfd,
 }: TradeProps) {
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
@@ -116,7 +120,8 @@ export default function Trade({
     const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(parse(quantity), quantityIncrement);
 
     const canSubmit = orderId && !isLongSubmitting && !balanceTooLow
-        && !quantityTooHigh && !quantityTooLow && quantityGreaterZero && quantityIsEvenlyDivisibleByIncrement;
+        && !quantityTooHigh && !quantityTooLow && quantityGreaterZero && quantityIsEvenlyDivisibleByIncrement
+        && !isSettingUpCfd;
 
     let alertBox;
 
@@ -126,6 +131,13 @@ export default function Trade({
             description={"You are not connected to any maker. Functionality may be limited"}
         />;
     } else {
+        if (isSettingUpCfd) {
+            alertBox = <AlertBox
+                title={"Cfd setup in progress!"}
+                description={"Please wait until the current setup finished before opening another position."}
+                status={"warning"}
+            />;
+        }
         if (balanceTooLow) {
             alertBox = <AlertBox
                 title={"Your balance is too low!"}

@@ -31,6 +31,7 @@ import {
     MarginResponse,
     Order,
     StateGroupKey,
+    StateKey,
     WalletInfo,
 } from "./types";
 import useDebouncedEffect from "./useDebouncedEffect";
@@ -63,6 +64,10 @@ export const App = () => {
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
     cfds.sort((a, b) => a.order_id.localeCompare(b.order_id));
+    const istSettingUpCfd = cfds.some((cfd) =>
+        [StateKey.OUTGOING_ORDER_REQUEST, StateKey.CONTRACT_SETUP].includes(cfd.state.key)
+    );
+
     const connectedToMakerOrUndefined = useLatestEvent<boolean>(source, "maker_status");
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined! : false;
 
@@ -131,6 +136,7 @@ export const App = () => {
                                     }}
                                     onLongSubmit={makeNewOrderRequest}
                                     isLongSubmitting={isCreatingNewOrderRequest}
+                                    isSettingUpCfd={istSettingUpCfd}
                                 />
                                 <History
                                     connectedToMaker={connectedToMaker}
