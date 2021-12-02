@@ -77,12 +77,7 @@ pub struct FromTaker {
     pub msg: wire::TakerToMaker,
 }
 
-pub struct Actor<
-    O = oracle::Actor,
-    M = monitor::Actor,
-    T = maker_inc_connections::Actor,
-    W = wallet::Actor,
-> {
+pub struct Actor<O, M, T, W> {
     db: sqlx::SqlitePool,
     wallet: Address<W>,
     settlement_interval: Duration,
