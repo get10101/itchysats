@@ -26,31 +26,45 @@ The script also enables backtraces by setting `RUST_BACKTRACE=1` env variable.
 
 ## Starting the maker and taker daemon
 
+A working example of starting both daemons with all the required command-line parameters can be found
+[here](https://github.com/itchysats/itchysats/blob/master/start_all.sh#L8)
+
 The maker and taker frontend depend on the respective daemon running.
-
-At the moment the maker daemon has to be started first:
-
-```bash
-cargo run --bin maker
-```
-
-Once the maker is started you can start the taker:
-
-```bash
-cargo run --bin taker
-```
-
-Upon startup the taker daemon will connect to the (hardcoded) maker and retrieve the current order.
-
-Note: The sqlite databases for maker and taker are currently created in the project root.
 
 ## Starting the maker and taker frontend
 
 We use a separate react projects for hosting taker and maker frontends.
 
-At the moment you will need a browser extension to allow CORS headers like `CORS Everywhere` ([Firefox Extension](https://addons.mozilla.org/en-US/firefox/addon/cors-everywhere/)) to use the frontends.
+### Building the frontends
 
-### Taker
+The latest version of the built frontends will be embedded by `cargo` inside
+their respective daemons and automatically served when the daemon starts.
+Embedded frontend is served on ports `8000` and `8001` by default.
+
+This means that it is highly recommended to build the frontend _before_ the daemons.
+
+#### Taker
+
+```bash
+cd taker-frontend
+yarn install
+yarn build
+```
+
+#### Maker
+
+```bash
+cd maker-frontend
+yarn install
+yarn build
+```
+
+### Developing frontend code
+
+If hot-reloading of the app is required, frontend can be started in development mode.
+Development frontend is served on ports `3000` and `3001` by default.
+
+#### Taker
 
 ```bash
 cd taker-frontend
@@ -58,7 +72,7 @@ yarn install
 yarn dev
 ```
 
-### Maker
+#### Maker
 
 ```bash
 cd maker-frontend
