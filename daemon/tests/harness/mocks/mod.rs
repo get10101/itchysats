@@ -82,6 +82,13 @@ impl Mocks {
             .expect_start_monitoring()
             .return_const(());
     }
+
+    pub async fn mock_monitor_collaborative_settlement(&mut self) {
+        self.monitor()
+            .await
+            .expect_collaborative_settlement()
+            .return_const(());
+    }
 }
 
 impl Default for Mocks {

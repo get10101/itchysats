@@ -1632,7 +1632,7 @@ pub struct CollaborativeSettlement {
 impl CollaborativeSettlement {
     pub fn new(tx: Transaction, own_script_pubkey: Script, price: Price) -> Result<Self> {
         // Falls back to Amount::ZERO in case we don't find an output that matches out script pubkey
-        // The assumption is, that this can happen for cases where we were liuqidated
+        // The assumption is, that this can happen for cases where we were liquidated
         let payout = match tx
             .output
             .iter()

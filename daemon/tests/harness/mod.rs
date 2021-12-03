@@ -230,6 +230,15 @@ impl Maker {
             .unwrap()
             .unwrap();
     }
+
+    pub async fn accept_settlement_proposal(&self, order_id: OrderId) {
+        self.system
+            .cfd_actor_addr
+            .send(maker_cfd::AcceptSettlement { order_id })
+            .await
+            .unwrap()
+            .unwrap();
+    }
 }
 
 /// Taker Test Setup
@@ -321,6 +330,18 @@ impl Taker {
             .unwrap()
             .unwrap();
     }
+
+    pub async fn propose_settlement(&self, order_id: OrderId) {
+        self.system
+            .cfd_actor_addr
+            .send(taker_cfd::ProposeSettlement {
+                order_id,
+                current_price: dummy_price(),
+            })
+            .await
+            .unwrap()
+            .unwrap();
+    }
 }
 
 /// Deliver the event that provokes the transition to cfd's "Open" state
@@ -335,6 +356,22 @@ pub async fn deliver_lock_finality_event(maker: &Maker, taker: &Taker, id: Order
         .system
         .cfd_actor_addr
         .send(daemon::monitor::Event::LockFinality(id))
+        .await
+        .unwrap();
+}
+
+/// Deliver the event that provokes the transition to cfd's "Close" state
+pub async fn deliver_close_finality_event(maker: &Maker, taker: &Taker, id: OrderId) {
+    taker
+        .system
+        .cfd_actor_addr
+        .send(daemon::monitor::Event::CloseFinality(id))
+        .await
+        .unwrap();
+    maker
+        .system
+        .cfd_actor_addr
+        .send(daemon::monitor::Event::CloseFinality(id))
         .await
         .unwrap();
 }
