@@ -4,7 +4,6 @@ use bdk::bitcoin::{Address, Amount};
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::connection::connect;
-use daemon::db::load_all_cfds;
 use daemon::model::cfd::Role;
 use daemon::model::{Identity, WalletInfo};
 use daemon::seed::Seed;
@@ -259,14 +258,8 @@ async fn main() -> Result<()> {
         .send(bitmex_price_feed::Connect)
         .await??;
 
-    let cfds = {
-        let mut conn = db.acquire().await?;
-
-        load_all_cfds(&mut conn).await?
-    };
-
     let (proj_actor, projection_feeds) =
-        projection::Actor::new(Role::Taker, bitcoin_network, cfds, init_quote);
+        projection::Actor::new(db.clone(), Role::Taker, bitcoin_network, init_quote).await?;
     tasks.add(projection_context.run(proj_actor));
 
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;

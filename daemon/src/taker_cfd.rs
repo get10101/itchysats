@@ -1,5 +1,5 @@
 use crate::address_map::AddressMap;
-use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
+use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_update_feed};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateCommon, Completed, Dlc, Order, OrderId, Origin, Role, RollOverProposal,
@@ -416,7 +416,7 @@ where
             CfdState::outgoing_order_request(),
         );
 
-        insert_cfd_and_send_to_feed(&cfd, &mut conn, &self.projection_actor).await?;
+        insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
 
         // Cleanup own order feed, after inserting the cfd.
         // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
