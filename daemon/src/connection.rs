@@ -1,9 +1,13 @@
 use crate::address_map::{AddressMap, Stopping};
 use crate::model::cfd::OrderId;
 use crate::model::{Identity, Price, Timestamp, Usd};
+use crate::taker_cfd::CurrentOrder;
 use crate::tokio_ext::FutureExt;
 use crate::wire::{EncryptedJsonCodec, TakerToMaker, Version};
-use crate::{collab_settlement_taker, log_error, noise, send_to_socket, setup_taker, wire, Tasks};
+use crate::{
+    collab_settlement_taker, log_error, noise, rollover_taker, send_to_socket, setup_taker, wire,
+    Tasks,
+};
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::Amount;
 use futures::{SinkExt, StreamExt, TryStreamExt};
@@ -31,13 +35,14 @@ pub struct Actor {
     send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
     send_to_maker_ctx: xtra::Context<send_to_socket::Actor<wire::TakerToMaker>>,
     identity_sk: x25519_dalek::StaticSecret,
-    maker_to_taker: Box<dyn MessageChannel<wire::MakerToTaker>>,
+    current_order: Box<dyn MessageChannel<CurrentOrder>>,
     /// Max duration since the last heartbeat until we die.
     heartbeat_timeout: Duration,
     connect_timeout: Duration,
     connected_state: Option<ConnectedState>,
     setup_actors: HashMap<OrderId, xtra::Address<setup_taker::Actor>>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
+    rollover_actors: AddressMap<OrderId, rollover_taker::Actor>,
 }
 
 pub struct Connect {
@@ -90,10 +95,16 @@ pub struct ProposeSettlement {
     pub address: xtra::Address<collab_settlement_taker::Actor>,
 }
 
+pub struct ProposeRollOver {
+    pub order_id: OrderId,
+    pub timestamp: Timestamp,
+    pub address: xtra::Address<rollover_taker::Actor>,
+}
+
 impl Actor {
     pub fn new(
         status_sender: watch::Sender<ConnectionStatus>,
-        maker_to_taker: Box<dyn MessageChannel<wire::MakerToTaker>>,
+        current_order: &(impl MessageChannel<CurrentOrder> + 'static),
         identity_sk: x25519_dalek::StaticSecret,
         hearthbeat_timeout: Duration,
         connect_timeout: Duration,
@@ -105,12 +116,13 @@ impl Actor {
             send_to_maker: Box::new(send_to_maker_addr),
             send_to_maker_ctx,
             identity_sk,
-            maker_to_taker,
+            current_order: current_order.clone_channel(),
             heartbeat_timeout: hearthbeat_timeout,
             connected_state: None,
             setup_actors: HashMap::new(),
             connect_timeout,
             collab_settlement_actors: AddressMap::default(),
+            rollover_actors: AddressMap::default(),
         }
     }
 }
@@ -126,6 +138,10 @@ impl Actor {
         message: Stopping<collab_settlement_taker::Actor>,
     ) {
         self.collab_settlement_actors.gc(message);
+    }
+
+    async fn handle_rollover_actor_stopping(&mut self, message: Stopping<rollover_taker::Actor>) {
+        self.rollover_actors.gc(message);
     }
 }
 
@@ -167,6 +183,25 @@ impl Actor {
             .await?;
 
         self.collab_settlement_actors.insert(order_id, address);
+
+        Ok(())
+    }
+
+    async fn handle_propose_roll_over(&mut self, msg: ProposeRollOver) -> Result<()> {
+        let ProposeRollOver {
+            order_id,
+            timestamp,
+            address,
+        } = msg;
+
+        self.send_to_maker
+            .send(wire::TakerToMaker::ProposeRollOver {
+                order_id,
+                timestamp,
+            })
+            .await?;
+
+        self.rollover_actors.insert(order_id, address);
 
         Ok(())
     }
@@ -338,12 +373,40 @@ impl Actor {
                     tracing::warn!(%order_id, "No active collaborative settlement");
                 }
             }
+            wire::MakerToTaker::ConfirmRollOver {
+                order_id,
+                oracle_event_id,
+            } => {
+                if !self
+                    .rollover_actors
+                    .send(
+                        &order_id,
+                        rollover_taker::RollOverAccepted { oracle_event_id },
+                    )
+                    .await
+                {
+                    tracing::warn!(%order_id, "No active rollover");
+                }
+            }
+            wire::MakerToTaker::RejectRollOver(order_id) => {
+                if !self
+                    .rollover_actors
+                    .send(&order_id, rollover_taker::RollOverRejected)
+                    .await
+                {
+                    tracing::warn!(%order_id, "No active rollover");
+                }
+            }
+            wire::MakerToTaker::RollOverProtocol { order_id, msg } => {
+                if !self.rollover_actors.send(&order_id, msg).await {
+                    tracing::warn!(%order_id, "No active rollover");
+                }
+            }
+            wire::MakerToTaker::CurrentOrder(msg) => {
+                log_error!(self.current_order.send(CurrentOrder(msg)));
+            }
             wire::MakerToTaker::Hello(_) => {
                 tracing::warn!("Ignoring unexpected Hello message from maker. Hello is only expected when opening a new connection.")
-            }
-            other => {
-                // this one should go to the taker cfd actor
-                log_error!(self.maker_to_taker.send(other));
             }
         }
         KeepRunning::Yes
