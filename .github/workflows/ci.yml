@@ -100,11 +100,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p /tmp/maker/testnet
-          cp -r daemon/util/testnet_seeds/maker_seed /tmp/maker/testnet/maker_seed
+          cp -r testnet/maker_seed /tmp/maker/testnet/maker_seed
           target/debug/maker --data-dir=/tmp/maker testnet &
           sleep 10s # Wait for maker to start\
 
-          # The maker-id is generated from the makers seed found in daemon/util/testnet_seeds/maker_seed
+          # The maker-id is generated from the makers seed found in testnet/maker_seed
           target/debug/taker --data-dir=/tmp/taker --maker localhost:9999 --maker-id 10d4ba2ac3f7a22da4009d813ff1bc3f404dfe2cc93a32bedf1512aa9951c95e testnet &
           sleep 10s # Wait for taker to start
 

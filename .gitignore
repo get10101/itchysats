@@ -22,3 +22,5 @@
 /taker_seed
 /mainnet
 /testnet
+!/testnet/maker_seed
+!/testnet/taker_seed
