@@ -171,8 +171,7 @@ async fn main() -> Result<()> {
         opts.network.electrum(),
         &data_dir.join("taker_wallet.sqlite"),
         ext_priv_key,
-    )
-    .await?
+    )?
     .create(None)
     .run();
     let _wallet_handle = wallet_fut.spawn_with_handle();
