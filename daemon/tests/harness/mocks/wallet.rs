@@ -2,10 +2,13 @@ use crate::harness::maia::dummy_wallet;
 use anyhow::Result;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{ecdsa, Amount, Txid};
+use bdk::wallet::tx_builder::TxOrdering;
+use bdk::wallet::AddressIndex;
+use bdk::FeeRate;
 use daemon::model::{Timestamp, WalletInfo};
 use daemon::wallet;
 use maia::secp256k1_zkp::Secp256k1;
-use maia::{PartyParams, WalletExt};
+use maia::{PartyParams, TxBuilderExt};
 use mockall::*;
 use rand::thread_rng;
 use std::sync::Arc;
@@ -74,8 +77,19 @@ pub fn build_party_params(msg: wallet::BuildPartyParams) -> Result<PartyParams> 
     let mut rng = thread_rng();
     let wallet = dummy_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
 
-    let party_params = wallet
-        .build_party_params(msg.amount, msg.identity_pk)
-        .unwrap();
-    Ok(party_params)
+    let mut builder = wallet.build_tx();
+
+    builder
+        .ordering(TxOrdering::Bip69Lexicographic) // TODO: I think this is pointless but we did this in maia.
+        .fee_rate(FeeRate::from_sat_per_vb(1.0))
+        .add_2of2_multisig_recipient(msg.amount);
+
+    let (psbt, _) = builder.finish()?;
+
+    Ok(PartyParams {
+        lock_psbt: psbt,
+        identity_pk: msg.identity_pk,
+        lock_amount: msg.amount,
+        address: wallet.get_address(AddressIndex::New)?.address,
+    })
 }

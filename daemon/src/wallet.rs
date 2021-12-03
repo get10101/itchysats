@@ -5,9 +5,10 @@ use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Amount, PublicKey, Script, Transaction, Txid};
 use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
+use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::AddressIndex;
 use bdk::{electrum_client, FeeRate, KeychainKind, SignOptions};
-use maia::{PartyParams, WalletExt};
+use maia::{PartyParams, TxBuilderExt};
 use rocket::serde::json::Value;
 
 use std::path::Path;
@@ -123,7 +124,21 @@ impl Actor {
             identity_pk,
         }: BuildPartyParams,
     ) -> Result<PartyParams> {
-        self.wallet.build_party_params(amount, identity_pk)
+        let mut builder = self.wallet.build_tx();
+
+        builder
+            .ordering(TxOrdering::Bip69Lexicographic) // TODO: I think this is pointless but we did this in maia.
+            .fee_rate(FeeRate::from_sat_per_vb(1.0))
+            .add_2of2_multisig_recipient(amount);
+
+        let (psbt, _) = builder.finish()?;
+
+        Ok(PartyParams {
+            lock_psbt: psbt,
+            identity_pk,
+            lock_amount: amount,
+            address: self.wallet.get_address(AddressIndex::New)?.address,
+        })
     }
 
     pub fn handle_try_broadcast_transaction(
