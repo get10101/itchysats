@@ -191,8 +191,6 @@ pub enum Error {
 struct PayoutCurve {
     curve: Curve,
     has_upper_limit: bool,
-    lower_corner: f64,
-    upper_corner: f64,
     total_value: f64,
 }
 
@@ -222,7 +220,6 @@ impl PayoutCurve {
             curve_factory::fit(payout, bounds.0, bounds.1, Some(tolerance), None)?;
         curve.append(variable_payout)?;
 
-        let upper_corner;
         if bounds.2 {
             let upper_liquidation = curve_factory::line(
                 (bounds.1, total_value),
@@ -230,16 +227,11 @@ impl PayoutCurve {
                 false,
             )?;
             curve.append(upper_liquidation)?;
-            upper_corner = bounds.1;
-        } else {
-            upper_corner = curve.spline.bases[0].end();
-        }
+        };
 
         Ok(PayoutCurve {
             curve,
             has_upper_limit: bounds.2,
-            lower_corner: bounds.0,
-            upper_corner,
             total_value,
         })
     }

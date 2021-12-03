@@ -38,7 +38,7 @@ async fn rebroadcast_transactions(
 ) -> Result<()> {
     let cfds = load_all_cfds(conn).await?;
 
-    for dlc in cfds.iter().filter_map(|cfd| Cfd::pending_open_dlc(cfd)) {
+    for dlc in cfds.iter().filter_map(Cfd::pending_open_dlc) {
         let txid = try_continue!(wallet
             .send(wallet::TryBroadcastTransaction {
                 tx: dlc.lock.0.clone()
