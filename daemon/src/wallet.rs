@@ -147,7 +147,7 @@ impl Actor {
         let wallet = self.wallet.lock().await;
         let txid = tx.txid();
 
-        let result = wallet.broadcast(tx.clone());
+        let result = wallet.broadcast(&tx);
 
         if let Err(&bdk::Error::Electrum(electrum_client::Error::Protocol(ref value))) =
             result.as_ref()
@@ -215,7 +215,7 @@ impl Actor {
 
         wallet.sign(&mut psbt, SignOptions::default())?;
 
-        let txid = wallet.broadcast(psbt.extract_tx())?;
+        let txid = wallet.broadcast(&psbt.extract_tx())?;
 
         tracing::info!(%txid, "Withdraw successful");
 
