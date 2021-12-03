@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
 use crate::harness::{
-    dummy_new_order, init_tracing, start_both, Maker, MakerConfig, Taker, TakerConfig,
+    deliver_lock_finality_event, dummy_new_order, init_tracing, start_both, Maker, MakerConfig,
+    Taker, TakerConfig,
 };
 use daemon::connection::ConnectionStatus;
 use daemon::model::Usd;
@@ -116,6 +117,12 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     assert_eq!(maker_cfd.order_id, received.id);
     assert!(matches!(taker_cfd.state, CfdState::PendingOpen { .. }));
     assert!(matches!(maker_cfd.state, CfdState::PendingOpen { .. }));
+
+    deliver_lock_finality_event(&maker, &taker, received.id).await;
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert!(matches!(taker_cfd.state, CfdState::Open { .. }));
+    assert!(matches!(maker_cfd.state, CfdState::Open { .. }));
 }
 
 #[tokio::test]

@@ -5,7 +5,7 @@ use crate::schnorrsig;
 use ::bdk::bitcoin::Network;
 use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{connect, ConnectionStatus};
-use daemon::model::cfd::Role;
+use daemon::model::cfd::{OrderId, Role};
 use daemon::model::{self, Price, Timestamp, Usd};
 use daemon::projection::{Cfd, CfdOrder, Feeds, Identity};
 use daemon::seed::Seed;
@@ -27,7 +27,6 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use xtra::Actor;
 
-pub mod bdk;
 pub mod flow;
 pub mod maia;
 pub mod mocks;
@@ -174,14 +173,8 @@ impl Maker {
         .await
         .unwrap();
 
-        let dummy_quote = Quote {
-            timestamp: Timestamp::now(),
-            bid: Price::new(dec!(10000)).unwrap(),
-            ask: Price::new(dec!(10000)).unwrap(),
-        };
-
         let (proj_actor, feeds) =
-            projection::Actor::new(Role::Maker, Network::Testnet, vec![], dummy_quote);
+            projection::Actor::new(Role::Maker, Network::Testnet, vec![], dummy_quote());
         tasks.add(projection_context.run(proj_actor));
 
         let address = listener.local_addr().unwrap();
@@ -297,14 +290,8 @@ impl Taker {
         .await
         .unwrap();
 
-        let dummy_quote = Quote {
-            timestamp: Timestamp::now(),
-            bid: Price::new(dec!(10000)).unwrap(),
-            ask: Price::new(dec!(10000)).unwrap(),
-        };
-
         let (proj_actor, feeds) =
-            projection::Actor::new(Role::Taker, Network::Testnet, vec![], dummy_quote);
+            projection::Actor::new(Role::Taker, Network::Testnet, vec![], dummy_quote());
         tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(
@@ -336,6 +323,22 @@ impl Taker {
     }
 }
 
+/// Deliver the event that provokes the transition to cfd's "Open" state
+pub async fn deliver_lock_finality_event(maker: &Maker, taker: &Taker, id: OrderId) {
+    maker
+        .system
+        .cfd_actor_addr
+        .send(daemon::monitor::Event::LockFinality(id))
+        .await
+        .unwrap();
+    taker
+        .system
+        .cfd_actor_addr
+        .send(daemon::monitor::Event::LockFinality(id))
+        .await
+        .unwrap();
+}
+
 async fn in_memory_db() -> SqlitePool {
     // Note: Every :memory: database is distinct from every other. So, opening two database
     // connections each with the filename ":memory:" will create two independent in-memory
@@ -347,9 +350,21 @@ async fn in_memory_db() -> SqlitePool {
     pool
 }
 
+pub fn dummy_price() -> Price {
+    Price::new(dec!(50_000)).expect("to not fail")
+}
+
+pub fn dummy_quote() -> Quote {
+    Quote {
+        timestamp: Timestamp::now(),
+        bid: dummy_price(),
+        ask: dummy_price(),
+    }
+}
+
 pub fn dummy_new_order() -> maker_cfd::NewOrder {
     maker_cfd::NewOrder {
-        price: Price::new(dec!(50_000)).expect("unexpected failure"),
+        price: dummy_price(),
         min_quantity: Usd::new(dec!(5)),
         max_quantity: Usd::new(dec!(100)),
     }
