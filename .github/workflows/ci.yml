@@ -18,13 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2.4.0
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          override: true
-          toolchain: stable
-          components: clippy
+      - name: Setup rust toolchain
+        run: rustup show
       - uses: Swatinem/rust-cache@v1.3.0
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
