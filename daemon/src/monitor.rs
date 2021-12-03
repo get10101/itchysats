@@ -587,7 +587,6 @@ struct Cet {
     txid: Txid,
     script: Script,
     range: RangeInclusive<u64>,
-    n_bits: usize,
 }
 
 impl From<model::cfd::Cet> for Cet {
@@ -596,7 +595,6 @@ impl From<model::cfd::Cet> for Cet {
             txid: cet.tx.txid(),
             script: cet.tx.output[0].script_pubkey.clone(),
             range: cet.range.clone(),
-            n_bits: cet.n_bits,
         }
     }
 }

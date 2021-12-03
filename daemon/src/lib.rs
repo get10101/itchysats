@@ -80,6 +80,7 @@ pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 /// Struct controlling the lifetime of the async tasks,
 /// such as running actors and periodic notifications.
 /// If it gets dropped, all tasks are cancelled.
+#[derive(Default)]
 pub struct Tasks(Vec<RemoteHandle<()>>);
 
 impl Tasks {
@@ -89,12 +90,6 @@ impl Tasks {
     pub fn add(&mut self, f: impl Future<Output = ()> + Send + 'static) {
         let handle = f.spawn_with_handle();
         self.0.push(handle);
-    }
-}
-
-impl Default for Tasks {
-    fn default() -> Self {
-        Tasks(vec![])
     }
 }
 

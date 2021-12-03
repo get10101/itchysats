@@ -352,7 +352,6 @@ mod olivia_api {
     #[derive(Debug, Clone, serde::Deserialize)]
     pub struct Announcement {
         oracle_event: OracleEvent,
-        signature: String,
     }
 
     #[derive(Debug, Clone, serde::Deserialize)]
@@ -373,8 +372,6 @@ mod olivia_api {
     pub struct Attestation {
         outcome: String,
         schemes: Schemes,
-        #[serde(with = "timestamp")]
-        time: OffsetDateTime,
     }
 
     #[derive(Debug, Clone, serde::Deserialize)]
