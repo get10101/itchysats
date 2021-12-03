@@ -164,19 +164,13 @@ async fn collaboratively_close_an_open_cfd() {
 #[tokio::test]
 async fn taker_notices_lack_of_maker() {
     let short_interval = Duration::from_secs(1);
-
     let _guard = init_tracing();
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-
-    let local_addr = listener.local_addr().unwrap();
-
     let maker_config = MakerConfig::default().with_heartbeat_interval(short_interval);
-
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let maker = Maker::start(&maker_config, listener).await;
 
     let taker_config = TakerConfig::default().with_heartbeat_timeout(short_interval * 2);
-
     let mut taker = Taker::start(&taker_config, maker.listen_addr, maker.identity).await;
 
     assert_eq!(
@@ -190,17 +184,6 @@ async fn taker_notices_lack_of_maker() {
 
     assert_eq!(
         ConnectionStatus::Offline { reason: None },
-        next(taker.maker_status_feed()).await.unwrap(),
-    );
-
-    let listener = tokio::net::TcpListener::bind(local_addr).await.unwrap();
-
-    let _maker = Maker::start(&maker_config, listener).await;
-
-    sleep(taker_config.heartbeat_timeout).await;
-
-    assert_eq!(
-        ConnectionStatus::Online,
         next(taker.maker_status_feed()).await.unwrap(),
     );
 }

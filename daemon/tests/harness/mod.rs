@@ -4,7 +4,7 @@ use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use ::bdk::bitcoin::Network;
 use daemon::bitmex_price_feed::Quote;
-use daemon::connection::{connect, ConnectionStatus};
+use daemon::connection::{self, ConnectionStatus};
 use daemon::model::cfd::{OrderId, Role};
 use daemon::model::{self, Price, Timestamp, Usd};
 use daemon::projection::{Cfd, CfdOrder, Feeds, Identity};
@@ -260,7 +260,7 @@ impl Taker {
 
     pub async fn start(
         config: &TakerConfig,
-        maker_address: SocketAddr,
+        maker_addr: SocketAddr,
         maker_identity: model::Identity,
     ) -> Self {
         let (identity_pk, identity_sk) = config.seed.derive_identity();
@@ -298,12 +298,15 @@ impl Taker {
             projection::Actor::new(Role::Taker, Network::Testnet, vec![], dummy_quote());
         tasks.add(projection_context.run(proj_actor));
 
-        tasks.add(connect(
-            taker.maker_online_status_feed_receiver.clone(),
-            taker.connection_actor_addr.clone(),
-            maker_identity,
-            vec![maker_address],
-        ));
+        taker
+            .connection_actor_addr
+            .send(connection::Connect {
+                maker_identity,
+                maker_addr,
+            })
+            .await
+            .unwrap()
+            .unwrap();
 
         Self {
             id: model::Identity::new(identity_pk).into(),

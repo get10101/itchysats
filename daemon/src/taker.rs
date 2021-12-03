@@ -3,15 +3,14 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::{Address, Amount};
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
-use daemon::connection::connect;
 use daemon::db::load_all_cfds;
 use daemon::model::cfd::Role;
 use daemon::model::{Identity, WalletInfo};
 use daemon::seed::Seed;
-use daemon::tokio_ext::FutureExt;
+use daemon::tokio_ext::{self, FutureExt};
 use daemon::{
-    bitmex_price_feed, db, housekeeping, logger, monitor, oracle, projection, wallet, wallet_sync,
-    TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS, SETTLEMENT_INTERVAL,
+    bitmex_price_feed, connection, db, housekeeping, logger, monitor, oracle, projection, wallet,
+    wallet_sync, TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS, SETTLEMENT_INTERVAL,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
@@ -270,14 +269,24 @@ async fn main() -> Result<()> {
     tasks.add(projection_context.run(proj_actor));
 
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
+    let attempt_all = connection::AttemptAll {
+        maker_identity: Identity::new(opts.maker_id),
+        maker_addresses: possible_addresses,
+    };
 
-    tasks.add(connect(
-        maker_online_status_feed_receiver.clone(),
-        connection_actor_addr,
-        Identity::new(opts.maker_id),
-        possible_addresses,
-    ));
+    tokio_ext::spawn_fallible({
+        let attempt_all = attempt_all.clone();
+        let connection_actor_addr = connection_actor_addr.clone();
 
+        async move {
+            connection_actor_addr
+                .send(attempt_all)
+                .await
+                .context("Connection actor not available")??;
+
+            anyhow::Ok(())
+        }
+    });
     tasks.add(wallet_sync::new(wallet.clone(), wallet_feed_sender));
 
     let rocket = rocket::custom(figment)
@@ -287,6 +296,8 @@ async fn main() -> Result<()> {
         .manage(bitcoin_network)
         .manage(wallet)
         .manage(maker_online_status_feed_receiver)
+        .manage(attempt_all)
+        .manage(connection_actor_addr)
         .mount(
             "/api",
             rocket::routes![
@@ -296,6 +307,7 @@ async fn main() -> Result<()> {
                 routes_taker::margin_calc,
                 routes_taker::post_cfd_action,
                 routes_taker::post_withdraw_request,
+                routes_taker::connect,
             ],
         )
         .mount(

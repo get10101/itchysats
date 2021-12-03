@@ -18,9 +18,6 @@ use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 
-/// Time between reconnection attempts
-const CONNECT_TO_MAKER_INTERVAL: Duration = Duration::from_secs(5);
-
 struct ConnectedState {
     last_heartbeat: SystemTime,
     _tasks: Tasks,
@@ -40,9 +37,16 @@ pub struct Actor {
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
 }
 
+#[derive(Clone)]
 pub struct Connect {
     pub maker_identity: Identity,
     pub maker_addr: SocketAddr,
+}
+
+#[derive(Clone)]
+pub struct AttemptAll {
+    pub maker_identity: Identity,
+    pub maker_addresses: Vec<SocketAddr>,
 }
 
 pub struct MakerStreamMessage {
@@ -172,14 +176,11 @@ impl Actor {
     }
 }
 
-#[xtra_productivity]
 impl Actor {
-    async fn handle_connect(
+    async fn connect_internal(
         &mut self,
-        Connect {
-            maker_addr,
-            maker_identity,
-        }: Connect,
+        maker_addr: SocketAddr,
+        maker_identity: Identity,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
         tracing::debug!(address = %maker_addr, "Connecting to maker");
@@ -274,6 +275,20 @@ impl Actor {
 
         Ok(())
     }
+}
+
+#[xtra_productivity]
+impl Actor {
+    async fn handle_connect(
+        &mut self,
+        Connect {
+            maker_addr,
+            maker_identity,
+        }: Connect,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
+        self.connect_internal(maker_addr, maker_identity, ctx).await
+    }
 
     async fn handle_wire_message(
         &mut self,
@@ -366,52 +381,29 @@ impl Actor {
             self.connected_state = None;
         }
     }
+
+    async fn handle_attempt_all(
+        &mut self,
+        AttemptAll {
+            maker_addresses,
+            maker_identity: maker_identity_pk,
+        }: AttemptAll,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
+        for maker_addr in maker_addresses {
+            match self
+                .connect_internal(maker_addr, maker_identity_pk, ctx)
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    tracing::debug!("{:#}", e);
+                }
+            }
+        }
+
+        bail!("All connection attempts failed")
+    }
 }
 
 impl xtra::Actor for Actor {}
-
-// TODO: Move the reconnection logic inside the connection::Actor instead of
-// depending on a watch channel
-pub async fn connect(
-    mut maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
-    connection_actor_addr: xtra::Address<Actor>,
-    maker_identity: Identity,
-    maker_addresses: Vec<SocketAddr>,
-) {
-    loop {
-        let connection_status = maker_online_status_feed_receiver.borrow().clone();
-        if matches!(connection_status, ConnectionStatus::Offline { .. }) {
-            tracing::debug!("No connection to the maker");
-            'connect: loop {
-                for address in &maker_addresses {
-                    let connect_msg = Connect {
-                        maker_identity,
-                        maker_addr: *address,
-                    };
-
-                    if let Err(e) = connection_actor_addr
-                        .send(connect_msg)
-                        .await
-                        .expect("Taker actor to be present")
-                    {
-                        tracing::warn!(%address, "Failed to establish connection: {:#}", e);
-                        continue;
-                    }
-                    break 'connect;
-                }
-
-                tracing::warn!(
-                    "Tried connecting to {} addresses without success, retrying in {} seconds",
-                    maker_addresses.len(),
-                    CONNECT_TO_MAKER_INTERVAL.as_secs()
-                );
-
-                tokio::time::sleep(CONNECT_TO_MAKER_INTERVAL).await;
-            }
-        }
-        maker_online_status_feed_receiver
-            .changed()
-            .await
-            .expect("watch channel should outlive the future");
-    }
-}

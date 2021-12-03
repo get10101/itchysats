@@ -1,5 +1,5 @@
 use bdk::bitcoin::{Amount, Network};
-use daemon::connection::ConnectionStatus;
+use daemon::connection::{self, ConnectionStatus};
 use daemon::model::cfd::{calculate_long_margin, OrderId};
 use daemon::model::{Leverage, Price, Usd, WalletInfo};
 use daemon::projection::{CfdAction, Feeds};
@@ -103,6 +103,24 @@ pub async fn post_order_request(
         })?;
 
     Ok(status::Accepted(None))
+}
+
+#[rocket::post("/connect")]
+pub async fn connect(
+    connection: &State<Address<connection::Actor>>,
+    attempt_all: &State<connection::AttemptAll>,
+) -> Result<(), HttpApiProblem> {
+    connection
+        .send(attempt_all.inner().clone())
+        .await
+        .map_err(disconnected_http_problem("Connection actor"))?
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::BAD_REQUEST)
+                .title("Connection failed")
+                .detail(format!("{:#}", e))
+        })?;
+
+    Ok(())
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
@@ -235,4 +253,11 @@ pub async fn post_withdraw_request(
         })?;
 
     Ok(tx::to_mempool_url(txid, *network.inner()))
+}
+
+fn disconnected_http_problem(actor: &'static str) -> impl Fn(xtra::Disconnected) -> HttpApiProblem {
+    move |_| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title(format!("{} is not connected", actor))
+    }
 }

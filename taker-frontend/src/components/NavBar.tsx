@@ -1,4 +1,4 @@
-import { HamburgerIcon, MoonIcon, SunIcon } from "@chakra-ui/icons";
+import { HamburgerIcon, LinkIcon, MoonIcon, SunIcon } from "@chakra-ui/icons";
 import {
     Box,
     Button,
@@ -18,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
 import { ConnectionCloseReason, ConnectionStatus, WalletInfo } from "../types";
+import usePostRequest from "../usePostRequest";
 
 interface NavProps {
     walletInfo: WalletInfo | null;
@@ -49,6 +50,7 @@ export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
                 break;
         }
     }
+    let [connect, isConnecting] = usePostRequest<{}, {}>("/api/connect");
 
     return (
         <>
@@ -71,6 +73,14 @@ export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
                     <Heading size={"sm"}>{"Maker status: " + connectionMessage}</Heading>
                     <Flex alignItems={"center"}>
                         <Stack direction={"row"} spacing={7}>
+                            <Button
+                                onClick={() => connect({})}
+                                disabled={connectedToMaker.online}
+                                isLoading={isConnecting}
+                                rightIcon={<LinkIcon />}
+                            >
+                                Reconnect
+                            </Button>
                             <Button onClick={toggleColorMode} bg={"transparent"}>
                                 {toggleIcon}
                             </Button>
