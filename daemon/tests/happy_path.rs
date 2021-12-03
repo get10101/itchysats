@@ -2,9 +2,11 @@ use std::time::Duration;
 
 use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
 use crate::harness::{
-    dummy_new_order, init_tracing, start_both, Maker, MakerConfig, Taker, TakerConfig,
+    deliver_close_finality_event, deliver_lock_finality_event, dummy_new_order, init_tracing,
+    start_both, Maker, MakerConfig, Taker, TakerConfig,
 };
 use daemon::connection::ConnectionStatus;
+use daemon::model::cfd::OrderId;
 use daemon::model::Usd;
 use daemon::projection::{CfdState, Identity};
 use maia::secp256k1_zkp::schnorrsig;
@@ -116,6 +118,47 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     assert_eq!(maker_cfd.order_id, received.id);
     assert!(matches!(taker_cfd.state, CfdState::PendingOpen { .. }));
     assert!(matches!(maker_cfd.state, CfdState::PendingOpen { .. }));
+
+    deliver_lock_finality_event(&maker, &taker, received.id).await;
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert!(matches!(taker_cfd.state, CfdState::Open { .. }));
+    assert!(matches!(maker_cfd.state, CfdState::Open { .. }));
+}
+
+#[tokio::test]
+async fn collaboratively_close_an_open_cfd() {
+    let _guard = init_tracing();
+    let (mut maker, mut taker, order_id) = start_from_open_cfd_state().await;
+
+    taker.propose_settlement(order_id).await;
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert!(matches!(
+        taker_cfd.state,
+        CfdState::OutgoingSettlementProposal { .. }
+    ));
+    assert!(matches!(
+        maker_cfd.state,
+        CfdState::IncomingSettlementProposal { .. }
+    ));
+
+    maker.mocks.mock_monitor_collaborative_settlement().await;
+    taker.mocks.mock_monitor_collaborative_settlement().await;
+
+    maker.accept_settlement_proposal(order_id).await;
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert!(matches!(taker_cfd.state, CfdState::PendingClose { .. }));
+    assert!(matches!(maker_cfd.state, CfdState::PendingClose { .. }));
+
+    deliver_close_finality_event(&maker, &taker, order_id).await;
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert!(matches!(taker_cfd.state, CfdState::Closed { .. }));
+    assert!(matches!(maker_cfd.state, CfdState::Closed { .. }));
 }
 
 #[tokio::test]
@@ -178,4 +221,69 @@ async fn maker_notices_lack_of_taker() {
         Vec::<Identity>::new(),
         next(maker.connected_takers_feed()).await.unwrap()
     );
+}
+
+/// Hide the implementation detail of arriving at the Cfd open state.
+/// Useful when reading tests that should start at this point.
+/// For convenience, returns also OrderId of the opened Cfd.
+async fn start_from_open_cfd_state() -> (Maker, Taker, OrderId) {
+    let heartbeat_interval = Duration::from_secs(60);
+    let maker_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut maker = Maker::start(
+        &MakerConfig::default().with_heartbeat_interval(heartbeat_interval),
+        maker_listener,
+    )
+    .await;
+    let mut taker = Taker::start(
+        &TakerConfig::default().with_heartbeat_timeout(heartbeat_interval * 2),
+        maker.listen_addr,
+        maker.identity_pk,
+    )
+    .await;
+
+    is_next_none(taker.order_feed()).await.unwrap();
+
+    maker.publish_order(dummy_new_order()).await;
+
+    let (_, received) = next_order(maker.order_feed(), taker.order_feed())
+        .await
+        .unwrap();
+
+    taker.mocks.mock_oracle_announcement().await;
+    maker.mocks.mock_oracle_announcement().await;
+
+    taker.take_order(received.clone(), Usd::new(dec!(5))).await;
+    let (_, _) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+
+    maker.mocks.mock_party_params().await;
+    taker.mocks.mock_party_params().await;
+
+    maker.mocks.mock_monitor_oracle_attestation().await;
+    taker.mocks.mock_monitor_oracle_attestation().await;
+
+    maker.mocks.mock_oracle_monitor_attestation().await;
+    taker.mocks.mock_oracle_monitor_attestation().await;
+
+    maker.mocks.mock_monitor_start_monitoring().await;
+    taker.mocks.mock_monitor_start_monitoring().await;
+
+    maker.accept_take_request(received.clone()).await;
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert!(matches!(taker_cfd.state, CfdState::ContractSetup { .. }));
+    assert!(matches!(maker_cfd.state, CfdState::ContractSetup { .. }));
+
+    maker.mocks.mock_wallet_sign_and_broadcast().await;
+    taker.mocks.mock_wallet_sign_and_broadcast().await;
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert!(matches!(taker_cfd.state, CfdState::PendingOpen { .. }));
+    assert!(matches!(maker_cfd.state, CfdState::PendingOpen { .. }));
+
+    deliver_lock_finality_event(&maker, &taker, received.id).await;
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert!(matches!(taker_cfd.state, CfdState::Open { .. }));
+    assert!(matches!(maker_cfd.state, CfdState::Open { .. }));
+    (maker, taker, received.id)
 }

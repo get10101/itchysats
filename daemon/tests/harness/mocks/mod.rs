@@ -6,8 +6,6 @@ use self::monitor::MonitorActor;
 use self::oracle::OracleActor;
 use self::wallet::WalletActor;
 
-use super::bdk::{dummy_partially_signed_transaction, dummy_tx_id};
-
 pub mod monitor;
 pub mod oracle;
 pub mod wallet;
@@ -39,19 +37,14 @@ impl Mocks {
 
     // Helper function setting up a "happy path" wallet mock
     pub async fn mock_wallet_sign_and_broadcast(&mut self) {
-        let mut seq = mockall::Sequence::new();
         self.wallet()
             .await
             .expect_sign()
-            .times(1)
-            .returning(|_| Ok(dummy_partially_signed_transaction()))
-            .in_sequence(&mut seq);
+            .returning(|sign_msg| Ok(sign_msg.psbt));
         self.wallet()
             .await
             .expect_broadcast()
-            .times(1)
-            .returning(|_| Ok(dummy_tx_id()))
-            .in_sequence(&mut seq);
+            .returning(|broadcast_msg| Ok(broadcast_msg.tx.txid()));
     }
 
     pub async fn mock_oracle_announcement(&mut self) {
@@ -87,6 +80,13 @@ impl Mocks {
         self.monitor()
             .await
             .expect_start_monitoring()
+            .return_const(());
+    }
+
+    pub async fn mock_monitor_collaborative_settlement(&mut self) {
+        self.monitor()
+            .await
+            .expect_collaborative_settlement()
             .return_const(());
     }
 }
