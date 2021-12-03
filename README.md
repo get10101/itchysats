@@ -26,23 +26,10 @@ The script also enables backtraces by setting `RUST_BACKTRACE=1` env variable.
 
 ## Starting the maker and taker daemon
 
+A working example of starting both daemons with all the required command-line parameters can be found
+[here](https://github.com/itchysats/itchysats/blob/master/start_all.sh#L8)
+
 The maker and taker frontend depend on the respective daemon running.
-
-At the moment the maker daemon has to be started first:
-
-```bash
-cargo run --bin maker
-```
-
-Once the maker is started you can start the taker:
-
-```bash
-cargo run --bin taker
-```
-
-Upon startup the taker daemon will connect to the (hardcoded) maker and retrieve the current order.
-
-Note: The sqlite databases for maker and taker are currently created in the project root.
 
 ## Starting the maker and taker frontend
 
