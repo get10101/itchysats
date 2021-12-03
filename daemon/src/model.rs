@@ -395,6 +395,10 @@ impl Identity {
     pub fn new(key: x25519_dalek::PublicKey) -> Self {
         Self(key)
     }
+
+    pub fn pk(&self) -> x25519_dalek::PublicKey {
+        self.0
+    }
 }
 
 impl Serialize for Identity {

@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 use daemon::connection::connect;
 use daemon::db::load_all_cfds;
 use daemon::model::cfd::Role;
-use daemon::model::WalletInfo;
+use daemon::model::{Identity, WalletInfo};
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
@@ -274,7 +274,7 @@ async fn main() -> Result<()> {
     tasks.add(connect(
         maker_online_status_feed_receiver.clone(),
         connection_actor_addr,
-        opts.maker_id,
+        Identity::new(opts.maker_id),
         possible_addresses,
     ));
 

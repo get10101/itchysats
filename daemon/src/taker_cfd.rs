@@ -663,6 +663,9 @@ where
             wire::MakerToTaker::Settlement { .. } => {
                 unreachable!("These messages should be sent to the `collab_settlement::Actor`")
             }
+            wire::MakerToTaker::Hello(_) => {
+                unreachable!("Connection related messages are handled in the connection actor")
+            }
         }
     }
 }

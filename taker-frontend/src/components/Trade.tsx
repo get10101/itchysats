@@ -47,12 +47,12 @@ import {
 } from "@chakra-ui/react";
 import { motion } from "framer-motion";
 import * as React from "react";
-import { CfdOrderRequestPayload } from "../types";
+import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 
 const MotionBox = motion<BoxProps>(Box);
 
 interface TradeProps {
-    connectedToMaker: boolean;
+    connectedToMaker: ConnectionStatus;
     orderId?: string;
     minQuantity: number;
     maxQuantity: number;
@@ -120,7 +120,7 @@ export default function Trade({
 
     let alertBox;
 
-    if (!connectedToMaker) {
+    if (!connectedToMaker.online) {
         alertBox = <AlertBox
             title={"No maker!"}
             description={"You are not connected to any maker. Functionality may be limited"}

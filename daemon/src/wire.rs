@@ -18,6 +18,21 @@ use std::ops::RangeInclusive;
 use std::sync::{Arc, Mutex};
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, PartialOrd)]
+pub struct Version(semver::Version);
+
+impl Version {
+    pub fn current() -> Self {
+        Self(semver::Version::new(1, 0, 0))
+    }
+}
+
+impl fmt::Display for Version {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 pub mod taker_to_maker {
     use super::*;
 
@@ -43,6 +58,7 @@ pub mod taker_to_maker {
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum TakerToMaker {
+    Hello(Version),
     TakeOrder {
         order_id: OrderId,
         quantity: Usd,
@@ -70,6 +86,7 @@ impl fmt::Display for TakerToMaker {
             TakerToMaker::ProposeRollOver { .. } => write!(f, "ProposeRollOver"),
             TakerToMaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
             TakerToMaker::Settlement { .. } => write!(f, "Settlement"),
+            TakerToMaker::Hello(_) => write!(f, "Hello"),
         }
     }
 }
@@ -78,6 +95,7 @@ impl fmt::Display for TakerToMaker {
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum MakerToTaker {
+    Hello(Version),
     /// Periodically broadcasted message, indicating maker's presence
     Heartbeat,
     CurrentOrder(Option<Order>),
@@ -114,6 +132,7 @@ pub mod maker_to_taker {
 impl fmt::Display for MakerToTaker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            MakerToTaker::Hello(_) => write!(f, "Hello"),
             MakerToTaker::Heartbeat { .. } => write!(f, "Heartbeat"),
             MakerToTaker::CurrentOrder(_) => write!(f, "CurrentOrder"),
             MakerToTaker::ConfirmOrder(_) => write!(f, "ConfirmOrder"),

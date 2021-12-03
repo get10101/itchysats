@@ -277,3 +277,13 @@ export interface WithdrawRequest {
     amount?: number;
     fee: number;
 }
+
+export interface ConnectionStatus {
+    online: boolean;
+    connection_close_reason?: ConnectionCloseReason;
+}
+
+export const enum ConnectionCloseReason {
+    MAKER_VERSION_OUTDATED = "MakerVersionOutdated",
+    TAKER_VERSION_OUTDATED = "TakerVersionOutdated",
+}
