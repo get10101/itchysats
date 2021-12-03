@@ -23,6 +23,7 @@ pub mod sqlx_ext; // Must come first because it is a macro.
 pub mod actors;
 pub mod address_map;
 pub mod auth;
+pub mod bdk_ext;
 pub mod bitmex_price_feed;
 pub mod cfd_actors;
 pub mod collab_settlement_taker;

@@ -1,10 +1,10 @@
-use crate::harness::maia::dummy_wallet;
 use anyhow::Result;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{ecdsa, Amount, Txid};
 use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
+use daemon::bdk_ext::new_test_wallet;
 use daemon::model::{Timestamp, WalletInfo};
 use daemon::wallet;
 use maia::secp256k1_zkp::Secp256k1;
@@ -75,7 +75,7 @@ fn dummy_wallet_info() -> Result<WalletInfo> {
 
 pub fn build_party_params(msg: wallet::BuildPartyParams) -> Result<PartyParams> {
     let mut rng = thread_rng();
-    let wallet = dummy_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+    let wallet = new_test_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
 
     let mut builder = wallet.build_tx();
 
