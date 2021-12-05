@@ -5,7 +5,7 @@ use crate::model::cfd::{
     UpdateCfdProposal,
 };
 use crate::model::{Leverage, Position, Timestamp, TradingPair};
-use crate::{bitmex_price_feed, model, tx, Order, UpdateCfdProposals};
+use crate::{bitmex_price_feed, db, model, tx, Order, UpdateCfdProposals};
 use anyhow::Result;
 use bdk::bitcoin::{Amount, Network, SignedAmount};
 use itertools::Itertools;
@@ -31,7 +31,12 @@ pub struct UpdateRollOverProposal {
 /// (replaces previously stored values)
 pub struct Update<T>(pub T);
 
+/// Message indicating that the Cfds in the projection need to be reloaded, as at
+/// least one of the Cfds has changed.
+pub struct CfdsChanged;
+
 pub struct Actor {
+    db: sqlx::SqlitePool,
     tx: Tx,
     state: State,
 }
@@ -44,12 +49,15 @@ pub struct Feeds {
 }
 
 impl Actor {
-    pub fn new(
+    pub async fn new(
+        db: sqlx::SqlitePool,
         role: Role,
         network: Network,
-        init_cfds: Vec<ModelCfd>,
         init_quote: bitmex_price_feed::Quote,
-    ) -> (Self, Feeds) {
+    ) -> Result<(Self, Feeds)> {
+        let mut conn = db.acquire().await?;
+        let init_cfds = db::load_all_cfds(&mut conn).await?;
+
         let state = State {
             role,
             network,
@@ -63,8 +71,9 @@ impl Actor {
         let (tx_quote, rx_quote) = watch::channel(init_quote.into());
         let (tx_connected_takers, rx_connected_takers) = watch::channel(Vec::new());
 
-        (
+        Ok((
             Self {
+                db,
                 tx: Tx {
                     cfds: tx_cfds,
                     order: tx_order,
@@ -79,7 +88,7 @@ impl Actor {
                 quote: rx_quote,
                 connected_takers: rx_connected_takers,
             },
-        )
+        ))
     }
 }
 
@@ -153,6 +162,13 @@ impl State {
 
 #[xtra_productivity]
 impl Actor {
+    fn handle(&mut self, _: CfdsChanged) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let cfds = db::load_all_cfds(&mut conn).await?;
+        self.state.update_cfds(cfds);
+        let _ = self.tx.cfds.send(self.state.to_cfds());
+        Ok(())
+    }
     fn handle(&mut self, msg: Update<Option<Order>>) {
         let _ = self.tx.order.send(msg.0.map(|x| x.into()));
     }
@@ -160,10 +176,6 @@ impl Actor {
         let quote = msg.0;
         self.state.update_quote(quote.clone());
         let _ = self.tx.quote.send(quote.into());
-        let _ = self.tx.cfds.send(self.state.to_cfds());
-    }
-    fn handle(&mut self, msg: Update<Vec<ModelCfd>>) {
-        self.state.update_cfds(msg.0);
         let _ = self.tx.cfds.send(self.state.to_cfds());
     }
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {

@@ -1,5 +1,5 @@
 use crate::address_map::{AddressMap, Stopping};
-use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_send_to_feed};
+use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_update_feed};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateCommon, CollaborativeSettlement, Dlc, Order, OrderId, Origin, Role,
@@ -478,7 +478,7 @@ where
                 taker_id,
             },
         );
-        insert_cfd_and_send_to_feed(&cfd, &mut conn, &self.projection_actor).await?;
+        insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
 
         // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any
         // state

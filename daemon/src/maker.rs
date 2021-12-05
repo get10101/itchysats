@@ -4,7 +4,6 @@ use bdk::bitcoin::Amount;
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::auth::{self, MAKER_USERNAME};
-use daemon::db::load_all_cfds;
 use daemon::model::cfd::Role;
 use daemon::model::WalletInfo;
 use daemon::seed::Seed;
@@ -276,14 +275,8 @@ async fn main() -> Result<()> {
         .send(bitmex_price_feed::Connect)
         .await??;
 
-    let cfds = {
-        let mut conn = db.acquire().await?;
-
-        load_all_cfds(&mut conn).await?
-    };
-
     let (proj_actor, projection_feeds) =
-        projection::Actor::new(Role::Maker, bitcoin_network, cfds, init_quote);
+        projection::Actor::new(db.clone(), Role::Maker, bitcoin_network, init_quote).await?;
     tasks.add(projection_context.run(proj_actor));
 
     let listener_stream = futures::stream::poll_fn(move |ctx| {

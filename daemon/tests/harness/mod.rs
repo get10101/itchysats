@@ -147,7 +147,7 @@ impl Maker {
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
         let maker = daemon::MakerActorSystem::new(
-            db,
+            db.clone(),
             wallet_addr,
             config.oracle_pk,
             |_, _| oracle,
@@ -169,7 +169,9 @@ impl Maker {
         .unwrap();
 
         let (proj_actor, feeds) =
-            projection::Actor::new(Role::Maker, Network::Testnet, vec![], dummy_quote());
+            projection::Actor::new(db, Role::Maker, Network::Testnet, dummy_quote())
+                .await
+                .unwrap();
         tasks.add(projection_context.run(proj_actor));
 
         let address = listener.local_addr().unwrap();
@@ -280,7 +282,7 @@ impl Taker {
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
         let taker = daemon::TakerActorSystem::new(
-            db,
+            db.clone(),
             wallet_addr,
             config.oracle_pk,
             identity_sk,
@@ -295,7 +297,9 @@ impl Taker {
         .unwrap();
 
         let (proj_actor, feeds) =
-            projection::Actor::new(Role::Taker, Network::Testnet, vec![], dummy_quote());
+            projection::Actor::new(db, Role::Taker, Network::Testnet, dummy_quote())
+                .await
+                .unwrap();
         tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(
