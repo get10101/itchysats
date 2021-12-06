@@ -11,15 +11,12 @@ use maia::{PartyParams, WalletExt};
 use rocket::serde::json::Value;
 
 use std::path::Path;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;
 
 const DUST_AMOUNT: u64 = 546;
 
-#[derive(Clone)]
 pub struct Actor {
-    wallet: Arc<Mutex<bdk::Wallet<ElectrumBlockchain, bdk::database::SqliteDatabase>>>,
+    wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::SqliteDatabase>,
 }
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
@@ -27,7 +24,7 @@ pub struct Actor {
 pub struct TransactionAlreadyInBlockchain;
 
 impl Actor {
-    pub async fn new(
+    pub fn new(
         electrum_rpc_url: &str,
         wallet_dir: &Path,
         ext_priv_key: ExtendedPrivKey,
@@ -45,8 +42,6 @@ impl Actor {
             ElectrumBlockchain::from(client),
         )?;
 
-        let wallet = Arc::new(Mutex::new(wallet));
-
         Ok(Self { wallet })
     }
 
@@ -54,13 +49,8 @@ impl Actor {
     ///
     /// We define this as the maximum amount we can pay to a single output,
     /// given a fee rate.
-    pub async fn max_giveable(
-        &self,
-        locking_script_size: usize,
-        fee_rate: FeeRate,
-    ) -> Result<Amount> {
-        let wallet = self.wallet.lock().await;
-        let balance = wallet.get_balance()?;
+    pub fn max_giveable(&self, locking_script_size: usize, fee_rate: FeeRate) -> Result<Amount> {
+        let balance = self.wallet.get_balance()?;
 
         // TODO: Do we have to deal with the min_relay_fee here as well, i.e. if balance below
         // min_relay_fee we should return Amount::ZERO?
@@ -68,7 +58,7 @@ impl Actor {
             return Ok(Amount::ZERO);
         }
 
-        let mut tx_builder = wallet.build_tx();
+        let mut tx_builder = self.wallet.build_tx();
 
         let dummy_script = Script::from(vec![0u8; locking_script_size]);
         tx_builder.drain_to(dummy_script);
@@ -92,15 +82,14 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    pub async fn handle_sync(&self, _msg: Sync) -> Result<WalletInfo> {
-        let wallet = self.wallet.lock().await;
-        wallet
+    pub fn handle_sync(&mut self, _msg: Sync) -> Result<WalletInfo> {
+        self.wallet
             .sync(NoopProgress, None)
             .context("Failed to sync wallet")?;
 
-        let balance = wallet.get_balance()?;
+        let balance = self.wallet.get_balance()?;
 
-        let address = wallet.get_address(AddressIndex::LastUnused)?.address;
+        let address = self.wallet.get_address(AddressIndex::LastUnused)?.address;
 
         let wallet_info = WalletInfo {
             balance: Amount::from_sat(balance),
@@ -111,11 +100,10 @@ impl Actor {
         Ok(wallet_info)
     }
 
-    pub async fn handle_sign(&self, msg: Sign) -> Result<PartiallySignedTransaction> {
+    pub fn handle_sign(&mut self, msg: Sign) -> Result<PartiallySignedTransaction> {
         let mut psbt = msg.psbt;
-        let wallet = self.wallet.lock().await;
 
-        wallet
+        self.wallet
             .sign(
                 &mut psbt,
                 SignOptions {
@@ -128,26 +116,24 @@ impl Actor {
         Ok(psbt)
     }
 
-    pub async fn build_party_params(
-        &self,
+    pub fn build_party_params(
+        &mut self,
         BuildPartyParams {
             amount,
             identity_pk,
         }: BuildPartyParams,
     ) -> Result<PartyParams> {
-        let wallet = self.wallet.lock().await;
-        wallet.build_party_params(amount, identity_pk)
+        self.wallet.build_party_params(amount, identity_pk)
     }
 
-    pub async fn handle_try_broadcast_transaction(
-        &self,
+    pub fn handle_try_broadcast_transaction(
+        &mut self,
         msg: TryBroadcastTransaction,
     ) -> Result<Txid> {
         let tx = msg.tx;
-        let wallet = self.wallet.lock().await;
         let txid = tx.txid();
 
-        let result = wallet.broadcast(&tx);
+        let result = self.wallet.broadcast(&tx);
 
         if let Err(&bdk::Error::Electrum(electrum_client::Error::Protocol(ref value))) =
             result.as_ref()
@@ -176,16 +162,13 @@ impl Actor {
         Ok(txid)
     }
 
-    pub async fn handle_withdraw(&self, msg: Withdraw) -> Result<Txid> {
-        {
-            let wallet = self.wallet.lock().await;
-            if msg.address.network != wallet.network() {
-                bail!(
-                    "Address has invalid network. It was {} but the wallet is connected to {}",
-                    msg.address.network,
-                    wallet.network()
-                )
-            }
+    pub fn handle_withdraw(&mut self, msg: Withdraw) -> Result<Txid> {
+        if msg.address.network != self.wallet.network() {
+            bail!(
+                "Address has invalid network. It was {} but the wallet is connected to {}",
+                msg.address.network,
+                self.wallet.network()
+            )
         }
 
         let fee_rate = msg.fee.unwrap_or_else(FeeRate::default_min_relay_fee);
@@ -195,15 +178,12 @@ impl Actor {
             amount
         } else {
             self.max_giveable(address.script_pubkey().len(), fee_rate)
-                .await
                 .context("Unable to drain wallet")?
         };
 
         tracing::info!(%amount, %address, "Amount to be sent to address");
 
-        let wallet = self.wallet.lock().await;
-
-        let mut tx_builder = wallet.build_tx();
+        let mut tx_builder = self.wallet.build_tx();
 
         tx_builder
             .add_recipient(address.script_pubkey(), amount.as_sat())
@@ -213,9 +193,9 @@ impl Actor {
 
         let (mut psbt, _) = tx_builder.finish()?;
 
-        wallet.sign(&mut psbt, SignOptions::default())?;
+        self.wallet.sign(&mut psbt, SignOptions::default())?;
 
-        let txid = wallet.broadcast(&psbt.extract_tx())?;
+        let txid = self.wallet.broadcast(&psbt.extract_tx())?;
 
         tracing::info!(%txid, "Withdraw successful");
 
