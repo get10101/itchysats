@@ -25,7 +25,7 @@ type Taker = xtra::Address<taker_cfd::Actor<oracle::Actor, monitor::Actor, walle
 #[rocket::get("/feed")]
 pub async fn feed(
     rx: &State<Feeds>,
-    rx_wallet: &State<watch::Receiver<WalletInfo>>,
+    rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
 ) -> EventStream![] {
     let rx = rx.inner();

@@ -5,7 +5,7 @@ use tokio::sync::watch;
 use tokio::time::sleep;
 use xtra::Address;
 
-pub async fn new(wallet: Address<wallet::Actor>, sender: watch::Sender<WalletInfo>) {
+pub async fn new(wallet: Address<wallet::Actor>, sender: watch::Sender<Option<WalletInfo>>) {
     loop {
         sleep(Duration::from_secs(10)).await;
 
@@ -14,10 +14,10 @@ pub async fn new(wallet: Address<wallet::Actor>, sender: watch::Sender<WalletInf
             .await
             .expect("Wallet actor to be available")
         {
-            Ok(info) => info,
+            Ok(info) => Some(info),
             Err(e) => {
                 tracing::warn!("Failed to sync wallet: {:#}", e);
-                continue;
+                None
             }
         };
 

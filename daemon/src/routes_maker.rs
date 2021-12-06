@@ -29,7 +29,7 @@ pub type Maker = xtra::Address<
 #[rocket::get("/feed")]
 pub async fn maker_feed(
     rx: &State<Feeds>,
-    rx_wallet: &State<watch::Receiver<WalletInfo>>,
+    rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     _auth: Authenticated,
 ) -> EventStream![] {
     let rx = rx.inner();

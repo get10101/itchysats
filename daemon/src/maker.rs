@@ -5,7 +5,6 @@ use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::auth::{self, MAKER_USERNAME};
 use daemon::model::cfd::Role;
-use daemon::model::WalletInfo;
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
@@ -205,7 +204,7 @@ async fn main() -> Result<()> {
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )?;
 
-    let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
+    let (wallet_feed_sender, wallet_feed_receiver) = watch::channel(Some(wallet_info));
 
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))

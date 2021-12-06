@@ -5,7 +5,7 @@ use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::connection::connect;
 use daemon::model::cfd::Role;
-use daemon::model::{Identity, WalletInfo};
+use daemon::model::Identity;
 use daemon::seed::Seed;
 use daemon::tokio_ext::FutureExt;
 use daemon::{
@@ -204,7 +204,7 @@ async fn main() -> Result<()> {
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )?;
 
-    let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
+    let (wallet_feed_sender, wallet_feed_receiver) = watch::channel(Some(wallet_info));
 
     let mut tasks = Tasks::default();
 

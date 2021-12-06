@@ -46,13 +46,13 @@ pub struct WalletInfo {
     last_updated_at: Timestamp,
 }
 
-impl ToSseEvent for model::WalletInfo {
+impl ToSseEvent for Option<model::WalletInfo> {
     fn to_sse_event(&self) -> Event {
-        let wallet_info = WalletInfo {
-            balance: self.balance,
-            address: self.address.to_string(),
-            last_updated_at: self.last_updated_at,
-        };
+        let wallet_info = self.as_ref().map(|wallet_info| WalletInfo {
+            balance: wallet_info.balance,
+            address: wallet_info.address.to_string(),
+            last_updated_at: wallet_info.last_updated_at,
+        });
 
         Event::json(&wallet_info).event("wallet")
     }
