@@ -149,6 +149,10 @@ async fn main() -> Result<()> {
 
     logger::init(opts.log_level, opts.json).context("initialize logger")?;
     tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
+    tracing::info!(
+        "CFDs created with this release will settle after {} hours",
+        SETTLEMENT_INTERVAL.whole_hours()
+    );
 
     let data_dir = opts
         .data_dir
