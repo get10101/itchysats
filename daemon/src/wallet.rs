@@ -178,6 +178,10 @@ impl Actor {
     }
 
     pub fn handle_withdraw(&mut self, msg: Withdraw) -> Result<Txid> {
+        self.wallet
+            .sync(NoopProgress, None)
+            .context("Failed to sync wallet")?;
+
         if msg.address.network != self.wallet.network() {
             bail!(
                 "Address has invalid network. It was {} but the wallet is connected to {}",

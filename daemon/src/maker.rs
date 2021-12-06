@@ -168,9 +168,6 @@ async fn main() -> Result<()> {
     .run();
     let _wallet_handle = wallet_fut.spawn_with_handle();
 
-    // do this before withdraw to ensure the wallet is synced
-    let wallet_info = wallet.send(wallet::Sync).await??;
-
     if let Some(Withdraw::Withdraw {
         amount,
         address,
@@ -204,7 +201,7 @@ async fn main() -> Result<()> {
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )?;
 
-    let (wallet_feed_sender, wallet_feed_receiver) = watch::channel(Some(wallet_info));
+    let (wallet_feed_sender, wallet_feed_receiver) = watch::channel(None);
 
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
