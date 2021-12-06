@@ -1,5 +1,7 @@
 use crate::model::{Timestamp, WalletInfo};
+use crate::Tasks;
 use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
 use bdk::bitcoin::consensus::encode::serialize_hex;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -11,9 +13,10 @@ use bdk::wallet::AddressIndex;
 use bdk::{electrum_client, FeeRate, KeychainKind, SignOptions};
 use maia::{PartyParams, TxBuilderExt};
 use rocket::serde::json::Value;
-
 use std::collections::HashSet;
 use std::path::Path;
+use std::time::Duration;
+use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
 
 const DUST_AMOUNT: u64 = 546;
@@ -21,6 +24,9 @@ const DUST_AMOUNT: u64 = 546;
 pub struct Actor {
     wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::SqliteDatabase>,
     used_utxos: HashSet<OutPoint>,
+    tasks: Tasks,
+    sync_interval: Duration,
+    sender: Option<watch::Sender<Option<WalletInfo>>>,
 }
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
@@ -32,7 +38,7 @@ impl Actor {
         electrum_rpc_url: &str,
         wallet_dir: &Path,
         ext_priv_key: ExtendedPrivKey,
-    ) -> Result<Self> {
+    ) -> Result<(Self, watch::Receiver<Option<WalletInfo>>)> {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
@@ -46,10 +52,16 @@ impl Actor {
             ElectrumBlockchain::from(client),
         )?;
 
-        Ok(Self {
+        let (sender, receiver) = watch::channel(None);
+        let actor = Self {
             wallet,
+            tasks: Tasks::default(),
+            sync_interval: Duration::from_secs(10),
+            sender: Some(sender),
             used_utxos: HashSet::default(),
-        })
+        };
+
+        Ok((actor, receiver))
     }
 
     /// Calculates the maximum "giveable" amount of this wallet.
@@ -222,14 +234,47 @@ impl Actor {
     }
 }
 
-impl xtra::Actor for Actor {}
+#[async_trait]
+impl xtra::Actor for Actor {
+    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        let sender = self
+            .sender
+            .take()
+            .expect("sender to be initialized in ctor");
+        let this = ctx.address().expect("self to be alive");
+        let interval = self.sync_interval;
+
+        self.tasks.add(async move {
+            loop {
+                tokio::time::sleep(interval).await;
+
+                let wallet_info_update = match this.send(Sync).await {
+                    Ok(Ok(wallet_info)) => Some(wallet_info),
+                    Ok(Err(e)) => {
+                        tracing::warn!("Failed to sync wallet: {:#}", e);
+                        None
+                    }
+                    Err(_) => {
+                        return; // we are disconnected, meaning actor stopped, just exit the loop.
+                    }
+                };
+
+                if sender.send(wallet_info_update).is_err() {
+                    tracing::info!("WalletInfo receiver died, exiting sync loop");
+                    return;
+                }
+            }
+        });
+    }
+}
 
 pub struct BuildPartyParams {
     pub amount: Amount,
     pub identity_pk: PublicKey,
 }
 
-pub struct Sync;
+/// Private message to trigger a sync.
+struct Sync;
 
 pub struct Sign {
     pub psbt: PartiallySignedTransaction,
