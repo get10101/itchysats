@@ -16,6 +16,7 @@ import { Route, Routes } from "react-router-dom";
 import { useEventSource } from "react-sse-hooks";
 import useWebSocket from "react-use-websocket";
 import { useBackendMonitor } from "./components/BackendMonitor";
+import Disclaimer from "./components/Disclaimer";
 import Footer from "./components/Footer";
 import History from "./components/History";
 import Nav from "./components/NavBar";
@@ -103,6 +104,7 @@ export const App = () => {
 
     return (
         <>
+            <Disclaimer />
             <Nav walletInfo={walletInfo} connectedToMaker={connectedToMaker} />
             <Box textAlign="center" padding={3}>
                 <Routes>
