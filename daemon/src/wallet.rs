@@ -3,13 +3,16 @@ use anyhow::{bail, Context, Result};
 use bdk::bitcoin::consensus::encode::serialize_hex;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::{Address, Amount, PublicKey, Script, Transaction, Txid};
+use bdk::bitcoin::{Address, Amount, OutPoint, PublicKey, Script, Transaction, Txid};
 use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
+use bdk::database::BatchDatabase;
+use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::AddressIndex;
 use bdk::{electrum_client, FeeRate, KeychainKind, SignOptions};
-use maia::{PartyParams, WalletExt};
+use maia::{PartyParams, TxBuilderExt};
 use rocket::serde::json::Value;
 
+use std::collections::HashSet;
 use std::path::Path;
 use xtra_productivity::xtra_productivity;
 
@@ -17,6 +20,7 @@ const DUST_AMOUNT: u64 = 546;
 
 pub struct Actor {
     wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::SqliteDatabase>,
+    used_utxos: HashSet<OutPoint>,
 }
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
@@ -42,7 +46,10 @@ impl Actor {
             ElectrumBlockchain::from(client),
         )?;
 
-        Ok(Self { wallet })
+        Ok(Self {
+            wallet,
+            used_utxos: HashSet::default(),
+        })
     }
 
     /// Calculates the maximum "giveable" amount of this wallet.
@@ -63,6 +70,7 @@ impl Actor {
         let dummy_script = Script::from(vec![0u8; locking_script_size]);
         tx_builder.drain_to(dummy_script);
         tx_builder.fee_rate(fee_rate);
+        tx_builder.unspendable(self.used_utxos.iter().copied().collect());
         tx_builder.drain_wallet();
 
         let response = tx_builder.finish();
@@ -123,7 +131,14 @@ impl Actor {
             identity_pk,
         }: BuildPartyParams,
     ) -> Result<PartyParams> {
-        self.wallet.build_party_params(amount, identity_pk)
+        let psbt = self.wallet.build_lock_tx(amount, &mut self.used_utxos)?;
+
+        Ok(PartyParams {
+            lock_psbt: psbt,
+            identity_pk,
+            lock_amount: amount,
+            address: self.wallet.get_address(AddressIndex::New)?.address,
+        })
     }
 
     pub fn handle_try_broadcast_transaction(
@@ -258,9 +273,55 @@ impl From<RpcErrorCode> for i64 {
     }
 }
 
+/// Module private trait to faciliate testing.
+///
+/// Implementing this generically on `bdk::Wallet` allows us to call it on a dummy wallet in the
+/// test.
+trait BuildLockTx {
+    fn build_lock_tx(
+        &mut self,
+        amount: Amount,
+        used_utxos: &mut HashSet<OutPoint>,
+    ) -> Result<PartiallySignedTransaction>;
+}
+
+impl<B, D> BuildLockTx for bdk::Wallet<B, D>
+where
+    D: BatchDatabase,
+{
+    fn build_lock_tx(
+        &mut self,
+        amount: Amount,
+        used_utxos: &mut HashSet<OutPoint>,
+    ) -> Result<PartiallySignedTransaction> {
+        let mut builder = self.build_tx();
+
+        builder
+            .ordering(TxOrdering::Bip69Lexicographic) // TODO: I think this is pointless but we did this in maia.
+            .fee_rate(FeeRate::from_sat_per_vb(1.0))
+            .unspendable(used_utxos.iter().copied().collect())
+            .add_2of2_multisig_recipient(amount);
+
+        let (psbt, _) = builder.finish()?;
+
+        let used_inputs = psbt
+            .global
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|input| input.previous_output);
+        used_utxos.extend(used_inputs);
+
+        Ok(psbt)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bdk_ext::new_test_wallet;
+    use rand::thread_rng;
+    use std::collections::HashSet;
 
     #[test]
     fn parse_error_response() {
@@ -269,5 +330,44 @@ mod tests {
         let code = parse_rpc_protocol_error_code(&response).unwrap();
 
         assert_eq!(code, -27);
+    }
+
+    #[test]
+    fn creating_two_lock_transactions_uses_different_utxos() {
+        let mut wallet = new_test_wallet(&mut thread_rng(), Amount::from_sat(1000), 10).unwrap();
+        let mut used_utxos = HashSet::new();
+
+        let lock_tx_1 = wallet
+            .build_lock_tx(Amount::from_sat(2500), &mut used_utxos)
+            .unwrap();
+        let lock_tx_2 = wallet
+            .build_lock_tx(Amount::from_sat(2500), &mut used_utxos)
+            .unwrap();
+
+        let mut utxos_in_transaction = HashSet::new();
+        utxos_in_transaction.extend(
+            lock_tx_1
+                .global
+                .unsigned_tx
+                .input
+                .iter()
+                .map(|i| i.previous_output),
+        );
+        utxos_in_transaction.extend(
+            lock_tx_2
+                .global
+                .unsigned_tx
+                .input
+                .iter()
+                .map(|i| i.previous_output),
+        );
+
+        // 2 TX a 2500 sats with UTXOs worth 1000s = 6 inputs
+        // If there are 6 UTXOs in the HashSet, we know that they are all different (HashSets don't
+        // allow duplicates!)
+        let expected_num_utxos = 6;
+
+        assert_eq!(utxos_in_transaction.len(), expected_num_utxos);
+        assert_eq!(utxos_in_transaction, used_utxos);
     }
 }
