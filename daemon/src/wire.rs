@@ -106,7 +106,10 @@ pub enum MakerToTaker {
         order_id: OrderId,
         msg: SetupMsg,
     },
-    RollOverProtocol(RollOverMsg),
+    RollOverProtocol {
+        order_id: OrderId,
+        msg: RollOverMsg,
+    },
     ConfirmRollOver {
         order_id: OrderId,
         oracle_event_id: BitMexPriceEventId,
@@ -141,7 +144,7 @@ impl fmt::Display for MakerToTaker {
             MakerToTaker::Protocol { .. } => write!(f, "Protocol"),
             MakerToTaker::ConfirmRollOver { .. } => write!(f, "ConfirmRollOver"),
             MakerToTaker::RejectRollOver(_) => write!(f, "RejectRollOver"),
-            MakerToTaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
+            MakerToTaker::RollOverProtocol { .. } => write!(f, "RollOverProtocol"),
             MakerToTaker::Settlement { .. } => write!(f, "Settlement"),
         }
     }

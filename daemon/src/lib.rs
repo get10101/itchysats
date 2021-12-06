@@ -41,6 +41,7 @@ pub mod olivia;
 pub mod oracle;
 pub mod payout_curve;
 pub mod projection;
+pub mod rollover_taker;
 pub mod routes;
 pub mod seed;
 pub mod send_to_socket;
@@ -270,7 +271,7 @@ where
 
         tasks.add(connection_actor_ctx.run(connection::Actor::new(
             maker_online_status_feed_sender,
-            Box::new(cfd_actor_addr.clone()),
+            &cfd_actor_addr,
             identity_sk,
             maker_heartbeat_interval,
             connect_timeout,
