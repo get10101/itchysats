@@ -7,7 +7,6 @@ use daemon::connection::connect;
 use daemon::model::cfd::Role;
 use daemon::model::Identity;
 use daemon::seed::Seed;
-use daemon::tokio_ext::FutureExt;
 use daemon::{
     bitmex_price_feed, db, housekeeping, logger, monitor, oracle, projection, wallet, wallet_sync,
     TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS, SETTLEMENT_INTERVAL,
@@ -170,6 +169,8 @@ async fn main() -> Result<()> {
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
     let (_, identity_sk) = seed.derive_identity();
 
+    let mut tasks = Tasks::default();
+
     let (wallet, wallet_fut) = wallet::Actor::new(
         opts.network.electrum(),
         &data_dir.join("taker_wallet.sqlite"),
@@ -177,7 +178,7 @@ async fn main() -> Result<()> {
     )?
     .create(None)
     .run();
-    let _wallet_handle = wallet_fut.spawn_with_handle();
+    tasks.add(wallet_fut);
 
     if let Some(Withdraw::Withdraw {
         amount,
@@ -202,8 +203,6 @@ async fn main() -> Result<()> {
     )?;
 
     let (wallet_feed_sender, wallet_feed_receiver) = watch::channel(None);
-
-    let mut tasks = Tasks::default();
 
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))

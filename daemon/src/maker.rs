@@ -6,7 +6,6 @@ use clap::{Parser, Subcommand};
 use daemon::auth::{self, MAKER_USERNAME};
 use daemon::model::cfd::Role;
 use daemon::seed::Seed;
-use daemon::tokio_ext::FutureExt;
 use daemon::{
     bitmex_price_feed, db, housekeeping, logger, maker_inc_connections, monitor, oracle,
     projection, wallet, wallet_sync, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
@@ -159,6 +158,8 @@ async fn main() -> Result<()> {
     let bitcoin_network = opts.network.bitcoin_network();
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
 
+    let mut tasks = Tasks::default();
+
     let (wallet, wallet_fut) = wallet::Actor::new(
         opts.network.electrum(),
         &data_dir.join("maker_wallet.sqlite"),
@@ -166,7 +167,7 @@ async fn main() -> Result<()> {
     )?
     .create(None)
     .run();
-    let _wallet_handle = wallet_fut.spawn_with_handle();
+    tasks.add(wallet_fut);
 
     if let Some(Withdraw::Withdraw {
         amount,
@@ -216,8 +217,6 @@ async fn main() -> Result<()> {
     let local_addr = listener.local_addr().unwrap();
 
     tracing::info!("Listening on {}", local_addr);
-
-    let mut tasks = Tasks::default();
 
     let db = SqlitePool::connect_with(
         SqliteConnectOptions::new()
