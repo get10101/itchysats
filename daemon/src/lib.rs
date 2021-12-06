@@ -49,6 +49,7 @@ pub mod olivia;
 pub mod oracle;
 pub mod payout_curve;
 pub mod projection;
+pub mod rollover_maker;
 pub mod rollover_taker;
 pub mod routes;
 pub mod seed;
@@ -122,7 +123,9 @@ where
         + xtra::Handler<maker_inc_connections::ConfirmOrder>
         + xtra::Handler<Stopping<setup_maker::Actor>>
         + xtra::Handler<maker_inc_connections::settlement::Response>
-        + xtra::Handler<Stopping<collab_settlement_maker::Actor>>,
+        + xtra::Handler<Stopping<collab_settlement_maker::Actor>>
+        + xtra::Handler<Stopping<rollover_maker::Actor>>
+        + xtra::Handler<maker_cfd::RollOverProposed>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>,

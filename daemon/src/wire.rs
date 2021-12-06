@@ -86,7 +86,10 @@ pub enum TakerToMaker {
         order_id: OrderId,
         msg: SetupMsg,
     },
-    RollOverProtocol(RollOverMsg),
+    RollOverProtocol {
+        order_id: OrderId,
+        msg: RollOverMsg,
+    },
     Settlement {
         order_id: OrderId,
         msg: taker_to_maker::Settlement,
@@ -99,7 +102,7 @@ impl fmt::Display for TakerToMaker {
             TakerToMaker::TakeOrder { .. } => write!(f, "TakeOrder"),
             TakerToMaker::Protocol { .. } => write!(f, "Protocol"),
             TakerToMaker::ProposeRollOver { .. } => write!(f, "ProposeRollOver"),
-            TakerToMaker::RollOverProtocol(_) => write!(f, "RollOverProtocol"),
+            TakerToMaker::RollOverProtocol { .. } => write!(f, "RollOverProtocol"),
             TakerToMaker::Settlement { .. } => write!(f, "Settlement"),
             TakerToMaker::Hello(_) => write!(f, "Hello"),
         }

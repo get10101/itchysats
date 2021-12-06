@@ -10,6 +10,7 @@ use crate::model::cfd::OrderId;
 use crate::model::Identity;
 use crate::noise;
 use crate::noise::TransportStateExt;
+use crate::rollover_maker;
 use crate::send_to_socket;
 use crate::setup_maker;
 use crate::tokio_ext::FutureExt;
@@ -105,6 +106,7 @@ pub struct Actor {
     heartbeat_interval: Duration,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
+    rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
     connection_tasks: HashMap<Identity, Tasks>,
 }
 
@@ -125,6 +127,7 @@ impl Actor {
             heartbeat_interval,
             setup_actors: AddressMap::default(),
             settlement_actors: AddressMap::default(),
+            rollover_actors: AddressMap::default(),
             connection_tasks: HashMap::new(),
         }
     }
@@ -330,6 +333,11 @@ impl Actor {
 
         self.drop_taker_connection(&taker_id).await;
     }
+
+    async fn handle_rollover_proposed(&mut self, message: maker_cfd::RollOverProposed) {
+        self.rollover_actors
+            .insert(message.order_id, message.address);
+    }
 }
 
 #[xtra_productivity(message_impl = false)]
@@ -345,6 +353,16 @@ impl Actor {
                     tracing::error!(%order_id, "No active contract setup");
                 }
             },
+            RollOverProtocol { order_id, msg } => {
+                if self
+                    .rollover_actors
+                    .send(&order_id, rollover_maker::ProtocolMsg(msg))
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!(%order_id, "No active rollover actor")
+                }
+            }
             Settlement {
                 order_id,
                 msg: taker_to_maker::Settlement::Initiate { sig_taker },
@@ -366,6 +384,10 @@ impl Actor {
 
     async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
         self.setup_actors.gc(message);
+    }
+
+    async fn handle_rollover_actor_stopping(&mut self, message: Stopping<rollover_maker::Actor>) {
+        self.rollover_actors.gc(message);
     }
 
     async fn handle_settlement_actor_stopping(
