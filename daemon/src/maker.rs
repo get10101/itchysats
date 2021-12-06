@@ -8,7 +8,7 @@ use daemon::model::cfd::Role;
 use daemon::seed::Seed;
 use daemon::{
     bitmex_price_feed, db, housekeeping, logger, maker_inc_connections, monitor, oracle,
-    projection, wallet, wallet_sync, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
+    projection, wallet, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
     SETTLEMENT_INTERVAL,
 };
 use sqlx::sqlite::SqliteConnectOptions;
@@ -17,7 +17,6 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::task::Poll;
-use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::Actor;
 
@@ -160,13 +159,13 @@ async fn main() -> Result<()> {
 
     let mut tasks = Tasks::default();
 
-    let (wallet, wallet_fut) = wallet::Actor::new(
+    let (wallet, wallet_feed_receiver) = wallet::Actor::new(
         opts.network.electrum(),
         &data_dir.join("maker_wallet.sqlite"),
         ext_priv_key,
-    )?
-    .create(None)
-    .run();
+    )?;
+
+    let (wallet, wallet_fut) = wallet.create(None).run();
     tasks.add(wallet_fut);
 
     if let Some(Withdraw::Withdraw {
@@ -201,8 +200,6 @@ async fn main() -> Result<()> {
     let oracle = schnorrsig::PublicKey::from_str(
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )?;
-
-    let (wallet_feed_sender, wallet_feed_receiver) = watch::channel(None);
 
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
@@ -289,7 +286,6 @@ async fn main() -> Result<()> {
     });
 
     tasks.add(incoming_connection_addr.attach_stream(listener_stream));
-    tasks.add(wallet_sync::new(wallet.clone(), wallet_feed_sender));
 
     rocket::custom(figment)
         .manage(projection_feeds)

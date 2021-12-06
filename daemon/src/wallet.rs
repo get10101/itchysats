@@ -1,5 +1,7 @@
 use crate::model::{Timestamp, WalletInfo};
+use crate::Tasks;
 use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
 use bdk::bitcoin::consensus::encode::serialize_hex;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -11,9 +13,10 @@ use bdk::wallet::AddressIndex;
 use bdk::{electrum_client, FeeRate, KeychainKind, SignOptions};
 use maia::{PartyParams, TxBuilderExt};
 use rocket::serde::json::Value;
-
 use std::collections::HashSet;
 use std::path::Path;
+use std::time::Duration;
+use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
 
 const DUST_AMOUNT: u64 = 546;
@@ -21,6 +24,8 @@ const DUST_AMOUNT: u64 = 546;
 pub struct Actor {
     wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::SqliteDatabase>,
     used_utxos: HashSet<OutPoint>,
+    tasks: Tasks,
+    sender: watch::Sender<Option<WalletInfo>>,
 }
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
@@ -32,7 +37,7 @@ impl Actor {
         electrum_rpc_url: &str,
         wallet_dir: &Path,
         ext_priv_key: ExtendedPrivKey,
-    ) -> Result<Self> {
+    ) -> Result<(Self, watch::Receiver<Option<WalletInfo>>)> {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
@@ -46,10 +51,15 @@ impl Actor {
             ElectrumBlockchain::from(client),
         )?;
 
-        Ok(Self {
+        let (sender, receiver) = watch::channel(None);
+        let actor = Self {
             wallet,
+            tasks: Tasks::default(),
+            sender,
             used_utxos: HashSet::default(),
-        })
+        };
+
+        Ok((actor, receiver))
     }
 
     /// Calculates the maximum "giveable" amount of this wallet.
@@ -86,11 +96,8 @@ impl Actor {
             Err(e) => bail!("Failed to build transaction. {:#}", e),
         }
     }
-}
 
-#[xtra_productivity]
-impl Actor {
-    pub fn handle_sync(&mut self, _msg: Sync) -> Result<WalletInfo> {
+    fn sync_internal(&mut self) -> Result<WalletInfo> {
         self.wallet
             .sync(NoopProgress, None)
             .context("Failed to sync wallet")?;
@@ -106,6 +113,24 @@ impl Actor {
         };
 
         Ok(wallet_info)
+    }
+}
+
+#[xtra_productivity]
+impl Actor {
+    pub fn handle_sync(&mut self, _msg: Sync) -> Result<()> {
+        let wallet_info_update = match self.sync_internal() {
+            Ok(wallet_info) => Some(wallet_info),
+            Err(e) => {
+                tracing::debug!("{:#}", e);
+
+                None
+            }
+        };
+
+        let _ = self.sender.send(wallet_info_update);
+
+        Ok(())
     }
 
     pub fn handle_sign(&mut self, msg: Sign) -> Result<PartiallySignedTransaction> {
@@ -222,14 +247,30 @@ impl Actor {
     }
 }
 
-impl xtra::Actor for Actor {}
+#[async_trait]
+impl xtra::Actor for Actor {
+    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        let this = ctx.address().expect("self to be alive");
+
+        self.tasks.add(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+
+                if this.send(Sync).await.is_err() {
+                    return; // we are disconnected, meaning actor stopped, just exit the loop.
+                }
+            }
+        });
+    }
+}
 
 pub struct BuildPartyParams {
     pub amount: Amount,
     pub identity_pk: PublicKey,
 }
 
-pub struct Sync;
+/// Private message to trigger a sync.
+struct Sync;
 
 pub struct Sign {
     pub psbt: PartiallySignedTransaction,
