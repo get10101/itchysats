@@ -75,7 +75,7 @@ pub const N_PAYOUTS: usize = 200;
 /// - How the oracle event id is chosen when creating an order (maker)
 /// - The sliding window of cached oracle announcements (maker, taker)
 /// - The auto-rollover time-window (taker)
-pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(2);
+pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::days(7);
 
 /// Struct controlling the lifetime of the async tasks,
 /// such as running actors and periodic notifications.
