@@ -1,3 +1,4 @@
+import { ExternalLinkIcon } from "@chakra-ui/icons";
 import {
     Button,
     Link,
@@ -9,6 +10,7 @@ import {
     ModalHeader,
     ModalOverlay,
     Text,
+    useColorModeValue,
     useDisclosure,
 } from "@chakra-ui/react";
 import React, { useEffect, useState } from "react";
@@ -20,6 +22,8 @@ export default function Disclaimer() {
     const [ack, setAck] = useState<boolean>(false);
 
     const { isOpen, onOpen, onClose } = useDisclosure();
+
+    const iconColor = useColorModeValue("white.200", "white.600");
 
     useEffect(() => {
         if (!ack) {
@@ -49,6 +53,7 @@ export default function Disclaimer() {
                             isExternal
                         >
                             this guide!
+                            <ExternalLinkIcon mx="2px" color={iconColor} />
                         </Link>
                         <Text>Additionally, CFD trading is inherently risky: so don't get rekt</Text>
                     </ModalBody>
