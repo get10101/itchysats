@@ -33,6 +33,7 @@ pub struct SetupParams {
     quantity: Usd,
     leverage: Leverage,
     refund_timelock: u32,
+    fee_rate: u32,
 }
 
 impl SetupParams {
@@ -43,6 +44,7 @@ impl SetupParams {
         quantity: Usd,
         leverage: Leverage,
         refund_timelock: u32,
+        fee_rate: u32,
     ) -> Self {
         Self {
             margin,
@@ -51,6 +53,7 @@ impl SetupParams {
             quantity,
             leverage,
             refund_timelock,
+            fee_rate,
         }
     }
 }
@@ -76,6 +79,7 @@ pub async fn new(
         .send(wallet::BuildPartyParams {
             amount: setup_params.margin,
             identity_pk: pk,
+            fee_rate: setup_params.fee_rate,
         })
         .await
         .context("Failed to send message to wallet actor")?
@@ -129,6 +133,7 @@ pub async fn new(
         (model::cfd::Cfd::CET_TIMELOCK, setup_params.refund_timelock),
         payouts,
         sk,
+        setup_params.fee_rate,
     )
     .context("Failed to create CFD transactions")?;
 
@@ -312,15 +317,23 @@ pub struct RolloverParams {
     quantity: Usd,
     leverage: Leverage,
     refund_timelock: u32,
+    fee_rate: u32,
 }
 
 impl RolloverParams {
-    pub fn new(price: Price, quantity: Usd, leverage: Leverage, refund_timelock: u32) -> Self {
+    pub fn new(
+        price: Price,
+        quantity: Usd,
+        leverage: Leverage,
+        refund_timelock: u32,
+        fee_rate: u32,
+    ) -> Self {
         Self {
             price,
             quantity,
             leverage,
             refund_timelock,
+            fee_rate,
         }
     }
 }
@@ -419,6 +432,7 @@ pub async fn roll_over(
         ),
         payouts,
         sk,
+        rollover_params.fee_rate,
     )
     .context("Failed to create new CFD transactions")?;
 

@@ -152,9 +152,14 @@ impl Actor {
         BuildPartyParams {
             amount,
             identity_pk,
+            fee_rate,
         }: BuildPartyParams,
     ) -> Result<PartyParams> {
-        let psbt = self.wallet.build_lock_tx(amount, &mut self.used_utxos)?;
+        let psbt = self.wallet.build_lock_tx(
+            amount,
+            &mut self.used_utxos,
+            FeeRate::from_sat_per_vb(fee_rate as f32),
+        )?;
 
         Ok(PartyParams {
             lock_psbt: psbt,
@@ -265,6 +270,7 @@ impl xtra::Actor for Actor {
 pub struct BuildPartyParams {
     pub amount: Amount,
     pub identity_pk: PublicKey,
+    pub fee_rate: u32,
 }
 
 /// Private message to trigger a sync.
@@ -325,6 +331,7 @@ trait BuildLockTx {
         &mut self,
         amount: Amount,
         used_utxos: &mut HashSet<OutPoint>,
+        fee_rate: FeeRate,
     ) -> Result<PartiallySignedTransaction>;
 }
 
@@ -336,12 +343,13 @@ where
         &mut self,
         amount: Amount,
         used_utxos: &mut HashSet<OutPoint>,
+        fee_rate: FeeRate,
     ) -> Result<PartiallySignedTransaction> {
         let mut builder = self.build_tx();
 
         builder
             .ordering(TxOrdering::Bip69Lexicographic) // TODO: I think this is pointless but we did this in maia.
-            .fee_rate(FeeRate::from_sat_per_vb(1.0))
+            .fee_rate(fee_rate)
             .unspendable(used_utxos.iter().copied().collect())
             .add_2of2_multisig_recipient(amount);
 
@@ -381,10 +389,18 @@ mod tests {
         let mut used_utxos = HashSet::new();
 
         let lock_tx_1 = wallet
-            .build_lock_tx(Amount::from_sat(2500), &mut used_utxos)
+            .build_lock_tx(
+                Amount::from_sat(2500),
+                &mut used_utxos,
+                FeeRate::default_min_relay_fee(),
+            )
             .unwrap();
         let lock_tx_2 = wallet
-            .build_lock_tx(Amount::from_sat(2500), &mut used_utxos)
+            .build_lock_tx(
+                Amount::from_sat(2500),
+                &mut used_utxos,
+                FeeRate::default_min_relay_fee(),
+            )
             .unwrap();
 
         let mut utxos_in_transaction = HashSet::new();

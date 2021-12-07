@@ -58,6 +58,7 @@ pub struct NewOrder {
     pub price: Price,
     pub min_quantity: Usd,
     pub max_quantity: Usd,
+    pub fee_rate: u32,
 }
 
 pub struct TakerConnected {
@@ -739,6 +740,7 @@ where
                 cfd.quantity_usd,
                 cfd.order.leverage,
                 cfd.refund_timelock_in_blocks(),
+                cfd.order.fee_rate,
             ),
             Role::Maker,
             dlc,
@@ -908,6 +910,7 @@ where
             price,
             min_quantity,
             max_quantity,
+            fee_rate,
         } = msg;
 
         let oracle_event_id = oracle::next_announcement_after(
@@ -921,6 +924,7 @@ where
             Origin::Ours,
             oracle_event_id,
             self.settlement_interval,
+            fee_rate,
         )?;
 
         // 1. Save to DB

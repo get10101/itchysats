@@ -91,6 +91,7 @@ pub struct CfdNewOrderRequest {
     // always 1 USD
     pub min_quantity: Usd,
     pub max_quantity: Usd,
+    pub fee_rate: Option<u32>,
 }
 
 #[rocket::post("/order/sell", data = "<order>")]
@@ -104,6 +105,7 @@ pub async fn post_sell_order(
             price: order.price,
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
+            fee_rate: order.fee_rate.unwrap_or(1),
         })
         .await
         .unwrap_or_else(|e| anyhow::bail!(e))
