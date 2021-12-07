@@ -55,7 +55,6 @@ pub mod tokio_ext;
 pub mod try_continue;
 pub mod tx;
 pub mod wallet;
-pub mod wallet_sync;
 pub mod wire;
 
 // Certain operations (e.g. contract setup) take long time in debug mode,
@@ -115,7 +114,6 @@ where
         + xtra::Handler<maker_inc_connections::ConfirmOrder>
         + xtra::Handler<Stopping<setup_maker::Actor>>,
     W: xtra::Handler<wallet::BuildPartyParams>
-        + xtra::Handler<wallet::Sync>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>,
 {
@@ -222,7 +220,6 @@ where
         + xtra::Handler<monitor::CollaborativeSettlement>
         + xtra::Handler<oracle::Attestation>,
     W: xtra::Handler<wallet::BuildPartyParams>
-        + xtra::Handler<wallet::Sync>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>,
 {

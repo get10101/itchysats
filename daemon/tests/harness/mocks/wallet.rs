@@ -28,10 +28,6 @@ impl WalletActor {
     async fn handle(&mut self, msg: wallet::BuildPartyParams) -> Result<PartyParams> {
         self.mock.lock().await.build_party_params(msg)
     }
-    async fn handle(&mut self, msg: wallet::Sync) -> Result<WalletInfo> {
-        tracing::info!("We are handling the wallet sync msg");
-        self.mock.lock().await.sync(msg)
-    }
     async fn handle(&mut self, msg: wallet::Sign) -> Result<PartiallySignedTransaction> {
         self.mock.lock().await.sign(msg)
     }
@@ -51,10 +47,6 @@ pub trait Wallet {
     }
 
     fn broadcast(&mut self, _msg: wallet::TryBroadcastTransaction) -> Result<Txid> {
-        unreachable!("mockall will reimplement this method")
-    }
-
-    fn sync(&mut self, _msg: wallet::Sync) -> Result<WalletInfo> {
         unreachable!("mockall will reimplement this method")
     }
 }

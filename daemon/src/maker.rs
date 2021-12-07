@@ -5,12 +5,10 @@ use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::auth::{self, MAKER_USERNAME};
 use daemon::model::cfd::Role;
-use daemon::model::WalletInfo;
 use daemon::seed::Seed;
-use daemon::tokio_ext::FutureExt;
 use daemon::{
     bitmex_price_feed, db, housekeeping, logger, maker_inc_connections, monitor, oracle,
-    projection, wallet, wallet_sync, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
+    projection, wallet, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
     SETTLEMENT_INTERVAL,
 };
 use sqlx::sqlite::SqliteConnectOptions;
@@ -19,7 +17,6 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::task::Poll;
-use tokio::sync::watch;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::Actor;
 
@@ -160,17 +157,12 @@ async fn main() -> Result<()> {
     let bitcoin_network = opts.network.bitcoin_network();
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
 
-    let (wallet, wallet_fut) = wallet::Actor::new(
-        opts.network.electrum(),
-        &data_dir.join("maker_wallet.sqlite"),
-        ext_priv_key,
-    )?
-    .create(None)
-    .run();
-    let _wallet_handle = wallet_fut.spawn_with_handle();
+    let mut tasks = Tasks::default();
 
-    // do this before withdraw to ensure the wallet is synced
-    let wallet_info = wallet.send(wallet::Sync).await??;
+    let (wallet, wallet_feed_receiver) = wallet::Actor::new(opts.network.electrum(), ext_priv_key)?;
+
+    let (wallet, wallet_fut) = wallet.create(None).run();
+    tasks.add(wallet_fut);
 
     if let Some(Withdraw::Withdraw {
         amount,
@@ -205,8 +197,6 @@ async fn main() -> Result<()> {
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
     )?;
 
-    let (wallet_feed_sender, wallet_feed_receiver) = watch::channel::<WalletInfo>(wallet_info);
-
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()));
@@ -220,8 +210,6 @@ async fn main() -> Result<()> {
     let local_addr = listener.local_addr().unwrap();
 
     tracing::info!("Listening on {}", local_addr);
-
-    let mut tasks = Tasks::default();
 
     let db = SqlitePool::connect_with(
         SqliteConnectOptions::new()
@@ -294,7 +282,6 @@ async fn main() -> Result<()> {
     });
 
     tasks.add(incoming_connection_addr.attach_stream(listener_stream));
-    tasks.add(wallet_sync::new(wallet.clone(), wallet_feed_sender));
 
     rocket::custom(figment)
         .manage(projection_feeds)
