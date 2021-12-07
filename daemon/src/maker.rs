@@ -159,11 +159,7 @@ async fn main() -> Result<()> {
 
     let mut tasks = Tasks::default();
 
-    let (wallet, wallet_feed_receiver) = wallet::Actor::new(
-        opts.network.electrum(),
-        &data_dir.join("maker_wallet.sqlite"),
-        ext_priv_key,
-    )?;
+    let (wallet, wallet_feed_receiver) = wallet::Actor::new(opts.network.electrum(), ext_priv_key)?;
 
     let (wallet, wallet_fut) = wallet.create(None).run();
     tasks.add(wallet_fut);

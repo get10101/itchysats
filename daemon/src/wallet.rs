@@ -14,7 +14,6 @@ use bdk::{electrum_client, FeeRate, KeychainKind, SignOptions};
 use maia::{PartyParams, TxBuilderExt};
 use rocket::serde::json::Value;
 use std::collections::HashSet;
-use std::path::Path;
 use std::time::Duration;
 use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
@@ -22,7 +21,7 @@ use xtra_productivity::xtra_productivity;
 const DUST_AMOUNT: u64 = 546;
 
 pub struct Actor {
-    wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::SqliteDatabase>,
+    wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::MemoryDatabase>,
     used_utxos: HashSet<OutPoint>,
     tasks: Tasks,
     sender: watch::Sender<Option<WalletInfo>>,
@@ -35,13 +34,12 @@ pub struct TransactionAlreadyInBlockchain;
 impl Actor {
     pub fn new(
         electrum_rpc_url: &str,
-        wallet_dir: &Path,
         ext_priv_key: ExtendedPrivKey,
     ) -> Result<(Self, watch::Receiver<Option<WalletInfo>>)> {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
-        let db = bdk::database::SqliteDatabase::new(wallet_dir.display().to_string());
+        let db = bdk::database::MemoryDatabase::new();
 
         let wallet = bdk::Wallet::new(
             bdk::template::Bip84(ext_priv_key, KeychainKind::External),
