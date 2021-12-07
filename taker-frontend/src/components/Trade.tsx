@@ -214,13 +214,20 @@ export default function Trade({
                                 padding="3"
                                 spacing="6"
                             >
-                                <Button colorScheme="red" size="lg" disabled h={16}>
+                                <Button colorScheme="red" size="lg" disabled h={16} w={"40"}>
                                     <VStack>
                                         <Text as="b">Short</Text>
                                         <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
                                     </VStack>
                                 </Button>
-                                <Button disabled={!canSubmit} colorScheme="green" size="lg" onClick={onOpen} h={16}>
+                                <Button
+                                    disabled={!canSubmit}
+                                    colorScheme="green"
+                                    size="lg"
+                                    onClick={onOpen}
+                                    h={16}
+                                    w={"40"}
+                                >
                                     <VStack>
                                         <Text as="b">Long</Text>
                                         <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
