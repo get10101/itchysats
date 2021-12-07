@@ -490,7 +490,7 @@ pub struct Cfd {
 
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub profit_btc: SignedAmount,
-    pub profit_in_percent: String,
+    pub profit_percent: String,
 
     pub state: CfdState,
     pub actions: Vec<CfdAction>,
@@ -511,7 +511,7 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
             .cfds
             .iter()
             .map(|cfd| {
-                let (profit_btc, profit_in_percent) =
+                let (profit_btc, profit_percent) =
                     cfd.profit(current_price).unwrap_or_else(|error| {
                         tracing::warn!(
                             "Calculating profit/loss failed. Falling back to 0. {:#}",
@@ -532,7 +532,7 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
                     liquidation_price: cfd.order.liquidation_price.into(),
                     quantity_usd: cfd.quantity_usd.into(),
                     profit_btc,
-                    profit_in_percent: profit_in_percent.round_dp(1).to_string(),
+                    profit_percent: profit_percent.round_dp(1).to_string(),
                     state: state.clone(),
                     actions: available_actions(state, cfd.role()),
                     state_transition_timestamp: cfd.state.get_transition_timestamp().seconds(),
