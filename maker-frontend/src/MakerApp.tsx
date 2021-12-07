@@ -47,8 +47,8 @@ export default function App() {
 
     const toast = useToast();
 
-    let [minQuantity, setMinQuantity] = useState<string>("10");
-    let [maxQuantity, setMaxQuantity] = useState<string>("100");
+    let [minQuantity, setMinQuantity] = useState<string>("100");
+    let [maxQuantity, setMaxQuantity] = useState<string>("1000");
     let [orderPrice, setOrderPrice] = useState<string>("0");
     let [autoRefresh, setAutoRefresh] = useState(true);
 
