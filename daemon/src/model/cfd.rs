@@ -123,6 +123,8 @@ pub struct Order {
     ///
     /// The maker includes this into the Order based on the Oracle announcement to be used.
     pub oracle_event_id: BitMexPriceEventId,
+
+    pub fee_rate: u32,
 }
 
 impl Order {
@@ -133,6 +135,7 @@ impl Order {
         origin: Origin,
         oracle_event_id: BitMexPriceEventId,
         settlement_interval: Duration,
+        fee_rate: u32,
     ) -> Result<Self> {
         let leverage = Leverage::new(2)?;
         let liquidation_price = calculate_long_liquidation_price(leverage, price);
@@ -150,6 +153,7 @@ impl Order {
             settlement_interval,
             origin,
             oracle_event_id,
+            fee_rate,
         })
     }
 }

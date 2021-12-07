@@ -5,7 +5,6 @@ resolver = "2"
 [patch.crates-io]
 rocket = { git = "https://github.com/SergioBenitez/Rocket" } # Need to patch rocket dependency of `rocket_basicauth` until there is an official release.
 xtra = { git = "https://github.com/Restioson/xtra" } # We need to use unreleased patches.
-secp256k1-zkp = { git = "https://github.com/ElementsProject/rust-secp256k1-zkp" } # We need to use unreleased patches.
-maia = { git = "https://github.com/comit-network/maia", branch = "temp-bdk-dependency" } # Unreleased
+maia = { git = "https://github.com/comit-network/maia" } # Unreleased
 xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity" } # Unreleased
 bdk = { git = "https://github.com/bitcoindevkit/bdk" } # Unreleased

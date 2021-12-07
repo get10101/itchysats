@@ -403,6 +403,7 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
         price: dummy_price(),
         min_quantity: Usd::new(dec!(5)),
         max_quantity: Usd::new(dec!(100)),
+        fee_rate: 1,
     }
 }
 

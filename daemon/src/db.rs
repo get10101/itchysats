@@ -25,8 +25,9 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
             creation_timestamp_seconds,
             settlement_time_interval_seconds,
             origin,
-            oracle_event_id
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
+            oracle_event_id,
+            fee_rate
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#,
     )
     .bind(&order.id)
     .bind(&order.trading_pair)
@@ -40,6 +41,7 @@ pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> a
     .bind(&order.settlement_interval.whole_seconds())
     .bind(&order.origin)
     .bind(&order.oracle_event_id)
+    .bind(&order.fee_rate)
     .execute(conn)
     .await?;
 
@@ -68,7 +70,8 @@ pub async fn load_order_by_id(
             creation_timestamp_seconds as "ts_secs: crate::model::Timestamp",
             settlement_time_interval_seconds as "settlement_time_interval_secs: i64",
             origin as "origin: crate::model::cfd::Origin",
-            oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId"
+            oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
+            fee_rate as "fee_rate: u32"
         from
             orders
         where
@@ -92,6 +95,7 @@ pub async fn load_order_by_id(
         settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
         origin: row.origin,
         oracle_event_id: row.oracle_event_id,
+        fee_rate: row.fee_rate,
     })
 }
 
@@ -241,7 +245,8 @@ pub async fn load_cfd_by_order_id(
                 creation_timestamp_seconds as ts_secs,
                 settlement_time_interval_seconds as settlement_time_interval_secs,
                 origin,
-                oracle_event_id
+                oracle_event_id,
+                fee_rate
             from orders
         ),
 
@@ -283,6 +288,7 @@ pub async fn load_cfd_by_order_id(
             ord.settlement_time_interval_secs as "settlement_time_interval_secs: i64",
             ord.origin as "origin: crate::model::cfd::Origin",
             ord.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
+            ord.fee_rate as "fee_rate: u32",
             state.quantity_usd as "quantity_usd: crate::model::Usd",
             state.state
 
@@ -309,6 +315,7 @@ pub async fn load_cfd_by_order_id(
         settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
         origin: row.origin,
         oracle_event_id: row.oracle_event_id,
+        fee_rate: row.fee_rate,
     };
 
     // TODO:
@@ -339,7 +346,8 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 creation_timestamp_seconds as ts_secs,
                 settlement_time_interval_seconds as settlement_time_interval_secs,
                 origin,
-                oracle_event_id
+                oracle_event_id,
+                fee_rate
             from orders
         ),
 
@@ -381,6 +389,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             ord.settlement_time_interval_secs as "settlement_time_interval_secs: i64",
             ord.origin as "origin: crate::model::cfd::Origin",
             ord.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
+            ord.fee_rate as "fee_rate: u32",
             state.quantity_usd as "quantity_usd: crate::model::Usd",
             state.state
 
@@ -407,6 +416,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
                 origin: row.origin,
                 oracle_event_id: row.oracle_event_id,
+                fee_rate: row.fee_rate,
             };
 
             Ok(Cfd {
@@ -442,7 +452,8 @@ pub async fn load_cfds_by_oracle_event_id(
                 creation_timestamp_seconds as ts_secs,
                 settlement_time_interval_seconds as settlement_time_interval_secs,
                 origin,
-                oracle_event_id
+                oracle_event_id,
+                fee_rate
             from orders
         ),
 
@@ -484,6 +495,7 @@ pub async fn load_cfds_by_oracle_event_id(
             ord.settlement_time_interval_secs as "settlement_time_interval_secs: i64",
             ord.origin as "origin: crate::model::cfd::Origin",
             ord.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
+            ord.fee_rate as "fee_rate: u32",
             state.quantity_usd as "quantity_usd: crate::model::Usd",
             state.state
 
@@ -513,6 +525,7 @@ pub async fn load_cfds_by_oracle_event_id(
                 settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
                 origin: row.origin,
                 oracle_event_id: row.oracle_event_id,
+                fee_rate: row.fee_rate,
             };
 
             Ok(Cfd {
@@ -770,6 +783,7 @@ mod tests {
                 Origin::Theirs,
                 BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
                 time::Duration::hours(24),
+                1,
             )
             .unwrap()
         }

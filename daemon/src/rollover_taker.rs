@@ -108,6 +108,7 @@ impl Actor {
                 self.cfd.quantity_usd,
                 self.cfd.order.leverage,
                 self.cfd.refund_timelock_in_blocks(),
+                self.cfd.order.fee_rate,
             ),
             Role::Taker,
             self.cfd.dlc().context("No DLC in CFD")?,

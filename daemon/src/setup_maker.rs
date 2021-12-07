@@ -94,6 +94,7 @@ impl Actor {
                 cfd.quantity_usd,
                 cfd.order.leverage,
                 cfd.refund_timelock_in_blocks(),
+                cfd.order.fee_rate,
             ),
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
