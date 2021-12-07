@@ -309,6 +309,7 @@ function Quantity({ min, max, onChange, quantity, quantityIncrement }: QuantityP
                     step={quantityIncrement}
                     onChange={onChange}
                     value={quantity}
+                    w={"100%"}
                 >
                     <NumberInputField />
                     <NumberInputStepper>
