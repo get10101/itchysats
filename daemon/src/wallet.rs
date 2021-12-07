@@ -4,11 +4,11 @@ use bdk::bitcoin::consensus::encode::serialize_hex;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Amount, OutPoint, PublicKey, Script, Transaction, Txid};
-use bdk::blockchain::{ElectrumBlockchain, NoopProgress};
+use bdk::blockchain::{EsploraBlockchain, NoopProgress};
 use bdk::database::BatchDatabase;
 use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::AddressIndex;
-use bdk::{electrum_client, FeeRate, KeychainKind, SignOptions};
+use bdk::{FeeRate, KeychainKind, SignOptions};
 use maia::{PartyParams, TxBuilderExt};
 use rocket::serde::json::Value;
 
@@ -19,7 +19,7 @@ use xtra_productivity::xtra_productivity;
 const DUST_AMOUNT: u64 = 546;
 
 pub struct Actor {
-    wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::SqliteDatabase>,
+    wallet: bdk::Wallet<EsploraBlockchain, bdk::database::SqliteDatabase>,
     used_utxos: HashSet<OutPoint>,
 }
 
@@ -33,9 +33,6 @@ impl Actor {
         wallet_dir: &Path,
         ext_priv_key: ExtendedPrivKey,
     ) -> Result<Self> {
-        let client = bdk::electrum_client::Client::new(electrum_rpc_url)
-            .context("Failed to initialize Electrum RPC client")?;
-
         let db = bdk::database::SqliteDatabase::new(wallet_dir.display().to_string());
 
         let wallet = bdk::Wallet::new(
@@ -43,7 +40,7 @@ impl Actor {
             Some(bdk::template::Bip84(ext_priv_key, KeychainKind::Internal)),
             ext_priv_key.network,
             db,
-            ElectrumBlockchain::from(client),
+            EsploraBlockchain::new(electrum_rpc_url, 20),
         )?;
 
         Ok(Self {
@@ -150,21 +147,22 @@ impl Actor {
 
         let result = self.wallet.broadcast(&tx);
 
-        if let Err(&bdk::Error::Electrum(electrum_client::Error::Protocol(ref value))) =
-            result.as_ref()
-        {
-            let error_code = parse_rpc_protocol_error_code(value).with_context(|| {
-                format!("Failed to parse electrum error response '{:?}'", value)
-            })?;
+        // TODO: Reintroduce this.
+        // if let Err(&bdk::Error::Electrum(electrum_client::Error::Protocol(ref value))) =
+        //     result.as_ref()
+        // {
+        //     let error_code = parse_rpc_protocol_error_code(value).with_context(|| {
+        //         format!("Failed to parse electrum error response '{:?}'", value)
+        //     })?;
 
-            if error_code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
-                tracing::trace!(
-                    %txid, "Attempted to broadcast transaction that was already on-chain",
-                );
+        //     if error_code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
+        //         tracing::trace!(
+        //             %txid, "Attempted to broadcast transaction that was already on-chain",
+        //         );
 
-                return Ok(txid);
-            }
-        }
+        //         return Ok(txid);
+        //     }
+        // }
 
         let txid = result.with_context(|| {
             format!(

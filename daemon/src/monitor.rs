@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bdk::bitcoin::{PublicKey, Script, Txid};
 use bdk::descriptor::Descriptor;
-use bdk::electrum_client::{ElectrumApi, GetHistoryRes, HeaderNotification};
 use bdk::miniscript::DescriptorTrait;
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
@@ -41,7 +40,7 @@ pub struct MonitorParams {
 
 pub struct Sync;
 
-pub struct Actor<C = bdk::electrum_client::Client> {
+pub struct Actor<C = bdk::blockchain::EsploraBlockchain> {
     cfds: HashMap<OrderId, MonitorParams>,
     event_channel: Box<dyn StrongMessageChannel<Event>>,
     client: C,
@@ -50,7 +49,7 @@ pub struct Actor<C = bdk::electrum_client::Client> {
     awaiting_status: HashMap<(Txid, Script), Vec<(ScriptStatus, Event)>>,
 }
 
-impl Actor<bdk::electrum_client::Client> {
+impl Actor<bdk::blockchain::EsploraBlockchain> {
     pub async fn new(
         electrum_rpc_url: String,
         event_channel: Box<dyn StrongMessageChannel<Event>>,
