@@ -1,5 +1,4 @@
-use crate::model::cfd::{Cfd, CfdState, Completed, Dlc, Order, OrderId, Role};
-use crate::model::{Identity, Usd};
+use crate::model::cfd::{Cfd, CfdState, Completed, Dlc, OrderId, Role};
 use crate::oracle::Announcement;
 use crate::setup_contract::{self, SetupParams};
 use crate::tokio_ext::spawn_fallible;
@@ -14,8 +13,7 @@ use xtra::prelude::*;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
-    order: Order,
-    quantity: Usd,
+    cfd: Cfd,
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
     announcement: Announcement,
@@ -25,24 +23,21 @@ pub struct Actor {
     on_accepted: Box<dyn MessageChannel<Started>>,
     on_completed: Box<dyn MessageChannel<Completed>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
-    maker_identity: Identity,
 }
 
 impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        (order, quantity, n_payouts): (Order, Usd, usize),
+        (cfd, n_payouts): (Cfd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
         maker: xtra::Address<connection::Actor>,
         on_accepted: &(impl MessageChannel<Started> + 'static),
         on_completed: &(impl MessageChannel<Completed> + 'static),
-        maker_identity: Identity,
     ) -> Self {
         Self {
-            order,
-            quantity,
+            cfd,
             n_payouts,
             oracle_pk,
             announcement,
@@ -52,7 +47,6 @@ impl Actor {
             on_accepted: on_accepted.clone_channel(),
             on_completed: on_completed.clone_channel(),
             setup_msg_sender: None,
-            maker_identity,
         }
     }
 }
@@ -60,19 +54,15 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     fn handle(&mut self, _: Accepted, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let order_id = self.order.id;
+        let order_id = self.cfd.id;
+
+        self.cfd.state = CfdState::contract_setup();
+
         tracing::info!(%order_id, "Order got accepted");
 
         // inform the `taker_cfd::Actor` about the start of contract
         // setup, so that the db and UI can be updated accordingly
         self.on_accepted.send(Started(order_id)).await?;
-
-        let cfd = Cfd::new(
-            self.order.clone(),
-            self.quantity,
-            CfdState::contract_setup(),
-            self.maker_identity,
-        );
 
         let (sender, receiver) = mpsc::unbounded::<SetupMsg>();
         // store the writing end to forward messages from the maker to
@@ -85,13 +75,13 @@ impl Actor {
             receiver,
             (self.oracle_pk, self.announcement.clone()),
             SetupParams::new(
-                cfd.margin()?,
-                cfd.counterparty_margin()?,
-                cfd.order.price,
-                cfd.quantity_usd,
-                cfd.order.leverage,
-                cfd.refund_timelock_in_blocks(),
-                cfd.order.fee_rate,
+                self.cfd.margin()?,
+                self.cfd.counterparty_margin()?,
+                self.cfd.price,
+                self.cfd.quantity_usd,
+                self.cfd.leverage,
+                self.cfd.refund_timelock_in_blocks(),
+                self.cfd.fee_rate,
             ),
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
@@ -113,7 +103,7 @@ impl Actor {
     }
 
     fn handle(&mut self, msg: Rejected, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let order_id = self.order.id;
+        let order_id = self.cfd.id;
         tracing::info!(%order_id, "Order got rejected");
 
         if msg.is_invalid_order {
@@ -175,14 +165,14 @@ impl xtra::Actor for Actor {
         let res = self
             .maker
             .send(connection::TakeOrder {
-                order_id: self.order.id,
-                quantity: self.quantity,
+                order_id: self.cfd.id,
+                quantity: self.cfd.quantity_usd,
                 address,
             })
             .await;
 
         if let Err(e) = res {
-            tracing::warn!(%self.order.id, "Stopping setup_taker actor: {}", e);
+            tracing::warn!(%self.cfd.id, "Stopping setup_taker actor: {}", e);
             ctx.stop()
         }
     }

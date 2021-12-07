@@ -533,6 +533,7 @@ impl str::FromStr for BitMexPriceEventId {
 impl_sqlx_type_display_from_str!(BitMexPriceEventId);
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[sqlx(transparent)]
 pub struct Timestamp(i64);
 
 impl Timestamp {

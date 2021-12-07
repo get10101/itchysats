@@ -79,66 +79,66 @@ impl Actor<bdk::electrum_client::Client> {
                 // In PendingOpen we know the complete dlc setup and assume that the lock transaction will be published
                 CfdState::PendingOpen { dlc, .. } => {
                     let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
-                    actor.cfds.insert(cfd.order.id, params.clone());
-                    actor.monitor_all(&params, cfd.order.id);
+                    actor.cfds.insert(cfd.id, params.clone());
+                    actor.monitor_all(&params, cfd.id);
                 }
                 CfdState::Open { dlc, .. } | CfdState::PendingCommit { dlc, .. } => {
                     let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
-                    actor.cfds.insert(cfd.order.id, params.clone());
+                    actor.cfds.insert(cfd.id, params.clone());
 
-                    actor.monitor_commit_finality(&params, cfd.order.id);
-                    actor.monitor_commit_cet_timelock(&params, cfd.order.id);
-                    actor.monitor_commit_refund_timelock(&params, cfd.order.id);
-                    actor.monitor_refund_finality(&params,cfd.order.id);
+                    actor.monitor_commit_finality(&params, cfd.id);
+                    actor.monitor_commit_cet_timelock(&params, cfd.id);
+                    actor.monitor_commit_refund_timelock(&params, cfd.id);
+                    actor.monitor_refund_finality(&params,cfd.id);
 
                     if let Some(model::cfd::CollaborativeSettlement { tx, ..}
                     ) = cfd.state.get_collaborative_close()  {
                         let close_params = (tx.txid(),
                             tx.output.first().context("transaction has zero outputs")?.script_pubkey.clone());
-                        actor.monitor_close_finality(close_params,cfd.order.id);
+                        actor.monitor_close_finality(close_params,cfd.id);
                     }
                 }
                 CfdState::OpenCommitted { dlc, cet_status, .. } => {
                     let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
-                    actor.cfds.insert(cfd.order.id, params.clone());
+                    actor.cfds.insert(cfd.id, params.clone());
 
                     match cet_status {
                         CetStatus::Unprepared => {
-                            actor.monitor_commit_cet_timelock(&params, cfd.order.id);
-                            actor.monitor_commit_refund_timelock(&params, cfd.order.id);
-                            actor.monitor_refund_finality(&params,cfd.order.id);
+                            actor.monitor_commit_cet_timelock(&params, cfd.id);
+                            actor.monitor_commit_refund_timelock(&params, cfd.id);
+                            actor.monitor_refund_finality(&params,cfd.id);
                         }
                         CetStatus::OracleSigned(attestation) => {
-                            actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.order.id)?;
-                            actor.monitor_commit_cet_timelock(&params, cfd.order.id);
-                            actor.monitor_commit_refund_timelock(&params, cfd.order.id);
-                            actor.monitor_refund_finality(&params,cfd.order.id);
+                            actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.id)?;
+                            actor.monitor_commit_cet_timelock(&params, cfd.id);
+                            actor.monitor_commit_refund_timelock(&params, cfd.id);
+                            actor.monitor_refund_finality(&params,cfd.id);
                         }
                         CetStatus::TimelockExpired => {
-                            actor.monitor_commit_refund_timelock(&params, cfd.order.id);
-                            actor.monitor_refund_finality(&params,cfd.order.id);
+                            actor.monitor_commit_refund_timelock(&params, cfd.id);
+                            actor.monitor_refund_finality(&params,cfd.id);
                         }
                         CetStatus::Ready(attestation) => {
-                            actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.order.id)?;
-                            actor.monitor_commit_refund_timelock(&params, cfd.order.id);
-                            actor.monitor_refund_finality(&params,cfd.order.id);
+                            actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.id)?;
+                            actor.monitor_commit_refund_timelock(&params, cfd.id);
+                            actor.monitor_refund_finality(&params,cfd.id);
                         }
                     }
                 }
                 CfdState::PendingCet { dlc, attestation, .. } => {
                     let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
-                    actor.cfds.insert(cfd.order.id, params.clone());
+                    actor.cfds.insert(cfd.id, params.clone());
 
-                    actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.order.id)?;
-                    actor.monitor_commit_refund_timelock(&params, cfd.order.id);
-                    actor.monitor_refund_finality(&params,cfd.order.id);
+                    actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.id)?;
+                    actor.monitor_commit_refund_timelock(&params, cfd.id);
+                    actor.monitor_refund_finality(&params,cfd.id);
                 }
                 CfdState::PendingRefund { dlc, .. } => {
                     let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
-                    actor.cfds.insert(cfd.order.id, params.clone());
+                    actor.cfds.insert(cfd.id, params.clone());
 
-                    actor.monitor_commit_refund_timelock(&params, cfd.order.id);
-                    actor.monitor_refund_finality(&params,cfd.order.id);
+                    actor.monitor_commit_refund_timelock(&params, cfd.id);
+                    actor.monitor_refund_finality(&params,cfd.id);
                 }
 
                 // too early to monitor

@@ -41,7 +41,7 @@ impl Actor {
         if !self.cfd.is_collaborative_settle_possible() {
             anyhow::bail!(
                 "Settlement proposal not possible because for cfd {} is in state {} which cannot be collaboratively settled",
-                self.cfd.order.id,
+                self.cfd.id,
                 self.cfd.state
             )
         }
@@ -53,7 +53,7 @@ impl Actor {
                 maker: self.proposal.maker,
                 price: self.proposal.price,
                 address: this,
-                order_id: self.cfd.order.id,
+                order_id: self.cfd.id,
             })
             .await??;
 
@@ -64,7 +64,7 @@ impl Actor {
     }
 
     async fn handle_confirmed(&mut self) -> Result<CollaborativeSettlement> {
-        let order_id = self.cfd.order.id;
+        let order_id = self.cfd.id;
 
         tracing::info!(%order_id, "Settlement proposal got accepted");
 
@@ -93,7 +93,7 @@ impl Actor {
     }
 
     async fn handle_rejected(&mut self) -> Result<()> {
-        let order_id = self.cfd.order.id;
+        let order_id = self.cfd.id;
 
         tracing::info!(%order_id, "Settlement proposal got rejected");
 
@@ -108,7 +108,7 @@ impl Actor {
     ) -> Result<()> {
         self.projection
             .send(projection::UpdateSettlementProposal {
-                order: self.cfd.order.id,
+                order: self.cfd.id,
                 proposal,
             })
             .await?;
@@ -131,7 +131,7 @@ impl xtra::Actor for Actor {
         if let Err(e) = self.propose(this).await {
             self.complete(
                 Completed::Failed {
-                    order_id: self.cfd.order.id,
+                    order_id: self.cfd.id,
                     error: e,
                 },
                 ctx,
@@ -170,7 +170,7 @@ impl Actor {
         msg: wire::maker_to_taker::Settlement,
         ctx: &mut xtra::Context<Self>,
     ) {
-        let order_id = self.cfd.order.id;
+        let order_id = self.cfd.id;
 
         let completed = match msg {
             wire::maker_to_taker::Settlement::Confirm => match self.handle_confirmed().await {
