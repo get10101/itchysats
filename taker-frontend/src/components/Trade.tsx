@@ -156,133 +156,135 @@ export default function Trade({
     }
 
     return (
-        <Center>
-            <Grid
-                templateRows="repeat(1, 1fr)"
-                templateColumns="repeat(1, 1fr)"
-                gap={4}
-            >
-                <GridItem colSpan={1}>
-                    <Center>
-                        <MotionBox
-                            variants={{
-                                pulse: {
-                                    scale: [1, 1.05, 1],
-                                },
-                            }}
-                            // @ts-ignore: lint is complaining but should be fine :)
-                            transition={{
-                                // type: "spring",
-                                ease: "linear",
-                                duration: 2,
-                                repeat: Infinity,
-                            }}
-                            animate={"pulse"}
-                        >
-                            <Circle size="256px" bg={outerCircleBg}>
-                                <Circle size="180px" bg={innerCircleBg}>
-                                    <MotionBox>
-                                        <Skeleton isLoaded={!!referencePriceAsNumber && referencePriceAsNumber > 0}>
-                                            <Text fontSize={"4xl"} as="b">{referencePrice}</Text>
-                                        </Skeleton>
-                                    </MotionBox>
+        <VStack>
+            <Center>
+                <Grid
+                    templateRows="repeat(1, 1fr)"
+                    templateColumns="repeat(1, 1fr)"
+                    gap={4}
+                >
+                    <GridItem colSpan={1}>
+                        <Center>
+                            <MotionBox
+                                variants={{
+                                    pulse: {
+                                        scale: [1, 1.05, 1],
+                                    },
+                                }}
+                                // @ts-ignore: lint is complaining but should be fine :)
+                                transition={{
+                                    // type: "spring",
+                                    ease: "linear",
+                                    duration: 2,
+                                    repeat: Infinity,
+                                }}
+                                animate={"pulse"}
+                            >
+                                <Circle size="256px" bg={outerCircleBg}>
+                                    <Circle size="180px" bg={innerCircleBg}>
+                                        <MotionBox>
+                                            <Skeleton isLoaded={!!referencePriceAsNumber && referencePriceAsNumber > 0}>
+                                                <Text fontSize={"4xl"} as="b">{referencePrice}</Text>
+                                            </Skeleton>
+                                        </MotionBox>
+                                    </Circle>
                                 </Circle>
-                            </Circle>
-                        </MotionBox>
-                    </Center>
-                </GridItem>
-                <GridItem colSpan={1}>
-                    <Quantity
-                        min={minQuantity}
-                        max={maxQuantity}
-                        quantity={quantity}
-                        onChange={onQuantityChange}
-                        quantityIncrement={quantityIncrement}
-                    />
-                </GridItem>
-                <GridItem colSpan={1}>
-                    <Leverage leverage={leverage} />
-                </GridItem>
-                <GridItem colSpan={1}>
-                    <Margin margin={margin} />
-                </GridItem>
-                <GridItem colSpan={1}>
-                    <Center>
-                        <ButtonGroup
-                            variant="solid"
-                            padding="3"
-                            spacing="6"
-                        >
-                            <Button colorScheme="red" size="lg" disabled h={16}>
-                                <VStack>
-                                    <Text as="b">Short</Text>
-                                    <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
-                                </VStack>
-                            </Button>
-                            <Button disabled={!canSubmit} colorScheme="green" size="lg" onClick={onOpen} h={16}>
-                                <VStack>
-                                    <Text as="b">Long</Text>
-                                    <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
-                                </VStack>
-                            </Button>
+                            </MotionBox>
+                        </Center>
+                    </GridItem>
+                    <GridItem colSpan={1}>
+                        <Quantity
+                            min={minQuantity}
+                            max={maxQuantity}
+                            quantity={quantity}
+                            onChange={onQuantityChange}
+                            quantityIncrement={quantityIncrement}
+                        />
+                    </GridItem>
+                    <GridItem colSpan={1}>
+                        <Leverage leverage={leverage} />
+                    </GridItem>
+                    <GridItem colSpan={1}>
+                        <Margin margin={margin} />
+                    </GridItem>
+                    <GridItem colSpan={1}>
+                        <Center>
+                            <ButtonGroup
+                                variant="solid"
+                                padding="3"
+                                spacing="6"
+                            >
+                                <Button colorScheme="red" size="lg" disabled h={16}>
+                                    <VStack>
+                                        <Text as="b">Short</Text>
+                                        <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
+                                    </VStack>
+                                </Button>
+                                <Button disabled={!canSubmit} colorScheme="green" size="lg" onClick={onOpen} h={16}>
+                                    <VStack>
+                                        <Text as="b">Long</Text>
+                                        <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
+                                    </VStack>
+                                </Button>
 
-                            <Modal isOpen={isOpen} onClose={onClose}>
-                                <ModalOverlay />
-                                <ModalContent>
-                                    <ModalHeader>
-                                        Market buy <b>{quantity}</b> of BTC/USD @ <b>{askPrice}</b>
-                                    </ModalHeader>
-                                    <ModalCloseButton />
-                                    <ModalBody>
-                                        <Table variant="striped" colorScheme="gray" size="sm">
-                                            <TableCaption>
-                                                By submitting, ₿{margin} will be locked on-chain in a contract.
-                                            </TableCaption>
-                                            <Tbody>
-                                                <Tr>
-                                                    <Td><Text as={"b"}>Margin</Text></Td>
-                                                    <Td>₿{margin}</Td>
-                                                </Tr>
-                                                <Tr>
-                                                    <Td><Text as={"b"}>Leverage</Text></Td>
-                                                    <Td>{leverage}</Td>
-                                                </Tr>
-                                                <Tr>
-                                                    <Td><Text as={"b"}>Liquidation Price</Text></Td>
-                                                    <Td>{liquidationPrice}</Td>
-                                                </Tr>
-                                            </Tbody>
-                                        </Table>
-                                    </ModalBody>
+                                <Modal isOpen={isOpen} onClose={onClose}>
+                                    <ModalOverlay />
+                                    <ModalContent>
+                                        <ModalHeader>
+                                            Market buy <b>{quantity}</b> of BTC/USD @ <b>{askPrice}</b>
+                                        </ModalHeader>
+                                        <ModalCloseButton />
+                                        <ModalBody>
+                                            <Table variant="striped" colorScheme="gray" size="sm">
+                                                <TableCaption>
+                                                    By submitting, ₿{margin} will be locked on-chain in a contract.
+                                                </TableCaption>
+                                                <Tbody>
+                                                    <Tr>
+                                                        <Td><Text as={"b"}>Margin</Text></Td>
+                                                        <Td>₿{margin}</Td>
+                                                    </Tr>
+                                                    <Tr>
+                                                        <Td><Text as={"b"}>Leverage</Text></Td>
+                                                        <Td>{leverage}</Td>
+                                                    </Tr>
+                                                    <Tr>
+                                                        <Td><Text as={"b"}>Liquidation Price</Text></Td>
+                                                        <Td>{liquidationPrice}</Td>
+                                                    </Tr>
+                                                </Tbody>
+                                            </Table>
+                                        </ModalBody>
 
-                                    <ModalFooter>
-                                        <HStack>
-                                            <Button
-                                                colorScheme="teal"
-                                                isLoading={isLongSubmitting}
-                                                onClick={() => {
-                                                    const quantityAsNumber = quantity.replace("$", "");
+                                        <ModalFooter>
+                                            <HStack>
+                                                <Button
+                                                    colorScheme="teal"
+                                                    isLoading={isLongSubmitting}
+                                                    onClick={() => {
+                                                        const quantityAsNumber = quantity.replace("$", "");
 
-                                                    let payload: CfdOrderRequestPayload = {
-                                                        order_id: orderId!,
-                                                        quantity: Number.parseFloat(quantityAsNumber),
-                                                    };
-                                                    onLongSubmit(payload);
-                                                    onClose();
-                                                }}
-                                            >
-                                                Confirm
-                                            </Button>
-                                        </HStack>
-                                    </ModalFooter>
-                                </ModalContent>
-                            </Modal>
-                        </ButtonGroup>
-                    </Center>
-                    {alertBox}
-                </GridItem>
-            </Grid>
-        </Center>
+                                                        let payload: CfdOrderRequestPayload = {
+                                                            order_id: orderId!,
+                                                            quantity: Number.parseFloat(quantityAsNumber),
+                                                        };
+                                                        onLongSubmit(payload);
+                                                        onClose();
+                                                    }}
+                                                >
+                                                    Confirm
+                                                </Button>
+                                            </HStack>
+                                        </ModalFooter>
+                                    </ModalContent>
+                                </Modal>
+                            </ButtonGroup>
+                        </Center>
+                    </GridItem>
+                </Grid>
+            </Center>
+            {alertBox}
+        </VStack>
     );
 }
 
