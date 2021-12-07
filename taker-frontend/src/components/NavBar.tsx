@@ -1,5 +1,16 @@
 import { HamburgerIcon, MoonIcon, SunIcon } from "@chakra-ui/icons";
 import {
+    AlertDialog,
+    AlertDialogBody,
+    AlertDialogContent,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogOverlay,
+    Icon,
+    IconButton,
+    Tooltip,
+} from "@chakra-ui/react";
+import {
     Box,
     Button,
     Flex,
@@ -13,11 +24,14 @@ import {
     useColorMode,
     useColorModeValue,
 } from "@chakra-ui/react";
+import { FocusableElement } from "@chakra-ui/utils";
 import * as React from "react";
+import { RiRestartLine } from "react-icons/ri";
 import { useNavigate } from "react-router-dom";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
 import { ConnectionCloseReason, ConnectionStatus, WalletInfo } from "../types";
+import usePostRequest from "../usePostRequest";
 
 interface NavProps {
     walletInfo: WalletInfo | null;
@@ -50,6 +64,8 @@ export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
         }
     }
 
+    let [forceStop, _] = usePostRequest<{}, {}>("/api/force-stop");
+
     return (
         <>
             <Box bg={useColorModeValue("gray.100", "gray.900")} px={4}>
@@ -74,6 +90,7 @@ export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
                             <Button onClick={toggleColorMode} bg={"transparent"}>
                                 {toggleIcon}
                             </Button>
+                            <ForceStopBackendButton onClick={() => forceStop({})} />
                             <Box>
                                 <Button bg={"transparent"} onClick={() => navigate("/")}>
                                     {navBarLog}
@@ -85,4 +102,63 @@ export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
             </Box>
         </>
     );
+}
+
+interface ForceStopBackendButtonProps {
+    onClick: () => void;
+}
+
+function ForceStopBackendButton({ onClick }: ForceStopBackendButtonProps) {
+    const [isOpen, setIsOpen] = React.useState(false);
+    const onClose = () => setIsOpen(false);
+    const cancelRef = React.useRef();
+
+    return <>
+        <Tooltip label="Force-stop the application">
+            <IconButton
+                aria-label="Force-stop"
+                onClick={() => {
+                    setIsOpen(true);
+                }}
+                icon={<Icon as={RiRestartLine} />}
+            />
+        </Tooltip>
+
+        <AlertDialog
+            isOpen={isOpen}
+            // @ts-ignore: I don't know what you want ...
+            leastDestructiveRef={cancelRef}
+            onClose={onClose}
+        >
+            <AlertDialogOverlay>
+                <AlertDialogContent>
+                    <AlertDialogHeader fontSize="lg" fontWeight="bold">
+                        Force-stop the application
+                    </AlertDialogHeader>
+
+                    <AlertDialogBody>
+                        Have you tried turning it off and on again? Force-stopping the application will trigger a
+                        restart which might help fix certain problems. Please refresh the page manually afterwards.
+                    </AlertDialogBody>
+
+                    <AlertDialogFooter>
+                        {/*@ts-ignore: I don't know what you want ...*/}
+                        <Button ref={cancelRef} onClick={onClose}>
+                            Cancel
+                        </Button>
+                        <Button
+                            colorScheme="red"
+                            onClick={() => {
+                                onClick();
+                                onClose();
+                            }}
+                            ml={3}
+                        >
+                            Force-stop
+                        </Button>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialogOverlay>
+        </AlertDialog>
+    </>;
 }

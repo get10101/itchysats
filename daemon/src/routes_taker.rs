@@ -236,3 +236,12 @@ pub async fn post_withdraw_request(
 
     Ok(tx::to_mempool_url(txid, *network.inner()))
 }
+
+/// A route for force-stopping the application.
+/// We purposely don't use rocket's `Shutdown` functionality here because that performs a graceful
+/// shutdown. In case the application is monitored by a supervising process like docker-compose or
+/// systemd, this will trigger a restart.
+#[rocket::post("/force-stop")]
+pub fn force_stop() {
+    std::process::exit(1);
+}

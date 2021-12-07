@@ -292,6 +292,7 @@ async fn main() -> Result<()> {
                 routes_taker::margin_calc,
                 routes_taker::post_cfd_action,
                 routes_taker::post_withdraw_request,
+                routes_taker::force_stop,
             ],
         )
         .mount(
