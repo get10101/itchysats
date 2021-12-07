@@ -13,6 +13,7 @@ import {
 } from "@chakra-ui/react";
 import * as React from "react";
 import { Cfd, StateGroupKey, StateKey } from "../types";
+import Timestamp from "./Timestamp";
 
 interface Props {
     cfd: Cfd;
@@ -44,8 +45,10 @@ export default function CloseButton({ cfd, request, status, action }: Props) {
                     <PopoverCloseButton />
                     <PopoverBody>
                         <Text>
-                            This will {action} your position with the counterparty. The exchange rate at {cfd
-                                .expiry_timestamp}
+                            This will {action.toLowerCase()} your position with the counterparty. The exchange rate at
+                        </Text>
+                        <Timestamp timestamp={cfd.expiry_timestamp} />
+                        <Text>
                             will determine your profit/losses. It is likely that the rate will change until then.
                         </Text>
                     </PopoverBody>
