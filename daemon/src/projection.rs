@@ -42,19 +42,14 @@ pub struct Actor {
 }
 
 pub struct Feeds {
-    pub quote: watch::Receiver<Quote>,
+    pub quote: watch::Receiver<Option<Quote>>,
     pub order: watch::Receiver<Option<CfdOrder>>,
     pub connected_takers: watch::Receiver<Vec<Identity>>,
     pub cfds: watch::Receiver<Vec<Cfd>>,
 }
 
 impl Actor {
-    pub async fn new(
-        db: sqlx::SqlitePool,
-        role: Role,
-        network: Network,
-        init_quote: bitmex_price_feed::Quote,
-    ) -> Result<(Self, Feeds)> {
+    pub async fn new(db: sqlx::SqlitePool, role: Role, network: Network) -> Result<(Self, Feeds)> {
         let mut conn = db.acquire().await?;
         let init_cfds = db::load_all_cfds(&mut conn).await?;
 
@@ -63,12 +58,12 @@ impl Actor {
             network,
             cfds: init_cfds,
             proposals: HashMap::new(),
-            quote: Some(init_quote.clone()),
+            quote: None,
         };
 
         let (tx_cfds, rx_cfds) = watch::channel(state.to_cfds());
         let (tx_order, rx_order) = watch::channel(None);
-        let (tx_quote, rx_quote) = watch::channel(init_quote.into());
+        let (tx_quote, rx_quote) = watch::channel(None);
         let (tx_connected_takers, rx_connected_takers) = watch::channel(Vec::new());
 
         Ok((
@@ -96,7 +91,7 @@ impl Actor {
 struct Tx {
     pub cfds: watch::Sender<Vec<Cfd>>,
     pub order: watch::Sender<Option<CfdOrder>>,
-    pub quote: watch::Sender<Quote>,
+    pub quote: watch::Sender<Option<Quote>>,
     // TODO: Use this channel to communicate maker status as well with generic
     // ID of connected counterparties
     pub connected_takers: watch::Sender<Vec<Identity>>,
@@ -175,7 +170,7 @@ impl Actor {
     fn handle(&mut self, msg: Update<bitmex_price_feed::Quote>) {
         let quote = msg.0;
         self.state.update_quote(quote.clone());
-        let _ = self.tx.quote.send(quote.into());
+        let _ = self.tx.quote.send(Some(quote.into()));
         let _ = self.tx.cfds.send(self.state.to_cfds());
     }
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {

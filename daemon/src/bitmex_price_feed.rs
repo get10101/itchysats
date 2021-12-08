@@ -43,7 +43,7 @@ impl Actor {
         self.tasks.add(connect_until_successful(this));
     }
 
-    async fn handle(&mut self, _: Connect, ctx: &mut xtra::Context<Self>) -> Result<Quote> {
+    async fn handle(&mut self, _: Connect, ctx: &mut xtra::Context<Self>) -> Result<()> {
         tracing::debug!("Connecting to BitMex realtime API");
 
         let (connection, _) = tokio_tungstenite::connect_async(URL).await?;
@@ -54,8 +54,6 @@ impl Actor {
             .fuse();
 
         tracing::info!("Connected to BitMex realtime API");
-
-        let initial_quote = quotes.select_next_some().await?;
 
         let this = ctx.address().expect("we are alive");
 
@@ -78,7 +76,7 @@ impl Actor {
             }
         });
 
-        Ok(initial_quote)
+        Ok(())
     }
 }
 
