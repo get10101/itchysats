@@ -43,21 +43,16 @@ export const App = () => {
     const toast = useToast();
     useBackendMonitor(toast, 5000, "Please start the taker again to reconnect..."); // 5s timeout
 
-    const {
-        lastMessage,
-        readyState,
-    } = useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
-        // Will attempt to reconnect on all close events, such as server shutting down
+    let [referencePrice, setReferencePrice] = useState<number>();
+    useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
         shouldReconnect: () => true,
+        onMessage: (message) => {
+            const data: BXBTData[] = JSON.parse(message.data).data;
+            if (data && data[0]?.markPrice) {
+                setReferencePrice(data[0].markPrice);
+            }
+        },
     });
-
-    let referencePrice;
-    if (readyState === 1 && lastMessage) {
-        const data: BXBTData[] = JSON.parse(lastMessage.data).data;
-        if (data && data[0]?.markPrice) {
-            referencePrice = data[0].markPrice;
-        }
-    }
 
     let source = useEventSource({ source: "/api/feed" });
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");

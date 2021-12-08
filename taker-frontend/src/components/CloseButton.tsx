@@ -19,14 +19,33 @@ interface Props {
     cfd: Cfd;
     request: (req: any) => void;
     status: boolean;
-    action: String;
+    isForceCloseButton: boolean;
+    buttonTitle: String;
 }
 
 /// Button that can be used to trigger non-collaborative close if the maker is offline and collaborative close if the
 /// maker is online.
-export default function CloseButton({ cfd, request, status, action }: Props) {
+export default function CloseButton({ cfd, request, status, buttonTitle, isForceCloseButton }: Props) {
     const disableCloseButton = cfd.state.getGroup() === StateGroupKey.CLOSED
         || !(cfd.state.key === StateKey.OPEN);
+
+    let popoverBody = <>
+        <Text>
+            This will close your position with the counterparty. The current exchange rate will determine your
+            profit/losses.
+        </Text>
+    </>;
+    if (isForceCloseButton) {
+        popoverBody = <>
+            <Text>
+                This will force close your position with the counterparty. The exchange rate at
+            </Text>
+            <Timestamp timestamp={cfd.expiry_timestamp} />
+            <Text>
+                will determine your profit/losses. It is likely that the rate will change until then.
+            </Text>
+        </>;
+    }
 
     return <Box w={"45%"}>
         <Popover
@@ -35,22 +54,16 @@ export default function CloseButton({ cfd, request, status, action }: Props) {
         >
             {({ onClose }) => (<>
                 <PopoverTrigger>
-                    <Button colorScheme={"blue"} disabled={disableCloseButton}>{action}</Button>
+                    <Button colorScheme={"blue"} disabled={disableCloseButton}>{buttonTitle}</Button>
                 </PopoverTrigger>
                 <PopoverContent color="white" bg="blue.800" borderColor="blue.800">
                     <PopoverHeader pt={4} fontWeight="bold" border="0">
-                        {action} your position
+                        {buttonTitle} your position
                     </PopoverHeader>
                     <PopoverArrow />
                     <PopoverCloseButton />
                     <PopoverBody>
-                        <Text>
-                            This will {action.toLowerCase()} your position with the counterparty. The exchange rate at
-                        </Text>
-                        <Timestamp timestamp={cfd.expiry_timestamp} />
-                        <Text>
-                            will determine your profit/losses. It is likely that the rate will change until then.
-                        </Text>
+                        {popoverBody}
                     </PopoverBody>
                     <PopoverFooter
                         border="0"
@@ -69,7 +82,7 @@ export default function CloseButton({ cfd, request, status, action }: Props) {
                             }}
                             isLoading={status}
                         >
-                            {action}
+                            {buttonTitle}
                         </Button>
                     </PopoverFooter>
                 </PopoverContent>
