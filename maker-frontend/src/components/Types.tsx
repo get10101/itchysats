@@ -50,6 +50,8 @@ export interface Cfd {
     state_transition_timestamp: number;
     details: CfdDetails;
     expiry_timestamp: number;
+
+    counterparty: string;
 }
 
 export interface CfdDetails {

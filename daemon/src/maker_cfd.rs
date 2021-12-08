@@ -478,6 +478,7 @@ where
                 },
                 taker_id,
             },
+            taker_id,
         );
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
 

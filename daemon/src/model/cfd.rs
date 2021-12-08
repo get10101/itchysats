@@ -577,16 +577,19 @@ pub struct Cfd {
     pub order: Order,
     pub quantity_usd: Usd,
     pub state: CfdState,
+
+    pub counterparty: Identity,
     /* TODO: Leverage is currently derived from the Order, but the actual leverage should be
      * stored in the Cfd once there is multiple choices of leverage */
 }
 
 impl Cfd {
-    pub fn new(order: Order, quantity: Usd, state: CfdState) -> Self {
+    pub fn new(order: Order, quantity: Usd, state: CfdState, counterparty: Identity) -> Self {
         Cfd {
             order,
             quantity_usd: quantity,
             state,
+            counterparty,
         }
     }
 
