@@ -2,7 +2,7 @@ use crate::address_map::{AddressMap, Stopping};
 use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_update_feed};
 use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
 use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Completed, Order, OrderId, Origin, Role};
-use crate::model::{Price, Usd};
+use crate::model::{Identity, Price, Usd};
 use crate::monitor::{self, MonitorParams};
 use crate::{
     collab_settlement_taker, connection, log_error, oracle, projection, rollover_taker,
@@ -48,6 +48,7 @@ pub struct Actor<O, M, W> {
     oracle_actor: Address<O>,
     n_payouts: usize,
     tasks: Tasks,
+    maker_identity: Identity,
 }
 
 impl<O, M, W> Actor<O, M, W>
@@ -66,6 +67,7 @@ where
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
         n_payouts: usize,
+        maker_identity: Identity,
     ) -> Self {
         Self {
             db,
@@ -80,6 +82,7 @@ where
             collab_settlement_actors: AddressMap::default(),
             rollover_actors: AddressMap::default(),
             tasks: Tasks::default(),
+            maker_identity,
         }
     }
 }
@@ -295,6 +298,7 @@ where
             current_order.clone(),
             quantity,
             CfdState::outgoing_order_request(),
+            self.maker_identity,
         );
 
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
@@ -321,6 +325,7 @@ where
             self.conn_actor.clone(),
             &this,
             &this,
+            self.maker_identity,
         )
         .create(None)
         .run();

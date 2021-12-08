@@ -162,6 +162,8 @@ async fn main() -> Result<()> {
         tokio::fs::create_dir_all(&data_dir).await?;
     }
 
+    let maker_identity = Identity::new(opts.maker_id);
+
     let seed = Seed::initialize(&data_dir.join("taker_seed")).await?;
 
     let bitcoin_network = opts.network.bitcoin_network();
@@ -238,6 +240,7 @@ async fn main() -> Result<()> {
         HEARTBEAT_INTERVAL * 2,
         Duration::from_secs(10),
         projection_actor.clone(),
+        maker_identity,
     )
     .await?;
 
@@ -259,7 +262,7 @@ async fn main() -> Result<()> {
     tasks.add(connect(
         maker_online_status_feed_receiver.clone(),
         connection_actor_addr,
-        Identity::new(opts.maker_id),
+        maker_identity,
         possible_addresses,
     ));
 

@@ -500,6 +500,8 @@ pub struct Cfd {
 
     #[serde(with = "::time::serde::timestamp")]
     pub expiry_timestamp: OffsetDateTime,
+
+    pub counterparty: Identity,
 }
 
 impl From<CfdsWithAuxData> for Vec<Cfd> {
@@ -546,6 +548,7 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
                         None => cfd.order.oracle_event_id.timestamp(),
                         Some(timestamp) => timestamp,
                     },
+                    counterparty: cfd.counterparty.into(),
                 }
             })
             .collect::<Vec<Cfd>>();

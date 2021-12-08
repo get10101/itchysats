@@ -113,12 +113,14 @@ pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow:
         insert into cfds (
             order_id,
             order_uuid,
-            quantity_usd
+            quantity_usd,
+            counterparty
         )
         select
             id as order_id,
             uuid as order_uuid,
-            $2 as quantity_usd
+            $2 as quantity_usd,
+            $3 as counterparty
         from orders
         where uuid = $1;
 
@@ -128,13 +130,14 @@ pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow:
         )
         select
             id as cfd_id,
-            $3 as state
+            $4 as state
         from cfds
         order by id desc limit 1;
         "#,
     )
     .bind(&cfd.order.id)
     .bind(&cfd.quantity_usd)
+    .bind(&cfd.counterparty)
     .bind(state)
     .execute(conn)
     .await?;
@@ -254,7 +257,8 @@ pub async fn load_cfd_by_order_id(
             select
                 ord.order_id,
                 id as cfd_id,
-                quantity_usd
+                quantity_usd,
+                counterparty
             from cfds
                 inner join ord on ord.order_id = cfds.order_id
         ),
@@ -264,6 +268,7 @@ pub async fn load_cfd_by_order_id(
                 id as state_id,
                 cfd.order_id,
                 cfd.quantity_usd,
+                cfd.counterparty,
                 state
             from cfd_states
                 inner join cfd on cfd.cfd_id = cfd_states.cfd_id
@@ -290,6 +295,7 @@ pub async fn load_cfd_by_order_id(
             ord.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
             ord.fee_rate as "fee_rate: u32",
             state.quantity_usd as "quantity_usd: crate::model::Usd",
+            state.counterparty as "counterparty: crate::model::Identity",
             state.state
 
         from ord
@@ -325,6 +331,7 @@ pub async fn load_cfd_by_order_id(
         order,
         quantity_usd: row.quantity_usd,
         state: serde_json::from_str(row.state.as_str())?,
+        counterparty: row.counterparty,
     })
 }
 
@@ -355,7 +362,8 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             select
                 ord.order_id,
                 id as cfd_id,
-                quantity_usd
+                quantity_usd,
+                counterparty
             from cfds
                 inner join ord on ord.order_id = cfds.order_id
         ),
@@ -365,6 +373,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 id as state_id,
                 cfd.order_id,
                 cfd.quantity_usd,
+                cfd.counterparty,
                 state
             from cfd_states
                 inner join cfd on cfd.cfd_id = cfd_states.cfd_id
@@ -391,6 +400,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
             ord.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
             ord.fee_rate as "fee_rate: u32",
             state.quantity_usd as "quantity_usd: crate::model::Usd",
+            state.counterparty as "counterparty: crate::model::Identity",
             state.state
 
         from ord
@@ -423,6 +433,7 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
                 order,
                 quantity_usd: row.quantity_usd,
                 state: serde_json::from_str(row.state.as_str())?,
+                counterparty: row.counterparty,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -461,7 +472,8 @@ pub async fn load_cfds_by_oracle_event_id(
             select
                 ord.order_id,
                 id as cfd_id,
-                quantity_usd
+                quantity_usd,
+                counterparty
             from cfds
                 inner join ord on ord.order_id = cfds.order_id
         ),
@@ -471,6 +483,7 @@ pub async fn load_cfds_by_oracle_event_id(
                 id as state_id,
                 cfd.order_id,
                 cfd.quantity_usd,
+                cfd.counterparty,
                 state
             from cfd_states
                 inner join cfd on cfd.cfd_id = cfd_states.cfd_id
@@ -497,6 +510,7 @@ pub async fn load_cfds_by_oracle_event_id(
             ord.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
             ord.fee_rate as "fee_rate: u32",
             state.quantity_usd as "quantity_usd: crate::model::Usd",
+            state.counterparty as "counterparty: crate::model::Identity",
             state.state
 
         from ord
@@ -532,6 +546,7 @@ pub async fn load_cfds_by_oracle_event_id(
                 order,
                 quantity_usd: row.quantity_usd,
                 state: serde_json::from_str(row.state.as_str())?,
+                counterparty: row.counterparty,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -541,18 +556,17 @@ pub async fn load_cfds_by_oracle_event_id(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::db::insert_order;
+    use crate::model::cfd::{Cfd, CfdState, Order, Origin};
+    use crate::model::{Identity, Price, Usd};
+    use crate::seed::Seed;
     use pretty_assertions::assert_eq;
     use rand::Rng;
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;
     use time::macros::datetime;
     use time::OffsetDateTime;
-
-    use crate::db::insert_order;
-    use crate::model::cfd::{Cfd, CfdState, Order, Origin};
-    use crate::model::{Price, Usd};
-
-    use super::*;
 
     #[tokio::test]
     async fn test_insert_and_load_order() {
@@ -753,10 +767,14 @@ mod tests {
 
     impl Cfd {
         fn dummy() -> Self {
+            let (pub_key, _) = Seed::default().derive_identity();
+            let dummy_identity = Identity::new(pub_key);
+
             Cfd::new(
                 Order::dummy(),
                 Usd::new(dec!(1000)),
                 CfdState::outgoing_order_request(),
+                dummy_identity,
             )
         }
 

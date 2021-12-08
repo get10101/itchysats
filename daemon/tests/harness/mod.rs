@@ -292,6 +292,7 @@ impl Taker {
             config.heartbeat_timeout,
             Duration::from_secs(10),
             projection_actor,
+            maker_identity,
         )
         .await
         .unwrap();

@@ -70,6 +70,7 @@ impl Actor {
             self.order.clone(),
             self.quantity,
             CfdState::contract_setup(),
+            self.taker_id,
         );
 
         let (sender, receiver) = mpsc::unbounded();

@@ -3,6 +3,7 @@
 use crate::db::load_all_cfds;
 use crate::maker_cfd::{FromTaker, TakerConnected};
 use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
+use crate::model::Identity;
 use crate::oracle::Attestation;
 use crate::tokio_ext::FutureExt;
 use address_map::Stopping;
@@ -235,6 +236,7 @@ where
         maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
         projection_actor: Address<projection::Actor>,
+        maker_identity: Identity,
     ) -> Result<Self>
     where
         F: Future<Output = Result<M>>,
@@ -261,6 +263,7 @@ where
             monitor_addr.clone(),
             oracle_addr,
             n_payouts,
+            maker_identity,
         )
         .create(None)
         .run();

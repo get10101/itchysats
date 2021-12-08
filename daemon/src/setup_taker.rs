@@ -1,5 +1,5 @@
 use crate::model::cfd::{Cfd, CfdState, Completed, Dlc, Order, OrderId, Role};
-use crate::model::Usd;
+use crate::model::{Identity, Usd};
 use crate::oracle::Announcement;
 use crate::setup_contract::{self, SetupParams};
 use crate::tokio_ext::spawn_fallible;
@@ -25,9 +25,11 @@ pub struct Actor {
     on_accepted: Box<dyn MessageChannel<Started>>,
     on_completed: Box<dyn MessageChannel<Completed>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
+    maker_identity: Identity,
 }
 
 impl Actor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         (order, quantity, n_payouts): (Order, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
@@ -36,6 +38,7 @@ impl Actor {
         maker: xtra::Address<connection::Actor>,
         on_accepted: &(impl MessageChannel<Started> + 'static),
         on_completed: &(impl MessageChannel<Completed> + 'static),
+        maker_identity: Identity,
     ) -> Self {
         Self {
             order,
@@ -49,6 +52,7 @@ impl Actor {
             on_accepted: on_accepted.clone_channel(),
             on_completed: on_completed.clone_channel(),
             setup_msg_sender: None,
+            maker_identity,
         }
     }
 }
@@ -67,6 +71,7 @@ impl Actor {
             self.order.clone(),
             self.quantity,
             CfdState::contract_setup(),
+            self.maker_identity,
         );
 
         let (sender, receiver) = mpsc::unbounded::<SetupMsg>();
