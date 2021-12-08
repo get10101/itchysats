@@ -1,3 +1,4 @@
+use crate::actor_name::ActorName;
 use crate::address_map::Stopping;
 use crate::model::cfd::{Cfd, CfdState, Dlc, Order, OrderId, Role};
 use crate::model::{Identity, Usd};
@@ -283,4 +284,10 @@ pub enum Completed {
 
 impl xtra::Message for Started {
     type Result = ();
+}
+
+impl ActorName for Actor {
+    fn actor_name() -> String {
+        "Taker contract setup".to_string()
+    }
 }

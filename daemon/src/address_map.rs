@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use xtra::{Address, Handler, Message};
 
+use crate::actor_name::ActorName;
+
 pub struct AddressMap<K, A> {
     inner: HashMap<K, xtra::Address<A>>,
 }
@@ -49,7 +51,7 @@ where
     pub async fn send<M>(&self, key: &K, msg: M) -> Result<(), NotConnected>
     where
         M: Message<Result = ()>,
-        A: Handler<M>,
+        A: Handler<M> + ActorName,
     {
         match self.inner.get(key) {
             Some(addr) if addr.is_connected() => {
@@ -58,14 +60,23 @@ where
                     .expect("we checked that we are connected");
                 Ok(())
             }
-            _ => Err(NotConnected),
+            _ => Err(NotConnected::new::<A>()),
         }
     }
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Receiving actor is down")]
-pub struct NotConnected;
+#[error("{0} actor is down")]
+pub struct NotConnected(String);
+
+impl NotConnected {
+    pub fn new<A>() -> Self
+    where
+        A: ActorName,
+    {
+        NotConnected(A::actor_name())
+    }
+}
 
 /// A message to notify that an actor instance is stopping.
 pub struct Stopping<A> {

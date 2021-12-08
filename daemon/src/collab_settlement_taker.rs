@@ -1,3 +1,4 @@
+use crate::actor_name::ActorName;
 use crate::address_map::Stopping;
 use crate::model::cfd::{
     Cfd, CollaborativeSettlement, OrderId, SettlementKind, SettlementProposal,
@@ -190,5 +191,11 @@ impl Actor {
         };
 
         self.complete(completed, ctx).await;
+    }
+}
+
+impl ActorName for Actor {
+    fn actor_name() -> String {
+        "Taker collab settlement".to_string()
     }
 }

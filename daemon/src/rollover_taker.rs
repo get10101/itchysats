@@ -1,3 +1,4 @@
+use crate::actor_name::ActorName;
 use crate::address_map::Stopping;
 use crate::connection;
 use crate::model::cfd::{Cfd, Dlc, OrderId, Role, RollOverProposal, SettlementKind};
@@ -316,4 +317,10 @@ pub enum Completed {
 
 impl xtra::Message for Completed {
     type Result = Result<()>;
+}
+
+impl ActorName for Actor {
+    fn actor_name() -> String {
+        "Taker rollover".to_string()
+    }
 }
