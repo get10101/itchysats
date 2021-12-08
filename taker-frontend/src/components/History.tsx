@@ -75,8 +75,14 @@ const CfdDetails = ({ cfd, connectedToMaker }: CfdDetailsProps) => {
     let [commit, isCommiting] = usePostRequest(`/api/cfd/${cfd.order_id}/commit`);
 
     const closeButton = connectedToMaker.online
-        ? <CloseButton request={settle} status={isSettling} cfd={cfd} action="Close" />
-        : <CloseButton request={commit} status={isCommiting} cfd={cfd} action="Force Close" />;
+        ? <CloseButton request={settle} status={isSettling} cfd={cfd} buttonTitle="Close" isForceCloseButton={false} />
+        : <CloseButton
+            request={commit}
+            status={isCommiting}
+            cfd={cfd}
+            buttonTitle="Force Close"
+            isForceCloseButton={true}
+        />;
 
     return (
         <HStack bg={useColorModeValue("gray.100", "gray.700")} rounded={5} padding={2}>
