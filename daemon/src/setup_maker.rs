@@ -1,5 +1,4 @@
-use crate::actor_name::ActorName;
-use crate::address_map::Stopping;
+use crate::address_map::{ActorName, Stopping};
 use crate::model::cfd::{Cfd, CfdState, Dlc, Order, OrderId, Role};
 use crate::model::{Identity, Usd};
 use crate::oracle::Announcement;

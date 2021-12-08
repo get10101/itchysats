@@ -4,8 +4,8 @@ use crate::model::cfd::{Order, OrderId};
 use crate::model::Identity;
 use crate::noise::TransportStateExt;
 use crate::tokio_ext::FutureExt;
-use crate::wire::{EncryptedJsonCodec, MakerToTaker, TakerToMaker, Version};
-use crate::{maker_cfd, noise, send_to_socket, setup_maker, wire, Tasks};
+use crate::wire::{taker_to_maker, EncryptedJsonCodec, MakerToTaker, TakerToMaker, Version};
+use crate::{collab_settlement_maker, maker_cfd, noise, send_to_socket, setup_maker, wire, Tasks};
 use anyhow::{bail, Context, Result};
 use futures::{SinkExt, TryStreamExt};
 use std::collections::HashMap;
@@ -35,6 +35,32 @@ pub struct ConfirmOrder {
     pub address: xtra::Address<setup_maker::Actor>,
 }
 
+pub mod settlement {
+    use super::*;
+
+    /// Message sent from the `collab_settlement_maker::Actor` to the
+    /// `maker_inc_connections::Actor` so that it can forward it to the
+    /// taker.
+    ///
+    /// Additionally, the address of this instance of the
+    /// `collab_settlement_maker::Actor` is included so that the
+    /// `maker_inc_connections::Actor` knows where to forward the
+    /// collaborative settlement messages from the taker about this
+    /// particular order.
+    pub struct Response {
+        pub taker_id: Identity,
+        pub order_id: OrderId,
+        pub decision: Decision,
+    }
+
+    pub enum Decision {
+        Accept {
+            address: xtra::Address<collab_settlement_maker::Actor>,
+        },
+        Reject,
+    }
+}
+
 #[derive(Debug)]
 pub struct TakerMessage {
     pub taker_id: Identity,
@@ -59,6 +85,7 @@ pub struct Actor {
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
+    settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
     connection_tasks: HashMap<Identity, Tasks>,
 }
 
@@ -78,6 +105,7 @@ impl Actor {
             noise_priv_key,
             heartbeat_interval,
             setup_actors: AddressMap::default(),
+            settlement_actors: AddressMap::default(),
             connection_tasks: HashMap::new(),
         }
     }
@@ -231,6 +259,28 @@ impl Actor {
         Ok(())
     }
 
+    async fn handle_settlement_response(&mut self, msg: settlement::Response) -> Result<()> {
+        let decision = match msg.decision {
+            settlement::Decision::Accept { address } => {
+                self.settlement_actors.insert(msg.order_id, address);
+
+                wire::maker_to_taker::Settlement::Confirm
+            }
+            settlement::Decision::Reject => wire::maker_to_taker::Settlement::Reject,
+        };
+
+        self.send_to_taker(
+            &msg.taker_id,
+            wire::MakerToTaker::Settlement {
+                order_id: msg.order_id,
+                msg: decision,
+            },
+        )
+        .await?;
+
+        Ok(())
+    }
+
     async fn handle_taker_message(&mut self, msg: TakerMessage) -> Result<(), NoConnection> {
         self.send_to_taker(&msg.taker_id, msg.msg).await?;
 
@@ -276,6 +326,19 @@ impl Actor {
                     tracing::error!(%order_id, "No active contract setup");
                 }
             },
+            Settlement {
+                order_id,
+                msg: taker_to_maker::Settlement::Initiate { sig_taker },
+            } => {
+                if self
+                    .settlement_actors
+                    .send(&order_id, collab_settlement_maker::Initiated { sig_taker })
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!(%order_id, "No active settlement");
+                }
+            }
             _ => {
                 let _ = self.taker_msg_channel.send(msg);
             }
@@ -284,6 +347,13 @@ impl Actor {
 
     async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
         self.setup_actors.gc(message);
+    }
+
+    async fn handle_settlement_actor_stopping(
+        &mut self,
+        message: Stopping<collab_settlement_maker::Actor>,
+    ) {
+        self.settlement_actors.gc(message);
     }
 }
 

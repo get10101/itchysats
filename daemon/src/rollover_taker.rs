@@ -1,5 +1,4 @@
-use crate::actor_name::ActorName;
-use crate::address_map::Stopping;
+use crate::address_map::{ActorName, Stopping};
 use crate::connection;
 use crate::model::cfd::{Cfd, Dlc, OrderId, Role, RollOverProposal, SettlementKind};
 use crate::model::{BitMexPriceEventId, Timestamp};

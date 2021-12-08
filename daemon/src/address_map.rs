@@ -3,8 +3,6 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use xtra::{Address, Handler, Message};
 
-use crate::actor_name::ActorName;
-
 pub struct AddressMap<K, A> {
     inner: HashMap<K, xtra::Address<A>>,
 }
@@ -109,6 +107,10 @@ impl<'a, K, A> Disconnected<'a, K, A> {
             }
         };
     }
+}
+
+pub trait ActorName {
+    fn actor_name() -> String;
 }
 
 #[cfg(test)]
