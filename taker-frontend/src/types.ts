@@ -52,8 +52,8 @@ export interface Cfd {
 
     margin: number;
 
-    profit_btc: number;
-    profit_percent: number;
+    profit_btc?: number;
+    profit_percent?: number;
 
     state: State;
     state_transition_timestamp: number;

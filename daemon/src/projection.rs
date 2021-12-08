@@ -488,9 +488,9 @@ pub struct Cfd {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub margin_counterparty: Amount,
 
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub profit_btc: SignedAmount,
-    pub profit_percent: String,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
+    pub profit_btc: Option<SignedAmount>,
+    pub profit_percent: Option<String>,
 
     pub state: CfdState,
     pub actions: Vec<CfdAction>,
@@ -511,14 +511,17 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
             .cfds
             .iter()
             .map(|cfd| {
-                let (profit_btc, profit_percent) =
-                    cfd.profit(current_price).unwrap_or_else(|error| {
-                        tracing::warn!(
-                            "Calculating profit/loss failed. Falling back to 0. {:#}",
-                            error
-                        );
-                        (SignedAmount::ZERO, Decimal::ZERO.into())
-                    });
+                let (profit_btc, profit_percent) = match cfd.profit(current_price) {
+                    Ok((profit_btc, profit_percent)) => (
+                        Some(profit_btc),
+                        Some(profit_percent.round_dp(1).to_string()),
+                    ),
+                    Err(e) => {
+                        tracing::warn!("Failed to calculate profit/loss {:#}", e);
+
+                        (None, None)
+                    }
+                };
 
                 let pending_proposal = input.pending_proposals.get(&cfd.order.id);
                 let state = to_cfd_state(&cfd.state, pending_proposal);
@@ -532,7 +535,7 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
                     liquidation_price: cfd.order.liquidation_price.into(),
                     quantity_usd: cfd.quantity_usd.into(),
                     profit_btc,
-                    profit_percent: profit_percent.round_dp(1).to_string(),
+                    profit_percent,
                     state: state.clone(),
                     actions: available_actions(state, cfd.role()),
                     state_transition_timestamp: cfd.state.get_transition_timestamp().seconds(),
