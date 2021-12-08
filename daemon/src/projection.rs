@@ -63,7 +63,7 @@ impl Actor {
             network,
             cfds: init_cfds,
             proposals: HashMap::new(),
-            quote: init_quote.clone(),
+            quote: Some(init_quote.clone()),
         };
 
         let (tx_cfds, rx_cfds) = watch::channel(state.to_cfds());
@@ -106,7 +106,7 @@ struct Tx {
 struct State {
     role: Role,
     network: Network,
-    quote: bitmex_price_feed::Quote,
+    quote: Option<bitmex_price_feed::Quote>,
     proposals: UpdateCfdProposals,
     cfds: Vec<ModelCfd>,
 }
@@ -135,7 +135,7 @@ impl State {
     }
 
     pub fn update_quote(&mut self, quote: bitmex_price_feed::Quote) {
-        let _ = std::mem::replace(&mut self.quote, quote);
+        self.quote = Some(quote);
     }
 
     pub fn update_cfds(&mut self, cfds: Vec<ModelCfd>) {
@@ -504,24 +504,29 @@ pub struct Cfd {
 
 impl From<CfdsWithAuxData> for Vec<Cfd> {
     fn from(input: CfdsWithAuxData) -> Self {
-        let current_price = input.current_price;
         let network = input.network;
 
         let cfds = input
             .cfds
             .iter()
             .map(|cfd| {
-                let (profit_btc, profit_percent) = match cfd.profit(current_price) {
-                    Ok((profit_btc, profit_percent)) => (
-                        Some(profit_btc),
-                        Some(profit_percent.round_dp(1).to_string()),
-                    ),
-                    Err(e) => {
-                        tracing::warn!("Failed to calculate profit/loss {:#}", e);
+                let (profit_btc, profit_percent) = input.current_price
+                    .map(|current_price| match cfd.profit(current_price) {
+                        Ok((profit_btc, profit_percent)) => (
+                            Some(profit_btc),
+                            Some(profit_percent.round_dp(1).to_string()),
+                        ),
+                        Err(e) => {
+                            tracing::warn!("Failed to calculate profit/loss {:#}", e);
+
+                            (None, None)
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        tracing::debug!(order_id = %cfd.order.id, "Unable to calculate profit/loss without current price");
 
                         (None, None)
-                    }
-                };
+                    });
 
                 let pending_proposal = input.pending_proposals.get(&cfd.order.id);
                 let state = to_cfd_state(&cfd.state, pending_proposal);
@@ -562,7 +567,7 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
 // TODO: Remove this struct out of existence
 pub struct CfdsWithAuxData {
     pub cfds: Vec<model::cfd::Cfd>,
-    pub current_price: model::Price,
+    pub current_price: Option<model::Price>,
     pub pending_proposals: UpdateCfdProposals,
     pub network: Network,
 }
@@ -570,15 +575,15 @@ pub struct CfdsWithAuxData {
 impl CfdsWithAuxData {
     pub fn new(
         cfds: Vec<model::cfd::Cfd>,
-        quote: bitmex_price_feed::Quote,
+        quote: Option<bitmex_price_feed::Quote>,
         pending_proposals: UpdateCfdProposals,
         role: Role,
         network: Network,
     ) -> Self {
-        let current_price = match role {
+        let current_price = quote.map(|quote| match role {
             Role::Maker => quote.for_maker(),
             Role::Taker => quote.for_taker(),
-        };
+        });
 
         CfdsWithAuxData {
             cfds,
