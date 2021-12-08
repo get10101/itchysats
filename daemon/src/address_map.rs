@@ -46,7 +46,7 @@ where
     }
 
     /// Sends a message to the actor stored with the given key.
-    pub async fn send<M>(&self, key: &K, msg: M) -> bool
+    pub async fn send<M>(&self, key: &K, msg: M) -> Result<(), NotConnected>
     where
         M: Message<Result = ()>,
         A: Handler<M>,
@@ -56,14 +56,16 @@ where
                 addr.send(msg)
                     .await
                     .expect("we checked that we are connected");
-
-                true
+                Ok(())
             }
-            Some(_) => false,
-            None => false,
+            _ => Err(NotConnected),
         }
     }
 }
+
+#[derive(thiserror::Error, Debug)]
+#[error("Receiving actor is down")]
+pub struct NotConnected;
 
 /// A message to notify that an actor instance is stopping.
 pub struct Stopping<A> {

@@ -523,13 +523,10 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        if !self
-            .setup_actors
+        self.setup_actors
             .send(&order_id, setup_maker::Accepted)
             .await
-        {
-            anyhow::bail!("No active contract setup for order {}", order_id);
-        }
+            .with_context(|| format!("No active contract setup for order {}", order_id))?;
 
         cfd.state = CfdState::contract_setup();
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
