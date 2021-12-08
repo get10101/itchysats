@@ -1,6 +1,7 @@
 use crate::model::{Price, Timestamp};
-use crate::{projection, Tasks};
+use crate::{projection, supervisor, Tasks};
 use anyhow::Result;
+use async_trait::async_trait;
 use futures::{SinkExt, TryStreamExt};
 use rust_decimal::Decimal;
 use std::convert::TryFrom;
@@ -14,49 +15,43 @@ const URL: &str = "wss://www.bitmex.com/realtime?subscribe=quoteBin1m:XBTUSD";
 pub struct Actor {
     tasks: Tasks,
     receiver: Box<dyn MessageChannel<projection::Update<Quote>>>,
+    supervisor: xtra::Address<supervisor::Actor<Self, StopReason>>,
 }
 
 impl Actor {
-    pub fn new(receiver: impl MessageChannel<projection::Update<Quote>> + 'static) -> Self {
+    pub fn new(
+        receiver: impl MessageChannel<projection::Update<Quote>> + 'static,
+        supervisor: xtra::Address<supervisor::Actor<Self, StopReason>>,
+    ) -> Self {
         Self {
             tasks: Tasks::default(),
             receiver: Box::new(receiver),
+            supervisor,
         }
     }
 }
 
-impl xtra::Actor for Actor {}
-
-#[xtra_productivity]
-impl Actor {
-    async fn handle(&mut self, msg: NotifyNoConnection, ctx: &mut xtra::Context<Self>) {
-        match msg {
-            NotifyNoConnection::Failed { error } => {
-                tracing::warn!("Connection to BitMex realtime API failed: {}", error)
-            }
-            NotifyNoConnection::StreamEnded => {
-                tracing::warn!("Connection to BitMex realtime API closed")
-            }
-        }
-
-        let this = ctx.address().expect("we are alive");
-
-        self.tasks.add(connect_until_successful(this));
-    }
-
-    async fn handle(&mut self, _: Connect, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        tracing::debug!("Connecting to BitMex realtime API");
-
-        let (mut connection, _) = tokio_tungstenite::connect_async(URL).await?;
-
-        tracing::info!("Connected to BitMex realtime API");
-
-        let this = ctx.address().expect("we are alive");
-
+#[async_trait]
+impl xtra::Actor for Actor {
+    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         self.tasks.add({
+            let this = ctx.address().expect("we are alive");
             let receiver = self.receiver.clone_channel();
+
             async move {
-                let no_connection = loop {
+                tracing::debug!("Connecting to BitMex realtime API");
+
+                let mut connection = match tokio_tungstenite::connect_async(URL).await {
+                    Ok((connection, _)) => connection,
+                    Err(e) => {
+                        let _ = this.send(StopReason::FailedToConnect { source: e }).await;
+                        return
+                    }
+                };
+
+                tracing::info!("Connected to BitMex realtime API");
+
+                loop {
                     tokio::select! {
                         _ = tokio::time::sleep(Duration::from_secs(5)) => {
                             tracing::trace!("No message from BitMex in the last 5 seconds, pinging");
@@ -89,38 +84,40 @@ impl Actor {
                                     continue;
                                 }
                                 Ok(None) => {
-                                    break NotifyNoConnection::StreamEnded
+                                    let _ = this.send(StopReason::StreamEnded).await;
+                                    return;
                                 }
                                 Err(e) => {
-                                    break NotifyNoConnection::Failed { error: e }
+                                    let _ = this.send(StopReason::Failed { source: e }).await;
+                                    return;
                                 }
                             }
                         },
                     }
-                };
-
-                let _ = this.send(no_connection).await;
+                }
             }
         });
-
-        Ok(())
     }
 }
 
-async fn connect_until_successful(this: xtra::Address<Actor>) {
-    while let Err(e) = this
-        .send(Connect)
-        .await
-        .expect("always connected to ourselves")
-    {
-        tracing::warn!("Failed to connect to BitMex realtime API: {:#}", e);
+#[xtra_productivity]
+impl Actor {
+    async fn handle(&mut self, msg: StopReason, ctx: &mut xtra::Context<Self>) {
+        let _ = self
+            .supervisor
+            .send(supervisor::Stopped { reason: msg })
+            .await;
+        ctx.stop();
     }
 }
 
-pub struct Connect;
-
-enum NotifyNoConnection {
-    Failed { error: tungstenite::Error },
+#[derive(thiserror::Error, Debug)]
+pub enum StopReason {
+    #[error("Connection to BitMex API failed")]
+    Failed { source: tungstenite::Error },
+    #[error("Failed to connect to BitMex API")]
+    FailedToConnect { source: tungstenite::Error },
+    #[error("Websocket stream to BitMex API closed")]
     StreamEnded,
 }
 

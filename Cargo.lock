@@ -3841,7 +3841,7 @@ dependencies = [
 [[package]]
 name = "xtra_productivity"
 version = "0.1.0"
-source = "git+https://github.com/comit-network/xtra-productivity#ee789b130f2d20b38f57434fe6ed18c4fdf1db4a"
+source = "git+https://github.com/comit-network/xtra-productivity#52492681bb260a5789162e70cb5067994f051360"
 dependencies = [
  "quote",
  "syn",
