@@ -14,7 +14,7 @@ clap = "3.0.0-beta.5"
 derive_more = { version = "0.99.17", default-features = false, features = ["display"] }
 futures = { version = "0.3", default-features = false }
 hex = "0.4"
-hkdf = "0.11"
+hkdf = "0.12"
 http-api-problem = { version = "0.51.0", features = ["rocket"] }
 itertools = "0.10"
 maia = "0.1.0"
