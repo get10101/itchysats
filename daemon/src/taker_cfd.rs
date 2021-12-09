@@ -1,5 +1,4 @@
 use crate::address_map::AddressMap;
-use crate::address_map::Stopping;
 use crate::cfd_actors::append_cfd_state;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::cfd_actors::{self};
@@ -22,7 +21,6 @@ use crate::monitor::MonitorParams;
 use crate::monitor::{self};
 use crate::oracle;
 use crate::projection;
-use crate::rollover_taker;
 use crate::setup_taker;
 use crate::wallet;
 use crate::Tasks;
@@ -47,10 +45,6 @@ pub struct ProposeSettlement {
     pub current_price: Price,
 }
 
-pub struct ProposeRollOver {
-    pub order_id: OrderId,
-}
-
 pub struct Commit {
     pub order_id: OrderId,
 }
@@ -64,7 +58,6 @@ pub struct Actor<O, M, W> {
     monitor_actor: Address<M>,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
-    rollover_actors: AddressMap<OrderId, rollover_taker::Actor>,
     oracle_actor: Address<O>,
     n_payouts: usize,
     tasks: Tasks,
@@ -101,7 +94,6 @@ where
             n_payouts,
             setup_actors: AddressMap::default(),
             collab_settlement_actors: AddressMap::default(),
-            rollover_actors: AddressMap::default(),
             tasks: Tasks::default(),
             current_order: None,
             maker_identity,
@@ -414,103 +406,6 @@ where
             .await?;
 
         Ok(())
-    }
-}
-
-#[xtra_productivity]
-impl<O, M, W> Actor<O, M, W>
-where
-    M: xtra::Handler<monitor::StartMonitoring>,
-    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-{
-    async fn handle_propose_rollover(
-        &mut self,
-        msg: ProposeRollOver,
-        ctx: &mut Context<Self>,
-    ) -> Result<()> {
-        let ProposeRollOver { order_id } = msg;
-
-        let disconnected = self
-            .rollover_actors
-            .get_disconnected(order_id)
-            .with_context(|| format!("Rollover for order {} is already in progress", order_id))?;
-
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
-        let (addr, fut) = rollover_taker::Actor::new(
-            (cfd, self.n_payouts),
-            self.oracle_pk,
-            self.conn_actor.clone(),
-            &self.oracle_actor,
-            self.projection_actor.clone(),
-            &this,
-            (&this, &self.conn_actor),
-        )
-        .create(None)
-        .run();
-
-        disconnected.insert(addr);
-        self.tasks.add(fut);
-
-        Ok(())
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O, M, W> Actor<O, M, W>
-where
-    M: xtra::Handler<monitor::StartMonitoring>,
-    O: xtra::Handler<oracle::MonitorAttestation>,
-{
-    async fn handle_rollover_completed(&mut self, msg: rollover_taker::Completed) -> Result<()> {
-        use rollover_taker::Completed::*;
-        let (order_id, dlc) = match msg {
-            UpdatedContract { order_id, dlc } => (order_id, dlc),
-            Rejected { .. } => {
-                return Ok(());
-            }
-            Failed { order_id, error } => {
-                tracing::warn!(%order_id, "Rollover failed: {:#}", error);
-                return Ok(());
-            }
-        };
-
-        let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::Open {
-            common: CfdStateCommon::default(),
-            dlc: dlc.clone(),
-            attestation: None,
-            collaborative_close: None,
-        };
-
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-        self.monitor_actor
-            .send(monitor::StartMonitoring {
-                id: order_id,
-                params: MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks()),
-            })
-            .await?;
-
-        self.oracle_actor
-            .send(oracle::MonitorAttestation {
-                event_id: dlc.settlement_event_id,
-            })
-            .await?;
-
-        Ok(())
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O, M, W> Actor<O, M, W> {
-    async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_taker::Actor>) {
-        self.rollover_actors.gc(msg);
     }
 }
 

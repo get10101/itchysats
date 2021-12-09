@@ -156,11 +156,6 @@ pub async fn post_cfd_action(
                 })
                 .await
         }
-        CfdAction::RollOver => {
-            cfd_actor
-                .send(taker_cfd::ProposeRollOver { order_id: id })
-                .await
-        }
     };
 
     result
