@@ -266,17 +266,18 @@ impl Actor {
     async fn handle(&mut self, msg: ListenerMessage, ctx: &mut xtra::Context<Self>) -> KeepRunning {
         let this = ctx.address().expect("we are alive");
         let noise_priv_key = self.noise_priv_key.clone();
-        let heartbeat_interval = self.heartbeat_interval;
 
         match msg {
             ListenerMessage::NewConnection { stream, address } => {
-                self.tasks.add(setup_new_connection(
-                    this,
-                    noise_priv_key,
-                    heartbeat_interval,
-                    stream,
-                    address,
-                ));
+                let upgrade = upgrade(stream, noise_priv_key, this);
+
+                self.tasks
+                    .add_fallible(
+                        upgrade,
+                        move |e| async move {
+                            tracing::warn!(address = %address, "Failed to upgrade incoming connection: {:#}", e);
+                        }
+                    );
 
                 KeepRunning::Yes
             }
@@ -297,16 +298,71 @@ impl Actor {
         self.drop_taker_connection(&taker_id).await;
     }
 
-    async fn handle_connection_ready(&mut self, msg: ConnectionReady) {
-        let connection = msg.0;
+    async fn handle_connection_ready(
+        &mut self,
+        msg: ConnectionReady,
+        ctx: &mut xtra::Context<Self>,
+    ) {
+        let ConnectionReady {
+            mut read,
+            write,
+            identity,
+        } = msg;
+        let this = ctx.address().expect("we are alive");
+
+        if self.connections.contains_key(&identity) {
+            tracing::warn!(
+                "Refusing to accept 2nd connection from already connected taker {}!",
+                identity
+            );
+            return;
+        }
 
         let _ = self
             .taker_connected_channel
-            .send(maker_cfd::TakerConnected {
-                id: connection.taker,
-            })
+            .send(maker_cfd::TakerConnected { id: identity })
             .await;
-        self.connections.insert(connection.taker, connection);
+
+        let mut tasks = Tasks::default();
+        tasks.add({
+            let this = this.clone();
+
+            async move {
+                while let Ok(Some(msg)) = read.try_next().await {
+                    let res = this
+                        .send(FromTaker {
+                            taker_id: identity,
+                            msg,
+                        })
+                        .await;
+
+                    if res.is_err() {
+                        break;
+                    }
+                }
+
+                let _ = this.send(ReadFail(identity)).await;
+            }
+        });
+        tasks.add({
+            let this = this.clone();
+            let heartbeat_interval = self.heartbeat_interval;
+
+            async move {
+                while let Ok(()) = this.send(SendHeartbeat(identity)).await {
+                    tokio::time::sleep(heartbeat_interval).await;
+                }
+            }
+        });
+
+        self.connections.insert(
+            identity,
+            Connection {
+                taker: identity,
+                write,
+                _tasks: tasks,
+            },
+        );
     }
 
     async fn handle_rollover_proposed(&mut self, message: maker_cfd::RollOverProposed) {
@@ -377,69 +433,14 @@ impl Actor {
     }
 }
 
-/// Sets up a new connection on the given stream including all relevant background tasks like
-/// heartbeat and reading messages from the stream.
-async fn setup_new_connection(
-    this: Address<Actor>,
-    noise_priv_key: x25519_dalek::StaticSecret,
-    heartbeat_interval: Duration,
-    stream: TcpStream,
-    address: SocketAddr,
-) {
-    let (mut read, write, taker_id) = match upgrade(stream, noise_priv_key).await {
-        Ok((read, write, identity)) => (read, write, identity),
-        Err(e) => {
-            tracing::warn!(address = %address, "Failed to upgrade incoming connection: {:#}", e);
-            return;
-        }
-    };
-
-    let mut tasks = Tasks::default();
-    tasks.add({
-        let this = this.clone();
-
-        async move {
-            while let Ok(Some(msg)) = read.try_next().await {
-                let res = this.send(FromTaker { taker_id, msg }).await;
-
-                if res.is_err() {
-                    break;
-                }
-            }
-
-            let _ = this.send(ReadFail(taker_id)).await;
-        }
-    });
-    tasks.add({
-        let this = this.clone();
-
-        async move {
-            while let Ok(()) = this.send(SendHeartbeat(taker_id)).await {
-                tokio::time::sleep(heartbeat_interval).await;
-            }
-        }
-    });
-
-    let _ = this
-        .send(ConnectionReady(Connection {
-            _tasks: tasks,
-            taker: taker_id,
-            write,
-        }))
-        .await;
-}
-
 /// Upgrades a TCP stream to an encrypted transport, checking the network version in the process.
 ///
 /// Both IO operations, upgrading to noise and checking the version are gated by a timeout.
 async fn upgrade(
     mut stream: TcpStream,
     noise_priv_key: x25519_dalek::StaticSecret,
-) -> Result<(
-    wire::Read<wire::TakerToMaker, wire::MakerToTaker>,
-    wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
-    Identity,
-)> {
+    this: xtra::Address<Actor>,
+) -> Result<()> {
     let taker_address = stream.peer_addr().context("Failed to get peer address")?;
 
     tracing::info!(%taker_address, "Upgrade new connection");
@@ -485,10 +486,22 @@ async fn upgrade(
 
     tracing::info!(taker_id = %taker_id, %taker_address, "Connection upgrade successful");
 
-    Ok((read, write, taker_id))
+    let _ = this
+        .send(ConnectionReady {
+            read,
+            write,
+            identity: taker_id,
+        })
+        .await;
+
+    Ok(())
 }
 
-struct ConnectionReady(Connection);
+struct ConnectionReady {
+    read: wire::Read<wire::TakerToMaker, wire::MakerToTaker>,
+    write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
+    identity: Identity,
+}
 
 struct ReadFail(Identity);
 
