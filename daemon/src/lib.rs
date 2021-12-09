@@ -27,6 +27,7 @@ pub mod auth;
 pub mod bdk_ext;
 pub mod bitmex_price_feed;
 pub mod cfd_actors;
+pub mod collab_settlement_maker;
 pub mod collab_settlement_taker;
 pub mod connection;
 pub mod db;
@@ -113,7 +114,9 @@ where
     T: xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>
         + xtra::Handler<maker_inc_connections::ConfirmOrder>
-        + xtra::Handler<Stopping<setup_maker::Actor>>,
+        + xtra::Handler<Stopping<setup_maker::Actor>>
+        + xtra::Handler<maker_inc_connections::settlement::Response>
+        + xtra::Handler<Stopping<collab_settlement_maker::Actor>>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>,

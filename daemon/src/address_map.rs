@@ -46,22 +46,33 @@ where
     }
 
     /// Sends a message to the actor stored with the given key.
-    pub async fn send<M>(&self, key: &K, msg: M) -> bool
+    pub async fn send<M>(&self, key: &K, msg: M) -> Result<(), NotConnected>
     where
         M: Message<Result = ()>,
-        A: Handler<M>,
+        A: Handler<M> + ActorName,
     {
         match self.inner.get(key) {
             Some(addr) if addr.is_connected() => {
                 addr.send(msg)
                     .await
                     .expect("we checked that we are connected");
-
-                true
+                Ok(())
             }
-            Some(_) => false,
-            None => false,
+            _ => Err(NotConnected::new::<A>()),
         }
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("{0} actor is down")]
+pub struct NotConnected(String);
+
+impl NotConnected {
+    pub fn new<A>() -> Self
+    where
+        A: ActorName,
+    {
+        NotConnected(A::actor_name())
     }
 }
 
@@ -96,6 +107,10 @@ impl<'a, K, A> Disconnected<'a, K, A> {
             }
         };
     }
+}
+
+pub trait ActorName {
+    fn actor_name() -> String;
 }
 
 #[cfg(test)]

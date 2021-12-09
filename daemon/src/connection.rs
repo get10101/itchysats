@@ -369,7 +369,12 @@ impl Actor {
                 }
             }
             wire::MakerToTaker::Settlement { order_id, msg } => {
-                if !self.collab_settlement_actors.send(&order_id, msg).await {
+                if self
+                    .collab_settlement_actors
+                    .send(&order_id, msg)
+                    .await
+                    .is_err()
+                {
                     tracing::warn!(%order_id, "No active collaborative settlement");
                 }
             }
@@ -377,28 +382,30 @@ impl Actor {
                 order_id,
                 oracle_event_id,
             } => {
-                if !self
+                if self
                     .rollover_actors
                     .send(
                         &order_id,
                         rollover_taker::RollOverAccepted { oracle_event_id },
                     )
                     .await
+                    .is_err()
                 {
                     tracing::warn!(%order_id, "No active rollover");
                 }
             }
             wire::MakerToTaker::RejectRollOver(order_id) => {
-                if !self
+                if self
                     .rollover_actors
                     .send(&order_id, rollover_taker::RollOverRejected)
                     .await
+                    .is_err()
                 {
                     tracing::warn!(%order_id, "No active rollover");
                 }
             }
             wire::MakerToTaker::RollOverProtocol { order_id, msg } => {
-                if !self.rollover_actors.send(&order_id, msg).await {
+                if self.rollover_actors.send(&order_id, msg).await.is_err() {
                     tracing::warn!(%order_id, "No active rollover");
                 }
             }

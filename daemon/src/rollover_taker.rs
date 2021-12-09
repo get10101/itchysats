@@ -1,4 +1,4 @@
-use crate::address_map::Stopping;
+use crate::address_map::{ActorName, Stopping};
 use crate::connection;
 use crate::model::cfd::{Cfd, Dlc, OrderId, Role, RollOverProposal, SettlementKind};
 use crate::model::{BitMexPriceEventId, Timestamp};
@@ -316,4 +316,10 @@ pub enum Completed {
 
 impl xtra::Message for Completed {
     type Result = Result<()>;
+}
+
+impl ActorName for Actor {
+    fn actor_name() -> String {
+        "Taker rollover".to_string()
+    }
 }
