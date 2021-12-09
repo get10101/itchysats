@@ -865,7 +865,7 @@ where
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
         let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
 
-        let (tx, sig_maker) = dlc.close_transaction(proposal, cfd.order.fee_rate)?;
+        let (tx, sig_maker) = dlc.close_transaction(proposal)?;
 
         let own_script_pubkey = dlc.script_pubkey_for(cfd.role());
         cfd.handle_proposal_signed(CollaborativeSettlement::new(
