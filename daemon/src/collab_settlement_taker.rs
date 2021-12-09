@@ -72,7 +72,7 @@ impl Actor {
 
         let dlc = self.cfd.dlc().context("No DLC in CFD")?;
 
-        let (tx, sig) = dlc.close_transaction(&self.proposal, self.cfd.order.fee_rate)?;
+        let (tx, sig) = dlc.close_transaction(&self.proposal)?;
 
         // Need to use `do_send_async` here because this handler is called in
         // context of a message arriving over the wire, and would result in a
