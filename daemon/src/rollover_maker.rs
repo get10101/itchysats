@@ -4,7 +4,7 @@ use crate::maker_inc_connections::TakerMessage;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
-use crate::model::cfd::RollOverProposal;
+use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementKind;
 use crate::model::cfd::UpdateCfdProposal;
 use crate::model::Identity;
@@ -68,7 +68,7 @@ pub struct Actor {
     oracle_actor: Box<dyn MessageChannel<GetAnnouncement>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     projection_actor: xtra::Address<projection::Actor>,
-    proposal: RollOverProposal,
+    proposal: RolloverProposal,
 }
 
 #[async_trait::async_trait]
@@ -117,7 +117,7 @@ impl Actor {
             &(impl MessageChannel<Stopping<Self>> + 'static),
         ),
         projection_actor: xtra::Address<projection::Actor>,
-        proposal: RollOverProposal,
+        proposal: RolloverProposal,
         n_payouts: usize,
     ) -> Self {
         Self {

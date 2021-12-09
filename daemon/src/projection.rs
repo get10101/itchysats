@@ -4,7 +4,7 @@ use crate::model;
 use crate::model::cfd::Cfd as ModelCfd;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
-use crate::model::cfd::RollOverProposal;
+use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementKind;
 use crate::model::cfd::SettlementProposal;
 use crate::model::cfd::UpdateCfdProposal;
@@ -37,7 +37,7 @@ pub struct UpdateSettlementProposal {
 /// Amend a given rollover proposal (if `proposal.is_none()`, it should be removed)
 pub struct UpdateRollOverProposal {
     pub order: OrderId,
-    pub proposal: Option<(RollOverProposal, SettlementKind)>,
+    pub proposal: Option<(RolloverProposal, SettlementKind)>,
 }
 
 /// Store the latest state of `T` for display purposes
@@ -446,7 +446,6 @@ pub enum CfdAction {
     Settle,
     AcceptSettlement,
     RejectSettlement,
-    RollOver,
     AcceptRollOver,
     RejectRollOver,
 }
@@ -472,7 +471,7 @@ fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
             vec![CfdAction::Commit]
         }
         (CfdState::Open { .. }, Role::Taker) => {
-            vec![CfdAction::RollOver, CfdAction::Commit, CfdAction::Settle]
+            vec![CfdAction::Commit, CfdAction::Settle]
         }
         (CfdState::Open { .. }, Role::Maker) => vec![CfdAction::Commit],
         _ => vec![],
