@@ -1445,6 +1445,7 @@ impl Dlc {
     pub fn close_transaction(
         &self,
         proposal: &crate::model::cfd::SettlementProposal,
+        fee_rate: u32,
     ) -> Result<(Transaction, Signature)> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {
@@ -1461,6 +1462,7 @@ impl Dlc {
             lock_amount,
             (&self.maker_address, proposal.maker),
             (&self.taker_address, proposal.taker),
+            fee_rate,
         )
         .context("Unable to collaborative close transaction")?;
 
