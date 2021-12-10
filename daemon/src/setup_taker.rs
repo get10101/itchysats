@@ -117,7 +117,7 @@ impl Actor {
         tracing::info!(%order_id, "Order got rejected");
 
         if msg.is_invalid_order {
-            tracing::error!(%order_id, "Rejection reason: Invalid order ID");
+            tracing::warn!(%order_id, "Rejection reason: Invalid order ID");
         }
 
         self.on_completed
@@ -182,7 +182,7 @@ impl xtra::Actor for Actor {
             .await;
 
         if let Err(e) = res {
-            tracing::error!(%self.order.id, "Stopping setup_taker actor: {}", e);
+            tracing::warn!(%self.order.id, "Stopping setup_taker actor: {}", e);
             ctx.stop()
         }
     }

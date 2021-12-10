@@ -150,7 +150,7 @@ impl Actor {
         };
 
         if let Err(error) = fut.await {
-            tracing::error!(%order_id, "Stopping setup_maker actor: {}", error);
+            tracing::warn!(%order_id, "Stopping setup_maker actor: {}", error);
 
             self.complete(Completed::Failed { order_id, error }, ctx)
                 .await;
