@@ -4,7 +4,7 @@ use crate::oracle::Announcement;
 use crate::setup_contract::{self, SetupParams};
 use crate::tokio_ext::spawn_fallible;
 use crate::wire::{self, SetupMsg};
-use crate::{connection, wallet};
+use crate::{address_map, connection, wallet};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::channel::mpsc::{self, UnboundedSender};
@@ -243,4 +243,10 @@ impl xtra::Message for Started {
 
 impl xtra::Message for Completed {
     type Result = ();
+}
+
+impl address_map::ActorName for Actor {
+    fn actor_name() -> String {
+        "Taker contract setup".to_string()
+    }
 }
