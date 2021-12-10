@@ -11,7 +11,6 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::Amount;
 use futures::{SinkExt, StreamExt, TryStreamExt};
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -40,7 +39,7 @@ pub struct Actor {
     heartbeat_timeout: Duration,
     connect_timeout: Duration,
     connected_state: Option<ConnectedState>,
-    setup_actors: HashMap<OrderId, xtra::Address<setup_taker::Actor>>,
+    setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
     rollover_actors: AddressMap<OrderId, rollover_taker::Actor>,
 }
@@ -119,7 +118,7 @@ impl Actor {
             current_order: current_order.clone_channel(),
             heartbeat_timeout: hearthbeat_timeout,
             connected_state: None,
-            setup_actors: HashMap::new(),
+            setup_actors: AddressMap::default(),
             connect_timeout,
             collab_settlement_actors: AddressMap::default(),
             rollover_actors: AddressMap::default(),
@@ -332,40 +331,44 @@ impl Actor {
                     .expect("wire messages only to arrive in connected state")
                     .last_heartbeat = SystemTime::now();
             }
-            wire::MakerToTaker::ConfirmOrder(order_id) => match self.setup_actors.get(&order_id) {
-                Some(addr) => {
-                    let _ = addr.send(setup_taker::Accepted).await;
-                }
-                None => {
+            wire::MakerToTaker::ConfirmOrder(order_id) => {
+                if self
+                    .setup_actors
+                    .send_fallible(&order_id, setup_taker::Accepted)
+                    .await
+                    .is_err()
+                {
                     tracing::warn!(%order_id, "No active contract setup");
                 }
-            },
-            wire::MakerToTaker::RejectOrder(order_id) => match self.setup_actors.get(&order_id) {
-                Some(addr) => {
-                    let _ = addr.send(setup_taker::Rejected::without_reason()).await;
-                }
-                None => {
+            }
+            wire::MakerToTaker::RejectOrder(order_id) => {
+                if self
+                    .setup_actors
+                    .send_fallible(&order_id, setup_taker::Rejected::without_reason())
+                    .await
+                    .is_err()
+                {
                     tracing::warn!(%order_id, "No active contract setup");
                 }
-            },
+            }
             wire::MakerToTaker::Protocol { order_id, msg } => {
-                match self.setup_actors.get(&order_id) {
-                    Some(addr) => {
-                        let _ = addr.send(msg).await;
-                    }
-                    None => {
-                        tracing::warn!(%order_id, "No active contract setup");
-                    }
+                if self
+                    .setup_actors
+                    .send_fallible(&order_id, msg)
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!(%order_id, "No active contract setup");
                 }
             }
             wire::MakerToTaker::InvalidOrderId(order_id) => {
-                match self.setup_actors.get(&order_id) {
-                    Some(addr) => {
-                        let _ = addr.send(setup_taker::Rejected::invalid_order_id()).await;
-                    }
-                    None => {
-                        tracing::warn!(%order_id, "No active contract setup");
-                    }
+                if self
+                    .setup_actors
+                    .send_fallible(&order_id, setup_taker::Rejected::invalid_order_id())
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!(%order_id, "No active contract setup");
                 }
             }
             wire::MakerToTaker::Settlement { order_id, msg } => {

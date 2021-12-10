@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -57,6 +58,24 @@ where
                     .await
                     .expect("we checked that we are connected");
                 Ok(())
+            }
+            _ => Err(NotConnected::new::<A>()),
+        }
+    }
+
+    /// Sends a message to the actor stored with the given key.
+    pub async fn send_fallible<M>(&self, key: &K, msg: M) -> Result<Result<()>, NotConnected>
+    where
+        M: Message<Result = anyhow::Result<()>>,
+        A: Handler<M> + ActorName,
+    {
+        match self.inner.get(key) {
+            Some(addr) if addr.is_connected() => {
+                let res = addr
+                    .send(msg)
+                    .await
+                    .expect("we checked that we are connected");
+                Ok(res)
             }
             _ => Err(NotConnected::new::<A>()),
         }
