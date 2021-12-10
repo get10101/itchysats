@@ -1,7 +1,8 @@
 use anyhow::Result;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::fmt::time::ChronoLocal;
-use tracing_subscriber::{EnvFilter, FmtSubscriber};
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::FmtSubscriber;
 
 pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
     if level == LevelFilter::OFF {

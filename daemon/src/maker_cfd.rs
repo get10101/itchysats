@@ -1,31 +1,56 @@
-use crate::address_map::{AddressMap, Stopping};
-use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_update_feed};
+use crate::address_map::AddressMap;
+use crate::address_map::Stopping;
+use crate::cfd_actors::append_cfd_state;
+use crate::cfd_actors::insert_cfd_and_update_feed;
+use crate::cfd_actors::{self};
+use crate::collab_settlement_maker;
 use crate::db::load_cfd_by_order_id;
-use crate::model::cfd::{
-    Cfd, CfdState, CfdStateCommon, Dlc, Order, OrderId, Origin, Role, RollOverProposal,
-    SettlementKind, SettlementProposal, UpdateCfdProposal,
-};
-use crate::model::{Identity, Price, Timestamp, Usd};
+use crate::log_error;
+use crate::maker_inc_connections;
+use crate::model::cfd::Cfd;
+use crate::model::cfd::CfdState;
+use crate::model::cfd::CfdStateCommon;
+use crate::model::cfd::Dlc;
+use crate::model::cfd::Order;
+use crate::model::cfd::OrderId;
+use crate::model::cfd::Origin;
+use crate::model::cfd::Role;
+use crate::model::cfd::RollOverProposal;
+use crate::model::cfd::SettlementKind;
+use crate::model::cfd::SettlementProposal;
+use crate::model::cfd::UpdateCfdProposal;
+use crate::model::Identity;
+use crate::model::Price;
+use crate::model::Timestamp;
+use crate::model::Usd;
 use crate::monitor::MonitorParams;
-use crate::projection::{
-    try_into_update_rollover_proposal, Update, UpdateRollOverProposal, UpdateSettlementProposal,
-};
+use crate::monitor::{self};
+use crate::oracle;
+use crate::projection;
+use crate::projection::try_into_update_rollover_proposal;
+use crate::projection::Update;
+use crate::projection::UpdateRollOverProposal;
+use crate::projection::UpdateSettlementProposal;
+use crate::setup_contract;
 use crate::setup_contract::RolloverParams;
+use crate::setup_maker;
 use crate::tokio_ext::FutureExt;
+use crate::wallet;
+use crate::wire;
 use crate::wire::TakerToMaker;
-use crate::{
-    collab_settlement_maker, log_error, maker_inc_connections, monitor, oracle, projection,
-    setup_contract, setup_maker, wallet, wire, Tasks,
-};
-use anyhow::{Context as _, Result};
+use crate::Tasks;
+use anyhow::Context as _;
+use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use futures::channel::mpsc;
+use futures::future;
 use futures::future::RemoteHandle;
-use futures::{future, SinkExt};
+use futures::SinkExt;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::collections::HashSet;
 use time::Duration;
 use xtra::prelude::*;
 use xtra::Actor as _;

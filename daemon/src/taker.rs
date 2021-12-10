@@ -1,16 +1,30 @@
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
+use bdk::bitcoin;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::{Address, Amount};
-use bdk::{bitcoin, FeeRate};
-use clap::{Parser, Subcommand};
+use bdk::bitcoin::Address;
+use bdk::bitcoin::Amount;
+use bdk::FeeRate;
+use clap::Parser;
+use clap::Subcommand;
+use daemon::bitmex_price_feed;
 use daemon::connection::connect;
+use daemon::db;
+use daemon::housekeeping;
+use daemon::logger;
 use daemon::model::cfd::Role;
 use daemon::model::Identity;
+use daemon::monitor;
+use daemon::oracle;
+use daemon::projection;
 use daemon::seed::Seed;
-use daemon::{
-    bitmex_price_feed, db, housekeeping, logger, monitor, oracle, projection, supervisor, wallet,
-    TakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS, SETTLEMENT_INTERVAL,
-};
+use daemon::supervisor;
+use daemon::wallet;
+use daemon::TakerActorSystem;
+use daemon::Tasks;
+use daemon::HEARTBEAT_INTERVAL;
+use daemon::N_PAYOUTS;
+use daemon::SETTLEMENT_INTERVAL;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;

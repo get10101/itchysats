@@ -3,7 +3,7 @@
   "projectType": "openSource",
   "incremental": true,
   "rustfmt": {
-    "imports_granularity": "module",
+    "imports_granularity": "item",
     "wrap_comments": true,
     "comment_width": 120
   },

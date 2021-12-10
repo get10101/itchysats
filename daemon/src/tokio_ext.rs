@@ -1,10 +1,12 @@
 use futures::future::RemoteHandle;
 use futures::FutureExt as _;
-use std::any::{Any, TypeId};
+use std::any::Any;
+use std::any::TypeId;
 use std::fmt;
 use std::future::Future;
 use std::time::Duration;
-use tokio::time::{timeout, Timeout};
+use tokio::time::timeout;
+use tokio::time::Timeout;
 
 pub fn spawn_fallible<F, E>(future: F)
 where

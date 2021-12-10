@@ -1,9 +1,14 @@
-use crate::address_map::{ActorName, Stopping};
-use crate::model::cfd::{
-    Cfd, CollaborativeSettlement, OrderId, Role, SettlementKind, SettlementProposal,
-};
+use crate::address_map::ActorName;
+use crate::address_map::Stopping;
+use crate::maker_inc_connections;
+use crate::model::cfd::Cfd;
+use crate::model::cfd::CollaborativeSettlement;
+use crate::model::cfd::OrderId;
+use crate::model::cfd::Role;
+use crate::model::cfd::SettlementKind;
+use crate::model::cfd::SettlementProposal;
 use crate::model::Identity;
-use crate::{maker_inc_connections, projection};
+use crate::projection;
 use anyhow::Context;
 use async_trait::async_trait;
 use bdk::bitcoin::Script;

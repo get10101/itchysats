@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::Mutex;
+use tokio::sync::MutexGuard;
 
 use self::monitor::MonitorActor;
 use self::oracle::OracleActor;

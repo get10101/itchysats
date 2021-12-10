@@ -1,6 +1,8 @@
 use bdk::bitcoin;
-use bdk::bitcoin::secp256k1::{self, SECP256K1};
-use rand::{CryptoRng, RngCore};
+use bdk::bitcoin::secp256k1;
+use bdk::bitcoin::secp256k1::SECP256K1;
+use rand::CryptoRng;
+use rand::RngCore;
 
 pub fn new<R>(rng: &mut R) -> (secp256k1::SecretKey, bitcoin::PublicKey)
 where

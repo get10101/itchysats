@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use daemon::{monitor, oracle};
+use daemon::monitor;
+use daemon::oracle;
 use mockall::*;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;

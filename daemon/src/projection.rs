@@ -1,16 +1,29 @@
-use std::collections::HashMap;
-
-use crate::model::cfd::{
-    Cfd as ModelCfd, OrderId, Role, RollOverProposal, SettlementKind, SettlementProposal,
-    UpdateCfdProposal,
-};
-use crate::model::{Leverage, Position, Timestamp, TradingPair};
-use crate::{bitmex_price_feed, db, model, tx, Order, UpdateCfdProposals};
+use crate::bitmex_price_feed;
+use crate::db;
+use crate::model;
+use crate::model::cfd::Cfd as ModelCfd;
+use crate::model::cfd::OrderId;
+use crate::model::cfd::Role;
+use crate::model::cfd::RollOverProposal;
+use crate::model::cfd::SettlementKind;
+use crate::model::cfd::SettlementProposal;
+use crate::model::cfd::UpdateCfdProposal;
+use crate::model::Leverage;
+use crate::model::Position;
+use crate::model::Timestamp;
+use crate::model::TradingPair;
+use crate::tx;
+use crate::Order;
+use crate::UpdateCfdProposals;
 use anyhow::Result;
-use bdk::bitcoin::{Amount, Network, SignedAmount};
+use bdk::bitcoin::Amount;
+use bdk::bitcoin::Network;
+use bdk::bitcoin::SignedAmount;
 use itertools::Itertools;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
+use std::collections::HashMap;
 use time::OffsetDateTime;
 use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
@@ -597,7 +610,8 @@ mod tests {
     use super::*;
 
     use rust_decimal_macros::dec;
-    use serde_test::{assert_ser_tokens, Token};
+    use serde_test::assert_ser_tokens;
+    use serde_test::Token;
 
     #[test]
     fn usd_serializes_with_only_cents() {

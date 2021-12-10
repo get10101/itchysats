@@ -1,16 +1,29 @@
 use anyhow::Result;
 use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
+use daemon::maker_cfd;
+use daemon::maker_inc_connections;
 use daemon::model::cfd::OrderId;
-use daemon::model::{Price, Usd, WalletInfo};
-use daemon::projection::{Cfd, CfdAction, Feeds, Identity};
+use daemon::model::Price;
+use daemon::model::Usd;
+use daemon::model::WalletInfo;
+use daemon::monitor;
+use daemon::oracle;
+use daemon::projection::Cfd;
+use daemon::projection::CfdAction;
+use daemon::projection::Feeds;
+use daemon::projection::Identity;
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::ToSseEvent;
-use daemon::{maker_cfd, maker_inc_connections, monitor, oracle, wallet};
-use http_api_problem::{HttpApiProblem, StatusCode};
-use rocket::http::{ContentType, Header, Status};
+use daemon::wallet;
+use http_api_problem::HttpApiProblem;
+use http_api_problem::StatusCode;
+use rocket::http::ContentType;
+use rocket::http::Header;
+use rocket::http::Status;
+use rocket::response::status;
 use rocket::response::stream::EventStream;
-use rocket::response::{status, Responder};
+use rocket::response::Responder;
 use rocket::serde::json::Json;
 use rocket::State;
 use rust_embed::RustEmbed;
@@ -266,9 +279,11 @@ pub async fn get_takers<'r>(
 mod tests {
     use super::*;
     use daemon::auth::Password;
-    use rocket::http::{Header, Status};
+    use rocket::http::Header;
+    use rocket::http::Status;
     use rocket::local::blocking::Client;
-    use rocket::{Build, Rocket};
+    use rocket::Build;
+    use rocket::Rocket;
 
     #[test]
     fn routes_are_password_protected() {

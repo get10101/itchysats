@@ -2,7 +2,9 @@ use anyhow::Result;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
-use xtra::{Address, Handler, Message};
+use xtra::Address;
+use xtra::Handler;
+use xtra::Message;
 
 pub struct AddressMap<K, A> {
     inner: HashMap<K, xtra::Address<A>>,

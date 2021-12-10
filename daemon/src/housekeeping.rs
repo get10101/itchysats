@@ -1,9 +1,13 @@
-use crate::db::{append_cfd_state, load_all_cfds};
-use crate::model::cfd::{Cfd, CfdState};
-use crate::{try_continue, wallet};
+use crate::db::append_cfd_state;
+use crate::db::load_all_cfds;
+use crate::model::cfd::Cfd;
+use crate::model::cfd::CfdState;
+use crate::try_continue;
+use crate::wallet;
 use anyhow::Result;
 use sqlx::pool::PoolConnection;
-use sqlx::{Sqlite, SqlitePool};
+use sqlx::Sqlite;
+use sqlx::SqlitePool;
 use xtra::Address;
 
 /// Perform necessary housekeeping before actor system startup

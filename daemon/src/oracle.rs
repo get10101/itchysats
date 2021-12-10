@@ -1,12 +1,19 @@
-use crate::model::cfd::{Cfd, CfdState};
+use crate::log_error;
+use crate::model::cfd::Cfd;
+use crate::model::cfd::CfdState;
 use crate::model::BitMexPriceEventId;
-use crate::{log_error, tokio_ext, try_continue};
-use anyhow::{Context, Result};
+use crate::tokio_ext;
+use crate::try_continue;
+use anyhow::Context;
+use anyhow::Result;
 use async_trait::async_trait;
-use maia::secp256k1_zkp::{schnorrsig, SecretKey};
-use rocket::time::{OffsetDateTime, Time};
+use maia::secp256k1_zkp::schnorrsig;
+use maia::secp256k1_zkp::SecretKey;
+use rocket::time::OffsetDateTime;
+use rocket::time::Time;
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::ops::Add;
 use time::ext::NumericalDuration;
 use time::Duration;
@@ -304,7 +311,8 @@ impl xtra::Message for NewAttestationFetched {
 mod olivia_api {
     use crate::model::BitMexPriceEventId;
     use anyhow::Context;
-    use maia::secp256k1_zkp::{schnorrsig, SecretKey};
+    use maia::secp256k1_zkp::schnorrsig;
+    use maia::secp256k1_zkp::SecretKey;
     use std::convert::TryFrom;
     use time::OffsetDateTime;
 
@@ -391,8 +399,10 @@ mod olivia_api {
     mod timestamp {
         use crate::olivia;
         use serde::de::Error as _;
-        use serde::{Deserialize, Deserializer};
-        use time::{OffsetDateTime, PrimitiveDateTime};
+        use serde::Deserialize;
+        use serde::Deserializer;
+        use time::OffsetDateTime;
+        use time::PrimitiveDateTime;
 
         pub fn deserialize<'a, D>(deserializer: D) -> Result<OffsetDateTime, D::Error>
         where

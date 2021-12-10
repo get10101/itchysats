@@ -1,19 +1,34 @@
-use crate::model::cfd::{CetStatus, Cfd, CfdState, Dlc, OrderId};
+use crate::log_error;
+use crate::model;
+use crate::model::cfd::CetStatus;
+use crate::model::cfd::Cfd;
+use crate::model::cfd::CfdState;
+use crate::model::cfd::Dlc;
+use crate::model::cfd::OrderId;
 use crate::model::BitMexPriceEventId;
+use crate::oracle;
 use crate::oracle::Attestation;
-use crate::{log_error, model, oracle, try_continue};
-use anyhow::{Context, Result};
+use crate::try_continue;
+use anyhow::Context;
+use anyhow::Result;
 use async_trait::async_trait;
-use bdk::bitcoin::{PublicKey, Script, Txid};
+use bdk::bitcoin::PublicKey;
+use bdk::bitcoin::Script;
+use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
-use bdk::electrum_client::{ElectrumApi, GetHistoryRes, HeaderNotification};
+use bdk::electrum_client::ElectrumApi;
+use bdk::electrum_client::GetHistoryRes;
+use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap};
-use std::convert::{TryFrom, TryInto};
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::fmt;
 use std::marker::Send;
-use std::ops::{Add, RangeInclusive};
+use std::ops::Add;
+use std::ops::RangeInclusive;
 use xtra::prelude::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -669,10 +684,14 @@ impl xtra::Handler<oracle::Attestation> for Actor {
 mod tests {
     use super::*;
     use bdk::bitcoin::blockdata::block;
-    use bdk::electrum_client::{
-        Batch, Error, GetBalanceRes, GetHeadersRes, GetMerkleRes, ListUnspentRes,
-        RawHeaderNotification, ServerFeaturesRes,
-    };
+    use bdk::electrum_client::Batch;
+    use bdk::electrum_client::Error;
+    use bdk::electrum_client::GetBalanceRes;
+    use bdk::electrum_client::GetHeadersRes;
+    use bdk::electrum_client::GetMerkleRes;
+    use bdk::electrum_client::ListUnspentRes;
+    use bdk::electrum_client::RawHeaderNotification;
+    use bdk::electrum_client::ServerFeaturesRes;
     use std::iter::FromIterator;
     use tracing_subscriber::prelude::*;
 
