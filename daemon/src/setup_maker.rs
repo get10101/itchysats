@@ -287,6 +287,6 @@ impl xtra::Message for Started {
 
 impl ActorName for Actor {
     fn actor_name() -> String {
-        "Taker contract setup".to_string()
+        "Maker contract setup".to_string()
     }
 }
