@@ -124,7 +124,15 @@ pub async fn post_cfd_action(
         }
         CfdAction::Commit => cfd_actor.send(taker_cfd::Commit { order_id: id }).await,
         CfdAction::Settle => {
-            let quote: bitmex_price_feed::Quote = feeds.quote.borrow().clone().into();
+            let quote: bitmex_price_feed::Quote = match feeds.quote.borrow().as_ref() {
+                Some(quote) => quote.clone().into(),
+                None => {
+                    return Err(HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                        .title("Quote unavailable")
+                        .detail("Cannot settle without current price information."))
+                }
+            };
+
             let current_price = quote.for_taker();
             cfd_actor
                 .send(taker_cfd::ProposeSettlement {

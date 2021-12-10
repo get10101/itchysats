@@ -98,7 +98,7 @@ impl ToSseEvent for connection::ConnectionStatus {
     }
 }
 
-impl ToSseEvent for Quote {
+impl ToSseEvent for Option<Quote> {
     fn to_sse_event(&self) -> Event {
         Event::json(self).event("quote")
     }

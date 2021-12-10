@@ -3,10 +3,9 @@ use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use ::bdk::bitcoin::Network;
-use daemon::bitmex_price_feed::Quote;
 use daemon::connection::{connect, ConnectionStatus};
 use daemon::model::cfd::{OrderId, Role};
-use daemon::model::{self, Price, Timestamp, Usd};
+use daemon::model::{self, Price, Usd};
 use daemon::projection::{Cfd, CfdOrder, Feeds, Identity};
 use daemon::seed::Seed;
 use daemon::{
@@ -168,10 +167,9 @@ impl Maker {
         .await
         .unwrap();
 
-        let (proj_actor, feeds) =
-            projection::Actor::new(db, Role::Maker, Network::Testnet, dummy_quote())
-                .await
-                .unwrap();
+        let (proj_actor, feeds) = projection::Actor::new(db, Role::Maker, Network::Testnet)
+            .await
+            .unwrap();
         tasks.add(projection_context.run(proj_actor));
 
         let address = listener.local_addr().unwrap();
@@ -297,10 +295,9 @@ impl Taker {
         .await
         .unwrap();
 
-        let (proj_actor, feeds) =
-            projection::Actor::new(db, Role::Taker, Network::Testnet, dummy_quote())
-                .await
-                .unwrap();
+        let (proj_actor, feeds) = projection::Actor::new(db, Role::Taker, Network::Testnet)
+            .await
+            .unwrap();
         tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(
@@ -389,14 +386,6 @@ async fn in_memory_db() -> SqlitePool {
 
 pub fn dummy_price() -> Price {
     Price::new(dec!(50_000)).expect("to not fail")
-}
-
-pub fn dummy_quote() -> Quote {
-    Quote {
-        timestamp: Timestamp::now(),
-        bid: dummy_price(),
-        ask: dummy_price(),
-    }
 }
 
 pub fn dummy_new_order() -> maker_cfd::NewOrder {

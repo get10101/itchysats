@@ -262,12 +262,12 @@ async fn main() -> Result<()> {
         .run();
     tasks.add(task);
 
-    let init_quote = price_feed_address
+    price_feed_address
         .send(bitmex_price_feed::Connect)
         .await??;
 
     let (proj_actor, projection_feeds) =
-        projection::Actor::new(db.clone(), Role::Maker, bitcoin_network, init_quote).await?;
+        projection::Actor::new(db.clone(), Role::Maker, bitcoin_network).await?;
     tasks.add(projection_context.run(proj_actor));
 
     let listener_stream = futures::stream::poll_fn(move |ctx| {

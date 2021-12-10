@@ -42,19 +42,14 @@ pub struct Actor {
 }
 
 pub struct Feeds {
-    pub quote: watch::Receiver<Quote>,
+    pub quote: watch::Receiver<Option<Quote>>,
     pub order: watch::Receiver<Option<CfdOrder>>,
     pub connected_takers: watch::Receiver<Vec<Identity>>,
     pub cfds: watch::Receiver<Vec<Cfd>>,
 }
 
 impl Actor {
-    pub async fn new(
-        db: sqlx::SqlitePool,
-        role: Role,
-        network: Network,
-        init_quote: bitmex_price_feed::Quote,
-    ) -> Result<(Self, Feeds)> {
+    pub async fn new(db: sqlx::SqlitePool, role: Role, network: Network) -> Result<(Self, Feeds)> {
         let mut conn = db.acquire().await?;
         let init_cfds = db::load_all_cfds(&mut conn).await?;
 
@@ -63,12 +58,12 @@ impl Actor {
             network,
             cfds: init_cfds,
             proposals: HashMap::new(),
-            quote: init_quote.clone(),
+            quote: None,
         };
 
         let (tx_cfds, rx_cfds) = watch::channel(state.to_cfds());
         let (tx_order, rx_order) = watch::channel(None);
-        let (tx_quote, rx_quote) = watch::channel(init_quote.into());
+        let (tx_quote, rx_quote) = watch::channel(None);
         let (tx_connected_takers, rx_connected_takers) = watch::channel(Vec::new());
 
         Ok((
@@ -96,7 +91,7 @@ impl Actor {
 struct Tx {
     pub cfds: watch::Sender<Vec<Cfd>>,
     pub order: watch::Sender<Option<CfdOrder>>,
-    pub quote: watch::Sender<Quote>,
+    pub quote: watch::Sender<Option<Quote>>,
     // TODO: Use this channel to communicate maker status as well with generic
     // ID of connected counterparties
     pub connected_takers: watch::Sender<Vec<Identity>>,
@@ -106,7 +101,7 @@ struct Tx {
 struct State {
     role: Role,
     network: Network,
-    quote: bitmex_price_feed::Quote,
+    quote: Option<bitmex_price_feed::Quote>,
     proposals: UpdateCfdProposals,
     cfds: Vec<ModelCfd>,
 }
@@ -135,7 +130,7 @@ impl State {
     }
 
     pub fn update_quote(&mut self, quote: bitmex_price_feed::Quote) {
-        let _ = std::mem::replace(&mut self.quote, quote);
+        self.quote = Some(quote);
     }
 
     pub fn update_cfds(&mut self, cfds: Vec<ModelCfd>) {
@@ -175,7 +170,7 @@ impl Actor {
     fn handle(&mut self, msg: Update<bitmex_price_feed::Quote>) {
         let quote = msg.0;
         self.state.update_quote(quote.clone());
-        let _ = self.tx.quote.send(quote.into());
+        let _ = self.tx.quote.send(Some(quote.into()));
         let _ = self.tx.cfds.send(self.state.to_cfds());
     }
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
@@ -488,9 +483,9 @@ pub struct Cfd {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub margin_counterparty: Amount,
 
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub profit_btc: SignedAmount,
-    pub profit_in_percent: String,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
+    pub profit_btc: Option<SignedAmount>,
+    pub profit_percent: Option<String>,
 
     pub state: CfdState,
     pub actions: Vec<CfdAction>,
@@ -506,20 +501,28 @@ pub struct Cfd {
 
 impl From<CfdsWithAuxData> for Vec<Cfd> {
     fn from(input: CfdsWithAuxData) -> Self {
-        let current_price = input.current_price;
         let network = input.network;
 
         let cfds = input
             .cfds
             .iter()
             .map(|cfd| {
-                let (profit_btc, profit_in_percent) =
-                    cfd.profit(current_price).unwrap_or_else(|error| {
-                        tracing::warn!(
-                            "Calculating profit/loss failed. Falling back to 0. {:#}",
-                            error
-                        );
-                        (SignedAmount::ZERO, Decimal::ZERO.into())
+                let (profit_btc, profit_percent) = input.current_price
+                    .map(|current_price| match cfd.profit(current_price) {
+                        Ok((profit_btc, profit_percent)) => (
+                            Some(profit_btc),
+                            Some(profit_percent.round_dp(1).to_string()),
+                        ),
+                        Err(e) => {
+                            tracing::warn!("Failed to calculate profit/loss {:#}", e);
+
+                            (None, None)
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        tracing::debug!(order_id = %cfd.order.id, "Unable to calculate profit/loss without current price");
+
+                        (None, None)
                     });
 
                 let pending_proposal = input.pending_proposals.get(&cfd.order.id);
@@ -534,7 +537,7 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
                     liquidation_price: cfd.order.liquidation_price.into(),
                     quantity_usd: cfd.quantity_usd.into(),
                     profit_btc,
-                    profit_in_percent: profit_in_percent.round_dp(1).to_string(),
+                    profit_percent,
                     state: state.clone(),
                     actions: available_actions(state, cfd.role()),
                     state_transition_timestamp: cfd.state.get_transition_timestamp().seconds(),
@@ -562,7 +565,7 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
 // TODO: Remove this struct out of existence
 pub struct CfdsWithAuxData {
     pub cfds: Vec<model::cfd::Cfd>,
-    pub current_price: model::Price,
+    pub current_price: Option<model::Price>,
     pub pending_proposals: UpdateCfdProposals,
     pub network: Network,
 }
@@ -570,15 +573,15 @@ pub struct CfdsWithAuxData {
 impl CfdsWithAuxData {
     pub fn new(
         cfds: Vec<model::cfd::Cfd>,
-        quote: bitmex_price_feed::Quote,
+        quote: Option<bitmex_price_feed::Quote>,
         pending_proposals: UpdateCfdProposals,
         role: Role,
         network: Network,
     ) -> Self {
-        let current_price = match role {
+        let current_price = quote.map(|quote| match role {
             Role::Maker => quote.for_maker(),
             Role::Taker => quote.for_taker(),
-        };
+        });
 
         CfdsWithAuxData {
             cfds,

@@ -249,12 +249,12 @@ async fn main() -> Result<()> {
         .run();
     tasks.add(task);
 
-    let init_quote = price_feed_address
+    price_feed_address
         .send(bitmex_price_feed::Connect)
         .await??;
 
     let (proj_actor, projection_feeds) =
-        projection::Actor::new(db.clone(), Role::Taker, bitcoin_network, init_quote).await?;
+        projection::Actor::new(db.clone(), Role::Taker, bitcoin_network).await?;
     tasks.add(projection_context.run(proj_actor));
 
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;

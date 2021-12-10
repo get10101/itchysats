@@ -8,6 +8,7 @@ import {
     HStack,
     Link,
     SimpleGrid,
+    Skeleton,
     Spinner,
     Table,
     Tbody,
@@ -60,11 +61,6 @@ const CfdDetails = ({ cfd, connectedToMaker }: CfdDetailsProps) => {
     const margin = `₿${Math.round((cfd.margin) * 1_000_000) / 1_000_000}`;
     const liquidationPrice = `$${cfd.liquidation_price}`;
 
-    const pAndLNumber = Math.round((cfd.profit_btc) * 1_000_000) / 1_000_000;
-    const pAndL = pAndLNumber < 0 ? `-₿${Math.abs(pAndLNumber)}` : `₿${Math.abs(pAndLNumber)}`;
-
-    const payout = `₿${Math.round((cfd.margin + cfd.profit_btc) * 1_000_000) / 1_000_000}`;
-
     const txLock = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Lock);
     const txCommit = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Commit);
     const txRefund = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Refund);
@@ -108,11 +104,19 @@ const CfdDetails = ({ cfd, connectedToMaker }: CfdDetailsProps) => {
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Unrealized P/L</Text></Td>
-                            <Td textAlign="right">{pAndL}</Td>
+                            <Td textAlign="right">
+                                <Skeleton isLoaded={cfd.profit_btc != null}>
+                                    <ProfitAndLoss profitBtc={cfd.profit_btc!} />
+                                </Skeleton>
+                            </Td>
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Payout</Text></Td>
-                            <Td textAlign="right">{payout}</Td>
+                            <Td textAlign="right">
+                                <Skeleton isLoaded={cfd.profit_btc != null}>
+                                    <Payout profitBtc={cfd.profit_btc!} margin={cfd.margin} />
+                                </Skeleton>
+                            </Td>
                         </Tr>
                     </Tbody>
                 </Table>
@@ -163,6 +167,33 @@ const CfdDetails = ({ cfd, connectedToMaker }: CfdDetailsProps) => {
         </HStack>
     );
 };
+
+interface ProfitAndLossProps {
+    profitBtc: number;
+}
+
+function ProfitAndLoss({ profitBtc }: ProfitAndLossProps) {
+    const pAndLNumber = Math.round((profitBtc) * 1_000_000) / 1_000_000;
+    const absPAndL = Math.abs(pAndLNumber);
+    const negativeSign = pAndLNumber < 0 ? "-" : "";
+
+    return <Text>
+        {negativeSign}₿{absPAndL}
+    </Text>;
+}
+
+interface PayoutProps {
+    profitBtc: number;
+    margin: number;
+}
+
+function Payout({ profitBtc, margin }: PayoutProps) {
+    let payoutBtc = Math.round((margin + profitBtc) * 1_000_000) / 1_000_000;
+
+    return <Text>
+        ₿{payoutBtc}
+    </Text>;
+}
 
 const CircleIcon = (props: any) => (
     <Icon viewBox="0 0 200 200" {...props}>
