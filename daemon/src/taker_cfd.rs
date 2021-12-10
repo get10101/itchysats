@@ -5,7 +5,6 @@ use crate::cfd_actors::{self};
 use crate::collab_settlement_taker;
 use crate::connection;
 use crate::db::load_cfd;
-use crate::log_error;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CfdState;
 use crate::model::cfd::CfdStateCommon;
@@ -412,8 +411,8 @@ where
 
 #[xtra_productivity]
 impl<O, M, W> Actor<O, M, W> {
-    async fn handle_current_order(&mut self, msg: CurrentOrder) {
-        log_error!(self.handle_new_order(msg.0));
+    async fn handle_current_order(&mut self, msg: CurrentOrder) -> Result<()> {
+        self.handle_new_order(msg.0).await
     }
 }
 
@@ -424,8 +423,8 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_setup_completed(msg))
+    async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_setup_completed(msg).await
     }
 }
 
@@ -434,8 +433,8 @@ impl<O: 'static, M: 'static, W: 'static> Handler<monitor::Event> for Actor<O, M,
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_monitoring_event(msg))
+    async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_monitoring_event(msg).await
     }
 }
 
@@ -445,14 +444,16 @@ where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_oracle_attestation(msg))
+        if let Err(e) = self.handle_oracle_attestation(msg).await {
+            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
+        }
     }
 }
 
 #[async_trait]
 impl<O: 'static, M: 'static, W: 'static> Handler<setup_taker::Started> for Actor<O, M, W> {
-    async fn handle(&mut self, msg: setup_taker::Started, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_setup_started(msg.0))
+    async fn handle(&mut self, msg: setup_taker::Started, _ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_setup_started(msg.0).await
     }
 }
 

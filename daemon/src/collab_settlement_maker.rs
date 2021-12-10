@@ -9,6 +9,7 @@ use crate::model::cfd::SettlementKind;
 use crate::model::cfd::SettlementProposal;
 use crate::model::Identity;
 use crate::projection;
+use crate::xtra_ext::LogFailure;
 use anyhow::Context;
 use async_trait::async_trait;
 use bdk::bitcoin::Script;
@@ -172,7 +173,11 @@ impl Actor {
     }
 
     async fn complete(&mut self, completed: Completed, ctx: &mut xtra::Context<Self>) {
-        let _ = self.on_completed.send(completed).await;
+        let _ = self
+            .on_completed
+            .send(completed)
+            .log_failure("Failed to inform about collab settlement completion")
+            .await;
 
         ctx.stop();
     }

@@ -5,7 +5,6 @@ use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::cfd_actors::{self};
 use crate::collab_settlement_maker;
 use crate::db::load_cfd;
-use crate::log_error;
 use crate::maker_inc_connections;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CfdState;
@@ -557,49 +556,50 @@ where
     M: xtra::Handler<monitor::CollaborativeSettlement>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle_settlement_completed(&mut self, msg: collab_settlement_maker::Completed) {
-        log_error!(async {
-            use collab_settlement_maker::Completed::*;
-            let (order_id, settlement, script_pubkey) = match msg {
-                Confirmed {
-                    order_id,
-                    settlement,
-                    script_pubkey,
-                } => (order_id, settlement, script_pubkey),
-                Rejected { .. } => {
-                    return Ok(());
-                }
-                Failed { order_id, error } => {
-                    tracing::warn!(%order_id, "Collaborative settlement failed: {:#}", error);
-                    return Ok(());
-                }
-            };
+    async fn handle_settlement_completed(
+        &mut self,
+        msg: collab_settlement_maker::Completed,
+    ) -> Result<()> {
+        use collab_settlement_maker::Completed::*;
+        let (order_id, settlement, script_pubkey) = match msg {
+            Confirmed {
+                order_id,
+                settlement,
+                script_pubkey,
+            } => (order_id, settlement, script_pubkey),
+            Rejected { .. } => {
+                return Ok(());
+            }
+            Failed { order_id, error } => {
+                tracing::warn!(%order_id, "Collaborative settlement failed: {:#}", error);
+                return Ok(());
+            }
+        };
 
-            let mut conn = self.db.acquire().await?;
-            let mut cfd = load_cfd(order_id, &mut conn).await?;
+        let mut conn = self.db.acquire().await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
 
-            let tx = settlement.tx.clone();
-            cfd.handle_proposal_signed(settlement)
-                .context("Failed to update state with collaborative settlement")?;
+        let tx = settlement.tx.clone();
+        cfd.handle_proposal_signed(settlement)
+            .context("Failed to update state with collaborative settlement")?;
 
-            append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
-            let txid = self
-                .wallet
-                .send(wallet::TryBroadcastTransaction { tx })
-                .await?
-                .context("Broadcasting close transaction")?;
-            tracing::info!(%order_id, "Close transaction published with txid {}", txid);
+        let txid = self
+            .wallet
+            .send(wallet::TryBroadcastTransaction { tx })
+            .await?
+            .context("Broadcasting close transaction")?;
+        tracing::info!(%order_id, "Close transaction published with txid {}", txid);
 
-            self.monitor_actor
-                .send(monitor::CollaborativeSettlement {
-                    order_id,
-                    tx: (txid, script_pubkey),
-                })
-                .await?;
+        self.monitor_actor
+            .send(monitor::CollaborativeSettlement {
+                order_id,
+                tx: (txid, script_pubkey),
+            })
+            .await?;
 
-            anyhow::Ok(())
-        });
+        Ok(())
     }
 }
 
@@ -754,56 +754,54 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle_setup_completed(&mut self, msg: setup_maker::Completed) {
-        log_error!(async {
-            use setup_maker::Completed::*;
-            let (order_id, dlc) = match msg {
-                NewContract { order_id, dlc } => (order_id, dlc),
-                Failed { order_id, error } => {
-                    self.append_cfd_state_setup_failed(order_id, error).await?;
-                    return anyhow::Ok(());
-                }
-                Rejected(order_id) => {
-                    self.append_cfd_state_rejected(order_id).await?;
-                    return anyhow::Ok(());
-                }
-            };
+    async fn handle_setup_completed(&mut self, msg: setup_maker::Completed) -> Result<()> {
+        use setup_maker::Completed::*;
+        let (order_id, dlc) = match msg {
+            NewContract { order_id, dlc } => (order_id, dlc),
+            Failed { order_id, error } => {
+                self.append_cfd_state_setup_failed(order_id, error).await?;
+                return anyhow::Ok(());
+            }
+            Rejected(order_id) => {
+                self.append_cfd_state_rejected(order_id).await?;
+                return anyhow::Ok(());
+            }
+        };
 
-            let mut conn = self.db.acquire().await?;
-            let mut cfd = load_cfd(order_id, &mut conn).await?;
+        let mut conn = self.db.acquire().await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
 
-            *cfd.state_mut() = CfdState::PendingOpen {
-                common: CfdStateCommon::default(),
-                dlc: dlc.clone(),
-                attestation: None,
-            };
+        *cfd.state_mut() = CfdState::PendingOpen {
+            common: CfdStateCommon::default(),
+            dlc: dlc.clone(),
+            attestation: None,
+        };
 
-            append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
-            let txid = self
-                .wallet
-                .send(wallet::TryBroadcastTransaction {
-                    tx: dlc.lock.0.clone(),
-                })
-                .await??;
+        let txid = self
+            .wallet
+            .send(wallet::TryBroadcastTransaction {
+                tx: dlc.lock.0.clone(),
+            })
+            .await??;
 
-            tracing::info!("Lock transaction published with txid {}", txid);
+        tracing::info!("Lock transaction published with txid {}", txid);
 
-            self.monitor_actor
-                .send(monitor::StartMonitoring {
-                    id: order_id,
-                    params: MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks()),
-                })
-                .await?;
+        self.monitor_actor
+            .send(monitor::StartMonitoring {
+                id: order_id,
+                params: MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks()),
+            })
+            .await?;
 
-            self.oracle_actor
-                .send(oracle::MonitorAttestation {
-                    event_id: dlc.settlement_event_id,
-                })
-                .await?;
+        self.oracle_actor
+            .send(oracle::MonitorAttestation {
+                event_id: dlc.settlement_event_id,
+            })
+            .await?;
 
-            Ok(())
-        });
+        Ok(())
     }
 }
 
@@ -812,8 +810,8 @@ impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<TakerConnected> for
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
-    async fn handle(&mut self, msg: TakerConnected, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_taker_connected(msg.id));
+    async fn handle(&mut self, msg: TakerConnected, _ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_taker_connected(msg.id).await
     }
 }
 
@@ -823,8 +821,8 @@ impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<TakerDisconnected>
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
-    async fn handle(&mut self, msg: TakerDisconnected, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_taker_disconnected(msg.id));
+    async fn handle(&mut self, msg: TakerDisconnected, _ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_taker_disconnected(msg.id).await
     }
 }
 
@@ -834,8 +832,8 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     O: xtra::Handler<oracle::MonitorAttestation>,
 {
-    async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_roll_over_completed(msg));
+    async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_roll_over_completed(msg).await
     }
 }
 
@@ -844,8 +842,8 @@ impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<monitor::Event> for
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_monitoring_event(msg))
+    async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) -> Result<()> {
+        self.handle_monitoring_event(msg).await
     }
 }
 
@@ -866,10 +864,15 @@ where
         + xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker, ctx: &mut Context<Self>) {
+    async fn handle(
+        &mut self,
+        FromTaker { taker_id, msg }: FromTaker,
+        ctx: &mut Context<Self>,
+    ) -> Result<()> {
         match msg {
             wire::TakerToMaker::TakeOrder { order_id, quantity } => {
-                log_error!(self.handle_take_order(taker_id, order_id, quantity, ctx))
+                self.handle_take_order(taker_id, order_id, quantity, ctx)
+                    .await?
             }
             wire::TakerToMaker::Settlement {
                 order_id,
@@ -881,17 +884,22 @@ where
                         price,
                     },
             } => {
-                log_error!(self.handle_propose_settlement(
-                    taker_id,
-                    SettlementProposal {
-                        order_id,
-                        timestamp,
-                        taker,
-                        maker,
-                        price
-                    },
-                    ctx
-                ))
+                if let Err(e) = self
+                    .handle_propose_settlement(
+                        taker_id,
+                        SettlementProposal {
+                            order_id,
+                            timestamp,
+                            taker,
+                            maker,
+                            price,
+                        },
+                        ctx,
+                    )
+                    .await
+                {
+                    tracing::warn!("Failed ot handle settlement proposal: {:#}", e);
+                }
             }
             wire::TakerToMaker::Settlement {
                 msg: wire::taker_to_maker::Settlement::Initiate { .. },
@@ -903,14 +911,19 @@ where
                 order_id,
                 timestamp,
             } => {
-                log_error!(self.handle_propose_roll_over(
-                    RolloverProposal {
-                        order_id,
-                        timestamp,
-                    },
-                    taker_id,
-                    ctx
-                ))
+                if let Err(e) = self
+                    .handle_propose_roll_over(
+                        RolloverProposal {
+                            order_id,
+                            timestamp,
+                        },
+                        taker_id,
+                        ctx,
+                    )
+                    .await
+                {
+                    tracing::warn!("Failed to handle rollover proposal: {:#}", e);
+                }
             }
             wire::TakerToMaker::RollOverProtocol { .. } => {
                 unreachable!("This kind of message should be sent to the rollover_maker::Actor`")
@@ -921,7 +934,9 @@ where
             TakerToMaker::Hello(_) => {
                 unreachable!("The Hello message is not sent to the cfd actor")
             }
-        }
+        };
+
+        Ok(())
     }
 }
 
@@ -932,24 +947,26 @@ where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_oracle_attestation(msg))
+        if let Err(e) = self.handle_oracle_attestation(msg).await {
+            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
+        }
     }
 }
 
 impl Message for TakerConnected {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl Message for TakerDisconnected {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl Message for Completed {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl Message for FromTaker {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl<O: 'static, M: 'static, T: 'static, W: 'static> xtra::Actor for Actor<O, M, T, W> {}

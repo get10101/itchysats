@@ -26,7 +26,6 @@ use xtra::Address;
 
 pub mod sqlx_ext; // Must come first because it is a macro.
 
-pub mod actors;
 pub mod address_map;
 pub mod auth;
 pub mod auto_rollover;
@@ -67,6 +66,7 @@ pub mod try_continue;
 pub mod tx;
 pub mod wallet;
 pub mod wire;
+pub mod xtra_ext;
 
 // Certain operations (e.g. contract setup) take long time in debug mode,
 // causing us to lag behind in processing heartbeats.

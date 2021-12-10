@@ -20,6 +20,7 @@ use crate::tokio_ext::spawn_fallible;
 use crate::wire;
 use crate::wire::MakerToTaker;
 use crate::wire::RollOverMsg;
+use crate::xtra_ext::LogFailure;
 use crate::Cfd;
 use crate::Stopping;
 use anyhow::Context as _;
@@ -140,7 +141,10 @@ impl Actor {
             order_id: self.cfd.id(),
             dlc,
         };
-        self.maker_cfd_actor.send(msg).await?;
+        self.maker_cfd_actor
+            .send(msg)
+            .log_failure("Failed to report rollover completion")
+            .await?;
         ctx.stop();
         Ok(())
     }
