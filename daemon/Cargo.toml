@@ -65,5 +65,5 @@ serde_test = "1"
 time = { version = "0.3", features = ["std"] }
 
 [build-dependencies]
-vergen = "5"
+vergen = "6"
 anyhow = "1"
