@@ -27,6 +27,7 @@ use crate::projection;
 use crate::projection::Update;
 use crate::rollover_maker;
 use crate::rollover_maker::Completed;
+use crate::send_async_safe::SendAsyncSafe;
 use crate::setup_maker;
 use crate::wallet;
 use crate::wire;
@@ -205,11 +206,8 @@ where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
     async fn handle_taker_connected(&mut self, taker_id: Identity) -> Result<()> {
-        // Need to use `do_send_async` here because we are being invoked from the
-        // `maker_inc_connections::Actor`. Using `send` would result in a deadlock.
-        #[allow(clippy::disallowed_method)]
         self.takers
-            .do_send_async(maker_inc_connections::TakerMessage {
+            .send_async_safe(maker_inc_connections::TakerMessage {
                 taker_id,
                 msg: wire::MakerToTaker::CurrentOrder(self.current_order.clone()),
             })
@@ -413,12 +411,8 @@ where
         // have to remove the current order.
         self.current_order = None;
 
-        // Need to use `do_send_async` here because invoking the
-        // corresponding handler can result in a deadlock with another
-        // invocation in `maker_inc_connections.rs`
-        #[allow(clippy::disallowed_method)]
         self.takers
-            .do_send_async(maker_inc_connections::BroadcastOrder(None))
+            .send_async_safe(maker_inc_connections::BroadcastOrder(None))
             .await?;
 
         self.projection_actor.send(projection::Update(None)).await?;

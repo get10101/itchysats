@@ -8,6 +8,7 @@ use crate::model::cfd::SettlementKind;
 use crate::model::cfd::SettlementProposal;
 use crate::model::Price;
 use crate::projection;
+use crate::send_async_safe::SendAsyncSafe;
 use crate::wire;
 use anyhow::Context;
 use anyhow::Result;
@@ -80,12 +81,8 @@ impl Actor {
 
         let (tx, sig) = dlc.close_transaction(&self.proposal)?;
 
-        // Need to use `do_send_async` here because this handler is called in
-        // context of a message arriving over the wire, and would result in a
-        // deadlock otherwise.
-        #[allow(clippy::disallowed_method)]
         self.connection
-            .do_send_async(wire::TakerToMaker::Settlement {
+            .send_async_safe(wire::TakerToMaker::Settlement {
                 order_id,
                 msg: wire::taker_to_maker::Settlement::Initiate { sig_taker: sig },
             })
