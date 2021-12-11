@@ -8,7 +8,7 @@ use daemon::model::cfd::Role;
 use daemon::seed::Seed;
 use daemon::{
     bitmex_price_feed, db, housekeeping, logger, maker_inc_connections, monitor, oracle,
-    projection, wallet, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
+    projection, supervisor, wallet, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
     SETTLEMENT_INTERVAL,
 };
 use sqlx::sqlite::SqliteConnectOptions;
@@ -257,14 +257,13 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let (price_feed_address, task) = bitmex_price_feed::Actor::new(projection_actor)
-        .create(None)
-        .run();
-    tasks.add(task);
+    let (supervisor, _price_feed) = supervisor::Actor::new(
+        move |supervisor| bitmex_price_feed::Actor::new(projection_actor.clone(), supervisor),
+        |_| true, // always restart price feed actor
+    );
 
-    price_feed_address
-        .send(bitmex_price_feed::Connect)
-        .await??;
+    let (_supervisor_address, task) = supervisor.create(None).run();
+    tasks.add(task);
 
     let (proj_actor, projection_feeds) =
         projection::Actor::new(db.clone(), Role::Maker, bitcoin_network).await?;

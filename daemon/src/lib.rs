@@ -51,6 +51,7 @@ pub mod send_to_socket;
 pub mod setup_contract;
 pub mod setup_maker;
 pub mod setup_taker;
+pub mod supervisor;
 pub mod taker_cfd;
 pub mod to_sse_event;
 pub mod tokio_ext;
