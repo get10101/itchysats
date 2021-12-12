@@ -45,7 +45,7 @@ pub struct Initiated {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, _: Accepted, ctx: &mut xtra::Context<Self>) {
-        let order_id = self.cfd.order.id;
+        let order_id = self.cfd.id;
 
         tracing::info!(%order_id, "Settlement proposal accepted");
 
@@ -54,7 +54,7 @@ impl Actor {
     }
 
     async fn handle(&mut self, _: Rejected, ctx: &mut xtra::Context<Self>) {
-        let order_id = self.cfd.order.id;
+        let order_id = self.cfd.id;
 
         tracing::info!(%order_id, "Settlement proposal rejected");
 
@@ -65,7 +65,7 @@ impl Actor {
     async fn handle(&mut self, msg: Initiated, ctx: &mut xtra::Context<Self>) {
         let completed = async {
             tracing::info!(
-                order_id = %self.cfd.order.id,
+                order_id = %self.cfd.id,
                 taker_id = %self.taker_id,
                 "Received signature for collaborative settlement"
             );
@@ -85,14 +85,14 @@ impl Actor {
             self.update_proposal(None).await;
 
             anyhow::Ok(Completed::Confirmed {
-                order_id: self.cfd.order.id,
+                order_id: self.cfd.id,
                 settlement,
                 script_pubkey: dlc.script_pubkey_for(Role::Maker),
             })
         }
         .await
         .unwrap_or_else(|e| Completed::Failed {
-            order_id: self.cfd.order.id,
+            order_id: self.cfd.id,
             error: e,
         });
 
@@ -154,7 +154,7 @@ impl Actor {
         if let Err(e) = self
             .projection
             .send(projection::UpdateSettlementProposal {
-                order: self.cfd.order.id,
+                order: self.cfd.id,
                 proposal,
             })
             .await
@@ -191,7 +191,7 @@ impl Actor {
         decision: maker_inc_connections::settlement::Decision,
         ctx: &mut xtra::Context<Self>,
     ) {
-        let order_id = self.cfd.order.id;
+        let order_id = self.cfd.id;
 
         if let Err(e) = self
             .connections

@@ -1,6 +1,6 @@
 use crate::address_map::{ActorName, Stopping};
-use crate::model::cfd::{Cfd, CfdState, Dlc, Order, OrderId, Role};
-use crate::model::{Identity, Usd};
+use crate::model::cfd::{Cfd, Dlc, Order, OrderId, Role};
+use crate::model::Identity;
 use crate::oracle::Announcement;
 use crate::setup_contract::{self, SetupParams};
 use crate::tokio_ext::spawn_fallible;
@@ -15,8 +15,8 @@ use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
+    cfd: Cfd,
     order: Order,
-    quantity: Usd,
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
     announcement: Announcement,
@@ -32,7 +32,7 @@ pub struct Actor {
 
 impl Actor {
     pub fn new(
-        (order, quantity, n_payouts): (Order, Usd, usize),
+        (cfd, order, n_payouts): (Cfd, Order, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
@@ -48,8 +48,8 @@ impl Actor {
         ),
     ) -> Self {
         Self {
+            cfd,
             order,
-            quantity,
             n_payouts,
             oracle_pk,
             announcement,
@@ -65,13 +65,7 @@ impl Actor {
     }
 
     async fn contract_setup(&mut self, this: xtra::Address<Self>) -> Result<()> {
-        let order_id = self.order.id;
-        let cfd = Cfd::new(
-            self.order.clone(),
-            self.quantity,
-            CfdState::contract_setup(),
-            self.taker_id,
-        );
+        let order_id = self.cfd.id;
 
         let (sender, receiver) = mpsc::unbounded();
         // store the writing end to forward messages from the taker to
@@ -89,13 +83,13 @@ impl Actor {
             receiver,
             (self.oracle_pk, self.announcement.clone()),
             SetupParams::new(
-                cfd.margin()?,
-                cfd.counterparty_margin()?,
-                cfd.order.price,
-                cfd.quantity_usd,
-                cfd.order.leverage,
-                cfd.refund_timelock_in_blocks(),
-                cfd.order.fee_rate,
+                self.cfd.margin()?,
+                self.cfd.counterparty_margin()?,
+                self.cfd.price,
+                self.cfd.quantity_usd,
+                self.cfd.leverage,
+                self.cfd.refund_timelock_in_blocks(),
+                self.cfd.fee_rate,
             ),
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
@@ -125,7 +119,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     fn handle(&mut self, _msg: Accepted, ctx: &mut xtra::Context<Self>) {
-        let order_id = self.order.id;
+        let order_id = self.cfd.id;
         tracing::info!(%order_id, "Maker accepts an order");
 
         let this = ctx
@@ -160,7 +154,7 @@ impl Actor {
     }
 
     fn handle(&mut self, _msg: Rejected, ctx: &mut xtra::Context<Self>) {
-        self.complete(Completed::Rejected(self.order.id), ctx).await;
+        self.complete(Completed::Rejected(self.cfd.id), ctx).await;
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
@@ -202,25 +196,25 @@ impl Actor {
 #[async_trait]
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        let quantity = self.quantity;
-        let order = self.order.clone();
-        if quantity < order.min_quantity || quantity > order.max_quantity {
+        let quantity = self.cfd.quantity_usd;
+        let cfd = self.cfd.clone();
+        if quantity < self.order.min_quantity || quantity > self.order.max_quantity {
             tracing::info!(
                 "Order rejected: quantity {} not in range [{}, {}]",
                 quantity,
-                order.min_quantity,
-                order.max_quantity
+                self.order.min_quantity,
+                self.order.max_quantity
             );
 
             let _ = self
                 .taker
                 .send(maker_inc_connections::TakerMessage {
                     taker_id: self.taker_id,
-                    msg: wire::MakerToTaker::RejectOrder(order.id),
+                    msg: wire::MakerToTaker::RejectOrder(cfd.id),
                 })
                 .await;
 
-            self.complete(Completed::Rejected(order.id), ctx).await;
+            self.complete(Completed::Rejected(cfd.id), ctx).await;
         }
     }
 

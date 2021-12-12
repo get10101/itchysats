@@ -1,6 +1,6 @@
-use crate::model::cfd::{Cfd, CfdState, Order, OrderId};
+use crate::model::cfd::{Cfd, CfdState, OrderId};
 use crate::model::BitMexPriceEventId;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use sqlx::pool::PoolConnection;
 use sqlx::{Sqlite, SqlitePool};
 use std::mem;
@@ -11,118 +11,25 @@ pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn insert_order(order: &Order, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
+pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
+    let state = serde_json::to_string(&cfd.state)?;
     let query_result = sqlx::query(
-        r#"insert into orders (
+        r#"
+        insert into cfds (
             uuid,
             trading_pair,
             position,
             initial_price,
-            min_quantity,
-            max_quantity,
             leverage,
             liquidation_price,
             creation_timestamp_seconds,
             settlement_time_interval_seconds,
             origin,
             oracle_event_id,
-            fee_rate
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#,
-    )
-    .bind(&order.id)
-    .bind(&order.trading_pair)
-    .bind(&order.position)
-    .bind(&order.price)
-    .bind(&order.min_quantity)
-    .bind(&order.max_quantity)
-    .bind(&order.leverage)
-    .bind(&order.liquidation_price)
-    .bind(&order.creation_timestamp.seconds())
-    .bind(&order.settlement_interval.whole_seconds())
-    .bind(&order.origin)
-    .bind(&order.oracle_event_id)
-    .bind(&order.fee_rate)
-    .execute(conn)
-    .await?;
-
-    if query_result.rows_affected() != 1 {
-        anyhow::bail!("failed to insert order");
-    }
-
-    Ok(())
-}
-
-pub async fn load_order_by_id(
-    id: OrderId,
-    conn: &mut PoolConnection<Sqlite>,
-) -> anyhow::Result<Order> {
-    let row = sqlx::query!(
-        r#"
-        select
-            uuid as "uuid: crate::model::cfd::OrderId",
-            trading_pair as "trading_pair: crate::model::TradingPair",
-            position as "position: crate::model::Position",
-            initial_price as "initial_price: crate::model::Price",
-            min_quantity as "min_quantity: crate::model::Usd",
-            max_quantity as "max_quantity: crate::model::Usd",
-            leverage as "leverage: crate::model::Leverage",
-            liquidation_price as "liquidation_price: crate::model::Price",
-            creation_timestamp_seconds as "ts_secs: crate::model::Timestamp",
-            settlement_time_interval_seconds as "settlement_time_interval_secs: i64",
-            origin as "origin: crate::model::cfd::Origin",
-            oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
-            fee_rate as "fee_rate: u32"
-        from
-            orders
-        where
-            uuid = $1
-        "#,
-        id
-    )
-    .fetch_one(conn)
-    .await?;
-
-    Ok(Order {
-        id: row.uuid,
-        trading_pair: row.trading_pair,
-        position: row.position,
-        price: row.initial_price,
-        min_quantity: row.min_quantity,
-        max_quantity: row.max_quantity,
-        leverage: row.leverage,
-        liquidation_price: row.liquidation_price,
-        creation_timestamp: row.ts_secs,
-        settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
-        origin: row.origin,
-        oracle_event_id: row.oracle_event_id,
-        fee_rate: row.fee_rate,
-    })
-}
-
-pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
-    if load_cfd_by_order_id(cfd.order.id, conn).await.is_ok() {
-        bail!(
-            "Cannot insert cfd because there is already a cfd for order id {}",
-            cfd.order.id
-        )
-    }
-
-    let state = serde_json::to_string(&cfd.state)?;
-    let query_result = sqlx::query(
-        r#"
-        insert into cfds (
-            order_id,
-            order_uuid,
+            fee_rate,
             quantity_usd,
             counterparty
-        )
-        select
-            id as order_id,
-            uuid as order_uuid,
-            $2 as quantity_usd,
-            $3 as counterparty
-        from orders
-        where uuid = $1;
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
 
         insert into cfd_states (
             cfd_id,
@@ -130,17 +37,28 @@ pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow:
         )
         select
             id as cfd_id,
-            $4 as state
+            $14 as state
         from cfds
         order by id desc limit 1;
         "#,
     )
-    .bind(&cfd.order.id)
+    .bind(&cfd.id)
+    .bind(&cfd.trading_pair)
+    .bind(&cfd.position)
+    .bind(&cfd.price)
+    .bind(&cfd.leverage)
+    .bind(&cfd.liquidation_price)
+    .bind(&cfd.creation_timestamp)
+    .bind(&cfd.settlement_interval.whole_seconds())
+    .bind(&cfd.origin)
+    .bind(&cfd.oracle_event_id)
+    .bind(&cfd.fee_rate)
     .bind(&cfd.quantity_usd)
     .bind(&cfd.counterparty)
     .bind(state)
     .execute(conn)
-    .await?;
+    .await
+    .with_context(|| format!("Failed to insert CFD with id {}", cfd.id))?;
 
     // Should be 2 because we insert into cfds and cfd_states
     if query_result.rows_affected() != 2 {
@@ -151,7 +69,7 @@ pub async fn insert_cfd(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow:
 }
 
 pub async fn append_cfd_state(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<()> {
-    let cfd_id = load_cfd_id_by_order_uuid(cfd.order.id, conn).await?;
+    let cfd_id = load_cfd_id_by_order_uuid(cfd.id, conn).await?;
     let current_state = load_latest_cfd_state(cfd_id, conn)
         .await
         .context("loading latest state failed")?;
@@ -161,7 +79,7 @@ pub async fn append_cfd_state(cfd: &Cfd, conn: &mut PoolConnection<Sqlite>) -> a
         // Since we have states where we add information this happens quite frequently
         tracing::trace!(
             "Same state transition for cfd with order_id {}: {}",
-            cfd.order.id,
+            cfd.id,
             current_state
         );
     }
@@ -193,7 +111,7 @@ async fn load_cfd_id_by_order_uuid(
         select
             id
         from cfds
-        where order_uuid = $1;
+        where cfds.uuid = $1;
         "#,
         order_uuid
     )
@@ -234,45 +152,13 @@ pub async fn load_cfd_by_order_id(
 ) -> Result<Cfd> {
     let row = sqlx::query!(
         r#"
-        with ord as (
+        with state as (
             select
-                id as order_id,
-                uuid,
-                trading_pair,
-                position,
-                initial_price,
-                min_quantity,
-                max_quantity,
-                leverage,
-                liquidation_price,
-                creation_timestamp_seconds as ts_secs,
-                settlement_time_interval_seconds as settlement_time_interval_secs,
-                origin,
-                oracle_event_id,
-                fee_rate
-            from orders
-        ),
-
-        cfd as (
-            select
-                ord.order_id,
-                id as cfd_id,
-                quantity_usd,
-                counterparty
-            from cfds
-                inner join ord on ord.order_id = cfds.order_id
-        ),
-
-        state as (
-            select
-                id as state_id,
-                cfd.order_id,
-                cfd.quantity_usd,
-                cfd.counterparty,
+                cfd_id,
                 state
             from cfd_states
-                inner join cfd on cfd.cfd_id = cfd_states.cfd_id
-            where id in (
+                inner join cfds on cfds.id = cfd_states.cfd_id
+            where cfd_states.id in (
                 select
                     max(id) as id
                 from cfd_states
@@ -281,54 +167,46 @@ pub async fn load_cfd_by_order_id(
         )
 
         select
-            ord.uuid as "uuid: crate::model::cfd::OrderId",
-            ord.trading_pair as "trading_pair: crate::model::TradingPair",
-            ord.position as "position: crate::model::Position",
-            ord.initial_price as "initial_price: crate::model::Price",
-            ord.min_quantity as "min_quantity: crate::model::Usd",
-            ord.max_quantity as "max_quantity: crate::model::Usd",
-            ord.leverage as "leverage: crate::model::Leverage",
-            ord.liquidation_price as "liquidation_price: crate::model::Price",
-            ord.ts_secs as "ts_secs: crate::model::Timestamp",
-            ord.settlement_time_interval_secs as "settlement_time_interval_secs: i64",
-            ord.origin as "origin: crate::model::cfd::Origin",
-            ord.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
-            ord.fee_rate as "fee_rate: u32",
-            state.quantity_usd as "quantity_usd: crate::model::Usd",
-            state.counterparty as "counterparty: crate::model::Identity",
+            cfds.uuid as "uuid: crate::model::cfd::OrderId",
+            cfds.trading_pair as "trading_pair: crate::model::TradingPair",
+            cfds.position as "position: crate::model::Position",
+            cfds.initial_price as "initial_price: crate::model::Price",
+            cfds.leverage as "leverage: crate::model::Leverage",
+            cfds.liquidation_price as "liquidation_price: crate::model::Price",
+            cfds.creation_timestamp_seconds as "creation_timestamp_seconds: crate::model::Timestamp",
+            cfds.settlement_time_interval_seconds as "settlement_time_interval_secs: i64",
+            cfds.origin as "origin: crate::model::cfd::Origin",
+            cfds.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
+            cfds.fee_rate as "fee_rate: u32",
+            cfds.quantity_usd as "quantity_usd: crate::model::Usd",
+            cfds.counterparty as "counterparty: crate::model::Identity",
             state.state
 
-        from ord
-            inner join state on state.order_id = ord.order_id
+        from cfds
+            inner join state on state.cfd_id = cfds.id
 
-        where ord.uuid = $1
+        where cfds.uuid = $1
         "#,
         order_id
     )
     .fetch_one(conn)
     .await?;
 
-    let order = Order {
-        id: row.uuid,
-        trading_pair: row.trading_pair,
-        position: row.position,
-        price: row.initial_price,
-        min_quantity: row.min_quantity,
-        max_quantity: row.max_quantity,
-        leverage: row.leverage,
-        liquidation_price: row.liquidation_price,
-        creation_timestamp: row.ts_secs,
-        settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
-        origin: row.origin,
-        oracle_event_id: row.oracle_event_id,
-        fee_rate: row.fee_rate,
-    };
-
     // TODO:
     // still have the use of serde_json::from_str() here, which will be dealt with
     // via https://github.com/comit-network/hermes/issues/290
     Ok(Cfd {
-        order,
+        id: row.uuid,
+        trading_pair: row.trading_pair,
+        position: row.position,
+        price: row.initial_price,
+        leverage: row.leverage,
+        liquidation_price: row.liquidation_price,
+        creation_timestamp: row.creation_timestamp_seconds,
+        settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
+        origin: row.origin,
+        oracle_event_id: row.oracle_event_id,
+        fee_rate: row.fee_rate,
         quantity_usd: row.quantity_usd,
         state: serde_json::from_str(row.state.as_str())?,
         counterparty: row.counterparty,
@@ -339,45 +217,13 @@ pub async fn load_cfd_by_order_id(
 pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<Vec<Cfd>> {
     let rows = sqlx::query!(
         r#"
-        with ord as (
+        with state as (
             select
-                id as order_id,
-                uuid,
-                trading_pair,
-                position,
-                initial_price,
-                min_quantity,
-                max_quantity,
-                leverage,
-                liquidation_price,
-                creation_timestamp_seconds as ts_secs,
-                settlement_time_interval_seconds as settlement_time_interval_secs,
-                origin,
-                oracle_event_id,
-                fee_rate
-            from orders
-        ),
-
-        cfd as (
-            select
-                ord.order_id,
-                id as cfd_id,
-                quantity_usd,
-                counterparty
-            from cfds
-                inner join ord on ord.order_id = cfds.order_id
-        ),
-
-        state as (
-            select
-                id as state_id,
-                cfd.order_id,
-                cfd.quantity_usd,
-                cfd.counterparty,
+                cfd_id,
                 state
             from cfd_states
-                inner join cfd on cfd.cfd_id = cfd_states.cfd_id
-            where id in (
+                inner join cfds on cfds.id = cfd_states.cfd_id
+            where cfd_states.id in (
                 select
                     max(id) as id
                 from cfd_states
@@ -386,25 +232,23 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
         )
 
         select
-            ord.uuid as "uuid: crate::model::cfd::OrderId",
-            ord.trading_pair as "trading_pair: crate::model::TradingPair",
-            ord.position as "position: crate::model::Position",
-            ord.initial_price as "initial_price: crate::model::Price",
-            ord.min_quantity as "min_quantity: crate::model::Usd",
-            ord.max_quantity as "max_quantity: crate::model::Usd",
-            ord.leverage as "leverage: crate::model::Leverage",
-            ord.liquidation_price as "liquidation_price: crate::model::Price",
-            ord.ts_secs as "ts_secs: crate::model::Timestamp",
-            ord.settlement_time_interval_secs as "settlement_time_interval_secs: i64",
-            ord.origin as "origin: crate::model::cfd::Origin",
-            ord.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
-            ord.fee_rate as "fee_rate: u32",
-            state.quantity_usd as "quantity_usd: crate::model::Usd",
-            state.counterparty as "counterparty: crate::model::Identity",
+            cfds.uuid as "uuid: crate::model::cfd::OrderId",
+            cfds.trading_pair as "trading_pair: crate::model::TradingPair",
+            cfds.position as "position: crate::model::Position",
+            cfds.initial_price as "initial_price: crate::model::Price",
+            cfds.leverage as "leverage: crate::model::Leverage",
+            cfds.liquidation_price as "liquidation_price: crate::model::Price",
+            cfds.creation_timestamp_seconds as "creation_timestamp_seconds: crate::model::Timestamp",
+            cfds.settlement_time_interval_seconds as "settlement_time_interval_secs: i64",
+            cfds.origin as "origin: crate::model::cfd::Origin",
+            cfds.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
+            cfds.fee_rate as "fee_rate: u32",
+            cfds.quantity_usd as "quantity_usd: crate::model::Usd",
+            cfds.counterparty as "counterparty: crate::model::Identity",
             state.state
 
-        from ord
-            inner join state on state.order_id = ord.order_id
+        from cfds
+            inner join state on state.cfd_id = cfds.id
         "#
     )
     .fetch_all(conn)
@@ -413,24 +257,18 @@ pub async fn load_all_cfds(conn: &mut PoolConnection<Sqlite>) -> anyhow::Result<
     let cfds = rows
         .into_iter()
         .map(|row| {
-            let order = Order {
+            Ok(Cfd {
                 id: row.uuid,
                 trading_pair: row.trading_pair,
                 position: row.position,
                 price: row.initial_price,
-                min_quantity: row.min_quantity,
-                max_quantity: row.max_quantity,
                 leverage: row.leverage,
                 liquidation_price: row.liquidation_price,
-                creation_timestamp: row.ts_secs,
+                creation_timestamp: row.creation_timestamp_seconds,
                 settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
                 origin: row.origin,
                 oracle_event_id: row.oracle_event_id,
                 fee_rate: row.fee_rate,
-            };
-
-            Ok(Cfd {
-                order,
                 quantity_usd: row.quantity_usd,
                 state: serde_json::from_str(row.state.as_str())?,
                 counterparty: row.counterparty,
@@ -449,45 +287,13 @@ pub async fn load_cfds_by_oracle_event_id(
     let event_id = oracle_event_id.to_string();
     let rows = sqlx::query!(
         r#"
-        with ord as (
+        with state as (
             select
-                id as order_id,
-                uuid,
-                trading_pair,
-                position,
-                initial_price,
-                min_quantity,
-                max_quantity,
-                leverage,
-                liquidation_price,
-                creation_timestamp_seconds as ts_secs,
-                settlement_time_interval_seconds as settlement_time_interval_secs,
-                origin,
-                oracle_event_id,
-                fee_rate
-            from orders
-        ),
-
-        cfd as (
-            select
-                ord.order_id,
-                id as cfd_id,
-                quantity_usd,
-                counterparty
-            from cfds
-                inner join ord on ord.order_id = cfds.order_id
-        ),
-
-        state as (
-            select
-                id as state_id,
-                cfd.order_id,
-                cfd.quantity_usd,
-                cfd.counterparty,
+                cfd_id,
                 state
             from cfd_states
-                inner join cfd on cfd.cfd_id = cfd_states.cfd_id
-            where id in (
+                inner join cfds on cfds.id = cfd_states.cfd_id
+            where cfd_states.id in (
                 select
                     max(id) as id
                 from cfd_states
@@ -496,27 +302,25 @@ pub async fn load_cfds_by_oracle_event_id(
         )
 
         select
-            ord.uuid as "uuid: crate::model::cfd::OrderId",
-            ord.trading_pair as "trading_pair: crate::model::TradingPair",
-            ord.position as "position: crate::model::Position",
-            ord.initial_price as "initial_price: crate::model::Price",
-            ord.min_quantity as "min_quantity: crate::model::Usd",
-            ord.max_quantity as "max_quantity: crate::model::Usd",
-            ord.leverage as "leverage: crate::model::Leverage",
-            ord.liquidation_price as "liquidation_price: crate::model::Price",
-            ord.ts_secs as "ts_secs: crate::model::Timestamp",
-            ord.settlement_time_interval_secs as "settlement_time_interval_secs: i64",
-            ord.origin as "origin: crate::model::cfd::Origin",
-            ord.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
-            ord.fee_rate as "fee_rate: u32",
-            state.quantity_usd as "quantity_usd: crate::model::Usd",
-            state.counterparty as "counterparty: crate::model::Identity",
+            cfds.uuid as "uuid: crate::model::cfd::OrderId",
+            cfds.trading_pair as "trading_pair: crate::model::TradingPair",
+            cfds.position as "position: crate::model::Position",
+            cfds.initial_price as "initial_price: crate::model::Price",
+            cfds.leverage as "leverage: crate::model::Leverage",
+            cfds.liquidation_price as "liquidation_price: crate::model::Price",
+            cfds.creation_timestamp_seconds as "creation_timestamp_seconds: crate::model::Timestamp",
+            cfds.settlement_time_interval_seconds as "settlement_time_interval_secs: i64",
+            cfds.origin as "origin: crate::model::cfd::Origin",
+            cfds.oracle_event_id as "oracle_event_id: crate::model::BitMexPriceEventId",
+            cfds.fee_rate as "fee_rate: u32",
+            cfds.quantity_usd as "quantity_usd: crate::model::Usd",
+            cfds.counterparty as "counterparty: crate::model::Identity",
             state.state
 
-        from ord
-            inner join state on state.order_id = ord.order_id
+        from cfds
+            inner join state on state.cfd_id = cfds.id
 
-        where ord.oracle_event_id = $1
+        where cfds.oracle_event_id = $1
         "#,
         event_id
     )
@@ -526,24 +330,18 @@ pub async fn load_cfds_by_oracle_event_id(
     let cfds = rows
         .into_iter()
         .map(|row| {
-            let order = Order {
+            Ok(Cfd {
                 id: row.uuid,
                 trading_pair: row.trading_pair,
                 position: row.position,
                 price: row.initial_price,
-                min_quantity: row.min_quantity,
-                max_quantity: row.max_quantity,
                 leverage: row.leverage,
                 liquidation_price: row.liquidation_price,
-                creation_timestamp: row.ts_secs,
+                creation_timestamp: row.creation_timestamp_seconds,
                 settlement_interval: Duration::new(row.settlement_time_interval_secs, 0),
                 origin: row.origin,
                 oracle_event_id: row.oracle_event_id,
                 fee_rate: row.fee_rate,
-            };
-
-            Ok(Cfd {
-                order,
                 quantity_usd: row.quantity_usd,
                 state: serde_json::from_str(row.state.as_str())?,
                 counterparty: row.counterparty,
@@ -557,7 +355,6 @@ pub async fn load_cfds_by_oracle_event_id(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::insert_order;
     use crate::model::cfd::{Cfd, CfdState, Order, Origin};
     use crate::model::{Identity, Price, Usd};
     use crate::seed::Seed;
@@ -567,16 +364,6 @@ mod tests {
     use sqlx::SqlitePool;
     use time::macros::datetime;
     use time::OffsetDateTime;
-
-    #[tokio::test]
-    async fn test_insert_and_load_order() {
-        let mut conn = setup_test_db().await;
-
-        let order = Order::dummy().insert(&mut conn).await;
-        let loaded = load_order_by_id(order.id, &mut conn).await.unwrap();
-
-        assert_eq!(order, loaded);
-    }
 
     #[tokio::test]
     async fn test_insert_and_load_cfd() {
@@ -593,7 +380,7 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         let cfd = Cfd::dummy().insert(&mut conn).await;
-        let loaded = load_cfd_by_order_id(cfd.order.id, &mut conn).await.unwrap();
+        let loaded = load_cfd_by_order_id(cfd.id, &mut conn).await.unwrap();
 
         assert_eq!(cfd, loaded)
     }
@@ -605,12 +392,8 @@ mod tests {
         let cfd1 = Cfd::dummy().insert(&mut conn).await;
         let cfd2 = Cfd::dummy().insert(&mut conn).await;
 
-        let loaded_1 = load_cfd_by_order_id(cfd1.order.id, &mut conn)
-            .await
-            .unwrap();
-        let loaded_2 = load_cfd_by_order_id(cfd2.order.id, &mut conn)
-            .await
-            .unwrap();
+        let loaded_1 = load_cfd_by_order_id(cfd1.id, &mut conn).await.unwrap();
+        let loaded_2 = load_cfd_by_order_id(cfd2.id, &mut conn).await.unwrap();
 
         assert_eq!(cfd1, loaded_1);
         assert_eq!(cfd2, loaded_2);
@@ -669,21 +452,6 @@ mod tests {
         assert_eq!(vec![cfd_1, cfd_2], cfds_from_db);
     }
 
-    #[tokio::test]
-    async fn test_insert_order_without_cfd_associates_with_correct_cfd() {
-        let mut conn = setup_test_db().await;
-
-        // Insert an order without a CFD
-        let _order_1 = Order::dummy().insert(&mut conn).await;
-
-        // Insert a CFD (this also inserts an order)
-        let cfd_1 = Cfd::dummy().insert(&mut conn).await;
-
-        let all_cfds = load_all_cfds(&mut conn).await.unwrap();
-
-        assert_eq!(all_cfds, vec![cfd_1]);
-    }
-
     // test more data; test will add 100 cfds to the database, with each
     // having a random number of random updates. Final results are deterministic.
     #[tokio::test]
@@ -704,7 +472,7 @@ mod tests {
             }
 
             // verify current state is correct
-            let loaded_by_order_id = load_cfd_by_order_id(cfd.order.id, &mut conn).await.unwrap();
+            let loaded_by_order_id = load_cfd_by_order_id(cfd.id, &mut conn).await.unwrap();
             assert_eq!(loaded_by_order_id, cfd);
 
             // load_cfds_by_oracle_event_id can return multiple CFDs
@@ -729,10 +497,10 @@ mod tests {
 
         let error = insert_cfd(&cfd, &mut conn).await.err().unwrap();
         assert_eq!(
-            error.to_string(),
+            format!("{:#}", error),
             format!(
-                "Cannot insert cfd because there is already a cfd for order id {}",
-                cfd.order.id
+                "Failed to insert CFD with id {}: error returned from database: UNIQUE constraint failed: cfds.uuid: UNIQUE constraint failed: cfds.uuid",
+                cfd.id,
             )
         );
     }
@@ -780,14 +548,13 @@ mod tests {
 
         /// Insert this [`Cfd`] into the database, returning the instance for further chaining.
         async fn insert(self, conn: &mut PoolConnection<Sqlite>) -> Self {
-            insert_order(&self.order, conn).await.unwrap();
             insert_cfd(&self, conn).await.unwrap();
 
             self
         }
 
         fn with_event_id(mut self, id: BitMexPriceEventId) -> Self {
-            self.order.oracle_event_id = id;
+            self.oracle_event_id = id;
             self
         }
     }
@@ -804,13 +571,6 @@ mod tests {
                 1,
             )
             .unwrap()
-        }
-
-        /// Insert this [`Order`] into the database, returning the instance for further chaining.
-        async fn insert(self, conn: &mut PoolConnection<Sqlite>) -> Self {
-            insert_order(&self, conn).await.unwrap();
-
-            self
         }
     }
 }

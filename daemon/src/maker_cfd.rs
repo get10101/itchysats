@@ -1,6 +1,6 @@
 use crate::address_map::{AddressMap, Stopping};
 use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_update_feed};
-use crate::db::{insert_order, load_cfd_by_order_id, load_order_by_id};
+use crate::db::load_cfd_by_order_id;
 use crate::model::cfd::{
     Cfd, CfdState, CfdStateCommon, Dlc, Order, OrderId, Origin, Role, RollOverProposal,
     SettlementKind, SettlementProposal, UpdateCfdProposal,
@@ -84,7 +84,7 @@ pub struct Actor<O, M, T, W> {
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: Address<projection::Actor>,
     takers: Address<T>,
-    current_order_id: Option<OrderId>,
+    current_order: Option<Order>,
     monitor_actor: Address<M>,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
@@ -126,7 +126,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             oracle_pk,
             projection_actor,
             takers,
-            current_order_id: None,
+            current_order: None,
             monitor_actor,
             setup_actors: AddressMap::default(),
             roll_over_state: RollOverState::None,
@@ -294,20 +294,13 @@ where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
     async fn handle_taker_connected(&mut self, taker_id: Identity) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-
-        let current_order = match self.current_order_id {
-            Some(current_order_id) => Some(load_order_by_id(current_order_id, &mut conn).await?),
-            None => None,
-        };
-
         // Need to use `do_send_async` here because we are being invoked from the
         // `maker_inc_connections::Actor`. Using `send` would result in a deadlock.
         #[allow(clippy::disallowed_method)]
         self.takers
             .do_send_async(maker_inc_connections::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::CurrentOrder(current_order),
+                msg: wire::MakerToTaker::CurrentOrder(self.current_order.clone()),
             })
             .await?;
 
@@ -339,7 +332,7 @@ where
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::RejectOrder(cfd.order.id),
+                msg: wire::MakerToTaker::RejectOrder(cfd.id),
             })
             .await??;
 
@@ -381,10 +374,8 @@ where
         let mut conn = self.db.acquire().await?;
 
         // 1. Validate if order is still valid
-        let current_order = match self.current_order_id {
-            Some(current_order_id) if current_order_id == order_id => {
-                load_order_by_id(current_order_id, &mut conn).await?
-            }
+        let current_order = match &self.current_order {
+            Some(current_order) if current_order.id == order_id => current_order.clone(),
             _ => {
                 // An outdated order on the taker side does not require any state change on the
                 // maker. notifying the taker with a specific message should be sufficient.
@@ -407,7 +398,7 @@ where
         // The order is removed before we update the state, because the maker might react on the
         // state change. Once we know that we go for either an accept/reject scenario we
         // have to remove the current order.
-        self.current_order_id = None;
+        self.current_order = None;
 
         // Need to use `do_send_async` here because invoking the
         // corresponding handler can result in a deadlock with another
@@ -437,15 +428,16 @@ where
         // state
         let announcement = self
             .oracle_actor
-            .send(oracle::GetAnnouncement(cfd.order.oracle_event_id))
+            .send(oracle::GetAnnouncement(cfd.oracle_event_id))
             .await??;
 
         // 5. Start up contract setup actor
         let this = ctx
             .address()
             .expect("actor to be able to give address to itself");
+
         let (addr, fut) = setup_maker::Actor::new(
-            (cfd.order, cfd.quantity_usd, self.n_payouts),
+            (cfd, current_order, self.n_payouts),
             (self.oracle_pk, announcement),
             &self.wallet,
             &self.wallet,
@@ -678,7 +670,7 @@ where
         let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
 
         let oracle_event_id = oracle::next_announcement_after(
-            time::OffsetDateTime::now_utc() + cfd.order.settlement_interval,
+            time::OffsetDateTime::now_utc() + cfd.settlement_interval,
         )?;
         let announcement = self
             .oracle_actor
@@ -707,11 +699,11 @@ where
             receiver,
             (self.oracle_pk, announcement),
             RolloverParams::new(
-                cfd.order.price,
+                cfd.price,
                 cfd.quantity_usd,
-                cfd.order.leverage,
+                cfd.leverage,
                 cfd.refund_timelock_in_blocks(),
-                cfd.order.fee_rate,
+                cfd.fee_rate,
             ),
             Role::Maker,
             dlc,
@@ -874,19 +866,15 @@ where
             fee_rate,
         )?;
 
-        // 1. Save to DB
-        let mut conn = self.db.acquire().await?;
-        insert_order(&order, &mut conn).await?;
+        // 1. Update actor state to current order
+        self.current_order.replace(order.clone());
 
-        // 2. Update actor state to current order
-        self.current_order_id.replace(order.id);
-
-        // 3. Notify UI via feed
+        // 2. Notify UI via feed
         self.projection_actor
             .send(projection::Update(Some(order.clone())))
             .await?;
 
-        // 4. Inform connected takers
+        // 3. Inform connected takers
         self.takers
             .send(maker_inc_connections::BroadcastOrder(Some(order)))
             .await?;
