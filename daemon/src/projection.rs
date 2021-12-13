@@ -354,7 +354,7 @@ impl From<model::Identity> for Identity {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum CfdState {
     OutgoingOrderRequest,
     IncomingOrderRequest,
