@@ -10,15 +10,11 @@ use crate::maker_inc_connections;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CfdState;
 use crate::model::cfd::CfdStateCommon;
-use crate::model::cfd::Dlc;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
-use crate::model::cfd::Role;
 use crate::model::cfd::RollOverProposal;
-use crate::model::cfd::SettlementKind;
 use crate::model::cfd::SettlementProposal;
-use crate::model::cfd::UpdateCfdProposal;
 use crate::model::Identity;
 use crate::model::Price;
 use crate::model::Timestamp;
@@ -27,14 +23,10 @@ use crate::monitor::MonitorParams;
 use crate::monitor::{self};
 use crate::oracle;
 use crate::projection;
-use crate::projection::try_into_update_rollover_proposal;
 use crate::projection::Update;
-use crate::projection::UpdateRollOverProposal;
-use crate::projection::UpdateSettlementProposal;
-use crate::setup_contract;
-use crate::setup_contract::RolloverParams;
+use crate::rollover_maker;
+use crate::rollover_maker::Completed;
 use crate::setup_maker;
-use crate::tokio_ext::FutureExt;
 use crate::wallet;
 use crate::wire;
 use crate::wire::TakerToMaker;
@@ -43,13 +35,8 @@ use anyhow::Context as _;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use futures::channel::mpsc;
-use futures::future;
-use futures::future::RemoteHandle;
-use futures::SinkExt;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
-use std::collections::HashMap;
 use std::collections::HashSet;
 use time::Duration;
 use xtra::prelude::*;
@@ -74,6 +61,10 @@ pub struct AcceptRollOver {
 pub struct RejectRollOver {
     pub order_id: OrderId,
 }
+pub struct RollOverProposed {
+    pub order_id: OrderId,
+    pub address: xtra::Address<rollover_maker::Actor>,
+}
 pub struct Commit {
     pub order_id: OrderId,
 }
@@ -92,11 +83,6 @@ pub struct TakerDisconnected {
     pub id: Identity,
 }
 
-pub struct CfdRollOverCompleted {
-    pub order_id: OrderId,
-    pub dlc: Result<Dlc>,
-}
-
 pub struct FromTaker {
     pub taker_id: Identity,
     pub msg: wire::TakerToMaker,
@@ -108,27 +94,16 @@ pub struct Actor<O, M, T, W> {
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: Address<projection::Actor>,
+    rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
     takers: Address<T>,
     current_order: Option<Order>,
     monitor_actor: Address<M>,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
-    roll_over_state: RollOverState,
     oracle_actor: Address<O>,
-    // Maker needs to also store Identity to be able to send a reply back
-    current_pending_proposals: HashMap<OrderId, (UpdateCfdProposal, Identity)>,
     connected_takers: HashSet<Identity>,
     n_payouts: usize,
     tasks: Tasks,
-}
-
-enum RollOverState {
-    Active {
-        taker: Identity,
-        sender: mpsc::UnboundedSender<wire::RollOverMsg>,
-        _task: RemoteHandle<()>,
-    },
-    None,
 }
 
 impl<O, M, T, W> Actor<O, M, T, W> {
@@ -150,107 +125,17 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             settlement_interval,
             oracle_pk,
             projection_actor,
+            rollover_actors: AddressMap::default(),
             takers,
             current_order: None,
             monitor_actor,
             setup_actors: AddressMap::default(),
-            roll_over_state: RollOverState::None,
             oracle_actor,
-            current_pending_proposals: HashMap::new(),
             n_payouts,
             connected_takers: HashSet::new(),
             settlement_actors: AddressMap::default(),
             tasks: Tasks::default(),
         }
-    }
-
-    async fn handle_propose_roll_over(
-        &mut self,
-        proposal: RollOverProposal,
-        taker_id: Identity,
-    ) -> Result<()> {
-        tracing::info!(
-            "Received proposal from the taker {}: {:?} to roll over order {}",
-            taker_id,
-            proposal,
-            proposal.order_id
-        );
-
-        // check if CFD is in open state, otherwise we should not proceed
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(proposal.order_id, &mut conn).await?;
-        match cfd {
-            Cfd {
-                state: CfdState::Open { .. },
-                ..
-            } => (),
-            _ => {
-                anyhow::bail!("Order is in invalid state. Cannot propose roll over.")
-            }
-        };
-
-        let new_proposal = UpdateCfdProposal::RollOverProposal {
-            proposal: proposal.clone(),
-            direction: SettlementKind::Incoming,
-        };
-
-        self.current_pending_proposals
-            .insert(proposal.order_id, (new_proposal.clone(), taker_id));
-        self.projection_actor
-            .send(try_into_update_rollover_proposal(new_proposal)?)
-            .await?;
-
-        Ok(())
-    }
-
-    async fn handle_inc_roll_over_protocol_msg(
-        &mut self,
-        taker_id: Identity,
-        msg: wire::RollOverMsg,
-    ) -> Result<()> {
-        match &mut self.roll_over_state {
-            RollOverState::Active { taker, sender, .. } if taker_id == *taker => {
-                sender.send(msg).await?;
-            }
-            RollOverState::Active { taker, .. } => {
-                anyhow::bail!("Currently rolling over with different taker {}", taker)
-            }
-            RollOverState::None => {}
-        }
-
-        Ok(())
-    }
-
-    /// Removes a proposal and updates the update cfd proposals' feed
-    async fn remove_pending_proposal(&mut self, order_id: &OrderId) -> Result<()> {
-        let removed_proposal = self.current_pending_proposals.remove(order_id);
-
-        // Strip the identity, ID doesn't care about this implementation detail
-        let removed_proposal = removed_proposal.map(|(proposal, _)| proposal);
-
-        if let Some(removed_proposal) = removed_proposal {
-            match removed_proposal {
-                UpdateCfdProposal::Settlement { .. } => {
-                    self.projection_actor
-                        .send(UpdateSettlementProposal {
-                            order: *order_id,
-                            proposal: None,
-                        })
-                        .await?
-                }
-                UpdateCfdProposal::RollOverProposal { .. } => {
-                    self.projection_actor
-                        .send(UpdateRollOverProposal {
-                            order: *order_id,
-                            proposal: None,
-                        })
-                        .await?
-                }
-            }
-        } else {
-            anyhow::bail!("Could not find proposal with order id: {}", &order_id);
-        }
-        Ok(())
     }
 
     async fn update_connected_takers(&mut self) -> Result<()> {
@@ -362,6 +247,111 @@ where
             .await??;
 
         Ok(())
+    }
+}
+
+#[xtra_productivity]
+impl<O, M, T, W> Actor<O, M, T, W> {
+    async fn handle_accept_rollover(&mut self, msg: AcceptRollOver) -> Result<()> {
+        if self
+            .rollover_actors
+            .send(&msg.order_id, rollover_maker::AcceptRollOver)
+            .await
+            .is_err()
+        {
+            tracing::warn!(%msg.order_id, "No active rollover");
+        }
+
+        Ok(())
+    }
+
+    async fn handle_reject_rollover(&mut self, msg: RejectRollOver) -> Result<()> {
+        if self
+            .rollover_actors
+            .send(&msg.order_id, rollover_maker::RejectRollOver)
+            .await
+            .is_err()
+        {
+            tracing::warn!(%msg.order_id, "No active rollover");
+        }
+
+        Ok(())
+    }
+}
+
+impl<O, M, T, W> Actor<O, M, T, W>
+where
+    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
+    M: xtra::Handler<monitor::StartMonitoring>,
+    T: xtra::Handler<maker_inc_connections::TakerMessage>
+        + xtra::Handler<Stopping<rollover_maker::Actor>>
+        + xtra::Handler<RollOverProposed>,
+    W: 'static,
+    Self: xtra::Handler<Stopping<rollover_maker::Actor>>,
+{
+    async fn handle_propose_roll_over(
+        &mut self,
+        proposal: RollOverProposal,
+        taker_id: Identity,
+        ctx: &mut Context<Self>,
+    ) -> Result<()> {
+        tracing::info!(
+            "Received proposal from the taker {}: {:?} to roll over order {}",
+            taker_id,
+            proposal,
+            proposal.order_id
+        );
+
+        // check if CFD is in open state, otherwise we should not proceed
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd_by_order_id(proposal.order_id, &mut conn).await?;
+        match cfd {
+            Cfd {
+                state: CfdState::Open { .. },
+                ..
+            } => (),
+            _ => {
+                anyhow::bail!("Order is in invalid state. Cannot propose roll over.")
+            }
+        };
+
+        let this = ctx.address().expect("acquired own address");
+
+        let (rollover_actor_addr, rollover_actor_future) = rollover_maker::Actor::new(
+            &self.takers,
+            cfd,
+            taker_id,
+            self.oracle_pk,
+            &this,
+            &self.oracle_actor,
+            (&self.takers, &this),
+            self.projection_actor.clone(),
+            proposal.clone(),
+            self.n_payouts,
+        )
+        .create(None)
+        .run();
+
+        self.tasks.add(rollover_actor_future);
+
+        self.takers
+            .send(RollOverProposed {
+                order_id: proposal.order_id,
+                address: rollover_actor_addr.clone(),
+            })
+            .await?;
+
+        self.rollover_actors
+            .insert(proposal.order_id, rollover_actor_addr);
+
+        Ok(())
+    }
+}
+
+#[xtra_productivity(message_impl = false)]
+impl<O, M, T, W> Actor<O, M, T, W> {
+    async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_maker::Actor>) {
+        self.rollover_actors.gc(msg);
     }
 }
 
@@ -569,41 +559,6 @@ where
 
         Ok(())
     }
-
-    async fn handle_reject_roll_over(&mut self, msg: RejectRollOver) -> Result<()> {
-        let RejectRollOver { order_id } = msg;
-
-        tracing::debug!(%order_id, "Maker rejects a roll_over proposal" );
-
-        // Validate if order is actually being requested to be extended
-        let (_, taker_id) = match self.current_pending_proposals.get(&order_id) {
-            Some((
-                UpdateCfdProposal::RollOverProposal {
-                    proposal,
-                    direction: SettlementKind::Incoming,
-                },
-                taker_id,
-            )) => (proposal, *taker_id),
-            _ => {
-                anyhow::bail!("Order is in invalid state. Ignoring reject roll over request.")
-            }
-        };
-
-        // clean-up state ahead of sending to ensure consistency in case we fail to deliver the
-        // message
-        self.remove_pending_proposal(&order_id)
-            .await
-            .context("rejected roll_over")?;
-
-        self.takers
-            .send(maker_inc_connections::TakerMessage {
-                taker_id,
-                msg: wire::MakerToTaker::RejectRollOver(order_id),
-            })
-            .await??;
-
-        Ok(())
-    }
 }
 
 #[xtra_productivity]
@@ -661,109 +616,6 @@ where
 #[xtra_productivity]
 impl<O, M, T, W> Actor<O, M, T, W>
 where
-    Self: xtra::Handler<CfdRollOverCompleted>,
-    O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
-    T: xtra::Handler<maker_inc_connections::TakerMessage>,
-    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
-{
-    async fn handle_accept_roll_over(
-        &mut self,
-        msg: AcceptRollOver,
-        ctx: &mut Context<Self>,
-    ) -> Result<()> {
-        let AcceptRollOver { order_id } = msg;
-
-        tracing::debug!(%order_id, "Maker accepts a roll_over proposal" );
-
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-
-        // Validate if order is actually being requested to be extended
-        let (proposal, taker_id) = match self.current_pending_proposals.get(&order_id) {
-            Some((
-                UpdateCfdProposal::RollOverProposal {
-                    proposal,
-                    direction: SettlementKind::Incoming,
-                },
-                taker_id,
-            )) => (proposal, *taker_id),
-            _ => {
-                anyhow::bail!("Order is in invalid state. Ignoring trying to accept the roll over request it.")
-            }
-        };
-
-        let dlc = cfd.open_dlc().context("CFD was in wrong state")?;
-
-        let oracle_event_id = oracle::next_announcement_after(
-            time::OffsetDateTime::now_utc() + cfd.settlement_interval,
-        )?;
-        let announcement = self
-            .oracle_actor
-            .send(oracle::GetAnnouncement(oracle_event_id))
-            .await?
-            .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
-
-        self.takers
-            .send(maker_inc_connections::TakerMessage {
-                taker_id,
-                msg: wire::MakerToTaker::ConfirmRollOver {
-                    order_id: proposal.order_id,
-                    oracle_event_id,
-                },
-            })
-            .await??;
-
-        let (sender, receiver) = mpsc::unbounded();
-        let contract_future = setup_contract::roll_over(
-            self.takers.clone().into_sink().with(move |msg| {
-                future::ok(maker_inc_connections::TakerMessage {
-                    taker_id,
-                    msg: wire::MakerToTaker::RollOverProtocol { order_id, msg },
-                })
-            }),
-            receiver,
-            (self.oracle_pk, announcement),
-            RolloverParams::new(
-                cfd.price,
-                cfd.quantity_usd,
-                cfd.leverage,
-                cfd.refund_timelock_in_blocks(),
-                cfd.fee_rate,
-            ),
-            Role::Maker,
-            dlc,
-            self.n_payouts,
-        );
-
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
-
-        let task = async move {
-            let dlc = contract_future.await;
-
-            this.send(CfdRollOverCompleted { order_id, dlc })
-                .await
-                .expect("always connected to ourselves")
-        }
-        .spawn_with_handle();
-
-        self.roll_over_state = RollOverState::Active {
-            sender,
-            taker: taker_id,
-            _task: task,
-        };
-
-        self.remove_pending_proposal(&order_id)
-            .await
-            .context("accepted roll_over")?;
-        Ok(())
-    }
-}
-
-#[xtra_productivity]
-impl<O, M, T, W> Actor<O, M, T, W>
-where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
@@ -782,13 +634,10 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     O: xtra::Handler<oracle::MonitorAttestation>,
 {
-    async fn handle_roll_over_completed(
-        &mut self,
-        order_id: OrderId,
-        dlc: Result<Dlc>,
-    ) -> Result<()> {
-        let dlc = dlc.context("Failed to roll over contract with taker")?;
-        self.roll_over_state = RollOverState::None;
+    async fn handle_roll_over_completed(&mut self, msg: Completed) -> Result<()> {
+        // We handle rollover success in the maker_cfd::Actor instead of the rollover_maker::Actor
+        // because we do not have access to the DB in the rollover_maker::Actor
+        let Completed { order_id, dlc } = msg;
 
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
@@ -990,14 +839,13 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<CfdRollOverCompleted>
-    for Actor<O, M, T, W>
+impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<Completed> for Actor<O, M, T, W>
 where
     M: xtra::Handler<monitor::StartMonitoring>,
     O: xtra::Handler<oracle::MonitorAttestation>,
 {
-    async fn handle(&mut self, msg: CfdRollOverCompleted, _ctx: &mut Context<Self>) {
-        log_error!(self.handle_roll_over_completed(msg.order_id, msg.dlc));
+    async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) {
+        log_error!(self.handle_roll_over_completed(msg));
     }
 }
 
@@ -1020,8 +868,10 @@ where
         + xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>
         + xtra::Handler<Stopping<setup_maker::Actor>>
+        + xtra::Handler<Stopping<rollover_maker::Actor>>
         + xtra::Handler<maker_inc_connections::settlement::Response>
-        + xtra::Handler<Stopping<collab_settlement_maker::Actor>>,
+        + xtra::Handler<Stopping<collab_settlement_maker::Actor>>
+        + xtra::Handler<RollOverProposed>,
     W: xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -1069,10 +919,11 @@ where
                         timestamp,
                     },
                     taker_id,
+                    ctx
                 ))
             }
-            wire::TakerToMaker::RollOverProtocol(msg) => {
-                log_error!(self.handle_inc_roll_over_protocol_msg(taker_id, msg))
+            wire::TakerToMaker::RollOverProtocol { .. } => {
+                unreachable!("This kind of message should be sent to the rollover_maker::Actor`")
             }
             wire::TakerToMaker::Protocol { .. } => {
                 unreachable!("This kind of message should be sent to the `setup_maker::Actor`")
@@ -1103,7 +954,7 @@ impl Message for TakerDisconnected {
     type Result = ();
 }
 
-impl Message for CfdRollOverCompleted {
+impl Message for Completed {
     type Result = ();
 }
 

@@ -113,8 +113,9 @@ impl Actor {
         self.rollover_msg_sender = Some(sender);
 
         let rollover_fut = setup_contract::roll_over(
-            xtra::message_channel::MessageChannel::sink(&self.maker)
-                .with(|msg| future::ok(wire::TakerToMaker::RollOverProtocol(msg))),
+            xtra::message_channel::MessageChannel::sink(&self.maker).with(move |msg| {
+                future::ok(wire::TakerToMaker::RollOverProtocol { order_id, msg })
+            }),
             receiver,
             (self.oracle_pk, announcement),
             RolloverParams::new(
