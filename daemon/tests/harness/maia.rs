@@ -1,11 +1,12 @@
+use daemon::model::BitMexPriceEventId;
+use daemon::oracle::{self};
 use maia::secp256k1_zkp::schnorrsig;
 use maia::secp256k1_zkp::SecretKey;
-use maia::Announcement;
 use std::str::FromStr;
 
 #[allow(dead_code)]
 pub struct OliviaData {
-    id: String,
+    id: BitMexPriceEventId,
     pk: schnorrsig::PublicKey,
     nonce_pks: Vec<schnorrsig::PublicKey>,
     price: u64,
@@ -29,7 +30,7 @@ impl OliviaData {
     fn example(id: &str, price: u64, nonce_pks: &[&str], attestations: &[&str]) -> Self {
         let oracle_pk = schnorrsig::PublicKey::from_str(Self::OLIVIA_PK).unwrap();
 
-        let id = id.to_string();
+        let id = id.parse().unwrap();
 
         let nonce_pks = nonce_pks
             .iter()
@@ -50,9 +51,10 @@ impl OliviaData {
         }
     }
 
-    pub fn announcement(&self) -> Announcement {
-        Announcement {
-            id: self.id.clone(),
+    pub fn announcement(&self) -> oracle::Announcement {
+        oracle::Announcement {
+            id: self.id,
+            expected_outcome_time: self.id.timestamp(),
             nonce_pks: self.nonce_pks.clone(),
         }
     }
