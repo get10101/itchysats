@@ -443,7 +443,7 @@ where
         // state
         let announcement = self
             .oracle_actor
-            .send(oracle::GetAnnouncement(cfd.oracle_event_id))
+            .send(oracle::GetAnnouncement(current_order.oracle_event_id))
             .await??;
 
         // 5. Start up contract setup actor
