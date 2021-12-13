@@ -332,9 +332,9 @@ where
 
         let announcement = self
             .oracle_actor
-            .send(oracle::GetAnnouncement(cfd.oracle_event_id))
+            .send(oracle::GetAnnouncement(current_order.oracle_event_id))
             .await?
-            .with_context(|| format!("Announcement {} not found", cfd.oracle_event_id))?;
+            .with_context(|| format!("Announcement {} not found", current_order.oracle_event_id))?;
 
         let this = ctx
             .address()

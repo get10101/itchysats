@@ -147,12 +147,17 @@ where
         attestation.id
     );
 
-    let mut cfds = db::load_cfds_by_oracle_event_id(attestation.id, conn).await?;
+    let mut cfds = db::load_all_cfds(conn).await?;
 
     for (cfd, dlc) in cfds
         .iter_mut()
         .filter_map(|cfd| cfd.dlc().map(|dlc| (cfd, dlc)))
     {
+        if dlc.settlement_event_id != attestation.id {
+            // If this CFD is not interested in this attestation we ignore it
+            continue;
+        }
+
         let attestation = try_continue!(Attestation::new(
             attestation.id,
             attestation.price,
