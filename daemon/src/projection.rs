@@ -432,7 +432,7 @@ pub struct CfdDetails {
 
 fn to_cfd_details(cfd: &model::cfd::Cfd, network: Network) -> CfdDetails {
     CfdDetails {
-        tx_url_list: tx::to_tx_url_list(cfd.state.clone(), network),
+        tx_url_list: tx::to_tx_url_list(cfd.state().clone(), network),
         payout: cfd.payout(),
     }
 }
@@ -532,27 +532,27 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
                         }
                     })
                     .unwrap_or_else(|| {
-                        tracing::debug!(order_id = %cfd.id, "Unable to calculate profit/loss without current price");
+                        tracing::debug!(order_id = %cfd.id(), "Unable to calculate profit/loss without current price");
 
                         (None, None)
                     });
 
-                let pending_proposal = input.pending_proposals.get(&cfd.id);
-                let state = to_cfd_state(&cfd.state, pending_proposal);
+                let pending_proposal = input.pending_proposals.get(&cfd.id());
+                let state = to_cfd_state(cfd.state(), pending_proposal);
 
                 Cfd {
-                    order_id: cfd.id,
-                    initial_price: cfd.price.into(),
-                    leverage: cfd.leverage,
-                    trading_pair: cfd.trading_pair.clone(),
+                    order_id: cfd.id(),
+                    initial_price: cfd.price().into(),
+                    leverage: cfd.leverage(),
+                    trading_pair: cfd.trading_pair(),
                     position: cfd.position(),
-                    liquidation_price: cfd.liquidation_price.into(),
-                    quantity_usd: cfd.quantity_usd.into(),
+                    liquidation_price: cfd.liquidation_price().into(),
+                    quantity_usd: cfd.quantity_usd().into(),
                     profit_btc,
                     profit_percent,
                     state: state.clone(),
                     actions: available_actions(state, cfd.role()),
-                    state_transition_timestamp: cfd.state.get_transition_timestamp().seconds(),
+                    state_transition_timestamp: cfd.state().get_transition_timestamp().seconds(),
 
                     // TODO: Depending on the state the margin might be set (i.e. in Open we save it
                     // in the DB internally) and does not have to be calculated
@@ -560,7 +560,7 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
                     margin_counterparty: cfd.counterparty_margin().expect("margin to be available"),
                     details: to_cfd_details(cfd, network),
                     expiry_timestamp: cfd.expiry_timestamp(),
-                    counterparty: cfd.counterparty.into(),
+                    counterparty: cfd.counterparty().into(),
                 }
             })
             .collect::<Vec<Cfd>>();

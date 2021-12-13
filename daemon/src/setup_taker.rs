@@ -66,9 +66,9 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     fn handle(&mut self, _: Accepted, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let order_id = self.cfd.id;
+        let order_id = self.cfd.id();
 
-        self.cfd.state = CfdState::contract_setup();
+        *self.cfd.state_mut() = CfdState::contract_setup();
 
         tracing::info!(%order_id, "Order got accepted");
 
@@ -89,11 +89,11 @@ impl Actor {
             SetupParams::new(
                 self.cfd.margin()?,
                 self.cfd.counterparty_margin()?,
-                self.cfd.price,
-                self.cfd.quantity_usd,
-                self.cfd.leverage,
+                self.cfd.price(),
+                self.cfd.quantity_usd(),
+                self.cfd.leverage(),
                 self.cfd.refund_timelock_in_blocks(),
-                self.cfd.fee_rate,
+                self.cfd.fee_rate(),
             ),
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
@@ -115,7 +115,7 @@ impl Actor {
     }
 
     fn handle(&mut self, msg: Rejected, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let order_id = self.cfd.id;
+        let order_id = self.cfd.id();
         tracing::info!(%order_id, "Order got rejected");
 
         if msg.is_invalid_order {
@@ -177,14 +177,14 @@ impl xtra::Actor for Actor {
         let res = self
             .maker
             .send(connection::TakeOrder {
-                order_id: self.cfd.id,
-                quantity: self.cfd.quantity_usd,
+                order_id: self.cfd.id(),
+                quantity: self.cfd.quantity_usd(),
                 address,
             })
             .await;
 
         if let Err(e) = res {
-            tracing::warn!(%self.cfd.id, "Stopping setup_taker actor: {}", e);
+            tracing::warn!(id = %self.cfd.id(), "Stopping setup_taker actor: {}", e);
             ctx.stop()
         }
     }

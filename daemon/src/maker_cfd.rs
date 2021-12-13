@@ -13,6 +13,7 @@ use crate::model::cfd::CfdStateCommon;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
+use crate::model::cfd::Role;
 use crate::model::cfd::RollOverProposal;
 use crate::model::cfd::SettlementProposal;
 use crate::model::Identity;
@@ -159,7 +160,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
 
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::setup_failed(error.to_string());
+        *cfd.state_mut() = CfdState::setup_failed(error.to_string());
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         Ok(())
@@ -168,7 +169,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
     async fn append_cfd_state_rejected(&mut self, order_id: OrderId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::rejected();
+        *cfd.state_mut() = CfdState::rejected();
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         Ok(())
@@ -235,14 +236,14 @@ where
         mut cfd: Cfd,
         mut conn: PoolConnection<Sqlite>,
     ) -> Result<()> {
-        cfd.state = CfdState::rejected();
+        *cfd.state_mut() = CfdState::rejected();
 
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         self.takers
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::RejectOrder(cfd.id),
+                msg: wire::MakerToTaker::RejectOrder(cfd.id()),
             })
             .await??;
 
@@ -305,11 +306,8 @@ where
         // check if CFD is in open state, otherwise we should not proceed
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd_by_order_id(proposal.order_id, &mut conn).await?;
-        match cfd {
-            Cfd {
-                state: CfdState::Open { .. },
-                ..
-            } => (),
+        match cfd.state() {
+            CfdState::Open { .. } => (),
             _ => {
                 anyhow::bail!("Order is in invalid state. Cannot propose roll over.")
             }
@@ -426,7 +424,7 @@ where
         self.projection_actor.send(projection::Update(None)).await?;
 
         // 3. Insert CFD in DB
-        let cfd = Cfd::new(
+        let cfd = Cfd::from_order(
             current_order.clone(),
             quantity,
             CfdState::IncomingOrderRequest {
@@ -436,6 +434,7 @@ where
                 taker_id,
             },
             taker_id,
+            Role::Maker,
         );
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
 
@@ -486,7 +485,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             .await
             .with_context(|| format!("No active contract setup for order {}", order_id))?;
 
-        cfd.state = CfdState::contract_setup();
+        *cfd.state_mut() = CfdState::contract_setup();
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         Ok(())
@@ -523,17 +522,14 @@ where
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-        let taker_id = match cfd {
-            Cfd {
-                state: CfdState::IncomingOrderRequest { taker_id, .. },
-                ..
-            } => taker_id,
+        let taker_id = match cfd.state() {
+            CfdState::IncomingOrderRequest { taker_id, .. } => taker_id,
             _ => {
                 anyhow::bail!("Order is in invalid state. Ignoring trying to reject it.")
             }
         };
 
-        self.reject_order(taker_id, cfd, conn).await?;
+        self.reject_order(*taker_id, cfd, conn).await?;
 
         Ok(())
     }
@@ -641,7 +637,7 @@ where
 
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::Open {
+        *cfd.state_mut() = CfdState::Open {
             common: CfdStateCommon::default(),
             dlc: dlc.clone(),
             attestation: None,
@@ -782,7 +778,7 @@ where
             let mut conn = self.db.acquire().await?;
             let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
 
-            cfd.state = CfdState::PendingOpen {
+            *cfd.state_mut() = CfdState::PendingOpen {
                 common: CfdStateCommon::default(),
                 dlc: dlc.clone(),
                 attestation: None,

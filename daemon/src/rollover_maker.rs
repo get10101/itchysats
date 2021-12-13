@@ -137,7 +137,7 @@ impl Actor {
 
     async fn update_contract(&mut self, dlc: Dlc, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let msg = Completed {
-            order_id: self.cfd.id,
+            order_id: self.cfd.id(),
             dlc,
         };
         self.maker_cfd_actor.send(msg).await?;
@@ -146,11 +146,11 @@ impl Actor {
     }
 
     async fn fail(&mut self, ctx: &mut xtra::Context<Self>, error: anyhow::Error) {
-        tracing::info!(%self.cfd.id, %error, "Rollover failed");
+        tracing::info!(id = %self.cfd.id(), %error, "Rollover failed");
         if let Err(err) = self
             .projection_actor
             .send(projection::UpdateRollOverProposal {
-                order: self.cfd.id,
+                order: self.cfd.id(),
                 proposal: None,
             })
             .await
@@ -161,7 +161,7 @@ impl Actor {
     }
 
     async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let order_id = self.cfd.id;
+        let order_id = self.cfd.id();
 
         let (sender, receiver) = mpsc::unbounded();
 
@@ -174,7 +174,7 @@ impl Actor {
         let dlc = cfd.open_dlc().expect("CFD was in wrong state");
 
         let oracle_event_id = oracle::next_announcement_after(
-            time::OffsetDateTime::now_utc() + cfd.settlement_interval,
+            time::OffsetDateTime::now_utc() + cfd.settlement_interval(),
         )?;
 
         let taker_id = self.taker_id;
@@ -212,11 +212,11 @@ impl Actor {
             receiver,
             (self.oracle_pk, announcement),
             RolloverParams::new(
-                cfd.price,
-                cfd.quantity_usd,
-                cfd.leverage,
+                cfd.price(),
+                cfd.quantity_usd(),
+                cfd.leverage(),
                 cfd.refund_timelock_in_blocks(),
-                cfd.fee_rate,
+                cfd.fee_rate(),
             ),
             Role::Maker,
             dlc,
@@ -238,17 +238,17 @@ impl Actor {
     }
 
     async fn reject(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        tracing::info!(%self.cfd.id, "Maker rejects a roll_over proposal" );
+        tracing::info!(id = %self.cfd.id(), "Maker rejects a roll_over proposal" );
 
         self.send_to_taker_actor
             .send(TakerMessage {
                 taker_id: self.taker_id,
-                msg: MakerToTaker::RejectRollOver(self.cfd.id),
+                msg: MakerToTaker::RejectRollOver(self.cfd.id()),
             })
             .await??;
         self.projection_actor
             .send(UpdateRollOverProposal {
-                order: self.cfd.id,
+                order: self.cfd.id(),
                 proposal: None,
             })
             .await?;

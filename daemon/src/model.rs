@@ -390,7 +390,7 @@ impl From<Decimal> for Percent {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub enum TradingPair {
     BtcUsd,
 }
@@ -399,6 +399,16 @@ pub enum TradingPair {
 pub enum Position {
     Long,
     Short,
+}
+
+impl Position {
+    /// Determines the counter position to the current position.
+    pub fn counter_position(&self) -> Position {
+        match self {
+            Position::Long => Position::Short,
+            Position::Short => Position::Long,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

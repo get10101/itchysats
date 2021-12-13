@@ -25,9 +25,9 @@ async fn transition_non_continue_cfds_to_setup_failed(
     let mut cfds = load_all_cfds(conn).await?;
 
     for cfd in cfds.iter_mut().filter(|cfd| Cfd::is_cleanup(cfd)) {
-        cfd.state = CfdState::setup_failed(format!(
+        *cfd.state_mut() = CfdState::setup_failed(format!(
             "Was in state {} which cannot be continued.",
-            cfd.state
+            cfd.state()
         ));
 
         append_cfd_state(cfd, conn).await?;

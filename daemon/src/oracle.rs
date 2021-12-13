@@ -74,7 +74,7 @@ impl Actor {
         let mut pending_attestations = HashSet::new();
 
         for cfd in cfds {
-            match cfd.state.clone() {
+            match cfd.state().clone() {
                 CfdState::PendingOpen { dlc, ..}
                 | CfdState::Open { dlc, .. }
                 | CfdState::PendingCommit { dlc, .. }
