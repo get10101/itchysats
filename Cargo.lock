@@ -622,7 +622,7 @@ dependencies = [
  "itertools",
  "maia",
  "mockall",
- "mockall_derive 0.10.2",
+ "mockall_derive",
  "nalgebra",
  "ndarray",
  "ndarray_einsum_beta",
@@ -1538,21 +1538,9 @@ dependencies = [
  "downcast",
  "fragile",
  "lazy_static",
- "mockall_derive 0.11.0",
+ "mockall_derive",
  "predicates",
  "predicates-tree",
-]
-
-[[package]]
-name = "mockall_derive"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7e25b214433f669161f414959594216d8e6ba83b6679d3db96899c0b4639033"
-dependencies = [
- "cfg-if 1.0.0",
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
