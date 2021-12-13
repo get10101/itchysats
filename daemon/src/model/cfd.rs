@@ -894,9 +894,6 @@ impl Cfd {
             monitor::Event::RefundTimelockExpired(_) => {
                 let dlc = if let OpenCommitted { dlc, .. } = self.state.clone() {
                     dlc
-                } else if let Open { dlc, .. } | PendingOpen { dlc, .. } = self.state.clone() {
-                    tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to PendingRefund", self.state);
-                    dlc
                 } else {
                     bail!(
                         "Cannot transition to PendingRefund because of unexpected state {}",
