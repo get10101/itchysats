@@ -24,6 +24,7 @@ use daemon::MakerActorSystem;
 use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
+use daemon::SETTLEMENT_INTERVAL;
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -149,7 +150,7 @@ impl Maker {
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tasks.add(wallet_fut);
 
-        let settlement_interval = time::Duration::hours(24);
+        let settlement_interval = SETTLEMENT_INTERVAL;
 
         let (identity_pk, identity_sk) = config.seed.derive_identity();
 
