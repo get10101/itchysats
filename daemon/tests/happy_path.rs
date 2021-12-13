@@ -5,6 +5,8 @@ use crate::harness::flow::next_cfd;
 use crate::harness::flow::next_order;
 use crate::harness::flow::next_some;
 use crate::harness::init_tracing;
+use crate::harness::maia::OliviaData;
+use crate::harness::mocks::oracle::dummy_end_attestation;
 use crate::harness::start_both;
 use crate::harness::Maker;
 use crate::harness::MakerConfig;
@@ -146,6 +148,43 @@ async fn collaboratively_close_an_open_cfd() {
     assert_next_state!(CfdState::PendingClose, maker, taker, order_id);
 
     deliver_event!(maker, taker, Event::CloseFinality(order_id));
+
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+
+    assert_next_state!(CfdState::Closed, maker, taker, order_id);
+}
+
+#[tokio::test]
+#[cfg_attr(not(feature = "fake_clock"), ignore)]
+async fn force_close_an_open_cfd() {
+    let _guard = init_tracing();
+
+    let start_time = OliviaData::example_0().announcement().expected_outcome_time
+        - daemon::SETTLEMENT_INTERVAL
+        - time::Duration::minutes(20);
+
+    let (mut maker, mut taker, order_id) = {
+        let _clock_handle = daemon::clock::set_fake_clock(start_time.into());
+        start_from_open_cfd_state().await
+    };
+
+    // Taker initiates force-closing
+    taker.force_close(order_id).await;
+
+    deliver_event!(maker, taker, Event::CommitFinality(order_id));
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+
+    assert_next_state!(CfdState::OpenCommitted, maker, taker, order_id);
+
+    deliver_event!(maker, taker, dummy_end_attestation());
+
+    deliver_event!(maker, taker, Event::CetTimelockExpired(order_id));
+
+    sleep(Duration::from_secs(5)).await;
+
+    assert_next_state!(CfdState::PendingCet, maker, taker, order_id);
+
+    deliver_event!(maker, taker, Event::CetFinality(order_id));
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 

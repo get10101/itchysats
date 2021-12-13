@@ -53,3 +53,7 @@ pub trait Oracle {
 pub fn dummy_announcement() -> oracle::Announcement {
     OliviaData::example_0().announcement()
 }
+
+pub fn dummy_end_attestation() -> oracle::Attestation {
+    OliviaData::example_0().attestation()
+}

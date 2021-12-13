@@ -1,4 +1,5 @@
 use daemon::model::BitMexPriceEventId;
+use daemon::oracle::Attestation;
 use daemon::oracle::{self};
 use maia::secp256k1_zkp::schnorrsig;
 use maia::secp256k1_zkp::SecretKey;
@@ -56,6 +57,14 @@ impl OliviaData {
             id: self.id,
             expected_outcome_time: self.id.timestamp(),
             nonce_pks: self.nonce_pks.clone(),
+        }
+    }
+
+    pub fn attestation(&self) -> Attestation {
+        Attestation {
+            id: self.id,
+            price: self.price,
+            scalars: self.attestations.clone(),
         }
     }
 
