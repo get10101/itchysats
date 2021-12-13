@@ -1,9 +1,7 @@
 use crate::harness::maia::OliviaData;
-use daemon::model::BitMexPriceEventId;
 use daemon::oracle;
 use mockall::*;
 use std::sync::Arc;
-use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;
 
@@ -53,11 +51,5 @@ pub trait Oracle {
 }
 
 pub fn dummy_announcement() -> oracle::Announcement {
-    let announcement = OliviaData::example_0().announcement();
-
-    oracle::Announcement {
-        id: BitMexPriceEventId::new(OffsetDateTime::UNIX_EPOCH, 0),
-        expected_outcome_time: OffsetDateTime::now_utc(),
-        nonce_pks: announcement.nonce_pks,
-    }
+    OliviaData::example_0().announcement()
 }

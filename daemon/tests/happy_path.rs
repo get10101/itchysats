@@ -1,7 +1,3 @@
-use std::time::Duration;
-
-use crate::harness::deliver_close_finality_event;
-use crate::harness::deliver_lock_finality_event;
 use crate::harness::dummy_new_order;
 use crate::harness::flow::is_next_none;
 use crate::harness::flow::next;
@@ -17,12 +13,29 @@ use crate::harness::TakerConfig;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
 use daemon::model::Usd;
+use daemon::monitor::Event;
 use daemon::projection::CfdState;
 use daemon::projection::Identity;
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
+use std::time::Duration;
 use tokio::time::sleep;
 mod harness;
+
+/// Assert the next state of the single cfd present at both maker and taker
+macro_rules! assert_next_state {
+    ($state:expr, $maker:expr, $taker:expr, $id:expr) => {
+        // TODO: Allow fetching cfd with the specified id if there is more than
+        // one on the cfd feed
+        let (taker_cfd, maker_cfd) = next_cfd($taker.cfd_feed(), $maker.cfd_feed())
+            .await
+            .unwrap();
+        assert_eq!(taker_cfd.order_id, $id);
+        assert_eq!(maker_cfd.order_id, $id);
+        assert_eq!(taker_cfd.state, $state);
+        assert_eq!(maker_cfd.state, $state);
+    };
+}
 
 #[tokio::test]
 async fn taker_receives_order_from_maker_on_publication() {
@@ -59,23 +72,12 @@ async fn taker_takes_order_and_maker_rejects() {
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
     assert_eq!(taker_cfd.order_id, received.id);
     assert_eq!(maker_cfd.order_id, received.id);
-    assert!(matches!(
-        taker_cfd.state,
-        CfdState::OutgoingOrderRequest { .. }
-    ));
-    assert!(matches!(
-        maker_cfd.state,
-        CfdState::IncomingOrderRequest { .. }
-    ));
+    assert_eq!(taker_cfd.state, CfdState::OutgoingOrderRequest);
+    assert_eq!(maker_cfd.state, CfdState::IncomingOrderRequest);
 
     maker.reject_take_request(received.clone()).await;
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    // TODO: More elaborate Cfd assertions
-    assert_eq!(taker_cfd.order_id, received.id);
-    assert_eq!(maker_cfd.order_id, received.id);
-    assert!(matches!(taker_cfd.state, CfdState::Rejected { .. }));
-    assert!(matches!(maker_cfd.state, CfdState::Rejected { .. }));
+    assert_next_state!(CfdState::Rejected, maker, taker, received.id);
 }
 
 #[tokio::test]
@@ -112,28 +114,16 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 
     maker.accept_take_request(received.clone()).await;
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    // TODO: More elaborate Cfd assertions
-    assert_eq!(taker_cfd.order_id, received.id);
-    assert_eq!(maker_cfd.order_id, received.id);
-    assert!(matches!(taker_cfd.state, CfdState::ContractSetup { .. }));
-    assert!(matches!(maker_cfd.state, CfdState::ContractSetup { .. }));
+    assert_next_state!(CfdState::ContractSetup, maker, taker, received.id);
 
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    // TODO: More elaborate Cfd assertions
-    assert_eq!(taker_cfd.order_id, received.id);
-    assert_eq!(maker_cfd.order_id, received.id);
-    assert!(matches!(taker_cfd.state, CfdState::PendingOpen { .. }));
-    assert!(matches!(maker_cfd.state, CfdState::PendingOpen { .. }));
+    assert_next_state!(CfdState::PendingOpen, maker, taker, received.id);
 
-    deliver_lock_finality_event(&maker, &taker, received.id).await;
+    deliver_event!(maker, taker, Event::LockFinality(received.id));
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert!(matches!(taker_cfd.state, CfdState::Open { .. }));
-    assert!(matches!(maker_cfd.state, CfdState::Open { .. }));
+    assert_next_state!(CfdState::Open, maker, taker, received.id);
 }
 
 #[tokio::test]
@@ -144,14 +134,8 @@ async fn collaboratively_close_an_open_cfd() {
     taker.propose_settlement(order_id).await;
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert!(matches!(
-        taker_cfd.state,
-        CfdState::OutgoingSettlementProposal { .. }
-    ));
-    assert!(matches!(
-        maker_cfd.state,
-        CfdState::IncomingSettlementProposal { .. }
-    ));
+    assert_eq!(taker_cfd.state, CfdState::OutgoingSettlementProposal);
+    assert_eq!(maker_cfd.state, CfdState::IncomingSettlementProposal);
 
     maker.mocks.mock_monitor_collaborative_settlement().await;
     taker.mocks.mock_monitor_collaborative_settlement().await;
@@ -159,16 +143,13 @@ async fn collaboratively_close_an_open_cfd() {
     maker.accept_settlement_proposal(order_id).await;
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert!(matches!(taker_cfd.state, CfdState::PendingClose { .. }));
-    assert!(matches!(maker_cfd.state, CfdState::PendingClose { .. }));
+    assert_next_state!(CfdState::PendingClose, maker, taker, order_id);
 
-    deliver_close_finality_event(&maker, &taker, order_id).await;
+    deliver_event!(maker, taker, Event::CloseFinality(order_id));
+
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert!(matches!(taker_cfd.state, CfdState::Closed { .. }));
-    assert!(matches!(maker_cfd.state, CfdState::Closed { .. }));
+    assert_next_state!(CfdState::Closed, maker, taker, order_id);
 }
 
 #[tokio::test]
@@ -279,21 +260,15 @@ async fn start_from_open_cfd_state() -> (Maker, Taker, OrderId) {
 
     maker.accept_take_request(received.clone()).await;
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert!(matches!(taker_cfd.state, CfdState::ContractSetup { .. }));
-    assert!(matches!(maker_cfd.state, CfdState::ContractSetup { .. }));
-
+    assert_next_state!(CfdState::ContractSetup, maker, taker, received.id);
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert!(matches!(taker_cfd.state, CfdState::PendingOpen { .. }));
-    assert!(matches!(maker_cfd.state, CfdState::PendingOpen { .. }));
+    assert_next_state!(CfdState::PendingOpen, maker, taker, received.id);
 
-    deliver_lock_finality_event(&maker, &taker, received.id).await;
+    deliver_event!(maker, taker, Event::LockFinality(received.id));
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert!(matches!(taker_cfd.state, CfdState::Open { .. }));
-    assert!(matches!(maker_cfd.state, CfdState::Open { .. }));
+    assert_next_state!(CfdState::Open, maker, taker, received.id);
+
     (maker, taker, received.id)
 }

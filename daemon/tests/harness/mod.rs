@@ -24,6 +24,7 @@ use daemon::MakerActorSystem;
 use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
+use daemon::SETTLEMENT_INTERVAL;
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -149,7 +150,7 @@ impl Maker {
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tasks.add(wallet_fut);
 
-        let settlement_interval = time::Duration::hours(24);
+        let settlement_interval = SETTLEMENT_INTERVAL;
 
         let (identity_pk, identity_sk) = config.seed.derive_identity();
 
@@ -353,36 +354,14 @@ impl Taker {
     }
 }
 
-/// Deliver the event that provokes the transition to cfd's "Open" state
-pub async fn deliver_lock_finality_event(maker: &Maker, taker: &Taker, id: OrderId) {
-    maker
-        .system
-        .cfd_actor_addr
-        .send(daemon::monitor::Event::LockFinality(id))
-        .await
-        .unwrap();
-    taker
-        .system
-        .cfd_actor_addr
-        .send(daemon::monitor::Event::LockFinality(id))
-        .await
-        .unwrap();
-}
-
-/// Deliver the event that provokes the transition to cfd's "Close" state
-pub async fn deliver_close_finality_event(maker: &Maker, taker: &Taker, id: OrderId) {
-    taker
-        .system
-        .cfd_actor_addr
-        .send(daemon::monitor::Event::CloseFinality(id))
-        .await
-        .unwrap();
-    maker
-        .system
-        .cfd_actor_addr
-        .send(daemon::monitor::Event::CloseFinality(id))
-        .await
-        .unwrap();
+/// Deliver monitor event to both actor systems
+#[macro_export]
+macro_rules! deliver_event {
+    ($maker:expr, $taker:expr, $event:expr) => {
+        tracing::debug!("Delivering event: {:?}", $event);
+        $taker.system.cfd_actor_addr.send($event).await.unwrap();
+        $maker.system.cfd_actor_addr.send($event).await.unwrap();
+    };
 }
 
 async fn in_memory_db() -> SqlitePool {
