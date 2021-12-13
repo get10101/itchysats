@@ -5,6 +5,8 @@ use crate::harness::flow::next_cfd;
 use crate::harness::flow::next_order;
 use crate::harness::flow::next_some;
 use crate::harness::init_tracing;
+use crate::harness::maia::OliviaData;
+use crate::harness::mocks::oracle::dummy_wrong_attestation;
 use crate::harness::start_both;
 use crate::harness::Maker;
 use crate::harness::MakerConfig;
@@ -14,6 +16,7 @@ use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
 use daemon::model::Usd;
 use daemon::monitor::Event;
+use daemon::oracle;
 use daemon::projection::CfdState;
 use daemon::projection::Identity;
 use maia::secp256k1_zkp::schnorrsig;
@@ -129,7 +132,8 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 #[tokio::test]
 async fn collaboratively_close_an_open_cfd() {
     let _guard = init_tracing();
-    let (mut maker, mut taker, order_id) = start_from_open_cfd_state().await;
+    let (mut maker, mut taker, order_id) =
+        start_from_open_cfd_state(OliviaData::example_0().announcement()).await;
 
     taker.propose_settlement(order_id).await;
 
@@ -149,6 +153,38 @@ async fn collaboratively_close_an_open_cfd() {
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 
+    assert_next_state!(CfdState::Closed, maker, taker, order_id);
+}
+
+#[tokio::test]
+async fn force_close_an_open_cfd() {
+    let _guard = init_tracing();
+    let oracle_data = OliviaData::example_0();
+    let (mut maker, mut taker, order_id) =
+        start_from_open_cfd_state(oracle_data.announcement()).await;
+
+    // Taker initiates force-closing
+    taker.force_close(order_id).await;
+
+    deliver_event!(maker, taker, Event::CommitFinality(order_id));
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    assert_next_state!(CfdState::OpenCommitted, maker, taker, order_id);
+
+    // After CetTimelockExpired, we're only waiting for attestation
+    deliver_event!(maker, taker, Event::CetTimelockExpired(order_id));
+
+    // Delivering the wrong attestation does not move state to `PendingCet`
+    deliver_event!(maker, taker, dummy_wrong_attestation());
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    assert_next_state!(CfdState::OpenCommitted, maker, taker, order_id);
+
+    // Delivering correct attestation moves the state `PendingCet`
+    deliver_event!(maker, taker, oracle_data.attestation());
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    assert_next_state!(CfdState::PendingCet, maker, taker, order_id);
+
+    deliver_event!(maker, taker, Event::CetFinality(order_id));
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     assert_next_state!(CfdState::Closed, maker, taker, order_id);
 }
 
@@ -217,7 +253,8 @@ async fn maker_notices_lack_of_taker() {
 /// Hide the implementation detail of arriving at the Cfd open state.
 /// Useful when reading tests that should start at this point.
 /// For convenience, returns also OrderId of the opened Cfd.
-async fn start_from_open_cfd_state() -> (Maker, Taker, OrderId) {
+/// `announcement` is used during Cfd's creation.
+async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker, Taker, OrderId) {
     let heartbeat_interval = Duration::from_secs(60);
     let maker_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut maker = Maker::start(
@@ -240,8 +277,14 @@ async fn start_from_open_cfd_state() -> (Maker, Taker, OrderId) {
         .await
         .unwrap();
 
-    taker.mocks.mock_oracle_announcement().await;
-    maker.mocks.mock_oracle_announcement().await;
+    taker
+        .mocks
+        .mock_oracle_announcement_with(announcement.clone())
+        .await;
+    maker
+        .mocks
+        .mock_oracle_announcement_with(announcement)
+        .await;
 
     taker.take_order(received.clone(), Usd::new(dec!(5))).await;
     let (_, _) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
