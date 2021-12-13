@@ -1,5 +1,7 @@
 use anyhow::Result;
-use vergen::{vergen, Config, SemverKind};
+use vergen::vergen;
+use vergen::Config;
+use vergen::SemverKind;
 
 fn main() -> Result<()> {
     std::fs::create_dir_all("../maker-frontend/dist/maker")?;

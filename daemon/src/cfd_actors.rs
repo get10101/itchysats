@@ -1,6 +1,16 @@
-use crate::model::cfd::{Attestation, Cfd, CfdState, OrderId};
-use crate::{db, monitor, oracle, projection, try_continue, wallet};
-use anyhow::{bail, Context, Result};
+use crate::db;
+use crate::model::cfd::Attestation;
+use crate::model::cfd::Cfd;
+use crate::model::cfd::CfdState;
+use crate::model::cfd::OrderId;
+use crate::monitor;
+use crate::oracle;
+use crate::projection;
+use crate::try_continue;
+use crate::wallet;
+use anyhow::bail;
+use anyhow::Context;
+use anyhow::Result;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 

@@ -1,11 +1,13 @@
-use crate::wire::{self, EncryptedJsonCodec};
+use crate::wire;
+use crate::wire::EncryptedJsonCodec;
 use futures::SinkExt;
 use serde::Serialize;
 use std::fmt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio_util::codec::FramedWrite;
-use xtra::{Handler, Message};
+use xtra::Handler;
+use xtra::Message;
 
 pub struct Actor<T> {
     write: FramedWrite<OwnedWriteHalf, EncryptedJsonCodec<T>>,

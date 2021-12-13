@@ -1,25 +1,52 @@
-use crate::model::cfd::{Cet, Dlc, RevokedCommit, Role};
-use crate::model::{Leverage, Price, Usd};
+use crate::model;
+use crate::model::cfd::Cet;
+use crate::model::cfd::Dlc;
+use crate::model::cfd::RevokedCommit;
+use crate::model::cfd::Role;
+use crate::model::Leverage;
+use crate::model::Price;
+use crate::model::Usd;
+use crate::oracle;
+use crate::payout_curve;
 use crate::tokio_ext::FutureExt;
-use crate::wire::{
-    Msg0, Msg1, Msg2, Msg3, RollOverMsg, RollOverMsg0, RollOverMsg1, RollOverMsg2, RollOverMsg3,
-    SetupMsg,
-};
-use crate::{model, oracle, payout_curve, wallet};
-use anyhow::{Context, Result};
-use bdk::bitcoin::secp256k1::{schnorrsig, Signature, SECP256K1};
+use crate::wallet;
+use crate::wire::Msg0;
+use crate::wire::Msg1;
+use crate::wire::Msg2;
+use crate::wire::Msg3;
+use crate::wire::RollOverMsg;
+use crate::wire::RollOverMsg0;
+use crate::wire::RollOverMsg1;
+use crate::wire::RollOverMsg2;
+use crate::wire::RollOverMsg3;
+use crate::wire::SetupMsg;
+use anyhow::Context;
+use anyhow::Result;
+use bdk::bitcoin::secp256k1::schnorrsig;
+use bdk::bitcoin::secp256k1::Signature;
+use bdk::bitcoin::secp256k1::SECP256K1;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::{Amount, PublicKey, Transaction};
+use bdk::bitcoin::Amount;
+use bdk::bitcoin::PublicKey;
+use bdk::bitcoin::Transaction;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use futures::stream::FusedStream;
-use futures::{Sink, SinkExt, StreamExt};
+use futures::Sink;
+use futures::SinkExt;
+use futures::StreamExt;
+use maia::commit_descriptor;
+use maia::compute_adaptor_pk;
+use maia::create_cfd_transactions;
+use maia::interval;
+use maia::lock_descriptor;
+use maia::renew_cfd_transactions;
+use maia::secp256k1_zkp;
 use maia::secp256k1_zkp::EcdsaAdaptorSignature;
-use maia::{
-    commit_descriptor, compute_adaptor_pk, create_cfd_transactions, interval, lock_descriptor,
-    renew_cfd_transactions, secp256k1_zkp, spending_tx_sighash, Announcement, PartyParams,
-    PunishParams,
-};
+use maia::spending_tx_sighash;
+use maia::Announcement;
+use maia::PartyParams;
+use maia::PunishParams;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::ops::RangeInclusive;

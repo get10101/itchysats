@@ -1,4 +1,5 @@
-use crate::payout_curve::compat::{To1DArray, ToNAlgebraMatrix};
+use crate::payout_curve::compat::To1DArray;
+use crate::payout_curve::compat::ToNAlgebraMatrix;
 use crate::payout_curve::Error;
 use itertools::Itertools;
 use ndarray::prelude::*;

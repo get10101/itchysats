@@ -1,14 +1,18 @@
 use anyhow::Result;
+use bdk::bitcoin;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
-use bdk::bitcoin::{self, Amount, Network};
-use rand::{CryptoRng, RngCore};
+use bdk::bitcoin::Amount;
+use bdk::bitcoin::Network;
+use rand::CryptoRng;
+use rand::RngCore;
 
 pub fn new_test_wallet(
     rng: &mut (impl RngCore + CryptoRng),
     utxo_amount: Amount,
     num_utxos: u8,
 ) -> Result<bdk::Wallet<(), bdk::database::MemoryDatabase>> {
-    use bdk::{populate_test_db, testutils};
+    use bdk::populate_test_db;
+    use bdk::testutils;
 
     let mut seed = [0u8; 32];
     rng.fill_bytes(&mut seed);

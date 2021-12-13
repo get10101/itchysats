@@ -1,9 +1,13 @@
 use hex::FromHexError;
 use rocket::http::Status;
-use rocket::outcome::{try_outcome, IntoOutcome};
-use rocket::request::{FromRequest, Outcome};
-use rocket::{Request, State};
-use rocket_basicauth::{BasicAuth, BasicAuthError};
+use rocket::outcome::try_outcome;
+use rocket::outcome::IntoOutcome;
+use rocket::request::FromRequest;
+use rocket::request::Outcome;
+use rocket::Request;
+use rocket::State;
+use rocket_basicauth::BasicAuth;
+use rocket_basicauth::BasicAuthError;
 use std::fmt;
 use std::str::FromStr;
 

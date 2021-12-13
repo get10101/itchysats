@@ -1,10 +1,16 @@
-use crate::address_map::{ActorName, Stopping};
-use crate::model::cfd::{
-    Cfd, CollaborativeSettlement, OrderId, SettlementKind, SettlementProposal,
-};
+use crate::address_map::ActorName;
+use crate::address_map::Stopping;
+use crate::connection;
+use crate::model::cfd::Cfd;
+use crate::model::cfd::CollaborativeSettlement;
+use crate::model::cfd::OrderId;
+use crate::model::cfd::SettlementKind;
+use crate::model::cfd::SettlementProposal;
 use crate::model::Price;
-use crate::{connection, projection, wire};
-use anyhow::{Context, Result};
+use crate::projection;
+use crate::wire;
+use anyhow::Context;
+use anyhow::Result;
 use async_trait::async_trait;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;

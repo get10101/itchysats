@@ -1,14 +1,24 @@
 use std::time::Duration;
 
-use crate::harness::flow::{is_next_none, next, next_cfd, next_order, next_some};
-use crate::harness::{
-    deliver_close_finality_event, deliver_lock_finality_event, dummy_new_order, init_tracing,
-    start_both, Maker, MakerConfig, Taker, TakerConfig,
-};
+use crate::harness::deliver_close_finality_event;
+use crate::harness::deliver_lock_finality_event;
+use crate::harness::dummy_new_order;
+use crate::harness::flow::is_next_none;
+use crate::harness::flow::next;
+use crate::harness::flow::next_cfd;
+use crate::harness::flow::next_order;
+use crate::harness::flow::next_some;
+use crate::harness::init_tracing;
+use crate::harness::start_both;
+use crate::harness::Maker;
+use crate::harness::MakerConfig;
+use crate::harness::Taker;
+use crate::harness::TakerConfig;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
 use daemon::model::Usd;
-use daemon::projection::{CfdState, Identity};
+use daemon::projection::CfdState;
+use daemon::projection::Identity;
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
 use tokio::time::sleep;

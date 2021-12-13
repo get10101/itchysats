@@ -1,8 +1,12 @@
-use crate::model::{Price, Timestamp};
-use crate::{projection, supervisor, Tasks};
+use crate::model::Price;
+use crate::model::Timestamp;
+use crate::projection;
+use crate::supervisor;
+use crate::Tasks;
 use anyhow::Result;
 use async_trait::async_trait;
-use futures::{SinkExt, TryStreamExt};
+use futures::SinkExt;
+use futures::TryStreamExt;
 use rust_decimal::Decimal;
 use std::convert::TryFrom;
 use std::time::Duration;

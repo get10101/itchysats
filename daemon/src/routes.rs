@@ -1,4 +1,5 @@
-use rocket::http::{ContentType, Status};
+use rocket::http::ContentType;
+use rocket::http::Status;
 use rust_embed::EmbeddedFile;
 use std::borrow::Cow;
 use std::path::PathBuf;

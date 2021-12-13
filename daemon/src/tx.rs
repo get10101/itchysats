@@ -1,4 +1,5 @@
-use bdk::bitcoin::{Network, Txid};
+use bdk::bitcoin::Network;
+use bdk::bitcoin::Txid;
 use serde::Serialize;
 
 use crate::model::cfd;

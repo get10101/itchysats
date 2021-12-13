@@ -1,7 +1,8 @@
 use crate::Tasks;
 use async_trait::async_trait;
 use std::fmt;
-use xtra::{Address, Context};
+use xtra::Address;
+use xtra::Context;
 use xtra_productivity::xtra_productivity;
 
 /// A supervising actor reacts to messages from the actor it is supervising and restarts it based on

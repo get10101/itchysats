@@ -1,8 +1,12 @@
-use crate::model::cfd::{Cfd, CfdState, OrderId};
+use crate::model::cfd::Cfd;
+use crate::model::cfd::CfdState;
+use crate::model::cfd::OrderId;
 use crate::model::BitMexPriceEventId;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use sqlx::pool::PoolConnection;
-use sqlx::{Sqlite, SqlitePool};
+use sqlx::Sqlite;
+use sqlx::SqlitePool;
 use std::mem;
 use time::Duration;
 
@@ -355,8 +359,13 @@ pub async fn load_cfds_by_oracle_event_id(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::cfd::{Cfd, CfdState, Order, Origin};
-    use crate::model::{Identity, Price, Usd};
+    use crate::model::cfd::Cfd;
+    use crate::model::cfd::CfdState;
+    use crate::model::cfd::Order;
+    use crate::model::cfd::Origin;
+    use crate::model::Identity;
+    use crate::model::Price;
+    use crate::model::Usd;
     use crate::seed::Seed;
     use pretty_assertions::assert_eq;
     use rand::Rng;

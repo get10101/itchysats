@@ -1,4 +1,5 @@
-use maia::secp256k1_zkp::{schnorrsig, SecretKey};
+use maia::secp256k1_zkp::schnorrsig;
+use maia::secp256k1_zkp::SecretKey;
 use maia::Announcement;
 use std::str::FromStr;
 

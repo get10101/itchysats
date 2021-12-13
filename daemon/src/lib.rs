@@ -1,8 +1,11 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![warn(clippy::disallowed_method)]
 use crate::db::load_all_cfds;
-use crate::maker_cfd::{FromTaker, TakerConnected};
-use crate::model::cfd::{Cfd, Order, UpdateCfdProposals};
+use crate::maker_cfd::FromTaker;
+use crate::maker_cfd::TakerConnected;
+use crate::model::cfd::Cfd;
+use crate::model::cfd::Order;
+use crate::model::cfd::UpdateCfdProposals;
 use crate::model::Identity;
 use crate::oracle::Attestation;
 use crate::tokio_ext::FutureExt;
@@ -16,8 +19,10 @@ use sqlx::SqlitePool;
 use std::future::Future;
 use std::time::Duration;
 use tokio::sync::watch;
-use xtra::message_channel::{MessageChannel, StrongMessageChannel};
-use xtra::{Actor, Address};
+use xtra::message_channel::MessageChannel;
+use xtra::message_channel::StrongMessageChannel;
+use xtra::Actor;
+use xtra::Address;
 
 pub mod sqlx_ext; // Must come first because it is a macro.
 

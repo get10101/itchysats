@@ -2,9 +2,11 @@ use crate::payout_curve::basis::BSplineBasis;
 use crate::payout_curve::csr_tools::CSR;
 use crate::payout_curve::Error;
 use itertools::Itertools;
+use ndarray::concatenate;
 use ndarray::prelude::*;
-use ndarray::{concatenate, Order};
-use ndarray_einsum_beta::{einsum, tensordot};
+use ndarray::Order;
+use ndarray_einsum_beta::einsum;
+use ndarray_einsum_beta::tensordot;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]

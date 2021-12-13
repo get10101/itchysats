@@ -1,4 +1,5 @@
-use anyhow::{anyhow, Result};
+use anyhow::anyhow;
+use anyhow::Result;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::Network;
 use hkdf::Hkdf;

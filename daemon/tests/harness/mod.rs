@@ -3,15 +3,27 @@ use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use ::bdk::bitcoin::Network;
-use daemon::connection::{connect, ConnectionStatus};
-use daemon::model::cfd::{OrderId, Role};
-use daemon::model::{self, Price, Usd};
-use daemon::projection::{Cfd, CfdOrder, Feeds, Identity};
+use daemon::connection::connect;
+use daemon::connection::ConnectionStatus;
+use daemon::db;
+use daemon::maker_cfd;
+use daemon::maker_inc_connections;
+use daemon::model::cfd::OrderId;
+use daemon::model::cfd::Role;
+use daemon::model::Price;
+use daemon::model::Usd;
+use daemon::model::{self};
+use daemon::projection;
+use daemon::projection::Cfd;
+use daemon::projection::CfdOrder;
+use daemon::projection::Feeds;
+use daemon::projection::Identity;
 use daemon::seed::Seed;
-use daemon::{
-    db, maker_cfd, maker_inc_connections, projection, taker_cfd, MakerActorSystem, Tasks,
-    HEARTBEAT_INTERVAL, N_PAYOUTS,
-};
+use daemon::taker_cfd;
+use daemon::MakerActorSystem;
+use daemon::Tasks;
+use daemon::HEARTBEAT_INTERVAL;
+use daemon::N_PAYOUTS;
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;

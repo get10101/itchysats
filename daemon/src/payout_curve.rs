@@ -1,14 +1,18 @@
-use std::fmt;
-
-use crate::model::{Leverage, Price, Usd};
+use crate::model::Leverage;
+use crate::model::Price;
+use crate::model::Usd;
 use crate::payout_curve::curve::Curve;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use bdk::bitcoin;
 use itertools::Itertools;
-use maia::{generate_payouts, Payout};
+use maia::generate_payouts;
+use maia::Payout;
 use ndarray::prelude::*;
-use num::{FromPrimitive, ToPrimitive};
+use num::FromPrimitive;
+use num::ToPrimitive;
 use rust_decimal::Decimal;
+use std::fmt;
 
 mod basis;
 mod basis_eval;

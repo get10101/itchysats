@@ -1,5 +1,9 @@
-use nalgebra::{ComplexField, DMatrix, Dynamic, Scalar};
-use ndarray::{Array1, Array2};
+use nalgebra::ComplexField;
+use nalgebra::DMatrix;
+use nalgebra::Dynamic;
+use nalgebra::Scalar;
+use ndarray::Array1;
+use ndarray::Array2;
 use std::fmt::Debug;
 
 pub trait ToNAlgebraMatrix<T> {

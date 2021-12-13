@@ -1,14 +1,34 @@
-use crate::address_map::{AddressMap, Stopping};
-use crate::cfd_actors::{self, append_cfd_state, insert_cfd_and_update_feed};
+use crate::address_map::AddressMap;
+use crate::address_map::Stopping;
+use crate::cfd_actors::append_cfd_state;
+use crate::cfd_actors::insert_cfd_and_update_feed;
+use crate::cfd_actors::{self};
+use crate::collab_settlement_taker;
+use crate::connection;
 use crate::db::load_cfd_by_order_id;
-use crate::model::cfd::{Cfd, CfdState, CfdStateCommon, Completed, Order, OrderId, Origin, Role};
-use crate::model::{Identity, Price, Usd};
-use crate::monitor::{self, MonitorParams};
-use crate::{
-    collab_settlement_taker, connection, log_error, oracle, projection, rollover_taker,
-    setup_taker, wallet, Tasks,
-};
-use anyhow::{bail, Context as _, Result};
+use crate::log_error;
+use crate::model::cfd::Cfd;
+use crate::model::cfd::CfdState;
+use crate::model::cfd::CfdStateCommon;
+use crate::model::cfd::Completed;
+use crate::model::cfd::Order;
+use crate::model::cfd::OrderId;
+use crate::model::cfd::Origin;
+use crate::model::cfd::Role;
+use crate::model::Identity;
+use crate::model::Price;
+use crate::model::Usd;
+use crate::monitor::MonitorParams;
+use crate::monitor::{self};
+use crate::oracle;
+use crate::projection;
+use crate::rollover_taker;
+use crate::setup_taker;
+use crate::wallet;
+use crate::Tasks;
+use anyhow::bail;
+use anyhow::Context as _;
+use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use xtra::prelude::*;
