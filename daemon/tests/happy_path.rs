@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use crate::harness::deliver_close_finality_event;
-use crate::harness::deliver_lock_finality_event;
 use crate::harness::dummy_new_order;
 use crate::harness::flow::is_next_none;
 use crate::harness::flow::next;
@@ -17,6 +15,7 @@ use crate::harness::TakerConfig;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
 use daemon::model::Usd;
+use daemon::monitor::Event;
 use daemon::projection::CfdState;
 use daemon::projection::Identity;
 use maia::secp256k1_zkp::schnorrsig;
@@ -129,7 +128,7 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     assert!(matches!(taker_cfd.state, CfdState::PendingOpen { .. }));
     assert!(matches!(maker_cfd.state, CfdState::PendingOpen { .. }));
 
-    deliver_lock_finality_event(&maker, &taker, received.id).await;
+    deliver_event!(maker, taker, Event::LockFinality(received.id));
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
     assert!(matches!(taker_cfd.state, CfdState::Open { .. }));
@@ -163,7 +162,8 @@ async fn collaboratively_close_an_open_cfd() {
     assert!(matches!(taker_cfd.state, CfdState::PendingClose { .. }));
     assert!(matches!(maker_cfd.state, CfdState::PendingClose { .. }));
 
-    deliver_close_finality_event(&maker, &taker, order_id).await;
+    deliver_event!(maker, taker, Event::CloseFinality(order_id));
+
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
@@ -290,7 +290,7 @@ async fn start_from_open_cfd_state() -> (Maker, Taker, OrderId) {
     assert!(matches!(taker_cfd.state, CfdState::PendingOpen { .. }));
     assert!(matches!(maker_cfd.state, CfdState::PendingOpen { .. }));
 
-    deliver_lock_finality_event(&maker, &taker, received.id).await;
+    deliver_event!(maker, taker, Event::LockFinality(received.id));
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
     assert!(matches!(taker_cfd.state, CfdState::Open { .. }));

@@ -354,36 +354,14 @@ impl Taker {
     }
 }
 
-/// Deliver the event that provokes the transition to cfd's "Open" state
-pub async fn deliver_lock_finality_event(maker: &Maker, taker: &Taker, id: OrderId) {
-    maker
-        .system
-        .cfd_actor_addr
-        .send(daemon::monitor::Event::LockFinality(id))
-        .await
-        .unwrap();
-    taker
-        .system
-        .cfd_actor_addr
-        .send(daemon::monitor::Event::LockFinality(id))
-        .await
-        .unwrap();
-}
-
-/// Deliver the event that provokes the transition to cfd's "Close" state
-pub async fn deliver_close_finality_event(maker: &Maker, taker: &Taker, id: OrderId) {
-    taker
-        .system
-        .cfd_actor_addr
-        .send(daemon::monitor::Event::CloseFinality(id))
-        .await
-        .unwrap();
-    maker
-        .system
-        .cfd_actor_addr
-        .send(daemon::monitor::Event::CloseFinality(id))
-        .await
-        .unwrap();
+/// Deliver monitor event to both actor systems
+#[macro_export]
+macro_rules! deliver_event {
+    ($maker:expr, $taker:expr, $event:expr) => {
+        tracing::debug!("Delivering event: {:?}", $event);
+        $taker.system.cfd_actor_addr.send($event).await.unwrap();
+        $maker.system.cfd_actor_addr.send($event).await.unwrap();
+    };
 }
 
 async fn in_memory_db() -> SqlitePool {
