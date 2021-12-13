@@ -268,20 +268,33 @@ where
 
         let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
         let (cfd_actor_addr, cfd_actor_fut) = taker_cfd::Actor::new(
-            db,
+            db.clone(),
             wallet_addr,
             oracle_pk,
-            projection_actor,
+            projection_actor.clone(),
             connection_actor_addr.clone(),
             monitor_addr.clone(),
-            oracle_addr,
+            oracle_addr.clone(),
             n_payouts,
             maker_identity,
         )
         .create(None)
         .run();
 
+        let (_, auto_rollover_fut) = auto_rollover::Actor::new(
+            db,
+            oracle_pk,
+            projection_actor,
+            connection_actor_addr.clone(),
+            monitor_addr.clone(),
+            oracle_addr,
+            n_payouts,
+        )
+        .create(None)
+        .run();
+
         tasks.add(cfd_actor_fut);
+        tasks.add(auto_rollover_fut);
 
         tasks.add(connection_actor_ctx.run(connection::Actor::new(
             maker_online_status_feed_sender,

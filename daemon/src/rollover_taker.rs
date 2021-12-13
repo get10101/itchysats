@@ -1,11 +1,12 @@
 use crate::address_map::ActorName;
 use crate::address_map::Stopping;
 use crate::connection;
+use crate::model::cfd::CannotRollover;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
-use crate::model::cfd::RollOverProposal;
+use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementKind;
 use crate::model::BitMexPriceEventId;
 use crate::model::Timestamp;
@@ -26,6 +27,7 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia::secp256k1_zkp::schnorrsig;
+use time::OffsetDateTime;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -79,7 +81,7 @@ impl Actor {
             .await??;
 
         self.update_proposal(Some((
-            RollOverProposal {
+            RolloverProposal {
                 order_id: self.cfd.id,
                 timestamp: self.timestamp,
             },
@@ -164,7 +166,7 @@ impl Actor {
 
     async fn update_proposal(
         &self,
-        proposal: Option<(RollOverProposal, SettlementKind)>,
+        proposal: Option<(RolloverProposal, SettlementKind)>,
     ) -> Result<()> {
         self.projection
             .send(UpdateRollOverProposal {
@@ -186,7 +188,19 @@ impl Actor {
 #[async_trait]
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        if let Err(e) = self.cfd.can_roll_over(OffsetDateTime::now_utc()) {
+            self.complete(
+                Completed::CannotRollover {
+                    order_id: self.cfd.id,
+                    reason: e,
+                },
+                ctx,
+            )
+            .await;
+        }
+
         let this = ctx.address().expect("self to be alive");
+
         if let Err(e) = self.propose(this).await {
             self.complete(
                 Completed::Failed {
@@ -326,6 +340,10 @@ pub enum Completed {
     Failed {
         order_id: OrderId,
         error: anyhow::Error,
+    },
+    CannotRollover {
+        order_id: OrderId,
+        reason: CannotRollover,
     },
 }
 

@@ -13,7 +13,7 @@ use crate::model::cfd::CfdStateCommon;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
-use crate::model::cfd::RollOverProposal;
+use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementProposal;
 use crate::model::Identity;
 use crate::model::Price;
@@ -291,7 +291,7 @@ where
 {
     async fn handle_propose_roll_over(
         &mut self,
-        proposal: RollOverProposal,
+        proposal: RolloverProposal,
         taker_id: Identity,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
@@ -914,7 +914,7 @@ where
                 timestamp,
             } => {
                 log_error!(self.handle_propose_roll_over(
-                    RollOverProposal {
+                    RolloverProposal {
                         order_id,
                         timestamp,
                     },
