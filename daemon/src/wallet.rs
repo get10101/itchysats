@@ -186,9 +186,14 @@ impl Actor {
     pub fn handle_try_broadcast_transaction(
         &mut self,
         msg: TryBroadcastTransaction,
+        ctx: &mut xtra::Context<Self>,
     ) -> Result<Txid> {
         let tx = msg.tx;
         let txid = tx.txid();
+
+        let this = ctx.address().expect("self to be alive");
+
+        this.send(Sync).await??;
 
         let result = self.wallet.broadcast(&tx);
 
