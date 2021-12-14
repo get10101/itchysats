@@ -398,7 +398,7 @@ mod tests {
 
     impl Order {
         fn dummy() -> Self {
-            Order::new(
+            Order::new_short(
                 Price::new(dec!(1000)).unwrap(),
                 Usd::new(dec!(100)),
                 Usd::new(dec!(1000)),

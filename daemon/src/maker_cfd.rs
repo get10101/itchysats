@@ -730,7 +730,7 @@ where
             time::OffsetDateTime::now_utc() + self.settlement_interval,
         )?;
 
-        let order = Order::new(
+        let order = Order::new_short(
             price,
             min_quantity,
             max_quantity,

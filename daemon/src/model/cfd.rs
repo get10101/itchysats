@@ -149,7 +149,7 @@ pub struct Order {
 }
 
 impl Order {
-    pub fn new(
+    pub fn new_short(
         price: Price,
         min_quantity: Usd,
         max_quantity: Usd,
