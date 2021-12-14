@@ -506,6 +506,7 @@ pub struct Cfd {
 
     pub details: CfdDetails,
 
+    #[serde(with = "::time::serde::timestamp::option")]
     pub expiry_timestamp: Option<OffsetDateTime>,
 
     pub counterparty: Identity,
