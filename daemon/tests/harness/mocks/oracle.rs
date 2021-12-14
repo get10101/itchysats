@@ -1,9 +1,12 @@
-use crate::harness::maia::OliviaData;
+use daemon::model::BitMexPriceEventId;
 use daemon::oracle;
 use mockall::*;
 use std::sync::Arc;
+use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;
+
+use crate::harness::maia::OliviaData;
 
 /// Test Stub simulating the Oracle actor.
 /// Serves as an entrypoint for injected mock handlers.
@@ -50,6 +53,18 @@ pub trait Oracle {
     }
 }
 
-pub fn dummy_announcement() -> oracle::Announcement {
-    OliviaData::example_0().announcement()
+/// We do *not* depend on the current time in our tests, the valid combination of
+/// announcement/attestation is hard-coded in OliviaData struct (along with event id's).
+/// Therefore, an attestation based on current utc time will always be wrong.
+pub fn dummy_wrong_attestation() -> oracle::Attestation {
+    let oracle::Attestation {
+        id: _,
+        price,
+        scalars,
+    } = OliviaData::example_0().attestation();
+    oracle::Attestation {
+        id: BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
+        price,
+        scalars,
+    }
 }

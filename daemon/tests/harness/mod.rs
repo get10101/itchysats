@@ -352,6 +352,15 @@ impl Taker {
             .unwrap()
             .unwrap();
     }
+
+    pub async fn force_close(&self, order_id: OrderId) {
+        self.system
+            .cfd_actor_addr
+            .send(taker_cfd::Commit { order_id })
+            .await
+            .unwrap()
+            .unwrap();
+    }
 }
 
 /// Deliver monitor event to both actor systems
