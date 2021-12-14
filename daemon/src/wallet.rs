@@ -341,7 +341,7 @@ struct RpcError {
 pub enum RpcErrorCode {
     /// General error during transaction or block submission Error code -25.
     RpcVerifyError,
-    /// Transaction or block was rejected by network rules. Error code -27.
+    /// Transaction already in chain. Error code -27.
     RpcVerifyAlreadyInChain,
 }
 
