@@ -1,4 +1,3 @@
-use crate::harness::maia::OliviaData;
 use daemon::oracle;
 use mockall::*;
 use std::sync::Arc;
@@ -48,12 +47,4 @@ pub trait Oracle {
     fn sync(&mut self, _msg: oracle::Sync) {
         unreachable!("mockall will reimplement this method")
     }
-}
-
-pub fn dummy_announcement() -> oracle::Announcement {
-    OliviaData::example_0().announcement()
-}
-
-pub fn dummy_end_attestation() -> oracle::Attestation {
-    OliviaData::example_0().attestation()
 }

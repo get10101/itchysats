@@ -7,6 +7,8 @@ use self::monitor::MonitorActor;
 use self::oracle::OracleActor;
 use self::wallet::WalletActor;
 
+use super::maia::OliviaData;
+
 pub mod monitor;
 pub mod oracle;
 pub mod wallet;
@@ -52,7 +54,7 @@ impl Mocks {
         self.oracle()
             .await
             .expect_get_announcement()
-            .return_const(Ok(oracle::dummy_announcement()));
+            .return_const(Ok(OliviaData::example_0().announcement()));
     }
 
     pub async fn mock_oracle_monitor_attestation(&mut self) {
