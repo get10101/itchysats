@@ -104,10 +104,10 @@ export function CfdTable(
                             <VStack>
                                 {txs}
                                 {details.payout && <Box>Payout: {details.payout}</Box>}
-                                {expiry_timestamp && <HStack>
+                                <HStack>
                                     <Text>Expires on:</Text>
                                     <Timestamp timestamp={expiry_timestamp} />
-                                </HStack>}
+                                </HStack>
                             </VStack>
                         </Box>
                     );

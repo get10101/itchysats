@@ -40,8 +40,7 @@ export default function CloseButton({ cfd, request, status, buttonTitle, isForce
             <Text>
                 This will force close your position with the counterparty. The exchange rate at
             </Text>
-            {/*Close button is only available if we have a DLC*/}
-            <Timestamp timestamp={cfd.expiry_timestamp!} />
+            <Timestamp timestamp={cfd.expiry_timestamp} />
             <Text>
                 will determine your profit/losses. It is likely that the rate will change until then.
             </Text>

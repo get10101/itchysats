@@ -614,6 +614,11 @@ pub struct Cfd {
 
     pub origin: Origin,
 
+    /// The id of the event to be used for price attestation
+    ///
+    /// The maker includes this into the Order based on the Oracle announcement to be used.
+    pub oracle_event_id: BitMexPriceEventId,
+
     pub fee_rate: u32,
 
     pub quantity_usd: Usd,
@@ -638,6 +643,7 @@ impl Cfd {
             creation_timestamp: Timestamp::now(),
             settlement_interval: order.settlement_interval,
             origin: order.origin,
+            oracle_event_id: order.oracle_event_id,
             fee_rate: order.fee_rate,
             counterparty,
         }

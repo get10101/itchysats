@@ -506,7 +506,8 @@ pub struct Cfd {
 
     pub details: CfdDetails,
 
-    pub expiry_timestamp: Option<OffsetDateTime>,
+    #[serde(with = "::time::serde::timestamp")]
+    pub expiry_timestamp: OffsetDateTime,
 
     pub counterparty: Identity,
 }
@@ -559,7 +560,10 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
                     margin: cfd.margin().expect("margin to be available"),
                     margin_counterparty: cfd.counterparty_margin().expect("margin to be available"),
                     details: to_cfd_details(cfd, network),
-                    expiry_timestamp: cfd.expiry_timestamp(),
+                    expiry_timestamp: match cfd.expiry_timestamp() {
+                        None => cfd.oracle_event_id.timestamp(),
+                        Some(timestamp) => timestamp,
+                    },
                     counterparty: cfd.counterparty.into(),
                 }
             })
