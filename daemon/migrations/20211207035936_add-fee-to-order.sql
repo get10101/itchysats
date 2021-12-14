@@ -1,2 +1,5 @@
 -- Add migration script here
-ALTER TABLE orders ADD COLUMN fee_rate not null default 1;
+ALTER TABLE
+    orders
+ADD
+    COLUMN fee_rate NOT NULL DEFAULT 1;

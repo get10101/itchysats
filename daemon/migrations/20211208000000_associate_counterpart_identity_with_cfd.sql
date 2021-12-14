@@ -1,25 +1,18 @@
 -- Add migration script here
-drop table cfd_states;
-drop table cfds;
-
-create table if not exists cfds
-(
-    id                    integer primary key autoincrement,
-    order_id              integer unique not null,
-    order_uuid            text unique    not null,
-    quantity_usd          text           not null,
-    counterparty text           not null,
-    foreign key (order_id) references orders (id)
+DROP TABLE cfd_states;
+DROP TABLE cfds;
+CREATE TABLE IF NOT EXISTS cfds (
+    id integer PRIMARY KEY autoincrement,
+    order_id integer UNIQUE NOT NULL,
+    order_uuid text UNIQUE NOT NULL,
+    quantity_usd text NOT NULL,
+    counterparty text NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders (id)
 );
-
-create unique index if not exists cfd_order_uuid
-    on cfds (order_uuid);
-
-create table if not exists cfd_states
-(
-    id     integer primary key autoincrement,
-    cfd_id integer not null,
-    state  text    not null,
-    foreign key (cfd_id) references cfds (id)
+CREATE UNIQUE INDEX IF NOT EXISTS cfd_order_uuid ON cfds (order_uuid);
+CREATE TABLE IF NOT EXISTS cfd_states (
+    id integer PRIMARY KEY autoincrement,
+    cfd_id integer NOT NULL,
+    state text NOT NULL,
+    FOREIGN KEY (cfd_id) REFERENCES cfds (id)
 );
-
