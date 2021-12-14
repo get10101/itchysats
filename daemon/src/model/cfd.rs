@@ -593,7 +593,7 @@ pub enum SettlementKind {
 pub type UpdateCfdProposals = HashMap<OrderId, UpdateCfdProposal>;
 
 /// Represents a cfd (including state)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Cfd {
     pub id: OrderId,
 
