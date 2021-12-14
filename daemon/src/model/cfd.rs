@@ -618,8 +618,6 @@ pub struct Cfd {
     pub state: CfdState,
 
     pub counterparty: Identity,
-    /* TODO: Leverage is currently derived from the Order, but the actual leverage should be
-     * stored in the Cfd once there is multiple choices of leverage */
 }
 
 impl Cfd {
