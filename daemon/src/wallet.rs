@@ -15,6 +15,7 @@ use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Script;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
+use bdk::blockchain::Blockchain;
 use bdk::blockchain::ElectrumBlockchain;
 use bdk::blockchain::NoopProgress;
 use bdk::database::BatchDatabase;
@@ -195,16 +196,29 @@ impl Actor {
         if let Err(&bdk::Error::Electrum(electrum_client::Error::Protocol(ref value))) =
             result.as_ref()
         {
-            let error_code = parse_rpc_protocol_error_code(value).with_context(|| {
+            let rpc_error = parse_rpc_protocol_error(value).with_context(|| {
                 format!("Failed to parse electrum error response '{:?}'", value)
             })?;
 
-            if error_code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
+            if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
                 tracing::trace!(
                     %txid, "Attempted to broadcast transaction that was already on-chain",
                 );
 
                 return Ok(txid);
+            }
+
+            // We do this check because electrum sometimes returns an RpcVerifyError when it should
+            // be returning a RpcVerifyAlreadyInChain error,
+            if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyError)
+                && rpc_error.message == "bad-txns-inputs-missingorspent"
+            {
+                if let Ok(Some(_)) = self.wallet.client().get_tx(&txid) {
+                    tracing::trace!(
+                        %txid, "Attempted to broadcast transaction that was already on-chain",
+                    );
+                    return Ok(txid);
+                }
             }
         }
 
@@ -304,7 +318,7 @@ pub struct Withdraw {
     pub address: Address,
 }
 
-fn parse_rpc_protocol_error_code(error_value: &Value) -> Result<i64> {
+fn parse_rpc_protocol_error(error_value: &Value) -> Result<RpcError> {
     let json = error_value
         .as_str()
         .context("Not a string")?
@@ -314,23 +328,27 @@ fn parse_rpc_protocol_error_code(error_value: &Value) -> Result<i64> {
 
     let error = serde_json::from_str::<RpcError>(json).context("Error has unexpected format")?;
 
-    Ok(error.code)
+    Ok(error)
 }
 
 #[derive(serde::Deserialize)]
 struct RpcError {
     code: i64,
+    message: String,
 }
 
 /// Bitcoin error codes: <https://github.com/bitcoin/bitcoin/blob/97d3500601c1d28642347d014a6de1e38f53ae4e/src/rpc/protocol.h#L23>
 pub enum RpcErrorCode {
-    /// Transaction or block was rejected by network rules. Error code -27.
+    /// General error during transaction or block submission Error code -25.
+    RpcVerifyError,
+    /// Transaction already in chain. Error code -27.
     RpcVerifyAlreadyInChain,
 }
 
 impl From<RpcErrorCode> for i64 {
     fn from(code: RpcErrorCode) -> Self {
         match code {
+            RpcErrorCode::RpcVerifyError => -25,
             RpcErrorCode::RpcVerifyAlreadyInChain => -27,
         }
     }
@@ -392,9 +410,10 @@ mod tests {
     fn parse_error_response() {
         let response = serde_json::Value::String(r#"sendrawtransaction RPC error: {"code":-27,"message":"Transaction already in block chain"}"#.to_owned());
 
-        let code = parse_rpc_protocol_error_code(&response).unwrap();
+        let rpc_error = parse_rpc_protocol_error(&response).unwrap();
 
-        assert_eq!(code, -27);
+        assert_eq!(rpc_error.code, -27);
+        assert_eq!(rpc_error.message, "Transaction already in block chain");
     }
 
     #[test]
