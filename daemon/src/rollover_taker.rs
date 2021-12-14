@@ -72,7 +72,7 @@ impl Actor {
     async fn propose(&self, this: xtra::Address<Self>) -> Result<()> {
         self.maker
             .send(connection::ProposeRollOver {
-                order_id: self.cfd.id,
+                order_id: self.cfd.id(),
                 timestamp: self.timestamp,
                 address: this,
             })
@@ -80,7 +80,7 @@ impl Actor {
 
         self.update_proposal(Some((
             RollOverProposal {
-                order_id: self.cfd.id,
+                order_id: self.cfd.id(),
                 timestamp: self.timestamp,
             },
             SettlementKind::Outgoing,
@@ -102,7 +102,7 @@ impl Actor {
             .await?
             .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
 
-        let order_id = self.cfd.id;
+        let order_id = self.cfd.id();
         tracing::info!(%order_id, "Rollover proposal got accepted");
 
         self.update_proposal(None).await?;
@@ -119,11 +119,11 @@ impl Actor {
             receiver,
             (self.oracle_pk, announcement),
             RolloverParams::new(
-                self.cfd.price,
-                self.cfd.quantity_usd,
-                self.cfd.leverage,
+                self.cfd.price(),
+                self.cfd.quantity_usd(),
+                self.cfd.leverage(),
                 self.cfd.refund_timelock_in_blocks(),
-                self.cfd.fee_rate,
+                self.cfd.fee_rate(),
             ),
             Role::Taker,
             self.cfd.dlc().context("No DLC in CFD")?,
@@ -144,7 +144,7 @@ impl Actor {
     }
 
     async fn handle_rejected(&self) -> Result<()> {
-        let order_id = self.cfd.id;
+        let order_id = self.cfd.id();
         tracing::info!(%order_id, "Rollover proposal got rejected");
 
         self.update_proposal(None).await?;
@@ -168,7 +168,7 @@ impl Actor {
     ) -> Result<()> {
         self.projection
             .send(UpdateRollOverProposal {
-                order: self.cfd.id,
+                order: self.cfd.id(),
                 proposal,
             })
             .await?;
@@ -190,7 +190,7 @@ impl xtra::Actor for Actor {
         if let Err(e) = self.propose(this).await {
             self.complete(
                 Completed::Failed {
-                    order_id: self.cfd.id,
+                    order_id: self.cfd.id(),
                     error: e,
                 },
                 ctx,
@@ -222,7 +222,7 @@ impl Actor {
         if let Err(error) = self.handle_confirmed(msg, ctx).await {
             self.complete(
                 Completed::Failed {
-                    order_id: self.cfd.id,
+                    order_id: self.cfd.id(),
                     error,
                 },
                 ctx,
@@ -232,7 +232,7 @@ impl Actor {
     }
 
     pub async fn reject_rollover(&mut self, _: RollOverRejected, ctx: &mut xtra::Context<Self>) {
-        let order_id = self.cfd.id;
+        let order_id = self.cfd.id();
         let completed = if let Err(error) = self.handle_rejected().await {
             Completed::Failed { order_id, error }
         } else {
@@ -249,7 +249,7 @@ impl Actor {
     ) {
         self.complete(
             Completed::UpdatedContract {
-                order_id: self.cfd.id,
+                order_id: self.cfd.id(),
                 dlc: msg.dlc,
             },
             ctx,
@@ -264,7 +264,7 @@ impl Actor {
     ) {
         self.complete(
             Completed::Failed {
-                order_id: self.cfd.id,
+                order_id: self.cfd.id(),
                 error: msg.error,
             },
             ctx,
@@ -280,7 +280,7 @@ impl Actor {
         if let Err(error) = self.forward_protocol_msg(msg).await {
             self.complete(
                 Completed::Failed {
-                    order_id: self.cfd.id,
+                    order_id: self.cfd.id(),
                     error,
                 },
                 ctx,

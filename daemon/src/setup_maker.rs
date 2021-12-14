@@ -76,7 +76,7 @@ impl Actor {
     }
 
     async fn contract_setup(&mut self, this: xtra::Address<Self>) -> Result<()> {
-        let order_id = self.cfd.id;
+        let order_id = self.cfd.id();
 
         let (sender, receiver) = mpsc::unbounded();
         // store the writing end to forward messages from the taker to
@@ -96,11 +96,11 @@ impl Actor {
             SetupParams::new(
                 self.cfd.margin()?,
                 self.cfd.counterparty_margin()?,
-                self.cfd.price,
-                self.cfd.quantity_usd,
-                self.cfd.leverage,
+                self.cfd.price(),
+                self.cfd.quantity_usd(),
+                self.cfd.leverage(),
                 self.cfd.refund_timelock_in_blocks(),
-                self.cfd.fee_rate,
+                self.cfd.fee_rate(),
             ),
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
@@ -130,7 +130,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     fn handle(&mut self, _msg: Accepted, ctx: &mut xtra::Context<Self>) {
-        let order_id = self.cfd.id;
+        let order_id = self.cfd.id();
         tracing::info!(%order_id, "Maker accepts an order");
 
         let this = ctx
@@ -165,7 +165,7 @@ impl Actor {
     }
 
     fn handle(&mut self, _msg: Rejected, ctx: &mut xtra::Context<Self>) {
-        self.complete(Completed::Rejected(self.cfd.id), ctx).await;
+        self.complete(Completed::Rejected(self.cfd.id()), ctx).await;
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
@@ -207,7 +207,7 @@ impl Actor {
 #[async_trait]
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        let quantity = self.cfd.quantity_usd;
+        let quantity = self.cfd.quantity_usd();
         let cfd = self.cfd.clone();
         if quantity < self.order.min_quantity || quantity > self.order.max_quantity {
             tracing::info!(
@@ -221,11 +221,11 @@ impl xtra::Actor for Actor {
                 .taker
                 .send(maker_inc_connections::TakerMessage {
                     taker_id: self.taker_id,
-                    msg: wire::MakerToTaker::RejectOrder(cfd.id),
+                    msg: wire::MakerToTaker::RejectOrder(cfd.id()),
                 })
                 .await;
 
-            self.complete(Completed::Rejected(cfd.id), ctx).await;
+            self.complete(Completed::Rejected(cfd.id()), ctx).await;
         }
     }
 

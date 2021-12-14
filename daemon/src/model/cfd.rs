@@ -100,7 +100,7 @@ pub enum Origin {
 }
 
 /// Role in the Cfd
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, sqlx::Type)]
 pub enum Role {
     Maker,
     Taker,
@@ -130,8 +130,6 @@ pub struct Order {
     pub min_quantity: Usd,
     pub max_quantity: Usd,
 
-    // TODO: [post-MVP] - Once we have multiple leverage we will have to move leverage and
-    //  liquidation_price into the CFD and add a calculation endpoint for the taker buy screen
     pub leverage: Leverage,
     pub liquidation_price: Price,
 
@@ -151,7 +149,7 @@ pub struct Order {
 }
 
 impl Order {
-    pub fn new(
+    pub fn new_short(
         price: Price,
         min_quantity: Usd,
         max_quantity: Usd,
@@ -595,51 +593,93 @@ pub enum SettlementKind {
 pub type UpdateCfdProposals = HashMap<OrderId, UpdateCfdProposal>;
 
 /// Represents a cfd (including state)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Cfd {
-    pub id: OrderId,
+    id: OrderId,
 
-    pub trading_pair: TradingPair,
-    pub position: Position,
+    trading_pair: TradingPair,
+    position: Position,
 
-    pub price: Price,
+    price: Price,
 
-    pub leverage: Leverage,
-    pub liquidation_price: Price,
+    leverage: Leverage,
+    liquidation_price: Price,
 
-    pub creation_timestamp: Timestamp,
+    creation_timestamp: Timestamp,
 
     /// The duration that will be used for calculating the settlement timestamp
-    pub settlement_interval: Duration,
+    settlement_interval: Duration,
 
-    pub origin: Origin,
+    role: Role,
 
-    pub fee_rate: u32,
+    fee_rate: u32,
 
-    pub quantity_usd: Usd,
-    pub state: CfdState,
+    quantity_usd: Usd,
+    state: CfdState,
 
-    pub counterparty: Identity,
-    /* TODO: Leverage is currently derived from the Order, but the actual leverage should be
-     * stored in the Cfd once there is multiple choices of leverage */
+    counterparty: Identity,
 }
 
 impl Cfd {
-    pub fn new(order: Order, quantity: Usd, state: CfdState, counterparty: Identity) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        id: OrderId,
+        trading_pair: TradingPair,
+        position: Position,
+        price: Price,
+        leverage: Leverage,
+        liquidation_price: Price,
+        creation_timestamp: Timestamp,
+        settlement_interval: Duration,
+        role: Role,
+        fee_rate: u32,
+        quantity_usd: Usd,
+        state: CfdState,
+        counterparty: Identity,
+    ) -> Self {
+        Self {
+            id,
+            trading_pair,
+            position,
+            price,
+            leverage,
+            liquidation_price,
+            creation_timestamp,
+            settlement_interval,
+            fee_rate,
+            quantity_usd,
+            state,
+            counterparty,
+            role,
+        }
+    }
+}
+
+impl Cfd {
+    pub fn from_order(
+        order: Order,
+        quantity: Usd,
+        state: CfdState,
+        counterparty: Identity,
+        role: Role,
+    ) -> Self {
         Cfd {
             id: order.id,
             quantity_usd: quantity,
             state,
             trading_pair: order.trading_pair,
-            position: order.position,
+            position: match order.origin {
+                Origin::Ours => order.position,
+                Origin::Theirs => order.position.counter_position(),
+            },
             price: order.price,
             leverage: order.leverage,
             liquidation_price: order.liquidation_price,
             creation_timestamp: Timestamp::now(),
             settlement_interval: order.settlement_interval,
-            origin: order.origin,
             fee_rate: order.fee_rate,
             counterparty,
+            role,
         }
     }
 
@@ -708,15 +748,7 @@ impl Cfd {
     }
 
     pub fn position(&self) -> Position {
-        match self.origin {
-            Origin::Ours => self.position,
-
-            // If the order is not our own we take the counter-position in the CFD
-            Origin::Theirs => match self.position {
-                Position::Long => Position::Short,
-                Position::Short => Position::Long,
-            },
-        }
+        self.position
     }
 
     pub fn refund_timelock_in_blocks(&self) -> u32 {
@@ -1194,7 +1226,7 @@ impl Cfd {
     }
 
     pub fn role(&self) -> Role {
-        self.origin.into()
+        self.role
     }
 
     pub fn dlc(&self) -> Option<Dlc> {
@@ -1305,6 +1337,54 @@ impl Cfd {
             (Some(attestation), None) => Some(attestation.payout()),
             (None, None) => None,
         }
+    }
+
+    pub fn id(&self) -> OrderId {
+        self.id
+    }
+
+    pub fn trading_pair(&self) -> TradingPair {
+        self.trading_pair
+    }
+
+    pub fn price(&self) -> Price {
+        self.price
+    }
+
+    pub fn leverage(&self) -> Leverage {
+        self.leverage
+    }
+
+    pub fn liquidation_price(&self) -> Price {
+        self.liquidation_price
+    }
+
+    pub fn creation_timestamp(&self) -> Timestamp {
+        self.creation_timestamp
+    }
+
+    pub fn settlement_interval(&self) -> Duration {
+        self.settlement_interval
+    }
+
+    pub fn fee_rate(&self) -> u32 {
+        self.fee_rate
+    }
+
+    pub fn quantity_usd(&self) -> Usd {
+        self.quantity_usd
+    }
+
+    pub fn state(&self) -> &CfdState {
+        &self.state
+    }
+
+    pub fn state_mut(&mut self) -> &mut CfdState {
+        &mut self.state
+    }
+
+    pub fn counterparty(&self) -> Identity {
+        self.counterparty
     }
 }
 

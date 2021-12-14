@@ -230,7 +230,7 @@ impl<O, M, W> Actor<O, M, W> {
 
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::rejected();
+        *cfd.state_mut() = CfdState::rejected();
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         Ok(())
@@ -245,7 +245,7 @@ impl<O, M, W> Actor<O, M, W> {
 
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::setup_failed(error.to_string());
+        *cfd.state_mut() = CfdState::setup_failed(error.to_string());
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         Ok(())
@@ -256,7 +256,7 @@ impl<O, M, W> Actor<O, M, W> {
     async fn handle_setup_started(&mut self, order_id: OrderId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::contract_setup();
+        *cfd.state_mut() = CfdState::contract_setup();
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
         Ok(())
@@ -316,11 +316,12 @@ where
 
         tracing::info!("Taking current order: {:?}", &current_order);
 
-        let cfd = Cfd::new(
+        let cfd = Cfd::from_order(
             current_order.clone(),
             quantity,
             CfdState::outgoing_order_request(),
             self.maker_identity,
+            Role::Taker,
         );
 
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
@@ -383,7 +384,7 @@ where
 
         tracing::info!("Setup complete, publishing on chain now");
 
-        cfd.state = CfdState::PendingOpen {
+        *cfd.state_mut() = CfdState::PendingOpen {
             common: CfdStateCommon::default(),
             dlc: dlc.clone(),
             attestation: None,
@@ -481,7 +482,7 @@ where
 
         let mut conn = self.db.acquire().await?;
         let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
-        cfd.state = CfdState::Open {
+        *cfd.state_mut() = CfdState::Open {
             common: CfdStateCommon::default(),
             dlc: dlc.clone(),
             attestation: None,

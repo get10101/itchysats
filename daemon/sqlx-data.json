@@ -18,8 +18,8 @@
       ]
     }
   },
-  "368233f70eed9dff137d884994a4863063459d53be75ed97bbf5297df70ffdb1": {
-    "query": "\n        with state as (\n            select\n                cfd_id,\n                state\n            from cfd_states\n                inner join cfds on cfds.id = cfd_states.cfd_id\n            where cfd_states.id in (\n                select\n                    max(id) as id\n                from cfd_states\n                group by (cfd_id)\n            )\n        )\n\n        select\n            cfds.uuid as \"uuid: crate::model::cfd::OrderId\",\n            cfds.trading_pair as \"trading_pair: crate::model::TradingPair\",\n            cfds.position as \"position: crate::model::Position\",\n            cfds.initial_price as \"initial_price: crate::model::Price\",\n            cfds.leverage as \"leverage: crate::model::Leverage\",\n            cfds.liquidation_price as \"liquidation_price: crate::model::Price\",\n            cfds.creation_timestamp_seconds as \"creation_timestamp_seconds: crate::model::Timestamp\",\n            cfds.settlement_time_interval_seconds as \"settlement_time_interval_secs: i64\",\n            cfds.origin as \"origin: crate::model::cfd::Origin\",\n            cfds.fee_rate as \"fee_rate: u32\",\n            cfds.quantity_usd as \"quantity_usd: crate::model::Usd\",\n            cfds.counterparty as \"counterparty: crate::model::Identity\",\n            state.state\n\n        from cfds\n            inner join state on state.cfd_id = cfds.id\n\n        where cfds.uuid = $1\n        ",
+  "8708389be41d08359966b16ea018a0fd39acbf61981c1933b46d3b50bb430311": {
+    "query": "\n        with state as (\n            select\n                cfd_id,\n                state\n            from cfd_states\n                inner join cfds on cfds.id = cfd_states.cfd_id\n            where cfd_states.id in (\n                select\n                    max(id) as id\n                from cfd_states\n                group by (cfd_id)\n            )\n        )\n\n        select\n            cfds.uuid as \"uuid: crate::model::cfd::OrderId\",\n            cfds.trading_pair as \"trading_pair: crate::model::TradingPair\",\n            cfds.position as \"position: crate::model::Position\",\n            cfds.initial_price as \"initial_price: crate::model::Price\",\n            cfds.leverage as \"leverage: crate::model::Leverage\",\n            cfds.liquidation_price as \"liquidation_price: crate::model::Price\",\n            cfds.creation_timestamp_seconds as \"creation_timestamp_seconds: crate::model::Timestamp\",\n            cfds.settlement_time_interval_seconds as \"settlement_time_interval_secs: i64\",\n            cfds.role as \"role: crate::model::cfd::Role\",\n            cfds.fee_rate as \"fee_rate: u32\",\n            cfds.quantity_usd as \"quantity_usd: crate::model::Usd\",\n            cfds.counterparty as \"counterparty: crate::model::Identity\",\n            state.state\n\n        from cfds\n            inner join state on state.cfd_id = cfds.id\n        ",
     "describe": {
       "columns": [
         {
@@ -63,7 +63,7 @@
           "type_info": "Int64"
         },
         {
-          "name": "origin: crate::model::cfd::Origin",
+          "name": "role: crate::model::cfd::Role",
           "ordinal": 8,
           "type_info": "Text"
         },
@@ -89,7 +89,7 @@
         }
       ],
       "parameters": {
-        "Right": 1
+        "Right": 0
       },
       "nullable": [
         false,
@@ -126,8 +126,8 @@
       ]
     }
   },
-  "e38578559a3a9bd5a082579cecc52c976f55f2ed25e3bedebab85bb8dcd69354": {
-    "query": "\n        with state as (\n            select\n                cfd_id,\n                state\n            from cfd_states\n                inner join cfds on cfds.id = cfd_states.cfd_id\n            where cfd_states.id in (\n                select\n                    max(id) as id\n                from cfd_states\n                group by (cfd_id)\n            )\n        )\n\n        select\n            cfds.uuid as \"uuid: crate::model::cfd::OrderId\",\n            cfds.trading_pair as \"trading_pair: crate::model::TradingPair\",\n            cfds.position as \"position: crate::model::Position\",\n            cfds.initial_price as \"initial_price: crate::model::Price\",\n            cfds.leverage as \"leverage: crate::model::Leverage\",\n            cfds.liquidation_price as \"liquidation_price: crate::model::Price\",\n            cfds.creation_timestamp_seconds as \"creation_timestamp_seconds: crate::model::Timestamp\",\n            cfds.settlement_time_interval_seconds as \"settlement_time_interval_secs: i64\",\n            cfds.origin as \"origin: crate::model::cfd::Origin\",\n            cfds.fee_rate as \"fee_rate: u32\",\n            cfds.quantity_usd as \"quantity_usd: crate::model::Usd\",\n            cfds.counterparty as \"counterparty: crate::model::Identity\",\n            state.state\n\n        from cfds\n            inner join state on state.cfd_id = cfds.id\n        ",
+  "a22bf53971e4e255ca63d16cc7eb37ded66b0c4c375828f13ae5c28aa975441e": {
+    "query": "\n        with state as (\n            select\n                cfd_id,\n                state\n            from cfd_states\n                inner join cfds on cfds.id = cfd_states.cfd_id\n            where cfd_states.id in (\n                select\n                    max(id) as id\n                from cfd_states\n                group by (cfd_id)\n            )\n        )\n\n        select\n            cfds.uuid as \"uuid: crate::model::cfd::OrderId\",\n            cfds.trading_pair as \"trading_pair: crate::model::TradingPair\",\n            cfds.position as \"position: crate::model::Position\",\n            cfds.initial_price as \"initial_price: crate::model::Price\",\n            cfds.leverage as \"leverage: crate::model::Leverage\",\n            cfds.liquidation_price as \"liquidation_price: crate::model::Price\",\n            cfds.creation_timestamp_seconds as \"creation_timestamp_seconds: crate::model::Timestamp\",\n            cfds.settlement_time_interval_seconds as \"settlement_time_interval_secs: i64\",\n            cfds.role as \"role: crate::model::cfd::Role\",\n            cfds.fee_rate as \"fee_rate: u32\",\n            cfds.quantity_usd as \"quantity_usd: crate::model::Usd\",\n            cfds.counterparty as \"counterparty: crate::model::Identity\",\n            state.state\n\n        from cfds\n            inner join state on state.cfd_id = cfds.id\n\n        where cfds.uuid = $1\n        ",
     "describe": {
       "columns": [
         {
@@ -171,7 +171,7 @@
           "type_info": "Int64"
         },
         {
-          "name": "origin: crate::model::cfd::Origin",
+          "name": "role: crate::model::cfd::Role",
           "ordinal": 8,
           "type_info": "Text"
         },
@@ -197,7 +197,7 @@
         }
       ],
       "parameters": {
-        "Right": 0
+        "Right": 1
       },
       "nullable": [
         false,
