@@ -130,8 +130,6 @@ pub struct Order {
     pub min_quantity: Usd,
     pub max_quantity: Usd,
 
-    // TODO: [post-MVP] - Once we have multiple leverage we will have to move leverage and
-    //  liquidation_price into the CFD and add a calculation endpoint for the taker buy screen
     pub leverage: Leverage,
     pub liquidation_price: Price,
 
