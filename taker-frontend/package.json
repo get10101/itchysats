@@ -27,6 +27,7 @@
     "eslint-config-react-app": "^7.0.0",
     "framer-motion": "^5",
     "next": "^12.0.4",
+    "npm-package-json-lint": "^5.4.2",
     "react": "^17.0.2",
     "react-async": "^10.0.1",
     "react-dom": "^17.0.2",
@@ -42,6 +43,11 @@
   "dependenciesComments": {
     "about": "https://stackoverflow.com/a/45815391/2489334",
     "next": "We only installed next because there is a bug in @chakra-ui/react 1.7.2, see https://github.com/chakra-ui/chakra-ui/issues/5082"
+  },
+  "npmpackagejsonlint": {
+    "rules": {
+      "prefer-no-devDependencies": "error"
+    }
   },
   "eslintConfig": {
     "parser": "@typescript-eslint/parser",
