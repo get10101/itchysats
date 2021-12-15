@@ -147,10 +147,7 @@ async fn load_latest_cfd_state(
     Ok(latest_cfd_state_in_db)
 }
 
-pub async fn load_cfd_by_order_id(
-    order_id: OrderId,
-    conn: &mut PoolConnection<Sqlite>,
-) -> Result<Cfd> {
+pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<Cfd> {
     let row = sqlx::query!(
         r#"
         with state as (
@@ -310,7 +307,7 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         let cfd = Cfd::dummy().insert(&mut conn).await;
-        let loaded = load_cfd_by_order_id(cfd.id(), &mut conn).await.unwrap();
+        let loaded = load_cfd(cfd.id(), &mut conn).await.unwrap();
 
         assert_eq!(cfd, loaded)
     }
@@ -322,8 +319,8 @@ mod tests {
         let cfd1 = Cfd::dummy().insert(&mut conn).await;
         let cfd2 = Cfd::dummy().insert(&mut conn).await;
 
-        let loaded_1 = load_cfd_by_order_id(cfd1.id(), &mut conn).await.unwrap();
-        let loaded_2 = load_cfd_by_order_id(cfd2.id(), &mut conn).await.unwrap();
+        let loaded_1 = load_cfd(cfd1.id(), &mut conn).await.unwrap();
+        let loaded_2 = load_cfd(cfd2.id(), &mut conn).await.unwrap();
 
         assert_eq!(cfd1, loaded_1);
         assert_eq!(cfd2, loaded_2);

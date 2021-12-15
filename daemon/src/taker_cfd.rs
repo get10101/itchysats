@@ -5,7 +5,7 @@ use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::cfd_actors::{self};
 use crate::collab_settlement_taker;
 use crate::connection;
-use crate::db::load_cfd_by_order_id;
+use crate::db::load_cfd;
 use crate::log_error;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CfdState;
@@ -140,7 +140,7 @@ where
             .with_context(|| format!("Settlement for order {} is already in progress", order_id))?;
 
         let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let cfd = load_cfd(order_id, &mut conn).await?;
 
         let this = ctx
             .address()
@@ -182,7 +182,7 @@ where
         let settlement_txid = settlement.tx.txid();
 
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
         let dlc = cfd.dlc().context("No DLC in CFD")?;
 
         cfd.handle_proposal_signed(settlement)?;
@@ -208,7 +208,7 @@ impl<O, M, W> Actor<O, M, W> {
 
                 let mut conn = self.db.acquire().await?;
 
-                if load_cfd_by_order_id(order.id, &mut conn).await.is_ok() {
+                if load_cfd(order.id, &mut conn).await.is_ok() {
                     bail!("Received order {} from maker, but already have a cfd in the database for that order. The maker did not properly remove the order.", order.id)
                 }
 
@@ -229,7 +229,7 @@ impl<O, M, W> Actor<O, M, W> {
         tracing::debug!(%order_id, "Order rejected");
 
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
         *cfd.state_mut() = CfdState::rejected();
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
@@ -244,7 +244,7 @@ impl<O, M, W> Actor<O, M, W> {
         tracing::error!(%order_id, "Contract setup failed: {:#?}", error);
 
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
         *cfd.state_mut() = CfdState::setup_failed(error.to_string());
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
@@ -255,7 +255,7 @@ impl<O, M, W> Actor<O, M, W> {
     /// and update the corresponding projection.
     async fn handle_setup_started(&mut self, order_id: OrderId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
         *cfd.state_mut() = CfdState::contract_setup();
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
@@ -380,7 +380,7 @@ where
         };
 
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
 
         tracing::info!("Setup complete, publishing on chain now");
 
@@ -437,7 +437,7 @@ where
             .with_context(|| format!("Rollover for order {} is already in progress", order_id))?;
 
         let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let cfd = load_cfd(order_id, &mut conn).await?;
 
         let this = ctx
             .address()
@@ -481,7 +481,7 @@ where
         };
 
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
         *cfd.state_mut() = CfdState::Open {
             common: CfdStateCommon::default(),
             dlc: dlc.clone(),

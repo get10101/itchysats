@@ -77,7 +77,7 @@ where
 {
     let order_id = event.order_id();
 
-    let mut cfd = db::load_cfd_by_order_id(order_id, conn).await?;
+    let mut cfd = db::load_cfd(order_id, conn).await?;
 
     if cfd.handle_monitoring_event(event)?.is_none() {
         // early exit if there was not state change
@@ -112,7 +112,7 @@ pub async fn handle_commit<W>(
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    let mut cfd = db::load_cfd_by_order_id(order_id, conn).await?;
+    let mut cfd = db::load_cfd(order_id, conn).await?;
 
     let signed_commit_tx = cfd.commit_tx()?;
 

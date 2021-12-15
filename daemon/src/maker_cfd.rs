@@ -4,7 +4,7 @@ use crate::cfd_actors::append_cfd_state;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::cfd_actors::{self};
 use crate::collab_settlement_maker;
-use crate::db::load_cfd_by_order_id;
+use crate::db::load_cfd;
 use crate::log_error;
 use crate::maker_inc_connections;
 use crate::model::cfd::Cfd;
@@ -160,7 +160,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         tracing::error!(%order_id, "Contract setup failed: {:#?}", error);
 
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
         *cfd.state_mut() = CfdState::setup_failed(error.to_string());
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
@@ -169,7 +169,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
 
     async fn append_cfd_state_rejected(&mut self, order_id: OrderId) -> Result<()> {
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
         *cfd.state_mut() = CfdState::rejected();
         append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
 
@@ -303,7 +303,7 @@ where
 
         // check if CFD is in open state, otherwise we should not proceed
         let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(proposal.order_id, &mut conn).await?;
+        let cfd = load_cfd(proposal.order_id, &mut conn).await?;
         match cfd.state() {
             CfdState::Open { .. } => (),
             _ => {
@@ -472,7 +472,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         tracing::debug!(%order_id, "Maker accepts order");
 
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
 
         self.setup_actors
             .send(&order_id, setup_maker::Accepted)
@@ -514,7 +514,7 @@ where
         tracing::debug!(%order_id, "Maker rejects order");
 
         let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let cfd = load_cfd(order_id, &mut conn).await?;
 
         let taker_id = match cfd.state() {
             CfdState::IncomingOrderRequest { taker_id, .. } => taker_id,
@@ -576,7 +576,7 @@ where
             };
 
             let mut conn = self.db.acquire().await?;
-            let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+            let mut cfd = load_cfd(order_id, &mut conn).await?;
 
             let tx = settlement.tx.clone();
             cfd.handle_proposal_signed(settlement)
@@ -630,7 +630,7 @@ where
         let Completed { order_id, dlc } = msg;
 
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+        let mut cfd = load_cfd(order_id, &mut conn).await?;
         *cfd.state_mut() = CfdState::Open {
             common: CfdStateCommon::default(),
             dlc: dlc.clone(),
@@ -681,7 +681,7 @@ where
             })?;
 
         let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd_by_order_id(proposal.order_id, &mut conn).await?;
+        let cfd = load_cfd(proposal.order_id, &mut conn).await?;
 
         let this = ctx.address().expect("self to be alive");
         let (addr, task) = collab_settlement_maker::Actor::new(
@@ -770,7 +770,7 @@ where
             };
 
             let mut conn = self.db.acquire().await?;
-            let mut cfd = load_cfd_by_order_id(order_id, &mut conn).await?;
+            let mut cfd = load_cfd(order_id, &mut conn).await?;
 
             *cfd.state_mut() = CfdState::PendingOpen {
                 common: CfdStateCommon::default(),
