@@ -16,6 +16,7 @@ use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementProposal;
+use crate::model::cfd::SetupCompleted;
 use crate::model::Identity;
 use crate::model::Price;
 use crate::model::Timestamp;
@@ -747,23 +748,23 @@ where
     }
 }
 
-#[xtra_productivity]
+#[xtra_productivity(message_impl = false)]
 impl<O, M, T, W> Actor<O, M, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle_setup_completed(&mut self, msg: setup_maker::Completed) {
+    async fn handle_setup_completed(&mut self, msg: SetupCompleted) {
         log_error!(async {
-            use setup_maker::Completed::*;
+            use SetupCompleted::*;
             let (order_id, dlc) = match msg {
                 NewContract { order_id, dlc } => (order_id, dlc),
                 Failed { order_id, error } => {
                     self.append_cfd_state_setup_failed(order_id, error).await?;
                     return anyhow::Ok(());
                 }
-                Rejected(order_id) => {
+                Rejected { order_id } => {
                     self.append_cfd_state_rejected(order_id).await?;
                     return anyhow::Ok(());
                 }

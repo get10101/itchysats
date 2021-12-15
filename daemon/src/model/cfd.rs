@@ -1837,7 +1837,7 @@ impl CollaborativeSettlement {
 /// Message sent from a setup actor to the
 /// cfd actor to notify that the contract setup has finished.
 #[allow(clippy::large_enum_variant)]
-pub enum Completed {
+pub enum SetupCompleted {
     NewContract {
         order_id: OrderId,
         dlc: Dlc,

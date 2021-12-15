@@ -9,11 +9,11 @@ use crate::log_error;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CfdState;
 use crate::model::cfd::CfdStateCommon;
-use crate::model::cfd::Completed;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
+use crate::model::cfd::SetupCompleted;
 use crate::model::Identity;
 use crate::model::Price;
 use crate::model::Usd;
@@ -282,7 +282,7 @@ where
 #[xtra_productivity]
 impl<O, M, W> Actor<O, M, W>
 where
-    Self: xtra::Handler<Completed>,
+    Self: xtra::Handler<SetupCompleted>,
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
 {
@@ -358,14 +358,14 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle_setup_completed(&mut self, msg: Completed) -> Result<()> {
+    async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
         let (order_id, dlc) = match msg {
-            Completed::NewContract { order_id, dlc } => (order_id, dlc),
-            Completed::Rejected { order_id } => {
+            SetupCompleted::NewContract { order_id, dlc } => (order_id, dlc),
+            SetupCompleted::Rejected { order_id } => {
                 self.append_cfd_state_rejected(order_id).await?;
                 return Ok(());
             }
-            Completed::Failed { order_id, error } => {
+            SetupCompleted::Failed { order_id, error } => {
                 self.append_cfd_state_setup_failed(order_id, error).await?;
                 return Ok(());
             }
@@ -418,13 +418,13 @@ impl<O, M, W> Actor<O, M, W> {
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, W: 'static> Handler<Completed> for Actor<O, M, W>
+impl<O: 'static, M: 'static, W: 'static> Handler<SetupCompleted> for Actor<O, M, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
     M: xtra::Handler<monitor::StartMonitoring>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) {
+    async fn handle(&mut self, msg: SetupCompleted, _ctx: &mut Context<Self>) {
         log_error!(self.handle_setup_completed(msg))
     }
 }

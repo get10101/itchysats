@@ -6,6 +6,7 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
+use crate::model::cfd::SetupCompleted;
 use crate::model::Identity;
 use crate::oracle::Announcement;
 use crate::setup_contract;
@@ -36,7 +37,7 @@ pub struct Actor {
     taker: Box<dyn MessageChannel<maker_inc_connections::TakerMessage>>,
     confirm_order: Box<dyn MessageChannel<maker_inc_connections::ConfirmOrder>>,
     taker_id: Identity,
-    on_completed: Box<dyn MessageChannel<Completed>>,
+    on_completed: Box<dyn MessageChannel<SetupCompleted>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
 }
@@ -52,7 +53,7 @@ impl Actor {
             &(impl MessageChannel<maker_inc_connections::ConfirmOrder> + 'static),
             Identity,
         ),
-        on_completed: &(impl MessageChannel<Completed> + 'static),
+        on_completed: &(impl MessageChannel<SetupCompleted> + 'static),
         (on_stopping0, on_stopping1): (
             &(impl MessageChannel<Stopping<Self>> + 'static),
             &(impl MessageChannel<Stopping<Self>> + 'static),
@@ -120,7 +121,7 @@ impl Actor {
         Ok(())
     }
 
-    async fn complete(&mut self, completed: Completed, ctx: &mut xtra::Context<Self>) {
+    async fn complete(&mut self, completed: SetupCompleted, ctx: &mut xtra::Context<Self>) {
         let _ = self.on_completed.send(completed).await;
 
         ctx.stop();
@@ -157,7 +158,7 @@ impl Actor {
         if let Err(error) = fut.await {
             tracing::warn!(%order_id, "Stopping setup_maker actor: {}", error);
 
-            self.complete(Completed::Failed { order_id, error }, ctx)
+            self.complete(SetupCompleted::Failed { order_id, error }, ctx)
                 .await;
 
             return;
@@ -165,12 +166,18 @@ impl Actor {
     }
 
     fn handle(&mut self, _msg: Rejected, ctx: &mut xtra::Context<Self>) {
-        self.complete(Completed::Rejected(self.cfd.id()), ctx).await;
+        self.complete(
+            SetupCompleted::Rejected {
+                order_id: self.cfd.id(),
+            },
+            ctx,
+        )
+        .await;
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
         self.complete(
-            Completed::NewContract {
+            SetupCompleted::NewContract {
                 order_id: msg.order_id,
                 dlc: msg.dlc,
             },
@@ -181,7 +188,7 @@ impl Actor {
 
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
         self.complete(
-            Completed::Failed {
+            SetupCompleted::Failed {
                 order_id: msg.order_id,
                 error: msg.error,
             },
@@ -225,7 +232,8 @@ impl xtra::Actor for Actor {
                 })
                 .await;
 
-            self.complete(Completed::Rejected(cfd.id()), ctx).await;
+            self.complete(SetupCompleted::Rejected { order_id: cfd.id() }, ctx)
+                .await;
         }
     }
 
@@ -268,22 +276,6 @@ pub struct SetupSucceeded {
 pub struct SetupFailed {
     order_id: OrderId,
     error: anyhow::Error,
-}
-
-/// Message sent from the `setup_maker::Actor` to the
-/// `maker_cfd::Actor` to notify that the contract setup has finished.
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum Completed {
-    Rejected(OrderId),
-    NewContract {
-        order_id: OrderId,
-        dlc: Dlc,
-    },
-    Failed {
-        order_id: OrderId,
-        error: anyhow::Error,
-    },
 }
 
 impl xtra::Message for Started {
