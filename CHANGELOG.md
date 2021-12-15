@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Off-chain perpetual CFD rollover.
+  Hourly, the taker sends a rollover request to the maker for each open position.
+  The maker can accept or reject a rollover proposal.
+  Upon acceptance the taker and maker collaboratively agree on an oracle price event further in the future and generate new payout transactions accordingly.
+  The previous payout transactions are invalidated.
+  The new payout transactions spend from the same lock transaction, so the rollover happens off-chain.
+  In case a maker rejects a rollover request from a taker the old oracle price event and payout transactions stay in place.
+
 ## [0.3.0] - 2021-12-09
 
 Initial release for mainnet.

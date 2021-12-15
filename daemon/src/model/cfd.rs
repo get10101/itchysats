@@ -11,6 +11,7 @@ use crate::model::Usd;
 use crate::monitor;
 use crate::oracle;
 use crate::payout_curve;
+use crate::SETTLEMENT_INTERVAL;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -562,7 +563,7 @@ pub enum UpdateCfdProposal {
         direction: SettlementKind,
     },
     RollOverProposal {
-        proposal: RollOverProposal,
+        proposal: RolloverProposal,
         direction: SettlementKind,
     },
 }
@@ -579,7 +580,7 @@ pub struct SettlementProposal {
 
 /// Proposed collaborative settlement
 #[derive(Debug, Clone)]
-pub struct RollOverProposal {
+pub struct RolloverProposal {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
 }
@@ -1235,6 +1236,7 @@ impl Cfd {
             | CfdState::Open { dlc, .. }
             | CfdState::PendingCommit { dlc, .. }
             | CfdState::OpenCommitted { dlc, .. }
+            | CfdState::PendingRefund { dlc, .. }
             | CfdState::PendingCet { dlc, .. } => Some(dlc),
 
             CfdState::OutgoingOrderRequest { .. }
@@ -1243,7 +1245,6 @@ impl Cfd {
             | CfdState::Rejected { .. }
             | CfdState::ContractSetup { .. }
             | CfdState::Closed { .. }
-            | CfdState::PendingRefund { .. }
             | CfdState::Refunded { .. }
             | CfdState::SetupFailed { .. } => None,
         }
@@ -1339,6 +1340,37 @@ impl Cfd {
         }
     }
 
+    /// Only cfds in state `Open` that have not received an attestation and are within 23 hours
+    /// until expiry are eligible for rollover
+    pub fn can_roll_over(&self, now: OffsetDateTime) -> Result<(), CannotRollover> {
+        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
+
+        if now > expiry_timestamp {
+            return Err(CannotRollover::AlreadyExpired);
+        }
+
+        let time_until_expiry = expiry_timestamp - now;
+
+        if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
+            return Err(CannotRollover::WasJustRolledOver);
+        }
+
+        // only state open with no attestation is acceptable for rollover
+        if !matches!(
+            self.state.clone(),
+            CfdState::Open {
+                attestation: None,
+                ..
+            }
+        ) {
+            return Err(CannotRollover::WrongState {
+                state: self.state.to_string(),
+            });
+        }
+
+        Ok(())
+    }
+
     pub fn id(&self) -> OrderId {
         self.id
     }
@@ -1386,6 +1418,18 @@ impl Cfd {
     pub fn counterparty(&self) -> Identity {
         self.counterparty
     }
+}
+
+#[derive(thiserror::Error, Debug, PartialEq)]
+pub enum CannotRollover {
+    #[error("Cfd does not have a dlc")]
+    NoDlc,
+    #[error("The Cfd is already expired")]
+    AlreadyExpired,
+    #[error("The Cfd was just rolled over")]
+    WasJustRolledOver,
+    #[error("Cannot roll over in state {state}")]
+    WrongState { state: String },
 }
 
 #[derive(thiserror::Error, Debug, Clone)]
@@ -1810,7 +1854,13 @@ pub enum Completed {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::seed::Seed;
+    use bdk::bitcoin::util::psbt::Global;
+    use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
     use rust_decimal_macros::dec;
+    use std::collections::BTreeMap;
+    use std::str::FromStr;
+    use time::macros::datetime;
 
     #[test]
     fn given_default_values_then_expected_liquidation_price() {
@@ -2056,5 +2106,293 @@ mod tests {
         let deserialized = serde_json::from_str(&serde_json::to_string(&id).unwrap()).unwrap();
 
         assert_eq!(id, deserialized);
+    }
+
+    #[tokio::test]
+    async fn given_cfd_expires_now_then_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //                                                          now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+        let result = cfd.can_roll_over(datetime!(2021-11-19 10:00:00).assume_utc());
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn given_cfd_expires_within_23hours_then_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //        now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let result = cfd.can_roll_over(datetime!(2021-11-18 11:00:00).assume_utc());
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn given_cfd_past_expiry_time_then_no_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //                                                           now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+        let cannot_roll_over = cfd
+            .can_roll_over(datetime!(2021-11-19 10:00:01).assume_utc())
+            .unwrap_err();
+
+        assert_eq!(cannot_roll_over, CannotRollover::AlreadyExpired)
+    }
+
+    #[tokio::test]
+    async fn given_cfd_was_just_rolled_over_then_no_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //    now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+        let cannot_roll_over = cfd
+            .can_roll_over(datetime!(2021-11-18 10:00:01).assume_utc())
+            .unwrap_err();
+
+        assert_eq!(cannot_roll_over, CannotRollover::WasJustRolledOver)
+    }
+
+    #[tokio::test]
+    async fn given_cfd_out_of_bounds_expiry_then_no_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //  now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+        let cannot_roll_over = cfd
+            .can_roll_over(datetime!(2021-11-18 09:59:59).assume_utc())
+            .unwrap_err();
+
+        assert_eq!(cannot_roll_over, CannotRollover::WasJustRolledOver)
+    }
+
+    #[tokio::test]
+    async fn given_cfd_was_renewed_less_than_1h_ago_then_no_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //       now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+        let cannot_roll_over = cfd
+            .can_roll_over(datetime!(2021-11-18 10:59:59).assume_utc())
+            .unwrap_err();
+
+        assert_eq!(cannot_roll_over, CannotRollover::WasJustRolledOver)
+    }
+
+    #[tokio::test]
+    async fn given_cfd_has_attestation_then_no_rollover() {
+        let cfd = Cfd::dummy_open_with_attestation(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let cannot_roll_over = cfd
+            .can_roll_over(datetime!(2021-11-19 10:00:00).assume_utc())
+            .unwrap_err();
+
+        assert!(matches!(
+            cannot_roll_over,
+            CannotRollover::WrongState { .. }
+        ))
+    }
+
+    #[tokio::test]
+    async fn given_cfd_not_in_open_then_no_rollover() {
+        let cfd = Cfd::dummy_not_open_but_dlc(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let cannot_roll_over = cfd
+            .can_roll_over(datetime!(2021-11-19 10:00:00).assume_utc())
+            .unwrap_err();
+
+        assert!(matches!(
+            cannot_roll_over,
+            CannotRollover::WrongState { .. }
+        ))
+    }
+
+    impl Cfd {
+        fn dummy_open(event_id: BitMexPriceEventId) -> Self {
+            Cfd::from_order(
+                Order::dummy_model(),
+                Usd::new(dec!(1000)),
+                CfdState::Open {
+                    common: Default::default(),
+                    dlc: Dlc::dummy(Some(event_id)),
+                    attestation: None,
+                    collaborative_close: None,
+                },
+                dummy_identity(),
+                Role::Taker,
+            )
+        }
+
+        fn dummy_open_with_attestation(event_id: BitMexPriceEventId) -> Self {
+            Cfd::from_order(
+                Order::dummy_model(),
+                Usd::new(dec!(1000)),
+                CfdState::Open {
+                    common: Default::default(),
+                    dlc: Dlc::dummy(Some(event_id)),
+                    // the dummy_dlc contains a dummy range [0, 1]
+                    attestation: Some(
+                        Attestation::new(
+                            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
+                            0,
+                            vec![],
+                            Dlc::dummy(None),
+                            Role::Taker,
+                        )
+                        .unwrap(),
+                    ),
+                    collaborative_close: None,
+                },
+                dummy_identity(),
+                Role::Taker,
+            )
+        }
+
+        fn dummy_not_open_but_dlc(event_id: BitMexPriceEventId) -> Self {
+            Cfd::from_order(
+                Order::dummy_model(),
+                Usd::new(dec!(1000)),
+                CfdState::PendingRefund {
+                    common: Default::default(),
+                    dlc: Dlc::dummy(Some(event_id)),
+                },
+                dummy_identity(),
+                Role::Taker,
+            )
+        }
+    }
+
+    impl Order {
+        fn dummy_model() -> Self {
+            Order::new_short(
+                Price::new(dec!(1000)).unwrap(),
+                Usd::new(dec!(100)),
+                Usd::new(dec!(1000)),
+                Origin::Theirs,
+                dummy_event_id(),
+                time::Duration::hours(24),
+                1,
+            )
+            .unwrap()
+        }
+    }
+
+    impl Dlc {
+        fn dummy(event_id: Option<BitMexPriceEventId>) -> Self {
+            let dummy_sk = SecretKey::from_slice(&[1; 32]).unwrap();
+            let dummy_pk = PublicKey::from_slice(&[
+                3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51,
+                41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
+            ])
+            .unwrap();
+
+            let dummy_addr = Address::from_str("132F25rTsvBdp9JzLLBHP5mvGY66i1xdiM").unwrap();
+
+            let dummy_tx = dummy_partially_signed_transaction().extract_tx();
+            let dummy_adapter_sig = "03424d14a5471c048ab87b3b83f6085d125d5864249ae4297a57c84e74710bb6730223f325042fce535d040fee52ec13231bf709ccd84233c6944b90317e62528b2527dff9d659a96db4c99f9750168308633c1867b70f3a18fb0f4539a1aecedcd1fc0148fc22f36b6303083ece3f872b18e35d368b3958efe5fb081f7716736ccb598d269aa3084d57e1855e1ea9a45efc10463bbf32ae378029f5763ceb40173f"
+                .parse()
+                .unwrap();
+
+            let dummy_sig = Signature::from_str("3046022100839c1fbc5304de944f697c9f4b1d01d1faeba32d751c0f7acb21ac8a0f436a72022100e89bd46bb3a5a62adc679f659b7ce876d83ee297c7a5587b2011c4fcc72eab45").unwrap();
+
+            let mut dummy_cet_with_zero_price_range = HashMap::new();
+            dummy_cet_with_zero_price_range.insert(
+                BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
+                vec![Cet {
+                    tx: dummy_tx.clone(),
+                    adaptor_sig: dummy_adapter_sig,
+                    range: RangeInclusive::new(0, 1),
+                    n_bits: 0,
+                }],
+            );
+
+            Dlc {
+                identity: dummy_sk,
+                identity_counterparty: dummy_pk,
+                revocation: dummy_sk,
+                revocation_pk_counterparty: dummy_pk,
+                publish: dummy_sk,
+                publish_pk_counterparty: dummy_pk,
+                maker_address: dummy_addr.clone(),
+                taker_address: dummy_addr,
+                lock: (dummy_tx.clone(), Descriptor::new_pk(dummy_pk)),
+                commit: (
+                    dummy_tx.clone(),
+                    dummy_adapter_sig,
+                    Descriptor::new_pk(dummy_pk),
+                ),
+                cets: dummy_cet_with_zero_price_range,
+                refund: (dummy_tx, dummy_sig),
+                maker_lock_amount: Default::default(),
+                taker_lock_amount: Default::default(),
+                revoked_commit: vec![],
+                settlement_event_id: match event_id {
+                    Some(event_id) => event_id,
+                    None => dummy_event_id(),
+                },
+            }
+        }
+    }
+
+    pub fn dummy_partially_signed_transaction() -> PartiallySignedTransaction {
+        // very simple dummy psbt that does not contain anything
+        // pulled in from github.com-1ecc6299db9ec823/bitcoin-0.27.1/src/util/psbt/mod.rs:238
+
+        PartiallySignedTransaction {
+            global: Global {
+                unsigned_tx: Transaction {
+                    version: 2,
+                    lock_time: 0,
+                    input: vec![],
+                    output: vec![],
+                },
+                xpub: Default::default(),
+                version: 0,
+                proprietary: BTreeMap::new(),
+                unknown: BTreeMap::new(),
+            },
+            inputs: vec![],
+            outputs: vec![],
+        }
+    }
+
+    pub fn dummy_identity() -> Identity {
+        Identity::new(Seed::default().derive_identity().0)
+    }
+
+    pub fn dummy_event_id() -> BitMexPriceEventId {
+        BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc())
     }
 }

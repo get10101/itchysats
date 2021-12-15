@@ -29,6 +29,7 @@ pub mod sqlx_ext; // Must come first because it is a macro.
 pub mod actors;
 pub mod address_map;
 pub mod auth;
+pub mod auto_rollover;
 pub mod bdk_ext;
 pub mod bitmex_price_feed;
 pub mod cfd_actors;
@@ -86,7 +87,7 @@ pub const N_PAYOUTS: usize = 200;
 /// - How the oracle event id is chosen when creating an order (maker)
 /// - The sliding window of cached oracle announcements (maker, taker)
 /// - The auto-rollover time-window (taker)
-pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::days(7);
+pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
 /// Struct controlling the lifetime of the async tasks,
 /// such as running actors and periodic notifications.
@@ -268,20 +269,33 @@ where
 
         let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
         let (cfd_actor_addr, cfd_actor_fut) = taker_cfd::Actor::new(
-            db,
+            db.clone(),
             wallet_addr,
             oracle_pk,
-            projection_actor,
+            projection_actor.clone(),
             connection_actor_addr.clone(),
             monitor_addr.clone(),
-            oracle_addr,
+            oracle_addr.clone(),
             n_payouts,
             maker_identity,
         )
         .create(None)
         .run();
 
+        let (_auto_rollover_address, auto_rollover_fut) = auto_rollover::Actor::new(
+            db,
+            oracle_pk,
+            projection_actor,
+            connection_actor_addr.clone(),
+            monitor_addr.clone(),
+            oracle_addr,
+            n_payouts,
+        )
+        .create(None)
+        .run();
+
         tasks.add(cfd_actor_fut);
+        tasks.add(auto_rollover_fut);
 
         tasks.add(connection_actor_ctx.run(connection::Actor::new(
             maker_online_status_feed_sender,
