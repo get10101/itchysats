@@ -176,14 +176,8 @@ impl Actor {
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
-        self.complete(
-            SetupCompleted::NewContract {
-                order_id: msg.order_id,
-                dlc: msg.dlc,
-            },
-            ctx,
-        )
-        .await
+        self.complete(SetupCompleted::succeeded(msg.order_id, msg.dlc), ctx)
+            .await
     }
 
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {

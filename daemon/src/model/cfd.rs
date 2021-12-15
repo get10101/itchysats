@@ -1834,13 +1834,11 @@ impl CollaborativeSettlement {
     }
 }
 
-/// Message sent from a setup actor to the
-/// cfd actor to notify that the contract setup has finished.
 #[allow(clippy::large_enum_variant)]
-pub enum SetupCompleted {
-    NewContract {
+pub enum Completed<P> {
+    Succeeded {
         order_id: OrderId,
-        dlc: Dlc,
+        payload: P,
     },
     Rejected {
         order_id: OrderId,
@@ -1849,6 +1847,40 @@ pub enum SetupCompleted {
         order_id: OrderId,
         error: anyhow::Error,
     },
+}
+
+pub mod marker {
+    /// Marker type for contract setup completion
+    pub struct Setup;
+    /// Marker type for rollover  completion
+    pub struct Rollover;
+}
+
+/// Message sent from a setup actor to the
+/// cfd actor to notify that the contract setup has finished.
+pub type SetupCompleted = Completed<(Dlc, marker::Setup)>;
+
+/// Message sent from a rollover actor to the
+/// cfd actor to notify that the rollover has finished (contract got updated).
+/// TODO: Roll it out in the maker rollover actor
+pub type RolloverCompleted = Completed<(Dlc, marker::Rollover)>;
+
+impl Completed<(Dlc, marker::Setup)> {
+    pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
+        Self::Succeeded {
+            order_id,
+            payload: (dlc, marker::Setup),
+        }
+    }
+}
+
+impl Completed<(Dlc, marker::Rollover)> {
+    pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
+        Self::Succeeded {
+            order_id,
+            payload: (dlc, marker::Rollover),
+        }
+    }
 }
 
 #[cfg(test)]

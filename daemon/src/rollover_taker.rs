@@ -7,6 +7,9 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverProposal;
+use crate::model::cfd::Role;
+use crate::model::cfd::RollOverProposal;
+use crate::model::cfd::RolloverCompleted;
 use crate::model::cfd::SettlementKind;
 use crate::model::BitMexPriceEventId;
 use crate::model::Timestamp;
@@ -44,7 +47,7 @@ pub struct Actor {
     maker: xtra::Address<connection::Actor>,
     get_announcement: Box<dyn MessageChannel<GetAnnouncement>>,
     projection: xtra::Address<projection::Actor>,
-    on_completed: Box<dyn MessageChannel<Completed>>,
+    on_completed: Box<dyn MessageChannel<RolloverCompleted>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     rollover_msg_sender: Option<UnboundedSender<RollOverMsg>>,
     tasks: Tasks,
@@ -57,7 +60,7 @@ impl Actor {
         maker: xtra::Address<connection::Actor>,
         get_announcement: &(impl MessageChannel<GetAnnouncement> + 'static),
         projection: xtra::Address<projection::Actor>,
-        on_completed: &(impl MessageChannel<Completed> + 'static),
+        on_completed: &(impl MessageChannel<RolloverCompleted> + 'static),
         (on_stopping0, on_stopping1): (
             &(impl MessageChannel<Stopping<Self>> + 'static),
             &(impl MessageChannel<Stopping<Self>> + 'static),
@@ -186,7 +189,7 @@ impl Actor {
         Ok(())
     }
 
-    async fn complete(&mut self, completed: Completed, ctx: &mut xtra::Context<Self>) {
+    async fn complete(&mut self, completed: RolloverCompleted, ctx: &mut xtra::Context<Self>) {
         let _ = self.on_completed.send(completed).await;
 
         ctx.stop();
@@ -213,7 +216,7 @@ impl xtra::Actor for Actor {
 
         if let Err(e) = self.propose(this).await {
             self.complete(
-                Completed::Failed {
+                RolloverCompleted::Failed {
                     order_id: self.cfd.id(),
                     error: e,
                 },
@@ -265,7 +268,7 @@ impl Actor {
     ) {
         if let Err(error) = self.handle_confirmed(msg, ctx).await {
             self.complete(
-                Completed::Failed {
+                RolloverCompleted::Failed {
                     order_id: self.cfd.id(),
                     error,
                 },
@@ -278,9 +281,9 @@ impl Actor {
     pub async fn reject_rollover(&mut self, _: RollOverRejected, ctx: &mut xtra::Context<Self>) {
         let order_id = self.cfd.id();
         let completed = if let Err(error) = self.handle_rejected().await {
-            Completed::Failed { order_id, error }
+            RolloverCompleted::Failed { order_id, error }
         } else {
-            Completed::Rejected { order_id }
+            RolloverCompleted::Rejected { order_id }
         };
 
         self.complete(completed, ctx).await;
@@ -291,14 +294,8 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        self.complete(
-            Completed::UpdatedContract {
-                order_id: self.cfd.id(),
-                dlc: msg.dlc,
-            },
-            ctx,
-        )
-        .await;
+        self.complete(RolloverCompleted::succeeded(self.cfd.id(), msg.dlc), ctx)
+            .await;
     }
 
     pub async fn handle_rollover_failed(
@@ -307,7 +304,7 @@ impl Actor {
         ctx: &mut xtra::Context<Self>,
     ) {
         self.complete(
-            Completed::Failed {
+            RolloverCompleted::Failed {
                 order_id: self.cfd.id(),
                 error: msg.error,
             },
@@ -323,7 +320,7 @@ impl Actor {
     ) {
         if let Err(error) = self.forward_protocol_msg(msg).await {
             self.complete(
-                Completed::Failed {
+                RolloverCompleted::Failed {
                     order_id: self.cfd.id(),
                     error,
                 },
@@ -358,28 +355,6 @@ pub struct RolloverFailed {
     error: anyhow::Error,
 }
 
-#[allow(clippy::large_enum_variant)]
-pub enum Completed {
-    UpdatedContract {
-        order_id: OrderId,
-        dlc: Dlc,
-    },
-    Rejected {
-        order_id: OrderId,
-    },
-    Failed {
-        order_id: OrderId,
-        error: anyhow::Error,
-    },
-    NoRollover {
-        order_id: OrderId,
-        reason: CannotRollover,
-    },
-}
-
-impl xtra::Message for Completed {
-    type Result = Result<()>;
-}
 
 impl ActorName for Actor {
     fn actor_name() -> String {

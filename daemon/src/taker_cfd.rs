@@ -13,6 +13,7 @@ use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
+use crate::model::cfd::RolloverCompleted;
 use crate::model::cfd::SetupCompleted;
 use crate::model::Identity;
 use crate::model::Price;
@@ -360,7 +361,10 @@ where
 {
     async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
         let (order_id, dlc) = match msg {
-            SetupCompleted::NewContract { order_id, dlc } => (order_id, dlc),
+            SetupCompleted::Succeeded {
+                order_id,
+                payload: (dlc, _),
+            } => (order_id, dlc),
             SetupCompleted::Rejected { order_id } => {
                 self.append_cfd_state_rejected(order_id).await?;
                 return Ok(());
@@ -411,6 +415,14 @@ where
 }
 
 #[xtra_productivity]
+#[xtra_productivity(message_impl = false)]
+    async fn handle_rollover_completed(&mut self, msg: rollover_taker::Completed) -> Result<()> {
+            UpdatedContract { order_id, dlc } => (order_id, dlc),
+                order_id,
+                payload: (dlc, _),
+            } => (order_id, dlc),
+            Rejected { .. } => {
+            Failed { order_id, error } => {
 impl<O, M, W> Actor<O, M, W> {
     async fn handle_current_order(&mut self, msg: CurrentOrder) {
         log_error!(self.handle_new_order(msg.0));

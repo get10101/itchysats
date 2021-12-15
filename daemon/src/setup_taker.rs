@@ -143,10 +143,7 @@ impl Actor {
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) -> Result<()> {
         self.on_completed
-            .send(SetupCompleted::NewContract {
-                order_id: msg.order_id,
-                dlc: msg.dlc,
-            })
+            .send(SetupCompleted::succeeded(msg.order_id, msg.dlc))
             .await?;
 
         ctx.stop();
