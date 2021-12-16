@@ -2,10 +2,10 @@ use crate::address_map;
 use crate::connection;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CfdState;
-use crate::model::cfd::Completed;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
+use crate::model::cfd::SetupCompleted;
 use crate::oracle::Announcement;
 use crate::setup_contract;
 use crate::setup_contract::SetupParams;
@@ -34,7 +34,7 @@ pub struct Actor {
     sign: Box<dyn MessageChannel<wallet::Sign>>,
     maker: xtra::Address<connection::Actor>,
     on_accepted: Box<dyn MessageChannel<Started>>,
-    on_completed: Box<dyn MessageChannel<Completed>>,
+    on_completed: Box<dyn MessageChannel<SetupCompleted>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
 }
 
@@ -47,7 +47,7 @@ impl Actor {
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
         maker: xtra::Address<connection::Actor>,
         on_accepted: &(impl MessageChannel<Started> + 'static),
-        on_completed: &(impl MessageChannel<Completed> + 'static),
+        on_completed: &(impl MessageChannel<SetupCompleted> + 'static),
     ) -> Self {
         Self {
             cfd,
@@ -122,12 +122,14 @@ impl Actor {
         let order_id = self.cfd.id();
         tracing::info!(%order_id, "Order got rejected");
 
-        if msg.is_invalid_order {
-            tracing::warn!(%order_id, "Rejection reason: Invalid order ID");
-        }
+        let reason = if msg.is_invalid_order {
+            anyhow::format_err!("Invalid order id: {}", &order_id)
+        } else {
+            anyhow::format_err!("Unknown")
+        };
 
         self.on_completed
-            .send(Completed::Rejected { order_id })
+            .send(SetupCompleted::rejected_due_to(order_id, reason))
             .log_failure("Failed to inform about contract setup rejection")
             .await?;
 
@@ -148,10 +150,7 @@ impl Actor {
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) -> Result<()> {
         self.on_completed
-            .send(Completed::NewContract {
-                order_id: msg.order_id,
-                dlc: msg.dlc,
-            })
+            .send(SetupCompleted::succeeded(msg.order_id, msg.dlc))
             .log_failure("Failed to inform about contract setup completion")
             .await?;
 
@@ -162,7 +161,7 @@ impl Actor {
 
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) -> Result<()> {
         self.on_completed
-            .send(Completed::Failed {
+            .send(SetupCompleted::Failed {
                 order_id: msg.order_id,
                 error: msg.error,
             })
@@ -250,7 +249,7 @@ impl xtra::Message for Started {
     type Result = Result<()>;
 }
 
-impl xtra::Message for Completed {
+impl xtra::Message for SetupCompleted {
     type Result = Result<()>;
 }
 
