@@ -9,6 +9,7 @@ use crate::maker_inc_connections;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CfdState;
 use crate::model::cfd::CfdStateCommon;
+use crate::model::cfd::MakerSettlementCompleted;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
@@ -557,21 +558,16 @@ where
     M: xtra::Handler<monitor::CollaborativeSettlement>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle_settlement_completed(
-        &mut self,
-        msg: collab_settlement_maker::Completed,
-    ) -> Result<()> {
-        use collab_settlement_maker::Completed::*;
+    async fn handle_settlement_completed(&mut self, msg: MakerSettlementCompleted) -> Result<()> {
         let (order_id, settlement, script_pubkey) = match msg {
-            Confirmed {
+            MakerSettlementCompleted::Succeeded {
                 order_id,
-                settlement,
-                script_pubkey,
+                payload: (settlement, script_pubkey),
             } => (order_id, settlement, script_pubkey),
-            Rejected { .. } => {
+            MakerSettlementCompleted::Rejected { .. } => {
                 return Ok(());
             }
-            Failed { order_id, error } => {
+            MakerSettlementCompleted::Failed { order_id, error } => {
                 tracing::warn!(%order_id, "Collaborative settlement failed: {:#}", error);
                 return Ok(());
             }

@@ -1851,6 +1851,14 @@ pub enum Completed<P> {
 }
 
 impl<P> Completed<P> {
+    pub fn order_id(&self) -> OrderId {
+        *match self {
+            Completed::Succeeded { order_id, .. } => order_id,
+            Completed::Rejected { order_id, .. } => order_id,
+            Completed::Failed { order_id, .. } => order_id,
+        }
+    }
+
     pub fn rejected(order_id: OrderId) -> Self {
         Self::Rejected {
             order_id,
@@ -1861,6 +1869,15 @@ impl<P> Completed<P> {
         Self::Rejected { order_id, reason }
     }
 }
+
+/// Message sent from a taker collab settlement actor to the
+/// cfd actor to notify that the settlement has finished.
+pub type TakerSettlementCompleted = Completed<CollaborativeSettlement>;
+
+/// Message sent from a maker collab settlement actor to the
+/// cfd actor to notify that the settlement has finished.
+/// Payload contains CollaborativeSettlement and script pubkey.
+pub type MakerSettlementCompleted = Completed<(CollaborativeSettlement, Script)>;
 
 pub mod marker {
     /// Marker type for contract setup completion
