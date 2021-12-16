@@ -53,7 +53,7 @@ pub fn calculate(
     leverage: Leverage,
     n_payouts: usize,
 ) -> Result<Vec<Payout>> {
-    let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts)?
+    let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts, 0)?
         .into_iter()
         .map(PayoutParameter::into_payouts)
         .flatten_ok()
@@ -74,6 +74,7 @@ fn calculate_payout_parameters(
     quantity: Usd,
     long_leverage: Leverage,
     n_payouts: usize,
+    funding_fee: u64,
 ) -> Result<Vec<PayoutParameter>> {
     let initial_rate = price
         .try_into_f64()
@@ -98,16 +99,20 @@ fn calculate_payout_parameters(
         .map(|row| {
             let left_bound = row[0] as u64;
             let right_bound = row[1] as u64;
-            let long_amount = row[2];
+            let long_amount_btc = row[2];
 
-            let short_amount = to_sats(payout_curve.total_value - long_amount)?;
-            let long_amount = to_sats(long_amount)?;
+            let long_amount = to_sats(long_amount_btc)?;
+            let long_amount_adjusted = long_amount.saturating_sub(funding_fee);
+            let adjustment = long_amount - long_amount_adjusted;
+
+            let short_amount = to_sats(payout_curve.total_value - long_amount_btc)?;
+            let short_amount_adjusted = short_amount + adjustment;
 
             Ok(PayoutParameter {
                 left_bound,
                 right_bound,
-                long_amount,
-                short_amount,
+                long_amount: long_amount_adjusted,
+                short_amount: short_amount_adjusted,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -115,7 +120,7 @@ fn calculate_payout_parameters(
     Ok(payout_parameters)
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 struct PayoutParameter {
     left_bound: u64,
     right_bound: u64,
@@ -511,6 +516,7 @@ mod tests {
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
             200,
+            0,
         )
         .unwrap();
 
@@ -722,12 +728,257 @@ mod tests {
     }
 
     #[test]
+    fn verify_effect_of_funding_fee() {
+        let payouts = calculate_payout_parameters(
+            Price::new(dec!(54000.00)).unwrap(),
+            Usd::new(dec!(3500.00)),
+            Leverage::new(5).unwrap(),
+            200,
+            0,
+        )
+        .unwrap();
+
+        let funding_fee = 100;
+        let payouts_with_fee = calculate_payout_parameters(
+            Price::new(dec!(54000.00)).unwrap(),
+            Usd::new(dec!(3500.00)),
+            Leverage::new(5).unwrap(),
+            200,
+            funding_fee,
+        )
+        .unwrap();
+        assert_eq!(payouts.len(), payouts_with_fee.len());
+
+        let total_per_payout = payouts
+            .iter()
+            .map(|payout| payout.short_amount + payout.long_amount)
+            .collect::<Vec<_>>();
+        let total_per_payout_with_fee = payouts_with_fee
+            .iter()
+            .map(|payout| payout.short_amount + payout.long_amount)
+            .collect::<Vec<_>>();
+        assert_eq!(total_per_payout, total_per_payout_with_fee);
+
+        let fees = payouts
+            .iter()
+            .zip(payouts_with_fee)
+            .map(|(payout, payout_with_fee)| payout_with_fee.short_amount - payout.short_amount)
+            .collect::<Vec<_>>();
+        let expected_fees = vec![
+            0, // the lower tail of this curve already assigns the short side all of the coins
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+            funding_fee,
+        ];
+
+        assert_eq!(fees, expected_fees);
+    }
+
+    #[test]
     fn verify_tails() {
         let actual_payouts = calculate_payout_parameters(
             Price::new(dec!(54000.00)).unwrap(),
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
             200,
+            0,
         )
         .unwrap();
 
