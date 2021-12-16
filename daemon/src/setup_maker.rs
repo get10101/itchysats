@@ -14,6 +14,7 @@ use crate::tokio_ext::spawn_fallible;
 use crate::wallet;
 use crate::wire;
 use crate::wire::SetupMsg;
+use crate::xtra_ext::LogFailure;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -121,7 +122,11 @@ impl Actor {
     }
 
     async fn complete(&mut self, completed: Completed, ctx: &mut xtra::Context<Self>) {
-        let _ = self.on_completed.send(completed).await;
+        let _ = self
+            .on_completed
+            .send(completed)
+            .log_failure("Failed to inform about contract setup completion")
+            .await;
 
         ctx.stop();
     }

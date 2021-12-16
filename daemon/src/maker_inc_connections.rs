@@ -20,6 +20,7 @@ use crate::wire::EncryptedJsonCodec;
 use crate::wire::MakerToTaker;
 use crate::wire::TakerToMaker;
 use crate::wire::Version;
+use crate::xtra_ext::LogFailure;
 use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
@@ -138,6 +139,7 @@ impl Actor {
             let _ = self
                 .taker_disconnected_channel
                 .send(maker_cfd::TakerDisconnected { id: *taker_id })
+                .log_failure("Failed to inform about taker disconnect")
                 .await;
             let _ = self.connection_tasks.remove(taker_id);
         }
@@ -219,7 +221,7 @@ impl Actor {
         let this = ctx.address().expect("self to be alive");
         let read_fut = async move {
             while let Ok(Some(msg)) = read.try_next().await {
-                let res = this.send(FromTaker { taker_id, msg }).await;
+                let res = this.send(FromTaker { taker_id, msg }).log_failure("").await;
 
                 if res.is_err() {
                     break;
@@ -249,6 +251,7 @@ impl Actor {
         let _ = self
             .taker_connected_channel
             .send(maker_cfd::TakerConnected { id: taker_id })
+            .log_failure("Failed to report new taker connection")
             .await;
 
         Ok(())
@@ -342,7 +345,7 @@ impl Actor {
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    async fn handle_msg_from_taker(&mut self, msg: FromTaker) {
+    async fn handle_msg_from_taker(&mut self, msg: FromTaker) -> Result<()> {
         use wire::TakerToMaker::*;
         match msg.msg {
             Protocol { order_id, msg } => match self.setup_actors.get_connected(&order_id) {
@@ -380,6 +383,8 @@ impl Actor {
                 let _ = self.taker_msg_channel.send(msg);
             }
         }
+
+        Ok(())
     }
 
     async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {

@@ -13,6 +13,7 @@ use crate::tokio_ext::spawn_fallible;
 use crate::wallet;
 use crate::wire;
 use crate::wire::SetupMsg;
+use crate::xtra_ext::LogFailure;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -74,7 +75,10 @@ impl Actor {
 
         // inform the `taker_cfd::Actor` about the start of contract
         // setup, so that the db and UI can be updated accordingly
-        self.on_accepted.send(Started(order_id)).await?;
+        self.on_accepted
+            .send(Started(order_id))
+            .log_failure("Failed to inform about contract setup start")
+            .await?;
 
         let (sender, receiver) = mpsc::unbounded::<SetupMsg>();
         // store the writing end to forward messages from the maker to
@@ -124,6 +128,7 @@ impl Actor {
 
         self.on_completed
             .send(Completed::Rejected { order_id })
+            .log_failure("Failed to inform about contract setup rejection")
             .await?;
 
         ctx.stop();
@@ -147,6 +152,7 @@ impl Actor {
                 order_id: msg.order_id,
                 dlc: msg.dlc,
             })
+            .log_failure("Failed to inform about contract setup completion")
             .await?;
 
         ctx.stop();
@@ -160,6 +166,7 @@ impl Actor {
                 order_id: msg.order_id,
                 error: msg.error,
             })
+            .log_failure("Failed to inform about contract setup failure")
             .await?;
 
         ctx.stop();
@@ -240,11 +247,11 @@ impl Rejected {
 }
 
 impl xtra::Message for Started {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl xtra::Message for Completed {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl address_map::ActorName for Actor {

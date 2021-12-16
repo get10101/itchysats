@@ -1,4 +1,3 @@
-use crate::log_error;
 use crate::model;
 use crate::model::cfd::CetStatus;
 use crate::model::cfd::Cfd;
@@ -333,7 +332,7 @@ where
         Ok(())
     }
 
-    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
+    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) {
         for (order_id, MonitorParams { cets, .. }) in self
             .cfds
             .clone()
@@ -342,8 +341,6 @@ where
         {
             try_continue!(self.monitor_cet_finality(cets, attestation.clone(), order_id))
         }
-
-        Ok(())
     }
 
     async fn update_state(
@@ -433,7 +430,7 @@ where
 
                     for (target_status, event) in reached_monitoring_target {
                         tracing::info!(%txid, target = %target_status, current = %status, "Bitcoin transaction reached monitoring target");
-                        self.event_channel.send(event).await?;
+                        self.event_channel.send(event).await??;
                     }
                 }
             }
@@ -628,7 +625,7 @@ fn map_cets(
 }
 
 impl xtra::Message for Event {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 impl xtra::Message for Sync {
@@ -669,14 +666,16 @@ where
     C: bdk::electrum_client::ElectrumApi + Send + 'static,
 {
     async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
-        log_error!(self.sync());
+        if let Err(e) = self.sync().await {
+            tracing::warn!("Sync failed: {:#}", e);
+        }
     }
 }
 
 #[async_trait]
 impl xtra::Handler<oracle::Attestation> for Actor {
     async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut xtra::Context<Self>) {
-        log_error!(self.handle_oracle_attestation(msg));
+        self.handle_oracle_attestation(msg).await
     }
 }
 
@@ -852,8 +851,10 @@ mod tests {
 
     #[async_trait]
     impl xtra::Handler<Event> for MessageRecordingActor {
-        async fn handle(&mut self, message: Event, _ctx: &mut xtra::Context<Self>) {
+        async fn handle(&mut self, message: Event, _ctx: &mut xtra::Context<Self>) -> Result<()> {
             self.events.push(message);
+
+            Ok(())
         }
     }
 

@@ -1,7 +1,6 @@
 use crate::address_map::AddressMap;
 use crate::address_map::Stopping;
 use crate::collab_settlement_taker;
-use crate::log_error;
 use crate::model::cfd::OrderId;
 use crate::model::Identity;
 use crate::model::Price;
@@ -17,6 +16,7 @@ use crate::wire;
 use crate::wire::EncryptedJsonCodec;
 use crate::wire::TakerToMaker;
 use crate::wire::Version;
+use crate::xtra_ext::LogFailure;
 use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
@@ -146,7 +146,10 @@ impl Actor {
 #[xtra_productivity(message_impl = false)]
 impl Actor {
     async fn handle_taker_to_maker(&mut self, message: wire::TakerToMaker) {
-        log_error!(self.send_to_maker.send(message));
+        let msg_str = message.to_string();
+        if self.send_to_maker.send(message).await.is_err() {
+            tracing::warn!("Failed to send wire message {} to maker", msg_str);
+        }
     }
 
     async fn handle_collab_settlement_actor_stopping(
@@ -430,7 +433,11 @@ impl Actor {
                 }
             }
             wire::MakerToTaker::CurrentOrder(msg) => {
-                log_error!(self.current_order.send(CurrentOrder(msg)));
+                let _ = self
+                    .current_order
+                    .send(CurrentOrder(msg))
+                    .log_failure("Failed to forward current order from maker")
+                    .await;
             }
             wire::MakerToTaker::Hello(_) => {
                 tracing::warn!("Ignoring unexpected Hello message from maker. Hello is only expected when opening a new connection.")

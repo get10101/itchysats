@@ -367,9 +367,13 @@ impl Taker {
 #[macro_export]
 macro_rules! deliver_event {
     ($maker:expr, $taker:expr, $event:expr) => {
-        tracing::debug!("Delivering event: {:?}", $event);
-        $taker.system.cfd_actor_addr.send($event).await.unwrap();
-        $maker.system.cfd_actor_addr.send($event).await.unwrap();
+        #[allow(unused_must_use)]
+        {
+            tracing::debug!("Delivering event: {:?}", $event);
+
+            $taker.system.cfd_actor_addr.send($event).await.unwrap();
+            $maker.system.cfd_actor_addr.send($event).await.unwrap();
+        }
     };
 }
 

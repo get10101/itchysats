@@ -1,8 +1,7 @@
-use std::sync::Arc;
-
 use daemon::monitor;
 use daemon::oracle;
 use mockall::*;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;
 
@@ -30,7 +29,7 @@ impl MonitorActor {
     }
 
     async fn handle(&mut self, msg: oracle::Attestation) {
-        self.mock.lock().await.oracle_attestation(msg)
+        self.mock.lock().await.oracle_attestation(msg);
     }
 }
 

@@ -1,9 +1,9 @@
-use crate::log_error;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CfdState;
 use crate::model::BitMexPriceEventId;
 use crate::tokio_ext;
 use crate::try_continue;
+use crate::xtra_ext::LogFailure;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -188,6 +188,7 @@ impl Actor {
                     id: event_id,
                     attestation,
                 })
+                .log_failure("Failed to send attestation to oracle::Actor")
                 .await?;
 
                 Ok(())
@@ -257,8 +258,13 @@ pub struct NoAnnouncement(pub BitMexPriceEventId);
 
 #[async_trait]
 impl xtra::Handler<NewAttestationFetched> for Actor {
-    async fn handle(&mut self, msg: NewAttestationFetched, _ctx: &mut xtra::Context<Self>) {
-        log_error!(self.handle_new_attestation_fetched(msg.id, msg.attestation));
+    async fn handle(
+        &mut self,
+        msg: NewAttestationFetched,
+        _ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
+        self.handle_new_attestation_fetched(msg.id, msg.attestation)
+            .await
     }
 }
 
@@ -305,7 +311,7 @@ impl xtra::Message for Attestation {
 }
 
 impl xtra::Message for NewAttestationFetched {
-    type Result = ();
+    type Result = Result<()>;
 }
 
 mod olivia_api {
