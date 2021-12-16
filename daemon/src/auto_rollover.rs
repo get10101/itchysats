@@ -8,6 +8,7 @@ use crate::model::cfd::CannotRollover;
 use crate::model::cfd::CfdState;
 use crate::model::cfd::CfdStateCommon;
 use crate::model::cfd::OrderId;
+use crate::model::cfd::RolloverCompleted;
 use crate::monitor;
 use crate::monitor::MonitorParams;
 use crate::oracle;
@@ -105,7 +106,7 @@ where
     }
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl<O, M> Actor<O, M>
 where
     O: 'static,
@@ -113,28 +114,18 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
 {
-    async fn handle_rollover_completed(&mut self, msg: rollover_taker::Completed) -> Result<()> {
-        use rollover_taker::Completed::*;
+    async fn handle_rollover_completed(&mut self, msg: RolloverCompleted) -> Result<()> {
         let (order_id, dlc) = match msg {
-            UpdatedContract { order_id, dlc } => (order_id, dlc),
-            Rejected { .. } => {
+            RolloverCompleted::Succeeded {
+                order_id,
+                payload: (dlc, _),
+            } => (order_id, dlc),
+            RolloverCompleted::Rejected { order_id, reason } => {
+                tracing::debug!(%order_id, "Not rolled over: {:#}", reason);
                 return Ok(());
             }
-            Failed { order_id, error } => {
+            RolloverCompleted::Failed { order_id, error } => {
                 tracing::warn!(%order_id, "Rollover failed: {:#}", error);
-                return Ok(());
-            }
-            NoRollover { order_id, reason } => {
-                match reason {
-                    CannotRollover::NoDlc => {
-                        tracing::warn!(%order_id, "Not rolled over: {:#}", reason);
-                    }
-                    CannotRollover::AlreadyExpired
-                    | CannotRollover::WasJustRolledOver
-                    | CannotRollover::WrongState { .. } => {
-                        tracing::debug!(%order_id, "Not rolled over: {:#}", reason);
-                    }
-                }
                 return Ok(());
             }
         };
@@ -165,7 +156,15 @@ where
 
         Ok(())
     }
+}
 
+impl<O, M> Actor<O, M>
+where
+    O: 'static,
+    M: 'static,
+    M: xtra::Handler<monitor::StartMonitoring>,
+    O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
+{
     async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_taker::Actor>) {
         self.rollover_actors.gc(msg);
     }

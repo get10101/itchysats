@@ -6,10 +6,8 @@ use crate::model::cfd::Cfd;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
-use crate::model::cfd::RolloverProposal;
-use crate::model::cfd::Role;
-use crate::model::cfd::RollOverProposal;
 use crate::model::cfd::RolloverCompleted;
+use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementKind;
 use crate::model::BitMexPriceEventId;
 use crate::model::Timestamp;
@@ -201,9 +199,17 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self.cfd.can_roll_over(OffsetDateTime::now_utc()) {
             self.complete(
-                Completed::NoRollover {
-                    order_id: self.cfd.id(),
-                    reason: e,
+                match e {
+                    CannotRollover::NoDlc => RolloverCompleted::Failed {
+                        order_id: self.cfd.id(),
+                        reason: e,
+                    },
+                    CannotRollover::AlreadyExpired
+                    | CannotRollover::WasJustRolledOver
+                    | CannotRollover::WrongState { .. } => RolloverCompleted::Rejected {
+                        order_id: self.cfd.id(),
+                        error: e,
+                    },
                 },
                 ctx,
             )
@@ -354,7 +360,6 @@ pub struct RolloverSucceeded {
 pub struct RolloverFailed {
     error: anyhow::Error,
 }
-
 
 impl ActorName for Actor {
     fn actor_name() -> String {

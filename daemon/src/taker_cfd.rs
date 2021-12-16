@@ -415,14 +415,6 @@ where
 }
 
 #[xtra_productivity]
-#[xtra_productivity(message_impl = false)]
-    async fn handle_rollover_completed(&mut self, msg: rollover_taker::Completed) -> Result<()> {
-            UpdatedContract { order_id, dlc } => (order_id, dlc),
-                order_id,
-                payload: (dlc, _),
-            } => (order_id, dlc),
-            Rejected { .. } => {
-            Failed { order_id, error } => {
 impl<O, M, W> Actor<O, M, W> {
     async fn handle_current_order(&mut self, msg: CurrentOrder) {
         log_error!(self.handle_new_order(msg.0));

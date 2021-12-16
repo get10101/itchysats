@@ -1842,6 +1842,7 @@ pub enum Completed<P> {
     },
     Rejected {
         order_id: OrderId,
+        reason: anyhow::Error,
     },
     Failed {
         order_id: OrderId,
