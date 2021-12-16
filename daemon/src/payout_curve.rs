@@ -722,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    fn verfiy_tails() {
+    fn verify_tails() {
         let actual_payouts = calculate_payout_parameters(
             Price::new(dec!(54000.00)).unwrap(),
             Usd::new(dec!(3500.00)),
