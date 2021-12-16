@@ -4,7 +4,6 @@ use crate::cfd_actors::append_cfd_state;
 use crate::connection;
 use crate::db;
 use crate::db::load_cfd;
-use crate::model::cfd::CannotRollover;
 use crate::model::cfd::CfdState;
 use crate::model::cfd::CfdStateCommon;
 use crate::model::cfd::OrderId;
@@ -158,10 +157,9 @@ where
     }
 }
 
+#[xtra_productivity(message_impl = false)]
 impl<O, M> Actor<O, M>
 where
-    O: 'static,
-    M: 'static,
     M: xtra::Handler<monitor::StartMonitoring>,
     O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
 {

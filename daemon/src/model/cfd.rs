@@ -1850,6 +1850,18 @@ pub enum Completed<P> {
     },
 }
 
+impl<P> Completed<P> {
+    pub fn rejected(order_id: OrderId) -> Self {
+        Self::Rejected {
+            order_id,
+            reason: anyhow::format_err!("unknown"),
+        }
+    }
+    pub fn rejected_due_to(order_id: OrderId, reason: anyhow::Error) -> Self {
+        Self::Rejected { order_id, reason }
+    }
+}
+
 pub mod marker {
     /// Marker type for contract setup completion
     pub struct Setup;

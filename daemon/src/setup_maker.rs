@@ -166,13 +166,8 @@ impl Actor {
     }
 
     fn handle(&mut self, _msg: Rejected, ctx: &mut xtra::Context<Self>) {
-        self.complete(
-            SetupCompleted::Rejected {
-                order_id: self.cfd.id(),
-            },
-            ctx,
-        )
-        .await;
+        self.complete(SetupCompleted::rejected(self.cfd.id()), ctx)
+            .await;
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
@@ -211,12 +206,11 @@ impl xtra::Actor for Actor {
         let quantity = self.cfd.quantity_usd();
         let cfd = self.cfd.clone();
         if quantity < self.order.min_quantity || quantity > self.order.max_quantity {
-            tracing::info!(
+            let reason = format!(
                 "Order rejected: quantity {} not in range [{}, {}]",
-                quantity,
-                self.order.min_quantity,
-                self.order.max_quantity
+                quantity, self.order.min_quantity, self.order.max_quantity
             );
+            tracing::info!("{}", reason.clone());
 
             let _ = self
                 .taker
@@ -226,8 +220,11 @@ impl xtra::Actor for Actor {
                 })
                 .await;
 
-            self.complete(SetupCompleted::Rejected { order_id: cfd.id() }, ctx)
-                .await;
+            self.complete(
+                SetupCompleted::rejected_due_to(cfd.id(), anyhow::format_err!(reason)),
+                ctx,
+            )
+            .await;
         }
     }
 

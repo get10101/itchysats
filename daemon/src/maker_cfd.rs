@@ -766,7 +766,7 @@ where
                     self.append_cfd_state_setup_failed(order_id, error).await?;
                     return anyhow::Ok(());
                 }
-                SetupCompleted::Rejected { order_id } => {
+                SetupCompleted::Rejected { order_id, .. } => {
                     self.append_cfd_state_rejected(order_id).await?;
                     return anyhow::Ok(());
                 }

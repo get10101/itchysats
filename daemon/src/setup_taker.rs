@@ -118,12 +118,14 @@ impl Actor {
         let order_id = self.cfd.id();
         tracing::info!(%order_id, "Order got rejected");
 
-        if msg.is_invalid_order {
-            tracing::warn!(%order_id, "Rejection reason: Invalid order ID");
-        }
+        let reason = if msg.is_invalid_order {
+            anyhow::format_err!("Invalid order id: {}", &order_id)
+        } else {
+            anyhow::format_err!("Unknown")
+        };
 
         self.on_completed
-            .send(SetupCompleted::Rejected { order_id })
+            .send(SetupCompleted::rejected_due_to(order_id, reason))
             .await?;
 
         ctx.stop();

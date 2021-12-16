@@ -4,7 +4,6 @@ use crate::connection;
 use crate::model::cfd::CannotRollover;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Dlc;
-use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
 use crate::model::cfd::RolloverProposal;
@@ -202,13 +201,13 @@ impl xtra::Actor for Actor {
                 match e {
                     CannotRollover::NoDlc => RolloverCompleted::Failed {
                         order_id: self.cfd.id(),
-                        reason: e,
+                        error: e.into(),
                     },
                     CannotRollover::AlreadyExpired
                     | CannotRollover::WasJustRolledOver
                     | CannotRollover::WrongState { .. } => RolloverCompleted::Rejected {
                         order_id: self.cfd.id(),
-                        error: e,
+                        reason: e.into(),
                     },
                 },
                 ctx,
@@ -289,7 +288,7 @@ impl Actor {
         let completed = if let Err(error) = self.handle_rejected().await {
             RolloverCompleted::Failed { order_id, error }
         } else {
-            RolloverCompleted::Rejected { order_id }
+            RolloverCompleted::rejected(order_id)
         };
 
         self.complete(completed, ctx).await;

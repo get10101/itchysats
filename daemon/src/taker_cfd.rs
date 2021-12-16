@@ -365,7 +365,7 @@ where
                 order_id,
                 payload: (dlc, _),
             } => (order_id, dlc),
-            SetupCompleted::Rejected { order_id } => {
+            SetupCompleted::Rejected { order_id, .. } => {
                 self.append_cfd_state_rejected(order_id).await?;
                 return Ok(());
             }
