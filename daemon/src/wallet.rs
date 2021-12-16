@@ -1,5 +1,6 @@
 use crate::model::Timestamp;
 use crate::model::WalletInfo;
+use crate::tokio_ext::spawn_fallible;
 use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
@@ -40,6 +41,7 @@ pub struct Actor {
     used_utxos: HashSet<OutPoint>,
     tasks: Tasks,
     sender: watch::Sender<Option<WalletInfo>>,
+    electrum_rpc_url: String,
 }
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
@@ -70,6 +72,7 @@ impl Actor {
             tasks: Tasks::default(),
             sender,
             used_utxos: HashSet::default(),
+            electrum_rpc_url: electrum_rpc_url.to_string(),
         };
 
         Ok((actor, receiver))
@@ -131,6 +134,41 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
+    pub fn handle_reinitialise(
+        &mut self,
+        msg: Reinitialise,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
+        let client = bdk::electrum_client::Client::new(&self.electrum_rpc_url)
+            .context("Failed to initialize Electrum RPC client")?;
+
+        let ext_priv_key =
+            ExtendedPrivKey::new_master(self.wallet.network(), msg.seed_words.as_bytes())?;
+
+        let db = bdk::database::MemoryDatabase::new();
+
+        let wallet = bdk::Wallet::new(
+            bdk::template::Bip84(ext_priv_key, KeychainKind::External),
+            Some(bdk::template::Bip84(ext_priv_key, KeychainKind::Internal)),
+            ext_priv_key.network,
+            db,
+            ElectrumBlockchain::from(client),
+        )?;
+
+        self.wallet = wallet;
+
+        self.used_utxos.clear();
+
+        let this = ctx.address().expect("self to be alive");
+
+        spawn_fallible::<_, anyhow::Error>(async move {
+            let _ = this.send(Sync).await?;
+            Ok(())
+        });
+
+        Ok(())
+    }
+
     pub fn handle_sync(&mut self, _msg: Sync) -> Result<()> {
         let wallet_info_update = match self.sync_internal() {
             Ok(wallet_info) => Some(wallet_info),
@@ -303,6 +341,10 @@ pub struct BuildPartyParams {
 
 /// Private message to trigger a sync.
 struct Sync;
+
+pub struct Reinitialise {
+    pub seed_words: String,
+}
 
 pub struct Sign {
     pub psbt: PartiallySignedTransaction,
