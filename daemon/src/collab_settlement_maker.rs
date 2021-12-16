@@ -3,7 +3,7 @@ use crate::address_map::Stopping;
 use crate::maker_inc_connections;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CollaborativeSettlement;
-use crate::model::cfd::OrderId;
+use crate::model::cfd::MakerSettlementCompleted;
 use crate::model::cfd::Role;
 use crate::model::cfd::SettlementKind;
 use crate::model::cfd::SettlementProposal;
@@ -12,7 +12,6 @@ use crate::projection;
 use crate::xtra_ext::LogFailure;
 use anyhow::Context;
 use async_trait::async_trait;
-use bdk::bitcoin::Script;
 use maia::secp256k1_zkp::Signature;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
@@ -20,26 +19,11 @@ use xtra_productivity::xtra_productivity;
 pub struct Actor {
     cfd: Cfd,
     projection: xtra::Address<projection::Actor>,
-    on_completed: Box<dyn MessageChannel<Completed>>,
+    on_completed: Box<dyn MessageChannel<MakerSettlementCompleted>>,
     proposal: SettlementProposal,
     taker_id: Identity,
     connections: Box<dyn MessageChannel<maker_inc_connections::settlement::Response>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
-}
-
-pub enum Completed {
-    Confirmed {
-        order_id: OrderId,
-        settlement: CollaborativeSettlement,
-        script_pubkey: Script,
-    },
-    Rejected {
-        order_id: OrderId,
-    },
-    Failed {
-        order_id: OrderId,
-        error: anyhow::Error,
-    },
 }
 
 pub struct Accepted;
@@ -90,14 +74,13 @@ impl Actor {
 
             self.update_proposal(None).await;
 
-            anyhow::Ok(Completed::Confirmed {
+            anyhow::Ok(MakerSettlementCompleted::Succeeded {
                 order_id: self.cfd.id(),
-                settlement,
-                script_pubkey: dlc.script_pubkey_for(Role::Maker),
+                payload: (settlement, dlc.script_pubkey_for(Role::Maker)),
             })
         }
         .await
-        .unwrap_or_else(|e| Completed::Failed {
+        .unwrap_or_else(|e| MakerSettlementCompleted::Failed {
             order_id: self.cfd.id(),
             error: e,
         });
@@ -137,7 +120,7 @@ impl Actor {
         cfd: Cfd,
         proposal: SettlementProposal,
         projection: xtra::Address<projection::Actor>,
-        on_completed: &(impl MessageChannel<Completed> + 'static),
+        on_completed: &(impl MessageChannel<MakerSettlementCompleted> + 'static),
         taker_id: Identity,
         connections: &(impl MessageChannel<maker_inc_connections::settlement::Response> + 'static),
         (on_stopping0, on_stopping1): (
@@ -172,7 +155,11 @@ impl Actor {
         };
     }
 
-    async fn complete(&mut self, completed: Completed, ctx: &mut xtra::Context<Self>) {
+    async fn complete(
+        &mut self,
+        completed: MakerSettlementCompleted,
+        ctx: &mut xtra::Context<Self>,
+    ) {
         let _ = self
             .on_completed
             .send(completed)
@@ -213,7 +200,7 @@ impl Actor {
             .await
             .context("Failed inform taker about settlement decision")
         {
-            self.complete(Completed::Failed { order_id, error: e }, ctx)
+            self.complete(MakerSettlementCompleted::Failed { order_id, error: e }, ctx)
                 .await;
         }
     }

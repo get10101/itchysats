@@ -13,6 +13,7 @@ use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
 use crate::model::cfd::SetupCompleted;
+use crate::model::cfd::TakerSettlementCompleted;
 use crate::model::Identity;
 use crate::model::Price;
 use crate::model::Usd;
@@ -153,19 +154,17 @@ where
         Ok(())
     }
 
-    async fn handle_settlement_completed(
-        &mut self,
-        msg: collab_settlement_taker::Completed,
-    ) -> Result<()> {
+    async fn handle_settlement_completed(&mut self, msg: TakerSettlementCompleted) -> Result<()> {
         let (order_id, settlement) = match msg {
-            collab_settlement_taker::Completed::Confirmed {
+            TakerSettlementCompleted::Succeeded {
                 order_id,
-                settlement,
+                payload: settlement,
             } => (order_id, settlement),
-            collab_settlement_taker::Completed::Rejected { .. } => {
+            TakerSettlementCompleted::Rejected { order_id, reason } => {
+                tracing::debug!(%order_id, "Collaborative settlement failed: {:#}", reason);
                 return Ok(());
             }
-            collab_settlement_taker::Completed::Failed { order_id, error } => {
+            TakerSettlementCompleted::Failed { order_id, error } => {
                 tracing::warn!(%order_id, "Collaborative settlement failed: {:#}", error);
                 return Ok(());
             }
