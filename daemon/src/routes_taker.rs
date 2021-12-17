@@ -13,10 +13,10 @@ use daemon::oracle;
 use daemon::projection::CfdAction;
 use daemon::projection::Feeds;
 use daemon::routes::EmbeddedFileExt;
-use daemon::taker_cfd;
 use daemon::to_sse_event::ToSseEvent;
 use daemon::tx;
 use daemon::wallet;
+use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
 use rocket::http::ContentType;
@@ -33,9 +33,8 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
-use xtra::prelude::*;
 
-type Taker = xtra::Address<taker_cfd::Actor<oracle::Actor, monitor::Actor, wallet::Actor>>;
+type Taker = TakerActorSystem<oracle::Actor, monitor::Actor, wallet::Actor>;
 
 #[rocket::get("/feed")]
 pub async fn feed(
@@ -102,15 +101,11 @@ pub struct CfdOrderRequest {
 #[rocket::post("/cfd/order", data = "<cfd_order_request>")]
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
-    cfd_actor: &State<Taker>,
+    taker: &State<Taker>,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
-    cfd_actor
-        .send(taker_cfd::TakeOffer {
-            order_id: cfd_order_request.order_id,
-            quantity: cfd_order_request.quantity,
-        })
+    taker
+        .take_offer(cfd_order_request.order_id, cfd_order_request.quantity)
         .await
-        .unwrap_or_else(|e| anyhow::bail!(e.to_string()))
         .map_err(|e| {
             HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .title("Order request failed")
@@ -124,7 +119,7 @@ pub async fn post_order_request(
 pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
-    cfd_actor: &State<Taker>,
+    taker: &State<Taker>,
     feeds: &State<Feeds>,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
     let result = match action {
@@ -137,7 +132,7 @@ pub async fn post_cfd_action(
             return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
                 .detail(format!("taker cannot invoke action {}", action)));
         }
-        CfdAction::Commit => cfd_actor.send(taker_cfd::Commit { order_id: id }).await,
+        CfdAction::Commit => taker.commit(id).await,
         CfdAction::Settle => {
             let quote: bitmex_price_feed::Quote = match feeds.quote.borrow().as_ref() {
                 Some(quote) => quote.clone().into(),
@@ -149,22 +144,16 @@ pub async fn post_cfd_action(
             };
 
             let current_price = quote.for_taker();
-            cfd_actor
-                .send(taker_cfd::ProposeSettlement {
-                    order_id: id,
-                    current_price,
-                })
-                .await
+
+            taker.propose_settlement(id, current_price).await
         }
     };
 
-    result
-        .unwrap_or_else(|e| anyhow::bail!(e.to_string()))
-        .map_err(|e| {
-            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .title(action.to_string() + " failed")
-                .detail(e.to_string())
-        })?;
+    result.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title(action.to_string() + " failed")
+            .detail(e.to_string())
+    })?;
 
     Ok(status::Accepted(None))
 }
@@ -228,27 +217,22 @@ pub struct WithdrawRequest {
 #[rocket::post("/withdraw", data = "<withdraw_request>")]
 pub async fn post_withdraw_request(
     withdraw_request: Json<WithdrawRequest>,
-    wallet: &State<Address<wallet::Actor>>,
+    taker: &State<Taker>,
     network: &State<Network>,
 ) -> Result<String, HttpApiProblem> {
     let amount =
         (withdraw_request.amount != bdk::bitcoin::Amount::ZERO).then(|| withdraw_request.amount);
 
-    let txid = wallet
-        .send(wallet::Withdraw {
+    let txid = taker
+        .withdraw(
             amount,
-            address: withdraw_request.address.clone(),
-            fee: Some(bdk::FeeRate::from_sat_per_vb(withdraw_request.fee)),
-        })
+            withdraw_request.address.clone(),
+            bdk::FeeRate::from_sat_per_vb(withdraw_request.fee),
+        )
         .await
         .map_err(|e| {
             HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .title("Could not proceed with withdraw request")
-                .detail(e.to_string())
-        })?
-        .map_err(|e| {
-            HttpApiProblem::new(StatusCode::BAD_REQUEST)
-                .title("Could not withdraw funds")
                 .detail(e.to_string())
         })?;
 

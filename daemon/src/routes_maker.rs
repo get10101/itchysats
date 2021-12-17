@@ -1,7 +1,6 @@
 use anyhow::Result;
 use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
-use daemon::maker_cfd;
 use daemon::maker_inc_connections;
 use daemon::model::cfd::OrderId;
 use daemon::model::Price;
@@ -16,6 +15,7 @@ use daemon::projection::Identity;
 use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::ToSseEvent;
 use daemon::wallet;
+use daemon::MakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
 use rocket::http::ContentType;
@@ -32,11 +32,9 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
-use xtra::prelude::*;
 
-pub type Maker = xtra::Address<
-    maker_cfd::Actor<oracle::Actor, monitor::Actor, maker_inc_connections::Actor, wallet::Actor>,
->;
+pub type Maker =
+    MakerActorSystem<oracle::Actor, monitor::Actor, maker_inc_connections::Actor, wallet::Actor>;
 
 #[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]
@@ -110,18 +108,17 @@ pub struct CfdNewOrderRequest {
 #[rocket::post("/order/sell", data = "<order>")]
 pub async fn post_sell_order(
     order: Json<CfdNewOrderRequest>,
-    cfd_actor: &State<Maker>,
+    maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
-    cfd_actor
-        .send(maker_cfd::NewOrder {
-            price: order.price,
-            min_quantity: order.min_quantity,
-            max_quantity: order.max_quantity,
-            fee_rate: order.fee_rate.unwrap_or(1),
-        })
+    maker
+        .new_order(
+            order.price,
+            order.min_quantity,
+            order.max_quantity,
+            order.fee_rate,
+        )
         .await
-        .unwrap_or_else(|e| anyhow::bail!(e))
         .map_err(|e| {
             HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .title("Posting offer failed")
@@ -152,19 +149,17 @@ pub struct PromptAuthentication {
 pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
-    cfd_actor: &State<Maker>,
+    maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
-    use maker_cfd::*;
-
     let result = match action {
-        CfdAction::AcceptOrder => cfd_actor.send(AcceptOrder { order_id: id }).await,
-        CfdAction::RejectOrder => cfd_actor.send(RejectOrder { order_id: id }).await,
-        CfdAction::AcceptSettlement => cfd_actor.send(AcceptSettlement { order_id: id }).await,
-        CfdAction::RejectSettlement => cfd_actor.send(RejectSettlement { order_id: id }).await,
-        CfdAction::AcceptRollOver => cfd_actor.send(AcceptRollOver { order_id: id }).await,
-        CfdAction::RejectRollOver => cfd_actor.send(RejectRollOver { order_id: id }).await,
-        CfdAction::Commit => cfd_actor.send(Commit { order_id: id }).await,
+        CfdAction::AcceptOrder => maker.accept_order(id).await,
+        CfdAction::RejectOrder => maker.reject_order(id).await,
+        CfdAction::AcceptSettlement => maker.accept_settlement(id).await,
+        CfdAction::RejectSettlement => maker.reject_settlement(id).await,
+        CfdAction::AcceptRollOver => maker.accept_rollover(id).await,
+        CfdAction::RejectRollOver => maker.reject_rollover(id).await,
+        CfdAction::Commit => maker.commit(id).await,
         CfdAction::Settle => {
             let msg = "Collaborative settlement can only be triggered by taker";
             tracing::error!(msg);
@@ -172,7 +167,7 @@ pub async fn post_cfd_action(
         }
     };
 
-    result.unwrap_or_else(|e| anyhow::bail!(e)).map_err(|e| {
+    result.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title(action.to_string() + " failed")
             .detail(e.to_string())
@@ -211,28 +206,23 @@ pub struct WithdrawRequest {
 #[rocket::post("/withdraw", data = "<withdraw_request>")]
 pub async fn post_withdraw_request(
     withdraw_request: Json<WithdrawRequest>,
-    wallet: &State<Address<wallet::Actor>>,
+    maker: &State<Maker>,
     network: &State<Network>,
     _auth: Authenticated,
 ) -> Result<String, HttpApiProblem> {
     let amount =
         (withdraw_request.amount != bdk::bitcoin::Amount::ZERO).then(|| withdraw_request.amount);
 
-    let txid = wallet
-        .send(wallet::Withdraw {
+    let txid = maker
+        .withdraw(
             amount,
-            address: withdraw_request.address.clone(),
-            fee: Some(bdk::FeeRate::from_sat_per_vb(withdraw_request.fee)),
-        })
+            withdraw_request.address.clone(),
+            withdraw_request.fee,
+        )
         .await
         .map_err(|e| {
             HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .title("Could not proceed with withdraw request")
-                .detail(e.to_string())
-        })?
-        .map_err(|e| {
-            HttpApiProblem::new(StatusCode::BAD_REQUEST)
-                .title("Could not withdraw funds")
                 .detail(e.to_string())
         })?;
 

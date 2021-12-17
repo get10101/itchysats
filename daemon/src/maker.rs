@@ -30,7 +30,6 @@ use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::task::Poll;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::Actor;
 
@@ -241,11 +240,7 @@ async fn main() -> Result<()> {
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
-    let MakerActorSystem {
-        cfd_actor_addr,
-        inc_conn_addr: incoming_connection_addr,
-        tasks: _tasks,
-    } = MakerActorSystem::new(
+    let mut maker = MakerActorSystem::new(
         db.clone(),
         wallet.clone(),
         oracle,
@@ -283,26 +278,14 @@ async fn main() -> Result<()> {
         projection::Actor::new(db.clone(), Role::Maker, bitcoin_network).await?;
     tasks.add(projection_context.run(proj_actor));
 
-    let listener_stream = futures::stream::poll_fn(move |ctx| {
-        let message = match futures::ready!(listener.poll_accept(ctx)) {
-            Ok((stream, address)) => {
-                maker_inc_connections::ListenerMessage::NewConnection { stream, address }
-            }
-            Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
-        };
-
-        Poll::Ready(Some(message))
-    });
-
-    tasks.add(incoming_connection_addr.attach_stream(listener_stream));
+    maker.listen_on(listener);
 
     rocket::custom(figment)
         .manage(projection_feeds)
-        .manage(cfd_actor_addr)
         .manage(wallet_feed_receiver)
+        .manage(maker)
         .manage(auth_password)
         .manage(bitcoin_network)
-        .manage(wallet)
         .mount(
             "/api",
             rocket::routes![

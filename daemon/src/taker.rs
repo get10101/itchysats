@@ -233,12 +233,7 @@ async fn main() -> Result<()> {
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
-    let TakerActorSystem {
-        cfd_actor_addr,
-        connection_actor_addr,
-        maker_online_status_feed_receiver,
-        tasks: _tasks,
-    } = TakerActorSystem::new(
+    let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
         oracle,
@@ -273,19 +268,18 @@ async fn main() -> Result<()> {
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
 
     tasks.add(connect(
-        maker_online_status_feed_receiver.clone(),
-        connection_actor_addr,
+        taker.maker_online_status_feed_receiver.clone(),
+        taker.connection_actor_addr.clone(),
         maker_identity,
         possible_addresses,
     ));
 
     let rocket = rocket::custom(figment)
         .manage(projection_feeds)
-        .manage(cfd_actor_addr)
         .manage(wallet_feed_receiver)
         .manage(bitcoin_network)
-        .manage(wallet)
-        .manage(maker_online_status_feed_receiver)
+        .manage(taker.maker_online_status_feed_receiver.clone())
+        .manage(taker)
         .mount(
             "/api",
             rocket::routes![
