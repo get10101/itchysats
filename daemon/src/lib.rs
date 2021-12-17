@@ -155,8 +155,8 @@ where
 
         let cfds = load_all_cfds(&mut conn).await?;
 
-        let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
-        let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
+        let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
+        let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
         let (inc_conn_addr, inc_conn_ctx) = xtra::Context::new(None);
 
         let mut tasks = Tasks::default();
@@ -185,19 +185,9 @@ where
 
         tasks.add(
             monitor_ctx
-                .notify_interval(Duration::from_secs(20), || monitor::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?,
-        );
-        tasks.add(
-            monitor_ctx
                 .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?),
         );
 
-        tasks.add(
-            oracle_ctx
-                .notify_interval(Duration::from_secs(5), || oracle::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?,
-        );
         let (fan_out_actor, fan_out_actor_fut) =
             fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
                 .create(None)
@@ -262,8 +252,8 @@ where
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
             watch::channel(ConnectionStatus::Offline { reason: None });
 
-        let (monitor_addr, mut monitor_ctx) = xtra::Context::new(None);
-        let (oracle_addr, mut oracle_ctx) = xtra::Context::new(None);
+        let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
+        let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
 
         let mut tasks = Tasks::default();
 
@@ -307,18 +297,7 @@ where
 
         tasks.add(
             monitor_ctx
-                .notify_interval(Duration::from_secs(20), || monitor::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?,
-        );
-        tasks.add(
-            monitor_ctx
                 .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?),
-        );
-
-        tasks.add(
-            oracle_ctx
-                .notify_interval(Duration::from_secs(5), || oracle::Sync)
-                .map_err(|e| anyhow::anyhow!(e))?,
         );
 
         let (fan_out_actor, fan_out_actor_fut) =

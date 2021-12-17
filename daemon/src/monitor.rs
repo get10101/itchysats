@@ -8,6 +8,7 @@ use crate::model::BitMexPriceEventId;
 use crate::oracle;
 use crate::oracle::Attestation;
 use crate::try_continue;
+use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -28,6 +29,7 @@ use std::fmt;
 use std::marker::Send;
 use std::ops::Add;
 use std::ops::RangeInclusive;
+use std::time::Duration;
 use xtra::prelude::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -62,6 +64,7 @@ pub struct Actor<C = bdk::electrum_client::Client> {
     latest_block_height: BlockHeight,
     current_status: BTreeMap<(Txid, Script), ScriptStatus>,
     awaiting_status: HashMap<(Txid, Script), Vec<(ScriptStatus, Event)>>,
+    tasks: Tasks,
 }
 
 impl Actor<bdk::electrum_client::Client> {
@@ -86,6 +89,7 @@ impl Actor<bdk::electrum_client::Client> {
             latest_block_height: BlockHeight::try_from(latest_block)?,
             current_status: BTreeMap::default(),
             awaiting_status: HashMap::default(),
+            tasks: Tasks::default(),
         };
 
         for cfd in cfds {
@@ -632,7 +636,20 @@ impl xtra::Message for Sync {
     type Result = ();
 }
 
-impl<C> xtra::Actor for Actor<C> where C: Send + 'static {}
+#[async_trait]
+impl<C> xtra::Actor for Actor<C>
+where
+    C: Send + 'static,
+    Self: xtra::Handler<Sync>,
+{
+    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        let fut = ctx
+            .notify_interval(Duration::from_secs(20), || Sync)
+            .expect("we just started");
+
+        self.tasks.add(fut);
+    }
+}
 
 #[xtra_productivity]
 impl<C> Actor<C>
@@ -822,6 +839,7 @@ mod tests {
                 latest_block_height: BlockHeight(0),
                 current_status: BTreeMap::default(),
                 awaiting_status: HashMap::from_iter(subscriptions),
+                tasks: Tasks::default(),
             }
         }
     }
