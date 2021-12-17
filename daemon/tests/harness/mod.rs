@@ -162,8 +162,8 @@ impl Maker {
             db.clone(),
             wallet_addr,
             config.oracle_pk,
-            |_, _| oracle,
-            |_, _| async { Ok(monitor) },
+            |_| async { Ok(oracle) },
+            |_| async { Ok(monitor) },
             |channel0, channel1, channel2| {
                 maker_inc_connections::Actor::new(
                     channel0,
@@ -297,8 +297,8 @@ impl Taker {
             wallet_addr,
             config.oracle_pk,
             identity_sk,
-            |_, _| oracle,
-            |_, _| async { Ok(monitor) },
+            |_| async { Ok(oracle) },
+            |_| async { Ok(monitor) },
             config.n_payouts,
             config.heartbeat_timeout,
             Duration::from_secs(10),
