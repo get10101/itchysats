@@ -1,4 +1,4 @@
-use crate::model::cfd::Cfd;
+use crate::db;
 use crate::model::cfd::CfdState;
 use crate::model::BitMexPriceEventId;
 use crate::tokio_ext;
@@ -13,6 +13,7 @@ use maia::secp256k1_zkp::SecretKey;
 use rocket::time::OffsetDateTime;
 use rocket::time::Time;
 use serde::Deserialize;
+use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ops::Add;
@@ -68,11 +69,13 @@ struct NewAttestationFetched {
 }
 
 impl Actor {
-    pub fn new(
-        cfds: Vec<Cfd>,
+    pub async fn new(
+        db: SqlitePool,
         attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
         announcement_lookahead: Duration,
-    ) -> Self {
+    ) -> Result<Self> {
+        let cfds = db::load_all_cfds(&mut db.acquire().await?).await?;
+
         let mut pending_attestations = HashSet::new();
 
         for cfd in cfds {
@@ -101,13 +104,13 @@ impl Actor {
             }
         }
 
-        Self {
+        Ok(Self {
             announcements: HashMap::new(),
             pending_attestations,
             attestation_channel,
             announcement_lookahead,
             tasks: Tasks::default(),
-        }
+        })
     }
 
     fn ensure_having_announcements(

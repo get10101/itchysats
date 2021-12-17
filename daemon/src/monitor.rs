@@ -1,3 +1,4 @@
+use crate::db;
 use crate::model;
 use crate::model::cfd::CetStatus;
 use crate::model::cfd::Cfd;
@@ -20,6 +21,7 @@ use bdk::electrum_client::ElectrumApi;
 use bdk::electrum_client::GetHistoryRes;
 use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
+use sqlx::SqlitePool;
 use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -69,10 +71,12 @@ pub struct Actor<C = bdk::electrum_client::Client> {
 
 impl Actor<bdk::electrum_client::Client> {
     pub async fn new(
+        db: SqlitePool,
         electrum_rpc_url: String,
         event_channel: Box<dyn StrongMessageChannel<Event>>,
-        cfds: Vec<Cfd>,
     ) -> Result<Self> {
+        let cfds = db::load_all_cfds(&mut db.acquire().await?).await?;
+
         let client = bdk::electrum_client::Client::new(&electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 

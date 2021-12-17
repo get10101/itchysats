@@ -249,11 +249,11 @@ async fn main() -> Result<()> {
         db.clone(),
         wallet.clone(),
         oracle,
-        |cfds, channel| oracle::Actor::new(cfds, channel, SETTLEMENT_INTERVAL),
+        |channel| oracle::Actor::new(db.clone(), channel, SETTLEMENT_INTERVAL),
         {
-            |channel, cfds| {
+            |channel| {
                 let electrum = opts.network.electrum().to_string();
-                monitor::Actor::new(electrum, channel, cfds)
+                monitor::Actor::new(db.clone(), electrum, channel)
             }
         },
         |channel0, channel1, channel2| {
