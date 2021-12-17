@@ -23,7 +23,9 @@ use maia::secp256k1_zkp::schnorrsig;
 use maker_cfd::TakerDisconnected;
 use sqlx::SqlitePool;
 use std::future::Future;
+use std::task::Poll;
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tokio::sync::watch;
 use xtra::message_channel::MessageChannel;
 use xtra::message_channel::StrongMessageChannel;
@@ -114,7 +116,7 @@ impl Tasks {
 pub struct MakerActorSystem<O, M, T, W> {
     pub cfd_actor_addr: Address<maker_cfd::Actor<O, M, T, W>>,
     wallet_actor_addr: Address<W>,
-    pub inc_conn_addr: Address<T>,
+    inc_conn_addr: Address<T>,
     _tasks: Tasks,
 }
 
@@ -134,7 +136,8 @@ where
         + xtra::Handler<maker_inc_connections::settlement::Response>
         + xtra::Handler<Stopping<collab_settlement_maker::Actor>>
         + xtra::Handler<Stopping<rollover_maker::Actor>>
-        + xtra::Handler<maker_cfd::RollOverProposed>,
+        + xtra::Handler<maker_cfd::RollOverProposed>
+        + xtra::Handler<maker_inc_connections::ListenerMessage>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>
@@ -208,6 +211,22 @@ where
             inc_conn_addr,
             _tasks: tasks,
         })
+    }
+
+    pub fn listen_on(&mut self, listener: TcpListener) {
+        let listener_stream = futures::stream::poll_fn(move |ctx| {
+            let message = match futures::ready!(listener.poll_accept(ctx)) {
+                Ok((stream, address)) => {
+                    maker_inc_connections::ListenerMessage::NewConnection { stream, address }
+                }
+                Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
+            };
+
+            Poll::Ready(Some(message))
+        });
+
+        self._tasks
+            .add(self.inc_conn_addr.clone().attach_stream(listener_stream));
     }
 
     pub async fn new_order(

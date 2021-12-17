@@ -278,23 +278,7 @@ async fn main() -> Result<()> {
         projection::Actor::new(db.clone(), Role::Maker, bitcoin_network).await?;
     tasks.add(projection_context.run(proj_actor));
 
-    let listener_stream = futures::stream::poll_fn(move |ctx| {
-        let message = match futures::ready!(listener.poll_accept(ctx)) {
-            Ok((stream, address)) => {
-                maker_inc_connections::ListenerMessage::NewConnection { stream, address }
-            }
-            Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
-        };
-
-        Poll::Ready(Some(message))
-    });
-
-    tasks.add(
-        maker_actor_system
-            .inc_conn_addr
-            .clone()
-            .attach_stream(listener_stream),
-    );
+    maker.listen_on(listener);
 
     rocket::custom(figment)
         .manage(projection_feeds)

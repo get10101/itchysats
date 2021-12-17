@@ -29,7 +29,6 @@ use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::task::Poll;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
@@ -158,7 +157,7 @@ impl Maker {
 
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
-        let maker = daemon::MakerActorSystem::new(
+        let mut maker = daemon::MakerActorSystem::new(
             db.clone(),
             wallet_addr,
             config.oracle_pk,
@@ -187,18 +186,7 @@ impl Maker {
 
         let address = listener.local_addr().unwrap();
 
-        let listener_stream = futures::stream::poll_fn(move |ctx| {
-            let message = match futures::ready!(listener.poll_accept(ctx)) {
-                Ok((stream, address)) => {
-                    maker_inc_connections::ListenerMessage::NewConnection { stream, address }
-                }
-                Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
-            };
-
-            Poll::Ready(Some(message))
-        });
-
-        tasks.add(maker.inc_conn_addr.clone().attach_stream(listener_stream));
+        maker.listen_on(listener);
 
         Self {
             system: maker,
