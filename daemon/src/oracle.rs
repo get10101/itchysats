@@ -4,6 +4,7 @@ use crate::model::BitMexPriceEventId;
 use crate::tokio_ext;
 use crate::try_continue;
 use crate::xtra_ext::LogFailure;
+use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -25,6 +26,7 @@ pub struct Actor {
     pending_attestations: HashSet<BitMexPriceEventId>,
     attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
     announcement_lookahead: Duration,
+    tasks: Tasks,
 }
 
 pub struct Sync;
@@ -104,6 +106,7 @@ impl Actor {
             pending_attestations,
             attestation_channel,
             announcement_lookahead,
+            tasks: Tasks::default(),
         }
     }
 
@@ -304,7 +307,16 @@ impl From<Announcement> for maia::Announcement {
     }
 }
 
-impl xtra::Actor for Actor {}
+#[async_trait]
+impl xtra::Actor for Actor {
+    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        let fut = ctx
+            .notify_interval(std::time::Duration::from_secs(5), || Sync)
+            .expect("we just started");
+
+        self.tasks.add(fut);
+    }
+}
 
 impl xtra::Message for Attestation {
     type Result = ();
