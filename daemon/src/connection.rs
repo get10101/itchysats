@@ -13,11 +13,10 @@ use bdk::bitcoin::Amount;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use tokio::net::TcpStream;
 use tokio::sync::watch;
-use tokio_util::codec::{FramedRead, FramedWrite};
+use tokio_util::codec::Framed;
 use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
@@ -33,7 +32,7 @@ struct ConnectedState {
 pub struct Actor {
     status_sender: watch::Sender<ConnectionStatus>,
     send_to_maker: Box<dyn MessageChannel<wire::TakerToMaker>>,
-    send_to_maker_ctx: xtra::Context<send_to_socket::Actor<wire::TakerToMaker>>,
+    send_to_maker_ctx: xtra::Context<send_to_socket::Actor<wire::MakerToTaker, wire::TakerToMaker>>,
     identity_sk: x25519_dalek::StaticSecret,
     current_order: Box<dyn MessageChannel<CurrentOrder>>,
     /// Max duration since the last heartbeat until we die.
@@ -219,7 +218,7 @@ impl Actor {
     ) -> Result<()> {
         tracing::debug!(address = %maker_addr, "Connecting to maker");
 
-        let (read, write, noise) = {
+        let (mut write, mut read) = {
             let mut connection = TcpStream::connect(&maker_addr)
                 .timeout(self.connect_timeout)
                 .await
@@ -238,12 +237,8 @@ impl Actor {
             )
             .await?;
 
-            let (read, write) = connection.into_split();
-            (read, write, Arc::new(Mutex::new(noise)))
+            Framed::new(connection, EncryptedJsonCodec::new(noise)).split()
         };
-
-        let mut read = FramedRead::new(read, wire::EncryptedJsonCodec::new(noise.clone()));
-        let mut write = FramedWrite::new(write, EncryptedJsonCodec::new(noise));
 
         let our_version = Version::current();
         write.send(TakerToMaker::Hello(our_version.clone())).await?;
