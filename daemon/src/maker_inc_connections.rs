@@ -26,16 +26,14 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use futures::SinkExt;
+use futures::StreamExt;
 use futures::TryStreamExt;
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio_util::codec::FramedRead;
-use tokio_util::codec::FramedWrite;
+use tokio_util::codec::Framed;
 use xtra::prelude::*;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
@@ -99,7 +97,8 @@ pub enum ListenerMessage {
 }
 
 pub struct Actor {
-    write_connections: HashMap<Identity, Address<send_to_socket::Actor<wire::MakerToTaker>>>,
+    write_connections:
+        HashMap<Identity, Address<send_to_socket::Actor<wire::TakerToMaker, wire::MakerToTaker>>>,
     taker_connected_channel: Box<dyn MessageChannel<TakerConnected>>,
     taker_disconnected_channel: Box<dyn MessageChannel<TakerDisconnected>>,
     taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
@@ -175,12 +174,8 @@ impl Actor {
         let transport_state = noise::responder_handshake(&mut stream, &self.noise_priv_key).await?;
         let taker_id = Identity::new(transport_state.get_remote_public_key()?);
 
-        let transport_state = Arc::new(Mutex::new(transport_state));
-
-        let (read, write) = stream.into_split();
-        let mut read =
-            FramedRead::new(read, wire::EncryptedJsonCodec::new(transport_state.clone()));
-        let mut write = FramedWrite::new(write, EncryptedJsonCodec::new(transport_state));
+        let (mut write, mut read) =
+            Framed::new(stream, EncryptedJsonCodec::new(transport_state)).split();
 
         match read
             .try_next()
