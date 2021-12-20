@@ -116,33 +116,36 @@ impl Actor {
             }
             let this = ctx.address().expect("self to be alive");
 
-            tokio_ext::spawn_fallible(async move {
-                let url = event_id.to_olivia_url();
+            tokio_ext::spawn_fallible(
+                async move {
+                    let url = event_id.to_olivia_url();
 
-                tracing::debug!("Fetching announcement for {}", event_id);
+                    tracing::debug!("Fetching announcement for {}", event_id);
 
-                let response = reqwest::get(url.clone())
-                    .await
-                    .with_context(|| format!("Failed to GET {}", url))?;
+                    let response = reqwest::get(url.clone())
+                        .await
+                        .with_context(|| format!("Failed to GET {}", url))?;
 
-                if !response.status().is_success() {
-                    anyhow::bail!("GET {} responded with {}", url, response.status());
-                }
+                    if !response.status().is_success() {
+                        anyhow::bail!("GET {} responded with {}", url, response.status());
+                    }
 
-                let announcement = response
-                    .json::<Announcement>()
-                    .await
-                    .context("Failed to deserialize as Announcement")?;
+                    let announcement = response
+                        .json::<Announcement>()
+                        .await
+                        .context("Failed to deserialize as Announcement")?;
 
-                this.send(NewAnnouncementFetched {
-                    id: event_id,
-                    nonce_pks: announcement.nonce_pks,
-                    expected_outcome_time: announcement.expected_outcome_time,
-                })
-                .await?;
+                    this.send(NewAnnouncementFetched {
+                        id: event_id,
+                        nonce_pks: announcement.nonce_pks,
+                        expected_outcome_time: announcement.expected_outcome_time,
+                    })
+                    .await?;
 
-                Ok(())
-            });
+                    Ok(())
+                },
+                "oracle_fallible",
+            );
         }
     }
 
@@ -159,32 +162,35 @@ impl Actor {
 
             let this = ctx.address().expect("self to be alive");
 
-            tokio_ext::spawn_fallible(async move {
-                let url = event_id.to_olivia_url();
+            tokio_ext::spawn_fallible(
+                async move {
+                    let url = event_id.to_olivia_url();
 
-                tracing::debug!("Fetching attestation for {}", event_id);
+                    tracing::debug!("Fetching attestation for {}", event_id);
 
-                let response = reqwest::get(url.clone())
-                    .await
-                    .with_context(|| format!("Failed to GET {}", url))?;
+                    let response = reqwest::get(url.clone())
+                        .await
+                        .with_context(|| format!("Failed to GET {}", url))?;
 
-                if !response.status().is_success() {
-                    anyhow::bail!("GET {} responded with {}", url, response.status());
-                }
+                    if !response.status().is_success() {
+                        anyhow::bail!("GET {} responded with {}", url, response.status());
+                    }
 
-                let attestation = response
-                    .json::<Attestation>()
-                    .await
-                    .context("Failed to deserialize as Attestation")?;
+                    let attestation = response
+                        .json::<Attestation>()
+                        .await
+                        .context("Failed to deserialize as Attestation")?;
 
-                this.send(NewAttestationFetched {
-                    id: event_id,
-                    attestation,
-                })
-                .await?;
+                    this.send(NewAttestationFetched {
+                        id: event_id,
+                        attestation,
+                    })
+                    .await?;
 
-                Ok(())
-            });
+                    Ok(())
+                },
+                "oracle_fallible_2",
+            );
         }
     }
 

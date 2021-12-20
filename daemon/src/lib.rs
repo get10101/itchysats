@@ -89,8 +89,8 @@ impl Tasks {
     /// Spawn the task on the runtime and remembers the handle
     /// NOTE: Do *not* call spawn_with_handle() before calling `add`,
     /// such calls  will trigger panic in debug mode.
-    pub fn add(&mut self, f: impl Future<Output = ()> + Send + 'static) {
-        let handle = f.spawn_with_handle();
+    pub fn add(&mut self, f: impl Future<Output = ()> + Send + 'static, name: &str) {
+        let handle = f.spawn_with_handle(name);
         self.0.push(handle);
     }
 }
@@ -161,36 +161,45 @@ where
         .create(None)
         .run();
 
-        tasks.add(cfd_actor_fut);
+        tasks.add(cfd_actor_fut, "cfd_actor_fut");
 
-        tasks.add(inc_conn_ctx.run(inc_conn_constructor(
-            Box::new(cfd_actor_addr.clone()),
-            Box::new(cfd_actor_addr.clone()),
-            Box::new(cfd_actor_addr.clone()),
-        )));
+        tasks.add(
+            inc_conn_ctx.run(inc_conn_constructor(
+                Box::new(cfd_actor_addr.clone()),
+                Box::new(cfd_actor_addr.clone()),
+                Box::new(cfd_actor_addr.clone()),
+            )),
+            "inc_conn_ctx",
+        );
 
         tasks.add(
             monitor_ctx
                 .notify_interval(Duration::from_secs(20), || monitor::Sync)
                 .map_err(|e| anyhow::anyhow!(e))?,
+            "monitor_ctx",
         );
         tasks.add(
             monitor_ctx
                 .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?),
+            "monitor_ctx2",
         );
 
         tasks.add(
             oracle_ctx
                 .notify_interval(Duration::from_secs(5), || oracle::Sync)
                 .map_err(|e| anyhow::anyhow!(e))?,
+            "oracle_ctx",
         );
         let (fan_out_actor, fan_out_actor_fut) =
             fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
                 .create(None)
                 .run();
-        tasks.add(fan_out_actor_fut);
+        tasks.add(fan_out_actor_fut, "fan_out");
 
-        tasks.add(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
+        tasks.add(
+            oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))),
+            "oracle_ctx",
+        );
 
         oracle_addr.send(oracle::Sync).await?;
 
@@ -268,30 +277,36 @@ where
         .create(None)
         .run();
 
-        tasks.add(cfd_actor_fut);
+        tasks.add(cfd_actor_fut, "cfd_actor_fut");
 
-        tasks.add(connection_actor_ctx.run(connection::Actor::new(
-            maker_online_status_feed_sender,
-            &cfd_actor_addr,
-            identity_sk,
-            maker_heartbeat_interval,
-            connect_timeout,
-        )));
+        tasks.add(
+            connection_actor_ctx.run(connection::Actor::new(
+                maker_online_status_feed_sender,
+                &cfd_actor_addr,
+                identity_sk,
+                maker_heartbeat_interval,
+                connect_timeout,
+            )),
+            "connection_actor",
+        );
 
         tasks.add(
             monitor_ctx
                 .notify_interval(Duration::from_secs(20), || monitor::Sync)
                 .map_err(|e| anyhow::anyhow!(e))?,
+            "monitor_ctx",
         );
         tasks.add(
             monitor_ctx
                 .run(monitor_constructor(Box::new(cfd_actor_addr.clone()), cfds.clone()).await?),
+            "monitor_ctx2",
         );
 
         tasks.add(
             oracle_ctx
                 .notify_interval(Duration::from_secs(5), || oracle::Sync)
                 .map_err(|e| anyhow::anyhow!(e))?,
+            "oracle_notify",
         );
 
         let (fan_out_actor, fan_out_actor_fut) =
@@ -299,9 +314,12 @@ where
                 .create(None)
                 .run();
 
-        tasks.add(fan_out_actor_fut);
+        tasks.add(fan_out_actor_fut, "fan_out");
 
-        tasks.add(oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))));
+        tasks.add(
+            oracle_ctx.run(oracle_constructor(cfds, Box::new(fan_out_actor))),
+            "oracle",
+        );
 
         tracing::debug!("Taker actor system ready");
 

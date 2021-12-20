@@ -191,9 +191,9 @@ impl Actor {
         self.write_connections.insert(taker_id, out_msg);
 
         let mut tasks = Tasks::default();
-        tasks.add(read_fut);
-        tasks.add(heartbeat_fut);
-        tasks.add(write_fut);
+        tasks.add(read_fut, "read_fut");
+        tasks.add(heartbeat_fut, "hearbeat_fut2");
+        tasks.add(write_fut, "write_fut");
         self.connection_tasks.insert(taker_id, tasks);
 
         let _ = self

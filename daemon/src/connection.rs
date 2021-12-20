@@ -292,11 +292,18 @@ impl Actor {
         let send_to_socket = send_to_socket::Actor::new(write);
 
         let mut tasks = Tasks::default();
-        tasks.add(self.send_to_maker_ctx.attach(send_to_socket));
-        tasks.add(this.attach_stream(read.map(move |item| MakerStreamMessage { item })));
+        tasks.add(
+            self.send_to_maker_ctx.attach(send_to_socket),
+            "send_to_maker",
+        );
+        tasks.add(
+            this.attach_stream(read.map(move |item| MakerStreamMessage { item })),
+            "maker_stream",
+        );
         tasks.add(
             ctx.notify_interval(self.heartbeat_timeout, || MeasurePulse)
                 .expect("we just started"),
+            "heartbeat",
         );
 
         self.connected_state = Some(ConnectedState {

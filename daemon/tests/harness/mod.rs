@@ -136,7 +136,7 @@ impl Maker {
         let mut tasks = Tasks::default();
 
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
-        tasks.add(wallet_fut);
+        tasks.add(wallet_fut, "wallet_fut_test");
 
         let settlement_interval = time::Duration::hours(24);
 
@@ -172,7 +172,7 @@ impl Maker {
             projection::Actor::new(db, Role::Maker, Network::Testnet, dummy_quote())
                 .await
                 .unwrap();
-        tasks.add(projection_context.run(proj_actor));
+        tasks.add(projection_context.run(proj_actor), "projection_test");
 
         let address = listener.local_addr().unwrap();
 
@@ -187,7 +187,10 @@ impl Maker {
             Poll::Ready(Some(message))
         });
 
-        tasks.add(maker.inc_conn_addr.clone().attach_stream(listener_stream));
+        tasks.add(
+            maker.inc_conn_addr.clone().attach_stream(listener_stream),
+            "maker_inc",
+        );
 
         Self {
             system: maker,
@@ -275,7 +278,7 @@ impl Taker {
         let mut tasks = Tasks::default();
 
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
-        tasks.add(wallet_fut);
+        tasks.add(wallet_fut, "wallet_fut_test");
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
@@ -301,14 +304,17 @@ impl Taker {
             projection::Actor::new(db, Role::Taker, Network::Testnet, dummy_quote())
                 .await
                 .unwrap();
-        tasks.add(projection_context.run(proj_actor));
+        tasks.add(projection_context.run(proj_actor), "projection_test");
 
-        tasks.add(connect(
-            taker.maker_online_status_feed_receiver.clone(),
-            taker.connection_actor_addr.clone(),
-            maker_identity,
-            vec![maker_address],
-        ));
+        tasks.add(
+            connect(
+                taker.maker_online_status_feed_receiver.clone(),
+                taker.connection_actor_addr.clone(),
+                maker_identity,
+                vec![maker_address],
+            ),
+            "maker_test",
+        );
 
         Self {
             id: model::Identity::new(identity_pk).into(),

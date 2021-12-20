@@ -103,14 +103,17 @@ impl Actor {
             self.n_payouts,
         );
 
-        spawn_fallible::<_, anyhow::Error>(async move {
-            let _ = match contract_future.await {
-                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await?,
-                Err(error) => this.send(SetupFailed { order_id, error }).await?,
-            };
+        spawn_fallible::<_, anyhow::Error>(
+            async move {
+                let _ = match contract_future.await {
+                    Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await?,
+                    Err(error) => this.send(SetupFailed { order_id, error }).await?,
+                };
 
-            Ok(())
-        });
+                Ok(())
+            },
+            "setup_maker_fallible",
+        );
 
         Ok(())
     }

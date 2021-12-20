@@ -100,14 +100,17 @@ impl Actor {
         );
 
         let this = ctx.address().expect("self to be alive");
-        spawn_fallible::<_, anyhow::Error>(async move {
-            let _ = match contract_future.await {
-                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await?,
-                Err(error) => this.send(SetupFailed { order_id, error }).await?,
-            };
+        spawn_fallible::<_, anyhow::Error>(
+            async move {
+                let _ = match contract_future.await {
+                    Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await?,
+                    Err(error) => this.send(SetupFailed { order_id, error }).await?,
+                };
 
-            Ok(())
-        });
+                Ok(())
+            },
+            "setup_taker_fallible",
+        );
 
         Ok(())
     }

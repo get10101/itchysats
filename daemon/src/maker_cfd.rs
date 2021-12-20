@@ -507,7 +507,7 @@ where
 
         disconnected.insert(addr);
 
-        self.tasks.add(fut);
+        self.tasks.add(fut, "handle_take_order");
 
         Ok(())
     }
@@ -759,7 +759,7 @@ where
                 .await
                 .expect("always connected to ourselves")
         }
-        .spawn_with_handle();
+        .spawn_with_handle("accept_rollover");
 
         self.roll_over_state = RollOverState::Active {
             sender,

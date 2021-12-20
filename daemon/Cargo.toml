@@ -40,10 +40,11 @@ sqlx = { version = "0.5", features = ["offline", "sqlite", "uuid", "runtime-toki
 thiserror = "1"
 time = { version = "0.3", features = ["serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
+console-subscriber = "0.1.0"
 tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 tokio-util = { version = "0.6", features = ["codec"] }
 tracing = { version = "0.1" }
-tracing-subscriber = { version = "0.2", default-features = false, features = ["fmt", "ansi", "env-filter", "chrono", "tracing-log", "json"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "tracing-log", "json", "registry", "time", "local-time"] }
 uuid = { version = "0.8", features = ["serde", "v4"] }
 x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6" }

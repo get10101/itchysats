@@ -255,15 +255,18 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
 
-        self.tasks.add(async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(10)).await;
+        self.tasks.add(
+            async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(10)).await;
 
-                if this.send(Sync).await.is_err() {
-                    return; // we are disconnected, meaning actor stopped, just exit the loop.
+                    if this.send(Sync).await.is_err() {
+                        return; // we are disconnected, meaning actor stopped, just exit the loop.
+                    }
                 }
-            }
-        });
+            },
+            "wallet_start",
+        );
     }
 }
 

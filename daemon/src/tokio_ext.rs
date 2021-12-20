@@ -6,18 +6,23 @@ use std::future::Future;
 use std::time::Duration;
 use tokio::time::{timeout, Timeout};
 
-pub fn spawn_fallible<F, E>(future: F)
+pub fn spawn_fallible<F, E>(future: F, name: &str)
 where
     F: Future<Output = Result<(), E>> + Send + 'static,
     E: fmt::Display,
 {
     // we want to disallow calls to tokio::spawn outside FutureExt
     #[allow(clippy::disallowed_method)]
-    tokio::spawn(async move {
+    tokio::task::Builder::new().name(name).spawn(async move {
         if let Err(e) = future.await {
             tracing::warn!("Task failed: {:#}", e);
         }
     });
+    // tokio::spawn(async move {
+    //     if let Err(e) = future.await {
+    //         tracing::warn!("Task failed: {:#}", e);
+    //     }
+    // });
 }
 
 pub trait FutureExt: Future + Sized {
@@ -25,7 +30,7 @@ pub trait FutureExt: Future + Sized {
 
     /// Spawn the future on a task in the runtime and return a RemoteHandle to it.
     /// The task will be stopped when the handle gets dropped.
-    fn spawn_with_handle(self) -> RemoteHandle<Self::Output>
+    fn spawn_with_handle(self, x: &str) -> RemoteHandle<Self::Output>
     where
         Self: Future<Output = ()> + Send + Any + 'static;
 }
@@ -38,7 +43,7 @@ where
         timeout(duration, self)
     }
 
-    fn spawn_with_handle(self) -> RemoteHandle<()>
+    fn spawn_with_handle(self, name: &str) -> RemoteHandle<()>
     where
         Self: Future<Output = ()> + Send + Any + 'static,
     {
@@ -50,7 +55,9 @@ where
         let (future, handle) = self.remote_handle();
         // we want to disallow calls to tokio::spawn outside FutureExt
         #[allow(clippy::disallowed_method)]
-        tokio::spawn(future);
+        tokio::task::Builder::new().name(name).spawn(future);
+        // tokio::spawn(future);
+
         handle
     }
 }

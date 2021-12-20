@@ -116,14 +116,17 @@ impl Actor {
         );
 
         let this = ctx.address().expect("self to be alive");
-        spawn_fallible::<_, anyhow::Error>(async move {
-            let _ = match rollover_fut.await {
-                Ok(dlc) => this.send(RolloverSucceeded { dlc }).await?,
-                Err(error) => this.send(RolloverFailed { error }).await?,
-            };
+        spawn_fallible::<_, anyhow::Error>(
+            async move {
+                let _ = match rollover_fut.await {
+                    Ok(dlc) => this.send(RolloverSucceeded { dlc }).await?,
+                    Err(error) => this.send(RolloverFailed { error }).await?,
+                };
 
-            Ok(())
-        });
+                Ok(())
+            },
+            "rollover_take_fallible",
+        );
 
         Ok(())
     }

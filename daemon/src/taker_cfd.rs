@@ -135,7 +135,7 @@ where
         .run();
 
         disconnected.insert(addr);
-        self.tasks.add(fut);
+        self.tasks.add(fut, "settlement");
 
         Ok(())
     }
@@ -332,7 +332,7 @@ where
 
         disconnected.insert(addr);
 
-        self.tasks.add(fut);
+        self.tasks.add(fut, "taker_actor");
 
         Ok(())
     }
@@ -433,7 +433,7 @@ where
         .run();
 
         disconnected.insert(addr);
-        self.tasks.add(fut);
+        self.tasks.add(fut, "propose_rollover");
 
         Ok(())
     }

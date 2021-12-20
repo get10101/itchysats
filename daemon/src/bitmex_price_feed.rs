@@ -40,7 +40,8 @@ impl Actor {
 
         let this = ctx.address().expect("we are alive");
 
-        self.tasks.add(connect_until_successful(this));
+        self.tasks
+            .add(connect_until_successful(this), "bitmex_notify");
     }
 
     async fn handle(&mut self, _: Connect, ctx: &mut xtra::Context<Self>) -> Result<Quote> {
@@ -59,24 +60,27 @@ impl Actor {
 
         let this = ctx.address().expect("we are alive");
 
-        self.tasks.add({
-            let receiver = self.receiver.clone_channel();
-            async move {
-                let no_connection = loop {
-                    match quotes.try_next().await {
-                        Ok(Some(quote)) => {
-                            if receiver.send(projection::Update(quote)).await.is_err() {
-                                return; // if the receiver dies, our job is done
+        self.tasks.add(
+            {
+                let receiver = self.receiver.clone_channel();
+                async move {
+                    let no_connection = loop {
+                        match quotes.try_next().await {
+                            Ok(Some(quote)) => {
+                                if receiver.send(projection::Update(quote)).await.is_err() {
+                                    return; // if the receiver dies, our job is done
+                                }
                             }
+                            Ok(None) => break NotifyNoConnection::StreamEnded,
+                            Err(e) => break NotifyNoConnection::Failed { error: e },
                         }
-                        Ok(None) => break NotifyNoConnection::StreamEnded,
-                        Err(e) => break NotifyNoConnection::Failed { error: e },
-                    }
-                };
+                    };
 
-                let _ = this.send(no_connection).await;
-            }
-        });
+                    let _ = this.send(no_connection).await;
+                }
+            },
+            "bitmex_inner",
+        );
 
         Ok(initial_quote)
     }

@@ -143,7 +143,14 @@ impl Network {
 #[rocket::main]
 async fn main() -> Result<()> {
     let opts = Opts::parse();
-
+    //
+    // console_subscriber::ConsoleLayer::builder()
+    //     // set how long the console will retain data from completed tasks
+    //     .retention(Duration::from_secs(60 * 60))
+    //     // set the address the server is bound to
+    //     .server_addr(([127, 0, 0, 1], 5555))
+    //     // ... other configurations ...
+    //     .init();
     logger::init(opts.log_level, opts.json).context("initialize logger")?;
     tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
     tracing::info!(
@@ -175,7 +182,7 @@ async fn main() -> Result<()> {
     let (wallet, wallet_feed_receiver) = wallet::Actor::new(opts.network.electrum(), ext_priv_key)?;
 
     let (wallet, wallet_fut) = wallet.create(None).run();
-    tasks.add(wallet_fut);
+    tasks.add(wallet_fut, "wallet_fut");
 
     if let Some(Withdraw::Withdraw {
         amount,
@@ -247,7 +254,7 @@ async fn main() -> Result<()> {
     let (price_feed_address, task) = bitmex_price_feed::Actor::new(projection_actor)
         .create(None)
         .run();
-    tasks.add(task);
+    tasks.add(task, "bitmex_price_feed");
 
     let init_quote = price_feed_address
         .send(bitmex_price_feed::Connect)
@@ -255,16 +262,19 @@ async fn main() -> Result<()> {
 
     let (proj_actor, projection_feeds) =
         projection::Actor::new(db.clone(), Role::Taker, bitcoin_network, init_quote).await?;
-    tasks.add(projection_context.run(proj_actor));
+    tasks.add(projection_context.run(proj_actor), "projection");
 
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
 
-    tasks.add(connect(
-        maker_online_status_feed_receiver.clone(),
-        connection_actor_addr,
-        maker_identity,
-        possible_addresses,
-    ));
+    tasks.add(
+        connect(
+            maker_online_status_feed_receiver.clone(),
+            connection_actor_addr,
+            maker_identity,
+            possible_addresses,
+        ),
+        "connect_to_maker",
+    );
 
     let rocket = rocket::custom(figment)
         .manage(projection_feeds)

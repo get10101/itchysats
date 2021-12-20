@@ -3,6 +3,7 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::Amount;
 use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
+use console_subscriber::ConsoleLayer;
 use daemon::auth::{self, MAKER_USERNAME};
 use daemon::model::cfd::Role;
 use daemon::seed::Seed;
@@ -17,6 +18,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::task::Poll;
+use std::time::Duration;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::Actor;
 
@@ -133,8 +135,11 @@ impl Network {
 #[rocket::main]
 async fn main() -> Result<()> {
     let opts = Opts::parse();
+    let layer = ConsoleLayer::builder().with_default_env().spawn();
+    use tracing_subscriber::prelude::*;
+    tracing_subscriber::registry().with(layer).init(); // to suppress must_use warnings
 
-    logger::init(opts.log_level, opts.json).context("initialize logger")?;
+    // logger::init(opts.log_level, opts.json).context("initialize logger")?;
     tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
     tracing::info!(
         "CFDs created with this release will settle after {} hours",
@@ -162,7 +167,7 @@ async fn main() -> Result<()> {
     let (wallet, wallet_feed_receiver) = wallet::Actor::new(opts.network.electrum(), ext_priv_key)?;
 
     let (wallet, wallet_fut) = wallet.create(None).run();
-    tasks.add(wallet_fut);
+    tasks.add(wallet_fut, "wallet_fut");
 
     if let Some(Withdraw::Withdraw {
         amount,
@@ -260,7 +265,7 @@ async fn main() -> Result<()> {
     let (price_feed_address, task) = bitmex_price_feed::Actor::new(projection_actor)
         .create(None)
         .run();
-    tasks.add(task);
+    tasks.add(task, "bitmex_price_feed");
 
     let init_quote = price_feed_address
         .send(bitmex_price_feed::Connect)
@@ -268,7 +273,7 @@ async fn main() -> Result<()> {
 
     let (proj_actor, projection_feeds) =
         projection::Actor::new(db.clone(), Role::Maker, bitcoin_network, init_quote).await?;
-    tasks.add(projection_context.run(proj_actor));
+    tasks.add(projection_context.run(proj_actor), "projection");
 
     let listener_stream = futures::stream::poll_fn(move |ctx| {
         let message = match futures::ready!(listener.poll_accept(ctx)) {
@@ -281,7 +286,10 @@ async fn main() -> Result<()> {
         Poll::Ready(Some(message))
     });
 
-    tasks.add(incoming_connection_addr.attach_stream(listener_stream));
+    tasks.add(
+        incoming_connection_addr.attach_stream(listener_stream),
+        "inc_connection_addr",
+    );
 
     rocket::custom(figment)
         .manage(projection_feeds)
