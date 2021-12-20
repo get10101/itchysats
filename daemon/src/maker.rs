@@ -22,8 +22,6 @@ use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
-use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -215,14 +213,7 @@ async fn main() -> Result<()> {
         .parse::<SocketAddr>()
         .unwrap();
 
-    let db = SqlitePool::connect_with(
-        SqliteConnectOptions::new()
-            .create_if_missing(true)
-            .filename(data_dir.join("maker.sqlite")),
-    )
-    .await?;
-
-    db::run_migrations(&db).await?;
+    let db = db::connect(data_dir.join("maker.sqlite")).await?;
 
     // Create actors
 

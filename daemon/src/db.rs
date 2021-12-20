@@ -11,11 +11,37 @@ use crate::model::Usd;
 use anyhow::Context;
 use anyhow::Result;
 use sqlx::pool::PoolConnection;
+use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;
+use std::path::PathBuf;
 use time::Duration;
 
-pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
+pub async fn connect(path: PathBuf) -> Result<SqlitePool> {
+    let pool = SqlitePool::connect_with(
+        SqliteConnectOptions::new()
+            .create_if_missing(true)
+            .filename(path),
+    )
+    .await?;
+
+    run_migrations(&pool).await?;
+
+    Ok(pool)
+}
+
+pub async fn memory() -> Result<SqlitePool> {
+    // Note: Every :memory: database is distinct from every other. So, opening two database
+    // connections each with the filename ":memory:" will create two independent in-memory
+    // databases. see: https://www.sqlite.org/inmemorydb.html
+    let pool = SqlitePool::connect(":memory:").await?;
+
+    run_migrations(&pool).await?;
+
+    Ok(pool)
+}
+
+async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     sqlx::migrate!("./migrations")
         .run(pool)
         .await
