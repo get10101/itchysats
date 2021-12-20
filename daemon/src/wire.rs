@@ -14,6 +14,8 @@ use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::PublicKey;
 use bytes::BytesMut;
+use futures::stream::SplitSink;
+use futures::stream::SplitStream;
 use maia::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia::secp256k1_zkp::SecretKey;
 use maia::CfdTransactions;
@@ -27,9 +29,14 @@ use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
+use tokio::net::TcpStream;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
+use tokio_util::codec::Framed;
 use tokio_util::codec::LengthDelimitedCodec;
+
+pub type Read<D, E> = SplitStream<Framed<TcpStream, EncryptedJsonCodec<D, E>>>;
+pub type Write<D, E> = SplitSink<Framed<TcpStream, EncryptedJsonCodec<D, E>>, E>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, PartialOrd)]
 pub struct Version(semver::Version);
