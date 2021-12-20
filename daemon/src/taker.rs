@@ -179,10 +179,20 @@ async fn main() -> Result<()> {
     let maker_identity = Identity::new(opts.maker_id);
 
     let seed = Seed::initialize(&data_dir.join("taker_seed")).await?;
+    let (_, identity_sk) = seed.derive_identity();
+
+    if !&data_dir.join("taker_wallet_seed").exists() {
+        tokio::fs::copy(
+            &data_dir.join("taker_seed"),
+            &data_dir.join("taker_wallet_seed"),
+        )
+        .await?;
+    }
+
+    let wallet_seed = Seed::initialize(&data_dir.join("taker_wallet_seed")).await?;
 
     let bitcoin_network = opts.network.bitcoin_network();
-    let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
-    let (_, identity_sk) = seed.derive_identity();
+    let ext_priv_key = wallet_seed.derive_extended_priv_key(bitcoin_network)?;
 
     let mut tasks = Tasks::default();
 
@@ -279,6 +289,7 @@ async fn main() -> Result<()> {
         .manage(wallet_feed_receiver)
         .manage(bitcoin_network)
         .manage(taker.maker_online_status_feed_receiver.clone())
+        .manage(seed)
         .manage(taker)
         .mount(
             "/api",
