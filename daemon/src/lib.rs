@@ -46,7 +46,6 @@ pub mod projection;
 pub mod rollover_taker;
 pub mod routes;
 pub mod seed;
-pub mod send_to_socket;
 pub mod setup_contract;
 pub mod setup_maker;
 pub mod setup_taker;

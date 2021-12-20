@@ -5,7 +5,7 @@ use crate::model::Identity;
 use crate::noise::TransportStateExt;
 use crate::tokio_ext::FutureExt;
 use crate::wire::{EncryptedJsonCodec, MakerToTaker, TakerToMaker, Version};
-use crate::{maker_cfd, noise, send_to_socket, setup_maker, wire, Tasks};
+use crate::{maker_cfd, noise, setup_maker, wire, Tasks};
 use anyhow::{bail, Context, Result};
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use std::collections::HashMap;
@@ -51,15 +51,33 @@ pub enum ListenerMessage {
 }
 
 pub struct Actor {
-    write_connections:
-        HashMap<Identity, Address<send_to_socket::Actor<wire::TakerToMaker, wire::MakerToTaker>>>,
+    connections: HashMap<Identity, Connection>,
     taker_connected_channel: Box<dyn MessageChannel<TakerConnected>>,
     taker_disconnected_channel: Box<dyn MessageChannel<TakerDisconnected>>,
     taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
-    connection_tasks: HashMap<Identity, Tasks>,
+}
+
+/// A connection to a taker.
+struct Connection {
+    taker: Identity,
+    write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
+    _tasks: Tasks,
+}
+
+impl Connection {
+    async fn send(&mut self, msg: wire::MakerToTaker) -> Result<()> {
+        let msg_str = msg.to_string();
+
+        self.write
+            .send(msg)
+            .await
+            .with_context(|| format!("Failed to send msg {} to taker {}", msg_str, self.taker))?;
+
+        Ok(())
+    }
 }
 
 impl Actor {
@@ -71,25 +89,23 @@ impl Actor {
         heartbeat_interval: Duration,
     ) -> Self {
         Self {
-            write_connections: HashMap::new(),
+            connections: HashMap::new(),
             taker_connected_channel: taker_connected_channel.clone_channel(),
             taker_disconnected_channel: taker_disconnected_channel.clone_channel(),
             taker_msg_channel: taker_msg_channel.clone_channel(),
             noise_priv_key,
             heartbeat_interval,
             setup_actors: AddressMap::default(),
-            connection_tasks: HashMap::new(),
         }
     }
 
     async fn drop_taker_connection(&mut self, taker_id: &Identity) {
-        if self.write_connections.remove(taker_id).is_some() {
+        if self.connections.remove(taker_id).is_some() {
             tracing::info!(%taker_id, "Dropping connection");
             let _ = self
                 .taker_disconnected_channel
                 .send(maker_cfd::TakerDisconnected { id: *taker_id })
                 .await;
-            let _ = self.connection_tasks.remove(taker_id);
         }
     }
 
@@ -99,14 +115,11 @@ impl Actor {
         msg: wire::MakerToTaker,
     ) -> Result<(), NoConnection> {
         let conn = self
-            .write_connections
-            .get(taker_id)
+            .connections
+            .get_mut(taker_id)
             .ok_or_else(|| NoConnection(*taker_id))?;
 
-        let msg_str = msg.to_string();
-
         if conn.send(msg).await.is_err() {
-            tracing::error!(%taker_id, "Failed to send message to taker: {}", msg_str);
             self.drop_taker_connection(taker_id).await;
             return Err(NoConnection(*taker_id));
         }
@@ -175,22 +188,22 @@ impl Actor {
             let _ = this.send(ReadFail(taker_id)).await;
         };
 
-        let (out_msg, mut out_msg_actor_context) = xtra::Context::new(None);
-        let send_to_socket_actor = send_to_socket::Actor::new(write);
-
-        let heartbeat_fut = out_msg_actor_context
-            .notify_interval(self.heartbeat_interval, || wire::MakerToTaker::Heartbeat)
+        let heartbeat_fut = ctx
+            .notify_interval(self.heartbeat_interval, move || SendHeartbeat(taker_id))
             .expect("actor not to shutdown");
-
-        let write_fut = out_msg_actor_context.run(send_to_socket_actor);
-
-        self.write_connections.insert(taker_id, out_msg);
 
         let mut tasks = Tasks::default();
         tasks.add(read_fut);
         tasks.add(heartbeat_fut);
-        tasks.add(write_fut);
-        self.connection_tasks.insert(taker_id, tasks);
+
+        self.connections.insert(
+            taker_id,
+            Connection {
+                _tasks: tasks,
+                taker: taker_id,
+                write,
+            },
+        );
 
         let _ = self
             .taker_connected_channel
@@ -201,6 +214,8 @@ impl Actor {
     }
 }
 
+pub struct SendHeartbeat(Identity);
+
 #[derive(Debug, thiserror::Error)]
 #[error("No connection to taker {0}")]
 pub struct NoConnection(Identity);
@@ -209,10 +224,35 @@ pub struct NoConnection(Identity);
 impl Actor {
     async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) {
         let order = msg.0;
-        for taker_id in self.write_connections.clone().keys() {
-            self.send_to_taker(taker_id, wire::MakerToTaker::CurrentOrder(order.clone())).await.expect("send_to_taker only fails on missing hashmap entry and we are iterating over those entries");
-            tracing::trace!(%taker_id, "sent new order: {:?}", order.as_ref().map(|o| o.id));
+
+        let mut broken_connections = Vec::with_capacity(self.connections.len());
+
+        for (id, conn) in &mut self.connections {
+            if let Err(e) = conn
+                .send(wire::MakerToTaker::CurrentOrder(order.clone()))
+                .await
+            {
+                tracing::warn!("{:#}", e);
+                broken_connections.push(*id);
+
+                continue;
+            }
+
+            tracing::trace!(taker_id = %id, "Sent new order: {:?}", order.as_ref().map(|o| o.id));
         }
+
+        for id in broken_connections {
+            self.drop_taker_connection(&id).await;
+        }
+    }
+
+    async fn handle_send_heartbeat(&mut self, msg: SendHeartbeat) {
+        let result = self
+            .send_to_taker(&msg.0, wire::MakerToTaker::Heartbeat)
+            .await;
+
+        // use explicit match on `Err` to catch fn signature changes
+        debug_assert!(!matches!(result, Err(NoConnection(_))), "`send_to_taker` only fails if we don't have a HashMap entry. We clean those up together with the heartbeat task. How did we get called without a connection?");
     }
 
     async fn handle_confirm_order(&mut self, msg: ConfirmOrder) -> Result<()> {
