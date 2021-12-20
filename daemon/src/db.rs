@@ -8,13 +8,14 @@ use crate::model::Leverage;
 use crate::model::Position;
 use crate::model::Price;
 use crate::model::Usd;
+use anyhow::Context;
 use anyhow::Result;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;
 use time::Duration;
 
-pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
+pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     sqlx::migrate!("./migrations")
         .run(pool)
         .await
