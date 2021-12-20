@@ -27,8 +27,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
-use std::sync::Arc;
-use std::sync::Mutex;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 use tokio_util::codec::LengthDelimitedCodec;
@@ -168,14 +166,15 @@ impl fmt::Display for MakerToTaker {
     }
 }
 
-pub struct EncryptedJsonCodec<T> {
-    _type: PhantomData<T>,
+/// A codec that can decode encrypted JSON into the type `D` and encode `E` to encrypted JSON.
+pub struct EncryptedJsonCodec<D, E> {
+    _type: PhantomData<(D, E)>,
     inner: LengthDelimitedCodec,
-    transport_state: Arc<Mutex<TransportState>>,
+    transport_state: TransportState,
 }
 
-impl<T> EncryptedJsonCodec<T> {
-    pub fn new(transport_state: Arc<Mutex<TransportState>>) -> Self {
+impl<D, E> EncryptedJsonCodec<D, E> {
+    pub fn new(transport_state: TransportState) -> Self {
         Self {
             _type: PhantomData,
             inner: LengthDelimitedCodec::new(),
@@ -184,11 +183,11 @@ impl<T> EncryptedJsonCodec<T> {
     }
 }
 
-impl<T> Decoder for EncryptedJsonCodec<T>
+impl<D, E> Decoder for EncryptedJsonCodec<D, E>
 where
-    T: DeserializeOwned,
+    D: DeserializeOwned,
 {
-    type Item = T;
+    type Item = D;
     type Error = anyhow::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -197,16 +196,11 @@ where
             Some(bytes) => bytes,
         };
 
-        let mut transport = self
-            .transport_state
-            .lock()
-            .expect("acquired mutex lock on Noise object to encrypt message");
-
         let decrypted = bytes
             .chunks(NOISE_MAX_MSG_LEN as usize)
             .map(|chunk| {
                 let mut buf = vec![0u8; chunk.len() - NOISE_TAG_LEN as usize];
-                transport.read_message(chunk, &mut *buf)?;
+                self.transport_state.read_message(chunk, &mut *buf)?;
                 Ok(buf)
             })
             .collect::<Result<Vec<Vec<u8>>>>()?
@@ -220,25 +214,20 @@ where
     }
 }
 
-impl<T> Encoder<T> for EncryptedJsonCodec<T>
+impl<D, E> Encoder<E> for EncryptedJsonCodec<D, E>
 where
-    T: Serialize,
+    E: Serialize,
 {
     type Error = anyhow::Error;
 
-    fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
+    fn encode(&mut self, item: E, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let bytes = serde_json::to_vec(&item)?;
-
-        let mut transport = self
-            .transport_state
-            .lock()
-            .expect("acquired mutex lock on Noise object to encrypt message");
 
         let encrypted = bytes
             .chunks((NOISE_MAX_MSG_LEN - NOISE_TAG_LEN) as usize)
             .map(|chunk| {
                 let mut buf = vec![0u8; chunk.len() + NOISE_TAG_LEN as usize];
-                transport.write_message(chunk, &mut *buf)?;
+                self.transport_state.write_message(chunk, &mut *buf)?;
                 Ok(buf)
             })
             .collect::<Result<Vec<Vec<u8>>>>()?

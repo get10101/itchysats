@@ -1,34 +1,30 @@
 use crate::wire;
-use crate::wire::EncryptedJsonCodec;
+use futures::stream::SplitSink;
 use futures::SinkExt;
 use serde::Serialize;
 use std::fmt;
-use tokio::io::AsyncWriteExt;
-use tokio::net::tcp::OwnedWriteHalf;
-use tokio_util::codec::FramedWrite;
+use tokio::net::TcpStream;
+use tokio_util::codec::Framed;
 use xtra::Handler;
 use xtra::Message;
 
-pub struct Actor<T> {
-    write: FramedWrite<OwnedWriteHalf, EncryptedJsonCodec<T>>,
+pub struct Actor<D, E> {
+    write: SplitSink<Framed<TcpStream, wire::EncryptedJsonCodec<D, E>>, E>,
 }
 
-impl<T> Actor<T> {
-    pub fn new(write: FramedWrite<OwnedWriteHalf, EncryptedJsonCodec<T>>) -> Self {
+impl<D, E> Actor<D, E> {
+    pub fn new(write: SplitSink<Framed<TcpStream, wire::EncryptedJsonCodec<D, E>>, E>) -> Self {
         Self { write }
-    }
-
-    pub async fn shutdown(self) {
-        let _ = self.write.into_inner().shutdown().await;
     }
 }
 
 #[async_trait::async_trait]
-impl<T> Handler<T> for Actor<T>
+impl<D, E> Handler<E> for Actor<D, E>
 where
-    T: Message<Result = ()> + Serialize + fmt::Display + Sync,
+    D: Send + Sync + 'static,
+    E: Message<Result = ()> + Serialize + fmt::Display + Sync,
 {
-    async fn handle(&mut self, message: T, ctx: &mut xtra::Context<Self>) {
+    async fn handle(&mut self, message: E, ctx: &mut xtra::Context<Self>) {
         let message_name = message.to_string(); // send consumes the message, avoid a clone just in case it errors by getting the name here
 
         tracing::trace!("Sending '{}'", message_name);
@@ -40,7 +36,12 @@ where
     }
 }
 
-impl<T: 'static + Send> xtra::Actor for Actor<T> {}
+impl<D, E> xtra::Actor for Actor<D, E>
+where
+    D: 'static + Send,
+    E: 'static + Send,
+{
+}
 
 impl xtra::Message for wire::MakerToTaker {
     type Result = ();
