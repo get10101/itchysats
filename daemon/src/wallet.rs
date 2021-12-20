@@ -1,5 +1,6 @@
 use crate::model::Timestamp;
 use crate::model::WalletInfo;
+use crate::seed::Seed;
 use crate::tokio_ext::spawn_fallible;
 use crate::Tasks;
 use anyhow::bail;
@@ -26,10 +27,13 @@ use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
 use bdk::KeychainKind;
 use bdk::SignOptions;
+use bip39::Mnemonic;
 use maia::PartyParams;
 use maia::TxBuilderExt;
 use rocket::serde::json::Value;
 use std::collections::HashSet;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
@@ -42,16 +46,20 @@ pub struct Actor {
     tasks: Tasks,
     sender: watch::Sender<Option<WalletInfo>>,
     electrum_rpc_url: String,
+    seed_path: Option<PathBuf>,
 }
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
 #[error("The transaction is already in the blockchain")]
 pub struct TransactionAlreadyInBlockchain;
 
+/// The seed_path is overwritten when regenerating the wallet. Do not pass in the path to the seed
+/// used to generate the network id as it could be overwritten.
 impl Actor {
     pub fn new(
         electrum_rpc_url: &str,
         ext_priv_key: ExtendedPrivKey,
+        seed_path: Option<PathBuf>,
     ) -> Result<(Self, watch::Receiver<Option<WalletInfo>>)> {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
@@ -73,6 +81,7 @@ impl Actor {
             sender,
             used_utxos: HashSet::default(),
             electrum_rpc_url: electrum_rpc_url.to_string(),
+            seed_path,
         };
 
         Ok((actor, receiver))
@@ -139,11 +148,19 @@ impl Actor {
         msg: Reinitialise,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
+        let seed_path = match &self.seed_path {
+            None => anyhow::bail!("Cannot reinitalise wallet. Wallet seed path has not been set"),
+            Some(path) => path,
+        };
+
         let client = bdk::electrum_client::Client::new(&self.electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
-        let ext_priv_key =
-            ExtendedPrivKey::new_master(self.wallet.network(), msg.seed_words.as_bytes())?;
+        let mnemonic = Mnemonic::from_str(&msg.seed_words)?;
+
+        let seed = Seed::try_from(mnemonic)?;
+
+        let ext_priv_key = seed.derive_extended_priv_key(self.wallet.network())?;
 
         let db = bdk::database::MemoryDatabase::new();
 
@@ -154,6 +171,8 @@ impl Actor {
             db,
             ElectrumBlockchain::from(client),
         )?;
+
+        seed.write_to(seed_path).await?;
 
         self.wallet = wallet;
 

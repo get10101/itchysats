@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use anyhow::Result;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::Network;
+use bip39::Mnemonic;
 use hkdf::Hkdf;
 use rand::Rng;
 use sha2::Sha256;
@@ -86,5 +87,14 @@ impl Default for Seed {
         rand::thread_rng().fill(&mut seed);
 
         Self(seed)
+    }
+}
+
+impl TryFrom<Mnemonic> for Seed {
+    type Error = anyhow::Error;
+
+    fn try_from(mnemonic: Mnemonic) -> Result<Self> {
+        let entropy = <[u8; 256]>::try_from(mnemonic.to_entropy().as_slice())?;
+        Ok(Self { 0: entropy })
     }
 }
