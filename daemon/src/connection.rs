@@ -59,6 +59,8 @@ impl State {
             }
         };
 
+        tracing::trace!(target = "wire", "Sending {}", msg_str);
+
         write
             .send(msg)
             .await
@@ -379,7 +381,7 @@ impl Actor {
             }
         };
 
-        tracing::trace!("Received '{}'", msg);
+        tracing::trace!(target = "wire", "Received {}", msg);
 
         match msg {
             wire::MakerToTaker::Heartbeat => {
