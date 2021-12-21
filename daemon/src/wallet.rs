@@ -33,7 +33,6 @@ use maia::TxBuilderExt;
 use rocket::serde::json::Value;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::time::Duration;
 use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
@@ -145,7 +144,7 @@ impl Actor {
 impl Actor {
     pub fn handle_reinitialise(
         &mut self,
-        msg: Reinitialise,
+        msg: Restore,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
         let seed_path = match &self.seed_path {
@@ -156,9 +155,7 @@ impl Actor {
         let client = bdk::electrum_client::Client::new(&self.electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
-        let mnemonic = Mnemonic::from_str(&msg.seed_words)?;
-
-        let seed = Seed::try_from(mnemonic)?;
+        let seed = Seed::try_from(msg.mnemonic)?;
 
         let ext_priv_key = seed.derive_extended_priv_key(self.wallet.network())?;
 
@@ -372,8 +369,8 @@ pub struct BuildPartyParams {
 /// Private message to trigger a sync.
 struct Sync;
 
-pub struct Reinitialise {
-    pub seed_words: String,
+pub struct Restore {
+    pub mnemonic: Mnemonic,
 }
 
 pub struct Backup;

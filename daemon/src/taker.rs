@@ -304,9 +304,9 @@ async fn main() -> Result<()> {
                 routes_taker::margin_calc,
                 routes_taker::post_cfd_action,
                 routes_taker::post_withdraw_request,
-                routes_taker::post_wallet_reinitialise,
-                routes_taker::get_wallet_backup,
-                routes_taker::post_generate_seed_words,
+                routes_taker::post_wallet_mnemonic,
+                routes_taker::get_wallet_mnemonic,
+                routes_taker::post_mnemonic,
             ],
         )
         .mount(

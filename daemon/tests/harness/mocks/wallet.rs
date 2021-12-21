@@ -42,7 +42,7 @@ impl WalletActor {
     async fn handle(&mut self, msg: wallet::Withdraw) -> Result<Txid> {
         self.mock.lock().await.withdraw(msg)
     }
-    async fn handle(&mut self, msg: wallet::Reinitialise) -> Result<()> {
+    async fn handle(&mut self, msg: wallet::Restore) -> Result<()> {
         self.mock.lock().await.reinitialise(msg)
     }
     async fn handle(&mut self, msg: wallet::Backup) -> Result<Mnemonic> {
@@ -68,7 +68,7 @@ pub trait Wallet {
         unreachable!("mockall will reimplement this method")
     }
 
-    fn reinitialise(&mut self, _msg: wallet::Reinitialise) -> Result<()> {
+    fn reinitialise(&mut self, _msg: wallet::Restore) -> Result<()> {
         unreachable!("mockall will reimplement this method")
     }
 

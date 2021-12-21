@@ -335,7 +335,7 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>
         + xtra::Handler<wallet::Withdraw>
-        + xtra::Handler<wallet::Reinitialise>
+        + xtra::Handler<wallet::Restore>
         + xtra::Handler<wallet::Backup>,
 {
     #[allow(clippy::too_many_arguments)]
@@ -461,11 +461,9 @@ where
             .await?
     }
 
-    pub async fn reinitialise_wallet(&self, seed_words: &str) -> Result<()> {
+    pub async fn restore_wallet(&self, mnemonic: Mnemonic) -> Result<()> {
         self.wallet_actor_addr
-            .send(wallet::Reinitialise {
-                seed_words: seed_words.to_string(),
-            })
+            .send(wallet::Restore { mnemonic })
             .await?
     }
 
