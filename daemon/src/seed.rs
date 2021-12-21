@@ -98,3 +98,11 @@ impl TryFrom<Mnemonic> for Seed {
         Ok(Self { 0: entropy })
     }
 }
+
+impl TryInto<Mnemonic> for Seed {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<Mnemonic> {
+        Ok(Mnemonic::from_entropy(&self.0)?)
+    }
+}

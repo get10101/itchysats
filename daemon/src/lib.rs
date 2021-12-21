@@ -17,10 +17,12 @@ use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
+use bip39::Mnemonic;
 use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use maker_cfd::TakerDisconnected;
+use rand::Rng;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::task::Poll;
@@ -333,7 +335,8 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>
         + xtra::Handler<wallet::Withdraw>
-        + xtra::Handler<wallet::Reinitialise>,
+        + xtra::Handler<wallet::Reinitialise>
+        + xtra::Handler<wallet::Backup>,
 {
     #[allow(clippy::too_many_arguments)]
     pub async fn new<FM, FO>(
@@ -464,5 +467,15 @@ where
                 seed_words: seed_words.to_string(),
             })
             .await?
+    }
+
+    pub async fn backup_wallet(&self) -> Result<Mnemonic> {
+        self.wallet_actor_addr.send(wallet::Backup).await?
+    }
+
+    pub fn generate_mnenomic(&self) -> Result<Mnemonic> {
+        let mut entropy = [0u8; 256];
+        rand::thread_rng().fill(&mut entropy);
+        Ok(Mnemonic::from_entropy(&entropy)?)
     }
 }

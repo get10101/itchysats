@@ -180,6 +180,31 @@ pub async fn post_wallet_reinitialise(
     Ok(status::Accepted(None))
 }
 
+#[rocket::get("/wallet/backup")]
+pub async fn get_wallet_backup(
+    taker: &State<Taker>,
+) -> Result<status::Accepted<String>, HttpApiProblem> {
+    let mnemonic = taker.backup_wallet().await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Wallet recover request failed")
+            .detail(e.to_string())
+    })?;
+
+    Ok(status::Accepted(Option::from(mnemonic.to_string())))
+}
+
+#[rocket::post("/generate_seed_words")]
+pub async fn post_generate_seed_words(
+    taker: &State<Taker>,
+) -> Result<status::Accepted<String>, HttpApiProblem> {
+    let mnemonic = taker.generate_mnenomic().map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Wallet recover request failed")
+            .detail(e.to_string())
+    })?;
+    Ok(status::Accepted(Option::from(mnemonic.to_string())))
+}
+
 #[rocket::get("/alive")]
 pub fn get_health_check() {}
 

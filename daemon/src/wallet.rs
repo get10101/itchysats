@@ -188,6 +188,17 @@ impl Actor {
         Ok(())
     }
 
+    pub fn handle_backup_wallet(&mut self, _msg: Backup) -> Result<Mnemonic> {
+        match &self.seed_path {
+            None => bail!("maker does not have a wallet seed path"),
+            Some(path) => {
+                let wallet_seed = Seed::read_from(path).await?;
+                let mnemonic: Mnemonic = wallet_seed.try_into()?;
+                Ok(mnemonic)
+            }
+        }
+    }
+
     pub fn handle_sync(&mut self, _msg: Sync) -> Result<()> {
         let wallet_info_update = match self.sync_internal() {
             Ok(wallet_info) => Some(wallet_info),
@@ -364,6 +375,8 @@ struct Sync;
 pub struct Reinitialise {
     pub seed_words: String,
 }
+
+pub struct Backup;
 
 pub struct Sign {
     pub psbt: PartiallySignedTransaction,
