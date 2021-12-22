@@ -41,12 +41,28 @@ where
     }
 
     fn spawn_new(&mut self, ctx: &mut Context<Self>) {
-        tracing::info!("Spawning new instance of actor"); // TODO: Include name
+        tracing::info!("Spawning new instance of {}", T::name());
 
         let this = ctx.address().expect("we are alive");
         let actor = (self.ctor)(this);
 
         self.tasks.add(self.context.attach(actor));
+    }
+}
+
+trait ActorName {
+    fn name() -> String;
+}
+
+impl<T> ActorName for T
+where
+    T: xtra::Actor,
+{
+    /// Devise the name of an actor from its type on a best-effort basis.
+    ///
+    /// To reduce some noise, we strip `daemon::` out of all module names contained in the type.
+    fn name() -> String {
+        std::any::type_name::<T>().replace("daemon::", "")
     }
 }
 
@@ -70,11 +86,18 @@ where
     pub fn handle(&mut self, msg: Stopped<R>, ctx: &mut Context<Self>) {
         let reason = msg.reason;
 
-        tracing::info!("Actor stopped: {}", reason); // TODO: Include name of actor
+        tracing::info!("{} stopped: {}", T::name(), reason);
 
         let should_restart = (self.restart_policy)(reason);
 
-        tracing::debug!("Restart actor? {}", should_restart);
+        tracing::debug!(
+            "Restart {}? {}",
+            T::name(),
+            match should_restart {
+                true => "yes",
+                false => "no",
+            }
+        );
 
         if should_restart {
             self.spawn_new(ctx)
@@ -88,4 +111,23 @@ where
 /// yields `true`, a new instance of the actor will be spawned.
 pub struct Stopped<R> {
     pub reason: R,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actor_name_from_type() {
+        let name = Actor::<Dummy, String>::name();
+
+        assert_eq!(
+            name,
+            "supervisor::Actor<supervisor::tests::Dummy, alloc::string::String>"
+        )
+    }
+
+    struct Dummy;
+
+    impl xtra::Actor for Dummy {}
 }
