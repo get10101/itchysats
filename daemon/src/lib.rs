@@ -18,11 +18,13 @@ use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
+use bip39::Language;
 use bip39::Mnemonic;
 use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use maker_cfd::TakerDisconnected;
+use rand::thread_rng;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::path::PathBuf;
@@ -477,6 +479,16 @@ where
     pub async fn backup_wallet(&self) -> Result<Mnemonic> {
         let wallet_seed = Seed::read_from(&self.wallet_seed_path).await?;
         let mnemonic = wallet_seed.try_into()?;
+        Ok(mnemonic)
+    }
+
+    pub async fn reinitialize_wallet(&self) -> Result<Mnemonic> {
+        let mnemonic = Mnemonic::generate_in_with(&mut thread_rng(), Language::English, 24)?;
+        self.wallet_actor_addr
+            .send(wallet::Restore {
+                mnemonic: mnemonic.clone(),
+            })
+            .await??;
         Ok(mnemonic)
     }
 }

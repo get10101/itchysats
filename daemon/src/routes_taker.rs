@@ -1,6 +1,6 @@
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Network;
-use bip39::{Language, Mnemonic};
+use bip39::Mnemonic;
 use daemon::bitmex_price_feed;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::calculate_long_margin;
@@ -20,7 +20,6 @@ use daemon::wallet;
 use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
-use rand::thread_rng;
 use rocket::http::ContentType;
 use rocket::http::Status;
 use rocket::response::status;
@@ -165,8 +164,8 @@ pub struct WalletRestoreRequest {
     pub mnemonic: Mnemonic,
 }
 
-#[rocket::post("/wallet/mnemonic", data = "<wallet_restore_request>")]
-pub async fn post_wallet_mnemonic(
+#[rocket::post("/wallet/restore", data = "<wallet_restore_request>")]
+pub async fn post_wallet_restore(
     wallet_restore_request: Json<WalletRestoreRequest>,
     taker: &State<Taker>,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
@@ -195,14 +194,15 @@ pub async fn get_wallet_mnemonic(
     Ok(status::Accepted(Option::from(mnemonic.to_string())))
 }
 
-#[rocket::post("/mnemonic")]
-pub async fn post_mnemonic() -> Result<status::Accepted<String>, HttpApiProblem> {
-    let mnemonic =
-        Mnemonic::generate_in_with(&mut thread_rng(), Language::English, 24).map_err(|e| {
-            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .title("Generate new mnemonic request failed")
-                .detail(e.to_string())
-        })?;
+#[rocket::post("/wallet/reinitialize")]
+pub async fn post_wallet_reinitalize(
+    taker: &State<Taker>,
+) -> Result<status::Accepted<String>, HttpApiProblem> {
+    let mnemonic = taker.reinitialize_wallet().await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Generate new mnemonic request failed")
+            .detail(e.to_string())
+    })?;
     Ok(status::Accepted(Option::from(mnemonic.to_string())))
 }
 
