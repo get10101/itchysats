@@ -23,7 +23,6 @@ use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use maker_cfd::TakerDisconnected;
-use rand::Rng;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::path::PathBuf;
@@ -479,11 +478,5 @@ where
         let wallet_seed = Seed::read_from(&self.wallet_seed_path).await?;
         let mnemonic = wallet_seed.try_into()?;
         Ok(mnemonic)
-    }
-
-    pub fn generate_mnenomic(&self) -> Result<Mnemonic> {
-        let mut entropy = [0u8; 256];
-        rand::thread_rng().fill(&mut entropy);
-        Ok(Mnemonic::from_entropy(&entropy)?)
     }
 }

@@ -1,6 +1,6 @@
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Network;
-use bip39::Mnemonic;
+use bip39::{Language, Mnemonic};
 use daemon::bitmex_price_feed;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::calculate_long_margin;
@@ -20,6 +20,7 @@ use daemon::wallet;
 use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
+use rand::thread_rng;
 use rocket::http::ContentType;
 use rocket::http::Status;
 use rocket::response::status;
@@ -195,14 +196,13 @@ pub async fn get_wallet_mnemonic(
 }
 
 #[rocket::post("/mnemonic")]
-pub async fn post_mnemonic(
-    taker: &State<Taker>,
-) -> Result<status::Accepted<String>, HttpApiProblem> {
-    let mnemonic = taker.generate_mnenomic().map_err(|e| {
-        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-            .title("Generate new mnemonic request failed")
-            .detail(e.to_string())
-    })?;
+pub async fn post_mnemonic() -> Result<status::Accepted<String>, HttpApiProblem> {
+    let mnemonic =
+        Mnemonic::generate_in_with(&mut thread_rng(), Language::English, 24).map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Generate new mnemonic request failed")
+                .detail(e.to_string())
+        })?;
     Ok(status::Accepted(Option::from(mnemonic.to_string())))
 }
 
