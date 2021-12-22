@@ -20,6 +20,7 @@ use daemon::projection;
 use daemon::seed::Seed;
 use daemon::supervisor;
 use daemon::wallet;
+use daemon::wallet_seed::WalletSeed;
 use daemon::TakerActorSystem;
 use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
@@ -178,22 +179,28 @@ async fn main() -> Result<()> {
 
     let maker_identity = Identity::new(opts.maker_id);
 
-    let seed = Seed::initialize(&data_dir.join("taker_seed")).await?;
-    let (_, identity_sk) = seed.derive_identity();
-
-    // If the wallet seed does not exist, create one using the seed
-    if !&data_dir.join("taker_wallet_seed").exists() {
-        tokio::fs::copy(
-            &data_dir.join("taker_seed"),
-            &data_dir.join("taker_wallet_seed"),
-        )
-        .await?;
-    }
-
-    let wallet_seed = Seed::initialize(&data_dir.join("taker_wallet_seed")).await?;
-
     let bitcoin_network = opts.network.bitcoin_network();
-    let ext_priv_key = wallet_seed.derive_extended_priv_key(bitcoin_network)?;
+
+    let (identity_sk, ext_priv_key) = match (
+        data_dir.join("taker_seed").exists(),
+        data_dir.join("taker_wallet_seed").exists(),
+    ) {
+        // If the seed exists and the wallet seed does not exist, the user might have funds in the
+        // wallet generated from that seed. Therefore we need to use the seed.
+        (true, false) => {
+            let seed = Seed::initialize(&data_dir.join("taker_seed")).await?;
+            let (_, identity_sk) = seed.derive_identity();
+            let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
+            (identity_sk, ext_priv_key)
+        }
+        (_, _) => {
+            let seed = Seed::initialize(&data_dir.join("taker_seed")).await?;
+            let (_, identity_sk) = seed.derive_identity();
+            let wallet_seed = WalletSeed::initialize(&data_dir.join("taker_wallet_seed")).await?;
+            let ext_priv_key = wallet_seed.derive_extended_priv_key(bitcoin_network)?;
+            (identity_sk, ext_priv_key)
+        }
+    };
 
     let mut tasks = Tasks::default();
 
@@ -291,7 +298,6 @@ async fn main() -> Result<()> {
         .manage(wallet_feed_receiver)
         .manage(bitcoin_network)
         .manage(taker.maker_online_status_feed_receiver.clone())
-        .manage(seed)
         .manage(taker)
         .mount(
             "/api",

@@ -13,18 +13,18 @@ use crate::model::Usd;
 use crate::oracle::Attestation;
 use crate::seed::Seed;
 use crate::tokio_ext::FutureExt;
+use crate::wallet_seed::WalletSeed;
 use address_map::Stopping;
+use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
-use bip39::Language;
 use bip39::Mnemonic;
 use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use maker_cfd::TakerDisconnected;
-use rand::thread_rng;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::path::PathBuf;
@@ -78,6 +78,7 @@ pub mod tokio_ext;
 pub mod try_continue;
 pub mod tx;
 pub mod wallet;
+pub mod wallet_seed;
 pub mod wire;
 pub mod xtra_ext;
 
@@ -467,9 +468,7 @@ where
     }
 
     pub async fn restore_wallet(&self, mnemonic: Mnemonic) -> Result<()> {
-        Seed::try_from(mnemonic.clone())?
-            .write_to(&self.wallet_seed_path)
-            .await?;
+        WalletSeed::restore(&self.wallet_seed_path, mnemonic.clone()).await?;
 
         self.wallet_actor_addr
             .send(wallet::Restore { mnemonic })
@@ -477,18 +476,19 @@ where
     }
 
     pub async fn backup_wallet(&self) -> Result<Mnemonic> {
-        let wallet_seed = Seed::read_from(&self.wallet_seed_path).await?;
+        let wallet_seed = Seed::read_from(&self.wallet_seed_path).await.context?;
         let mnemonic = wallet_seed.try_into()?;
         Ok(mnemonic)
     }
 
     pub async fn reinitialize_wallet(&self) -> Result<Mnemonic> {
-        let mnemonic = Mnemonic::generate_in_with(&mut thread_rng(), Language::English, 24)?;
+        let wallet_seed = WalletSeed::reinitialize(&self.wallet_seed_path).await?;
+
         self.wallet_actor_addr
             .send(wallet::Restore {
-                mnemonic: mnemonic.clone(),
+                mnemonic: wallet_seed.mnemonic(),
             })
             .await??;
-        Ok(mnemonic)
+        Ok(wallet_seed.mnemonic())
     }
 }
