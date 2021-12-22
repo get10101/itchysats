@@ -5,6 +5,7 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
+use bip39::Mnemonic;
 use clap::Parser;
 use clap::Subcommand;
 use daemon::bitmex_price_feed;
@@ -20,7 +21,7 @@ use daemon::projection;
 use daemon::seed::Seed;
 use daemon::supervisor;
 use daemon::wallet;
-use daemon::wallet_seed::WalletSeed;
+use daemon::wallet_seed::MnemonicExt;
 use daemon::TakerActorSystem;
 use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
@@ -196,7 +197,7 @@ async fn main() -> Result<()> {
         (_, _) => {
             let seed = Seed::initialize(&data_dir.join("taker_seed")).await?;
             let (_, identity_sk) = seed.derive_identity();
-            let wallet_seed = WalletSeed::initialize(&data_dir.join("taker_wallet_seed")).await?;
+            let wallet_seed = Mnemonic::initialize(&data_dir.join("taker_wallet_seed")).await?;
             let ext_priv_key = wallet_seed.derive_extended_priv_key(bitcoin_network)?;
             (identity_sk, ext_priv_key)
         }

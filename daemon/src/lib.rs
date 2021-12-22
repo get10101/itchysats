@@ -13,7 +13,7 @@ use crate::model::Usd;
 use crate::oracle::Attestation;
 use crate::seed::Seed;
 use crate::tokio_ext::FutureExt;
-use crate::wallet_seed::WalletSeed;
+use crate::wallet_seed::MnemonicExt;
 use address_map::Stopping;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -467,7 +467,7 @@ where
     }
 
     pub async fn restore_wallet(&self, mnemonic: Mnemonic) -> Result<()> {
-        WalletSeed::restore(&self.wallet_seed_path, mnemonic.clone()).await?;
+        Mnemonic::restore(&self.wallet_seed_path, mnemonic.clone()).await?;
 
         self.wallet_actor_addr
             .send(wallet::Restore { mnemonic })
@@ -481,13 +481,13 @@ where
     }
 
     pub async fn reinitialize_wallet(&self) -> Result<Mnemonic> {
-        let wallet_seed = WalletSeed::reinitialize(&self.wallet_seed_path).await?;
+        let wallet_seed = Mnemonic::reinitialize(&self.wallet_seed_path).await?;
 
         self.wallet_actor_addr
             .send(wallet::Restore {
-                mnemonic: wallet_seed.mnemonic(),
+                mnemonic: wallet_seed.clone(),
             })
             .await??;
-        Ok(wallet_seed.mnemonic())
+        Ok(wallet_seed)
     }
 }
