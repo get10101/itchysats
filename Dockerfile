@@ -5,10 +5,9 @@ USER 1000
 LABEL "org.opencontainers.image.source"="https://github.com/itchysats/itchysats"
 LABEL "org.opencontainers.image.authors"="hello@itchysats.network"
 
-ARG TARGETPLATFORM
 ARG BINARY_PATH
 
-COPY $TARGETPLATFORM/$BINARY_PATH /usr/bin/binary
+COPY $BINARY_PATH /usr/bin/binary
 
 VOLUME /data
 

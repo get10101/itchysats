@@ -1,0 +1,53 @@
+name: Build release binary
+description: Builds a release binary including the embedded frontend
+inputs:
+  target:
+    description: 'The Rust target to build for.'
+    required: true
+  binary:
+    description: 'The binary to build (maker | taker).'
+    required: true
+outputs:
+  path:
+    description: 'The path to the built binary.'
+    value: target/${{ inputs.target }}/release/${{ inputs.binary }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install toolchain from `rust-toolchain.toml`
+      shell: bash
+      run: rustup show
+
+    - uses: Swatinem/rust-cache@v1.3.0
+      with:
+        key: ${{ inputs.target }}
+
+    - name: Install compiler for aarch64 arch (armv8)
+      shell: bash
+      if: inputs.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        sudo apt-get update
+        sudo apt-get install 'gcc-aarch64-linux-gnu'
+
+    - uses: actions/setup-node@v2
+      with:
+        node-version: '16'
+        cache: yarn
+        cache-dependency-path: '${{ inputs.binary }}-frontend/yarn.lock'
+
+    - name: Build ${{ inputs.binary }} frontend
+      working-directory: ${{ inputs.binary }}-frontend
+      shell: bash
+      run: |
+        yarn
+        yarn build
+
+    - name: Build ${{ inputs.target }} ${{ matrix.binary }} release binary
+      shell: bash
+      run: cargo build --target=${{ inputs.target }} --release --bin ${{ inputs.binary }}
+
+    - name: Smoke test the binary
+      shell: bash
+      # aarch64-* is only cross-compiled, no smoke test
+      if: inputs.target != 'aarch64-unknown-linux-gnu'
+      run: target/${{ inputs.target }}/release/${{ inputs.binary }} --help

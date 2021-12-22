@@ -1,0 +1,79 @@
+name: "Build and push docker image"
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        description: The docker tag to use.
+        type: string
+
+jobs:
+  # We build the binaries outside of docker because here we can parallelize.
+  build_docker_image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - bin: taker
+            target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            docker_arch: amd64
+          - bin: taker
+            target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            docker_arch: arm64
+          - bin: maker
+            target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            docker_arch: amd64
+          - bin: maker
+            target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            docker_arch: arm64
+    steps:
+      - uses: actions/checkout@v2.4.0
+
+      - uses: ./.github/actions/build-release-binary
+        id: build
+        with:
+          target: ${{ matrix.target }}
+          binary: ${{ matrix.bin }}
+
+      - name: Login into github registry
+        uses: docker/login-action@v1.11.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build docker image
+        run: |
+          docker build --platform linux/${{ matrix.docker_arch }} --pull --build-arg BINARY_PATH=./target/${{ matrix.target }}/release/${{ matrix.bin }} --tag ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }}-${{ matrix.docker_arch }} .
+          docker push ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }}-${{ matrix.docker_arch }}
+
+  create_manifest_image:
+    needs: build_docker_image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        bin: [ maker, taker ]
+    steps:
+      - name: Login into github registry
+        uses: docker/login-action@v1.11.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: |    
+          docker manifest create --amend ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }} ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }}-amd64 ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }}-arm64
+          docker manifest annotate ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }} ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }}-amd64 --os linux --arch amd64
+          docker manifest annotate ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }} ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }}-arm64 --os linux --arch arm64 --variant v8
+          docker manifest push ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }} -p
