@@ -32,7 +32,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::str::FromStr;
 use tokio::select;
 use tokio::sync::watch;
 
@@ -162,7 +161,7 @@ pub async fn post_cfd_action(
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct WalletRestoreRequest {
-    pub mnemonic: String,
+    pub mnemonic: Mnemonic,
 }
 
 #[rocket::post("/wallet/mnemonic", data = "<wallet_restore_request>")]
@@ -170,17 +169,14 @@ pub async fn post_wallet_mnemonic(
     wallet_restore_request: Json<WalletRestoreRequest>,
     taker: &State<Taker>,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
-    let mnemonic = Mnemonic::from_str(&wallet_restore_request.mnemonic).map_err(|e| {
-        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-            .title("Provided mnemonic is invalid")
-            .detail(e.to_string())
-    })?;
-
-    taker.restore_wallet(mnemonic).await.map_err(|e| {
-        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-            .title("Wallet restore request failed")
-            .detail(e.to_string())
-    })?;
+    taker
+        .restore_wallet(wallet_restore_request.mnemonic.clone())
+        .await
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Wallet restore request failed")
+                .detail(e.to_string())
+        })?;
 
     Ok(status::Accepted(None))
 }
