@@ -15,7 +15,6 @@ use crate::seed::Seed;
 use crate::tokio_ext::FutureExt;
 use crate::wallet_seed::WalletSeed;
 use address_map::Stopping;
-use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
@@ -476,7 +475,7 @@ where
     }
 
     pub async fn backup_wallet(&self) -> Result<Mnemonic> {
-        let wallet_seed = Seed::read_from(&self.wallet_seed_path).await.context?;
+        let wallet_seed = Seed::read_from(&self.wallet_seed_path).await?;
         let mnemonic = wallet_seed.try_into()?;
         Ok(mnemonic)
     }
