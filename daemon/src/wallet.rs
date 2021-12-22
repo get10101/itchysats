@@ -50,8 +50,6 @@ pub struct Actor {
 #[error("The transaction is already in the blockchain")]
 pub struct TransactionAlreadyInBlockchain;
 
-/// The seed_path is overwritten when regenerating the wallet. Do not pass in the path to the seed
-/// used to generate the network id as it could be overwritten.
 impl Actor {
     pub fn new(
         electrum_rpc_url: &str,

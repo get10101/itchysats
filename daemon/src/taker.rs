@@ -187,7 +187,8 @@ async fn main() -> Result<()> {
         data_dir.join("taker_wallet_seed").exists(),
     ) {
         // If the seed exists and the wallet seed does not exist, the user might have funds in the
-        // wallet generated from that seed. Therefore we need to use the seed.
+        // wallet generated from that seed. Therefore we need to use that seed to generate the
+        // wallet private key.
         (true, false) => {
             let seed = Seed::initialize(&data_dir.join("taker_seed")).await?;
             let (_, identity_sk) = seed.derive_identity();
