@@ -181,6 +181,7 @@ async fn main() -> Result<()> {
     let seed = Seed::initialize(&data_dir.join("taker_seed")).await?;
     let (_, identity_sk) = seed.derive_identity();
 
+    // If the wallet seed does not exist, create one using the seed
     if !&data_dir.join("taker_wallet_seed").exists() {
         tokio::fs::copy(
             &data_dir.join("taker_seed"),
@@ -196,11 +197,7 @@ async fn main() -> Result<()> {
 
     let mut tasks = Tasks::default();
 
-    let (wallet, wallet_feed_receiver) = wallet::Actor::new(
-        opts.network.electrum(),
-        ext_priv_key,
-        Some(data_dir.join("taker_wallet_seed")),
-    )?;
+    let (wallet, wallet_feed_receiver) = wallet::Actor::new(opts.network.electrum(), ext_priv_key)?;
 
     let (wallet, wallet_fut) = wallet.create(None).run();
     tasks.add(wallet_fut);
@@ -264,6 +261,7 @@ async fn main() -> Result<()> {
         Duration::from_secs(10),
         projection_actor.clone(),
         maker_identity,
+        data_dir.join("taker_wallet_seed"),
     )
     .await?;
 

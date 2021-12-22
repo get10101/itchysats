@@ -32,7 +32,6 @@ use maia::PartyParams;
 use maia::TxBuilderExt;
 use rocket::serde::json::Value;
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
@@ -45,7 +44,6 @@ pub struct Actor {
     tasks: Tasks,
     sender: watch::Sender<Option<WalletInfo>>,
     electrum_rpc_url: String,
-    seed_path: Option<PathBuf>,
 }
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
@@ -58,7 +56,6 @@ impl Actor {
     pub fn new(
         electrum_rpc_url: &str,
         ext_priv_key: ExtendedPrivKey,
-        seed_path: Option<PathBuf>,
     ) -> Result<(Self, watch::Receiver<Option<WalletInfo>>)> {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
@@ -80,7 +77,6 @@ impl Actor {
             sender,
             used_utxos: HashSet::default(),
             electrum_rpc_url: electrum_rpc_url.to_string(),
-            seed_path,
         };
 
         Ok((actor, receiver))
@@ -142,16 +138,7 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    pub fn handle_reinitialise(
-        &mut self,
-        msg: Restore,
-        ctx: &mut xtra::Context<Self>,
-    ) -> Result<()> {
-        let seed_path = match &self.seed_path {
-            None => anyhow::bail!("Cannot reinitalise wallet. Wallet seed path has not been set"),
-            Some(path) => path,
-        };
-
+    pub fn handle_restore(&mut self, msg: Restore, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let client = bdk::electrum_client::Client::new(&self.electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
@@ -169,8 +156,6 @@ impl Actor {
             ElectrumBlockchain::from(client),
         )?;
 
-        seed.write_to(seed_path).await?;
-
         self.wallet = wallet;
 
         self.used_utxos.clear();
@@ -183,17 +168,6 @@ impl Actor {
         });
 
         Ok(())
-    }
-
-    pub fn handle_backup_wallet(&mut self, _msg: Backup) -> Result<Mnemonic> {
-        match &self.seed_path {
-            None => bail!("maker does not have a wallet seed path"),
-            Some(path) => {
-                let wallet_seed = Seed::read_from(path).await?;
-                let mnemonic: Mnemonic = wallet_seed.try_into()?;
-                Ok(mnemonic)
-            }
-        }
     }
 
     pub fn handle_sync(&mut self, _msg: Sync) -> Result<()> {
@@ -372,8 +346,6 @@ struct Sync;
 pub struct Restore {
     pub mnemonic: Mnemonic,
 }
-
-pub struct Backup;
 
 pub struct Sign {
     pub psbt: PartiallySignedTransaction,

@@ -28,6 +28,7 @@ use daemon::SETTLEMENT_INTERVAL;
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -292,6 +293,7 @@ impl Taker {
             Duration::from_secs(10),
             projection_actor,
             maker_identity,
+            PathBuf::from_str("/dev/null").expect("Valid path string"),
         )
         .await
         .unwrap();

@@ -11,6 +11,7 @@ use crate::model::Identity;
 use crate::model::Price;
 use crate::model::Usd;
 use crate::oracle::Attestation;
+use crate::seed::Seed;
 use crate::tokio_ext::FutureExt;
 use address_map::Stopping;
 use anyhow::Result;
@@ -25,6 +26,7 @@ use maker_cfd::TakerDisconnected;
 use rand::Rng;
 use sqlx::SqlitePool;
 use std::future::Future;
+use std::path::PathBuf;
 use std::task::Poll;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -319,6 +321,7 @@ pub struct TakerActorSystem<O, M, W> {
     pub connection_actor_addr: Address<connection::Actor>,
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     wallet_actor_addr: Address<W>,
+    wallet_seed_path: PathBuf,
     _tasks: Tasks,
 }
 
@@ -335,8 +338,7 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>
         + xtra::Handler<wallet::Withdraw>
-        + xtra::Handler<wallet::Restore>
-        + xtra::Handler<wallet::Backup>,
+        + xtra::Handler<wallet::Restore>,
 {
     #[allow(clippy::too_many_arguments)]
     pub async fn new<FM, FO>(
@@ -351,6 +353,7 @@ where
         connect_timeout: Duration,
         projection_actor: Address<projection::Actor>,
         maker_identity: Identity,
+        wallet_seed_path: PathBuf,
     ) -> Result<Self>
     where
         FO: Future<Output = Result<O>>,
@@ -420,6 +423,7 @@ where
             connection_actor_addr,
             maker_online_status_feed_receiver,
             wallet_actor_addr,
+            wallet_seed_path,
             _tasks: tasks,
         })
     }
@@ -462,13 +466,19 @@ where
     }
 
     pub async fn restore_wallet(&self, mnemonic: Mnemonic) -> Result<()> {
+        Seed::try_from(mnemonic.clone())?
+            .write_to(&self.wallet_seed_path)
+            .await?;
+
         self.wallet_actor_addr
             .send(wallet::Restore { mnemonic })
             .await?
     }
 
     pub async fn backup_wallet(&self) -> Result<Mnemonic> {
-        self.wallet_actor_addr.send(wallet::Backup).await?
+        let wallet_seed = Seed::read_from(&self.wallet_seed_path).await?;
+        let mnemonic = wallet_seed.try_into()?;
+        Ok(mnemonic)
     }
 
     pub fn generate_mnenomic(&self) -> Result<Mnemonic> {

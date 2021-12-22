@@ -6,7 +6,6 @@ use bdk::bitcoin::Txid;
 use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
-use bip39::Mnemonic;
 use daemon::bdk_ext::new_test_wallet;
 use daemon::model::Timestamp;
 use daemon::model::WalletInfo;
@@ -45,9 +44,6 @@ impl WalletActor {
     async fn handle(&mut self, msg: wallet::Restore) -> Result<()> {
         self.mock.lock().await.restore(msg)
     }
-    async fn handle(&mut self, msg: wallet::Backup) -> Result<Mnemonic> {
-        self.mock.lock().await.backup(msg)
-    }
 }
 
 #[automock]
@@ -69,10 +65,6 @@ pub trait Wallet {
     }
 
     fn restore(&mut self, _msg: wallet::Restore) -> Result<()> {
-        unreachable!("mockall will reimplement this method")
-    }
-
-    fn backup(&mut self, _msg: wallet::Backup) -> Result<Mnemonic> {
         unreachable!("mockall will reimplement this method")
     }
 }
