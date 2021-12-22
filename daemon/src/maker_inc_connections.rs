@@ -118,7 +118,7 @@ impl Connection {
     async fn send(&mut self, msg: wire::MakerToTaker) -> Result<()> {
         let msg_str = msg.to_string();
 
-        tracing::trace!(target = "wire", taker_id = %self.taker, "Sending {}", msg_str);
+        tracing::trace!(target: "wire", taker_id = %self.taker, "Sending {}", msg_str);
 
         self.write
             .send(msg)
@@ -384,7 +384,7 @@ impl Actor {
     async fn handle_msg_from_taker(&mut self, msg: FromTaker) -> Result<()> {
         let msg_str = msg.msg.to_string();
 
-        tracing::trace!(target = "wire", taker_id = %msg.taker_id, "Received {}", msg_str);
+        tracing::trace!(target: "wire", taker_id = %msg.taker_id, "Received {}", msg_str);
 
         use wire::TakerToMaker::*;
         match msg.msg {
