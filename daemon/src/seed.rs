@@ -95,7 +95,7 @@ impl TryFrom<Mnemonic> for Seed {
 
     fn try_from(mnemonic: Mnemonic) -> Result<Self> {
         let entropy = <[u8; 256]>::try_from(mnemonic.to_entropy().as_slice())?;
-        Ok(Self { 0: entropy })
+        Ok(Self(entropy))
     }
 }
 
