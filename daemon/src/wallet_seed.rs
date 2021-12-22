@@ -31,16 +31,8 @@ impl WalletSeed {
     }
 
     pub async fn reinitialize(seed_file: &Path) -> Result<Self> {
-        tokio::fs::remove_file(seed_file).await?;
-
-        if seed_file.exists() {
-            bail!("Failed to reinitialize wallet seed file. Old wallet seed file was not successfully deleted.");
-        }
-
         let seed = Self::default();
-        seed.write_to(seed_file).await?;
-
-        Ok(seed)
+        Self::restore(seed_file, seed.mnemonic()).await
     }
 
     pub async fn restore(seed_file: &Path, mnemonic: Mnemonic) -> Result<Self> {

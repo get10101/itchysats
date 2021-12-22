@@ -185,7 +185,7 @@ pub async fn post_wallet_restore(
 pub async fn get_wallet_mnemonic(taker: &State<Taker>) -> Result<String, HttpApiProblem> {
     let mnemonic = taker.backup_wallet().await.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-            .title("Wallet recover request failed")
+            .title("Wallet mnemonic request failed")
             .detail(e.to_string())
     })?;
 
@@ -196,7 +196,7 @@ pub async fn get_wallet_mnemonic(taker: &State<Taker>) -> Result<String, HttpApi
 pub async fn post_wallet_reinitalize(taker: &State<Taker>) -> Result<String, HttpApiProblem> {
     let mnemonic = taker.reinitialize_wallet().await.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-            .title("Generate new mnemonic request failed")
+            .title("Reinitialise request failed")
             .detail(e.to_string())
     })?;
     Ok(mnemonic.to_string())
