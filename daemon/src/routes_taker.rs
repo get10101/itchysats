@@ -168,7 +168,7 @@ pub struct WalletRestoreRequest {
 pub async fn post_wallet_restore(
     wallet_restore_request: Json<WalletRestoreRequest>,
     taker: &State<Taker>,
-) -> Result<status::Accepted<()>, HttpApiProblem> {
+) -> Result<(), HttpApiProblem> {
     taker
         .restore_wallet(wallet_restore_request.mnemonic.clone())
         .await
@@ -178,32 +178,28 @@ pub async fn post_wallet_restore(
                 .detail(e.to_string())
         })?;
 
-    Ok(status::Accepted(None))
+    Ok(())
 }
 
 #[rocket::get("/wallet/mnemonic")]
-pub async fn get_wallet_mnemonic(
-    taker: &State<Taker>,
-) -> Result<status::Accepted<String>, HttpApiProblem> {
+pub async fn get_wallet_mnemonic(taker: &State<Taker>) -> Result<String, HttpApiProblem> {
     let mnemonic = taker.backup_wallet().await.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title("Wallet recover request failed")
             .detail(e.to_string())
     })?;
 
-    Ok(status::Accepted(Option::from(mnemonic.to_string())))
+    Ok(mnemonic.to_string())
 }
 
 #[rocket::post("/wallet/reinitialize")]
-pub async fn post_wallet_reinitalize(
-    taker: &State<Taker>,
-) -> Result<status::Accepted<String>, HttpApiProblem> {
+pub async fn post_wallet_reinitalize(taker: &State<Taker>) -> Result<String, HttpApiProblem> {
     let mnemonic = taker.reinitialize_wallet().await.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title("Generate new mnemonic request failed")
             .detail(e.to_string())
     })?;
-    Ok(status::Accepted(Option::from(mnemonic.to_string())))
+    Ok(mnemonic.to_string())
 }
 
 #[rocket::get("/alive")]
