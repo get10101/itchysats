@@ -9,7 +9,6 @@ use clap::Parser;
 use clap::Subcommand;
 use daemon::auth;
 use daemon::bitmex_price_feed;
-use daemon::connection::connect;
 use daemon::db;
 use daemon::logger;
 use daemon::model::cfd::Role;
@@ -245,6 +244,8 @@ async fn main() -> Result<()> {
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
+    let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
+
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
@@ -262,6 +263,7 @@ async fn main() -> Result<()> {
         Duration::from_secs(10),
         projection_actor.clone(),
         maker_identity,
+        possible_addresses,
     )
     .await?;
 
@@ -277,20 +279,10 @@ async fn main() -> Result<()> {
         projection::Actor::new(db.clone(), Role::Taker, bitcoin_network);
     tasks.add(projection_context.run(proj_actor));
 
-    let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
-
-    tasks.add(connect(
-        taker.maker_online_status_feed_receiver.clone(),
-        taker.connection_actor_addr.clone(),
-        maker_identity,
-        possible_addresses,
-    ));
-
     let rocket = rocket::custom(figment)
         .manage(projection_feeds)
         .manage(wallet_feed_receiver)
         .manage(bitcoin_network)
-        .manage(taker.maker_online_status_feed_receiver.clone())
         .manage(taker)
         .manage(web_password)
         .mount(

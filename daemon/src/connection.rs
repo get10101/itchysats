@@ -7,8 +7,10 @@ use crate::model::Price;
 use crate::model::Timestamp;
 use crate::model::Usd;
 use crate::noise;
+use crate::projection;
 use crate::rollover_taker;
 use crate::setup_taker;
+use crate::supervisor;
 use crate::taker_cfd::CurrentOrder;
 use crate::tokio_ext::FutureExt;
 use crate::wire;
@@ -21,6 +23,7 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use async_trait::async_trait;
 use bdk::bitcoin::Amount;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -29,7 +32,6 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::net::TcpStream;
-use tokio::sync::watch;
 use tokio_util::codec::Framed;
 use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
@@ -100,7 +102,9 @@ impl State {
 }
 
 pub struct Actor {
-    status_sender: watch::Sender<ConnectionStatus>,
+    projection: xtra::Address<projection::Actor>,
+    supervisor: xtra::Address<supervisor::Actor<Self, StopReason>>,
+
     identity_sk: x25519_dalek::StaticSecret,
     current_order: Box<dyn MessageChannel<CurrentOrder>>,
     /// Max duration since the last heartbeat until we die.
@@ -110,19 +114,22 @@ pub struct Actor {
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
     rollover_actors: AddressMap<OrderId, rollover_taker::Actor>,
+
+    maker_identity: Identity,
+    maker_addresses: Vec<SocketAddr>,
+
+    /// Upon shutdown, store an error in here why we shut down.
+    stop_reason: Option<StopReason>,
 }
 
-pub struct Connect {
-    pub maker_identity: Identity,
-    pub maker_addresses: Vec<SocketAddr>,
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum ConnectError {
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum StopReason {
     #[error("Connection got closed")]
     Closed(ConnectionCloseReason),
     #[error("Made {number} attempts, all failed")]
     AllAttemptsFailed { number: usize },
+    #[error("Did not receive a heartbeat within {0} seconds")]
+    HeartbeatTimeout(u64),
 }
 
 pub struct MakerStreamMessage {
@@ -181,14 +188,18 @@ pub struct ProposeRollOver {
 
 impl Actor {
     pub fn new(
-        status_sender: watch::Sender<ConnectionStatus>,
+        maker_identity: Identity,
+        maker_addresses: Vec<SocketAddr>,
+        projection: xtra::Address<projection::Actor>,
+        supervisor: xtra::Address<supervisor::Actor<Self, StopReason>>,
         current_order: &(impl MessageChannel<CurrentOrder> + 'static),
         identity_sk: x25519_dalek::StaticSecret,
         hearthbeat_timeout: Duration,
         connect_timeout: Duration,
     ) -> Self {
         Self {
-            status_sender,
+            projection,
+            supervisor,
             identity_sk,
             current_order: current_order.clone_channel(),
             heartbeat_timeout: hearthbeat_timeout,
@@ -197,6 +208,9 @@ impl Actor {
             connect_timeout,
             collab_settlement_actors: AddressMap::default(),
             rollover_actors: AddressMap::default(),
+            maker_identity,
+            maker_addresses,
+            stop_reason: None,
         }
     }
 
@@ -276,6 +290,11 @@ impl Actor {
             write,
             _tasks: tasks,
         })
+    }
+
+    fn stop_with(&mut self, stop_reason: StopReason, ctx: &mut xtra::Context<Self>) {
+        self.stop_reason = Some(stop_reason);
+        ctx.stop();
     }
 }
 
@@ -375,50 +394,6 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle_connect(
-        &mut self,
-        Connect {
-            maker_addresses,
-            maker_identity,
-        }: Connect,
-        ctx: &mut xtra::Context<Self>,
-    ) -> Result<(), ConnectError> {
-        let num_addresses = maker_addresses.len();
-
-        for address in maker_addresses {
-            match self.connect(maker_identity, address, ctx).await {
-                Ok(state) => {
-                    self.state = state;
-                    self.status_sender
-                        .send(ConnectionStatus::Online)
-                        .expect("receiver to outlive the actor");
-
-                    return Ok(());
-                }
-                Err(FailedToConnect::VersionMismatch { taker, maker }) => {
-                    let reason = ConnectionCloseReason::VersionMismatch {
-                        taker_version: taker,
-                        maker_version: maker,
-                    };
-
-                    let _ = self.status_sender.send(ConnectionStatus::Offline {
-                        reason: Some(reason.clone()),
-                    });
-
-                    return Err(ConnectError::Closed(reason));
-                }
-                Err(e) => {
-                    tracing::warn!(%address, "Failed to establish connection: {:#}", anyhow!(e)); // format as anyhow to get entire backtrace
-                    continue;
-                }
-            }
-        }
-
-        return Err(ConnectError::AllAttemptsFailed {
-            number: num_addresses,
-        });
-    }
-
     async fn handle_wire_message(
         &mut self,
         message: MakerStreamMessage,
@@ -533,52 +508,80 @@ impl Actor {
         KeepRunning::Yes
     }
 
-    fn handle_measure_pulse(&mut self, _: MeasurePulse) {
+    fn handle_measure_pulse(&mut self, _: MeasurePulse, ctx: &mut xtra::Context<Self>) {
         if self
             .state
             .disconnect_if_last_heartbeat_older_than(self.heartbeat_timeout)
         {
-            self.status_sender
-                .send(ConnectionStatus::Offline { reason: None })
-                .expect("watch receiver to outlive the actor");
+            self.stop_with(
+                StopReason::HeartbeatTimeout(self.heartbeat_timeout.as_secs()),
+                ctx,
+            );
         }
     }
 }
 
-impl xtra::Actor for Actor {}
+#[async_trait]
+impl xtra::Actor for Actor {
+    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        let num_addresses = self.maker_addresses.len();
 
-// TODO: Move the reconnection logic inside the connection::Actor instead of
-// depending on a watch channel
-pub async fn connect(
-    mut maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
-    address: xtra::Address<Actor>,
-    maker_identity: Identity,
-    maker_addresses: Vec<SocketAddr>,
-) {
-    loop {
-        let connection_status = maker_online_status_feed_receiver.borrow().clone();
-        if matches!(connection_status, ConnectionStatus::Offline { .. }) {
-            tracing::debug!("No connection to the maker");
+        for address in self.maker_addresses.clone() {
+            match self.connect(self.maker_identity, address, ctx).await {
+                Ok(state) => {
+                    self.state = state;
+                    let _: Result<(), xtra::Disconnected> =
+                        self.projection.send(projection::ConnectedToMaker).await;
 
-            let connect = || async {
-                address
-                    .send(Connect {
-                        maker_identity,
-                        maker_addresses: maker_addresses.clone(),
-                    })
-                    .await
-                    .expect("Taker actor to be present")
-            };
+                    return;
+                }
+                Err(FailedToConnect::VersionMismatch { taker, maker }) => {
+                    let reason = ConnectionCloseReason::VersionMismatch {
+                        taker_version: taker,
+                        maker_version: maker,
+                    };
 
-            while let Err(e) = connect().await {
-                tracing::warn!("{:#}", e);
-
-                tokio::time::sleep(CONNECT_TO_MAKER_INTERVAL).await;
+                    self.stop_with(StopReason::Closed(reason), ctx);
+                    return;
+                }
+                Err(e) => {
+                    tracing::warn!(%address, "Failed to establish connection: {:#}", anyhow!(e)); // format as anyhow to get entire backtrace
+                    continue;
+                }
             }
         }
-        maker_online_status_feed_receiver
-            .changed()
-            .await
-            .expect("watch channel should outlive the future");
+
+        self.stop_with(
+            StopReason::AllAttemptsFailed {
+                number: num_addresses,
+            },
+            ctx,
+        );
+    }
+
+    async fn stopped(mut self) {
+        let stop_reason = match self.stop_reason {
+            Some(stop_reason) => stop_reason,
+            None => {
+                tracing::warn!("Stopping without a stop reason");
+                return;
+            }
+        };
+
+        // TODO: Should we introduce a concept of "interested parties" in a supervisor that are
+        // notified when an actor shuts down?
+
+        let _ = self
+            .projection
+            .send(projection::DisconnectedFromMaker {
+                reason: stop_reason.clone(),
+            })
+            .await;
+        let _ = self
+            .supervisor
+            .send(supervisor::Stopped {
+                reason: stop_reason,
+            })
+            .await;
     }
 }

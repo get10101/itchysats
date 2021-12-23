@@ -1,4 +1,6 @@
 use crate::bitmex_price_feed;
+use crate::connection;
+use crate::connection::StopReason;
 use crate::db;
 use crate::model;
 use crate::model::cfd::calculate_long_liquidation_price;
@@ -69,6 +71,7 @@ pub struct Feeds {
     pub order: watch::Receiver<Option<CfdOrder>>,
     pub connected_takers: watch::Receiver<Vec<Identity>>,
     pub cfds: watch::Receiver<Vec<Cfd>>,
+    pub connection_status: watch::Receiver<ConnectionStatus>,
 }
 
 impl Actor {
@@ -77,6 +80,10 @@ impl Actor {
         let (tx_order, rx_order) = watch::channel(None);
         let (tx_quote, rx_quote) = watch::channel(None);
         let (tx_connected_takers, rx_connected_takers) = watch::channel(Vec::new());
+        let (tx_status, rx_status) = watch::channel(ConnectionStatus {
+            online: false,
+            offline_reason: Some(OfflineReason::NotYetConnected),
+        });
 
         let actor = Self {
             db,
@@ -85,6 +92,7 @@ impl Actor {
                 order: tx_order,
                 quote: tx_quote,
                 connected_takers: tx_connected_takers,
+                connection_status: tx_status,
             },
             state: State::new(network),
         };
@@ -93,6 +101,7 @@ impl Actor {
             order: rx_order,
             quote: rx_quote,
             connected_takers: rx_connected_takers,
+            connection_status: rx_status,
         };
 
         (actor, feeds)
@@ -488,6 +497,7 @@ struct Tx {
     // TODO: Use this channel to communicate maker status as well with generic
     // ID of connected counterparties
     pub connected_takers: watch::Sender<Vec<Identity>>,
+    pub connection_status: watch::Sender<ConnectionStatus>,
 }
 
 /// Internal struct to keep state in one place
@@ -564,7 +574,56 @@ impl Actor {
         self.state.amend_rollover_proposal(msg);
         self.refresh_cfds().await;
     }
+    fn handle(&mut self, _: ConnectedToMaker) {
+        let _ = self.tx.connection_status.send(ConnectionStatus {
+            online: true,
+            offline_reason: None,
+        });
+    }
+    fn handle(&mut self, msg: DisconnectedFromMaker) {
+        let offline_reason = match msg.reason {
+            StopReason::Closed(connection::ConnectionCloseReason::VersionMismatch {
+                maker_version,
+                taker_version,
+            }) => {
+                if maker_version < taker_version {
+                    OfflineReason::MakerVersionOutdated
+                } else {
+                    OfflineReason::TakerVersionOutdated
+                }
+            }
+            StopReason::AllAttemptsFailed { .. } => OfflineReason::UnableToConnect,
+            StopReason::HeartbeatTimeout(_) => OfflineReason::HeartbeatTimeout,
+        };
+
+        let status = ConnectionStatus {
+            online: false,
+            offline_reason: Some(offline_reason),
+        };
+        let _ = self.tx.connection_status.send(status);
+    }
 }
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ConnectionStatus {
+    pub online: bool,
+    pub offline_reason: Option<OfflineReason>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub enum OfflineReason {
+    MakerVersionOutdated,
+    TakerVersionOutdated,
+    HeartbeatTimeout,
+    UnableToConnect,
+    NotYetConnected,
+}
+
+pub struct DisconnectedFromMaker {
+    pub reason: StopReason,
+}
+
+pub struct ConnectedToMaker;
 
 #[async_trait]
 impl xtra::Actor for Actor {

@@ -1,6 +1,8 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![warn(clippy::disallowed_method)]
 use crate::bitcoin::Txid;
+use crate::connection::ConnectionCloseReason;
+use crate::connection::StopReason;
 use crate::maker_cfd::FromTaker;
 use crate::maker_cfd::TakerConnected;
 use crate::model::cfd::Cfd;
@@ -17,16 +19,16 @@ use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
-use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use maker_cfd::TakerDisconnected;
 use sqlx::SqlitePool;
 use std::future::Future;
+use std::mem;
+use std::net::SocketAddr;
 use std::task::Poll;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::watch;
 use xtra::message_channel::MessageChannel;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
@@ -347,7 +349,6 @@ where
 pub struct TakerActorSystem<O, W> {
     pub cfd_actor_addr: Address<taker_cfd::Actor<O, W>>,
     pub connection_actor_addr: Address<connection::Actor>,
-    pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     wallet_actor_addr: Address<W>,
     _tasks: Tasks,
 }
@@ -376,6 +377,7 @@ where
         connect_timeout: Duration,
         projection_actor: Address<projection::Actor>,
         maker_identity: Identity,
+        possible_addresses: Vec<SocketAddr>,
     ) -> Result<Self>
     where
         M: xtra::Handler<monitor::StartMonitoring>
@@ -385,9 +387,6 @@ where
         FO: Future<Output = Result<O>>,
         FM: Future<Output = Result<M>>,
     {
-        let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
-            watch::channel(ConnectionStatus::Offline { reason: None });
-
         let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
         let (process_manager_addr, process_manager_ctx) = xtra::Context::new(None);
@@ -404,8 +403,33 @@ where
             &oracle_addr,
         )));
 
-        let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
-        let (cfd_actor_addr, cfd_actor_fut) = taker_cfd::Actor::new(
+        let (cfd_actor_addr, cfd_actor_addr_ctx) = xtra::Context::new(None);
+        let (connection_supervisor, connection_actor_addr) = supervisor::Actor::new(
+            {
+                let projection_actor = projection_actor.clone();
+                let cfd_actor_addr = cfd_actor_addr.clone();
+
+                move |supervisor| {
+                    connection::Actor::new(
+                        maker_identity,
+                        possible_addresses.clone(),
+                        projection_actor.clone(),
+                        supervisor,
+                        &cfd_actor_addr,
+                        identity_sk.clone(),
+                        maker_heartbeat_interval,
+                        connect_timeout,
+                    )
+                }
+            },
+            |reason| match reason {
+                StopReason::HeartbeatTimeout(_) => true,
+                StopReason::AllAttemptsFailed { .. } => true,
+                StopReason::Closed(ConnectionCloseReason::VersionMismatch { .. }) => false,
+            },
+        );
+
+        let cfd_actor_fut = cfd_actor_addr_ctx.run(taker_cfd::Actor::new(
             db.clone(),
             wallet_actor_addr.clone(),
             oracle_pk,
@@ -415,14 +439,11 @@ where
             oracle_addr.clone(),
             n_payouts,
             maker_identity,
-        )
-        .create(None)
-        .run();
-
+        ));
         let (auto_rollover_address, auto_rollover_fut) = auto_rollover::Actor::new(
             db,
             oracle_pk,
-            projection_actor,
+            projection_actor.clone(),
             connection_actor_addr.clone(),
             monitor_addr.clone(),
             oracle_addr,
@@ -432,17 +453,12 @@ where
         .run();
         std::mem::forget(auto_rollover_address); // leak this address to avoid shutdown
 
+        let (supervisor_addr, supervisor_fut) = connection_supervisor.create(None).run();
+        mem::forget(supervisor_addr);
+
+        tasks.add(supervisor_fut);
         tasks.add(cfd_actor_fut);
         tasks.add(auto_rollover_fut);
-
-        tasks.add(connection_actor_ctx.run(connection::Actor::new(
-            maker_online_status_feed_sender,
-            &cfd_actor_addr,
-            identity_sk,
-            maker_heartbeat_interval,
-            connect_timeout,
-        )));
-
         tasks.add(monitor_ctx.run(monitor_constructor(Box::new(cfd_actor_addr.clone())).await?));
 
         let (fan_out_actor, fan_out_actor_fut) =
@@ -459,7 +475,6 @@ where
         Ok(Self {
             cfd_actor_addr,
             connection_actor_addr,
-            maker_online_status_feed_receiver,
             wallet_actor_addr,
             _tasks: tasks,
         })

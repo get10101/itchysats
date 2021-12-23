@@ -12,13 +12,14 @@ use crate::harness::Maker;
 use crate::harness::MakerConfig;
 use crate::harness::Taker;
 use crate::harness::TakerConfig;
-use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
 use daemon::model::Identity;
 use daemon::model::Usd;
 use daemon::monitor::Event;
 use daemon::oracle;
 use daemon::projection::CfdState;
+use daemon::projection::ConnectionStatus;
+use daemon::projection::OfflineReason;
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
 use std::time::Duration;
@@ -200,7 +201,10 @@ async fn taker_notices_lack_of_maker() {
     let mut taker = Taker::start(&taker_config, maker.listen_addr, maker.identity).await;
 
     assert_eq!(
-        ConnectionStatus::Online,
+        ConnectionStatus {
+            online: true,
+            offline_reason: None
+        },
         next(taker.maker_status_feed()).await.unwrap()
     );
 
@@ -209,7 +213,10 @@ async fn taker_notices_lack_of_maker() {
     sleep(taker_config.heartbeat_timeout).await;
 
     assert_eq!(
-        ConnectionStatus::Offline { reason: None },
+        ConnectionStatus {
+            online: false,
+            offline_reason: Some(OfflineReason::HeartbeatTimeout)
+        },
         next(taker.maker_status_feed()).await.unwrap(),
     );
 
@@ -220,7 +227,10 @@ async fn taker_notices_lack_of_maker() {
     sleep(taker_config.heartbeat_timeout).await;
 
     assert_eq!(
-        ConnectionStatus::Online,
+        ConnectionStatus {
+            online: true,
+            offline_reason: None
+        },
         next(taker.maker_status_feed()).await.unwrap(),
     );
 }

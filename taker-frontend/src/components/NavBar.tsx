@@ -17,7 +17,7 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
-import { ConnectionCloseReason, ConnectionStatus, WalletInfo } from "../types";
+import { ConnectionStatus, OfflineReason, WalletInfo } from "../types";
 
 interface NavProps {
     walletInfo: WalletInfo | null;
@@ -39,13 +39,22 @@ export default function Nav({ walletInfo, connectedToMaker }: NavProps) {
     );
 
     let connectionMessage = connectedToMaker.online ? "Online" : "Offline";
-    if (connectedToMaker.connection_close_reason) {
-        switch (connectedToMaker.connection_close_reason) {
-            case ConnectionCloseReason.MAKER_VERSION_OUTDATED:
+    if (connectedToMaker.offline_reason) {
+        switch (connectedToMaker.offline_reason) {
+            case OfflineReason.MAKER_VERSION_OUTDATED:
                 connectionMessage = connectionMessage + ": the maker is running an outdated version";
                 break;
-            case ConnectionCloseReason.TAKER_VERSION_OUTDATED:
-                connectionMessage = connectionMessage + " - you are running an incompatible version, please upgrade!";
+            case OfflineReason.TAKER_VERSION_OUTDATED:
+                connectionMessage = connectionMessage + ": you are running an incompatible version, please upgrade!";
+                break;
+            case OfflineReason.HEARTBEAT_TIMEOUT:
+                connectionMessage = connectionMessage + ": lost connection";
+                break;
+            case OfflineReason.UNABLE_TO_CONNECT:
+                connectionMessage = connectionMessage + ": maker unreachable";
+                break;
+            case OfflineReason.NOT_YET_CONNECTED:
+                connectionMessage = connectionMessage + ": connecting ...";
                 break;
         }
     }

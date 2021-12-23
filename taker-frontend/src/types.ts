@@ -264,10 +264,13 @@ export interface WithdrawRequest {
 
 export interface ConnectionStatus {
     online: boolean;
-    connection_close_reason?: ConnectionCloseReason;
+    offline_reason?: OfflineReason;
 }
 
-export const enum ConnectionCloseReason {
-    MAKER_VERSION_OUTDATED = "MakerVersionOutdated",
-    TAKER_VERSION_OUTDATED = "TakerVersionOutdated",
+export const enum OfflineReason {
+    MAKER_VERSION_OUTDATED = "MakerVersionOutdated,",
+    TAKER_VERSION_OUTDATED = "TakerVersionOutdated,",
+    HEARTBEAT_TIMEOUT = "HeartbeatTimeout,",
+    UNABLE_TO_CONNECT = "UnableToConnect,",
+    NOT_YET_CONNECTED = "NotYetConnected,",
 }

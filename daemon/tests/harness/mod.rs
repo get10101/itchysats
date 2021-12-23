@@ -2,8 +2,6 @@ use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use ::bdk::bitcoin::Network;
-use daemon::connection::connect;
-use daemon::connection::ConnectionStatus;
 use daemon::db;
 use daemon::maker_cfd;
 use daemon::maker_inc_connections;
@@ -16,6 +14,7 @@ use daemon::model::Usd;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::CfdOrder;
+use daemon::projection::ConnectionStatus;
 use daemon::projection::Feeds;
 use daemon::seed::Seed;
 use daemon::taker_cfd;
@@ -252,7 +251,7 @@ impl Taker {
     }
 
     pub fn maker_status_feed(&mut self) -> &mut watch::Receiver<ConnectionStatus> {
-        &mut self.system.maker_online_status_feed_receiver
+        &mut self.feeds.connection_status
     }
 
     pub async fn start(
@@ -288,19 +287,13 @@ impl Taker {
             Duration::from_secs(10),
             projection_actor,
             maker_identity,
+            vec![maker_address],
         )
         .await
         .unwrap();
 
         let (proj_actor, feeds) = projection::Actor::new(db, Role::Taker, Network::Testnet);
         tasks.add(projection_context.run(proj_actor));
-
-        tasks.add(connect(
-            taker.maker_online_status_feed_receiver.clone(),
-            taker.connection_actor_addr.clone(),
-            maker_identity,
-            vec![maker_address],
-        ));
 
         Self {
             id: model::Identity::new(identity_pk),
