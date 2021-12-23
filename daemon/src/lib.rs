@@ -11,7 +11,6 @@ use crate::model::Identity;
 use crate::model::Price;
 use crate::model::Usd;
 use crate::oracle::Attestation;
-use crate::seed::Seed;
 use crate::tokio_ext::FutureExt;
 use crate::wallet_seed::MnemonicExt;
 use address_map::Stopping;
@@ -475,8 +474,8 @@ where
     }
 
     pub async fn backup_wallet(&self) -> Result<Mnemonic> {
-        let wallet_seed = Seed::read_from(&self.wallet_seed_path).await?;
-        let mnemonic = wallet_seed.try_into()?;
+        let mnemonic = Mnemonic::read_from(&self.wallet_seed_path).await?;
+
         Ok(mnemonic)
     }
 

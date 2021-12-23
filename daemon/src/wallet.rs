@@ -1,8 +1,7 @@
 use crate::model::Timestamp;
 use crate::model::WalletInfo;
-use crate::seed::Seed;
 use crate::tokio_ext::spawn_fallible;
-use crate::Tasks;
+use crate::{MnemonicExt, Tasks};
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -140,9 +139,9 @@ impl Actor {
         let client = bdk::electrum_client::Client::new(&self.electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
-        let seed = Seed::try_from(msg.mnemonic)?;
-
-        let ext_priv_key = seed.derive_extended_priv_key(self.wallet.network())?;
+        let ext_priv_key = msg
+            .mnemonic
+            .derive_extended_priv_key(self.wallet.network())?;
 
         let db = bdk::database::MemoryDatabase::new();
 
