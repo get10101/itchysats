@@ -282,3 +282,19 @@ pub async fn post_withdraw_request(
 
     Ok(tx::to_mempool_url(txid, *network.inner()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wallet_restore_request_deserializes_from_valid_mnemonic() {
+        let json = r#"
+            {
+                "mnemonic": "clay logic upset stadium treat nothing lumber seek inject require tourist disagree atom call lady eagle caught equip dove game connect peanut noble quick"
+            }
+        "#;
+
+        assert!(serde_json::from_str::<WalletRestoreRequest>(json).is_ok());
+    }
+}
