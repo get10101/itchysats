@@ -293,7 +293,7 @@ impl Taker {
             Duration::from_secs(10),
             projection_actor,
             maker_identity,
-            PathBuf::from_str("/dev/null").expect("Valid path string"),
+            PathBuf::from("/dev/null"),
         )
         .await
         .unwrap();
