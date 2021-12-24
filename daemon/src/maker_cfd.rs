@@ -179,35 +179,6 @@ where
     }
 }
 
-#[xtra_productivity]
-impl<O, T, W> Actor<O, T, W> {
-    async fn handle_accept_rollover(&mut self, msg: AcceptRollOver) -> Result<()> {
-        if self
-            .rollover_actors
-            .send(&msg.order_id, rollover_maker::AcceptRollOver)
-            .await
-            .is_err()
-        {
-            tracing::warn!(%msg.order_id, "No active rollover");
-        }
-
-        Ok(())
-    }
-
-    async fn handle_reject_rollover(&mut self, msg: RejectRollOver) -> Result<()> {
-        if self
-            .rollover_actors
-            .send(&msg.order_id, rollover_maker::RejectRollOver)
-            .await
-            .is_err()
-        {
-            tracing::warn!(%msg.order_id, "No active rollover");
-        }
-
-        Ok(())
-    }
-}
-
 impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
@@ -265,13 +236,6 @@ where
             .insert(proposal.order_id, rollover_actor_addr);
 
         Ok(())
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O, T, W> Actor<O, T, W> {
-    async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_maker::Actor>) {
-        self.rollover_actors.gc(msg);
     }
 }
 
@@ -430,24 +394,66 @@ impl<O, T, W> Actor<O, T, W> {
 
         Ok(())
     }
+
+    async fn handle_accept_rollover(&mut self, msg: AcceptRollOver) -> Result<()> {
+        if self
+            .rollover_actors
+            .send(&msg.order_id, rollover_maker::AcceptRollOver)
+            .await
+            .is_err()
+        {
+            tracing::warn!(%msg.order_id, "No active rollover");
+        }
+
+        Ok(())
+    }
+
+    async fn handle_reject_rollover(&mut self, msg: RejectRollOver) -> Result<()> {
+        if self
+            .rollover_actors
+            .send(&msg.order_id, rollover_maker::RejectRollOver)
+            .await
+            .is_err()
+        {
+            tracing::warn!(%msg.order_id, "No active rollover");
+        }
+
+        Ok(())
+    }
+
+    async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
+        let Commit { order_id } = msg;
+
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_commit(order_id, &mut conn, &self.process_manager_actor).await?;
+
+        Ok(())
+    }
 }
 
 #[xtra_productivity(message_impl = false)]
 impl<O, T, W> Actor<O, T, W> {
+    async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
+        let order_id = msg.order_id();
+        let mut conn = self.db.acquire().await?;
+
+        let cfd = load_cfd(order_id, &mut conn).await?;
+        let event = cfd.setup_contract(msg)?;
+        if let Err(e) = self
+            .process_manager_actor
+            .send(process_manager::Event::new(event.clone()))
+            .await?
+        {
+            tracing::error!("Sending event to process manager failed: {:#}", e);
+        }
+
+        Ok(())
+    }
+
     async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
         self.setup_actors.gc(message);
     }
 
-    async fn handle_settlement_actor_stopping(
-        &mut self,
-        message: Stopping<collab_settlement_maker::Actor>,
-    ) {
-        self.settlement_actors.gc(message);
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O, T, W> Actor<O, T, W> {
     async fn handle_settlement_completed(
         &mut self,
         msg: model::cfd::Completed<CollaborativeSettlement>,
@@ -467,17 +473,32 @@ impl<O, T, W> Actor<O, T, W> {
 
         Ok(())
     }
-}
 
-#[xtra_productivity]
-impl<O, T, W> Actor<O, T, W> {
-    async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
-        let Commit { order_id } = msg;
+    async fn handle_settlement_actor_stopping(
+        &mut self,
+        message: Stopping<collab_settlement_maker::Actor>,
+    ) {
+        self.settlement_actors.gc(message);
+    }
 
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_commit(order_id, &mut conn, &self.process_manager_actor).await?;
+    async fn handle_monitor(&mut self, msg: monitor::Event) {
+        if let Err(e) =
+            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager_actor).await
+        {
+            tracing::error!("Unable to handle monotoring event: {:#}", e)
+        }
+    }
 
-        Ok(())
+    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
+        if let Err(e) =
+            cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager_actor).await
+        {
+            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
+        }
+    }
+
+    async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_maker::Actor>) {
+        self.rollover_actors.gc(msg);
     }
 }
 
@@ -582,26 +603,6 @@ where
     }
 }
 
-#[xtra_productivity(message_impl = false)]
-impl<O, T, W> Actor<O, T, W> {
-    async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
-        let order_id = msg.order_id();
-        let mut conn = self.db.acquire().await?;
-
-        let cfd = load_cfd(order_id, &mut conn).await?;
-        let event = cfd.setup_contract(msg)?;
-        if let Err(e) = self
-            .process_manager_actor
-            .send(process_manager::Event::new(event.clone()))
-            .await?
-        {
-            tracing::error!("Sending event to process manager failed: {:#}", e);
-        }
-
-        Ok(())
-    }
-}
-
 #[async_trait]
 impl<O: 'static, T: 'static, W: 'static> Handler<TakerConnected> for Actor<O, T, W>
 where
@@ -629,25 +630,6 @@ where
 {
     async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) -> Result<()> {
         self.handle_roll_over_completed(msg).await
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O, T, W> Actor<O, T, W> {
-    async fn handle_monitor(&mut self, msg: monitor::Event) {
-        if let Err(e) =
-            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager_actor).await
-        {
-            tracing::error!("Unable to handle monotoring event: {:#}", e)
-        }
-    }
-
-    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
-        if let Err(e) =
-            cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager_actor).await
-        {
-            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
-        }
     }
 }
 

@@ -103,6 +103,27 @@ impl<O, W> Actor<O, W>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
+    async fn handle_current_order(&mut self, msg: CurrentOrder) -> Result<()> {
+        let order = msg.0;
+
+        tracing::trace!("new order {:?}", order);
+        match order {
+            Some(mut order) => {
+                order.origin = Origin::Theirs;
+
+                self.current_order = Some(order.clone());
+
+                self.projection_actor
+                    .send(projection::Update(Some(order)))
+                    .await?;
+            }
+            None => {
+                self.projection_actor.send(projection::Update(None)).await?;
+            }
+        }
+        Ok(())
+    }
+
     async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
         let Commit { order_id } = msg;
 
@@ -152,6 +173,23 @@ where
 
 #[xtra_productivity(message_impl = false)]
 impl<O, W> Actor<O, W> {
+    async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let order_id = msg.order_id();
+
+        let cfd = load_cfd(order_id, &mut conn).await?;
+        let event = cfd.setup_contract(msg)?;
+        if let Err(e) = self
+            .process_manager_actor
+            .send(process_manager::Event::new(event.clone()))
+            .await?
+        {
+            tracing::error!("Sending event to process manager failed: {:#}", e);
+        }
+
+        Ok(())
+    }
+
     async fn handle_settlement_completed(
         &mut self,
         msg: Completed<CollaborativeSettlement>,
@@ -171,26 +209,21 @@ impl<O, W> Actor<O, W> {
 
         Ok(())
     }
-}
 
-impl<O, W> Actor<O, W> {
-    async fn handle_new_order(&mut self, order: Option<Order>) -> Result<()> {
-        tracing::trace!("new order {:?}", order);
-        match order {
-            Some(mut order) => {
-                order.origin = Origin::Theirs;
-
-                self.current_order = Some(order.clone());
-
-                self.projection_actor
-                    .send(projection::Update(Some(order)))
-                    .await?;
-            }
-            None => {
-                self.projection_actor.send(projection::Update(None)).await?;
-            }
+    async fn handle_monitor(&mut self, msg: monitor::Event) {
+        if let Err(e) =
+            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager_actor).await
+        {
+            tracing::error!("Unable to handle monotoring event: {:#}", e)
         }
-        Ok(())
+    }
+
+    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
+        if let Err(e) =
+            cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager_actor).await
+        {
+            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
+        }
     }
 }
 
@@ -266,55 +299,6 @@ where
         self.tasks.add(fut);
 
         Ok(())
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O, W> Actor<O, W> {
-    async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let order_id = msg.order_id();
-
-        let cfd = load_cfd(order_id, &mut conn).await?;
-        let event = cfd.setup_contract(msg)?;
-        if let Err(e) = self
-            .process_manager_actor
-            .send(process_manager::Event::new(event.clone()))
-            .await?
-        {
-            tracing::error!("Sending event to process manager failed: {:#}", e);
-        }
-
-        Ok(())
-    }
-}
-
-#[xtra_productivity]
-impl<O, W> Actor<O, W> {
-    async fn handle_current_order(&mut self, msg: CurrentOrder) -> Result<()> {
-        self.handle_new_order(msg.0).await
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O, W> Actor<O, W>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    async fn handle_monitor(&mut self, msg: monitor::Event) {
-        if let Err(e) =
-            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager_actor).await
-        {
-            tracing::error!("Unable to handle monotoring event: {:#}", e)
-        }
-    }
-
-    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
-        if let Err(e) =
-            cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager_actor).await
-        {
-            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
-        }
     }
 }
 
