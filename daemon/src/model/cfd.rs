@@ -211,8 +211,8 @@ pub enum SettlementKind {
     Outgoing,
 }
 
-#[derive(thiserror::Error, Debug, PartialEq)]
-pub enum CannotRollover {
+#[derive(thiserror::Error, Debug)]
+pub enum RolloverError {
     #[error("Cfd does not have a dlc")]
     NoDlc,
     #[error("The Cfd is already expired")]
@@ -221,6 +221,15 @@ pub enum CannotRollover {
     WasJustRolledOver,
     #[error("Cannot roll over in state {state}")]
     WrongState { state: String },
+    #[error("Maker did not respond within {timeout} seconds")]
+    MakerDidNotRespond { timeout: u64 },
+    #[error("Rollover protocol failed")]
+    Protocol { source: anyhow::Error },
+    #[error(transparent)]
+    Other {
+        #[from]
+        source: anyhow::Error,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -497,29 +506,29 @@ impl Cfd {
 
     /// Only cfds in state `Open` that have not received an attestation and are within 23 hours
     /// until expiry are eligible for rollover
-    pub fn is_rollover_possible(&self, now: OffsetDateTime) -> Result<(), CannotRollover> {
+    pub fn is_rollover_possible(&self, now: OffsetDateTime) -> Result<(), RolloverError> {
         if self.is_final() {
-            return Err(CannotRollover::WrongState {
+            return Err(RolloverError::WrongState {
                 state: "final".to_owned(),
             });
         }
 
         if self.commit_tx.is_some() {
-            return Err(CannotRollover::WrongState {
+            return Err(RolloverError::WrongState {
                 state: "committed".to_owned(),
             });
         }
 
-        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
+        let expiry_timestamp = self.expiry_timestamp().ok_or(RolloverError::NoDlc)?;
 
         if now > expiry_timestamp {
-            return Err(CannotRollover::AlreadyExpired);
+            return Err(RolloverError::AlreadyExpired);
         }
 
         let time_until_expiry = expiry_timestamp - now;
 
         if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
-            return Err(CannotRollover::WasJustRolledOver);
+            return Err(RolloverError::WasJustRolledOver);
         }
 
         // only state open with no attestation is acceptable for rollover
@@ -1455,7 +1464,7 @@ pub type SetupCompleted = Completed<(Dlc, marker::Setup), anyhow::Error>;
 /// Message sent from a rollover actor to the
 /// cfd actor to notify that the rollover has finished (contract got updated).
 /// TODO: Roll it out in the maker rollover actor
-pub type RolloverCompleted = Completed<(Dlc, marker::Rollover), anyhow::Error>;
+pub type RolloverCompleted = Completed<(Dlc, marker::Rollover), RolloverError>;
 
 pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;
 
@@ -1468,7 +1477,7 @@ impl Completed<(Dlc, marker::Setup), anyhow::Error> {
     }
 }
 
-impl Completed<(Dlc, marker::Rollover), anyhow::Error> {
+impl Completed<(Dlc, marker::Rollover), RolloverError> {
     pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
         Self::Succeeded {
             order_id,
