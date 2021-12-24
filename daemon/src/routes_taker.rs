@@ -189,7 +189,7 @@ pub async fn get_wallet_mnemonic(taker: &State<Taker>) -> Result<Json<Mnemonic>,
             .detail(e.to_string())
     })?;
 
-    Ok(Json::from(mnemonic))
+    Ok(Json(mnemonic))
 }
 
 #[rocket::post("/wallet/reinitialize")]
@@ -201,7 +201,7 @@ pub async fn post_wallet_reinitalize(
             .title("Reinitialise request failed")
             .detail(e.to_string())
     })?;
-    Ok(Json::from(mnemonic))
+    Ok(Json(mnemonic))
 }
 
 #[rocket::get("/alive")]
@@ -288,6 +288,7 @@ pub async fn post_withdraw_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn wallet_restore_request_deserializes_from_valid_mnemonic() {
@@ -298,5 +299,14 @@ mod tests {
         "#;
 
         assert!(serde_json::from_str::<WalletRestoreRequest>(json).is_ok());
+    }
+
+    #[test]
+    fn mnemonic_serializes_to_space_seperated_word_list() {
+        let mnemonic =
+            Mnemonic::from_str("clay logic upset stadium treat nothing lumber seek inject require tourist disagree atom call lady eagle caught equip dove game connect peanut noble quick").unwrap();
+        let json = serde_json::to_string(&mnemonic).unwrap();
+
+        assert_eq!(json, "\"clay logic upset stadium treat nothing lumber seek inject require tourist disagree atom call lady eagle caught equip dove game connect peanut noble quick\"");
     }
 }
