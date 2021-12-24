@@ -1396,7 +1396,7 @@ impl CollaborativeSettlement {
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub enum Completed<P> {
+pub enum Completed<P, E> {
     Succeeded {
         order_id: OrderId,
         payload: P,
@@ -1407,18 +1407,19 @@ pub enum Completed<P> {
     },
     Failed {
         order_id: OrderId,
-        error: anyhow::Error,
+        error: E,
     },
 }
 
-impl<P> xtra::Message for Completed<P>
+impl<P, E> xtra::Message for Completed<P, E>
 where
     P: Send + 'static,
+    E: Send + 'static,
 {
     type Result = Result<()>;
 }
 
-impl<P> Completed<P> {
+impl<P, E> Completed<P, E> {
     pub fn order_id(&self) -> OrderId {
         *match self {
             Completed::Succeeded { order_id, .. } => order_id,
@@ -1449,16 +1450,16 @@ pub mod marker {
 
 /// Message sent from a setup actor to the
 /// cfd actor to notify that the contract setup has finished.
-pub type SetupCompleted = Completed<(Dlc, marker::Setup)>;
+pub type SetupCompleted = Completed<(Dlc, marker::Setup), anyhow::Error>;
 
 /// Message sent from a rollover actor to the
 /// cfd actor to notify that the rollover has finished (contract got updated).
 /// TODO: Roll it out in the maker rollover actor
-pub type RolloverCompleted = Completed<(Dlc, marker::Rollover)>;
+pub type RolloverCompleted = Completed<(Dlc, marker::Rollover), anyhow::Error>;
 
-pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement>;
+pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;
 
-impl Completed<(Dlc, marker::Setup)> {
+impl Completed<(Dlc, marker::Setup), anyhow::Error> {
     pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
         Self::Succeeded {
             order_id,
@@ -1467,7 +1468,7 @@ impl Completed<(Dlc, marker::Setup)> {
     }
 }
 
-impl Completed<(Dlc, marker::Rollover)> {
+impl Completed<(Dlc, marker::Rollover), anyhow::Error> {
     pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
         Self::Succeeded {
             order_id,
