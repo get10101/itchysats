@@ -708,7 +708,7 @@ impl Cfd {
     }
 
     // TODO: Pass the entire enum
-    pub fn roll_over(self, rollover_result: Result<Dlc>) -> Result<Event> {
+    pub fn rollover(self, rollover_result: Result<Dlc>) -> Result<Event> {
         // TODO: Compare that the version that we started the rollover with is the same as the
         // version now. For that to work we should pass the version into the state machine
         // that will handle rollover and the pass it back in here for comparison.
