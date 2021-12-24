@@ -25,7 +25,7 @@ pub async fn insert_cfd_and_update_feed(
 pub async fn handle_monitoring_event(
     event: monitor::Event,
     db: &SqlitePool,
-    process_manager_address: &xtra::Address<process_manager::Actor>,
+    process_manager: &xtra::Address<process_manager::Actor>,
 ) -> Result<()> {
     let mut conn = db.acquire().await?;
 
@@ -50,7 +50,7 @@ pub async fn handle_monitoring_event(
         monitor::Event::RevokedTransactionFound(_) => cfd.handle_revoke_confirmed(),
     };
 
-    if let Err(e) = process_manager_address
+    if let Err(e) = process_manager
         .send(process_manager::Event::new(event.clone()))
         .await?
     {
@@ -92,12 +92,12 @@ pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> R
 pub async fn handle_commit(
     order_id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
-    process_manager_address: &xtra::Address<process_manager::Actor>,
+    process_manager: &xtra::Address<process_manager::Actor>,
 ) -> Result<()> {
     let cfd = load_cfd(order_id, conn).await?;
 
     let event = cfd.manual_commit_to_blockchain()?;
-    if let Err(e) = process_manager_address
+    if let Err(e) = process_manager
         .send(process_manager::Event::new(event.clone()))
         .await?
     {
@@ -110,7 +110,7 @@ pub async fn handle_commit(
 pub async fn handle_oracle_attestation(
     attestation: oracle::Attestation,
     db: &SqlitePool,
-    process_manager_address: &xtra::Address<process_manager::Actor>,
+    process_manager: &xtra::Address<process_manager::Actor>,
 ) -> Result<()> {
     let mut conn = db.acquire().await?;
 
@@ -127,7 +127,7 @@ pub async fn handle_oracle_attestation(
 
         if let Some(event) = event {
             // Note: ? OK, because if the actor is disconnected we can fail the loop
-            if let Err(e) = process_manager_address
+            if let Err(e) = process_manager
                 .send(process_manager::Event::new(event.clone()))
                 .await?
             {
