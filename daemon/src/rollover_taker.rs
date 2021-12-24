@@ -149,11 +149,12 @@ impl Actor {
     }
 
     pub async fn forward_protocol_msg(&mut self, msg: wire::RollOverMsg) -> Result<()> {
-        let sender = self
-            .rollover_msg_sender
+        self.rollover_msg_sender
             .as_mut()
-            .context("Cannot forward message to rollover task")?;
-        sender.send(msg).await?;
+            .context("Rollover task is not active")? // Sender is set once `Accepted` is received.
+            .send(msg)
+            .await
+            .context("Failed to forward message to rollover task")?;
 
         Ok(())
     }
