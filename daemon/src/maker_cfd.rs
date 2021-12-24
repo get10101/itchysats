@@ -501,17 +501,6 @@ impl<O, T, W> Actor<O, T, W> {
 impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
-{
-    async fn handle_roll_over_completed(&mut self, _: Completed) -> Result<()> {
-        // TODO: Implement this in terms of event sourcing
-
-        Ok(())
-    }
-}
-
-impl<O, T, W> Actor<O, T, W>
-where
-    O: xtra::Handler<oracle::MonitorAttestation>,
     T: xtra::Handler<maker_inc_connections::settlement::Response>
         + xtra::Handler<Stopping<collab_settlement_maker::Actor>>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -624,8 +613,10 @@ impl<O: 'static, T: 'static, W: 'static> Handler<Completed> for Actor<O, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
 {
-    async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) -> Result<()> {
-        self.handle_roll_over_completed(msg).await
+    async fn handle(&mut self, _: Completed, _ctx: &mut Context<Self>) -> Result<()> {
+        // TODO: Implement this in terms of event sourcing
+
+        Ok(())
     }
 }
 
