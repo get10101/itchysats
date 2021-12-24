@@ -8,7 +8,6 @@ use crate::collab_settlement_maker;
 use crate::maker_inc_connections;
 use crate::model;
 use crate::model::cfd::Cfd;
-use crate::model::cfd::CollaborativeSettlement;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
@@ -444,7 +443,7 @@ impl<O, T, W> Actor<O, T, W> {
 
     async fn handle_settlement_completed(
         &mut self,
-        msg: model::cfd::Completed<CollaborativeSettlement>,
+        msg: model::cfd::CollaborativeSettlementCompleted,
     ) -> Result<()> {
         let order_id = msg.order_id();
         let mut conn = self.db.acquire().await?;

@@ -800,7 +800,7 @@ impl Cfd {
 
     pub fn settle_collaboratively(
         mut self,
-        settlement: Completed<CollaborativeSettlement>,
+        settlement: CollaborativeSettlementCompleted,
     ) -> Result<Event> {
         if !self.can_settle_collaboratively() {
             bail!("Cannot collaboratively settle anymore")
@@ -1553,6 +1553,8 @@ pub type SetupCompleted = Completed<(Dlc, marker::Setup)>;
 /// cfd actor to notify that the rollover has finished (contract got updated).
 /// TODO: Roll it out in the maker rollover actor
 pub type RolloverCompleted = Completed<(Dlc, marker::Rollover)>;
+
+pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement>;
 
 impl Completed<(Dlc, marker::Setup)> {
     pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
