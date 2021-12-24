@@ -111,22 +111,18 @@ impl Tasks {
     }
 }
 
-pub struct MakerActorSystem<O, M, T, W> {
-    pub cfd_actor_addr: Address<maker_cfd::Actor<O, M, T, W>>,
+pub struct MakerActorSystem<O, T, W> {
+    pub cfd_actor_addr: Address<maker_cfd::Actor<O, T, W>>,
     wallet_actor_addr: Address<W>,
     inc_conn_addr: Address<T>,
     _tasks: Tasks,
 }
 
-impl<O, M, T, W> MakerActorSystem<O, M, T, W>
+impl<O, T, W> MakerActorSystem<O, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
         + xtra::Handler<oracle::Sync>,
-    M: xtra::Handler<monitor::StartMonitoring>
-        + xtra::Handler<monitor::Sync>
-        + xtra::Handler<monitor::CollaborativeSettlement>
-        + xtra::Handler<oracle::Attestation>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>
         + xtra::Handler<maker_inc_connections::ConfirmOrder>
@@ -142,7 +138,7 @@ where
         + xtra::Handler<wallet::Withdraw>,
 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new<FO, FM>(
+    pub async fn new<FO, FM, M>(
         db: SqlitePool,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
@@ -158,6 +154,10 @@ where
         projection_actor: Address<projection::Actor>,
     ) -> Result<Self>
     where
+        M: xtra::Handler<monitor::StartMonitoring>
+            + xtra::Handler<monitor::Sync>
+            + xtra::Handler<monitor::CollaborativeSettlement>
+            + xtra::Handler<oracle::Attestation>,
         FO: Future<Output = Result<O>>,
         FM: Future<Output = Result<M>>,
     {
@@ -172,6 +172,10 @@ where
             db.clone(),
             Role::Maker,
             &projection_actor,
+            &wallet_addr,
+            &monitor_addr,
+            &monitor_addr,
+            &oracle_addr,
         )));
 
         let (cfd_actor_addr, cfd_actor_fut) = maker_cfd::Actor::new(
@@ -182,7 +186,6 @@ where
             projection_actor,
             process_manager_addr.clone(),
             inc_conn_addr.clone(),
-            monitor_addr.clone(),
             oracle_addr.clone(),
             n_payouts,
         )
@@ -318,23 +321,19 @@ where
     }
 }
 
-pub struct TakerActorSystem<O, M, W> {
-    pub cfd_actor_addr: Address<taker_cfd::Actor<O, M, W>>,
+pub struct TakerActorSystem<O, W> {
+    pub cfd_actor_addr: Address<taker_cfd::Actor<O, W>>,
     pub connection_actor_addr: Address<connection::Actor>,
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     wallet_actor_addr: Address<W>,
     _tasks: Tasks,
 }
 
-impl<O, M, W> TakerActorSystem<O, M, W>
+impl<O, W> TakerActorSystem<O, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
         + xtra::Handler<oracle::Sync>,
-    M: xtra::Handler<monitor::StartMonitoring>
-        + xtra::Handler<monitor::Sync>
-        + xtra::Handler<monitor::CollaborativeSettlement>
-        + xtra::Handler<oracle::Attestation>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>
@@ -342,7 +341,7 @@ where
         + xtra::Handler<wallet::Reinitialise>,
 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new<FM, FO>(
+    pub async fn new<FM, FO, M>(
         db: SqlitePool,
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
@@ -356,6 +355,10 @@ where
         maker_identity: Identity,
     ) -> Result<Self>
     where
+        M: xtra::Handler<monitor::StartMonitoring>
+            + xtra::Handler<monitor::Sync>
+            + xtra::Handler<monitor::CollaborativeSettlement>
+            + xtra::Handler<oracle::Attestation>,
         FO: Future<Output = Result<O>>,
         FM: Future<Output = Result<M>>,
     {
@@ -372,6 +375,10 @@ where
             db.clone(),
             Role::Taker,
             &projection_actor,
+            &wallet_actor_addr,
+            &monitor_addr,
+            &monitor_addr,
+            &oracle_addr,
         )));
 
         let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
@@ -382,7 +389,6 @@ where
             projection_actor.clone(),
             process_manager_addr,
             connection_actor_addr.clone(),
-            monitor_addr.clone(),
             oracle_addr.clone(),
             n_payouts,
             maker_identity,

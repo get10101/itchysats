@@ -1,14 +1,11 @@
 use crate::db;
 use crate::model::cfd::Cfd;
-use crate::model::cfd::CfdEvent;
-use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::monitor;
 use crate::oracle;
 use crate::process_manager;
 use crate::projection;
 use crate::try_continue;
-use crate::wallet;
 use anyhow::Context;
 use anyhow::Result;
 use sqlx::pool::PoolConnection;
@@ -25,15 +22,11 @@ pub async fn insert_cfd_and_update_feed(
     Ok(())
 }
 
-pub async fn handle_monitoring_event<W>(
+pub async fn handle_monitoring_event(
     event: monitor::Event,
     db: &SqlitePool,
-    wallet: &xtra::Address<W>,
     process_manager_address: &xtra::Address<process_manager::Actor>,
-) -> Result<()>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
+) -> Result<()> {
     let mut conn = db.acquire().await?;
 
     let order_id = event.order_id();
@@ -62,9 +55,6 @@ where
         .await?
     {
         tracing::error!("Sending event to process manager failed: {:#}", e);
-    } else {
-        // TODO: Move into process manager
-        post_process_event(event, wallet).await?;
     }
 
     Ok(())
@@ -99,15 +89,11 @@ pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> R
     Ok(cfd)
 }
 
-pub async fn handle_commit<W>(
+pub async fn handle_commit(
     order_id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
-    wallet: &xtra::Address<W>,
     process_manager_address: &xtra::Address<process_manager::Actor>,
-) -> Result<()>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
+) -> Result<()> {
     let cfd = load_cfd(order_id, conn).await?;
 
     let event = cfd.manual_commit_to_blockchain()?;
@@ -116,23 +102,16 @@ where
         .await?
     {
         tracing::error!("Sending event to process manager failed: {:#}", e);
-    } else {
-        // TODO: Move into process manager
-        post_process_event(event, wallet).await?;
     }
 
     Ok(())
 }
 
-pub async fn handle_oracle_attestation<W>(
+pub async fn handle_oracle_attestation(
     attestation: oracle::Attestation,
     db: &SqlitePool,
-    wallet: &xtra::Address<W>,
     process_manager_address: &xtra::Address<process_manager::Actor>,
-) -> Result<()>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
+) -> Result<()> {
     let mut conn = db.acquire().await?;
 
     tracing::debug!(
@@ -153,41 +132,8 @@ where
                 .await?
             {
                 tracing::error!("Sending event to process manager failed: {:#}", e);
-            } else {
-                // TODO: Move into process manager
-                try_continue!(post_process_event(event, wallet).await);
             }
         }
-    }
-
-    Ok(())
-}
-
-async fn post_process_event<W>(event: Event, wallet: &xtra::Address<W>) -> Result<()>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    match event.event {
-        CfdEvent::OracleAttestedPostCetTimelock { cet, .. }
-        | CfdEvent::CetTimelockConfirmedPostOracleAttestation { cet } => {
-            let txid = wallet
-                .send(wallet::TryBroadcastTransaction { tx: cet })
-                .await?
-                .context("Failed to broadcast CET")?;
-
-            tracing::info!(%txid, "CET published");
-        }
-        CfdEvent::OracleAttestedPriorCetTimelock { commit_tx: tx, .. }
-        | CfdEvent::ManualCommit { tx } => {
-            let txid = wallet
-                .send(wallet::TryBroadcastTransaction { tx })
-                .await?
-                .context("Failed to broadcast commit transaction")?;
-
-            tracing::info!(%txid, "Commit transaction published");
-        }
-
-        _ => {}
     }
 
     Ok(())

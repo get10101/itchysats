@@ -100,7 +100,7 @@ impl Cfd {
     // might become relevant. See also https://github.com/itchysats/itchysats/issues/605 and https://github.com/itchysats/itchysats/issues/236.
     fn apply(self, event: cfd::Event) -> Self {
         match event.event {
-            CfdEvent::ContractSetupCompleted { dlc } => Self {
+            CfdEvent::ContractSetupCompleted { dlc, .. } => Self {
                 params: Some(MonitorParams::new(dlc)),
                 monitor_lock_finality: true,
                 monitor_commit_finality: true,

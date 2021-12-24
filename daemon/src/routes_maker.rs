@@ -7,7 +7,6 @@ use daemon::model::Identity;
 use daemon::model::Price;
 use daemon::model::Usd;
 use daemon::model::WalletInfo;
-use daemon::monitor;
 use daemon::oracle;
 use daemon::projection::Cfd;
 use daemon::projection::CfdAction;
@@ -33,8 +32,7 @@ use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
 
-pub type Maker =
-    MakerActorSystem<oracle::Actor, monitor::Actor, maker_inc_connections::Actor, wallet::Actor>;
+pub type Maker = MakerActorSystem<oracle::Actor, maker_inc_connections::Actor, wallet::Actor>;
 
 #[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]

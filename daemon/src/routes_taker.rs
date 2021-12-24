@@ -8,7 +8,6 @@ use daemon::model::Leverage;
 use daemon::model::Price;
 use daemon::model::Usd;
 use daemon::model::WalletInfo;
-use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
 use daemon::projection::CfdAction;
@@ -34,7 +33,7 @@ use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
 
-type Taker = TakerActorSystem<oracle::Actor, monitor::Actor, wallet::Actor>;
+type Taker = TakerActorSystem<oracle::Actor, wallet::Actor>;
 
 #[rocket::get("/feed")]
 pub async fn feed(
