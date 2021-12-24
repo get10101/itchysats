@@ -7,15 +7,12 @@ import {
     Box,
     Center,
     StackDivider,
-    useToast,
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
 import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
-import { useEventSource } from "react-sse-hooks";
 import useWebSocket from "react-use-websocket";
-import { useBackendMonitor } from "./components/BackendMonitor";
 import Disclaimer from "./components/Disclaimer";
 import Footer from "./components/Footer";
 import History from "./components/History";
@@ -36,13 +33,11 @@ import {
     WalletInfo,
 } from "./types";
 import useDebouncedEffect from "./useDebouncedEffect";
+import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
 import usePostRequest from "./usePostRequest";
 
 export const App = () => {
-    const toast = useToast();
-    useBackendMonitor(toast, 5000, "Please start the taker again to reconnect..."); // 5s timeout
-
     let [referencePrice, setReferencePrice] = useState<number>();
     useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
         shouldReconnect: () => true,
@@ -54,7 +49,7 @@ export const App = () => {
         },
     });
 
-    let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });
+    const source = useEventSource("/api/feed", true);
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const order = useLatestEvent<Order>(source, "order", intoOrder);
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);

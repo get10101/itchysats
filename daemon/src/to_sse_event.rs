@@ -109,3 +109,55 @@ impl ToSseEvent for Option<Quote> {
         Event::json(self).event("quote")
     }
 }
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Heartbeat {
+    timestamp: Timestamp,
+}
+
+impl Heartbeat {
+    pub fn new() -> Self {
+        Self {
+            timestamp: Timestamp::now(),
+        }
+    }
+}
+
+impl Default for Heartbeat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ToSseEvent for Heartbeat {
+    fn to_sse_event(&self) -> Event {
+        Event::json(self).event("heartbeat")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_test::Token;
+
+    #[test]
+    fn heartbeat_serialization() {
+        let heartbeat = Heartbeat {
+            timestamp: Timestamp::new(0),
+        };
+
+        serde_test::assert_ser_tokens(
+            &heartbeat,
+            &[
+                Token::Struct {
+                    name: "Heartbeat",
+                    len: 1,
+                },
+                Token::Str("timestamp"),
+                Token::NewtypeStruct { name: "Timestamp" },
+                Token::I64(0),
+                Token::StructEnd,
+            ],
+        );
+    }
+}
