@@ -140,7 +140,7 @@ pub async fn post_cfd_action(
                 None => {
                     return Err(HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
                         .title("Quote unavailable")
-                        .detail("Cannot settle without current price information."))
+                        .detail("Cannot settle without current price information."));
                 }
             };
 
@@ -182,24 +182,26 @@ pub async fn post_wallet_restore(
 }
 
 #[rocket::get("/wallet/mnemonic")]
-pub async fn get_wallet_mnemonic(taker: &State<Taker>) -> Result<String, HttpApiProblem> {
+pub async fn get_wallet_mnemonic(taker: &State<Taker>) -> Result<Json<Mnemonic>, HttpApiProblem> {
     let mnemonic = taker.backup_wallet().await.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title("Wallet mnemonic request failed")
             .detail(e.to_string())
     })?;
 
-    Ok(mnemonic.to_string())
+    Ok(Json::from(mnemonic))
 }
 
 #[rocket::post("/wallet/reinitialize")]
-pub async fn post_wallet_reinitalize(taker: &State<Taker>) -> Result<String, HttpApiProblem> {
+pub async fn post_wallet_reinitalize(
+    taker: &State<Taker>,
+) -> Result<Json<Mnemonic>, HttpApiProblem> {
     let mnemonic = taker.reinitialize_wallet().await.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title("Reinitialise request failed")
             .detail(e.to_string())
     })?;
-    Ok(mnemonic.to_string())
+    Ok(Json::from(mnemonic))
 }
 
 #[rocket::get("/alive")]
