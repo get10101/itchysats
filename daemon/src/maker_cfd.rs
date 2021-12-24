@@ -4,11 +4,9 @@ use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_maker;
-use crate::db::append_event;
 use crate::maker_inc_connections;
 use crate::model;
 use crate::model::cfd::Cfd;
-use crate::model::cfd::CfdEvent;
 use crate::model::cfd::CollaborativeSettlement;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
@@ -22,8 +20,8 @@ use crate::model::Position;
 use crate::model::Price;
 use crate::model::Usd;
 use crate::monitor;
-use crate::monitor::MonitorParams;
 use crate::oracle;
+use crate::process_manager;
 use crate::projection;
 use crate::projection::Update;
 use crate::rollover_maker;
@@ -34,7 +32,6 @@ use crate::wallet;
 use crate::wire;
 use crate::wire::TakerToMaker;
 use crate::Tasks;
-use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -91,16 +88,16 @@ pub struct FromTaker {
     pub msg: wire::TakerToMaker,
 }
 
-pub struct Actor<O, M, T, W> {
+pub struct Actor<O, T, W> {
     db: sqlx::SqlitePool,
     wallet: Address<W>,
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: Address<projection::Actor>,
+    process_manager_actor: Address<process_manager::Actor>,
     rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
     takers: Address<T>,
     current_order: Option<Order>,
-    monitor_actor: Address<M>,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
     oracle_actor: Address<O>,
@@ -109,7 +106,7 @@ pub struct Actor<O, M, T, W> {
     tasks: Tasks,
 }
 
-impl<O, M, T, W> Actor<O, M, T, W> {
+impl<O, T, W> Actor<O, T, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
@@ -117,8 +114,8 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         settlement_interval: Duration,
         oracle_pk: schnorrsig::PublicKey,
         projection_actor: Address<projection::Actor>,
+        process_manager_actor: Address<process_manager::Actor>,
         takers: Address<T>,
-        monitor_actor: Address<M>,
         oracle_actor: Address<O>,
         n_payouts: usize,
     ) -> Self {
@@ -128,10 +125,10 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             settlement_interval,
             oracle_pk,
             projection_actor,
+            process_manager_actor,
             rollover_actors: AddressMap::default(),
             takers,
             current_order: None,
-            monitor_actor,
             setup_actors: AddressMap::default(),
             oracle_actor,
             n_payouts,
@@ -154,7 +151,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
     }
 }
 
-impl<O, M, T, W> Actor<O, M, T, W>
+impl<O, T, W> Actor<O, T, W>
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
@@ -182,39 +179,9 @@ where
     }
 }
 
-#[xtra_productivity]
-impl<O, M, T, W> Actor<O, M, T, W> {
-    async fn handle_accept_rollover(&mut self, msg: AcceptRollOver) -> Result<()> {
-        if self
-            .rollover_actors
-            .send(&msg.order_id, rollover_maker::AcceptRollOver)
-            .await
-            .is_err()
-        {
-            tracing::warn!(%msg.order_id, "No active rollover");
-        }
-
-        Ok(())
-    }
-
-    async fn handle_reject_rollover(&mut self, msg: RejectRollOver) -> Result<()> {
-        if self
-            .rollover_actors
-            .send(&msg.order_id, rollover_maker::RejectRollOver)
-            .await
-            .is_err()
-        {
-            tracing::warn!(%msg.order_id, "No active rollover");
-        }
-
-        Ok(())
-    }
-}
-
-impl<O, M, T, W> Actor<O, M, T, W>
+impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    M: xtra::Handler<monitor::StartMonitoring>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<Stopping<rollover_maker::Actor>>
         + xtra::Handler<RollOverProposed>,
@@ -272,17 +239,9 @@ where
     }
 }
 
-#[xtra_productivity(message_impl = false)]
-impl<O, M, T, W> Actor<O, M, T, W> {
-    async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_maker::Actor>) {
-        self.rollover_actors.gc(msg);
-    }
-}
-
-impl<O, M, T, W> Actor<O, M, T, W>
+impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    M: xtra::Handler<monitor::StartMonitoring>,
     T: xtra::Handler<maker_inc_connections::ConfirmOrder>
         + xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>
@@ -352,7 +311,6 @@ where
             .await?;
 
         self.projection_actor.send(projection::Update(None)).await?;
-
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
 
         // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any
@@ -388,7 +346,7 @@ where
 }
 
 #[xtra_productivity]
-impl<O, M, T, W> Actor<O, M, T, W> {
+impl<O, T, W> Actor<O, T, W> {
     async fn handle_accept_order(&mut self, msg: AcceptOrder) -> Result<()> {
         let AcceptOrder { order_id } = msg;
 
@@ -436,28 +394,66 @@ impl<O, M, T, W> Actor<O, M, T, W> {
 
         Ok(())
     }
+
+    async fn handle_accept_rollover(&mut self, msg: AcceptRollOver) -> Result<()> {
+        if self
+            .rollover_actors
+            .send(&msg.order_id, rollover_maker::AcceptRollOver)
+            .await
+            .is_err()
+        {
+            tracing::warn!(%msg.order_id, "No active rollover");
+        }
+
+        Ok(())
+    }
+
+    async fn handle_reject_rollover(&mut self, msg: RejectRollOver) -> Result<()> {
+        if self
+            .rollover_actors
+            .send(&msg.order_id, rollover_maker::RejectRollOver)
+            .await
+            .is_err()
+        {
+            tracing::warn!(%msg.order_id, "No active rollover");
+        }
+
+        Ok(())
+    }
+
+    async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
+        let Commit { order_id } = msg;
+
+        let mut conn = self.db.acquire().await?;
+        cfd_actors::handle_commit(order_id, &mut conn, &self.process_manager_actor).await?;
+
+        Ok(())
+    }
 }
 
 #[xtra_productivity(message_impl = false)]
-impl<O, M, T, W> Actor<O, M, T, W> {
+impl<O, T, W> Actor<O, T, W> {
+    async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
+        let order_id = msg.order_id();
+        let mut conn = self.db.acquire().await?;
+
+        let cfd = load_cfd(order_id, &mut conn).await?;
+        let event = cfd.setup_contract(msg)?;
+        if let Err(e) = self
+            .process_manager_actor
+            .send(process_manager::Event::new(event.clone()))
+            .await?
+        {
+            tracing::error!("Sending event to process manager failed: {:#}", e);
+        }
+
+        Ok(())
+    }
+
     async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
         self.setup_actors.gc(message);
     }
 
-    async fn handle_settlement_actor_stopping(
-        &mut self,
-        message: Stopping<collab_settlement_maker::Actor>,
-    ) {
-        self.settlement_actors.gc(message);
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O, M, T, W> Actor<O, M, T, W>
-where
-    M: xtra::Handler<monitor::CollaborativeSettlement>,
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
     async fn handle_settlement_completed(
         &mut self,
         msg: model::cfd::Completed<CollaborativeSettlement>,
@@ -467,78 +463,47 @@ where
         let cfd = load_cfd(order_id, &mut conn).await?;
 
         let event = cfd.settle_collaboratively(msg)?;
-        append_event(event.clone(), &mut conn).await?;
-        self.projection_actor.send(projection::CfdsChanged).await?;
-
-        match event.event {
-            CfdEvent::CollaborativeSettlementCompleted {
-                spend_tx, script, ..
-            } => {
-                let txid = self
-                    .wallet
-                    .send(wallet::TryBroadcastTransaction { tx: spend_tx })
-                    .await?
-                    .context("Broadcasting close transaction")?;
-
-                tracing::info!(%order_id, "Close transaction published with txid {}", txid);
-
-                self.monitor_actor
-                    .send(monitor::CollaborativeSettlement {
-                        order_id,
-                        tx: (txid, script),
-                    })
-                    .await?;
-            }
-            CfdEvent::CollaborativeSettlementRejected { commit_tx } => {
-                let txid = self
-                    .wallet
-                    .send(wallet::TryBroadcastTransaction { tx: commit_tx })
-                    .await?
-                    .context("Broadcasting commit transaction")?;
-
-                tracing::info!(
-                    "Closing non-collaboratively. Commit tx published with txid {}",
-                    txid
-                )
-            }
-            CfdEvent::CollaborativeSettlementFailed { commit_tx } => {
-                let txid = self
-                    .wallet
-                    .send(wallet::TryBroadcastTransaction { tx: commit_tx })
-                    .await?
-                    .context("Broadcasting commit transaction")?;
-
-                tracing::warn!(
-                    "Closing non-collaboratively. Commit tx published with txid {}",
-                    txid
-                )
-            }
-            _ => bail!("Unexpected event {:?}", event.event),
+        if let Err(e) = self
+            .process_manager_actor
+            .send(process_manager::Event::new(event.clone()))
+            .await?
+        {
+            tracing::error!("Sending event to process manager failed: {:#}", e);
         }
 
         Ok(())
     }
-}
 
-#[xtra_productivity]
-impl<O, M, T, W> Actor<O, M, T, W>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
-        let Commit { order_id } = msg;
+    async fn handle_settlement_actor_stopping(
+        &mut self,
+        message: Stopping<collab_settlement_maker::Actor>,
+    ) {
+        self.settlement_actors.gc(message);
+    }
 
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_commit(order_id, &mut conn, &self.wallet, &self.projection_actor)
-            .await?;
+    async fn handle_monitor(&mut self, msg: monitor::Event) {
+        if let Err(e) =
+            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager_actor).await
+        {
+            tracing::error!("Unable to handle monotoring event: {:#}", e)
+        }
+    }
 
-        Ok(())
+    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
+        if let Err(e) =
+            cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager_actor).await
+        {
+            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
+        }
+    }
+
+    async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_maker::Actor>) {
+        self.rollover_actors.gc(msg);
     }
 }
 
-impl<O, M, T, W> Actor<O, M, T, W>
+impl<O, T, W> Actor<O, T, W>
 where
-    M: xtra::Handler<monitor::StartMonitoring>,
     O: xtra::Handler<oracle::MonitorAttestation>,
 {
     async fn handle_roll_over_completed(&mut self, _: Completed) -> Result<()> {
@@ -548,10 +513,9 @@ where
     }
 }
 
-impl<O, M, T, W> Actor<O, M, T, W>
+impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
-    M: xtra::Handler<monitor::StartMonitoring> + xtra::Handler<monitor::CollaborativeSettlement>,
     T: xtra::Handler<maker_inc_connections::settlement::Response>
         + xtra::Handler<Stopping<collab_settlement_maker::Actor>>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -596,7 +560,7 @@ where
 }
 
 #[xtra_productivity]
-impl<O, M, T, W> Actor<O, M, T, W>
+impl<O, T, W> Actor<O, T, W>
 where
     T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
 {
@@ -639,61 +603,8 @@ where
     }
 }
 
-#[xtra_productivity(message_impl = false)]
-impl<O, M, T, W> Actor<O, M, T, W>
-where
-    O: xtra::Handler<oracle::MonitorAttestation>,
-    M: xtra::Handler<monitor::StartMonitoring>,
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
-        let order_id = msg.order_id();
-        let mut conn = self.db.acquire().await?;
-
-        let cfd = load_cfd(order_id, &mut conn).await?;
-        let event = cfd.setup_contract(msg)?;
-        append_event(event.clone(), &mut conn).await?;
-
-        self.projection_actor.send(projection::CfdsChanged).await?;
-
-        let dlc = match event.event {
-            CfdEvent::ContractSetupCompleted { dlc } => dlc,
-            CfdEvent::OfferRejected | CfdEvent::ContractSetupFailed => {
-                return Ok(());
-            }
-            _ => bail!("Unexpected event {:?}", event.event),
-        };
-
-        tracing::info!("Setup complete, publishing on chain now");
-
-        let txid = self
-            .wallet
-            .send(wallet::TryBroadcastTransaction {
-                tx: dlc.lock.0.clone(),
-            })
-            .await??;
-
-        tracing::info!("Lock transaction published with txid {}", txid);
-
-        self.monitor_actor
-            .send(monitor::StartMonitoring {
-                id: order_id,
-                params: MonitorParams::new(dlc.clone()),
-            })
-            .await?;
-
-        self.oracle_actor
-            .send(oracle::MonitorAttestation {
-                event_id: dlc.settlement_event_id,
-            })
-            .await?;
-
-        Ok(())
-    }
-}
-
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<TakerConnected> for Actor<O, M, T, W>
+impl<O: 'static, T: 'static, W: 'static> Handler<TakerConnected> for Actor<O, T, W>
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
@@ -703,8 +614,7 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<TakerDisconnected>
-    for Actor<O, M, T, W>
+impl<O: 'static, T: 'static, W: 'static> Handler<TakerDisconnected> for Actor<O, T, W>
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
@@ -714,9 +624,8 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<Completed> for Actor<O, M, T, W>
+impl<O: 'static, T: 'static, W: 'static> Handler<Completed> for Actor<O, T, W>
 where
-    M: xtra::Handler<monitor::StartMonitoring>,
     O: xtra::Handler<oracle::MonitorAttestation>,
 {
     async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) -> Result<()> {
@@ -724,39 +633,10 @@ where
     }
 }
 
-#[xtra_productivity(message_impl = false)]
-impl<O, M, T, W> Actor<O, M, T, W>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    async fn handle_monitor(&mut self, msg: monitor::Event) {
-        if let Err(e) =
-            cfd_actors::handle_monitoring_event(msg, &self.db, &self.wallet, &self.projection_actor)
-                .await
-        {
-            tracing::error!("Unable to handle monotoring event: {:#}", e)
-        }
-    }
-
-    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
-        if let Err(e) = cfd_actors::handle_oracle_attestation(
-            msg,
-            &self.db,
-            &self.wallet,
-            &self.projection_actor,
-        )
-        .await
-        {
-            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
-        }
-    }
-}
-
 #[async_trait]
-impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<FromTaker> for Actor<O, M, T, W>
+impl<O: 'static, T: 'static, W: 'static> Handler<FromTaker> for Actor<O, T, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    M: xtra::Handler<monitor::StartMonitoring> + xtra::Handler<monitor::CollaborativeSettlement>,
     T: xtra::Handler<maker_inc_connections::ConfirmOrder>
         + xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>
@@ -859,4 +739,4 @@ impl Message for FromTaker {
     type Result = ();
 }
 
-impl<O: 'static, M: 'static, T: 'static, W: 'static> xtra::Actor for Actor<O, M, T, W> {}
+impl<O: 'static, T: 'static, W: 'static> xtra::Actor for Actor<O, T, W> {}

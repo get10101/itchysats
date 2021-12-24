@@ -1,4 +1,3 @@
-use crate::harness::mocks::monitor::MonitorActor;
 use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
@@ -116,8 +115,7 @@ impl Default for TakerConfig {
 
 /// Maker Test Setup
 pub struct Maker {
-    pub system:
-        MakerActorSystem<OracleActor, MonitorActor, maker_inc_connections::Actor, WalletActor>,
+    pub system: MakerActorSystem<OracleActor, maker_inc_connections::Actor, WalletActor>,
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     pub listen_addr: SocketAddr,
@@ -238,7 +236,7 @@ impl Maker {
 /// Taker Test Setup
 pub struct Taker {
     pub id: Identity,
-    pub system: daemon::TakerActorSystem<OracleActor, MonitorActor, WalletActor>,
+    pub system: daemon::TakerActorSystem<OracleActor, WalletActor>,
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     _tasks: Tasks,

@@ -1,14 +1,11 @@
 use crate::db;
 use crate::model::cfd::Cfd;
-use crate::model::cfd::CfdEvent;
-use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::monitor;
 use crate::oracle;
+use crate::process_manager;
 use crate::projection;
-use crate::projection::CfdsChanged;
 use crate::try_continue;
-use crate::wallet;
 use anyhow::Context;
 use anyhow::Result;
 use sqlx::pool::PoolConnection;
@@ -25,15 +22,11 @@ pub async fn insert_cfd_and_update_feed(
     Ok(())
 }
 
-pub async fn handle_monitoring_event<W>(
+pub async fn handle_monitoring_event(
     event: monitor::Event,
     db: &SqlitePool,
-    wallet: &xtra::Address<W>,
-    projection_address: &xtra::Address<projection::Actor>,
-) -> Result<()>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
+    process_manager: &xtra::Address<process_manager::Actor>,
+) -> Result<()> {
     let mut conn = db.acquire().await?;
 
     let order_id = event.order_id();
@@ -57,9 +50,12 @@ where
         monitor::Event::RevokedTransactionFound(_) => cfd.handle_revoke_confirmed(),
     };
 
-    db::append_event(event.clone(), &mut conn).await?;
-    post_process_event(event, wallet).await?;
-    projection_address.send(CfdsChanged).await?;
+    if let Err(e) = process_manager
+        .send(process_manager::Event::new(event.clone()))
+        .await?
+    {
+        tracing::error!("Sending event to process manager failed: {:#}", e);
+    }
 
     Ok(())
 }
@@ -93,36 +89,29 @@ pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> R
     Ok(cfd)
 }
 
-pub async fn handle_commit<W>(
+pub async fn handle_commit(
     order_id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
-    wallet: &xtra::Address<W>,
-    projection_address: &xtra::Address<projection::Actor>,
-) -> Result<()>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
+    process_manager: &xtra::Address<process_manager::Actor>,
+) -> Result<()> {
     let cfd = load_cfd(order_id, conn).await?;
 
     let event = cfd.manual_commit_to_blockchain()?;
-    db::append_event(event.clone(), conn).await?;
-
-    post_process_event(event, wallet).await?;
-
-    projection_address.send(CfdsChanged).await?;
+    if let Err(e) = process_manager
+        .send(process_manager::Event::new(event.clone()))
+        .await?
+    {
+        tracing::error!("Sending event to process manager failed: {:#}", e);
+    }
 
     Ok(())
 }
 
-pub async fn handle_oracle_attestation<W>(
+pub async fn handle_oracle_attestation(
     attestation: oracle::Attestation,
     db: &SqlitePool,
-    wallet: &xtra::Address<W>,
-    projection_address: &xtra::Address<projection::Actor>,
-) -> Result<()>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
+    process_manager: &xtra::Address<process_manager::Actor>,
+) -> Result<()> {
     let mut conn = db.acquire().await?;
 
     tracing::debug!(
@@ -136,45 +125,15 @@ where
             .decrypt_cet(&attestation)
             .context("Failed to decrypt CET using attestation"));
 
-        try_continue!(db::append_event(event.clone(), &mut conn)
-            .await
-            .context("Failed to append events"));
-
         if let Some(event) = event {
-            try_continue!(post_process_event(event, wallet).await)
-        }
-    }
-
-    projection_address.send(CfdsChanged).await?;
-
-    Ok(())
-}
-
-async fn post_process_event<W>(event: Event, wallet: &xtra::Address<W>) -> Result<()>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    match event.event {
-        CfdEvent::OracleAttestedPostCetTimelock { cet, .. }
-        | CfdEvent::CetTimelockConfirmedPostOracleAttestation { cet } => {
-            let txid = wallet
-                .send(wallet::TryBroadcastTransaction { tx: cet })
+            // Note: ? OK, because if the actor is disconnected we can fail the loop
+            if let Err(e) = process_manager
+                .send(process_manager::Event::new(event.clone()))
                 .await?
-                .context("Failed to broadcast CET")?;
-
-            tracing::info!(%txid, "CET published");
+            {
+                tracing::error!("Sending event to process manager failed: {:#}", e);
+            }
         }
-        CfdEvent::OracleAttestedPriorCetTimelock { commit_tx: tx, .. }
-        | CfdEvent::ManualCommit { tx } => {
-            let txid = wallet
-                .send(wallet::TryBroadcastTransaction { tx })
-                .await?
-                .context("Failed to broadcast commit transaction")?;
-
-            tracing::info!(%txid, "Commit transaction published");
-        }
-
-        _ => {}
     }
 
     Ok(())
