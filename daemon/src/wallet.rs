@@ -1,7 +1,8 @@
 use crate::model::Timestamp;
 use crate::model::WalletInfo;
 use crate::tokio_ext::spawn_fallible;
-use crate::{MnemonicExt, Tasks};
+use crate::MnemonicExt;
+use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;

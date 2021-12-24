@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![warn(clippy::disallowed_method)]
+use crate::bip39_ext::MnemonicExt;
 use crate::bitcoin::Txid;
 use crate::maker_cfd::FromTaker;
 use crate::maker_cfd::TakerConnected;
@@ -12,7 +13,6 @@ use crate::model::Price;
 use crate::model::Usd;
 use crate::oracle::Attestation;
 use crate::tokio_ext::FutureExt;
-use crate::wallet_seed::MnemonicExt;
 use address_map::Stopping;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -41,6 +41,7 @@ pub mod address_map;
 pub mod auth;
 pub mod auto_rollover;
 pub mod bdk_ext;
+pub mod bip39_ext;
 pub mod bitmex_price_feed;
 pub mod cfd_actors;
 pub mod collab_settlement_maker;
@@ -76,7 +77,6 @@ pub mod tokio_ext;
 pub mod try_continue;
 pub mod tx;
 pub mod wallet;
-pub mod wallet_seed;
 pub mod wire;
 pub mod xtra_ext;
 
