@@ -5,6 +5,7 @@ use crate::connection;
 use crate::model::cfd;
 use crate::model::cfd::CfdEvent;
 use crate::model::cfd::CollaborativeSettlement;
+use crate::model::cfd::CollaborativeSettlementCompleted;
 use crate::model::cfd::Completed;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::SettlementKind;
@@ -142,7 +143,7 @@ impl Actor {
 
     async fn complete(
         &mut self,
-        completed: Completed<CollaborativeSettlement>,
+        completed: CollaborativeSettlementCompleted,
         ctx: &mut xtra::Context<Self>,
     ) {
         let order_id = self.order_id;
