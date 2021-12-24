@@ -8,16 +8,16 @@ use daemon::connection::ConnectionStatus;
 use daemon::db;
 use daemon::maker_cfd;
 use daemon::maker_inc_connections;
+use daemon::model;
 use daemon::model::cfd::OrderId;
 use daemon::model::cfd::Role;
+use daemon::model::Identity;
 use daemon::model::Price;
 use daemon::model::Usd;
-use daemon::model::{self};
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::CfdOrder;
 use daemon::projection::Feeds;
-use daemon::projection::Identity;
 use daemon::seed::Seed;
 use daemon::taker_cfd;
 use daemon::MakerActorSystem;
@@ -179,9 +179,7 @@ impl Maker {
         .await
         .unwrap();
 
-        let (proj_actor, feeds) = projection::Actor::new(db, Role::Maker, Network::Testnet)
-            .await
-            .unwrap();
+        let (proj_actor, feeds) = projection::Actor::new(db, Role::Maker, Network::Testnet);
         tasks.add(projection_context.run(proj_actor));
 
         let address = listener.local_addr().unwrap();
@@ -296,9 +294,7 @@ impl Taker {
         .await
         .unwrap();
 
-        let (proj_actor, feeds) = projection::Actor::new(db, Role::Taker, Network::Testnet)
-            .await
-            .unwrap();
+        let (proj_actor, feeds) = projection::Actor::new(db, Role::Taker, Network::Testnet);
         tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(
@@ -309,7 +305,7 @@ impl Taker {
         ));
 
         Self {
-            id: model::Identity::new(identity_pk).into(),
+            id: model::Identity::new(identity_pk),
             system: taker,
             feeds,
             mocks,

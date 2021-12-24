@@ -8,9 +8,10 @@ use crate::model::Price;
 use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
-use crate::monitor;
 use crate::oracle;
 use crate::payout_curve;
+use crate::setup_contract::RolloverParams;
+use crate::setup_contract::SetupParams;
 use crate::SETTLEMENT_INTERVAL;
 use anyhow::bail;
 use anyhow::Context;
@@ -41,10 +42,13 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::RangeInclusive;
+use std::str;
 use time::Duration;
 use time::OffsetDateTime;
 use uuid::adapter::Hyphenated;
 use uuid::Uuid;
+
+pub const CET_TIMELOCK: u32 = 12;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
@@ -132,6 +136,8 @@ pub struct Order {
     pub max_quantity: Usd,
 
     pub leverage: Leverage,
+
+    // TODO: Remove from order, can be calculated
     pub liquidation_price: Price,
 
     pub creation_timestamp: Timestamp,
@@ -180,394 +186,6 @@ impl Order {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Error {
-    Connect,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CfdStateError {
-    last_successful_state: CfdState,
-    error: Error,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub struct CfdStateCommon {
-    pub transition_timestamp: Timestamp,
-}
-
-impl Default for CfdStateCommon {
-    fn default() -> Self {
-        Self {
-            transition_timestamp: Timestamp::now(),
-        }
-    }
-}
-
-// Note: De-/Serialize with type tag to make handling on UI easier
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", content = "payload")]
-pub enum CfdState {
-    /// The taker sent an order to the maker to open the CFD but doesn't have a response yet.
-    ///
-    /// This state applies to taker only.
-    OutgoingOrderRequest { common: CfdStateCommon },
-
-    /// The maker received an order from the taker to open the CFD but doesn't have a response yet.
-    ///
-    /// This state applies to the maker only.
-    IncomingOrderRequest {
-        common: CfdStateCommon,
-        taker_id: Identity,
-    },
-
-    /// The maker has accepted the CFD take request, but the contract is not set up on chain yet.
-    ///
-    /// This state applies to taker and maker.
-    Accepted { common: CfdStateCommon },
-
-    /// The maker rejected the CFD order.
-    ///
-    /// This state applies to taker and maker.
-    /// This is a final state.
-    Rejected { common: CfdStateCommon },
-
-    /// State used during contract setup.
-    ///
-    /// This state applies to taker and maker.
-    /// All contract setup messages between taker and maker are expected to be sent in on scope.
-    ContractSetup { common: CfdStateCommon },
-
-    PendingOpen {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        attestation: Option<Attestation>,
-    },
-
-    /// The CFD contract is set up on chain.
-    ///
-    /// This state applies to taker and maker.
-    Open {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        attestation: Option<Attestation>,
-        collaborative_close: Option<CollaborativeSettlement>,
-    },
-
-    /// The commit transaction was published but it not final yet
-    ///
-    /// This state applies to taker and maker.
-    /// This state is needed, because otherwise the user does not get any feedback.
-    PendingCommit {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        attestation: Option<Attestation>,
-    },
-
-    // TODO: At the moment we are appending to this state. The way this is handled internally is
-    //  by inserting the same state with more information in the database. We could consider
-    //  changing this to insert different states or update the stae instead of inserting again.
-    /// The CFD contract's commit transaction reached finality on chain
-    ///
-    /// This means that the commit transaction was detected on chain and reached finality
-    /// confirmations and the contract will be forced to close.
-    OpenCommitted {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        cet_status: CetStatus,
-    },
-
-    /// The CET was published on chain but is not final yet
-    ///
-    /// This state applies to taker and maker.
-    /// This state is needed, because otherwise the user does not get any feedback.
-    PendingCet {
-        common: CfdStateCommon,
-        dlc: Dlc,
-        attestation: Attestation,
-    },
-
-    /// The position was closed collaboratively or non-collaboratively
-    ///
-    /// This state applies to taker and maker.
-    /// This is a final state.
-    /// This is the final state for all happy-path scenarios where we had an open position and then
-    /// "settled" it. Settlement can be collaboratively or non-collaboratively (by publishing
-    /// commit + cet).
-    Closed {
-        common: CfdStateCommon,
-        payout: Payout,
-    },
-
-    // TODO: Can be extended with CetStatus
-    /// The CFD contract's refund transaction was published but it not final yet
-    PendingRefund { common: CfdStateCommon, dlc: Dlc },
-
-    /// The Cfd was refunded and the refund transaction reached finality
-    ///
-    /// This state applies to taker and maker.
-    /// This is a final state.
-    Refunded { common: CfdStateCommon, dlc: Dlc },
-
-    /// The Cfd was in a state that could not be continued after the application got interrupted
-    ///
-    /// This state applies to taker and maker.
-    /// This is a final state.
-    /// It is safe to remove Cfds in this state from the database.
-    SetupFailed {
-        common: CfdStateCommon,
-        info: String,
-    },
-}
-
-impl CfdState {
-    pub fn outgoing_order_request() -> Self {
-        Self::OutgoingOrderRequest {
-            common: CfdStateCommon::default(),
-        }
-    }
-
-    pub fn accepted() -> Self {
-        Self::Accepted {
-            common: CfdStateCommon::default(),
-        }
-    }
-
-    pub fn rejected() -> Self {
-        Self::Rejected {
-            common: CfdStateCommon::default(),
-        }
-    }
-
-    pub fn contract_setup() -> Self {
-        Self::ContractSetup {
-            common: CfdStateCommon::default(),
-        }
-    }
-
-    pub fn closed(payout: Payout) -> Self {
-        Self::Closed {
-            common: CfdStateCommon::default(),
-            payout,
-        }
-    }
-
-    pub fn must_refund(dlc: Dlc) -> Self {
-        Self::PendingRefund {
-            common: CfdStateCommon::default(),
-            dlc,
-        }
-    }
-
-    pub fn refunded(dlc: Dlc) -> Self {
-        Self::Refunded {
-            common: CfdStateCommon::default(),
-            dlc,
-        }
-    }
-
-    pub fn setup_failed(info: String) -> Self {
-        Self::SetupFailed {
-            common: CfdStateCommon::default(),
-            info,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum Payout {
-    CollaborativeClose(CollaborativeSettlement),
-    Cet(Attestation),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Attestation {
-    pub id: BitMexPriceEventId,
-    pub scalars: Vec<SecretKey>,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
-    payout: Amount,
-    price: u64,
-    txid: Txid,
-}
-
-impl Attestation {
-    pub fn new(
-        id: BitMexPriceEventId,
-        price: u64,
-        scalars: Vec<SecretKey>,
-        dlc: Dlc,
-        role: Role,
-    ) -> Result<Self> {
-        let cet = dlc
-            .cets
-            .iter()
-            .find_map(|(_, cet)| cet.iter().find(|cet| cet.range.contains(&price)))
-            .context("Unable to find attested price in any range")?;
-
-        let txid = cet.tx.txid();
-
-        let our_script_pubkey = dlc.script_pubkey_for(role);
-        let payout = cet
-            .tx
-            .output
-            .iter()
-            .find_map(|output| {
-                (output.script_pubkey == our_script_pubkey).then(|| Amount::from_sat(output.value))
-            })
-            .unwrap_or_default();
-
-        Ok(Self {
-            id,
-            price,
-            scalars,
-            payout,
-            txid,
-        })
-    }
-
-    pub fn price(&self) -> Result<Price> {
-        let dec = Decimal::from_u64(self.price).context("Could not convert u64 to decimal")?;
-        Ok(Price::new(dec)?)
-    }
-
-    pub fn txid(&self) -> Txid {
-        self.txid
-    }
-
-    pub fn payout(&self) -> Amount {
-        self.payout
-    }
-}
-
-impl From<Attestation> for oracle::Attestation {
-    fn from(attestation: Attestation) -> oracle::Attestation {
-        oracle::Attestation {
-            id: attestation.id,
-            price: attestation.price,
-            scalars: attestation.scalars,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", content = "payload")]
-pub enum CetStatus {
-    Unprepared,
-    TimelockExpired,
-    OracleSigned(Attestation),
-    Ready(Attestation),
-}
-
-impl fmt::Display for CetStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CetStatus::Unprepared => write!(f, "Unprepared"),
-            CetStatus::TimelockExpired => write!(f, "TimelockExpired"),
-            CetStatus::OracleSigned(_) => write!(f, "OracleSigned"),
-            CetStatus::Ready(_) => write!(f, "Ready"),
-        }
-    }
-}
-
-impl CfdState {
-    fn get_common(&self) -> CfdStateCommon {
-        let common = match self {
-            CfdState::OutgoingOrderRequest { common } => common,
-            CfdState::IncomingOrderRequest { common, .. } => common,
-            CfdState::Accepted { common } => common,
-            CfdState::Rejected { common } => common,
-            CfdState::ContractSetup { common } => common,
-            CfdState::PendingOpen { common, .. } => common,
-            CfdState::Open { common, .. } => common,
-            CfdState::OpenCommitted { common, .. } => common,
-            CfdState::PendingRefund { common, .. } => common,
-            CfdState::Refunded { common, .. } => common,
-            CfdState::SetupFailed { common, .. } => common,
-            CfdState::PendingCommit { common, .. } => common,
-            CfdState::PendingCet { common, .. } => common,
-            CfdState::Closed { common, .. } => common,
-        };
-
-        *common
-    }
-
-    pub fn get_transition_timestamp(&self) -> Timestamp {
-        self.get_common().transition_timestamp
-    }
-
-    pub fn get_collaborative_close(&self) -> Option<CollaborativeSettlement> {
-        match self {
-            CfdState::Open {
-                collaborative_close,
-                ..
-            } => collaborative_close.clone(),
-            _ => None,
-        }
-    }
-}
-
-impl fmt::Display for CfdState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CfdState::OutgoingOrderRequest { .. } => {
-                write!(f, "Request sent")
-            }
-            CfdState::IncomingOrderRequest { .. } => {
-                write!(f, "Requested")
-            }
-            CfdState::Accepted { .. } => {
-                write!(f, "Accepted")
-            }
-            CfdState::Rejected { .. } => {
-                write!(f, "Rejected")
-            }
-            CfdState::ContractSetup { .. } => {
-                write!(f, "Contract Setup")
-            }
-            CfdState::PendingOpen { .. } => {
-                write!(f, "Pending Open")
-            }
-            CfdState::Open { .. } => {
-                write!(f, "Open")
-            }
-            CfdState::PendingCommit { .. } => {
-                write!(f, "Pending Commit")
-            }
-            CfdState::OpenCommitted { .. } => {
-                write!(f, "Open Committed")
-            }
-            CfdState::PendingRefund { .. } => {
-                write!(f, "Must Refund")
-            }
-            CfdState::Refunded { .. } => {
-                write!(f, "Refunded")
-            }
-            CfdState::SetupFailed { .. } => {
-                write!(f, "Setup Failed")
-            }
-            CfdState::PendingCet { .. } => {
-                write!(f, "Pending CET")
-            }
-            CfdState::Closed { .. } => {
-                write!(f, "Closed")
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum UpdateCfdProposal {
-    Settlement {
-        proposal: SettlementProposal,
-        direction: SettlementKind,
-    },
-    RollOverProposal {
-        proposal: RolloverProposal,
-        direction: SettlementKind,
-    },
-}
-
 /// Proposed collaborative settlement
 #[derive(Debug, Clone)]
 pub struct SettlementProposal {
@@ -591,143 +209,431 @@ pub enum SettlementKind {
     Outgoing,
 }
 
-pub type UpdateCfdProposals = HashMap<OrderId, UpdateCfdProposal>;
+#[derive(thiserror::Error, Debug, PartialEq)]
+pub enum CannotRollover {
+    #[error("Cfd does not have a dlc")]
+    NoDlc,
+    #[error("The Cfd is already expired")]
+    AlreadyExpired,
+    #[error("The Cfd was just rolled over")]
+    WasJustRolledOver,
+    #[error("Cannot roll over in state {state}")]
+    WrongState { state: String },
+}
 
-/// Represents a cfd (including state)
 #[derive(Debug, Clone, PartialEq)]
+pub struct Event {
+    pub timestamp: Timestamp,
+    pub id: OrderId,
+    pub event: CfdEvent,
+}
+
+impl Event {
+    pub fn new(id: OrderId, event: CfdEvent) -> Self {
+        Event {
+            timestamp: Timestamp::now(),
+            id,
+            event,
+        }
+    }
+}
+
+/// CfdEvents used by the maker and taker, some events are only for one role
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[serde(tag = "name", content = "data")]
+pub enum CfdEvent {
+    ContractSetupCompleted {
+        dlc: Dlc,
+    },
+
+    ContractSetupFailed,
+    OfferRejected,
+
+    RolloverCompleted {
+        dlc: Dlc,
+    },
+    RolloverRejected,
+    RolloverFailed,
+
+    CollaborativeSettlementCompleted {
+        #[serde(with = "hex_transaction")]
+        spend_tx: Transaction,
+        script: Script,
+        price: Price,
+    },
+    CollaborativeSettlementRejected {
+        #[serde(with = "hex_transaction")]
+        commit_tx: Transaction,
+    },
+    // TODO: What does "failed" mean here? Do we have to record this as event? what would it mean?
+    CollaborativeSettlementFailed {
+        #[serde(with = "hex_transaction")]
+        commit_tx: Transaction,
+    },
+
+    // TODO: The monitoring events should move into the monitor once we use multiple
+    // aggregates in different actors
+    LockConfirmed,
+    CommitConfirmed,
+    CetConfirmed,
+    RefundConfirmed,
+    RevokeConfirmed,
+    CollaborativeSettlementConfirmed,
+
+    CetTimelockConfirmedPriorOracleAttestation,
+    CetTimelockConfirmedPostOracleAttestation {
+        #[serde(with = "hex_transaction")]
+        cet: Transaction,
+    },
+
+    RefundTimelockConfirmed {
+        #[serde(with = "hex_transaction")]
+        refund_tx: Transaction,
+    },
+
+    // TODO: Once we use multiple aggregates in different actors we could change this to something
+    // like CetReadyForPublication that is emitted by the CfdActor. The Oracle actor would
+    // take care of saving and broadcasting an attestation event that can be picked up by the
+    // wallet actor which can then decide to publish the CetReadyForPublication event.
+    OracleAttestedPriorCetTimelock {
+        #[serde(with = "hex_transaction")]
+        timelocked_cet: Transaction,
+        #[serde(with = "hex_transaction")]
+        commit_tx: Transaction,
+        price: Price,
+    },
+    OracleAttestedPostCetTimelock {
+        #[serde(with = "hex_transaction")]
+        cet: Transaction,
+        price: Price,
+    },
+    ManualCommit {
+        #[serde(with = "hex_transaction")]
+        tx: Transaction,
+    },
+}
+
+impl CfdEvent {
+    pub fn to_json(&self) -> (String, String) {
+        let value = serde_json::to_value(self).expect("serialization to always work");
+        let object = value.as_object().expect("always an object");
+
+        let name = object
+            .get("name")
+            .expect("to have property `name`")
+            .as_str()
+            .expect("name to be `string`")
+            .to_owned();
+        let data = object.get("data").cloned().unwrap_or_default().to_string();
+
+        (name, data)
+    }
+
+    pub fn from_json(name: String, data: String) -> Result<Self> {
+        use serde_json::json;
+
+        let data = serde_json::from_str::<serde_json::Value>(&data)?;
+
+        let event = serde_json::from_value::<Self>(json!({
+            "name": name,
+            "data": data
+        }))?;
+
+        Ok(event)
+    }
+}
+
+/// Models the cfd state of the taker
+///
+/// Upon `Command`s, that are reaction to something happening in the system, we decide to
+/// produce `Event`s that are saved in the database. After saving an `Event` in the database
+/// we apply the event to the aggregate producing a new aggregate (representing the latest state
+/// `version`). To bring a cfd into a certain state version we load all events from the
+/// database and apply them in order (order by version).
+#[derive(Debug, PartialEq)]
 pub struct Cfd {
+    version: u64,
+
+    // static
     id: OrderId,
-
-    trading_pair: TradingPair,
     position: Position,
-
-    price: Price,
-
+    initial_price: Price,
     leverage: Leverage,
-    liquidation_price: Price,
-
-    creation_timestamp: Timestamp,
-
-    /// The duration that will be used for calculating the settlement timestamp
     settlement_interval: Duration,
-
+    quantity: Usd,
+    counterparty_network_identity: Identity,
     role: Role,
 
-    fee_rate: u32,
+    // dynamic (based on events)
+    dlc: Option<Dlc>,
 
-    quantity_usd: Usd,
-    state: CfdState,
+    /// Holds the decrypted CET transaction once it is available in the CFD lifecycle
+    ///
+    /// Only `Some` in case we receive the attestation after the CET timelock expiry.
+    /// This does _not_ imply that the transaction is actually confirmed.
+    cet: Option<Transaction>,
 
-    counterparty: Identity,
+    /// Holds the decrypted commit transaction once it is available in the CFD lifecycle
+    ///
+    /// Only `Some` in case we receive the attestation before the CET timelock expiry.
+    /// This does _not_ imply that the transaction is actually confirmed.
+    commit_tx: Option<Transaction>,
+
+    collaborative_settlement_spend_tx: Option<Transaction>,
+
+    refund_tx: Option<Transaction>,
+
+    lock_finality: bool,
+    commit_finality: bool,
+    refund_finality: bool,
+    cet_finality: bool,
+    collaborative_settlement_finality: bool,
+
+    cet_timelock_expired: bool,
+    refund_timelock_expired: bool,
 }
 
 impl Cfd {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: OrderId,
-        trading_pair: TradingPair,
         position: Position,
-        price: Price,
+        initial_price: Price,
         leverage: Leverage,
-        liquidation_price: Price,
-        creation_timestamp: Timestamp,
-        settlement_interval: Duration,
+        settlement_interval: Duration, /* TODO: Make a newtype that enforces hours only so
+                                        * we don't have to deal with precisions in the
+                                        * database. */
         role: Role,
-        fee_rate: u32,
-        quantity_usd: Usd,
-        state: CfdState,
-        counterparty: Identity,
-    ) -> Self {
-        Self {
-            id,
-            trading_pair,
-            position,
-            price,
-            leverage,
-            liquidation_price,
-            creation_timestamp,
-            settlement_interval,
-            fee_rate,
-            quantity_usd,
-            state,
-            counterparty,
-            role,
-        }
-    }
-}
-
-impl Cfd {
-    pub fn from_order(
-        order: Order,
         quantity: Usd,
-        state: CfdState,
-        counterparty: Identity,
-        role: Role,
+        counterparty_network_identity: Identity,
     ) -> Self {
         Cfd {
-            id: order.id,
-            quantity_usd: quantity,
-            state,
-            trading_pair: order.trading_pair,
-            position: match order.origin {
-                Origin::Ours => order.position,
-                Origin::Theirs => order.position.counter_position(),
-            },
-            price: order.price,
-            leverage: order.leverage,
-            liquidation_price: order.liquidation_price,
-            creation_timestamp: Timestamp::now(),
-            settlement_interval: order.settlement_interval,
-            fee_rate: order.fee_rate,
-            counterparty,
+            version: 0,
+            id,
+            position,
+            initial_price,
+            leverage,
+            settlement_interval,
+            quantity,
+            counterparty_network_identity,
             role,
+            dlc: None,
+            cet: None,
+            commit_tx: None,
+            collaborative_settlement_spend_tx: None,
+            refund_tx: None,
+            lock_finality: false,
+            commit_finality: false,
+            refund_finality: false,
+            cet_finality: false,
+            collaborative_settlement_finality: false,
+            cet_timelock_expired: false,
+            refund_timelock_expired: false,
         }
     }
 
-    pub fn margin(&self) -> Result<Amount> {
-        let margin = match self.position() {
-            Position::Long => calculate_long_margin(self.price, self.quantity_usd, self.leverage),
-            Position::Short => calculate_short_margin(self.price, self.quantity_usd),
-        };
-
-        Ok(margin)
+    /// A convenience method, creating a Cfd from an Order
+    pub fn from_order(
+        order: Order,
+        position: Position,
+        quantity: Usd,
+        counterparty_network_identity: Identity,
+        role: Role,
+    ) -> Self {
+        Cfd::new(
+            order.id,
+            position,
+            order.price,
+            order.leverage,
+            order.settlement_interval,
+            role,
+            quantity,
+            counterparty_network_identity,
+        )
     }
 
-    pub fn counterparty_margin(&self) -> Result<Amount> {
-        let margin = match self.position() {
-            Position::Long => calculate_short_margin(self.price, self.quantity_usd),
-            Position::Short => calculate_long_margin(self.price, self.quantity_usd, self.leverage),
-        };
-
-        Ok(margin)
+    /// Creates a new [`Cfd`] and rehydrates it from the given list of events.
+    #[allow(clippy::too_many_arguments)]
+    pub fn rehydrate(
+        id: OrderId,
+        position: Position,
+        initial_price: Price,
+        leverage: Leverage,
+        settlement_interval: Duration,
+        quantity: Usd,
+        counterparty_network_identity: Identity,
+        role: Role,
+        events: Vec<Event>,
+    ) -> Self {
+        let cfd = Self::new(
+            id,
+            position,
+            initial_price,
+            leverage,
+            settlement_interval,
+            role,
+            quantity,
+            counterparty_network_identity,
+        );
+        events.into_iter().fold(cfd, Cfd::apply)
     }
 
-    pub fn profit(&self, current_price: Price) -> Result<(SignedAmount, Percent)> {
-        let closing_price = match (self.attestation(), self.collaborative_close()) {
-            (Some(_attestation), Some(collaborative_close)) => collaborative_close.price,
-            (None, Some(collaborative_close)) => collaborative_close.price,
-            (Some(attestation), None) => attestation.price()?,
-            (None, None) => current_price,
-        };
-
-        let (p_n_l, p_n_l_percent) = calculate_profit(
-            self.price,
-            closing_price,
-            self.quantity_usd,
-            self.leverage,
-            self.position(),
-        )?;
-
-        Ok((p_n_l, p_n_l_percent))
+    fn expiry_timestamp(&self) -> Option<OffsetDateTime> {
+        self.dlc
+            .as_ref()
+            .map(|dlc| dlc.settlement_event_id.timestamp)
     }
 
-    pub fn calculate_settlement(
+    /// Only cfds in state `Open` that have not received an attestation and are within 23 hours
+    /// until expiry are eligible for rollover
+    pub fn is_rollover_possible(&self, now: OffsetDateTime) -> Result<(), CannotRollover> {
+        if self.is_final() {
+            return Err(CannotRollover::WrongState {
+                state: "final".to_owned(),
+            });
+        }
+
+        if self.commit_tx.is_some() {
+            return Err(CannotRollover::WrongState {
+                state: "committed".to_owned(),
+            });
+        }
+
+        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
+
+        if now > expiry_timestamp {
+            return Err(CannotRollover::AlreadyExpired);
+        }
+
+        let time_until_expiry = expiry_timestamp - now;
+
+        if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
+            return Err(CannotRollover::WasJustRolledOver);
+        }
+
+        // only state open with no attestation is acceptable for rollover
+        // TODO: Rewrite it terms of events
+        // if !matches!(
+        //     self.state(),
+        //     CfdState::Open {
+        //         attestation: None,
+        //         ..
+        //     }
+        // ) {
+        //     // TODO: how to derive state for these messages?
+        //     return Err(CannotRollover::WrongState {
+        //         state: "Insert state here (how do to it?)".into(),
+        //     });
+        // }
+
+        Ok(())
+    }
+
+    fn can_roll_over(&self) -> bool {
+        self.lock_finality && !self.commit_finality && !self.is_final() && !self.is_attested()
+    }
+
+    fn can_settle_collaboratively(&self) -> bool {
+        self.lock_finality && !self.commit_finality && !self.is_final() && !self.is_attested()
+    }
+
+    fn is_attested(&self) -> bool {
+        self.cet.is_some()
+    }
+
+    fn is_final(&self) -> bool {
+        self.collaborative_settlement_finality || self.cet_finality || self.refund_finality
+    }
+
+    pub fn start_contract_setup(&self) -> Result<(SetupParams, Identity)> {
+        if self.version > 0 {
+            bail!("Start contract not allowed in version {}", self.version)
+        }
+
+        let margin = match self.position {
+            Position::Long => {
+                calculate_long_margin(self.initial_price, self.quantity, self.leverage)
+            }
+            Position::Short => calculate_short_margin(self.initial_price, self.quantity),
+        };
+
+        let counterparty_margin = match self.position {
+            Position::Long => calculate_short_margin(self.initial_price, self.quantity),
+            Position::Short => {
+                calculate_long_margin(self.initial_price, self.quantity, self.leverage)
+            }
+        };
+
+        Ok((
+            SetupParams::new(
+                margin,
+                counterparty_margin,
+                self.initial_price,
+                self.quantity,
+                self.leverage,
+                self.refund_timelock_in_blocks(),
+                1, // TODO: Where should I get the fee rate from?
+            ),
+            self.counterparty_network_identity,
+        ))
+    }
+
+    pub fn start_rollover(&self) -> Result<(RolloverParams, Dlc, Duration)> {
+        if !self.can_roll_over() {
+            bail!("Start rollover only allowed when open")
+        }
+
+        Ok((
+            RolloverParams::new(
+                self.initial_price,
+                self.quantity,
+                self.leverage,
+                self.refund_timelock_in_blocks(),
+                1, // TODO: Where should I get the fee rate from?
+            ),
+            self.dlc
+                .as_ref()
+                .context("dlc has to be available for rollover")?
+                .clone(),
+            self.settlement_interval,
+        ))
+    }
+
+    pub fn start_collaborative_settlement_maker(
+        &self,
+        proposal: SettlementProposal,
+        sig_taker: Signature,
+    ) -> Result<CollaborativeSettlement> {
+        let dlc = self
+            .dlc
+            .as_ref()
+            .context("dlc has to be available for collab settlemment")?
+            .clone();
+
+        let (tx, sig_maker) = dlc.close_transaction(&proposal)?;
+        let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
+        let script_pk = dlc.script_pubkey_for(Role::Maker);
+
+        let settlement = CollaborativeSettlement::new(spend_tx, script_pk, proposal.price)?;
+        Ok(settlement)
+    }
+
+    pub fn start_collaborative_settlement_taker(
         &self,
         current_price: Price,
         n_payouts: usize,
     ) -> Result<SettlementProposal> {
-        let payout_curve =
-            payout_curve::calculate(self.price, self.quantity_usd, self.leverage, n_payouts)?;
+        if !self.can_settle_collaboratively() {
+            bail!("Start collaborative settlement only allowed when open")
+        }
+
+        let payout_curve = payout_curve::calculate(
+            // TODO: Is this correct? Does rollover change the price? (I think currently not)
+            self.initial_price,
+            self.quantity,
+            self.leverage,
+            n_payouts,
+        )?;
 
         let payout = {
             let current_price = current_price.try_into_u64()?;
@@ -737,7 +643,7 @@ impl Cfd {
                 .context("find current price on the payout curve")?
         };
 
-        let settlement = SettlementProposal {
+        let settlement_proposal = SettlementProposal {
             order_id: self.id,
             timestamp: Timestamp::now(),
             taker: *payout.taker_amount(),
@@ -745,21 +651,185 @@ impl Cfd {
             price: current_price,
         };
 
-        Ok(settlement)
+        Ok(settlement_proposal)
     }
 
-    pub fn position(&self) -> Position {
-        self.position
+    pub fn setup_contract(self, completed: SetupCompleted) -> Result<Event> {
+        if self.version > 0 {
+            bail!(
+                "Complete contract setup not allowed because cfd already in version {}",
+                self.version
+            )
+        }
+
+        let event = match completed {
+            SetupCompleted::Succeeded {
+                payload: (dlc, _), ..
+            } => CfdEvent::ContractSetupCompleted { dlc },
+            SetupCompleted::Rejected { .. } => CfdEvent::OfferRejected,
+            SetupCompleted::Failed { error, .. } => {
+                tracing::error!("Contract setup failed: {:#}", error);
+
+                CfdEvent::ContractSetupFailed
+            }
+        };
+
+        Ok(self.event(event))
     }
 
-    pub fn refund_timelock_in_blocks(&self) -> u32 {
-        (self.settlement_interval * Cfd::REFUND_THRESHOLD)
-            .as_blocks()
-            .ceil() as u32
+    // TODO: Pass the entire enum
+    pub fn roll_over(self, rollover_result: Result<Dlc>) -> Result<Event> {
+        // TODO: Compare that the version that we started the rollover with is the same as the
+        // version now. For that to work we should pass the version into the state machine
+        // that will handle rollover and the pass it back in here for comparison.
+        if !self.can_roll_over() {
+            bail!("Complete rollover only allowed when open")
+        }
+
+        let event = match rollover_result {
+            Ok(dlc) => CfdEvent::RolloverCompleted { dlc },
+            Err(err) => {
+                tracing::error!("Rollover failed: {:#}", err);
+
+                CfdEvent::RolloverFailed
+            }
+        };
+
+        Ok(self.event(event))
     }
 
-    pub fn expiry_timestamp(&self) -> Option<OffsetDateTime> {
-        self.dlc().map(|dlc| dlc.settlement_event_id.timestamp)
+    pub fn settle_collaboratively(
+        mut self,
+        settlement: Completed<CollaborativeSettlement>,
+    ) -> Result<Event> {
+        if !self.can_settle_collaboratively() {
+            bail!("Cannot collaboratively settle anymore")
+        }
+
+        let event = match settlement {
+            Completed::Succeeded {
+                payload: settlement,
+                ..
+            } => CfdEvent::CollaborativeSettlementCompleted {
+                spend_tx: settlement.tx,
+                script: settlement.script_pubkey,
+                price: settlement.price,
+            },
+            Completed::Rejected { reason, .. } => {
+                tracing::info!(order_id=%self.id(), "Collaborative close rejected: {:#}", reason);
+
+                let dlc = self
+                    .dlc
+                    .take()
+                    .context("No dlc after collaborative settlement rejected")?;
+                let commit_tx = dlc.signed_commit_tx()?;
+
+                CfdEvent::CollaborativeSettlementRejected { commit_tx }
+            }
+            Completed::Failed { error, .. } => {
+                tracing::warn!(order_id=%self.id(), "Collaborative close failed: {:#}", error);
+
+                let dlc = self
+                    .dlc
+                    .take()
+                    .context("No dlc after collaborative settlement rejected")?;
+                let commit_tx = dlc.signed_commit_tx()?;
+
+                CfdEvent::CollaborativeSettlementFailed { commit_tx }
+            }
+        };
+
+        Ok(self.event(event))
+    }
+
+    /// Given an attestation, find and decrypt the relevant CET.
+    pub fn decrypt_cet(self, attestation: &oracle::Attestation) -> Result<Option<Event>> {
+        anyhow::ensure!(!self.is_final());
+
+        let dlc = match self.dlc.as_ref() {
+            Some(dlc) => dlc,
+            None => {
+                tracing::warn!(order_id = %self.id(), "Handling attestation without a DLC is a no-op");
+                return Ok(None);
+            }
+        };
+
+        let cet = match dlc.signed_cet(attestation)? {
+            Ok(cet) => cet,
+            Err(e @ IrrelevantAttestation { .. }) => {
+                tracing::debug!("{}", e);
+                return Ok(None);
+            }
+        };
+
+        let price = Price(Decimal::from(attestation.price));
+
+        if self.cet_timelock_expired {
+            return Ok(Some(
+                self.event(CfdEvent::OracleAttestedPostCetTimelock { cet, price }),
+            ));
+        }
+
+        Ok(Some(self.event(CfdEvent::OracleAttestedPriorCetTimelock {
+            timelocked_cet: cet,
+            commit_tx: dlc.signed_commit_tx()?,
+            price,
+        })))
+    }
+
+    pub fn handle_cet_timelock_expired(mut self) -> Result<Event> {
+        anyhow::ensure!(!self.is_final());
+
+        let cfd_event = self
+            .cet
+            .take()
+            // If we have cet, that means it has been attested
+            .map(|cet| CfdEvent::CetTimelockConfirmedPostOracleAttestation { cet })
+            .unwrap_or_else(|| CfdEvent::CetTimelockConfirmedPriorOracleAttestation);
+
+        Ok(self.event(cfd_event))
+    }
+
+    pub fn handle_refund_timelock_expired(self) -> Event {
+        todo!()
+    }
+
+    pub fn handle_lock_confirmed(self) -> Event {
+        self.event(CfdEvent::LockConfirmed)
+    }
+
+    pub fn handle_commit_confirmed(self) -> Event {
+        self.event(CfdEvent::CommitConfirmed)
+    }
+
+    pub fn handle_collaborative_settlement_confirmed(self) -> Event {
+        self.event(CfdEvent::CollaborativeSettlementConfirmed)
+    }
+
+    pub fn handle_cet_confirmed(self) -> Event {
+        self.event(CfdEvent::CetConfirmed)
+    }
+
+    pub fn handle_refund_confirmed(self) -> Event {
+        self.event(CfdEvent::RefundConfirmed)
+    }
+
+    pub fn handle_revoke_confirmed(self) -> Event {
+        self.event(CfdEvent::RevokeConfirmed)
+    }
+
+    pub fn manual_commit_to_blockchain(&self) -> Result<Event> {
+        anyhow::ensure!(!self.is_final());
+
+        let dlc = self.dlc.as_ref().context("Cannot commit without a DLC")?;
+
+        Ok(self.event(CfdEvent::ManualCommit {
+            tx: dlc.signed_commit_tx()?,
+        }))
+    }
+
+    fn event(&self, event: CfdEvent) -> Event {
+        Event::new(self.id, event)
     }
 
     /// A factor to be added to the CFD order settlement_interval for calculating the
@@ -778,664 +848,105 @@ impl Cfd {
     /// `1.5` times of the settlement_interval to get his funds back.
     const REFUND_THRESHOLD: f32 = 1.5;
 
-    pub const CET_TIMELOCK: u32 = 12;
-
-    pub fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<Option<CfdState>> {
-        use CfdState::*;
-
-        let order_id = self.id;
-
-        // early exit if already final
-        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
-            tracing::trace!(
-                "Ignoring monitoring event {:?} because cfd already in state {}",
-                event,
-                self.state
-            );
-            return Ok(None);
-        }
-
-        let new_state = match event {
-            monitor::Event::LockFinality(_) => {
-                if let PendingOpen { dlc, .. } = self.state.clone() {
-                    CfdState::Open {
-                        common: CfdStateCommon {
-                            transition_timestamp: Timestamp::now(),
-                        },
-                        dlc,
-                        attestation: None,
-                        collaborative_close: None,
-                    }
-                } else if let Open {
-                    dlc,
-                    attestation,
-                    collaborative_close,
-                    ..
-                } = self.state.clone()
-                {
-                    CfdState::Open {
-                        common: CfdStateCommon {
-                            transition_timestamp: Timestamp::now(),
-                        },
-                        dlc,
-                        attestation,
-                        collaborative_close,
-                    }
-                } else {
-                    bail!(
-                        "Cannot transition to Open because of unexpected state {}",
-                        self.state
-                    )
-                }
-            }
-            monitor::Event::CommitFinality(_) => {
-                let (dlc, attestation) = if let PendingCommit {
-                    dlc, attestation, ..
-                } = self.state.clone()
-                {
-                    (dlc, attestation)
-                } else if let PendingOpen {
-                    dlc, attestation, ..
-                }
-                | Open {
-                    dlc, attestation, ..
-                } = self.state.clone()
-                {
-                    tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
-                    (dlc, attestation)
-                } else {
-                    bail!(
-                        "Cannot transition to OpenCommitted because of unexpected state {}",
-                        self.state
-                    )
-                };
-
-                OpenCommitted {
-                    common: CfdStateCommon {
-                        transition_timestamp: Timestamp::now(),
-                    },
-                    dlc,
-                    cet_status: if let Some(attestation) = attestation {
-                        CetStatus::OracleSigned(attestation)
-                    } else {
-                        CetStatus::Unprepared
-                    },
-                }
-            }
-            monitor::Event::CloseFinality(_) => {
-                let collaborative_close = self.collaborative_close().context(
-                    "No collaborative close after reaching collaborative close finality",
-                )?;
-
-                CfdState::closed(Payout::CollaborativeClose(collaborative_close))
-            }
-            monitor::Event::CetTimelockExpired(_) => match self.state.clone() {
-                CfdState::OpenCommitted {
-                    dlc,
-                    cet_status: CetStatus::Unprepared,
-                    ..
-                } => CfdState::OpenCommitted {
-                    common: CfdStateCommon {
-                        transition_timestamp: Timestamp::now(),
-                    },
-                    dlc,
-                    cet_status: CetStatus::TimelockExpired,
-                },
-                CfdState::OpenCommitted {
-                    dlc,
-                    cet_status: CetStatus::OracleSigned(attestation),
-                    ..
-                } => CfdState::OpenCommitted {
-                    common: CfdStateCommon {
-                        transition_timestamp: Timestamp::now(),
-                    },
-                    dlc,
-                    cet_status: CetStatus::Ready(attestation),
-                },
-                PendingOpen {
-                    dlc, attestation, ..
-                }
-                | Open {
-                    dlc, attestation, ..
-                }
-                | PendingCommit {
-                    dlc, attestation, ..
-                } => {
-                    tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to OpenCommitted", self.state);
-                    CfdState::OpenCommitted {
-                        common: CfdStateCommon {
-                            transition_timestamp: Timestamp::now(),
-                        },
-                        dlc,
-                        cet_status: match attestation {
-                            None => CetStatus::TimelockExpired,
-                            Some(attestation) => CetStatus::Ready(attestation),
-                        },
-                    }
-                }
-                _ => bail!(
-                    "Cannot transition to OpenCommitted because of unexpected state {}",
-                    self.state
-                ),
-            },
-            monitor::Event::RefundTimelockExpired(_) => {
-                let dlc = if let OpenCommitted { dlc, .. } = self.state.clone() {
-                    dlc
-                } else if let Open { dlc, .. } | PendingOpen { dlc, .. } = self.state.clone() {
-                    tracing::debug!(%order_id, "Was in unexpected state {}, jumping ahead to PendingRefund", self.state);
-                    dlc
-                } else {
-                    bail!(
-                        "Cannot transition to PendingRefund because of unexpected state {}",
-                        self.state
-                    )
-                };
-
-                CfdState::must_refund(dlc)
-            }
-            monitor::Event::RefundFinality(_) => {
-                let dlc = self
-                    .dlc()
-                    .context("No dlc available when reaching refund finality")?;
-
-                CfdState::refunded(dlc)
-            }
-            monitor::Event::CetFinality(_) => {
-                let attestation = self
-                    .attestation()
-                    .context("No attestation available when reaching CET finality")?;
-
-                CfdState::closed(Payout::Cet(attestation))
-            }
-            monitor::Event::RevokedTransactionFound(_) => {
-                todo!("Punish bad counterparty")
-            }
-        };
-
-        self.state = new_state.clone();
-
-        Ok(Some(new_state))
-    }
-
-    pub fn handle_commit_tx_sent(&mut self) -> Result<Option<CfdState>> {
-        use CfdState::*;
-
-        // early exit if already final
-        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
-            tracing::trace!(
-                "Ignoring sent commit transaction because cfd already in state {}",
-                self.state
-            );
-            return Ok(None);
-        }
-
-        let (dlc, attestation) = match self.state.clone() {
-            PendingOpen {
-                dlc, attestation, ..
-            } => (dlc, attestation),
-            Open {
-                dlc, attestation, ..
-            } => (dlc, attestation),
-            _ => {
-                bail!(
-                    "Cannot transition to PendingCommit because of unexpected state {}",
-                    self.state
-                )
-            }
-        };
-
-        self.state = PendingCommit {
-            common: CfdStateCommon {
-                transition_timestamp: Timestamp::now(),
-            },
-            dlc,
-            attestation,
-        };
-
-        Ok(Some(self.state.clone()))
-    }
-
-    pub fn handle_oracle_attestation(
-        &mut self,
-        attestation: Attestation,
-    ) -> Result<Option<CfdState>> {
-        use CfdState::*;
-
-        // early exit if already final
-        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
-            tracing::trace!(
-                "Ignoring oracle attestation because cfd already in state {}",
-                self.state
-            );
-            return Ok(None);
-        }
-
-        let new_state = match self.state.clone() {
-            CfdState::PendingOpen { dlc, .. } => CfdState::PendingOpen {
-                common: CfdStateCommon {
-                    transition_timestamp: Timestamp::now(),
-                },
-                dlc,
-                attestation: Some(attestation),
-            },
-            CfdState::Open { dlc, .. } => CfdState::Open {
-                common: CfdStateCommon {
-                    transition_timestamp: Timestamp::now(),
-                },
-                dlc,
-                attestation: Some(attestation),
-                collaborative_close: None,
-            },
-            CfdState::PendingCommit { dlc, .. } => CfdState::PendingCommit {
-                common: CfdStateCommon {
-                    transition_timestamp: Timestamp::now(),
-                },
-                dlc,
-                attestation: Some(attestation),
-            },
-            CfdState::OpenCommitted {
-                dlc,
-                cet_status: CetStatus::Unprepared,
-                ..
-            } => CfdState::OpenCommitted {
-                common: CfdStateCommon {
-                    transition_timestamp: Timestamp::now(),
-                },
-                dlc,
-                cet_status: CetStatus::OracleSigned(attestation),
-            },
-            CfdState::OpenCommitted {
-                dlc,
-                cet_status: CetStatus::TimelockExpired,
-                ..
-            } => CfdState::OpenCommitted {
-                common: CfdStateCommon {
-                    transition_timestamp: Timestamp::now(),
-                },
-                dlc,
-                cet_status: CetStatus::Ready(attestation),
-            },
-            _ => bail!(
-                "Cannot transition to OpenCommitted because of unexpected state {}",
-                self.state
-            ),
-        };
-
-        self.state = new_state.clone();
-
-        Ok(Some(new_state))
-    }
-
-    pub fn handle_cet_sent(&mut self) -> Result<Option<CfdState>> {
-        use CfdState::*;
-
-        // early exit if already final
-        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
-            tracing::trace!(
-                "Ignoring pending CET because cfd already in state {}",
-                self.state
-            );
-            return Ok(None);
-        }
-
-        let dlc = self.dlc().context("No DLC available after CET was sent")?;
-        let attestation = self
-            .attestation()
-            .context("No attestation available after CET was sent")?;
-
-        self.state = CfdState::PendingCet {
-            common: CfdStateCommon {
-                transition_timestamp: Timestamp::now(),
-            },
-            dlc,
-            attestation,
-        };
-
-        Ok(Some(self.state.clone()))
-    }
-
-    pub fn handle_proposal_signed(
-        &mut self,
-        collaborative_close: CollaborativeSettlement,
-    ) -> Result<Option<CfdState>> {
-        use CfdState::*;
-
-        // early exit if already final
-        if let SetupFailed { .. } | Closed { .. } | Refunded { .. } = self.state.clone() {
-            tracing::trace!(
-                "Ignoring collaborative settlement because cfd already in state {}",
-                self.state
-            );
-            return Ok(None);
-        }
-
-        let new_state = match self.state.clone() {
-            CfdState::Open {
-                common,
-                dlc,
-                attestation,
-                ..
-            } => CfdState::Open {
-                common,
-                dlc,
-                attestation,
-                collaborative_close: Some(collaborative_close),
-            },
-            _ => bail!(
-                "Cannot add proposed settlement details to state because of unexpected state {}",
-                self.state
-            ),
-        };
-
-        self.state = new_state.clone();
-
-        Ok(Some(new_state))
-    }
-
-    pub fn refund_tx(&self) -> Result<Transaction> {
-        let dlc = if let CfdState::PendingRefund { dlc, .. } = self.state.clone() {
-            dlc
-        } else {
-            bail!("Refund transaction can only be constructed when in state PendingRefund, but we are currently in {}", self.state.clone())
-        };
-
-        dlc.signed_refund_tx()
-    }
-
-    pub fn commit_tx(&self) -> Result<Transaction> {
-        let dlc = if let CfdState::Open { dlc, .. }
-        | CfdState::PendingOpen { dlc, .. }
-        | CfdState::PendingCommit { dlc, .. } = self.state.clone()
-        {
-            dlc
-        } else {
-            bail!(
-                "Cannot publish commit transaction in state {}",
-                self.state.clone()
-            )
-        };
-
-        dlc.signed_commit_tx()
-    }
-
-    pub fn cet(&self) -> Result<Result<Transaction, NotReadyYet>> {
-        let (dlc, attestation) = match self.state.clone() {
-            CfdState::OpenCommitted {
-                dlc,
-                cet_status: CetStatus::Ready(attestation),
-                ..
-            }
-            | CfdState::PendingCet {
-                dlc, attestation, ..
-            } => (dlc, attestation),
-            CfdState::OpenCommitted { cet_status, .. } => {
-                return Ok(Err(NotReadyYet { cet_status }));
-            }
-            CfdState::Open { .. } | CfdState::PendingCommit { .. } => {
-                return Ok(Err(NotReadyYet {
-                    cet_status: CetStatus::Unprepared,
-                }));
-            }
-            _ => bail!("Cannot publish CET in state {}", self.state.clone()),
-        };
-
-        let signed_cet = dlc.signed_cet(&attestation)?;
-
-        Ok(Ok(signed_cet))
-    }
-
-    pub fn pending_open_dlc(&self) -> Option<Dlc> {
-        if let CfdState::PendingOpen { dlc, .. } = self.state.clone() {
-            Some(dlc)
-        } else {
-            None
-        }
-    }
-
-    pub fn open_dlc(&self) -> Option<Dlc> {
-        if let CfdState::Open { dlc, .. } = self.state.clone() {
-            Some(dlc)
-        } else {
-            None
-        }
-    }
-
-    pub fn is_must_refund(&self) -> bool {
-        matches!(self.state.clone(), CfdState::PendingRefund { .. })
-    }
-
-    pub fn is_pending_commit(&self) -> bool {
-        matches!(self.state.clone(), CfdState::PendingCommit { .. })
-    }
-
-    pub fn is_pending_cet(&self) -> bool {
-        matches!(self.state.clone(), CfdState::PendingCet { .. })
-    }
-
-    pub fn is_cleanup(&self) -> bool {
-        matches!(
-            self.state.clone(),
-            CfdState::OutgoingOrderRequest { .. }
-                | CfdState::IncomingOrderRequest { .. }
-                | CfdState::Accepted { .. }
-                | CfdState::ContractSetup { .. }
-        )
-    }
-
-    pub fn is_collaborative_settle_possible(&self) -> bool {
-        matches!(self.state.clone(), CfdState::Open { .. })
-    }
-
-    pub fn role(&self) -> Role {
-        self.role
-    }
-
-    pub fn dlc(&self) -> Option<Dlc> {
-        match self.state.clone() {
-            CfdState::PendingOpen { dlc, .. }
-            | CfdState::Open { dlc, .. }
-            | CfdState::PendingCommit { dlc, .. }
-            | CfdState::OpenCommitted { dlc, .. }
-            | CfdState::PendingRefund { dlc, .. }
-            | CfdState::PendingCet { dlc, .. } => Some(dlc),
-
-            CfdState::OutgoingOrderRequest { .. }
-            | CfdState::IncomingOrderRequest { .. }
-            | CfdState::Accepted { .. }
-            | CfdState::Rejected { .. }
-            | CfdState::ContractSetup { .. }
-            | CfdState::Closed { .. }
-            | CfdState::Refunded { .. }
-            | CfdState::SetupFailed { .. } => None,
-        }
-    }
-
-    fn attestation(&self) -> Option<Attestation> {
-        match self.state.clone() {
-            CfdState::PendingOpen {
-                attestation: Some(attestation),
-                ..
-            }
-            | CfdState::Open {
-                attestation: Some(attestation),
-                ..
-            }
-            | CfdState::PendingCommit {
-                attestation: Some(attestation),
-                ..
-            }
-            | CfdState::OpenCommitted {
-                cet_status: CetStatus::OracleSigned(attestation) | CetStatus::Ready(attestation),
-                ..
-            }
-            | CfdState::PendingCet { attestation, .. }
-            | CfdState::Closed {
-                payout: Payout::Cet(attestation),
-                ..
-            } => Some(attestation),
-
-            CfdState::OutgoingOrderRequest { .. }
-            | CfdState::IncomingOrderRequest { .. }
-            | CfdState::Accepted { .. }
-            | CfdState::Rejected { .. }
-            | CfdState::ContractSetup { .. }
-            | CfdState::PendingOpen { .. }
-            | CfdState::Open { .. }
-            | CfdState::PendingCommit { .. }
-            | CfdState::Closed { .. }
-            | CfdState::OpenCommitted { .. }
-            | CfdState::PendingRefund { .. }
-            | CfdState::Refunded { .. }
-            | CfdState::SetupFailed { .. } => None,
-        }
-    }
-
-    pub fn collaborative_close(&self) -> Option<CollaborativeSettlement> {
-        match self.state.clone() {
-            CfdState::Open {
-                collaborative_close: Some(collaborative_close),
-                ..
-            }
-            | CfdState::Closed {
-                payout: Payout::CollaborativeClose(collaborative_close),
-                ..
-            } => Some(collaborative_close),
-
-            CfdState::OutgoingOrderRequest { .. }
-            | CfdState::IncomingOrderRequest { .. }
-            | CfdState::Accepted { .. }
-            | CfdState::Rejected { .. }
-            | CfdState::ContractSetup { .. }
-            | CfdState::PendingOpen { .. }
-            | CfdState::Open { .. }
-            | CfdState::PendingCommit { .. }
-            | CfdState::PendingCet { .. }
-            | CfdState::Closed { .. }
-            | CfdState::OpenCommitted { .. }
-            | CfdState::PendingRefund { .. }
-            | CfdState::Refunded { .. }
-            | CfdState::SetupFailed { .. } => None,
-        }
-    }
-
-    /// Returns the payout of the Cfd
-    ///
-    /// In case the cfd's payout is not fixed yet (because we don't have attestation or
-    /// collaborative close transaction None is returned, which means that the payout is still
-    /// undecided
-    pub fn payout(&self) -> Option<Amount> {
-        // early exit in case of refund scenario
-        if let CfdState::PendingRefund { dlc, .. } | CfdState::Refunded { dlc, .. } =
-            self.state.clone()
-        {
-            return Some(dlc.refund_amount(self.role()));
-        }
-
-        // decision between attestation and collaborative close payout
-        match (self.attestation(), self.collaborative_close()) {
-            (Some(_attestation), Some(collaborative_close)) => Some(collaborative_close.payout()),
-            (None, Some(collaborative_close)) => Some(collaborative_close.payout()),
-            (Some(attestation), None) => Some(attestation.payout()),
-            (None, None) => None,
-        }
-    }
-
-    /// Only cfds in state `Open` that have not received an attestation and are within 23 hours
-    /// until expiry are eligible for rollover
-    pub fn can_roll_over(&self, now: OffsetDateTime) -> Result<(), CannotRollover> {
-        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
-
-        if now > expiry_timestamp {
-            return Err(CannotRollover::AlreadyExpired);
-        }
-
-        let time_until_expiry = expiry_timestamp - now;
-
-        if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
-            return Err(CannotRollover::WasJustRolledOver);
-        }
-
-        // only state open with no attestation is acceptable for rollover
-        if !matches!(
-            self.state.clone(),
-            CfdState::Open {
-                attestation: None,
-                ..
-            }
-        ) {
-            return Err(CannotRollover::WrongState {
-                state: self.state.to_string(),
-            });
-        }
-
-        Ok(())
+    fn refund_timelock_in_blocks(&self) -> u32 {
+        (self.settlement_interval * Self::REFUND_THRESHOLD)
+            .as_blocks()
+            .ceil() as u32
     }
 
     pub fn id(&self) -> OrderId {
         self.id
     }
 
-    pub fn trading_pair(&self) -> TradingPair {
-        self.trading_pair
+    pub fn position(&self) -> Position {
+        self.position
     }
 
-    pub fn price(&self) -> Price {
-        self.price
+    pub fn initial_price(&self) -> Price {
+        self.initial_price
     }
 
     pub fn leverage(&self) -> Leverage {
         self.leverage
     }
 
-    pub fn liquidation_price(&self) -> Price {
-        self.liquidation_price
-    }
-
-    pub fn creation_timestamp(&self) -> Timestamp {
-        self.creation_timestamp
-    }
-
-    pub fn settlement_interval(&self) -> Duration {
+    pub fn settlement_time_interval_hours(&self) -> Duration {
         self.settlement_interval
     }
 
-    pub fn fee_rate(&self) -> u32 {
-        self.fee_rate
+    pub fn quantity(&self) -> Usd {
+        self.quantity
     }
 
-    pub fn quantity_usd(&self) -> Usd {
-        self.quantity_usd
+    pub fn counterparty_network_identity(&self) -> Identity {
+        self.counterparty_network_identity
     }
 
-    pub fn state(&self) -> &CfdState {
-        &self.state
+    pub fn role(&self) -> Role {
+        self.role
     }
 
-    pub fn state_mut(&mut self) -> &mut CfdState {
-        &mut self.state
+    pub fn sign_collaborative_close_transaction_taker(
+        &mut self,
+        proposal: &SettlementProposal,
+    ) -> Result<(Transaction, Signature, Script)> {
+        let dlc = self.dlc.take().context("Collaborative close without DLC")?;
+
+        let (tx, sig) = dlc.close_transaction(proposal)?;
+        let script_pk = dlc.script_pubkey_for(Role::Taker);
+
+        Ok((tx, sig, script_pk))
     }
 
-    pub fn counterparty(&self) -> Identity {
-        self.counterparty
+    pub fn version(&self) -> u64 {
+        self.version
     }
-}
 
-#[derive(thiserror::Error, Debug, PartialEq)]
-pub enum CannotRollover {
-    #[error("Cfd does not have a dlc")]
-    NoDlc,
-    #[error("The Cfd is already expired")]
-    AlreadyExpired,
-    #[error("The Cfd was just rolled over")]
-    WasJustRolledOver,
-    #[error("Cannot roll over in state {state}")]
-    WrongState { state: String },
-}
+    pub fn apply(mut self, evt: Event) -> Cfd {
+        use CfdEvent::*;
 
-#[derive(thiserror::Error, Debug, Clone)]
-#[error("The cfd is not ready for CET publication yet: {cet_status}")]
-pub struct NotReadyYet {
-    cet_status: CetStatus,
+        self.version += 1;
+
+        match evt.event {
+            ContractSetupCompleted { dlc } => self.dlc = Some(dlc),
+            OracleAttestedPostCetTimelock { cet, .. } => self.cet = Some(cet),
+            OracleAttestedPriorCetTimelock { timelocked_cet, .. } => {
+                self.cet = Some(timelocked_cet);
+            }
+            ContractSetupFailed { .. } => {
+                // TODO: Deal with failed contract setup
+            }
+            RolloverCompleted { dlc } => {
+                self.dlc = Some(dlc);
+            }
+            RolloverFailed { .. } => todo!(),
+            RolloverRejected => todo!(),
+            CollaborativeSettlementCompleted { spend_tx, .. } => {
+                self.collaborative_settlement_spend_tx = Some(spend_tx)
+            }
+            CollaborativeSettlementRejected { commit_tx } => self.commit_tx = Some(commit_tx),
+            CollaborativeSettlementFailed { commit_tx } => self.commit_tx = Some(commit_tx),
+
+            CetConfirmed => self.cet_finality = true,
+            RefundConfirmed => self.refund_finality = true,
+            CollaborativeSettlementConfirmed => self.collaborative_settlement_finality = true,
+            RefundTimelockConfirmed { .. } => self.refund_timelock_expired = true,
+            LockConfirmed => self.lock_finality = true,
+            CommitConfirmed => self.commit_finality = true,
+            CetTimelockConfirmedPriorOracleAttestation
+            | CetTimelockConfirmedPostOracleAttestation { .. } => {
+                self.cet_timelock_expired = true;
+            }
+            OfferRejected => {
+                // nothing to do here? A rejection means it should be impossible to issue any
+                // commands
+            }
+            ManualCommit { tx } => self.commit_tx = Some(tx),
+            RevokeConfirmed => todo!("Deal with revoke"),
+        }
+
+        self
+    }
 }
 
 pub trait AsBlocks {
@@ -1452,6 +963,7 @@ impl AsBlocks for Duration {
     }
 }
 
+// Make a `Margin` newtype and call `Margin::long`
 /// Calculates the long's margin in BTC
 ///
 /// The margin is the initial margin and represents the collateral the buyer
@@ -1466,21 +978,16 @@ pub fn calculate_long_margin(price: Price, quantity: Usd, leverage: Leverage) ->
 /// The short margin is represented as the quantity of the contract given the
 /// initial price. The short side can currently not leverage the position but
 /// always has to cover the complete quantity.
-fn calculate_short_margin(price: Price, quantity: Usd) -> Amount {
+pub fn calculate_short_margin(price: Price, quantity: Usd) -> Amount {
     quantity / price
 }
 
-fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Price {
+pub fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Price {
     price * leverage / (leverage + 1)
 }
 
-// PLACEHOLDER
-// fn calculate_short_liquidation_price(leverage: Leverage, price: Price) -> Price {
-//     price * leverage / (leverage - 1)
-// }
-
 /// Returns the Profit/Loss (P/L) as Bitcoin. Losses are capped by the provided margin
-fn calculate_profit(
+pub fn calculate_profit(
     initial_price: Price,
     closing_price: Price,
     quantity: Usd,
@@ -1604,6 +1111,7 @@ pub struct Dlc {
     // (settlement and liquidation-point). We should NOT make these fields public on the Dlc
     // and create an internal structure that depicts this properly and avoids duplication.
     pub settlement_event_id: BitMexPriceEventId,
+    pub refund_timelock: u32,
 }
 
 impl Dlc {
@@ -1726,11 +1234,19 @@ impl Dlc {
         Ok(signed_commit_tx)
     }
 
-    pub fn signed_cet(&self, attestation: &Attestation) -> Result<Transaction> {
-        let cets = self
-            .cets
-            .get(&attestation.id)
-            .context("Unable to find oracle event id within the cets of the self")?;
+    pub fn signed_cet(
+        &self,
+        attestation: &oracle::Attestation,
+    ) -> Result<Result<Transaction, IrrelevantAttestation>> {
+        let cets = match self.cets.get(&attestation.id) {
+            Some(cets) => cets,
+            None => {
+                return Ok(Err(IrrelevantAttestation {
+                    id: attestation.id,
+                    tx_id: self.lock.0.txid(),
+                }))
+            }
+        };
 
         let Cet {
             tx: cet,
@@ -1768,8 +1284,15 @@ impl Dlc {
             (counterparty_pubkey, counterparty_sig),
         )?;
 
-        Ok(signed_cet)
+        Ok(Ok(signed_cet))
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Attestation {id} is irrelevant for DLC {tx_id}")]
+pub struct IrrelevantAttestation {
+    id: BitMexPriceEventId,
+    tx_id: Txid,
 }
 
 /// Information which we need to remember in order to construct a
@@ -1796,6 +1319,7 @@ pub struct RevokedCommit {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CollaborativeSettlement {
     pub tx: Transaction,
+    pub script_pubkey: Script,
     pub timestamp: Timestamp,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     payout: Amount,
@@ -1823,6 +1347,7 @@ impl CollaborativeSettlement {
 
         Ok(Self {
             tx,
+            script_pubkey: own_script_pubkey,
             timestamp: Timestamp::now(),
             payout,
             price,
@@ -1835,6 +1360,7 @@ impl CollaborativeSettlement {
 }
 
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
 pub enum Completed<P> {
     Succeeded {
         order_id: OrderId,
@@ -1848,6 +1374,13 @@ pub enum Completed<P> {
         order_id: OrderId,
         error: anyhow::Error,
     },
+}
+
+impl<P> xtra::Message for Completed<P>
+where
+    P: Send + 'static,
+{
+    type Result = Result<()>;
 }
 
 impl<P> Completed<P> {
@@ -1870,19 +1403,12 @@ impl<P> Completed<P> {
     }
 }
 
-/// Message sent from a taker collab settlement actor to the
-/// cfd actor to notify that the settlement has finished.
-pub type TakerSettlementCompleted = Completed<CollaborativeSettlement>;
-
-/// Message sent from a maker collab settlement actor to the
-/// cfd actor to notify that the settlement has finished.
-/// Payload contains CollaborativeSettlement and script pubkey.
-pub type MakerSettlementCompleted = Completed<(CollaborativeSettlement, Script)>;
-
 pub mod marker {
     /// Marker type for contract setup completion
+    #[derive(Debug)]
     pub struct Setup;
     /// Marker type for rollover  completion
+    #[derive(Debug)]
     pub struct Rollover;
 }
 
@@ -1913,16 +1439,33 @@ impl Completed<(Dlc, marker::Rollover)> {
     }
 }
 
+mod hex_transaction {
+    use super::*;
+    use bdk::bitcoin;
+    use serde::Deserializer;
+    use serde::Serializer;
+
+    pub fn serialize<S: Serializer>(value: &Transaction, serializer: S) -> Result<S::Ok, S::Error> {
+        let bytes = bitcoin::consensus::serialize(value);
+        let hex_str = hex::encode(bytes);
+        serializer.serialize_str(hex_str.as_str())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Transaction, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let hex = String::deserialize(deserializer).map_err(D::Error::custom)?;
+        let bytes = hex::decode(hex).map_err(D::Error::custom)?;
+        let tx = bitcoin::consensus::deserialize(&bytes).map_err(D::Error::custom)?;
+        Ok(tx)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::seed::Seed;
-    use bdk::bitcoin::util::psbt::Global;
-    use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
     use rust_decimal_macros::dec;
-    use std::collections::BTreeMap;
-    use std::str::FromStr;
-    use time::macros::datetime;
 
     #[test]
     fn given_default_values_then_expected_liquidation_price() {
@@ -2170,291 +1713,33 @@ mod tests {
         assert_eq!(id, deserialized);
     }
 
-    #[tokio::test]
-    async fn given_cfd_expires_now_then_rollover() {
-        // --|----|-------------------------------------------------|--> time
-        //   ct   1h                                                24h
-        // --|----|<--------------------rollover------------------->|--
-        //                                                          now
+    #[test]
+    fn cfd_event_to_json() {
+        let event = CfdEvent::ContractSetupFailed;
 
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
-        let result = cfd.can_roll_over(datetime!(2021-11-19 10:00:00).assume_utc());
+        let (name, data) = event.to_json();
 
-        assert!(result.is_ok());
+        assert_eq!(name, "ContractSetupFailed");
+        assert_eq!(data, r#"null"#);
     }
 
-    #[tokio::test]
-    async fn given_cfd_expires_within_23hours_then_rollover() {
-        // --|----|-------------------------------------------------|--> time
-        //   ct   1h                                                24h
-        // --|----|<--------------------rollover------------------->|--
-        //        now
+    #[test]
+    fn cfd_event_from_json() {
+        let name = "ContractSetupFailed".to_owned();
+        let data = r#"null"#.to_owned();
 
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
+        let event = CfdEvent::from_json(name, data).unwrap();
 
-        let result = cfd.can_roll_over(datetime!(2021-11-18 11:00:00).assume_utc());
-
-        assert!(result.is_ok());
+        assert_eq!(event, CfdEvent::ContractSetupFailed);
     }
 
-    #[tokio::test]
-    async fn given_cfd_past_expiry_time_then_no_rollover() {
-        // --|----|-------------------------------------------------|--> time
-        //   ct   1h                                                24h
-        // --|----|<--------------------rollover------------------->|--
-        //                                                           now
+    #[test]
+    fn cfd_event_no_data_from_json() {
+        let name = "OfferRejected".to_owned();
+        let data = r#"null"#.to_owned();
 
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
-        let cannot_roll_over = cfd
-            .can_roll_over(datetime!(2021-11-19 10:00:01).assume_utc())
-            .unwrap_err();
+        let event = CfdEvent::from_json(name, data).unwrap();
 
-        assert_eq!(cannot_roll_over, CannotRollover::AlreadyExpired)
-    }
-
-    #[tokio::test]
-    async fn given_cfd_was_just_rolled_over_then_no_rollover() {
-        // --|----|-------------------------------------------------|--> time
-        //   ct   1h                                                24h
-        // --|----|<--------------------rollover------------------->|--
-        //    now
-
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
-        let cannot_roll_over = cfd
-            .can_roll_over(datetime!(2021-11-18 10:00:01).assume_utc())
-            .unwrap_err();
-
-        assert_eq!(cannot_roll_over, CannotRollover::WasJustRolledOver)
-    }
-
-    #[tokio::test]
-    async fn given_cfd_out_of_bounds_expiry_then_no_rollover() {
-        // --|----|-------------------------------------------------|--> time
-        //   ct   1h                                                24h
-        // --|----|<--------------------rollover------------------->|--
-        //  now
-
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
-        let cannot_roll_over = cfd
-            .can_roll_over(datetime!(2021-11-18 09:59:59).assume_utc())
-            .unwrap_err();
-
-        assert_eq!(cannot_roll_over, CannotRollover::WasJustRolledOver)
-    }
-
-    #[tokio::test]
-    async fn given_cfd_was_renewed_less_than_1h_ago_then_no_rollover() {
-        // --|----|-------------------------------------------------|--> time
-        //   ct   1h                                                24h
-        // --|----|<--------------------rollover------------------->|--
-        //       now
-
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
-        let cannot_roll_over = cfd
-            .can_roll_over(datetime!(2021-11-18 10:59:59).assume_utc())
-            .unwrap_err();
-
-        assert_eq!(cannot_roll_over, CannotRollover::WasJustRolledOver)
-    }
-
-    #[tokio::test]
-    async fn given_cfd_has_attestation_then_no_rollover() {
-        let cfd = Cfd::dummy_open_with_attestation(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
-
-        let cannot_roll_over = cfd
-            .can_roll_over(datetime!(2021-11-19 10:00:00).assume_utc())
-            .unwrap_err();
-
-        assert!(matches!(
-            cannot_roll_over,
-            CannotRollover::WrongState { .. }
-        ))
-    }
-
-    #[tokio::test]
-    async fn given_cfd_not_in_open_then_no_rollover() {
-        let cfd = Cfd::dummy_not_open_but_dlc(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
-
-        let cannot_roll_over = cfd
-            .can_roll_over(datetime!(2021-11-19 10:00:00).assume_utc())
-            .unwrap_err();
-
-        assert!(matches!(
-            cannot_roll_over,
-            CannotRollover::WrongState { .. }
-        ))
-    }
-
-    impl Cfd {
-        fn dummy_open(event_id: BitMexPriceEventId) -> Self {
-            Cfd::from_order(
-                Order::dummy_model(),
-                Usd::new(dec!(1000)),
-                CfdState::Open {
-                    common: Default::default(),
-                    dlc: Dlc::dummy(Some(event_id)),
-                    attestation: None,
-                    collaborative_close: None,
-                },
-                dummy_identity(),
-                Role::Taker,
-            )
-        }
-
-        fn dummy_open_with_attestation(event_id: BitMexPriceEventId) -> Self {
-            Cfd::from_order(
-                Order::dummy_model(),
-                Usd::new(dec!(1000)),
-                CfdState::Open {
-                    common: Default::default(),
-                    dlc: Dlc::dummy(Some(event_id)),
-                    // the dummy_dlc contains a dummy range [0, 1]
-                    attestation: Some(
-                        Attestation::new(
-                            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
-                            0,
-                            vec![],
-                            Dlc::dummy(None),
-                            Role::Taker,
-                        )
-                        .unwrap(),
-                    ),
-                    collaborative_close: None,
-                },
-                dummy_identity(),
-                Role::Taker,
-            )
-        }
-
-        fn dummy_not_open_but_dlc(event_id: BitMexPriceEventId) -> Self {
-            Cfd::from_order(
-                Order::dummy_model(),
-                Usd::new(dec!(1000)),
-                CfdState::PendingRefund {
-                    common: Default::default(),
-                    dlc: Dlc::dummy(Some(event_id)),
-                },
-                dummy_identity(),
-                Role::Taker,
-            )
-        }
-    }
-
-    impl Order {
-        fn dummy_model() -> Self {
-            Order::new_short(
-                Price::new(dec!(1000)).unwrap(),
-                Usd::new(dec!(100)),
-                Usd::new(dec!(1000)),
-                Origin::Theirs,
-                dummy_event_id(),
-                time::Duration::hours(24),
-                1,
-            )
-            .unwrap()
-        }
-    }
-
-    impl Dlc {
-        fn dummy(event_id: Option<BitMexPriceEventId>) -> Self {
-            let dummy_sk = SecretKey::from_slice(&[1; 32]).unwrap();
-            let dummy_pk = PublicKey::from_slice(&[
-                3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51,
-                41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
-            ])
-            .unwrap();
-
-            let dummy_addr = Address::from_str("132F25rTsvBdp9JzLLBHP5mvGY66i1xdiM").unwrap();
-
-            let dummy_tx = dummy_partially_signed_transaction().extract_tx();
-            let dummy_adapter_sig = "03424d14a5471c048ab87b3b83f6085d125d5864249ae4297a57c84e74710bb6730223f325042fce535d040fee52ec13231bf709ccd84233c6944b90317e62528b2527dff9d659a96db4c99f9750168308633c1867b70f3a18fb0f4539a1aecedcd1fc0148fc22f36b6303083ece3f872b18e35d368b3958efe5fb081f7716736ccb598d269aa3084d57e1855e1ea9a45efc10463bbf32ae378029f5763ceb40173f"
-                .parse()
-                .unwrap();
-
-            let dummy_sig = Signature::from_str("3046022100839c1fbc5304de944f697c9f4b1d01d1faeba32d751c0f7acb21ac8a0f436a72022100e89bd46bb3a5a62adc679f659b7ce876d83ee297c7a5587b2011c4fcc72eab45").unwrap();
-
-            let mut dummy_cet_with_zero_price_range = HashMap::new();
-            dummy_cet_with_zero_price_range.insert(
-                BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
-                vec![Cet {
-                    tx: dummy_tx.clone(),
-                    adaptor_sig: dummy_adapter_sig,
-                    range: RangeInclusive::new(0, 1),
-                    n_bits: 0,
-                }],
-            );
-
-            Dlc {
-                identity: dummy_sk,
-                identity_counterparty: dummy_pk,
-                revocation: dummy_sk,
-                revocation_pk_counterparty: dummy_pk,
-                publish: dummy_sk,
-                publish_pk_counterparty: dummy_pk,
-                maker_address: dummy_addr.clone(),
-                taker_address: dummy_addr,
-                lock: (dummy_tx.clone(), Descriptor::new_pk(dummy_pk)),
-                commit: (
-                    dummy_tx.clone(),
-                    dummy_adapter_sig,
-                    Descriptor::new_pk(dummy_pk),
-                ),
-                cets: dummy_cet_with_zero_price_range,
-                refund: (dummy_tx, dummy_sig),
-                maker_lock_amount: Default::default(),
-                taker_lock_amount: Default::default(),
-                revoked_commit: vec![],
-                settlement_event_id: match event_id {
-                    Some(event_id) => event_id,
-                    None => dummy_event_id(),
-                },
-            }
-        }
-    }
-
-    pub fn dummy_partially_signed_transaction() -> PartiallySignedTransaction {
-        // very simple dummy psbt that does not contain anything
-        // pulled in from github.com-1ecc6299db9ec823/bitcoin-0.27.1/src/util/psbt/mod.rs:238
-
-        PartiallySignedTransaction {
-            global: Global {
-                unsigned_tx: Transaction {
-                    version: 2,
-                    lock_time: 0,
-                    input: vec![],
-                    output: vec![],
-                },
-                xpub: Default::default(),
-                version: 0,
-                proprietary: BTreeMap::new(),
-                unknown: BTreeMap::new(),
-            },
-            inputs: vec![],
-            outputs: vec![],
-        }
-    }
-
-    pub fn dummy_identity() -> Identity {
-        Identity::new(Seed::default().derive_identity().0)
-    }
-
-    pub fn dummy_event_id() -> BitMexPriceEventId {
-        BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc())
+        assert_eq!(event, CfdEvent::OfferRejected);
     }
 }

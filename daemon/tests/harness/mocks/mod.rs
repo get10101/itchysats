@@ -1,13 +1,10 @@
-use std::sync::Arc;
-
-use tokio::sync::Mutex;
-use tokio::sync::MutexGuard;
-
 use self::monitor::MonitorActor;
 use self::oracle::OracleActor;
 use self::wallet::WalletActor;
-
 use super::maia::OliviaData;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::sync::MutexGuard;
 
 pub mod monitor;
 pub mod oracle;

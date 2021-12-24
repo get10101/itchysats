@@ -1,8 +1,8 @@
-use crate::model;
 use crate::model::cfd::Cet;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::RevokedCommit;
 use crate::model::cfd::Role;
+use crate::model::cfd::CET_TIMELOCK;
 use crate::model::Leverage;
 use crate::model::Price;
 use crate::model::Usd;
@@ -157,7 +157,7 @@ pub async fn new(
         (params.maker().clone(), *params.maker_punish()),
         (params.taker().clone(), *params.taker_punish()),
         oracle_pk,
-        (model::cfd::Cfd::CET_TIMELOCK, setup_params.refund_timelock),
+        (CET_TIMELOCK, setup_params.refund_timelock),
         payouts,
         sk,
         setup_params.fee_rate,
@@ -336,6 +336,7 @@ pub async fn new(
         taker_lock_amount: params.taker().lock_amount,
         revoked_commit: Vec::new(),
         settlement_event_id,
+        refund_timelock: setup_params.refund_timelock,
     })
 }
 
@@ -453,10 +454,7 @@ pub async fn roll_over(
             taker_punish_params,
         ),
         oracle_pk,
-        (
-            model::cfd::Cfd::CET_TIMELOCK,
-            rollover_params.refund_timelock,
-        ),
+        (CET_TIMELOCK, rollover_params.refund_timelock),
         payouts,
         sk,
         rollover_params.fee_rate,
@@ -645,6 +643,7 @@ pub async fn roll_over(
         taker_lock_amount,
         revoked_commit,
         settlement_event_id: announcement.id,
+        refund_timelock: rollover_params.refund_timelock,
     })
 }
 

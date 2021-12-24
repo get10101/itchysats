@@ -1,15 +1,15 @@
 use crate::address_map::AddressMap;
 use crate::address_map::Stopping;
-use crate::cfd_actors::append_cfd_state;
+use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
-use crate::cfd_actors::{self};
+use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_maker;
-use crate::db::load_cfd;
+use crate::db::append_event;
 use crate::maker_inc_connections;
+use crate::model;
 use crate::model::cfd::Cfd;
-use crate::model::cfd::CfdState;
-use crate::model::cfd::CfdStateCommon;
-use crate::model::cfd::MakerSettlementCompleted;
+use crate::model::cfd::CfdEvent;
+use crate::model::cfd::CollaborativeSettlement;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
@@ -18,8 +18,8 @@ use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementProposal;
 use crate::model::cfd::SetupCompleted;
 use crate::model::Identity;
+use crate::model::Position;
 use crate::model::Price;
-use crate::model::Timestamp;
 use crate::model::Usd;
 use crate::monitor;
 use crate::monitor::MonitorParams;
@@ -34,14 +34,14 @@ use crate::wallet;
 use crate::wire;
 use crate::wire::TakerToMaker;
 use crate::Tasks;
+use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use sqlx::pool::PoolConnection;
-use sqlx::Sqlite;
 use std::collections::HashSet;
 use time::Duration;
+use time::OffsetDateTime;
 use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
@@ -152,54 +152,6 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             .await?;
         Ok(())
     }
-
-    async fn append_cfd_state_setup_failed(
-        &mut self,
-        order_id: OrderId,
-        error: anyhow::Error,
-    ) -> Result<()> {
-        tracing::error!(%order_id, "Contract setup failed: {:#?}", error);
-
-        let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd(order_id, &mut conn).await?;
-        *cfd.state_mut() = CfdState::setup_failed(error.to_string());
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-        Ok(())
-    }
-
-    async fn append_cfd_state_rejected(&mut self, order_id: OrderId) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd(order_id, &mut conn).await?;
-        *cfd.state_mut() = CfdState::rejected();
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-        Ok(())
-    }
-}
-
-impl<O, M, T, W> Actor<O, M, T, W>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    async fn handle_monitoring_event(&mut self, event: monitor::Event) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_monitoring_event(event, &mut conn, &self.wallet, &self.projection_actor)
-            .await?;
-        Ok(())
-    }
-
-    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_oracle_attestation(
-            attestation,
-            &mut conn,
-            &self.wallet,
-            &self.projection_actor,
-        )
-        .await?;
-        Ok(())
-    }
 }
 
 impl<O, M, T, W> Actor<O, M, T, W>
@@ -226,26 +178,6 @@ where
             tracing::warn!("Removed unknown taker: {:?}", &taker_id);
         }
         self.update_connected_takers().await?;
-        Ok(())
-    }
-
-    async fn reject_order(
-        &mut self,
-        taker_id: Identity,
-        mut cfd: Cfd,
-        mut conn: PoolConnection<Sqlite>,
-    ) -> Result<()> {
-        *cfd.state_mut() = CfdState::rejected();
-
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-        self.takers
-            .send(maker_inc_connections::TakerMessage {
-                taker_id,
-                msg: wire::MakerToTaker::RejectOrder(cfd.id()),
-            })
-            .await??;
-
         Ok(())
     }
 }
@@ -302,15 +234,10 @@ where
             proposal.order_id
         );
 
-        // check if CFD is in open state, otherwise we should not proceed
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd(proposal.order_id, &mut conn).await?;
-        match cfd.state() {
-            CfdState::Open { .. } => (),
-            _ => {
-                anyhow::bail!("Order is in invalid state. Cannot propose roll over.")
-            }
-        };
+
+        cfd.is_rollover_possible(OffsetDateTime::now_utc())?;
 
         let this = ctx.address().expect("acquired own address");
 
@@ -406,6 +333,14 @@ where
             }
         };
 
+        let cfd = Cfd::from_order(
+            current_order.clone(),
+            Position::Short,
+            quantity,
+            taker_id,
+            Role::Maker,
+        );
+
         // 2. Remove current order
         // The order is removed before we update the state, because the maker might react on the
         // state change. Once we know that we go for either an accept/reject scenario we
@@ -418,19 +353,6 @@ where
 
         self.projection_actor.send(projection::Update(None)).await?;
 
-        // 3. Insert CFD in DB
-        let cfd = Cfd::from_order(
-            current_order.clone(),
-            quantity,
-            CfdState::IncomingOrderRequest {
-                common: CfdStateCommon {
-                    transition_timestamp: Timestamp::now(),
-                },
-                taker_id,
-            },
-            taker_id,
-            Role::Maker,
-        );
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
 
         // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any
@@ -472,59 +394,23 @@ impl<O, M, T, W> Actor<O, M, T, W> {
 
         tracing::debug!(%order_id, "Maker accepts order");
 
-        let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd(order_id, &mut conn).await?;
-
         self.setup_actors
             .send(&order_id, setup_maker::Accepted)
             .await
             .with_context(|| format!("No active contract setup for order {}", order_id))?;
 
-        *cfd.state_mut() = CfdState::contract_setup();
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
         Ok(())
     }
-}
 
-#[xtra_productivity(message_impl = false)]
-impl<O, M, T, W> Actor<O, M, T, W> {
-    async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
-        self.setup_actors.gc(message);
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O, M, T, W> Actor<O, M, T, W> {
-    async fn handle_settlement_actor_stopping(
-        &mut self,
-        message: Stopping<collab_settlement_maker::Actor>,
-    ) {
-        self.settlement_actors.gc(message);
-    }
-}
-
-#[xtra_productivity]
-impl<O, M, T, W> Actor<O, M, T, W>
-where
-    T: xtra::Handler<maker_inc_connections::TakerMessage>,
-{
     async fn handle_reject_order(&mut self, msg: RejectOrder) -> Result<()> {
         let RejectOrder { order_id } = msg;
 
         tracing::debug!(%order_id, "Maker rejects order");
 
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(order_id, &mut conn).await?;
-
-        let taker_id = match cfd.state() {
-            CfdState::IncomingOrderRequest { taker_id, .. } => taker_id,
-            _ => {
-                anyhow::bail!("Order is in invalid state. Ignoring trying to reject it.")
-            }
-        };
-
-        self.reject_order(*taker_id, cfd, conn).await?;
+        self.setup_actors
+            .send(&order_id, setup_maker::Rejected)
+            .await
+            .with_context(|| format!("No active contract setup for order {}", order_id))?;
 
         Ok(())
     }
@@ -552,49 +438,83 @@ where
     }
 }
 
-#[xtra_productivity]
+#[xtra_productivity(message_impl = false)]
+impl<O, M, T, W> Actor<O, M, T, W> {
+    async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
+        self.setup_actors.gc(message);
+    }
+
+    async fn handle_settlement_actor_stopping(
+        &mut self,
+        message: Stopping<collab_settlement_maker::Actor>,
+    ) {
+        self.settlement_actors.gc(message);
+    }
+}
+
+#[xtra_productivity(message_impl = false)]
 impl<O, M, T, W> Actor<O, M, T, W>
 where
     M: xtra::Handler<monitor::CollaborativeSettlement>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle_settlement_completed(&mut self, msg: MakerSettlementCompleted) -> Result<()> {
-        let (order_id, settlement, script_pubkey) = match msg {
-            MakerSettlementCompleted::Succeeded {
-                order_id,
-                payload: (settlement, script_pubkey),
-            } => (order_id, settlement, script_pubkey),
-            MakerSettlementCompleted::Rejected { .. } => {
-                return Ok(());
-            }
-            MakerSettlementCompleted::Failed { order_id, error } => {
-                tracing::warn!(%order_id, "Collaborative settlement failed: {:#}", error);
-                return Ok(());
-            }
-        };
-
+    async fn handle_settlement_completed(
+        &mut self,
+        msg: model::cfd::Completed<CollaborativeSettlement>,
+    ) -> Result<()> {
+        let order_id = msg.order_id();
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd(order_id, &mut conn).await?;
+        let cfd = load_cfd(order_id, &mut conn).await?;
 
-        let tx = settlement.tx.clone();
-        cfd.handle_proposal_signed(settlement)
-            .context("Failed to update state with collaborative settlement")?;
+        let event = cfd.settle_collaboratively(msg)?;
+        append_event(event.clone(), &mut conn).await?;
+        self.projection_actor.send(projection::CfdsChanged).await?;
 
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+        match event.event {
+            CfdEvent::CollaborativeSettlementCompleted {
+                spend_tx, script, ..
+            } => {
+                let txid = self
+                    .wallet
+                    .send(wallet::TryBroadcastTransaction { tx: spend_tx })
+                    .await?
+                    .context("Broadcasting close transaction")?;
 
-        let txid = self
-            .wallet
-            .send(wallet::TryBroadcastTransaction { tx })
-            .await?
-            .context("Broadcasting close transaction")?;
-        tracing::info!(%order_id, "Close transaction published with txid {}", txid);
+                tracing::info!(%order_id, "Close transaction published with txid {}", txid);
 
-        self.monitor_actor
-            .send(monitor::CollaborativeSettlement {
-                order_id,
-                tx: (txid, script_pubkey),
-            })
-            .await?;
+                self.monitor_actor
+                    .send(monitor::CollaborativeSettlement {
+                        order_id,
+                        tx: (txid, script),
+                    })
+                    .await?;
+            }
+            CfdEvent::CollaborativeSettlementRejected { commit_tx } => {
+                let txid = self
+                    .wallet
+                    .send(wallet::TryBroadcastTransaction { tx: commit_tx })
+                    .await?
+                    .context("Broadcasting commit transaction")?;
+
+                tracing::info!(
+                    "Closing non-collaboratively. Commit tx published with txid {}",
+                    txid
+                )
+            }
+            CfdEvent::CollaborativeSettlementFailed { commit_tx } => {
+                let txid = self
+                    .wallet
+                    .send(wallet::TryBroadcastTransaction { tx: commit_tx })
+                    .await?
+                    .context("Broadcasting commit transaction")?;
+
+                tracing::warn!(
+                    "Closing non-collaboratively. Commit tx published with txid {}",
+                    txid
+                )
+            }
+            _ => bail!("Unexpected event {:?}", event.event),
+        }
 
         Ok(())
     }
@@ -621,33 +541,8 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     O: xtra::Handler<oracle::MonitorAttestation>,
 {
-    async fn handle_roll_over_completed(&mut self, msg: Completed) -> Result<()> {
-        // We handle rollover success in the maker_cfd::Actor instead of the rollover_maker::Actor
-        // because we do not have access to the DB in the rollover_maker::Actor
-        let Completed { order_id, dlc } = msg;
-
-        let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd(order_id, &mut conn).await?;
-        *cfd.state_mut() = CfdState::Open {
-            common: CfdStateCommon::default(),
-            dlc: dlc.clone(),
-            attestation: None,
-            collaborative_close: None,
-        };
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-        self.monitor_actor
-            .send(monitor::StartMonitoring {
-                id: order_id,
-                params: MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks()),
-            })
-            .await?;
-
-        self.oracle_actor
-            .send(oracle::MonitorAttestation {
-                event_id: dlc.settlement_event_id,
-            })
-            .await?;
+    async fn handle_roll_over_completed(&mut self, _: Completed) -> Result<()> {
+        // TODO: Implement this in terms of event sourcing
 
         Ok(())
     }
@@ -752,31 +647,24 @@ where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
-        let (order_id, dlc) = match msg {
-            SetupCompleted::Succeeded {
-                order_id,
-                payload: (dlc, _),
-            } => (order_id, dlc),
-            SetupCompleted::Failed { order_id, error } => {
-                self.append_cfd_state_setup_failed(order_id, error).await?;
-                return anyhow::Ok(());
-            }
-            SetupCompleted::Rejected { order_id, .. } => {
-                self.append_cfd_state_rejected(order_id).await?;
-                return anyhow::Ok(());
-            }
-        };
-
+        let order_id = msg.order_id();
         let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd(order_id, &mut conn).await?;
 
-        *cfd.state_mut() = CfdState::PendingOpen {
-            common: CfdStateCommon::default(),
-            dlc: dlc.clone(),
-            attestation: None,
+        let cfd = load_cfd(order_id, &mut conn).await?;
+        let event = cfd.setup_contract(msg)?;
+        append_event(event.clone(), &mut conn).await?;
+
+        self.projection_actor.send(projection::CfdsChanged).await?;
+
+        let dlc = match event.event {
+            CfdEvent::ContractSetupCompleted { dlc } => dlc,
+            CfdEvent::OfferRejected | CfdEvent::ContractSetupFailed => {
+                return Ok(());
+            }
+            _ => bail!("Unexpected event {:?}", event.event),
         };
 
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
+        tracing::info!("Setup complete, publishing on chain now");
 
         let txid = self
             .wallet
@@ -790,7 +678,7 @@ where
         self.monitor_actor
             .send(monitor::StartMonitoring {
                 id: order_id,
-                params: MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks()),
+                params: MonitorParams::new(dlc.clone()),
             })
             .await?;
 
@@ -836,13 +724,31 @@ where
     }
 }
 
-#[async_trait]
-impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<monitor::Event> for Actor<O, M, T, W>
+#[xtra_productivity(message_impl = false)]
+impl<O, M, T, W> Actor<O, M, T, W>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle(&mut self, msg: monitor::Event, _ctx: &mut Context<Self>) -> Result<()> {
-        self.handle_monitoring_event(msg).await
+    async fn handle_monitor(&mut self, msg: monitor::Event) {
+        if let Err(e) =
+            cfd_actors::handle_monitoring_event(msg, &self.db, &self.wallet, &self.projection_actor)
+                .await
+        {
+            tracing::error!("Unable to handle monotoring event: {:#}", e)
+        }
+    }
+
+    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
+        if let Err(e) = cfd_actors::handle_oracle_attestation(
+            msg,
+            &self.db,
+            &self.wallet,
+            &self.projection_actor,
+        )
+        .await
+        {
+            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
+        }
     }
 }
 
@@ -863,15 +769,15 @@ where
         + xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    async fn handle(
-        &mut self,
-        FromTaker { taker_id, msg }: FromTaker,
-        ctx: &mut Context<Self>,
-    ) -> Result<()> {
+    async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker, ctx: &mut Context<Self>) {
         match msg {
             wire::TakerToMaker::TakeOrder { order_id, quantity } => {
-                self.handle_take_order(taker_id, order_id, quantity, ctx)
-                    .await?
+                if let Err(e) = self
+                    .handle_take_order(taker_id, order_id, quantity, ctx)
+                    .await
+                {
+                    tracing::error!("Error when handling order take request: {:#}", e)
+                }
             }
             wire::TakerToMaker::Settlement {
                 order_id,
@@ -933,21 +839,6 @@ where
             TakerToMaker::Hello(_) => {
                 unreachable!("The Hello message is not sent to the cfd actor")
             }
-        };
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl<O: 'static, M: 'static, T: 'static, W: 'static> Handler<oracle::Attestation>
-    for Actor<O, M, T, W>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut Context<Self>) {
-        if let Err(e) = self.handle_oracle_attestation(msg).await {
-            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
         }
     }
 }
@@ -965,7 +856,7 @@ impl Message for Completed {
 }
 
 impl Message for FromTaker {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 impl<O: 'static, M: 'static, T: 'static, W: 'static> xtra::Actor for Actor<O, M, T, W> {}

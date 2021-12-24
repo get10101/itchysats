@@ -125,7 +125,7 @@ pub enum StopReason {
     StreamEnded,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Quote {
     pub timestamp: Timestamp,
     pub bid: Price,

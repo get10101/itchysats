@@ -1,18 +1,19 @@
 use crate::db;
-use crate::model::cfd::Attestation;
 use crate::model::cfd::Cfd;
-use crate::model::cfd::CfdState;
+use crate::model::cfd::CfdEvent;
+use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::monitor;
 use crate::oracle;
 use crate::projection;
+use crate::projection::CfdsChanged;
 use crate::try_continue;
 use crate::wallet;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
+use sqlx::SqlitePool;
 
 pub async fn insert_cfd_and_update_feed(
     cfd: &Cfd,
@@ -20,87 +21,76 @@ pub async fn insert_cfd_and_update_feed(
     projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()> {
     db::insert_cfd(cfd, conn).await?;
-    projection_address.send(projection::CfdsChanged).await??;
-    Ok(())
-}
-
-pub async fn append_cfd_state(
-    cfd: &Cfd,
-    conn: &mut PoolConnection<Sqlite>,
-    projection_address: &xtra::Address<projection::Actor>,
-) -> Result<()> {
-    db::append_cfd_state(cfd, conn).await?;
-    projection_address.send(projection::CfdsChanged).await??;
-    Ok(())
-}
-
-pub async fn try_cet_publication<W>(
-    cfd: &mut Cfd,
-    conn: &mut PoolConnection<Sqlite>,
-    wallet: &xtra::Address<W>,
-    projection_address: &xtra::Address<projection::Actor>,
-) -> Result<()>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
-    match cfd.cet()? {
-        Ok(cet) => {
-            let txid = wallet
-                .send(wallet::TryBroadcastTransaction { tx: cet })
-                .await?
-                .context("Failed to send transaction")?;
-            tracing::info!("CET published with txid {}", txid);
-
-            if cfd.handle_cet_sent()?.is_none() {
-                bail!("If we can get the CET we should be able to transition")
-            }
-
-            append_cfd_state(cfd, conn, projection_address).await?;
-        }
-        Err(not_ready_yet) => {
-            tracing::debug!("{:#}", not_ready_yet);
-            return Ok(());
-        }
-    };
-
+    projection_address.send(projection::CfdsChanged).await?;
     Ok(())
 }
 
 pub async fn handle_monitoring_event<W>(
     event: monitor::Event,
-    conn: &mut PoolConnection<Sqlite>,
+    db: &SqlitePool,
     wallet: &xtra::Address<W>,
     projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
+    let mut conn = db.acquire().await?;
+
     let order_id = event.order_id();
 
-    let mut cfd = db::load_cfd(order_id, conn).await?;
+    let cfd = load_cfd(order_id, &mut conn).await?;
 
-    if cfd.handle_monitoring_event(event)?.is_none() {
-        // early exit if there was not state change
-        // this is for cases where we are already in a final state
-        return Ok(());
-    }
+    let event = match event {
+        monitor::Event::LockFinality(_) => cfd.handle_lock_confirmed(),
+        monitor::Event::CommitFinality(_) => cfd.handle_commit_confirmed(),
+        monitor::Event::CloseFinality(_) => cfd.handle_collaborative_settlement_confirmed(),
+        monitor::Event::CetTimelockExpired(_) => {
+            if let Ok(event) = cfd.handle_cet_timelock_expired() {
+                event
+            } else {
+                return Ok(()); // Early return from a no-op
+            }
+        }
+        monitor::Event::CetFinality(_) => cfd.handle_cet_confirmed(),
+        monitor::Event::RefundTimelockExpired(_) => cfd.handle_refund_timelock_expired(),
+        monitor::Event::RefundFinality(_) => cfd.handle_refund_confirmed(),
+        monitor::Event::RevokedTransactionFound(_) => cfd.handle_revoke_confirmed(),
+    };
 
-    append_cfd_state(&cfd, conn, projection_address).await?;
+    db::append_event(event.clone(), &mut conn).await?;
+    post_process_event(event, wallet).await?;
+    projection_address.send(CfdsChanged).await?;
 
-    if let CfdState::OpenCommitted { .. } = cfd.state() {
-        try_cet_publication(&mut cfd, conn, wallet, projection_address).await?;
-    } else if let CfdState::PendingRefund { .. } = cfd.state() {
-        let signed_refund_tx = cfd.refund_tx()?;
-        let txid = wallet
-            .send(wallet::TryBroadcastTransaction {
-                tx: signed_refund_tx,
-            })
-            .await?
-            .context("Failed to publish CET")?;
-
-        tracing::info!("Refund transaction published on chain: {}", txid);
-    }
     Ok(())
+}
+
+/// Load a CFD from the database and rehydrate as the [`model::cfd::Cfd`] aggregate.
+pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<Cfd> {
+    let (
+        db::Cfd {
+            id,
+            position,
+            initial_price,
+            leverage,
+            settlement_interval,
+            counterparty_network_identity,
+            role,
+            quantity_usd,
+        },
+        events,
+    ) = db::load_cfd(order_id, conn).await?;
+    let cfd = Cfd::rehydrate(
+        id,
+        position,
+        initial_price,
+        leverage,
+        settlement_interval,
+        quantity_usd,
+        counterparty_network_identity,
+        role,
+        events,
+    );
+    Ok(cfd)
 }
 
 pub async fn handle_commit<W>(
@@ -112,73 +102,79 @@ pub async fn handle_commit<W>(
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
-    let mut cfd = db::load_cfd(order_id, conn).await?;
+    let cfd = load_cfd(order_id, conn).await?;
 
-    let signed_commit_tx = cfd.commit_tx()?;
+    let event = cfd.manual_commit_to_blockchain()?;
+    db::append_event(event.clone(), conn).await?;
 
-    let txid = wallet
-        .send(wallet::TryBroadcastTransaction {
-            tx: signed_commit_tx,
-        })
-        .await?
-        .context("Failed to publish commit tx")?;
+    post_process_event(event, wallet).await?;
 
-    if cfd.handle_commit_tx_sent()?.is_none() {
-        bail!("If we can get the commit tx we should be able to transition")
-    }
-
-    append_cfd_state(&cfd, conn, projection_address).await?;
-    tracing::info!("Commit transaction published on chain: {}", txid);
+    projection_address.send(CfdsChanged).await?;
 
     Ok(())
 }
 
 pub async fn handle_oracle_attestation<W>(
     attestation: oracle::Attestation,
-    conn: &mut PoolConnection<Sqlite>,
+    db: &SqlitePool,
     wallet: &xtra::Address<W>,
     projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
+    let mut conn = db.acquire().await?;
+
     tracing::debug!(
         "Learnt latest oracle attestation for event: {}",
         attestation.id
     );
 
-    let mut cfds = db::load_all_cfds(conn).await?;
+    for id in db::load_all_cfd_ids(&mut conn).await? {
+        let cfd = try_continue!(load_cfd(id, &mut conn).await);
+        let event = try_continue!(cfd
+            .decrypt_cet(&attestation)
+            .context("Failed to decrypt CET using attestation"));
 
-    for (cfd, dlc) in cfds
-        .iter_mut()
-        .filter_map(|cfd| cfd.dlc().map(|dlc| (cfd, dlc)))
-    {
-        if dlc.settlement_event_id != attestation.id {
-            // If this CFD is not interested in this attestation we ignore it
-            continue;
-        }
-
-        let attestation = try_continue!(Attestation::new(
-            attestation.id,
-            attestation.price,
-            attestation.scalars.clone(),
-            dlc,
-            cfd.role(),
-        ));
-
-        let new_state = try_continue!(cfd.handle_oracle_attestation(attestation));
-
-        if new_state.is_none() {
-            // if we don't transition to a new state after oracle attestation we ignore the cfd
-            // this is for cases where we cannot handle the attestation which should be in a
-            // final state
-            continue;
-        }
-
-        try_continue!(append_cfd_state(cfd, conn, projection_address).await);
-        try_continue!(try_cet_publication(cfd, conn, wallet, projection_address)
+        try_continue!(db::append_event(event.clone(), &mut conn)
             .await
-            .context("Error when trying to publish CET"));
+            .context("Failed to append events"));
+
+        if let Some(event) = event {
+            try_continue!(post_process_event(event, wallet).await)
+        }
+    }
+
+    projection_address.send(CfdsChanged).await?;
+
+    Ok(())
+}
+
+async fn post_process_event<W>(event: Event, wallet: &xtra::Address<W>) -> Result<()>
+where
+    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+{
+    match event.event {
+        CfdEvent::OracleAttestedPostCetTimelock { cet, .. }
+        | CfdEvent::CetTimelockConfirmedPostOracleAttestation { cet } => {
+            let txid = wallet
+                .send(wallet::TryBroadcastTransaction { tx: cet })
+                .await?
+                .context("Failed to broadcast CET")?;
+
+            tracing::info!(%txid, "CET published");
+        }
+        CfdEvent::OracleAttestedPriorCetTimelock { commit_tx: tx, .. }
+        | CfdEvent::ManualCommit { tx } => {
+            let txid = wallet
+                .send(wallet::TryBroadcastTransaction { tx })
+                .await?
+                .context("Failed to broadcast commit transaction")?;
+
+            tracing::info!(%txid, "Commit transaction published");
+        }
+
+        _ => {}
     }
 
     Ok(())

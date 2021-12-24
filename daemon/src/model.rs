@@ -6,6 +6,7 @@ use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
 use chrono::DateTime;
+use derive_more::Display;
 use reqwest::Url;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -161,6 +162,12 @@ impl Leverage {
 
     pub fn get(&self) -> u8 {
         self.0
+    }
+}
+
+impl fmt::Display for Leverage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "x{}", self.0)
     }
 }
 
@@ -395,7 +402,7 @@ pub enum TradingPair {
     BtcUsd,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type, Display)]
 pub enum Position {
     Long,
     Short,
@@ -706,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_taker_id_serde() {
+    fn roundtrip_identity_serde() {
         let id = Identity::new(x25519_dalek::PublicKey::from([42u8; 32]));
 
         serde_test::assert_tokens(

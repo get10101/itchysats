@@ -6,32 +6,86 @@ hide circle
 ' avoid problems with angled crows feet
 skinparam linetype ortho
 
-entity "orders" as order {
-    *id : number <<PK>> <<generated>>
+entity "cfds" as cfds {
+    id <<PK>> <<auto-increment>>
     --
-    ...
-}
-
-entity "cfds" as cfd {
-  *id : number <<PK>> <<generated>>
-  --
-  *order_id : text <<FK>>
-  --
-  quantity_usd: long
-  creation_timestamp: Date
-}
-
-entity "cfd_states" as cfd_states {
-    *id : number <<PK>> <<generated>>
+    uuid <<unique>>
     --
-    state: blob
+    position
+    initial_price
+    leverage
+    settlement_time_interval_hours
+    quantity
+    counterparty_network_identity
 }
-note left: state de-/serialized \nfrom rust state enum \nthis is not backwards\ncompatible, but that's \nOK for the MVP
 
+entity "events" as events {
+    id <<PK>> <<auto-increment>>
+    --
+    cfd_id <<FK>>
+    --
+    name: text
+    data: json
+    timestamp: date
+}
 
-order ||--|| cfd
+cfds }o--|| events
 
-cfd ||--|{ cfd_states
+entity "taker::CfdAggregate" as taker_cfd_aggregate {
+    --
+    --
+    start_contract_setup() -> ContractSetupParams
+    complete_contract_setup() -> Event::Dlc
 
+    start_rollover()
+    complete_rollover()
+
+    start_collaborative_settlement()
+    complete_collaborative_settlement()
+
+    start_non_collaborative_settlement()
+
+    lock_confirmed()
+    commit_confirmed()
+    cet_confirmed()
+    refund_confirmed()
+    collaborative_settlement_confirmed()
+    cet_timelock_expired()
+    refund_timelock_expired()
+
+    oracle_attested()
+}
+
+entity "maker::CfdAggregate" as maker_cfd_aggregate {
+    --
+    --
+    start_contract_setup() -> ContractSetupParams
+    complete_contract_setup() -> Event::Dlc
+
+    rollover_requested() -> RolloverParams
+    accept_rollover()
+    reject_rollover()
+    complete_rollover()
+
+    collaborative_settlement_requested()
+    accept_collaborative_settlement()
+    reject_collaborative_settlement()
+    complete_collaborative_settlement()
+
+    start_non_collaborative_settlement()
+
+    lock_confirmed()
+    commit_confirmed()
+    cet_confirmed()
+    refund_confirmed()
+    collaborative_settlement_confirmed()
+    cet_timelock_expired()
+    refund_timelock_expired()
+
+    oracle_attested()
+}
+
+entity "Event" as taker_event {
+}
 
 @enduml

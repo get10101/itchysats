@@ -1,14 +1,12 @@
 use crate::address_map;
 use crate::connection;
 use crate::model::cfd::Cfd;
-use crate::model::cfd::CfdState;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::SetupCompleted;
 use crate::oracle::Announcement;
 use crate::setup_contract;
-use crate::setup_contract::SetupParams;
 use crate::tokio_ext::spawn_fallible;
 use crate::wallet;
 use crate::wire;
@@ -33,7 +31,6 @@ pub struct Actor {
     build_party_params: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign: Box<dyn MessageChannel<wallet::Sign>>,
     maker: xtra::Address<connection::Actor>,
-    on_accepted: Box<dyn MessageChannel<Started>>,
     on_completed: Box<dyn MessageChannel<SetupCompleted>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
 }
@@ -46,7 +43,6 @@ impl Actor {
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
         maker: xtra::Address<connection::Actor>,
-        on_accepted: &(impl MessageChannel<Started> + 'static),
         on_completed: &(impl MessageChannel<SetupCompleted> + 'static),
     ) -> Self {
         Self {
@@ -57,7 +53,6 @@ impl Actor {
             build_party_params: build_party_params.clone_channel(),
             sign: sign.clone_channel(),
             maker,
-            on_accepted: on_accepted.clone_channel(),
             on_completed: on_completed.clone_channel(),
             setup_msg_sender: None,
         }
@@ -68,18 +63,9 @@ impl Actor {
 impl Actor {
     fn handle(&mut self, _: Accepted, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let order_id = self.cfd.id();
-
-        *self.cfd.state_mut() = CfdState::contract_setup();
-
         tracing::info!(%order_id, "Order got accepted");
 
-        // inform the `taker_cfd::Actor` about the start of contract
-        // setup, so that the db and UI can be updated accordingly
-        self.on_accepted
-            .send(Started(order_id))
-            .log_failure("Failed to inform about contract setup start")
-            .await?;
-
+        let (setup_params, _) = self.cfd.start_contract_setup()?;
         let (sender, receiver) = mpsc::unbounded::<SetupMsg>();
         // store the writing end to forward messages from the maker to
         // the spawned contract setup task
@@ -90,15 +76,7 @@ impl Actor {
                 .with(move |msg| future::ok(wire::TakerToMaker::Protocol { order_id, msg })),
             receiver,
             (self.oracle_pk, self.announcement.clone()),
-            SetupParams::new(
-                self.cfd.margin()?,
-                self.cfd.counterparty_margin()?,
-                self.cfd.price(),
-                self.cfd.quantity_usd(),
-                self.cfd.leverage(),
-                self.cfd.refund_timelock_in_blocks(),
-                self.cfd.fee_rate(),
-            ),
+            setup_params,
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
             Role::Taker,
@@ -184,7 +162,7 @@ impl xtra::Actor for Actor {
             .maker
             .send(connection::TakeOrder {
                 order_id: self.cfd.id(),
-                quantity: self.cfd.quantity_usd(),
+                quantity: self.cfd.quantity(),
                 address,
             })
             .await;
@@ -200,10 +178,6 @@ impl xtra::Actor for Actor {
 /// `setup_taker::Actor` to notify that the order taken was accepted
 /// by the maker.
 pub struct Accepted;
-
-/// Message sent from the `setup_taker::Actor` to the
-/// `taker_cfd::Actor` to notify that the contract setup has started.
-pub struct Started(pub OrderId);
 
 /// Message sent from the `connection::Actor` to the
 /// `setup_taker::Actor` to notify that the order taken was rejected
@@ -243,14 +217,6 @@ impl Rejected {
             is_invalid_order: true,
         }
     }
-}
-
-impl xtra::Message for Started {
-    type Result = Result<()>;
-}
-
-impl xtra::Message for SetupCompleted {
-    type Result = Result<()>;
 }
 
 impl address_map::ActorName for Actor {

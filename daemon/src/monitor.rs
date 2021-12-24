@@ -1,10 +1,10 @@
 use crate::db;
 use crate::model;
-use crate::model::cfd::CetStatus;
-use crate::model::cfd::Cfd;
-use crate::model::cfd::CfdState;
+use crate::model::cfd;
+use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
+use crate::model::cfd::CET_TIMELOCK;
 use crate::model::BitMexPriceEventId;
 use crate::oracle;
 use crate::oracle::Attestation;
@@ -47,6 +47,8 @@ pub struct CollaborativeSettlement {
     pub tx: (Txid, Script),
 }
 
+// TODO: The design of this struct causes a lot of marshalling und unmarshelling that is quite
+// unnecessary. Should be taken apart so we can handle all cases individually!
 #[derive(Clone)]
 pub struct MonitorParams {
     lock: (Txid, Descriptor<PublicKey>),
@@ -59,6 +61,8 @@ pub struct MonitorParams {
 
 pub struct Sync;
 
+// TODO: Send messages to the projection actor upon finality events so we send out updates.
+//  -> Might as well just send out all events independent of sending to the cfd actor.
 pub struct Actor<C = bdk::electrum_client::Client> {
     cfds: HashMap<OrderId, MonitorParams>,
     event_channel: Box<dyn StrongMessageChannel<Event>>,
@@ -69,14 +73,109 @@ pub struct Actor<C = bdk::electrum_client::Client> {
     tasks: Tasks,
 }
 
+/// Read-model of the CFD for the monitoring actor.
+#[derive(Default)]
+struct Cfd {
+    params: Option<MonitorParams>,
+
+    monitor_lock_finality: bool,
+    monitor_commit_finality: bool,
+    monitor_cet_timelock: bool,
+    monitor_refund_timelock: bool,
+    monitor_refund_finality: bool,
+    monitor_revoked_commit_transactions: bool,
+
+    // Ideally, all of the above would be like this.
+    monitor_collaborative_settlement_finality: Option<(Txid, Script)>,
+}
+
+impl Cfd {
+    // TODO: Ideally, we would only set the specific monitoring events to `true` that occur _next_,
+    // like lock_finality after contract-setup. However, this would require that
+    // - either the monitoring actor is smart enough to know that it needs to monitor for
+    //   commit-finality after lock-finality
+    // - or some other actor tells it to do that
+    //
+    // At the moment, neither of those two is the case which is why we set everything to true that
+    // might become relevant. See also https://github.com/itchysats/itchysats/issues/605 and https://github.com/itchysats/itchysats/issues/236.
+    fn apply(self, event: cfd::Event) -> Self {
+        match event.event {
+            CfdEvent::ContractSetupCompleted { dlc } => Self {
+                params: Some(MonitorParams::new(dlc)),
+                monitor_lock_finality: true,
+                monitor_commit_finality: true,
+                monitor_cet_timelock: true,
+                monitor_refund_timelock: true,
+                monitor_refund_finality: true,
+                monitor_revoked_commit_transactions: false,
+                monitor_collaborative_settlement_finality: None,
+            },
+            CfdEvent::RolloverCompleted { dlc } => {
+                Self {
+                    params: Some(MonitorParams::new(dlc)),
+                    monitor_lock_finality: false, // Lock is already final after rollover.
+                    monitor_commit_finality: true,
+                    monitor_cet_timelock: true,
+                    monitor_refund_timelock: true,
+                    monitor_refund_finality: true,
+                    monitor_revoked_commit_transactions: true, /* After rollover, the other party
+                                                                * might publish old states. */
+                    monitor_collaborative_settlement_finality: None,
+                }
+            }
+            CfdEvent::CollaborativeSettlementCompleted {
+                spend_tx, script, ..
+            } => {
+                Self {
+                    monitor_lock_finality: false, // Lock is already final if we collab settle.
+                    monitor_commit_finality: true, // The other party might still want to race us.
+                    monitor_collaborative_settlement_finality: Some((spend_tx.txid(), script)),
+                    ..self
+                }
+            }
+            CfdEvent::ContractSetupFailed
+            | CfdEvent::OfferRejected
+            | CfdEvent::RolloverRejected => {
+                Self::default() // all false / empty
+            }
+            CfdEvent::LockConfirmed => Self {
+                monitor_lock_finality: false,
+                ..self
+            },
+            CfdEvent::CommitConfirmed => Self {
+                monitor_commit_finality: false,
+                ..self
+            },
+            // final states, don't monitor anything
+            CfdEvent::CetConfirmed
+            | CfdEvent::RefundConfirmed
+            | CfdEvent::CollaborativeSettlementConfirmed => Self::default(),
+            CfdEvent::CetTimelockConfirmedPriorOracleAttestation
+            | CfdEvent::CetTimelockConfirmedPostOracleAttestation { .. } => Self {
+                monitor_cet_timelock: false,
+                ..self
+            },
+            CfdEvent::RefundTimelockConfirmed { .. } => Self {
+                monitor_refund_timelock: false,
+                ..self
+            },
+            CfdEvent::RolloverFailed
+            | CfdEvent::ManualCommit { .. }
+            | CfdEvent::OracleAttestedPostCetTimelock { .. }
+            | CfdEvent::OracleAttestedPriorCetTimelock { .. }
+            | CfdEvent::CollaborativeSettlementRejected { .. }
+            | CfdEvent::CollaborativeSettlementFailed { .. } => self,
+            CfdEvent::RevokeConfirmed => todo!("Deal with revoked"),
+        }
+    }
+}
+
 impl Actor<bdk::electrum_client::Client> {
     pub async fn new(
         db: SqlitePool,
         electrum_rpc_url: String,
         event_channel: Box<dyn StrongMessageChannel<Event>>,
     ) -> Result<Self> {
-        let cfds = db::load_all_cfds(&mut db.acquire().await?).await?;
-
         let client = bdk::electrum_client::Client::new(&electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
@@ -96,84 +195,55 @@ impl Actor<bdk::electrum_client::Client> {
             tasks: Tasks::default(),
         };
 
-        for cfd in cfds {
-            match cfd.state().clone() {
-                // In PendingOpen we know the complete dlc setup and assume that the lock transaction will be published
-                CfdState::PendingOpen { dlc, .. } => {
-                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
-                    actor.cfds.insert(cfd.id(), params.clone());
-                    actor.monitor_all(&params, cfd.id());
-                }
-                CfdState::Open { dlc, .. } | CfdState::PendingCommit { dlc, .. } => {
-                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
-                    actor.cfds.insert(cfd.id(), params.clone());
+        let mut conn = db.acquire().await?;
 
-                    actor.monitor_commit_finality(&params, cfd.id());
-                    actor.monitor_commit_cet_timelock(&params, cfd.id());
-                    actor.monitor_commit_refund_timelock(&params, cfd.id());
-                    actor.monitor_refund_finality(&params,cfd.id());
+        for id in db::load_all_cfd_ids(&mut conn).await? {
+            let (_, events) = db::load_cfd(id, &mut conn).await?;
 
-                    if let Some(model::cfd::CollaborativeSettlement { tx, ..}
-                    ) = cfd.state().get_collaborative_close()  {
-                        let close_params = (tx.txid(),
-                            tx.output.first().context("transaction has zero outputs")?.script_pubkey.clone());
-                        actor.monitor_close_finality(close_params,cfd.id());
-                    }
-                }
-                CfdState::OpenCommitted { dlc, cet_status, .. } => {
-                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
-                    actor.cfds.insert(cfd.id(), params.clone());
+            let Cfd {
+                params,
+                monitor_lock_finality,
+                monitor_commit_finality,
+                monitor_cet_timelock,
+                monitor_refund_timelock,
+                monitor_refund_finality,
+                monitor_revoked_commit_transactions,
+                monitor_collaborative_settlement_finality,
+            } = events.into_iter().fold(Cfd::default(), Cfd::apply);
 
-                    match cet_status {
-                        CetStatus::Unprepared => {
-                            actor.monitor_commit_cet_timelock(&params, cfd.id());
-                            actor.monitor_commit_refund_timelock(&params, cfd.id());
-                            actor.monitor_refund_finality(&params,cfd.id());
-                        }
-                        CetStatus::OracleSigned(attestation) => {
-                            actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.id())?;
-                            actor.monitor_commit_cet_timelock(&params, cfd.id());
-                            actor.monitor_commit_refund_timelock(&params, cfd.id());
-                            actor.monitor_refund_finality(&params,cfd.id());
-                        }
-                        CetStatus::TimelockExpired => {
-                            actor.monitor_commit_refund_timelock(&params, cfd.id());
-                            actor.monitor_refund_finality(&params,cfd.id());
-                        }
-                        CetStatus::Ready(attestation) => {
-                            actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.id())?;
-                            actor.monitor_commit_refund_timelock(&params, cfd.id());
-                            actor.monitor_refund_finality(&params,cfd.id());
-                        }
-                    }
-                }
-                CfdState::PendingCet { dlc, attestation, .. } => {
-                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
-                    actor.cfds.insert(cfd.id(), params.clone());
+            let params = match params {
+                None => continue,
+                Some(params) => params,
+            };
 
-                    actor.monitor_cet_finality(map_cets(dlc.cets), attestation.into(), cfd.id())?;
-                    actor.monitor_commit_refund_timelock(&params, cfd.id());
-                    actor.monitor_refund_finality(&params,cfd.id());
-                }
-                CfdState::PendingRefund { dlc, .. } => {
-                    let params = MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks());
-                    actor.cfds.insert(cfd.id(), params.clone());
+            actor.cfds.insert(id, params.clone());
 
-                    actor.monitor_commit_refund_timelock(&params, cfd.id());
-                    actor.monitor_refund_finality(&params,cfd.id());
-                }
+            if monitor_lock_finality {
+                actor.monitor_lock_finality(&params, id);
+            }
 
-                // too early to monitor
-                CfdState::OutgoingOrderRequest { .. }
-                | CfdState::IncomingOrderRequest { .. }
-                | CfdState::Accepted { .. }
-                | CfdState::ContractSetup { .. }
+            if monitor_commit_finality {
+                actor.monitor_commit_finality(&params, id)
+            }
 
-                // final states
-                | CfdState::Closed { .. }
-                | CfdState::Rejected { .. }
-                | CfdState::Refunded { .. }
-                | CfdState::SetupFailed { .. } => ()
+            if monitor_cet_timelock {
+                actor.monitor_commit_cet_timelock(&params, id);
+            }
+
+            if monitor_refund_timelock {
+                actor.monitor_commit_refund_timelock(&params, id);
+            }
+
+            if monitor_refund_finality {
+                actor.monitor_refund_finality(&params, id);
+            }
+
+            if monitor_revoked_commit_transactions {
+                actor.monitor_revoked_commit_transactions(&params, id);
+            }
+
+            if let Some(params) = monitor_collaborative_settlement_finality {
+                actor.monitor_close_finality(params, id);
             }
         }
 
@@ -220,7 +290,7 @@ where
             .entry((params.commit.0, params.commit.1.script_pubkey()))
             .or_default()
             .push((
-                ScriptStatus::with_confirmations(Cfd::CET_TIMELOCK),
+                ScriptStatus::with_confirmations(CET_TIMELOCK),
                 Event::CetTimelockExpired(order_id),
             ));
     }
@@ -438,7 +508,7 @@ where
 
                     for (target_status, event) in reached_monitoring_target {
                         tracing::info!(%txid, target = %target_status, current = %status, "Bitcoin transaction reached monitoring target");
-                        self.event_channel.send(event).await??;
+                        self.event_channel.send(event).await?;
                     }
                 }
             }
@@ -581,17 +651,13 @@ impl Event {
 }
 
 impl MonitorParams {
-    pub fn new(dlc: Dlc, refund_timelock_in_blocks: u32) -> Self {
+    pub fn new(dlc: Dlc) -> Self {
         let script_pubkey = dlc.maker_address.script_pubkey();
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
             commit: (dlc.commit.0.txid(), dlc.commit.2),
             cets: map_cets(dlc.cets),
-            refund: (
-                dlc.refund.0.txid(),
-                script_pubkey,
-                refund_timelock_in_blocks,
-            ),
+            refund: (dlc.refund.0.txid(), script_pubkey, dlc.refund_timelock),
             revoked_commits: dlc
                 .revoked_commit
                 .iter()
@@ -633,7 +699,7 @@ fn map_cets(
 }
 
 impl xtra::Message for Event {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 impl xtra::Message for Sync {
@@ -681,6 +747,7 @@ where
         );
     }
 }
+
 #[async_trait]
 impl<C> xtra::Handler<Sync> for Actor<C>
 where
@@ -703,6 +770,7 @@ impl xtra::Handler<oracle::Attestation> for Actor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::cfd::CET_TIMELOCK;
     use bdk::bitcoin::blockdata::block;
     use bdk::electrum_client::Batch;
     use bdk::electrum_client::Error;
@@ -736,7 +804,7 @@ mod tests {
                 vec![
                     (ScriptStatus::finality(), commit_finality.clone()),
                     (
-                        ScriptStatus::with_confirmations(Cfd::CET_TIMELOCK),
+                        ScriptStatus::with_confirmations(CET_TIMELOCK),
                         refund_expired.clone(),
                     ),
                 ],
@@ -873,10 +941,8 @@ mod tests {
 
     #[async_trait]
     impl xtra::Handler<Event> for MessageRecordingActor {
-        async fn handle(&mut self, message: Event, _ctx: &mut xtra::Context<Self>) -> Result<()> {
+        async fn handle(&mut self, message: Event, _ctx: &mut xtra::Context<Self>) {
             self.events.push(message);
-
-            Ok(())
         }
     }
 

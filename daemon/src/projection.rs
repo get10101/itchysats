@@ -1,31 +1,41 @@
 use crate::bitmex_price_feed;
 use crate::db;
 use crate::model;
-use crate::model::cfd::Cfd as ModelCfd;
+use crate::model::cfd::calculate_long_liquidation_price;
+use crate::model::cfd::calculate_long_margin;
+use crate::model::cfd::calculate_profit;
+use crate::model::cfd::calculate_short_margin;
+use crate::model::cfd::CfdEvent;
+use crate::model::cfd::Dlc;
+use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementKind;
 use crate::model::cfd::SettlementProposal;
-use crate::model::cfd::UpdateCfdProposal;
+use crate::model::Identity;
 use crate::model::Leverage;
 use crate::model::Position;
+use crate::model::Price;
 use crate::model::Timestamp;
 use crate::model::TradingPair;
-use crate::tx;
+use crate::model::Usd;
+use crate::send_async_safe::SendAsyncSafe;
 use crate::Order;
-use crate::UpdateCfdProposals;
 use anyhow::Result;
+use async_trait::async_trait;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Network;
 use bdk::bitcoin::SignedAmount;
-use itertools::Itertools;
+use bdk::bitcoin::Txid;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde::Serialize;
+use sqlx::pool::PoolConnection;
 use std::collections::HashMap;
 use time::OffsetDateTime;
 use tokio::sync::watch;
+use xtra::Context;
 use xtra_productivity::xtra_productivity;
 
 /// Amend a given settlement proposal (if `proposal.is_none()`, it should be removed)
@@ -62,41 +72,411 @@ pub struct Feeds {
 }
 
 impl Actor {
-    pub async fn new(db: sqlx::SqlitePool, role: Role, network: Network) -> Result<(Self, Feeds)> {
-        let mut conn = db.acquire().await?;
-        let init_cfds = db::load_all_cfds(&mut conn).await?;
-
-        let state = State {
-            role,
-            network,
-            cfds: init_cfds,
-            proposals: HashMap::new(),
-            quote: None,
-        };
-
-        let (tx_cfds, rx_cfds) = watch::channel(state.to_cfds());
+    pub fn new(db: sqlx::SqlitePool, _role: Role, network: Network) -> (Self, Feeds) {
+        let (tx_cfds, rx_cfds) = watch::channel(Vec::new());
         let (tx_order, rx_order) = watch::channel(None);
         let (tx_quote, rx_quote) = watch::channel(None);
         let (tx_connected_takers, rx_connected_takers) = watch::channel(Vec::new());
 
-        Ok((
-            Self {
-                db,
-                tx: Tx {
-                    cfds: tx_cfds,
-                    order: tx_order,
-                    quote: tx_quote,
-                    connected_takers: tx_connected_takers,
-                },
-                state,
+        let actor = Self {
+            db,
+            tx: Tx {
+                cfds: tx_cfds,
+                order: tx_order,
+                quote: tx_quote,
+                connected_takers: tx_connected_takers,
             },
-            Feeds {
-                cfds: rx_cfds,
-                order: rx_order,
-                quote: rx_quote,
-                connected_takers: rx_connected_takers,
+            state: State::new(network),
+        };
+        let feeds = Feeds {
+            cfds: rx_cfds,
+            order: rx_order,
+            quote: rx_quote,
+            connected_takers: rx_connected_takers,
+        };
+
+        (actor, feeds)
+    }
+
+    async fn refresh_cfds(&mut self) {
+        let mut conn = match self.db.acquire().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                tracing::warn!("Failed to acquire DB connection: {}", e);
+                return;
+            }
+        };
+        let cfds = match load_and_hydrate_cfds(
+            &mut conn,
+            self.state.quote,
+            self.state.network,
+            &self.state.settlement_proposals,
+            &self.state.rollover_proposals,
+        )
+        .await
+        {
+            Ok(cfds) => cfds,
+            Err(e) => {
+                tracing::warn!("Failed to load CFDs: {:#}", e);
+                return;
+            }
+        };
+
+        let _ = self.tx.cfds.send(cfds);
+    }
+}
+
+async fn load_and_hydrate_cfds(
+    conn: &mut PoolConnection<sqlx::Sqlite>,
+    quote: Option<bitmex_price_feed::Quote>,
+    network: Network,
+    settlement_proposals: &HashMap<OrderId, (SettlementProposal, SettlementKind)>,
+    rollover_proposals: &HashMap<OrderId, (RolloverProposal, SettlementKind)>,
+) -> Result<Vec<Cfd>> {
+    let ids = db::load_all_cfd_ids(conn).await?;
+
+    let mut cfds = Vec::with_capacity(ids.len());
+
+    for id in ids {
+        let (cfd, events) = db::load_cfd(id, conn).await?;
+        let role = cfd.role;
+
+        let cfd = events.into_iter().fold(Cfd::new(cfd, quote), |cfd, event| {
+            cfd.apply(
+                event,
+                network,
+                settlement_proposals.get(&id),
+                rollover_proposals.get(&id),
+                role,
+            )
+        });
+
+        cfds.push(cfd);
+    }
+
+    Ok(cfds)
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Cfd {
+    pub order_id: OrderId,
+    #[serde(with = "round_to_two_dp")]
+    pub initial_price: Price,
+
+    pub leverage: Leverage,
+    pub trading_pair: TradingPair,
+    pub position: Position,
+    #[serde(with = "round_to_two_dp")]
+    pub liquidation_price: Price,
+
+    #[serde(with = "round_to_two_dp")]
+    pub quantity_usd: Usd,
+
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub margin: Amount,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub margin_counterparty: Amount,
+
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
+    pub profit_btc: Option<SignedAmount>,
+    pub profit_percent: Option<String>,
+
+    pub state: CfdState,
+    pub actions: Vec<CfdAction>, // TODO: This should be a HashMap.
+    pub state_transition_timestamp: i64,
+
+    pub details: CfdDetails,
+
+    #[serde(with = "::time::serde::timestamp::option")]
+    pub expiry_timestamp: Option<OffsetDateTime>,
+
+    pub counterparty: Identity,
+
+    // This is a bit awkward but we need this to compute the appropriate state as more events are
+    // processed.
+    #[serde(skip)]
+    latest_dlc: Option<Dlc>,
+}
+
+impl Cfd {
+    fn new(
+        db::Cfd {
+            id,
+            position,
+            initial_price,
+            leverage,
+            quantity_usd,
+            counterparty_network_identity,
+            role,
+            ..
+        }: db::Cfd,
+        latest_quote: Option<bitmex_price_feed::Quote>,
+    ) -> Self {
+        let long_margin = calculate_long_margin(initial_price, quantity_usd, leverage);
+        let short_margin = calculate_short_margin(initial_price, quantity_usd);
+
+        let (margin, margin_counterparty) = match position {
+            Position::Long => (long_margin, short_margin),
+            Position::Short => (short_margin, long_margin),
+        };
+        let liquidation_price = calculate_long_liquidation_price(leverage, initial_price);
+
+        let latest_price = match (latest_quote, role) {
+            (None, _) => None,
+            (Some(quote), Role::Maker) => Some(quote.for_maker()),
+            (Some(quote), Role::Taker) => Some(quote.for_taker()),
+        };
+
+        let (profit_btc_latest_price, profit_percent_latest_price) = latest_price.and_then(|latest_price| {
+            match calculate_profit(initial_price, latest_price, quantity_usd, leverage, position) {
+                Ok(profit) => Some(profit),
+                Err(e) => {
+                    tracing::warn!("Failed to calculate profit/loss {:#}", e);
+
+                    None
+                }
+            }
+        }).map(|(in_btc, in_percent)| (Some(in_btc), Some(in_percent.round_dp(1).to_string())))
+            .unwrap_or_else(|| {
+                tracing::debug!(order_id = %id, "Unable to calculate profit/loss without current price");
+
+                (None, None)
+            });
+
+        let initial_actions = if role == Role::Maker {
+            vec![CfdAction::AcceptOrder, CfdAction::RejectOrder]
+        } else {
+            vec![]
+        };
+
+        Self {
+            order_id: id,
+            initial_price,
+            leverage,
+            trading_pair: TradingPair::BtcUsd,
+            position,
+            liquidation_price,
+            quantity_usd,
+            margin,
+            margin_counterparty,
+
+            // By default, we assume profit should be based on the latest price!
+            profit_btc: profit_btc_latest_price,
+            profit_percent: profit_percent_latest_price,
+
+            state: CfdState::PendingSetup,
+            actions: initial_actions,
+            state_transition_timestamp: 0,
+            details: CfdDetails {
+                tx_url_list: vec![],
+                payout: None,
             },
-        ))
+            expiry_timestamp: None,
+            counterparty: counterparty_network_identity,
+            latest_dlc: None,
+        }
+    }
+
+    // TODO: There is probably a better way of doing this?
+    // The issue is, we need to re-hydrate the CFD to get the latest state but at the same time
+    // incorporate other data like network, current price, etc ...
+    fn apply(
+        mut self,
+        event: Event,
+        network: Network,
+        pending_settlement_proposal: Option<&(SettlementProposal, SettlementKind)>,
+        pending_rollover_proposal: Option<&(RolloverProposal, SettlementKind)>,
+        role: Role,
+    ) -> Self {
+        // First, try to set state based on event.
+        let (state, actions) = match event.event {
+            CfdEvent::ContractSetupCompleted { dlc } => {
+                self.details.tx_url_list.push(TxUrl::new(
+                    dlc.lock.0.txid(),
+                    network,
+                    TxLabel::Lock,
+                ));
+                self.latest_dlc = Some(dlc);
+
+                (CfdState::PendingOpen, vec![])
+            }
+            CfdEvent::ContractSetupFailed => {
+                // Don't display profit for failed contracts.
+                self.profit_btc = None;
+                self.profit_percent = None;
+
+                (CfdState::SetupFailed, vec![])
+            }
+            CfdEvent::OfferRejected => {
+                // Don't display profit for rejected contracts.
+                self.profit_btc = None;
+                self.profit_percent = None;
+
+                (CfdState::Rejected, vec![])
+            }
+            CfdEvent::RolloverCompleted { dlc } => {
+                self.latest_dlc = Some(dlc);
+
+                (CfdState::Open, vec![])
+            }
+            CfdEvent::RolloverRejected => (CfdState::Open, vec![]),
+            CfdEvent::RolloverFailed => (CfdState::Open, vec![]),
+            CfdEvent::CollaborativeSettlementCompleted {
+                spend_tx, price, ..
+            } => {
+                self.details.tx_url_list.push(TxUrl::new(
+                    spend_tx.txid(),
+                    network,
+                    TxLabel::Collaborative,
+                ));
+
+                let (profit_btc, profit_percent) = self.maybe_calculate_profit(price);
+                self.profit_btc = profit_btc;
+                self.profit_percent = profit_percent;
+
+                (CfdState::PendingClose, vec![])
+            }
+            CfdEvent::CollaborativeSettlementRejected { commit_tx } => {
+                self.details.tx_url_list.push(TxUrl::new(
+                    commit_tx.txid(),
+                    network,
+                    TxLabel::Commit,
+                ));
+
+                (CfdState::PendingCommit, vec![])
+            }
+            CfdEvent::CollaborativeSettlementFailed { commit_tx } => {
+                self.details.tx_url_list.push(TxUrl::new(
+                    commit_tx.txid(),
+                    network,
+                    TxLabel::Commit,
+                ));
+
+                (CfdState::PendingCommit, vec![])
+            }
+            CfdEvent::LockConfirmed => (CfdState::Open, vec![CfdAction::Commit, CfdAction::Settle]),
+            CfdEvent::CommitConfirmed => {
+                // pretty weird if this is not defined ...
+                if let Some(dlc) = self.latest_dlc.as_ref() {
+                    self.details.tx_url_list.push(TxUrl::new(
+                        dlc.commit.0.txid(),
+                        network,
+                        TxLabel::Commit,
+                    ));
+                }
+                (CfdState::OpenCommitted, vec![])
+            }
+            CfdEvent::CetConfirmed => (CfdState::Closed, vec![]),
+            CfdEvent::RefundConfirmed => {
+                if let Some(dlc) = self.latest_dlc.as_ref() {
+                    self.details.tx_url_list.push(TxUrl::new(
+                        dlc.refund.0.txid(),
+                        network,
+                        TxLabel::Refund,
+                    ));
+                }
+                (CfdState::Refunded, vec![])
+            }
+            CfdEvent::CollaborativeSettlementConfirmed => (CfdState::Closed, vec![]),
+            CfdEvent::CetTimelockConfirmedPriorOracleAttestation => {
+                (CfdState::OpenCommitted, self.actions)
+            }
+            CfdEvent::CetTimelockConfirmedPostOracleAttestation { .. } => {
+                (CfdState::PendingCet, self.actions)
+            }
+            CfdEvent::RefundTimelockConfirmed { .. } => (self.state, self.actions),
+            CfdEvent::OracleAttestedPriorCetTimelock {
+                price, commit_tx, ..
+            } => {
+                let (profit_btc, profit_percent) = self.maybe_calculate_profit(price);
+                self.profit_btc = profit_btc;
+                self.profit_percent = profit_percent;
+
+                self.details.tx_url_list.push(TxUrl::new(
+                    commit_tx.txid(),
+                    network,
+                    TxLabel::Commit,
+                ));
+
+                // Only allow committing once the oracle attested.
+                (CfdState::PendingCommit, vec![])
+            }
+            CfdEvent::OracleAttestedPostCetTimelock { cet, price } => {
+                self.details
+                    .tx_url_list
+                    .push(TxUrl::new(cet.txid(), network, TxLabel::Cet));
+
+                let (profit_btc, profit_percent) = self.maybe_calculate_profit(price);
+                self.profit_btc = profit_btc;
+                self.profit_percent = profit_percent;
+
+                // Only allow committing once the oracle attested.
+                (CfdState::PendingCet, vec![CfdAction::Commit])
+            }
+            CfdEvent::ManualCommit { tx } => {
+                self.details
+                    .tx_url_list
+                    .push(TxUrl::new(tx.txid(), network, TxLabel::Commit));
+
+                (CfdState::PendingCommit, vec![])
+            }
+            CfdEvent::RevokeConfirmed => todo!("Deal with revoked"),
+        };
+
+        self.state = state;
+        self.actions = actions;
+
+        // If we have pending proposals, override the state
+
+        match pending_settlement_proposal {
+            Some((_, SettlementKind::Incoming)) => {
+                self.state = CfdState::IncomingSettlementProposal;
+
+                if role == Role::Maker {
+                    self.actions = vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement];
+                }
+            }
+            Some((_, SettlementKind::Outgoing)) => {
+                self.state = CfdState::OutgoingSettlementProposal;
+            }
+            None => {}
+        }
+        match pending_rollover_proposal {
+            Some((_, SettlementKind::Incoming)) => {
+                self.state = CfdState::IncomingRollOverProposal;
+
+                if role == Role::Maker {
+                    self.actions = vec![CfdAction::AcceptRollOver, CfdAction::RejectRollOver];
+                }
+            }
+            Some((_, SettlementKind::Outgoing)) => {
+                self.state = CfdState::OutgoingRollOverProposal;
+            }
+            None => {}
+        }
+
+        self
+    }
+
+    fn maybe_calculate_profit(
+        &self,
+        closing_price: Price,
+    ) -> (Option<SignedAmount>, Option<String>) {
+        match calculate_profit(
+            self.initial_price,
+            closing_price,
+            self.quantity_usd,
+            self.leverage,
+            self.position,
+        ) {
+            Ok((profit_btc, profit_percent)) => {
+                (Some(profit_btc), Some(profit_percent.to_string()))
+            }
+            Err(err) => {
+                tracing::error!(initial_price=%self.initial_price, closing_price=%closing_price, quantity=%self.quantity_usd, leverage=%self.leverage, position=%self.position, "Profit calculation failed: {:#}", err);
+                (None, None)
+            }
+        }
     }
 }
 
@@ -112,162 +492,89 @@ struct Tx {
 
 /// Internal struct to keep state in one place
 struct State {
-    role: Role,
     network: Network,
     quote: Option<bitmex_price_feed::Quote>,
-    proposals: UpdateCfdProposals,
-    cfds: Vec<ModelCfd>,
+    settlement_proposals: HashMap<OrderId, (SettlementProposal, SettlementKind)>,
+    rollover_proposals: HashMap<OrderId, (RolloverProposal, SettlementKind)>,
 }
 
 impl State {
-    pub fn to_cfds(&self) -> Vec<Cfd> {
-        // FIXME: starting with the intermediate struct, only temporarily
-        let temp = CfdsWithAuxData::new(
-            self.cfds.clone(),
-            self.quote.clone(),
-            self.proposals.clone(),
-            self.role,
-            self.network,
-        );
-        temp.into()
+    fn new(network: Network) -> Self {
+        Self {
+            network,
+            quote: None,
+            settlement_proposals: Default::default(),
+            rollover_proposals: Default::default(),
+        }
     }
 
-    pub fn amend_settlement_proposal(&mut self, proposal: UpdateSettlementProposal) {
-        let order = proposal.order;
-        self.amend_cfd_proposal(order, proposal.into())
+    fn amend_settlement_proposal(&mut self, update: UpdateSettlementProposal) {
+        match update.proposal {
+            Some(proposal) => {
+                self.settlement_proposals.insert(update.order, proposal);
+            }
+            None => {
+                self.settlement_proposals.remove(&update.order);
+            }
+        }
     }
 
-    pub fn amend_rollover_proposal(&mut self, proposal: UpdateRollOverProposal) {
-        let order = proposal.order;
-        self.amend_cfd_proposal(order, proposal.into())
+    fn amend_rollover_proposal(&mut self, update: UpdateRollOverProposal) {
+        match update.proposal {
+            Some(proposal) => {
+                self.rollover_proposals.insert(update.order, proposal);
+            }
+            None => {
+                self.rollover_proposals.remove(&update.order);
+            }
+        }
     }
 
-    pub fn update_quote(&mut self, quote: bitmex_price_feed::Quote) {
+    fn update_quote(&mut self, quote: bitmex_price_feed::Quote) {
         self.quote = Some(quote);
-    }
-
-    pub fn update_cfds(&mut self, cfds: Vec<ModelCfd>) {
-        let _ = std::mem::replace(&mut self.cfds, cfds);
-    }
-
-    fn amend_cfd_proposal(&mut self, order: OrderId, proposal: Option<UpdateCfdProposal>) {
-        if let Some(proposal) = proposal {
-            self.proposals.insert(order, proposal);
-            tracing::trace!(%order, "Cfd proposal got updated");
-
-            return;
-        }
-
-        if self.proposals.remove(&order).is_none() {
-            tracing::trace!(%order, "Cannot remove cfd proposal: unknown");
-
-            return;
-        }
-
-        tracing::trace!(%order, "Removed cfd proposal");
     }
 }
 
 #[xtra_productivity]
 impl Actor {
-    fn handle(&mut self, _: CfdsChanged) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let cfds = db::load_all_cfds(&mut conn).await?;
-        self.state.update_cfds(cfds);
-        let _ = self.tx.cfds.send(self.state.to_cfds());
-        Ok(())
+    async fn handle(&mut self, _: CfdsChanged) {
+        self.refresh_cfds().await
     }
+
     fn handle(&mut self, msg: Update<Option<Order>>) {
         let _ = self.tx.order.send(msg.0.map(|x| x.into()));
     }
+
     fn handle(&mut self, msg: Update<bitmex_price_feed::Quote>) {
-        let quote = msg.0;
-        self.state.update_quote(quote.clone());
-        let _ = self.tx.quote.send(Some(quote.into()));
-        let _ = self.tx.cfds.send(self.state.to_cfds());
+        self.state.update_quote(msg.0);
+        let _ = self.tx.quote.send(Some(msg.0.into()));
+        self.refresh_cfds().await;
     }
+
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
-        let _ = self
-            .tx
-            .connected_takers
-            .send(msg.0.iter().map(|x| x.into()).collect_vec());
+        let _ = self.tx.connected_takers.send(msg.0);
     }
+
     fn handle(&mut self, msg: UpdateSettlementProposal) {
         self.state.amend_settlement_proposal(msg);
-        let _ = self.tx.cfds.send(self.state.to_cfds());
+        self.refresh_cfds().await;
     }
+
     fn handle(&mut self, msg: UpdateRollOverProposal) {
         self.state.amend_rollover_proposal(msg);
-        let _ = self.tx.cfds.send(self.state.to_cfds());
+        self.refresh_cfds().await;
     }
 }
 
-impl xtra::Actor for Actor {}
+#[async_trait]
+impl xtra::Actor for Actor {
+    async fn started(&mut self, ctx: &mut Context<Self>) {
+        let this = ctx.address().expect("we just started");
 
-/// Types
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Usd {
-    inner: model::Usd,
-}
-
-impl Usd {
-    fn new(usd: model::Usd) -> Self {
-        Self {
-            inner: model::Usd::new(usd.into_decimal().round_dp(2)),
-        }
-    }
-}
-
-impl From<model::Usd> for Usd {
-    fn from(usd: model::Usd) -> Self {
-        Self::new(usd)
-    }
-}
-
-impl Serialize for Usd {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        <Decimal as Serialize>::serialize(&self.inner.into_decimal(), serializer)
-    }
-}
-
-impl Serialize for Price {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        <Decimal as Serialize>::serialize(&self.inner.into_decimal(), serializer)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Price {
-    inner: model::Price,
-}
-
-impl Price {
-    fn new(price: model::Price) -> Self {
-        Self {
-            inner: model::Price::new(price.into_decimal().round_dp(2)).expect(
-                "rounding a valid price to 2 decimal places should still result in a valid price",
-            ),
-        }
-    }
-}
-
-impl From<model::Price> for Price {
-    fn from(price: model::Price) -> Self {
-        Self::new(price)
-    }
-}
-
-// TODO: Remove this after CfdsWithAuxData is removed
-impl From<Price> for model::Price {
-    fn from(price: Price) -> Self {
-        price.inner
+        // this will make us load all cfds from the DB
+        this.send_async_safe(CfdsChanged)
+            .await
+            .expect("we just started");
     }
 }
 
@@ -281,20 +588,20 @@ pub struct Quote {
 impl From<bitmex_price_feed::Quote> for Quote {
     fn from(quote: bitmex_price_feed::Quote) -> Self {
         Quote {
-            bid: quote.bid.into(),
-            ask: quote.ask.into(),
+            bid: quote.bid,
+            ask: quote.ask,
             last_updated_at: quote.timestamp,
         }
     }
 }
 
-// TODO: Remove this after CfdsWithAuxData is removed
+// FIXME: Remove this hack when it's not needed
 impl From<Quote> for bitmex_price_feed::Quote {
     fn from(quote: Quote) -> Self {
         Self {
             timestamp: quote.last_updated_at,
-            bid: quote.bid.into(),
-            ask: quote.ask.into(),
+            bid: quote.bid,
+            ask: quote.ask,
         }
     }
 }
@@ -306,12 +613,16 @@ pub struct CfdOrder {
     pub trading_pair: TradingPair,
     pub position: Position,
 
+    #[serde(with = "round_to_two_dp")]
     pub price: Price,
 
+    #[serde(with = "round_to_two_dp")]
     pub min_quantity: Usd,
+    #[serde(with = "round_to_two_dp")]
     pub max_quantity: Usd,
 
     pub leverage: Leverage,
+    #[serde(with = "round_to_two_dp")]
     pub liquidation_price: Price,
 
     pub creation_timestamp: Timestamp,
@@ -324,11 +635,11 @@ impl From<Order> for CfdOrder {
             id: order.id,
             trading_pair: order.trading_pair,
             position: order.position,
-            price: order.price.into(),
-            min_quantity: order.min_quantity.into(),
-            max_quantity: order.max_quantity.into(),
+            price: order.price,
+            min_quantity: order.min_quantity,
+            max_quantity: order.max_quantity,
             leverage: order.leverage,
-            liquidation_price: order.liquidation_price.into(),
+            liquidation_price: order.liquidation_price,
             creation_timestamp: order.creation_timestamp,
             settlement_time_interval_in_secs: order
                 .settlement_interval
@@ -339,28 +650,10 @@ impl From<Order> for CfdOrder {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, derive_more::Display)]
-pub struct Identity(String);
-
-impl From<&model::Identity> for Identity {
-    fn from(id: &model::Identity) -> Self {
-        Self(id.to_string())
-    }
-}
-
-impl From<model::Identity> for Identity {
-    fn from(id: model::Identity) -> Self {
-        Self(id.to_string())
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum CfdState {
-    OutgoingOrderRequest,
-    IncomingOrderRequest,
-    Accepted,
+    PendingSetup,
     Rejected,
-    ContractSetup,
     PendingOpen,
     Open,
     PendingCommit,
@@ -377,64 +670,13 @@ pub enum CfdState {
     SetupFailed,
 }
 
-pub fn to_cfd_state(
-    cfd_state: &model::cfd::CfdState,
-    proposal_status: Option<&UpdateCfdProposal>,
-) -> CfdState {
-    match proposal_status {
-        Some(UpdateCfdProposal::Settlement {
-            direction: SettlementKind::Outgoing,
-            ..
-        }) => CfdState::OutgoingSettlementProposal,
-        Some(UpdateCfdProposal::Settlement {
-            direction: SettlementKind::Incoming,
-            ..
-        }) => CfdState::IncomingSettlementProposal,
-        Some(UpdateCfdProposal::RollOverProposal {
-            direction: SettlementKind::Outgoing,
-            ..
-        }) => CfdState::OutgoingRollOverProposal,
-        Some(UpdateCfdProposal::RollOverProposal {
-            direction: SettlementKind::Incoming,
-            ..
-        }) => CfdState::IncomingRollOverProposal,
-        None => match cfd_state {
-            // Filled in collaborative close in Open means that we're awaiting
-            // a collaborative closure
-            model::cfd::CfdState::Open {
-                collaborative_close: Some(_),
-                ..
-            } => CfdState::PendingClose,
-            model::cfd::CfdState::OutgoingOrderRequest { .. } => CfdState::OutgoingOrderRequest,
-            model::cfd::CfdState::IncomingOrderRequest { .. } => CfdState::IncomingOrderRequest,
-            model::cfd::CfdState::Accepted { .. } => CfdState::Accepted,
-            model::cfd::CfdState::Rejected { .. } => CfdState::Rejected,
-            model::cfd::CfdState::ContractSetup { .. } => CfdState::ContractSetup,
-            model::cfd::CfdState::PendingOpen { .. } => CfdState::PendingOpen,
-            model::cfd::CfdState::Open { .. } => CfdState::Open,
-            model::cfd::CfdState::OpenCommitted { .. } => CfdState::OpenCommitted,
-            model::cfd::CfdState::PendingRefund { .. } => CfdState::PendingRefund,
-            model::cfd::CfdState::Refunded { .. } => CfdState::Refunded,
-            model::cfd::CfdState::SetupFailed { .. } => CfdState::SetupFailed,
-            model::cfd::CfdState::PendingCommit { .. } => CfdState::PendingCommit,
-            model::cfd::CfdState::PendingCet { .. } => CfdState::PendingCet,
-            model::cfd::CfdState::Closed { .. } => CfdState::Closed,
-        },
-    }
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct CfdDetails {
-    tx_url_list: Vec<tx::TxUrl>,
+    // TODO: I think there should be one field per tx URL otherwise we can add duplicate entries
+    // easily ...
+    tx_url_list: Vec<TxUrl>,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
     payout: Option<Amount>,
-}
-
-fn to_cfd_details(cfd: &model::cfd::Cfd, network: Network) -> CfdDetails {
-    CfdDetails {
-        tx_url_list: tx::to_tx_url_list(cfd.state().clone(), network),
-        payout: cfd.payout(),
-    }
 }
 
 #[derive(Debug, derive_more::Display, Clone, Serialize, Deserialize, PartialEq)]
@@ -450,193 +692,116 @@ pub enum CfdAction {
     RejectRollOver,
 }
 
-fn available_actions(state: CfdState, role: Role) -> Vec<CfdAction> {
-    match (state, role) {
-        (CfdState::IncomingOrderRequest { .. }, Role::Maker) => {
-            vec![CfdAction::AcceptOrder, CfdAction::RejectOrder]
+mod round_to_two_dp {
+    use super::*;
+    use serde::Serializer;
+
+    pub trait ToDecimal {
+        fn to_decimal(&self) -> Decimal;
+    }
+
+    impl ToDecimal for Usd {
+        fn to_decimal(&self) -> Decimal {
+            self.into_decimal()
         }
-        (CfdState::IncomingSettlementProposal { .. }, Role::Maker) => {
-            vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement]
+    }
+
+    impl ToDecimal for Price {
+        fn to_decimal(&self) -> Decimal {
+            self.into_decimal()
         }
-        (CfdState::IncomingRollOverProposal { .. }, Role::Maker) => {
-            vec![CfdAction::AcceptRollOver, CfdAction::RejectRollOver]
+    }
+
+    pub fn serialize<D: ToDecimal, S: Serializer>(
+        value: &D,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let decimal = value.to_decimal();
+        let decimal = decimal.round_dp(2);
+
+        Serialize::serialize(&decimal, serializer)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use rust_decimal_macros::dec;
+        use serde_test::assert_ser_tokens;
+        use serde_test::Token;
+
+        #[derive(Serialize)]
+        #[serde(transparent)]
+        struct WithOnlyTwoDecimalPlaces<I: ToDecimal> {
+            #[serde(with = "super")]
+            inner: I,
         }
-        // If there is an outgoing settlement proposal already, user can't
-        // initiate new one
-        (CfdState::OutgoingSettlementProposal { .. }, Role::Maker) => {
-            vec![CfdAction::Commit]
+
+        #[test]
+        fn usd_serializes_with_only_cents() {
+            let usd = WithOnlyTwoDecimalPlaces {
+                inner: model::Usd::new(dec!(1000.12345)),
+            };
+
+            assert_ser_tokens(&usd, &[Token::Str("1000.12")]);
         }
-        // User is awaiting collaborative close, commit is left as a safeguard
-        (CfdState::PendingClose { .. }, _) => {
-            vec![CfdAction::Commit]
+
+        #[test]
+        fn price_serializes_with_only_cents() {
+            let price = WithOnlyTwoDecimalPlaces {
+                inner: model::Price::new(dec!(1000.12345)).unwrap(),
+            };
+
+            assert_ser_tokens(&price, &[Token::Str("1000.12")]);
         }
-        (CfdState::Open { .. }, Role::Taker) => {
-            vec![CfdAction::Commit, CfdAction::Settle]
-        }
-        (CfdState::Open { .. }, Role::Maker) => vec![CfdAction::Commit],
-        _ => vec![],
     }
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Cfd {
-    pub order_id: OrderId,
-    pub initial_price: Price,
-
-    pub leverage: Leverage,
-    pub trading_pair: TradingPair,
-    pub position: Position,
-    pub liquidation_price: Price,
-
-    pub quantity_usd: Usd,
-
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub margin: Amount,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub margin_counterparty: Amount,
-
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
-    pub profit_btc: Option<SignedAmount>,
-    pub profit_percent: Option<String>,
-
-    pub state: CfdState,
-    pub actions: Vec<CfdAction>,
-    pub state_transition_timestamp: i64,
-
-    pub details: CfdDetails,
-
-    #[serde(with = "::time::serde::timestamp::option")]
-    pub expiry_timestamp: Option<OffsetDateTime>,
-
-    pub counterparty: Identity,
+pub struct TxUrl {
+    pub label: TxLabel,
+    pub url: String,
 }
 
-impl From<CfdsWithAuxData> for Vec<Cfd> {
-    fn from(input: CfdsWithAuxData) -> Self {
-        let network = input.network;
-
-        let cfds = input
-            .cfds
-            .iter()
-            .map(|cfd| {
-                let (profit_btc, profit_percent) = input.current_price
-                    .map(|current_price| match cfd.profit(current_price) {
-                        Ok((profit_btc, profit_percent)) => (
-                            Some(profit_btc),
-                            Some(profit_percent.round_dp(1).to_string()),
-                        ),
-                        Err(e) => {
-                            tracing::warn!("Failed to calculate profit/loss {:#}", e);
-
-                            (None, None)
-                        }
-                    })
-                    .unwrap_or_else(|| {
-                        tracing::debug!(order_id = %cfd.id(), "Unable to calculate profit/loss without current price");
-
-                        (None, None)
-                    });
-
-                let pending_proposal = input.pending_proposals.get(&cfd.id());
-                let state = to_cfd_state(cfd.state(), pending_proposal);
-
-                Cfd {
-                    order_id: cfd.id(),
-                    initial_price: cfd.price().into(),
-                    leverage: cfd.leverage(),
-                    trading_pair: cfd.trading_pair(),
-                    position: cfd.position(),
-                    liquidation_price: cfd.liquidation_price().into(),
-                    quantity_usd: cfd.quantity_usd().into(),
-                    profit_btc,
-                    profit_percent,
-                    state: state.clone(),
-                    actions: available_actions(state, cfd.role()),
-                    state_transition_timestamp: cfd.state().get_transition_timestamp().seconds(),
-
-                    // TODO: Depending on the state the margin might be set (i.e. in Open we save it
-                    // in the DB internally) and does not have to be calculated
-                    margin: cfd.margin().expect("margin to be available"),
-                    margin_counterparty: cfd.counterparty_margin().expect("margin to be available"),
-                    details: to_cfd_details(cfd, network),
-                    expiry_timestamp: cfd.expiry_timestamp(),
-                    counterparty: cfd.counterparty().into(),
-                }
-            })
-            .collect::<Vec<Cfd>>();
-        cfds
+/// Construct a mempool.space URL for a given txid
+pub fn to_mempool_url(txid: Txid, network: Network) -> String {
+    match network {
+        Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
+        Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
+        Network::Signet => format!("https://mempool.space/signet/tx/{}", txid),
+        Network::Regtest => txid.to_string(),
     }
 }
 
-/// Intermediate struct to able to piggy-back additional information along with
-/// cfds, so we can avoid a 1:1 mapping between the states in the model and seen
-/// by UI
-// TODO: Remove this struct out of existence
-pub struct CfdsWithAuxData {
-    pub cfds: Vec<model::cfd::Cfd>,
-    pub current_price: Option<model::Price>,
-    pub pending_proposals: UpdateCfdProposals,
-    pub network: Network,
-}
-
-impl CfdsWithAuxData {
-    pub fn new(
-        cfds: Vec<model::cfd::Cfd>,
-        quote: Option<bitmex_price_feed::Quote>,
-        pending_proposals: UpdateCfdProposals,
-        role: Role,
-        network: Network,
-    ) -> Self {
-        let current_price = quote.map(|quote| match role {
-            Role::Maker => quote.for_maker(),
-            Role::Taker => quote.for_taker(),
-        });
-
-        CfdsWithAuxData {
-            cfds,
-            current_price,
-            pending_proposals,
-            network,
+impl TxUrl {
+    pub fn new(txid: Txid, network: Network, label: TxLabel) -> Self {
+        Self {
+            label,
+            url: to_mempool_url(txid, network),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum TxLabel {
+    Lock,
+    Commit,
+    Cet,
+    Refund,
+    Collaborative,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use rust_decimal_macros::dec;
-    use serde_test::assert_ser_tokens;
-    use serde_test::Token;
-
-    #[test]
-    fn usd_serializes_with_only_cents() {
-        let usd = Usd::new(model::Usd::new(dec!(1000.12345)));
-
-        assert_ser_tokens(&usd, &[Token::Str("1000.12")]);
-    }
-
-    #[test]
-    fn price_serializes_with_only_cents() {
-        let price = Price::new(model::Price::new(dec!(1000.12345)).unwrap());
-
-        assert_ser_tokens(&price, &[Token::Str("1000.12")]);
-    }
-
     #[test]
     fn state_snapshot_test() {
         // Make sure to update the UI after changing this test!
 
-        let json = serde_json::to_string(&CfdState::OutgoingOrderRequest).unwrap();
-        assert_eq!(json, "\"OutgoingOrderRequest\"");
-        let json = serde_json::to_string(&CfdState::IncomingOrderRequest).unwrap();
-        assert_eq!(json, "\"IncomingOrderRequest\"");
-        let json = serde_json::to_string(&CfdState::Accepted).unwrap();
-        assert_eq!(json, "\"Accepted\"");
+        let json = serde_json::to_string(&CfdState::PendingSetup).unwrap();
+        assert_eq!(json, "\"PendingSetup\"");
         let json = serde_json::to_string(&CfdState::Rejected).unwrap();
         assert_eq!(json, "\"Rejected\"");
-        let json = serde_json::to_string(&CfdState::ContractSetup).unwrap();
-        assert_eq!(json, "\"ContractSetup\"");
         let json = serde_json::to_string(&CfdState::PendingOpen).unwrap();
         assert_eq!(json, "\"PendingOpen\"");
         let json = serde_json::to_string(&CfdState::Open).unwrap();
@@ -649,67 +814,5 @@ mod tests {
         assert_eq!(json, "\"Refunded\"");
         let json = serde_json::to_string(&CfdState::SetupFailed).unwrap();
         assert_eq!(json, "\"SetupFailed\"");
-    }
-}
-
-pub fn try_into_update_settlement_proposal(
-    cfd_update_proposal: UpdateCfdProposal,
-) -> Result<UpdateSettlementProposal> {
-    match cfd_update_proposal {
-        UpdateCfdProposal::Settlement {
-            proposal,
-            direction,
-        } => Ok(UpdateSettlementProposal {
-            order: proposal.order_id,
-            proposal: Some((proposal, direction)),
-        }),
-        UpdateCfdProposal::RollOverProposal { .. } => {
-            anyhow::bail!("Can't convert a RollOver proposal")
-        }
-    }
-}
-
-pub fn try_into_update_rollover_proposal(
-    cfd_update_proposal: UpdateCfdProposal,
-) -> Result<UpdateRollOverProposal> {
-    match cfd_update_proposal {
-        UpdateCfdProposal::RollOverProposal {
-            proposal,
-            direction,
-        } => Ok(UpdateRollOverProposal {
-            order: proposal.order_id,
-            proposal: Some((proposal, direction)),
-        }),
-        UpdateCfdProposal::Settlement { .. } => {
-            anyhow::bail!("Can't convert a Settlement proposal")
-        }
-    }
-}
-
-impl From<UpdateSettlementProposal> for Option<UpdateCfdProposal> {
-    fn from(proposal: UpdateSettlementProposal) -> Self {
-        let UpdateSettlementProposal { order: _, proposal } = proposal;
-        if let Some((proposal, kind)) = proposal {
-            Some(UpdateCfdProposal::Settlement {
-                proposal,
-                direction: kind,
-            })
-        } else {
-            None
-        }
-    }
-}
-
-impl From<UpdateRollOverProposal> for Option<UpdateCfdProposal> {
-    fn from(proposal: UpdateRollOverProposal) -> Self {
-        let UpdateRollOverProposal { order: _, proposal } = proposal;
-        if let Some((proposal, kind)) = proposal {
-            Some(UpdateCfdProposal::RollOverProposal {
-                proposal,
-                direction: kind,
-            })
-        } else {
-            None
-        }
     }
 }

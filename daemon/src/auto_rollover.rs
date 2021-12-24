@@ -1,15 +1,11 @@
 use crate::address_map::AddressMap;
 use crate::address_map::Stopping;
-use crate::cfd_actors::append_cfd_state;
+use crate::cfd_actors::load_cfd;
 use crate::connection;
 use crate::db;
-use crate::db::load_cfd;
-use crate::model::cfd::CfdState;
-use crate::model::cfd::CfdStateCommon;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::RolloverCompleted;
 use crate::monitor;
-use crate::monitor::MonitorParams;
 use crate::oracle;
 use crate::projection;
 use crate::rollover_taker;
@@ -27,7 +23,7 @@ pub struct Actor<O, M> {
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: Address<projection::Actor>,
     conn_actor: Address<connection::Actor>,
-    monitor_actor: Address<M>,
+    _monitor_actor: Address<M>,
     oracle_actor: Address<O>,
     n_payouts: usize,
 
@@ -51,7 +47,7 @@ impl<O, M> Actor<O, M> {
             oracle_pk,
             projection_actor,
             conn_actor,
-            monitor_actor,
+            _monitor_actor: monitor_actor,
             oracle_actor,
             n_payouts,
             rollover_actors: AddressMap::default(),
@@ -70,20 +66,23 @@ where
         tracing::trace!("Checking all CFDs for rollover eligibility");
 
         let mut conn = self.db.acquire().await?;
-        let cfds = db::load_all_cfds(&mut conn).await?;
+        let cfd_ids = db::load_all_cfd_ids(&mut conn).await?;
 
         let this = ctx
             .address()
             .expect("actor to be able to give address to itself");
 
-        for cfd in cfds {
-            let disconnected = match self.rollover_actors.get_disconnected(cfd.id()) {
+        for id in cfd_ids {
+            let disconnected = match self.rollover_actors.get_disconnected(id) {
                 Ok(disconnected) => disconnected,
                 Err(_) => {
-                    tracing::debug!(order_id=%cfd.id(), "Rollover already in progress");
+                    tracing::debug!(order_id=%id, "Rollover already in progress");
                     continue;
                 }
             };
+
+            // TODO: Shall this have a try_continue?
+            let cfd = load_cfd(id, &mut conn).await?;
 
             let (addr, fut) = rollover_taker::Actor::new(
                 (cfd, self.n_payouts),
@@ -105,7 +104,7 @@ where
     }
 }
 
-#[xtra_productivity]
+#[xtra_productivity(message_impl = false)]
 impl<O, M> Actor<O, M>
 where
     O: 'static,
@@ -113,45 +112,8 @@ where
     M: xtra::Handler<monitor::StartMonitoring>,
     O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
 {
-    async fn handle_rollover_completed(&mut self, msg: RolloverCompleted) -> Result<()> {
-        let (order_id, dlc) = match msg {
-            RolloverCompleted::Succeeded {
-                order_id,
-                payload: (dlc, _),
-            } => (order_id, dlc),
-            RolloverCompleted::Rejected { order_id, reason } => {
-                tracing::debug!(%order_id, "Not rolled over: {:#}", reason);
-                return Ok(());
-            }
-            RolloverCompleted::Failed { order_id, error } => {
-                tracing::warn!(%order_id, "Rollover failed: {:#}", error);
-                return Ok(());
-            }
-        };
-
-        let mut conn = self.db.acquire().await?;
-        let mut cfd = load_cfd(order_id, &mut conn).await?;
-        *cfd.state_mut() = CfdState::Open {
-            common: CfdStateCommon::default(),
-            dlc: dlc.clone(),
-            attestation: None,
-            collaborative_close: None,
-        };
-
-        append_cfd_state(&cfd, &mut conn, &self.projection_actor).await?;
-
-        self.monitor_actor
-            .send(monitor::StartMonitoring {
-                id: order_id,
-                params: MonitorParams::new(dlc.clone(), cfd.refund_timelock_in_blocks()),
-            })
-            .await?;
-
-        self.oracle_actor
-            .send(oracle::MonitorAttestation {
-                event_id: dlc.settlement_event_id,
-            })
-            .await?;
+    async fn handle_rollover_completed(&mut self, _: RolloverCompleted) -> Result<()> {
+        // TODO: Implement this in terms of event sourcing
 
         Ok(())
     }

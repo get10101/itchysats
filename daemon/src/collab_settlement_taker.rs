@@ -3,14 +3,13 @@ use crate::address_map::Stopping;
 use crate::connection;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CollaborativeSettlement;
+use crate::model::cfd::Completed;
 use crate::model::cfd::SettlementKind;
 use crate::model::cfd::SettlementProposal;
-use crate::model::cfd::TakerSettlementCompleted;
 use crate::model::Price;
 use crate::projection;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::wire;
-use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use xtra::prelude::MessageChannel;
@@ -19,7 +18,7 @@ use xtra_productivity::xtra_productivity;
 pub struct Actor {
     cfd: Cfd,
     projection: xtra::Address<projection::Actor>,
-    on_completed: Box<dyn MessageChannel<TakerSettlementCompleted>>,
+    on_completed: Box<dyn MessageChannel<Completed<CollaborativeSettlement>>>,
     connection: xtra::Address<connection::Actor>,
     proposal: SettlementProposal,
 }
@@ -28,12 +27,12 @@ impl Actor {
     pub fn new(
         cfd: Cfd,
         projection: xtra::Address<projection::Actor>,
-        on_completed: impl MessageChannel<TakerSettlementCompleted> + 'static,
+        on_completed: impl MessageChannel<Completed<CollaborativeSettlement>> + 'static,
         current_price: Price,
         connection: xtra::Address<connection::Actor>,
         n_payouts: usize,
     ) -> Result<Self> {
-        let proposal = cfd.calculate_settlement(current_price, n_payouts)?;
+        let proposal = cfd.start_collaborative_settlement_taker(current_price, n_payouts)?;
 
         Ok(Self {
             cfd,
@@ -45,14 +44,6 @@ impl Actor {
     }
 
     async fn propose(&mut self, this: xtra::Address<Self>) -> Result<()> {
-        if !self.cfd.is_collaborative_settle_possible() {
-            anyhow::bail!(
-                "Settlement proposal not possible because for cfd {} is in state {} which cannot be collaboratively settled",
-                self.cfd.id(),
-                self.cfd.state()
-            )
-        }
-
         self.connection
             .send(connection::ProposeSettlement {
                 timestamp: self.proposal.timestamp,
@@ -77,9 +68,11 @@ impl Actor {
 
         self.update_proposal(None).await?;
 
-        let dlc = self.cfd.dlc().context("No DLC in CFD")?;
-
-        let (tx, sig) = dlc.close_transaction(&self.proposal)?;
+        // TODO: This should happen within a dedicated state machine returned from
+        // start_collaborative_settlement
+        let (tx, sig, payout_script_pubkey) = self
+            .cfd
+            .sign_collaborative_close_transaction_taker(&self.proposal)?;
 
         self.connection
             .send_async_safe(wire::TakerToMaker::Settlement {
@@ -90,7 +83,7 @@ impl Actor {
 
         Ok(CollaborativeSettlement::new(
             tx,
-            dlc.script_pubkey_for(self.cfd.role()), // TODO: Hardcode role to Taker?
+            payout_script_pubkey,
             self.proposal.price,
         )?)
     }
@@ -121,7 +114,7 @@ impl Actor {
 
     async fn complete(
         &mut self,
-        completed: TakerSettlementCompleted,
+        completed: Completed<CollaborativeSettlement>,
         ctx: &mut xtra::Context<Self>,
     ) {
         let _ = self.on_completed.send(completed).await;
@@ -137,7 +130,7 @@ impl xtra::Actor for Actor {
 
         if let Err(e) = self.propose(this).await {
             self.complete(
-                TakerSettlementCompleted::Failed {
+                Completed::Failed {
                     order_id: self.cfd.id(),
                     error: e,
                 },
@@ -154,6 +147,10 @@ impl xtra::Actor for Actor {
 
         xtra::KeepRunning::StopAll
     }
+
+    async fn stopped(mut self) {
+        let _ = self.update_proposal(None).await;
+    }
 }
 
 #[xtra_productivity]
@@ -167,18 +164,18 @@ impl Actor {
 
         let completed = match msg {
             wire::maker_to_taker::Settlement::Confirm => match self.handle_confirmed().await {
-                Ok(settlement) => TakerSettlementCompleted::Succeeded {
+                Ok(settlement) => Completed::Succeeded {
                     order_id,
                     payload: settlement,
                 },
-                Err(e) => TakerSettlementCompleted::Failed { error: e, order_id },
+                Err(e) => Completed::Failed { error: e, order_id },
             },
             wire::maker_to_taker::Settlement::Reject => {
                 if let Err(e) = self.handle_rejected().await {
                     // XXX: Should this be rejected_due_to(order_id, e) instead?
-                    TakerSettlementCompleted::Failed { error: e, order_id }
+                    Completed::Failed { error: e, order_id }
                 } else {
-                    TakerSettlementCompleted::rejected(order_id)
+                    Completed::rejected(order_id)
                 }
             }
         };

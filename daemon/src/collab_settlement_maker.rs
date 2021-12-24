@@ -3,8 +3,7 @@ use crate::address_map::Stopping;
 use crate::maker_inc_connections;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CollaborativeSettlement;
-use crate::model::cfd::MakerSettlementCompleted;
-use crate::model::cfd::Role;
+use crate::model::cfd::Completed;
 use crate::model::cfd::SettlementKind;
 use crate::model::cfd::SettlementProposal;
 use crate::model::Identity;
@@ -19,7 +18,7 @@ use xtra_productivity::xtra_productivity;
 pub struct Actor {
     cfd: Cfd,
     projection: xtra::Address<projection::Actor>,
-    on_completed: Box<dyn MessageChannel<MakerSettlementCompleted>>,
+    on_completed: Box<dyn MessageChannel<Completed<CollaborativeSettlement>>>,
     proposal: SettlementProposal,
     taker_id: Identity,
     connections: Box<dyn MessageChannel<maker_inc_connections::settlement::Response>>,
@@ -60,27 +59,19 @@ impl Actor {
                 "Received signature for collaborative settlement"
             );
 
-            let Initiated { sig_taker } = msg;
-
-            let dlc = self.cfd.open_dlc().context("CFD was in wrong state")?;
-            let (tx, sig_maker) = dlc.close_transaction(&self.proposal)?;
-            let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
-
-            let settlement = CollaborativeSettlement::new(
-                spend_tx.clone(),
-                dlc.script_pubkey_for(Role::Maker),
-                self.proposal.price,
-            )?;
+            let settlement = self
+                .cfd
+                .start_collaborative_settlement_maker(self.proposal.clone(), msg.sig_taker)?;
 
             self.update_proposal(None).await;
 
-            anyhow::Ok(MakerSettlementCompleted::Succeeded {
+            anyhow::Ok(Completed::Succeeded {
                 order_id: self.cfd.id(),
-                payload: (settlement, dlc.script_pubkey_for(Role::Maker)),
+                payload: settlement,
             })
         }
         .await
-        .unwrap_or_else(|e| MakerSettlementCompleted::Failed {
+        .unwrap_or_else(|e| Completed::Failed {
             order_id: self.cfd.id(),
             error: e,
         });
@@ -113,6 +104,10 @@ impl xtra::Actor for Actor {
 
         xtra::KeepRunning::StopAll
     }
+
+    async fn stopped(mut self) {
+        let _ = self.update_proposal(None).await;
+    }
 }
 
 impl Actor {
@@ -120,7 +115,7 @@ impl Actor {
         cfd: Cfd,
         proposal: SettlementProposal,
         projection: xtra::Address<projection::Actor>,
-        on_completed: &(impl MessageChannel<MakerSettlementCompleted> + 'static),
+        on_completed: &(impl MessageChannel<Completed<CollaborativeSettlement>> + 'static),
         taker_id: Identity,
         connections: &(impl MessageChannel<maker_inc_connections::settlement::Response> + 'static),
         (on_stopping0, on_stopping1): (
@@ -157,7 +152,7 @@ impl Actor {
 
     async fn complete(
         &mut self,
-        completed: MakerSettlementCompleted,
+        completed: Completed<CollaborativeSettlement>,
         ctx: &mut xtra::Context<Self>,
     ) {
         let _ = self
@@ -200,7 +195,7 @@ impl Actor {
             .await
             .context("Failed inform taker about settlement decision")
         {
-            self.complete(MakerSettlementCompleted::Failed { order_id, error: e }, ctx)
+            self.complete(Completed::Failed { order_id, error: e }, ctx)
                 .await;
         }
     }

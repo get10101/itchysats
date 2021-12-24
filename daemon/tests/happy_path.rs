@@ -14,11 +14,11 @@ use crate::harness::Taker;
 use crate::harness::TakerConfig;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
+use daemon::model::Identity;
 use daemon::model::Usd;
 use daemon::monitor::Event;
 use daemon::oracle;
 use daemon::projection::CfdState;
-use daemon::projection::Identity;
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;
 use std::time::Duration;
@@ -70,13 +70,10 @@ async fn taker_takes_order_and_maker_rejects() {
         .unwrap();
 
     taker.mocks.mock_oracle_announcement().await;
+    maker.mocks.mock_oracle_announcement().await;
     taker.take_order(received.clone(), Usd::new(dec!(10))).await;
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert_eq!(taker_cfd.order_id, received.id);
-    assert_eq!(maker_cfd.order_id, received.id);
-    assert_eq!(taker_cfd.state, CfdState::OutgoingOrderRequest);
-    assert_eq!(maker_cfd.state, CfdState::IncomingOrderRequest);
+    assert_next_state!(CfdState::PendingSetup, maker, taker, received.id);
 
     maker.reject_take_request(received.clone()).await;
 
@@ -101,7 +98,7 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     maker.mocks.mock_oracle_announcement().await;
 
     taker.take_order(received.clone(), Usd::new(dec!(5))).await;
-    let (_, _) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert_next_state!(CfdState::PendingSetup, maker, taker, received.id);
 
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
@@ -115,17 +112,13 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     maker.mocks.mock_monitor_start_monitoring().await;
     taker.mocks.mock_monitor_start_monitoring().await;
 
-    maker.accept_take_request(received.clone()).await;
-
-    assert_next_state!(CfdState::ContractSetup, maker, taker, received.id);
-
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
+    maker.accept_take_request(received.clone()).await;
     assert_next_state!(CfdState::PendingOpen, maker, taker, received.id);
 
     deliver_event!(maker, taker, Event::LockFinality(received.id));
-
     assert_next_state!(CfdState::Open, maker, taker, received.id);
 }
 
@@ -238,7 +231,7 @@ async fn maker_notices_lack_of_taker() {
 
     let (mut maker, taker) = start_both().await;
     assert_eq!(
-        vec![taker.id.clone()],
+        vec![taker.id],
         next(maker.connected_takers_feed()).await.unwrap()
     );
 
@@ -287,7 +280,7 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
         .await;
 
     taker.take_order(received.clone(), Usd::new(dec!(5))).await;
-    let (_, _) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert_next_state!(CfdState::PendingSetup, maker, taker, received.id);
 
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
@@ -301,16 +294,13 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
     maker.mocks.mock_monitor_start_monitoring().await;
     taker.mocks.mock_monitor_start_monitoring().await;
 
-    maker.accept_take_request(received.clone()).await;
-
-    assert_next_state!(CfdState::ContractSetup, maker, taker, received.id);
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
+    maker.accept_take_request(received.clone()).await;
     assert_next_state!(CfdState::PendingOpen, maker, taker, received.id);
 
     deliver_event!(maker, taker, Event::LockFinality(received.id));
-
     assert_next_state!(CfdState::Open, maker, taker, received.id);
 
     (maker, taker, received.id)
