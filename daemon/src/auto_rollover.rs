@@ -139,10 +139,7 @@ where
 {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let fut = ctx
-            .notify_interval(
-                rollover_taker::MAX_ROLLOVER_DURATION + Duration::from_secs(60),
-                || AutoRollover,
-            )
+            .notify_interval(Duration::from_secs(5 * 60), || AutoRollover)
             .expect("we are alive");
 
         self.tasks.add(fut);

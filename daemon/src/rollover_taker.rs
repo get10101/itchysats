@@ -33,7 +33,8 @@ use time::OffsetDateTime;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
-pub const MAX_ROLLOVER_DURATION: Duration = Duration::from_secs(4 * 60);
+/// The maximum amount of time we give the maker to send us a response.
+const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct Actor {
     cfd: Cfd,
@@ -176,6 +177,11 @@ impl Actor {
 
         ctx.stop();
     }
+
+    /// Returns whether the maker has accepted our rollover proposal.
+    fn is_accepted(&self) -> bool {
+        self.rollover_msg_sender.is_some()
+    }
 }
 
 #[async_trait]
@@ -217,23 +223,20 @@ impl xtra::Actor for Actor {
             return;
         }
 
-        let cleanup = {
+        let maker_response_timeout = {
             let this = ctx.address().expect("self to be alive");
             async move {
-                tokio::time::sleep(MAX_ROLLOVER_DURATION).await;
+                tokio::time::sleep(MAKER_RESPONSE_TIMEOUT).await;
 
-                this.send(RolloverFailed {
-                    error: anyhow!(
-                        "Maker did not react within {} seconds, cleaning up",
-                        MAX_ROLLOVER_DURATION.as_secs()
-                    ),
+                this.send(MakerResponseTimeoutReached {
+                    timeout: MAKER_RESPONSE_TIMEOUT,
                 })
                 .await
                 .expect("can send to ourselves");
             }
         };
 
-        self.tasks.add(cleanup);
+        self.tasks.add(maker_response_timeout);
     }
 
     async fn stopping(&mut self, ctx: &mut xtra::Context<Self>) -> xtra::KeepRunning {
@@ -305,6 +308,30 @@ impl Actor {
         .await;
     }
 
+    pub async fn handle_rollover_timeout_reached(
+        &mut self,
+        msg: MakerResponseTimeoutReached,
+        ctx: &mut xtra::Context<Self>,
+    ) {
+        // If we are accepted, discard the timeout because the maker DID respond.
+        if self.is_accepted() {
+            return;
+        }
+
+        // Otherwise, fail because we did not receive a response.
+        // If the proposal is rejected, our entire actor would already be shut down and we hence
+        // never get this message.
+        let completed = RolloverCompleted::Failed {
+            order_id: self.cfd.id(),
+            error: anyhow!(
+                "Maker did not answer within {} seconds",
+                msg.timeout.as_secs()
+            ),
+        };
+
+        self.complete(completed, ctx).await;
+    }
+
     pub async fn handle_protocol_msg(
         &mut self,
         msg: wire::RollOverMsg,
@@ -345,6 +372,14 @@ pub struct RolloverSucceeded {
 /// notify that rollover has failed.
 pub struct RolloverFailed {
     error: anyhow::Error,
+}
+
+/// Message sent from the spawned task to `rollover_taker::Actor` to
+/// notify that the timeout has been reached.
+///
+/// It is up to the actor to reason whether or not the protocol has progressed since then.
+struct MakerResponseTimeoutReached {
+    timeout: Duration,
 }
 
 impl ActorName for Actor {
