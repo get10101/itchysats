@@ -179,7 +179,7 @@ impl Actor {
         Ok(())
     }
 
-    pub async fn forward_protocol_msg(&mut self, msg: wire::RollOverMsg) -> Result<()> {
+    async fn forward_protocol_msg(&mut self, msg: wire::RollOverMsg) -> Result<()> {
         self.rollover_msg_sender
             .as_mut()
             .context("Rollover task is not active")? // Sender is set once `Accepted` is received.
@@ -376,13 +376,13 @@ pub struct RollOverRejected;
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has finished successfully.
-pub struct RolloverSucceeded {
+struct RolloverSucceeded {
     dlc: Dlc,
 }
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has failed.
-pub struct RolloverFailed {
+struct RolloverFailed {
     error: anyhow::Error,
 }
 
