@@ -5,8 +5,8 @@ use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::monitor;
 use crate::oracle;
+use crate::process_manager;
 use crate::projection;
-use crate::projection::CfdsChanged;
 use crate::try_continue;
 use crate::wallet;
 use anyhow::Context;
@@ -29,7 +29,7 @@ pub async fn handle_monitoring_event<W>(
     event: monitor::Event,
     db: &SqlitePool,
     wallet: &xtra::Address<W>,
-    projection_address: &xtra::Address<projection::Actor>,
+    process_manager_address: &xtra::Address<process_manager::Actor>,
 ) -> Result<()>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -57,9 +57,15 @@ where
         monitor::Event::RevokedTransactionFound(_) => cfd.handle_revoke_confirmed(),
     };
 
-    db::append_event(event.clone(), &mut conn).await?;
-    post_process_event(event, wallet).await?;
-    projection_address.send(CfdsChanged).await?;
+    if let Err(e) = process_manager_address
+        .send(process_manager::Event::new(event.clone()))
+        .await?
+    {
+        tracing::error!("Sending event to process manager failed: {:#}", e);
+    } else {
+        // TODO: Move into process manager
+        post_process_event(event, wallet).await?;
+    }
 
     Ok(())
 }
@@ -97,7 +103,7 @@ pub async fn handle_commit<W>(
     order_id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
     wallet: &xtra::Address<W>,
-    projection_address: &xtra::Address<projection::Actor>,
+    process_manager_address: &xtra::Address<process_manager::Actor>,
 ) -> Result<()>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -105,11 +111,15 @@ where
     let cfd = load_cfd(order_id, conn).await?;
 
     let event = cfd.manual_commit_to_blockchain()?;
-    db::append_event(event.clone(), conn).await?;
-
-    post_process_event(event, wallet).await?;
-
-    projection_address.send(CfdsChanged).await?;
+    if let Err(e) = process_manager_address
+        .send(process_manager::Event::new(event.clone()))
+        .await?
+    {
+        tracing::error!("Sending event to process manager failed: {:#}", e);
+    } else {
+        // TODO: Move into process manager
+        post_process_event(event, wallet).await?;
+    }
 
     Ok(())
 }
@@ -118,7 +128,7 @@ pub async fn handle_oracle_attestation<W>(
     attestation: oracle::Attestation,
     db: &SqlitePool,
     wallet: &xtra::Address<W>,
-    projection_address: &xtra::Address<projection::Actor>,
+    process_manager_address: &xtra::Address<process_manager::Actor>,
 ) -> Result<()>
 where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -136,16 +146,19 @@ where
             .decrypt_cet(&attestation)
             .context("Failed to decrypt CET using attestation"));
 
-        try_continue!(db::append_event(event.clone(), &mut conn)
-            .await
-            .context("Failed to append events"));
-
         if let Some(event) = event {
-            try_continue!(post_process_event(event, wallet).await)
+            // Note: ? OK, because if the actor is disconnected we can fail the loop
+            if let Err(e) = process_manager_address
+                .send(process_manager::Event::new(event.clone()))
+                .await?
+            {
+                tracing::error!("Sending event to process manager failed: {:#}", e);
+            } else {
+                // TODO: Move into process manager
+                try_continue!(post_process_event(event, wallet).await);
+            }
         }
     }
-
-    projection_address.send(CfdsChanged).await?;
 
     Ok(())
 }

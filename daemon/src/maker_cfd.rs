@@ -4,7 +4,6 @@ use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_maker;
-use crate::db::append_event;
 use crate::maker_inc_connections;
 use crate::model;
 use crate::model::cfd::Cfd;
@@ -24,6 +23,7 @@ use crate::model::Usd;
 use crate::monitor;
 use crate::monitor::MonitorParams;
 use crate::oracle;
+use crate::process_manager;
 use crate::projection;
 use crate::projection::Update;
 use crate::rollover_maker;
@@ -97,6 +97,7 @@ pub struct Actor<O, M, T, W> {
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: Address<projection::Actor>,
+    process_manager_actor: Address<process_manager::Actor>,
     rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
     takers: Address<T>,
     current_order: Option<Order>,
@@ -117,6 +118,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
         settlement_interval: Duration,
         oracle_pk: schnorrsig::PublicKey,
         projection_actor: Address<projection::Actor>,
+        process_manager_actor: Address<process_manager::Actor>,
         takers: Address<T>,
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
@@ -128,6 +130,7 @@ impl<O, M, T, W> Actor<O, M, T, W> {
             settlement_interval,
             oracle_pk,
             projection_actor,
+            process_manager_actor,
             rollover_actors: AddressMap::default(),
             takers,
             current_order: None,
@@ -352,7 +355,6 @@ where
             .await?;
 
         self.projection_actor.send(projection::Update(None)).await?;
-
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
 
         // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any
@@ -467,8 +469,13 @@ where
         let cfd = load_cfd(order_id, &mut conn).await?;
 
         let event = cfd.settle_collaboratively(msg)?;
-        append_event(event.clone(), &mut conn).await?;
-        self.projection_actor.send(projection::CfdsChanged).await?;
+        if let Err(e) = self
+            .process_manager_actor
+            .send(process_manager::Event::new(event.clone()))
+            .await?
+        {
+            tracing::error!("Sending event to process manager failed: {:#}", e);
+        }
 
         match event.event {
             CfdEvent::CollaborativeSettlementCompleted {
@@ -529,8 +536,13 @@ where
         let Commit { order_id } = msg;
 
         let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_commit(order_id, &mut conn, &self.wallet, &self.projection_actor)
-            .await?;
+        cfd_actors::handle_commit(
+            order_id,
+            &mut conn,
+            &self.wallet,
+            &self.process_manager_actor,
+        )
+        .await?;
 
         Ok(())
     }
@@ -652,9 +664,13 @@ where
 
         let cfd = load_cfd(order_id, &mut conn).await?;
         let event = cfd.setup_contract(msg)?;
-        append_event(event.clone(), &mut conn).await?;
-
-        self.projection_actor.send(projection::CfdsChanged).await?;
+        if let Err(e) = self
+            .process_manager_actor
+            .send(process_manager::Event::new(event.clone()))
+            .await?
+        {
+            tracing::error!("Sending event to process manager failed: {:#}", e);
+        }
 
         let dlc = match event.event {
             CfdEvent::ContractSetupCompleted { dlc } => dlc,
@@ -730,9 +746,13 @@ where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle_monitor(&mut self, msg: monitor::Event) {
-        if let Err(e) =
-            cfd_actors::handle_monitoring_event(msg, &self.db, &self.wallet, &self.projection_actor)
-                .await
+        if let Err(e) = cfd_actors::handle_monitoring_event(
+            msg,
+            &self.db,
+            &self.wallet,
+            &self.process_manager_actor,
+        )
+        .await
         {
             tracing::error!("Unable to handle monotoring event: {:#}", e)
         }
@@ -743,7 +763,7 @@ where
             msg,
             &self.db,
             &self.wallet,
-            &self.projection_actor,
+            &self.process_manager_actor,
         )
         .await
         {

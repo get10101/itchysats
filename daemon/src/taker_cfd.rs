@@ -4,7 +4,6 @@ use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_taker;
 use crate::connection;
-use crate::db::append_event;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CfdEvent;
 use crate::model::cfd::CollaborativeSettlement;
@@ -21,6 +20,7 @@ use crate::model::Usd;
 use crate::monitor;
 use crate::monitor::MonitorParams;
 use crate::oracle;
+use crate::process_manager;
 use crate::projection;
 use crate::setup_taker;
 use crate::wallet;
@@ -55,6 +55,7 @@ pub struct Actor<O, M, W> {
     wallet: Address<W>,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: Address<projection::Actor>,
+    process_manager_actor: Address<process_manager::Actor>,
     conn_actor: Address<connection::Actor>,
     monitor_actor: Address<M>,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
@@ -78,6 +79,7 @@ where
         wallet: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         projection_actor: Address<projection::Actor>,
+        process_manager_actor: Address<process_manager::Actor>,
         conn_actor: Address<connection::Actor>,
         monitor_actor: Address<M>,
         oracle_actor: Address<O>,
@@ -89,6 +91,7 @@ where
             wallet,
             oracle_pk,
             projection_actor,
+            process_manager_actor,
             conn_actor,
             monitor_actor,
             oracle_actor,
@@ -112,8 +115,13 @@ where
         let Commit { order_id } = msg;
 
         let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_commit(order_id, &mut conn, &self.wallet, &self.projection_actor)
-            .await?;
+        cfd_actors::handle_commit(
+            order_id,
+            &mut conn,
+            &self.wallet,
+            &self.process_manager_actor,
+        )
+        .await?;
         Ok(())
     }
 
@@ -171,8 +179,13 @@ where
         let cfd = load_cfd(order_id, &mut conn).await?;
 
         let event = cfd.settle_collaboratively(msg)?;
-        append_event(event.clone(), &mut conn).await?;
-        self.projection_actor.send(projection::CfdsChanged).await?;
+        if let Err(e) = self
+            .process_manager_actor
+            .send(process_manager::Event::new(event.clone()))
+            .await?
+        {
+            tracing::error!("Sending event to process manager failed: {:#}", e);
+        }
 
         match event.event {
             CfdEvent::CollaborativeSettlementCompleted {
@@ -330,9 +343,13 @@ where
 
         let cfd = load_cfd(order_id, &mut conn).await?;
         let event = cfd.setup_contract(msg)?;
-        append_event(event.clone(), &mut conn).await?;
-
-        self.projection_actor.send(projection::CfdsChanged).await?;
+        if let Err(e) = self
+            .process_manager_actor
+            .send(process_manager::Event::new(event.clone()))
+            .await?
+        {
+            tracing::error!("Sending event to process manager failed: {:#}", e);
+        }
 
         let dlc = match event.event {
             CfdEvent::ContractSetupCompleted { dlc } => dlc,
@@ -395,9 +412,13 @@ where
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
 {
     async fn handle_monitor(&mut self, msg: monitor::Event) {
-        if let Err(e) =
-            cfd_actors::handle_monitoring_event(msg, &self.db, &self.wallet, &self.projection_actor)
-                .await
+        if let Err(e) = cfd_actors::handle_monitoring_event(
+            msg,
+            &self.db,
+            &self.wallet,
+            &self.process_manager_actor,
+        )
+        .await
         {
             tracing::error!("Unable to handle monotoring event: {:#}", e)
         }
@@ -408,7 +429,7 @@ where
             msg,
             &self.db,
             &self.wallet,
-            &self.projection_actor,
+            &self.process_manager_actor,
         )
         .await
         {

@@ -6,6 +6,7 @@ use crate::maker_cfd::TakerConnected;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
+use crate::model::cfd::Role;
 use crate::model::Identity;
 use crate::model::Price;
 use crate::model::Usd;
@@ -54,6 +55,7 @@ mod noise;
 pub mod olivia;
 pub mod oracle;
 pub mod payout_curve;
+pub mod process_manager;
 pub mod projection;
 pub mod rollover_maker;
 pub mod rollover_taker;
@@ -162,8 +164,15 @@ where
         let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
         let (inc_conn_addr, inc_conn_ctx) = xtra::Context::new(None);
+        let (process_manager_addr, process_manager_ctx) = xtra::Context::new(None);
 
         let mut tasks = Tasks::default();
+
+        tasks.add(process_manager_ctx.run(process_manager::Actor::new(
+            db.clone(),
+            Role::Maker,
+            &projection_actor,
+        )));
 
         let (cfd_actor_addr, cfd_actor_fut) = maker_cfd::Actor::new(
             db,
@@ -171,6 +180,7 @@ where
             settlement_interval,
             oracle_pk,
             projection_actor,
+            process_manager_addr.clone(),
             inc_conn_addr.clone(),
             monitor_addr.clone(),
             oracle_addr.clone(),
@@ -354,8 +364,15 @@ where
 
         let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
+        let (process_manager_addr, process_manager_ctx) = xtra::Context::new(None);
 
         let mut tasks = Tasks::default();
+
+        tasks.add(process_manager_ctx.run(process_manager::Actor::new(
+            db.clone(),
+            Role::Taker,
+            &projection_actor,
+        )));
 
         let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
         let (cfd_actor_addr, cfd_actor_fut) = taker_cfd::Actor::new(
@@ -363,6 +380,7 @@ where
             wallet_actor_addr.clone(),
             oracle_pk,
             projection_actor.clone(),
+            process_manager_addr,
             connection_actor_addr.clone(),
             monitor_addr.clone(),
             oracle_addr.clone(),
