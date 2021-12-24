@@ -6,6 +6,7 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
+use crate::model::cfd::RolloverError;
 use crate::model::BitMexPriceEventId;
 use crate::model::Timestamp;
 use crate::oracle;
@@ -16,7 +17,6 @@ use crate::setup_contract::RolloverParams;
 use crate::wire;
 use crate::wire::RollOverMsg;
 use crate::Tasks;
-use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -84,19 +84,19 @@ impl Actor {
         }
     }
 
-    async fn propose(&mut self, this: xtra::Address<Self>) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(self.id, &mut conn).await?;
+    async fn propose(&mut self, this: xtra::Address<Self>) -> Result<(), RolloverError> {
+        let mut conn = self.db.acquire().await.context("Failed to connect to DB")?;
+        let cfd = load_cfd(self.id, &mut conn)
+            .await
+            .context("Failed to load CFD")?;
 
         let (event, (rollover_params, dlc)) = cfd.start_rollover_taker()?;
 
-        if let Err(e) = self
-            .process_manager
-            .send(process_manager::Event::new(event))
-            .await?
-        {
-            tracing::error!("Sending event to process manager failed: {:#}", e);
-        }
+        self.process_manager
+            .send(process_manager::Event::new(event.clone()))
+            .await
+            .context("Process manager actor disconnected")?
+            .with_context(|| format!("Process manager failed to process event {:?}", event))?;
 
         self.rollover_params = Some(rollover_params);
         self.dlc = Some(dlc);
@@ -108,7 +108,8 @@ impl Actor {
                 timestamp: Timestamp::now(),
                 address: this,
             })
-            .await??;
+            .await
+            .context("Failed to propose rollover")??;
 
         Ok(())
     }
@@ -117,24 +118,29 @@ impl Actor {
         &mut self,
         msg: RollOverAccepted,
         ctx: &mut xtra::Context<Self>,
-    ) -> Result<()> {
+    ) -> Result<(), RolloverError> {
         // TODO: Check the oracle event id for sanity (i.e. is in the future according to settlement
         // interval)
         let RollOverAccepted { oracle_event_id } = msg;
         let order_id = self.id;
 
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(order_id, &mut conn).await?;
+        let mut conn = self.db.acquire().await.context("Failed to connect to DB")?;
+        let cfd = load_cfd(self.id, &mut conn)
+            .await
+            .context("Failed to load CFD")?;
 
         let event = cfd.handle_rollover_accepted_taker()?;
         self.process_manager
-            .send(process_manager::Event::new(event))
-            .await??;
+            .send(process_manager::Event::new(event.clone()))
+            .await
+            .context("Process manager actor disconnected")?
+            .with_context(|| format!("Process manager failed to process event {:?}", event))?;
 
         let announcement = self
             .get_announcement
             .send(oracle::GetAnnouncement(oracle_event_id))
-            .await?
+            .await
+            .context("Oracle actor disconnected")?
             .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
 
         tracing::info!(%order_id, "Rollover proposal got accepted");
@@ -179,7 +185,7 @@ impl Actor {
         Ok(())
     }
 
-    async fn forward_protocol_msg(&mut self, msg: wire::RollOverMsg) -> Result<()> {
+    async fn forward_protocol_msg(&mut self, msg: wire::RollOverMsg) -> Result<(), RolloverError> {
         self.rollover_msg_sender
             .as_mut()
             .context("Rollover task is not active")? // Sender is set once `Accepted` is received.
@@ -226,11 +232,11 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
 
-        if let Err(e) = self.propose(this).await {
+        if let Err(error) = self.propose(this).await {
             self.complete(
                 RolloverCompleted::Failed {
                     order_id: self.id,
-                    error: e,
+                    error,
                 },
                 ctx,
             )
@@ -313,7 +319,7 @@ impl Actor {
         self.complete(
             RolloverCompleted::Failed {
                 order_id: self.id,
-                error: msg.error,
+                error: RolloverError::Protocol { source: msg.error },
             },
             ctx,
         )
@@ -335,10 +341,9 @@ impl Actor {
         // never get this message.
         let completed = RolloverCompleted::Failed {
             order_id: self.id,
-            error: anyhow!(
-                "Maker did not answer within {} seconds",
-                msg.timeout.as_secs()
-            ),
+            error: RolloverError::MakerDidNotRespond {
+                timeout: msg.timeout.as_secs(),
+            },
         };
 
         self.complete(completed, ctx).await;
