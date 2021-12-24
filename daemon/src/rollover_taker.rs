@@ -15,7 +15,6 @@ use crate::oracle::GetAnnouncement;
 use crate::projection;
 use crate::projection::UpdateRollOverProposal;
 use crate::setup_contract;
-use crate::tokio_ext::spawn_fallible;
 use crate::wire;
 use crate::wire::RollOverMsg;
 use crate::Tasks;
@@ -31,6 +30,7 @@ use maia::secp256k1_zkp::schnorrsig;
 use std::time::Duration;
 use time::OffsetDateTime;
 use xtra::prelude::MessageChannel;
+use xtra::Disconnected;
 use xtra_productivity::xtra_productivity;
 
 /// The maximum amount of time we give the maker to send us a response.
@@ -136,13 +136,13 @@ impl Actor {
         );
 
         let this = ctx.address().expect("self to be alive");
-        spawn_fallible::<_, anyhow::Error>(async move {
-            let _ = match rollover_fut.await {
-                Ok(dlc) => this.send(RolloverSucceeded { dlc }).await?,
-                Err(error) => this.send(RolloverFailed { error }).await?,
+        self.tasks.add(async move {
+            // Use an explicit type annotation to cause a compile error if someone changes the
+            // handler.
+            let _: Result<(), Disconnected> = match rollover_fut.await {
+                Ok(dlc) => this.send(RolloverSucceeded { dlc }).await,
+                Err(error) => this.send(RolloverFailed { error }).await,
             };
-
-            Ok(())
         });
 
         Ok(())
