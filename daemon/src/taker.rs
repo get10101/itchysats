@@ -7,6 +7,7 @@ use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use clap::Parser;
 use clap::Subcommand;
+use daemon::auth::Password;
 use daemon::bitmex_price_feed;
 use daemon::connection::connect;
 use daemon::db;
@@ -62,6 +63,11 @@ struct Opts {
     /// Configure the log level, e.g.: one of Error, Warn, Info, Debug, Trace
     #[clap(short, long, default_value = "Debug")]
     log_level: LevelFilter,
+
+    /// Password to be used for web authentication. If not set, it will default to
+    /// daemon::auth::TAKER_DEFAULT_PASSWORD
+    #[clap(short, long, default_value = daemon::auth::TAKER_DEFAULT_PASSWORD)]
+    password: Password,
 
     #[clap(subcommand)]
     network: Network,
@@ -278,6 +284,7 @@ async fn main() -> Result<()> {
         .manage(bitcoin_network)
         .manage(taker.maker_online_status_feed_receiver.clone())
         .manage(taker)
+        .manage(opts.password)
         .mount(
             "/api",
             rocket::routes![
@@ -290,10 +297,12 @@ async fn main() -> Result<()> {
                 routes_taker::post_wallet_reinitialise,
             ],
         )
+        .register("/api", rocket::catchers![routes_taker::unauthorized])
         .mount(
             "/",
             rocket::routes![routes_taker::dist, routes_taker::index],
-        );
+        )
+        .register("/", rocket::catchers![routes_taker::unauthorized]);
 
     let rocket = rocket.ignite().await?;
     rocket.launch().await?;

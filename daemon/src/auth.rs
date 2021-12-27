@@ -15,6 +15,7 @@ use std::str::FromStr;
 pub struct Authenticated {}
 
 pub const USERNAME: &str = "itchysats";
+pub const TAKER_DEFAULT_PASSWORD: &str = "onbrinkofsecondbailout";
 
 #[derive(Debug)]
 pub enum Error {
