@@ -1,16 +1,10 @@
 use crate::address_map::{AddressMap, Stopping};
 use crate::model::cfd::OrderId;
-use crate::model::Identity;
-use crate::model::Price;
-use crate::model::Timestamp;
-use crate::model::Usd;
+use crate::model::{Identity, Price, Timestamp, Usd};
 use crate::taker_cfd::CurrentOrder;
 use crate::tokio_ext::FutureExt;
 use crate::wire::{EncryptedJsonCodec, TakerToMaker, Version};
-use crate::{
-    collab_settlement_taker, log_error, noise, rollover_taker, setup_taker, wire,
-    Tasks,
-};
+use crate::{collab_settlement_taker, log_error, noise, rollover_taker, setup_taker, wire, Tasks};
 use anyhow::{bail, Context, Result};
 use bdk::bitcoin::Amount;
 use futures::{SinkExt, StreamExt, TryStreamExt};

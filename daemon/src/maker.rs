@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::Amount;
-use bdk::{bitcoin, FeeRate};
+use bdk::FeeRate;
 use clap::{Parser, Subcommand};
-use daemon::auth::{self, MAKER_USERNAME};
+use daemon::auth::USERNAME;
 use daemon::model::cfd::Role;
 use daemon::seed::Seed;
 use daemon::{
-    bitmex_price_feed, db, housekeeping, logger, maker_inc_connections, monitor, oracle,
+    auth, bitmex_price_feed, db, housekeeping, logger, maker_inc_connections, monitor, oracle,
     projection, wallet, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
     SETTLEMENT_INTERVAL,
 };
@@ -187,7 +187,7 @@ async fn main() -> Result<()> {
 
     tracing::info!(
         "Authentication details: username='{}' password='{}', noise_public_key='{}'",
-        MAKER_USERNAME,
+        USERNAME,
         auth_password,
         hex::encode(identity_pk.to_bytes())
     );
