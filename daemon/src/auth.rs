@@ -28,17 +28,17 @@ pub enum Error {
 }
 
 #[derive(PartialEq)]
-pub struct Password([u8; 32]);
+pub struct Password(String);
 
 impl From<[u8; 32]> for Password {
     fn from(bytes: [u8; 32]) -> Self {
-        Self(bytes)
+        Self(hex::encode(bytes))
     }
 }
 
 impl fmt::Display for Password {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", hex::encode(self.0))
+        self.0.fmt(f)
     }
 }
 
@@ -46,10 +46,7 @@ impl FromStr for Password {
     type Err = FromHexError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut bytes = [0u8; 32];
-        hex::decode_to_slice(s, &mut bytes)?;
-
-        Ok(Self(bytes))
+        Ok(Self(s.to_string()))
     }
 }
 
