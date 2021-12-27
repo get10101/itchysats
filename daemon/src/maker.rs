@@ -7,7 +7,7 @@ use bdk::FeeRate;
 use clap::Parser;
 use clap::Subcommand;
 use daemon::auth;
-use daemon::auth::MAKER_USERNAME;
+use daemon::auth::USERNAME;
 use daemon::bitmex_price_feed;
 use daemon::db;
 use daemon::logger;
@@ -199,7 +199,7 @@ async fn main() -> Result<()> {
 
     tracing::info!(
         "Authentication details: username='{}' password='{}', noise_public_key='{}'",
-        MAKER_USERNAME,
+        USERNAME,
         auth_password,
         hex::encode(identity_pk.to_bytes())
     );
