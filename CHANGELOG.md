@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The new payout transactions spend from the same lock transaction, so the rollover happens off-chain.
   In case a maker rejects a rollover request from a taker the old oracle price event and payout transactions stay in place.
 
+### Changed
+
+- Username for HTTP authentication to `itchysats`.
+
 ## [0.3.0] - 2021-12-09
 
 Initial release for mainnet.
