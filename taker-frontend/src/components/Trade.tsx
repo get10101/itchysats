@@ -129,7 +129,7 @@ export default function Trade({
         if (balanceTooLow) {
             alertBox = <AlertBox
                 title={"Your balance is too low!"}
-                description={"Please deposit more into you wallet."}
+                description={"Please deposit more into your wallet."}
             />;
         }
         if (!quantityIsEvenlyDivisibleByIncrement) {
