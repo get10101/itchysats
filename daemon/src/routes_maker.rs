@@ -304,12 +304,15 @@ mod tests {
     /// Creates an "Authorization" header that matches the password above,
     /// in particular it has been created through:
     /// ```
-    /// base64(maker:hex("Now I'm feelin' so fly like a G6"))
+    /// let password = "Now I'm feelin' so fly like a G6".to_string();
+    /// let password_vec = password.as_bytes();
+    /// let password_hex = hex::encode(vec);
+    /// let basic_auth = base64::encode(&format!("{}:{}", "itchysats", password_hex));
     /// ```
     fn auth_header() -> Header<'static> {
         Header::new(
             "Authorization",
-            "Basic bWFrZXI6NGU2Zjc3MjA0OTI3NmQyMDY2NjU2NTZjNjk2ZTI3MjA3MzZmMjA2NjZjNzkyMDZjNjk2YjY1MjA2MTIwNDczNg==",
+            "Basic aXRjaHlzYXRzOjRlNmY3NzIwNDkyNzZkMjA2NjY1NjU2YzY5NmUyNzIwNzM2ZjIwNjY2Yzc5MjA2YzY5NmI2NTIwNjEyMDQ3MzY=",
         )
     }
 }
