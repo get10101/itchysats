@@ -20,6 +20,7 @@ export default function usePostRequest<Req = any, Res = any>(
                 headers: {
                     "Content-type": "application/json",
                 },
+                credentials: "include",
             });
 
             if (!res.status.toString().startsWith("2")) {

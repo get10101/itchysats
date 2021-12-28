@@ -7,6 +7,7 @@ use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use clap::Parser;
 use clap::Subcommand;
+use daemon::auth;
 use daemon::bitmex_price_feed;
 use daemon::connection::connect;
 use daemon::db;
@@ -62,6 +63,12 @@ struct Opts {
     /// Configure the log level, e.g.: one of Error, Warn, Info, Debug, Trace
     #[clap(short, long, default_value = "Debug")]
     log_level: LevelFilter,
+
+    /// Password for the web interface.
+    ///
+    /// If not provided, will be derived from the seed.
+    #[clap(long)]
+    password: Option<auth::Password>,
 
     #[clap(subcommand)]
     network: Network,
@@ -182,6 +189,7 @@ async fn main() -> Result<()> {
     let bitcoin_network = opts.network.bitcoin_network();
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
     let (_, identity_sk) = seed.derive_identity();
+    let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
 
     let mut tasks = Tasks::default();
 
@@ -206,6 +214,12 @@ async fn main() -> Result<()> {
 
         return Ok(());
     }
+
+    tracing::info!(
+        "Authentication details: username='{}' password='{}'",
+        auth::USERNAME,
+        web_password
+    );
 
     // TODO: Actually fetch it from Olivia
     let oracle = schnorrsig::PublicKey::from_str(
@@ -278,6 +292,7 @@ async fn main() -> Result<()> {
         .manage(bitcoin_network)
         .manage(taker.maker_online_status_feed_receiver.clone())
         .manage(taker)
+        .manage(web_password)
         .mount(
             "/api",
             rocket::routes![
@@ -290,10 +305,12 @@ async fn main() -> Result<()> {
                 routes_taker::post_wallet_reinitialise,
             ],
         )
+        .register("/api", rocket::catchers![auth::unauthorized])
         .mount(
             "/",
             rocket::routes![routes_taker::dist, routes_taker::index],
-        );
+        )
+        .register("/", rocket::catchers![auth::unauthorized]);
 
     let rocket = rocket.ignite().await?;
     rocket.launch().await?;
