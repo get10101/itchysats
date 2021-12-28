@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = "1"
 async-trait = "0.1.52"
 atty = "0.2"
-bdk = { version = "0.14.1-dev", default-features = false, features = ["electrum"] }
+bdk = { version = "0.15", default-features = false, features = ["electrum"] }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "3.0.0-rc.9", features = ["derive"] }

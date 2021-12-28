@@ -1135,6 +1135,7 @@ impl Dlc {
             lock_amount,
             (&self.maker_address, proposal.maker),
             (&self.taker_address, proposal.taker),
+            1,
         )
         .context("Unable to collaborative close transaction")?;
 

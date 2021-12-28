@@ -7,4 +7,3 @@ rocket = { git = "https://github.com/SergioBenitez/Rocket" } # Need to patch roc
 xtra = { git = "https://github.com/Restioson/xtra" } # We need to use unreleased patches.
 maia = { git = "https://github.com/comit-network/maia" } # Unreleased
 xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity" } # Unreleased
-bdk = { git = "https://github.com/bitcoindevkit/bdk" } # Unreleased
