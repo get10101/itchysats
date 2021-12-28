@@ -296,12 +296,12 @@ async fn main() -> Result<()> {
                 routes_maker::get_takers,
             ],
         )
-        .register("/api", rocket::catchers![routes_maker::unauthorized])
+        .register("/api", rocket::catchers![auth::unauthorized])
         .mount(
             "/",
             rocket::routes![routes_maker::dist, routes_maker::index],
         )
-        .register("/", rocket::catchers![routes_maker::unauthorized])
+        .register("/", rocket::catchers![auth::unauthorized])
         .launch()
         .await?;
 
