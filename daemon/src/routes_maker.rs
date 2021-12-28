@@ -8,7 +8,7 @@ use daemon::routes::EmbeddedFileExt;
 use daemon::to_sse_event::ToSseEvent;
 use daemon::{maker_cfd, maker_inc_connections, monitor, oracle, wallet};
 use http_api_problem::{HttpApiProblem, StatusCode};
-use rocket::http::{ContentType, Header, Status};
+use rocket::http::{ContentType, Status};
 use rocket::response::stream::EventStream;
 use rocket::response::{status, Responder};
 use rocket::serde::json::Json;
@@ -116,23 +116,6 @@ pub async fn post_sell_order(
         })?;
 
     Ok(status::Accepted(None))
-}
-
-/// A "catcher" for all 401 responses, triggers the browser's basic auth implementation.
-#[rocket::catch(401)]
-pub fn unauthorized() -> PromptAuthentication {
-    PromptAuthentication {
-        inner: (),
-        www_authenticate: Header::new("WWW-Authenticate", r#"Basic charset="UTF-8"#),
-    }
-}
-
-/// A rocket responder that prompts the user to sign in to access the API.
-#[derive(rocket::Responder)]
-#[response(status = 401)]
-pub struct PromptAuthentication {
-    inner: (),
-    www_authenticate: Header<'static>,
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
@@ -260,58 +243,4 @@ pub async fn get_takers<'r>(
     let takers = rx_connected_takers.borrow().clone();
 
     Ok(Json(takers))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use daemon::auth::Password;
-    use rocket::http::{Header, Status};
-    use rocket::local::blocking::Client;
-    use rocket::{Build, Rocket};
-
-    #[test]
-    fn routes_are_password_protected() {
-        let client = Client::tracked(rocket()).unwrap();
-
-        let response = client.get("/protected").dispatch();
-
-        assert_eq!(response.status(), Status::Unauthorized);
-        assert_eq!(
-            response.headers().get_one("WWW-Authenticate"),
-            Some(r#"Basic charset="UTF-8"#)
-        );
-    }
-
-    #[test]
-    fn correct_password_grants_access() {
-        let client = Client::tracked(rocket()).unwrap();
-
-        let response = client.get("/protected").header(auth_header()).dispatch();
-
-        assert_eq!(response.status(), Status::Ok);
-    }
-
-    #[rocket::get("/protected")]
-    async fn protected(_auth: Authenticated) {}
-
-    /// Constructs a Rocket instance for testing.
-    fn rocket() -> Rocket<Build> {
-        rocket::build()
-            .manage(Password::from(*b"Now I'm feelin' so fly like a G6"))
-            .mount("/", rocket::routes![protected])
-            .register("/", rocket::catchers![unauthorized])
-    }
-
-    /// Creates an "Authorization" header that matches the password above,
-    /// in particular it has been created through:
-    /// ```
-    /// base64(itchysats:hex("Now I'm feelin' so fly like a G6"))
-    /// ```
-    fn auth_header() -> Header<'static> {
-        Header::new(
-            "Authorization",
-            "Basic aXRjaHlzYXRzOjRlNmY3NzIwNDkyNzZkMjA2NjY1NjU2YzY5NmUyNzIwNzM2ZjIwNjY2Yzc5MjA2YzY5NmI2NTIwNjEyMDQ3MzY=",
-        )
-    }
 }

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::Amount;
-use bdk::FeeRate;
+use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::auth::USERNAME;
 use daemon::model::cfd::Role;
@@ -302,12 +302,12 @@ async fn main() -> Result<()> {
                 routes_maker::get_takers,
             ],
         )
-        .register("/api", rocket::catchers![routes_maker::unauthorized])
+        .register("/api", rocket::catchers![auth::unauthorized])
         .mount(
             "/",
             rocket::routes![routes_maker::dist, routes_maker::index],
         )
-        .register("/", rocket::catchers![routes_maker::unauthorized])
+        .register("/", rocket::catchers![auth::unauthorized])
         .launch()
         .await?;
 
