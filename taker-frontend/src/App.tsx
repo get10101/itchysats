@@ -54,7 +54,7 @@ export const App = () => {
         },
     });
 
-    let source = useEventSource({ source: "/api/feed" });
+    let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const order = useLatestEvent<Order>(source, "order", intoOrder);
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
