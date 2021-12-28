@@ -2462,9 +2462,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal_macros"
-version = "1.18.0"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2a71e447554613b11da876d63d04e78fc3e8e86769488d3b58887671e23bc86"
+checksum = "dda58fd861235dddfe687bec7f3fd1fbdff03376aac8daa64400991317fe7181"
 dependencies = [
  "quote",
  "rust_decimal",
