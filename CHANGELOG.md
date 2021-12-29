@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The previous payout transactions are invalidated.
   The new payout transactions spend from the same lock transaction, so the rollover happens off-chain.
   In case a maker rejects a rollover request from a taker the old oracle price event and payout transactions stay in place.
+- Basic authentication for the web interface of the `taker` binary.
+  A password is now required to access the web interface.
+  If not set via `--password`, one will be derived from the seed file and displayed in the start-up logs.
+
+### Changed
+
+- Username for HTTP authentication to `itchysats`.
 
 ## [0.3.2] - 2021-12-21
 

@@ -1,5 +1,6 @@
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Network;
+use daemon::auth::Authenticated;
 use daemon::bitmex_price_feed;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::calculate_long_margin;
@@ -40,6 +41,7 @@ pub async fn feed(
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
+    _auth: Authenticated,
 ) -> EventStream![] {
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
@@ -101,6 +103,7 @@ pub struct CfdOrderRequest {
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
     taker: &State<Taker>,
+    _auth: Authenticated,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
     taker
         .take_offer(cfd_order_request.order_id, cfd_order_request.quantity)
@@ -120,6 +123,7 @@ pub async fn post_cfd_action(
     action: CfdAction,
     taker: &State<Taker>,
     feeds: &State<Feeds>,
+    _auth: Authenticated,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
     let result = match action {
         CfdAction::AcceptOrder
@@ -166,6 +170,7 @@ pub struct WalletReinitialiseRequest {
 pub async fn post_wallet_reinitialise(
     wallet_reinitialise_request: Json<WalletReinitialiseRequest>,
     taker: &State<Taker>,
+    _auth: Authenticated,
 ) -> Result<status::Accepted<()>, HttpApiProblem> {
     taker
         .reinitialise_wallet(&wallet_reinitialise_request.seed_words)
@@ -201,6 +206,7 @@ pub struct MarginResponse {
 #[rocket::post("/calculate/margin", data = "<margin_request>")]
 pub fn margin_calc(
     margin_request: Json<MarginRequest>,
+    _auth: Authenticated,
 ) -> Result<status::Accepted<Json<MarginResponse>>, HttpApiProblem> {
     let margin = calculate_long_margin(
         margin_request.price,
@@ -216,13 +222,13 @@ pub fn margin_calc(
 struct Asset;
 
 #[rocket::get("/assets/<file..>")]
-pub fn dist<'r>(file: PathBuf) -> impl Responder<'r, 'static> {
+pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let filename = format!("assets/{}", file.display().to_string());
     Asset::get(&filename).into_response(file)
 }
 
 #[rocket::get("/<_paths..>", format = "text/html")]
-pub fn index<'r>(_paths: PathBuf) -> impl Responder<'r, 'static> {
+pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
     Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
 }
@@ -240,6 +246,7 @@ pub async fn post_withdraw_request(
     withdraw_request: Json<WithdrawRequest>,
     taker: &State<Taker>,
     network: &State<Network>,
+    _auth: Authenticated,
 ) -> Result<String, HttpApiProblem> {
     let amount =
         (withdraw_request.amount != bdk::bitcoin::Amount::ZERO).then(|| withdraw_request.amount);

@@ -7,7 +7,6 @@ use bdk::FeeRate;
 use clap::Parser;
 use clap::Subcommand;
 use daemon::auth;
-use daemon::auth::MAKER_USERNAME;
 use daemon::bitmex_price_feed;
 use daemon::db;
 use daemon::logger;
@@ -199,7 +198,7 @@ async fn main() -> Result<()> {
 
     tracing::info!(
         "Authentication details: username='{}' password='{}', noise_public_key='{}'",
-        MAKER_USERNAME,
+        auth::USERNAME,
         auth_password,
         hex::encode(identity_pk.to_bytes())
     );
@@ -296,12 +295,12 @@ async fn main() -> Result<()> {
                 routes_maker::get_takers,
             ],
         )
-        .register("/api", rocket::catchers![routes_maker::unauthorized])
+        .register("/api", rocket::catchers![auth::unauthorized])
         .mount(
             "/",
             rocket::routes![routes_maker::dist, routes_maker::index],
         )
-        .register("/", rocket::catchers![routes_maker::unauthorized])
+        .register("/", rocket::catchers![auth::unauthorized])
         .launch()
         .await?;
 
