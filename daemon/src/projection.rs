@@ -502,6 +502,8 @@ pub struct Cfd {
     pub expiry_timestamp: OffsetDateTime,
 
     pub counterparty: Identity,
+
+    pub pending_settlement_proposal_price: Option<Price>,
 }
 
 impl From<CfdsWithAuxData> for Vec<Cfd> {
@@ -525,6 +527,12 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
                 let pending_proposal = input.pending_proposals.get(&cfd.order.id);
                 let state = to_cfd_state(&cfd.state, pending_proposal);
 
+                let pending_settlement_proposal_price = match pending_proposal {
+                    Some(UpdateCfdProposal::Settlement { proposal, .. }) => {
+                        Some(proposal.price.into())
+                    }
+                    _ => None,
+                };
                 Cfd {
                     order_id: cfd.order.id,
                     initial_price: cfd.order.price.into(),
@@ -549,6 +557,7 @@ impl From<CfdsWithAuxData> for Vec<Cfd> {
                         Some(timestamp) => timestamp,
                     },
                     counterparty: cfd.counterparty.into(),
+                    pending_settlement_proposal_price,
                 }
             })
             .collect::<Vec<Cfd>>();
