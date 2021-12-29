@@ -58,6 +58,7 @@ pub struct Actor {
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
+    tasks: Tasks,
 }
 
 /// A connection to a taker.
@@ -96,6 +97,7 @@ impl Actor {
             noise_priv_key,
             heartbeat_interval,
             setup_actors: AddressMap::default(),
+            tasks: Tasks::default(),
         }
     }
 
@@ -123,92 +125,6 @@ impl Actor {
             self.drop_taker_connection(taker_id).await;
             return Err(NoConnection(*taker_id));
         }
-
-        Ok(())
-    }
-
-    async fn handle_new_connection_impl(
-        &mut self,
-        mut stream: TcpStream,
-        taker_address: SocketAddr,
-        ctx: &mut xtra::Context<Self>,
-    ) -> Result<()> {
-        let transport_state = noise::responder_handshake(&mut stream, &self.noise_priv_key).await?;
-        let taker_id = Identity::new(transport_state.get_remote_public_key()?);
-
-        let (mut write, mut read) =
-            Framed::new(stream, EncryptedJsonCodec::new(transport_state)).split();
-
-        match read
-            .try_next()
-            .timeout(Duration::from_secs(10))
-            .await
-            .with_context(|| {
-                format!(
-                    "Taker {} did not send Hello within 10 seconds, dropping connection",
-                    taker_id
-                )
-            })? {
-            Ok(Some(TakerToMaker::Hello(taker_version))) => {
-                let our_version = Version::current();
-                write.send(MakerToTaker::Hello(our_version.clone())).await?;
-
-                if our_version != taker_version {
-                    tracing::debug!(
-                        "Network version mismatch, we are on version {} but taker is on version {}",
-                        our_version,
-                        taker_version
-                    );
-
-                    // A taker running a different version is not treated as error for the maker
-                    return Ok(());
-                }
-            }
-            unexpected_message => {
-                bail!(
-                    "Unexpected message {:?} from taker {}",
-                    unexpected_message,
-                    taker_id
-                );
-            }
-        }
-
-        tracing::info!(%taker_id, address = %taker_address, "New taker connected");
-
-        let this = ctx.address().expect("self to be alive");
-        let read_fut = async move {
-            while let Ok(Some(msg)) = read.try_next().await {
-                let res = this.send(FromTaker { taker_id, msg }).await;
-
-                if res.is_err() {
-                    break;
-                }
-            }
-
-            let _ = this.send(ReadFail(taker_id)).await;
-        };
-
-        let heartbeat_fut = ctx
-            .notify_interval(self.heartbeat_interval, move || SendHeartbeat(taker_id))
-            .expect("actor not to shutdown");
-
-        let mut tasks = Tasks::default();
-        tasks.add(read_fut);
-        tasks.add(heartbeat_fut);
-
-        self.connections.insert(
-            taker_id,
-            Connection {
-                _tasks: tasks,
-                taker: taker_id,
-                write,
-            },
-        );
-
-        let _ = self
-            .taker_connected_channel
-            .send(maker_cfd::TakerConnected { id: taker_id })
-            .await;
 
         Ok(())
     }
@@ -274,11 +190,20 @@ impl Actor {
     }
 
     async fn handle(&mut self, msg: ListenerMessage, ctx: &mut xtra::Context<Self>) -> KeepRunning {
+        let this = ctx.address().expect("we are alive");
+        let noise_priv_key = self.noise_priv_key.clone();
+        let heartbeat_interval = self.heartbeat_interval;
+
         match msg {
             ListenerMessage::NewConnection { stream, address } => {
-                if let Err(err) = self.handle_new_connection_impl(stream, address, ctx).await {
-                    tracing::warn!("Maker was unable to negotiate a new connection: {}", err);
-                }
+                self.tasks.add(setup_new_connection(
+                    this,
+                    noise_priv_key,
+                    heartbeat_interval,
+                    stream,
+                    address,
+                ));
+
                 KeepRunning::Yes
             }
             ListenerMessage::Error { source } => {
@@ -296,6 +221,18 @@ impl Actor {
         tracing::error!(%taker_id, "Failed to read incoming messages from taker");
 
         self.drop_taker_connection(&taker_id).await;
+    }
+
+    async fn handle_connection_ready(&mut self, msg: ConnectionReady) {
+        let connection = msg.0;
+
+        let _ = self
+            .taker_connected_channel
+            .send(maker_cfd::TakerConnected {
+                id: connection.taker,
+            })
+            .await;
+        self.connections.insert(connection.taker, connection);
     }
 }
 
@@ -322,6 +259,119 @@ impl Actor {
         self.setup_actors.gc(message);
     }
 }
+
+/// Sets up a new connection on the given stream including all relevant background tasks like
+/// heartbeat and reading messages from the stream.
+async fn setup_new_connection(
+    this: Address<Actor>,
+    noise_priv_key: x25519_dalek::StaticSecret,
+    heartbeat_interval: Duration,
+    stream: TcpStream,
+    address: SocketAddr,
+) {
+    let (mut read, write, taker_id) = match upgrade(stream, noise_priv_key).await {
+        Ok((read, write, identity)) => (read, write, identity),
+        Err(e) => {
+            tracing::warn!(address = %address, "Failed to upgrade incoming connection: {:#}", e);
+            return;
+        }
+    };
+
+    let mut tasks = Tasks::default();
+    tasks.add({
+        let this = this.clone();
+
+        async move {
+            while let Ok(Some(msg)) = read.try_next().await {
+                let res = this.send(FromTaker { taker_id, msg }).await;
+
+                if res.is_err() {
+                    break;
+                }
+            }
+
+            let _ = this.send(ReadFail(taker_id)).await;
+        }
+    });
+    tasks.add({
+        let this = this.clone();
+
+        async move {
+            while let Ok(()) = this.send(SendHeartbeat(taker_id)).await {
+                tokio::time::sleep(heartbeat_interval).await;
+            }
+        }
+    });
+
+    let _ = this
+        .send(ConnectionReady(Connection {
+            _tasks: tasks,
+            taker: taker_id,
+            write,
+        }))
+        .await;
+}
+
+/// Upgrades a TCP stream to an encrypted transport, checking the network version in the process.
+///
+/// Both IO operations, upgrading to noise and checking the version are gated by a timeout.
+async fn upgrade(
+    mut stream: TcpStream,
+    noise_priv_key: x25519_dalek::StaticSecret,
+) -> Result<(
+    wire::Read<wire::TakerToMaker, wire::MakerToTaker>,
+    wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
+    Identity,
+)> {
+    let taker_address = stream.peer_addr().context("Failed to get peer address")?;
+
+    tracing::info!(%taker_address, "Upgrade new connection");
+
+    let transport_state = noise::responder_handshake(&mut stream, &noise_priv_key)
+        .timeout(Duration::from_secs(20))
+        .await
+        .context("Failed to complete noise handshake within 20 seconds")??;
+    let taker_id = Identity::new(transport_state.get_remote_public_key()?);
+
+    let (mut write, mut read) =
+        Framed::new(stream, EncryptedJsonCodec::new(transport_state)).split();
+
+    let first_message = read
+        .try_next()
+        .timeout(Duration::from_secs(10))
+        .await
+        .context("No message from taker within 10 seconds")?
+        .context("Failed to read first message on stream")?
+        .context("Stream closed before first message")?;
+
+    match first_message {
+        TakerToMaker::Hello(taker_version) => {
+            let our_version = Version::current();
+            write.send(MakerToTaker::Hello(our_version.clone())).await?;
+
+            if our_version != taker_version {
+                bail!(
+                    "Network version mismatch, we are on version {} but taker is on version {}",
+                    our_version,
+                    taker_version
+                );
+            }
+        }
+        unexpected_message => {
+            bail!(
+                "Unexpected message {} from taker {}",
+                unexpected_message,
+                taker_id
+            );
+        }
+    }
+
+    tracing::info!(taker_id = %taker_id, %taker_address, "Connection upgrade successful");
+
+    Ok((read, write, taker_id))
+}
+
+struct ConnectionReady(Connection);
 
 struct ReadFail(Identity);
 
