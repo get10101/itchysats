@@ -284,7 +284,9 @@ where
             .address()
             .expect("actor to be able to give address to itself");
         let (addr, fut) = setup_taker::Actor::new(
-            (cfd, self.n_payouts),
+            self.db.clone(),
+            self.process_manager_actor.clone(),
+            (cfd.id(), cfd.quantity(), self.n_payouts),
             (self.oracle_pk, announcement),
             &self.wallet,
             &self.wallet,

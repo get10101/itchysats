@@ -70,7 +70,9 @@ export class State {
     public getLabel(): string {
         switch (this.key) {
             case StateKey.PENDING_SETUP:
-                return "Setting up";
+                return "Offered";
+            case StateKey.CONTRACT_SETUP:
+                return "Contract Setup";
             case StateKey.REJECTED:
                 return "Rejected";
             case StateKey.PENDING_OPEN:
@@ -125,6 +127,7 @@ export class State {
                 return orange;
 
             case StateKey.PENDING_SETUP:
+            case StateKey.CONTRACT_SETUP:
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
             case StateKey.INCOMING_ROLL_OVER_PROPOSAL:
@@ -140,6 +143,7 @@ export class State {
     public getGroup(): StateGroupKey {
         switch (this.key) {
             case StateKey.PENDING_SETUP:
+            case StateKey.CONTRACT_SETUP:
                 return StateGroupKey.OPENING;
 
             case StateKey.PENDING_OPEN:
@@ -182,6 +186,7 @@ export enum Action {
 
 const enum StateKey {
     PENDING_SETUP = "PendingSetup",
+    CONTRACT_SETUP = "ContractSetup",
     REJECTED = "Rejected",
     PENDING_OPEN = "PendingOpen",
     OPEN = "Open",

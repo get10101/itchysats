@@ -1,15 +1,18 @@
 use crate::address_map::ActorName;
 use crate::address_map::Stopping;
+use crate::cfd_actors::apply_event;
+use crate::cfd_actors::load_cfd;
 use crate::maker_inc_connections;
 use crate::maker_inc_connections::TakerMessage;
-use crate::model::cfd::Cfd;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::SetupCompleted;
 use crate::model::Identity;
+use crate::model::Usd;
 use crate::oracle::Announcement;
+use crate::process_manager;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::setup_contract;
 use crate::tokio_ext::spawn_fallible;
@@ -27,11 +30,14 @@ use futures::future;
 use futures::SinkExt;
 use maia::secp256k1_zkp::schnorrsig;
 use xtra::prelude::MessageChannel;
+use xtra::Address;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
-    cfd: Cfd,
+    db: sqlx::SqlitePool,
+    process_manager_actor: Address<process_manager::Actor>,
     order: Order,
+    quantity: Usd,
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
     announcement: Announcement,
@@ -46,8 +52,11 @@ pub struct Actor {
 }
 
 impl Actor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        (cfd, order, n_payouts): (Cfd, Order, usize),
+        db: sqlx::SqlitePool,
+        process_manager_actor: Address<process_manager::Actor>,
+        (order, quantity, n_payouts): (Order, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
@@ -63,8 +72,10 @@ impl Actor {
         ),
     ) -> Self {
         Self {
-            cfd,
+            db,
+            process_manager_actor,
             order,
+            quantity,
             n_payouts,
             oracle_pk,
             announcement,
@@ -80,14 +91,18 @@ impl Actor {
     }
 
     async fn contract_setup(&mut self, this: xtra::Address<Self>) -> Result<()> {
-        let order_id = self.cfd.id();
+        let order_id = self.order.id;
 
         let (sender, receiver) = mpsc::unbounded();
         // store the writing end to forward messages from the taker to
         // the spawned contract setup task
         self.setup_msg_sender = Some(sender);
 
-        let setup_params = self.cfd.start_contract_setup()?;
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(order_id, &mut conn).await?;
+        let (event, setup_params) = cfd.start_contract_setup()?;
+        apply_event(&self.process_manager_actor, event).await?;
+
         let taker_id = setup_params.counterparty_identity();
 
         let contract_future = setup_contract::new(
@@ -132,7 +147,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     fn handle(&mut self, _msg: Accepted, ctx: &mut xtra::Context<Self>) {
-        let order_id = self.cfd.id();
+        let order_id = self.order.id;
 
         if self.setup_msg_sender.is_some() {
             tracing::warn!(%order_id, "Contract setup already active");
@@ -177,7 +192,7 @@ impl Actor {
             .taker
             .send(TakerMessage {
                 taker_id: self.taker_id,
-                msg: MakerToTaker::RejectOrder(self.cfd.id()),
+                msg: MakerToTaker::RejectOrder(self.order.id),
             })
             .log_failure("Failed to reject order to taker")
             .await;
@@ -186,7 +201,7 @@ impl Actor {
         // `send` would be a deadlock!
         let _ = self
             .on_completed
-            .send_async_safe(SetupCompleted::rejected(self.cfd.id()))
+            .send_async_safe(SetupCompleted::rejected(self.order.id))
             .await;
 
         ctx.stop();
@@ -225,7 +240,7 @@ impl Actor {
 #[async_trait]
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        let quantity = self.cfd.quantity();
+        let quantity = self.quantity;
         if quantity < self.order.min_quantity || quantity > self.order.max_quantity {
             let reason = format!(
                 "Order rejected: quantity {} not in range [{}, {}]",
@@ -237,12 +252,12 @@ impl xtra::Actor for Actor {
                 .taker
                 .send(maker_inc_connections::TakerMessage {
                     taker_id: self.taker_id,
-                    msg: wire::MakerToTaker::RejectOrder(self.cfd.id()),
+                    msg: wire::MakerToTaker::RejectOrder(self.order.id),
                 })
                 .await;
 
             self.complete(
-                SetupCompleted::rejected_due_to(self.cfd.id(), anyhow::format_err!(reason)),
+                SetupCompleted::rejected_due_to(self.order.id, anyhow::format_err!(reason)),
                 ctx,
             )
             .await;

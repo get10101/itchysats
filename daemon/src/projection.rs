@@ -290,6 +290,13 @@ impl Cfd {
     ) -> Self {
         // First, try to set state based on event.
         let (state, actions) = match event.event {
+            CfdEvent::ContractSetupStarted => {
+                // Don't display profit for contracts that are not yet created.
+                self.profit_btc = None;
+                self.profit_percent = None;
+
+                (CfdState::ContractSetup, vec![])
+            }
             CfdEvent::ContractSetupCompleted { dlc } => {
                 self.details.tx_url_list.push(TxUrl::new(
                     dlc.lock.0.txid(),
@@ -653,6 +660,7 @@ impl From<Order> for CfdOrder {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum CfdState {
     PendingSetup,
+    ContractSetup,
     Rejected,
     PendingOpen,
     Open,
@@ -800,6 +808,8 @@ mod tests {
 
         let json = serde_json::to_string(&CfdState::PendingSetup).unwrap();
         assert_eq!(json, "\"PendingSetup\"");
+        let json = serde_json::to_string(&CfdState::ContractSetup).unwrap();
+        assert_eq!(json, "\"ContractSetup\"");
         let json = serde_json::to_string(&CfdState::Rejected).unwrap();
         assert_eq!(json, "\"Rejected\"");
         let json = serde_json::to_string(&CfdState::PendingOpen).unwrap();
