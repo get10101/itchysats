@@ -14,7 +14,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react",
-    "skipLibCheck": false
+    "skipLibCheck": true // Flip this to false once we use yarn 3. See https://github.com/itchysats/itchysats/pull/923.
   },
   "include": ["src"]
 }
