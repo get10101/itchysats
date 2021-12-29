@@ -2266,7 +2266,7 @@
   dependencies:
     "@types/react" "*"
 
-"@types/react@*", "@types/react@^17.0.0", "@types/react@^17.0.15", "@types/react@^17.0.38":
+"@types/react@*", "@types/react@^17.0.15", "@types/react@^17.0.38":
   version "17.0.38"
   resolved "https://registry.yarnpkg.com/@types/react/-/react-17.0.38.tgz#f24249fefd89357d5fa71f739a686b8d7c7202bd"
   integrity sha512-SI92X1IA+FMnP3qM5m4QReluXzhcmovhZnLNm3pyeQlooi02qI7sLiepEYqT678uNiyc25XfCqxREFpy3W7YhQ==
@@ -5281,13 +5281,6 @@ react-router@6.2.1:
   integrity sha512-2fG0udBtxou9lXtK97eJeET2ki5//UWfQSl1rlJ7quwe6jrktK9FCCc8dQb5QY6jAv3jua8bBQRhhDOM/kVRsg==
   dependencies:
     history "^5.2.0"
-
-react-sse-hooks@^1.0.5:
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/react-sse-hooks/-/react-sse-hooks-1.0.5.tgz#ff4fbc390c125824b29070b9a2a673081d765c65"
-  integrity sha512-NChucs60LgxbVIkjwArZOyKyI6SPRdaIztmRHnKNBlcwbf5IraiIjr8X5XHchcE9Nq78yRpzQIRtUVEebBxOrQ==
-  dependencies:
-    "@types/react" "^17.0.0"
 
 react-style-singleton@^2.1.0:
   version "2.1.1"
