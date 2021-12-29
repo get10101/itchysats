@@ -65,7 +65,7 @@ enum Network {
     /// Run on mainnet.
     Mainnet {
         /// URL to the electrum backend to use for the wallet.
-        #[clap(long, default_value = "ssl://electrum.blockstream.info:50002")]
+        #[clap(long, default_value = "ssl://blockstream.info:700")]
         electrum: String,
 
         #[clap(subcommand)]
@@ -74,7 +74,7 @@ enum Network {
     /// Run on testnet.
     Testnet {
         /// URL to the electrum backend to use for the wallet.
-        #[clap(long, default_value = "ssl://electrum.blockstream.info:60002")]
+        #[clap(long, default_value = "ssl://blockstream.info:993")]
         electrum: String,
 
         #[clap(subcommand)]
