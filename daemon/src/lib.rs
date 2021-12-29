@@ -20,9 +20,8 @@ use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use sqlx::SqlitePool;
 use std::future::Future;
-use std::task::Poll;
+use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::net::TcpListener;
 use tokio::sync::watch;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
@@ -110,7 +109,6 @@ impl Tasks {
 pub struct MakerActorSystem<O, W> {
     pub cfd_actor_addr: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
     wallet_actor_addr: Address<W>,
-    inc_conn_addr: Address<maker_inc_connections::Actor>,
     _tasks: Tasks,
 }
 
@@ -136,6 +134,7 @@ where
         projection_actor: Address<projection::Actor>,
         identity: x25519_dalek::StaticSecret,
         heartbeat_interval: Duration,
+        p2p_socket: SocketAddr,
     ) -> Result<Self>
     where
         M: xtra::Handler<monitor::StartMonitoring>
@@ -184,6 +183,7 @@ where
             Box::new(cfd_actor_addr.clone()),
             identity,
             heartbeat_interval,
+            p2p_socket,
         )));
 
         tasks.add(monitor_ctx.run(monitor_constructor(Box::new(cfd_actor_addr.clone())).await?));
@@ -203,25 +203,8 @@ where
         Ok(Self {
             cfd_actor_addr,
             wallet_actor_addr: wallet_addr,
-            inc_conn_addr,
             _tasks: tasks,
         })
-    }
-
-    pub fn listen_on(&mut self, listener: TcpListener) {
-        let listener_stream = futures::stream::poll_fn(move |ctx| {
-            let message = match futures::ready!(listener.poll_accept(ctx)) {
-                Ok((stream, address)) => {
-                    maker_inc_connections::ListenerMessage::NewConnection { stream, address }
-                }
-                Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
-            };
-
-            Poll::Ready(Some(message))
-        });
-
-        self._tasks
-            .add(self.inc_conn_addr.clone().attach_stream(listener_stream));
     }
 
     pub async fn new_order(

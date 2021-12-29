@@ -25,6 +25,8 @@ use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
@@ -51,8 +53,7 @@ fn oracle_pk() -> schnorrsig::PublicKey {
 }
 
 pub async fn start_both() -> (Maker, Taker) {
-    let maker_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let maker = Maker::start(&MakerConfig::default(), maker_listener).await;
+    let maker = Maker::start(&MakerConfig::default()).await;
     let taker = Taker::start(&TakerConfig::default(), maker.listen_addr, maker.identity).await;
     (maker, taker)
 }
@@ -62,12 +63,20 @@ pub struct MakerConfig {
     seed: Seed,
     pub heartbeat_interval: Duration,
     n_payouts: usize,
+    dedicated_port: Option<u16>,
 }
 
 impl MakerConfig {
     pub fn with_heartbeat_interval(self, interval: Duration) -> Self {
         Self {
             heartbeat_interval: interval,
+            ..self
+        }
+    }
+
+    pub fn with_dedicated_port(self, port: u16) -> Self {
+        Self {
+            dedicated_port: Some(port),
             ..self
         }
     }
@@ -80,6 +89,7 @@ impl Default for MakerConfig {
             seed: Seed::default(),
             heartbeat_interval: HEARTBEAT_INTERVAL_FOR_TEST,
             n_payouts: N_PAYOUTS_FOR_TEST,
+            dedicated_port: None,
         }
     }
 }
@@ -135,7 +145,21 @@ impl Maker {
         &mut self.feeds.connected_takers
     }
 
-    pub async fn start(config: &MakerConfig, listener: TcpListener) -> Self {
+    pub async fn start(config: &MakerConfig) -> Self {
+        let port = match config.dedicated_port {
+            Some(port) => port,
+            None => {
+                // If not explicitly given, get a random free port
+                TcpListener::bind("127.0.0.1:0")
+                    .await
+                    .unwrap()
+                    .local_addr()
+                    .unwrap()
+                    .port()
+            }
+        };
+        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+
         let db = in_memory_db().await;
 
         let mut mocks = mocks::Mocks::default();
@@ -154,7 +178,7 @@ impl Maker {
 
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
-        let mut maker = daemon::MakerActorSystem::new(
+        let maker = daemon::MakerActorSystem::new(
             db.clone(),
             wallet_addr,
             config.oracle_pk,
@@ -165,16 +189,13 @@ impl Maker {
             projection_actor.clone(),
             identity_sk,
             config.heartbeat_interval,
+            address,
         )
         .await
         .unwrap();
 
         let (proj_actor, feeds) = projection::Actor::new(db, Role::Maker, Network::Testnet);
         tasks.add(projection_context.run(proj_actor));
-
-        let address = listener.local_addr().unwrap();
-
-        maker.listen_on(listener);
 
         Self {
             system: maker,
