@@ -17,9 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The new payout transactions spend from the same lock transaction, so the rollover happens off-chain.
   In case a maker rejects a rollover request from a taker the old oracle price event and payout transactions stay in place.
 
+## [0.3.2] - 2021-12-21
+
+Backport https://github.com/itchysats/itchysats/pull/927 in an attempt to fix https://github.com/itchysats/itchysats/issues/759.
+
+## [0.3.1] - 2021-12-20
+
+Backport https://github.com/itchysats/itchysats/pull/924 in an attempt to fix https://github.com/itchysats/itchysats/issues/759.
+
 ## [0.3.0] - 2021-12-09
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.3.0...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.3.2...HEAD
+[0.3.2]: https://github.com/itchysats/itchysats/compare/0.3.1...0.3.2
+[0.3.1]: https://github.com/itchysats/itchysats/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/itchysats/itchysats/compare/d12e04d4954deb2ee9ebdc9...0.3.0
