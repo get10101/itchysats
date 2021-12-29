@@ -267,7 +267,7 @@ impl Actor {
     }
 }
 
-pub struct SendHeartbeat(Identity);
+struct SendHeartbeat(Identity);
 
 #[derive(Debug, thiserror::Error)]
 #[error("No connection to taker {0}")]
