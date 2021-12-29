@@ -6,7 +6,6 @@ use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
 use daemon::maker_cfd;
-use daemon::maker_inc_connections;
 use daemon::model;
 use daemon::model::cfd::OrderId;
 use daemon::model::cfd::Role;
@@ -115,7 +114,7 @@ impl Default for TakerConfig {
 
 /// Maker Test Setup
 pub struct Maker {
-    pub system: MakerActorSystem<OracleActor, maker_inc_connections::Actor, WalletActor>,
+    pub system: MakerActorSystem<OracleActor, WalletActor>,
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     pub listen_addr: SocketAddr,
@@ -161,18 +160,11 @@ impl Maker {
             config.oracle_pk,
             |_| async { Ok(oracle) },
             |_| async { Ok(monitor) },
-            |channel0, channel1, channel2| {
-                maker_inc_connections::Actor::new(
-                    channel0,
-                    channel1,
-                    channel2,
-                    identity_sk,
-                    config.heartbeat_interval,
-                )
-            },
             settlement_interval,
             config.n_payouts,
             projection_actor.clone(),
+            identity_sk,
+            config.heartbeat_interval,
         )
         .await
         .unwrap();
