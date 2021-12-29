@@ -87,12 +87,13 @@ impl Actor {
         // the spawned contract setup task
         self.setup_msg_sender = Some(sender);
 
-        let (setup_params, identity) = self.cfd.start_contract_setup()?;
+        let setup_params = self.cfd.start_contract_setup()?;
+        let taker_id = setup_params.counterparty_identity();
 
         let contract_future = setup_contract::new(
             self.taker.sink().with(move |msg| {
                 future::ok(maker_inc_connections::TakerMessage {
-                    taker_id: identity,
+                    taker_id,
                     msg: wire::MakerToTaker::Protocol { order_id, msg },
                 })
             }),

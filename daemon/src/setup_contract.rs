@@ -3,6 +3,7 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::RevokedCommit;
 use crate::model::cfd::Role;
 use crate::model::cfd::CET_TIMELOCK;
+use crate::model::Identity;
 use crate::model::Leverage;
 use crate::model::Price;
 use crate::model::Usd;
@@ -56,6 +57,7 @@ use xtra::prelude::MessageChannel;
 pub struct SetupParams {
     margin: Amount,
     counterparty_margin: Amount,
+    counterparty_identity: Identity,
     price: Price,
     quantity: Usd,
     leverage: Leverage,
@@ -64,9 +66,11 @@ pub struct SetupParams {
 }
 
 impl SetupParams {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         margin: Amount,
         counterparty_margin: Amount,
+        counterparty_identity: Identity,
         price: Price,
         quantity: Usd,
         leverage: Leverage,
@@ -76,12 +80,17 @@ impl SetupParams {
         Self {
             margin,
             counterparty_margin,
+            counterparty_identity,
             price,
             quantity,
             leverage,
             refund_timelock,
             fee_rate,
         }
+    }
+
+    pub fn counterparty_identity(&self) -> Identity {
+        self.counterparty_identity
     }
 }
 

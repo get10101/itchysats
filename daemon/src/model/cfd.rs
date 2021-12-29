@@ -545,7 +545,7 @@ impl Cfd {
         self.collaborative_settlement_finality || self.cet_finality || self.refund_finality
     }
 
-    pub fn start_contract_setup(&self) -> Result<(SetupParams, Identity)> {
+    pub fn start_contract_setup(&self) -> Result<SetupParams> {
         if self.version > 0 {
             bail!("Start contract not allowed in version {}", self.version)
         }
@@ -564,17 +564,15 @@ impl Cfd {
             }
         };
 
-        Ok((
-            SetupParams::new(
-                margin,
-                counterparty_margin,
-                self.initial_price,
-                self.quantity,
-                self.leverage,
-                self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
-            ),
+        Ok(SetupParams::new(
+            margin,
+            counterparty_margin,
             self.counterparty_network_identity,
+            self.initial_price,
+            self.quantity,
+            self.leverage,
+            self.refund_timelock_in_blocks(),
+            1, // TODO: Where should I get the fee rate from?
         ))
     }
 
