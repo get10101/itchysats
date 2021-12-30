@@ -1,1 +1,2 @@
-ALTER TABLE cfds RENAME COLUMN origin TO role;
+ALTER TABLE
+    cfds RENAME COLUMN origin TO role;

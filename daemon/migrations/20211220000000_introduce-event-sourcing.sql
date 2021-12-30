@@ -1,29 +1,22 @@
-drop table cfd_states;
-drop table cfds;
-
-create table if not exists cfds
-(
-    id                              integer primary key autoincrement,
-    uuid                            text unique not null,
-    position                        text        not null,
-    initial_price                   text        not null,
-    leverage                        integer     not null,
-    settlement_time_interval_hours  integer     not null,
-    quantity_usd                    text        not null,
-    counterparty_network_identity   text        not null,
-    role                            text        not null
+DROP TABLE cfd_states;
+DROP TABLE cfds;
+CREATE TABLE IF NOT EXISTS cfds (
+    id integer PRIMARY KEY autoincrement,
+    uuid text UNIQUE NOT NULL,
+    position text NOT NULL,
+    initial_price text NOT NULL,
+    leverage integer NOT NULL,
+    settlement_time_interval_hours integer NOT NULL,
+    quantity_usd text NOT NULL,
+    counterparty_network_identity text NOT NULL,
+    role text NOT NULL
 );
-
-create unique index if not exists cfds_uuid
-    on cfds (uuid);
-
-create table if not exists events
-(
-    id         integer primary key autoincrement,
-    cfd_id     integer not null,
-    name       text not null,
-    data       text not null,
-    created_at text not null,
-
-    foreign key (cfd_id) references cfds (id)
+CREATE UNIQUE INDEX IF NOT EXISTS cfds_uuid ON cfds (uuid);
+CREATE TABLE IF NOT EXISTS EVENTS (
+    id integer PRIMARY KEY autoincrement,
+    cfd_id integer NOT NULL,
+    name text NOT NULL,
+    data text NOT NULL,
+    created_at text NOT NULL,
+    FOREIGN KEY (cfd_id) REFERENCES cfds (id)
 )

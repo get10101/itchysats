@@ -1,8 +1,6 @@
-alter table orders
-rename column term_seconds to settlement_time_interval_seconds;
-
-alter table orders
-drop column creation_timestamp_nanoseconds;
-
-alter table orders
-drop column term_nanoseconds;
+ALTER TABLE
+    orders RENAME COLUMN term_seconds TO settlement_time_interval_seconds;
+ALTER TABLE
+    orders DROP COLUMN creation_timestamp_nanoseconds;
+ALTER TABLE
+    orders DROP COLUMN term_nanoseconds;

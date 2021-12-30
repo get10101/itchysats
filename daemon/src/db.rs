@@ -8,14 +8,90 @@ use crate::model::Leverage;
 use crate::model::Position;
 use crate::model::Price;
 use crate::model::Usd;
+use anyhow::Context;
 use anyhow::Result;
+use futures::future::BoxFuture;
+use futures::FutureExt;
+use sqlx::migrate::MigrateError;
 use sqlx::pool::PoolConnection;
+use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;
+use std::path::PathBuf;
 use time::Duration;
 
-pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
-    sqlx::migrate!("./migrations").run(pool).await?;
+/// Connects to the SQLite database at the given path.
+///
+/// If the database does not exist, it will be created. If it does exist, we load it and apply all
+/// pending migrations. If applying migrations fails, the old database is backed up next to it and a
+/// new one is created.
+pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
+    async move {
+        let pool = SqlitePool::connect_with(
+            SqliteConnectOptions::new()
+                .create_if_missing(true)
+                .filename(&path),
+        )
+        .await?;
+
+        // Attempt to migrate, early return if successful
+        let error = match run_migrations(&pool).await {
+            Ok(()) => {
+                tracing::info!("Opened database at {}", path.display());
+
+                return Ok(pool);
+            }
+            Err(e) => e,
+        };
+
+        // Attempt to recover from _some_ problems during migration.
+        // These two can happen if someone tampered with the migrations or messed with the DB.
+        if let Some(MigrateError::VersionMissing(_) | MigrateError::VersionMismatch(_)) =
+            error.downcast_ref::<MigrateError>()
+        {
+            tracing::error!("{:#}", error);
+
+            let unix_timestamp = time::OffsetDateTime::now_utc().unix_timestamp();
+            let new_path = PathBuf::from(format!("{}-{}-backup", path.display(), unix_timestamp));
+
+            tracing::info!(
+                "Backing up old database at {} to {}",
+                path.display(),
+                new_path.display()
+            );
+
+            tokio::fs::rename(&path, &new_path)
+                .await
+                .context("Failed to rename database file")?;
+
+            tracing::info!("Starting with a new database!");
+
+            // recurse to reconnect (async recursion requires a `BoxFuture`)
+            return connect(path).await;
+        }
+
+        Err(error)
+    }
+    .boxed()
+}
+
+pub async fn memory() -> Result<SqlitePool> {
+    // Note: Every :memory: database is distinct from every other. So, opening two database
+    // connections each with the filename ":memory:" will create two independent in-memory
+    // databases. see: https://www.sqlite.org/inmemorydb.html
+    let pool = SqlitePool::connect(":memory:").await?;
+
+    run_migrations(&pool).await?;
+
+    Ok(pool)
+}
+
+async fn run_migrations(pool: &SqlitePool) -> Result<()> {
+    sqlx::migrate!("./migrations")
+        .run(pool)
+        .await
+        .context("Failed to run migrations")?;
+
     Ok(())
 }
 
