@@ -12,6 +12,7 @@ use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
+use crate::model::cfd::RolloverCompleted;
 use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementProposal;
 use crate::model::cfd::SetupCompleted;
@@ -25,7 +26,6 @@ use crate::process_manager;
 use crate::projection;
 use crate::projection::Update;
 use crate::rollover_maker;
-use crate::rollover_maker::Completed;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::setup_maker;
 use crate::wallet;
@@ -609,11 +609,11 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, T: 'static, W: 'static> Handler<Completed> for Actor<O, T, W>
+impl<O: 'static, T: 'static, W: 'static> Handler<RolloverCompleted> for Actor<O, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
 {
-    async fn handle(&mut self, _: Completed, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle(&mut self, _: RolloverCompleted, _ctx: &mut Context<Self>) -> Result<()> {
         // TODO: Implement this in terms of event sourcing
 
         Ok(())
@@ -715,10 +715,6 @@ impl Message for TakerConnected {
 }
 
 impl Message for TakerDisconnected {
-    type Result = Result<()>;
-}
-
-impl Message for Completed {
     type Result = Result<()>;
 }
 
