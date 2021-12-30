@@ -38,13 +38,13 @@ pub struct ProtocolMsg(pub wire::RollOverMsg);
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has finished successfully.
-pub struct RolloverSucceeded {
+struct RolloverSucceeded {
     dlc: Dlc,
 }
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has failed.
-pub struct RolloverFailed {
+struct RolloverFailed {
     error: RolloverError,
 }
 
