@@ -109,6 +109,29 @@ impl Tasks {
         let handle = f.spawn_with_handle();
         self.0.push(handle);
     }
+
+    /// Spawn a fallible task on the runtime and remembers the handle.
+    ///
+    /// The task will be stopped if this instance of [`Tasks`] goes out of scope.
+    /// If the task fails, the `err_handler` will be invoked.
+    pub fn add_fallible<E, EF>(
+        &mut self,
+        f: impl Future<Output = Result<(), E>> + Send + 'static,
+        err_handler: impl FnOnce(E) -> EF + Send + 'static,
+    ) where
+        E: Send + 'static,
+        EF: Future<Output = ()> + Send + 'static,
+    {
+        let fut = async move {
+            match f.await {
+                Ok(()) => {}
+                Err(err) => err_handler(err).await,
+            }
+        };
+
+        let handle = fut.spawn_with_handle();
+        self.0.push(handle);
+    }
 }
 
 pub struct MakerActorSystem<O, T, W> {
