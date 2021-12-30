@@ -613,8 +613,29 @@ impl<O: 'static, T: 'static, W: 'static> Handler<RolloverCompleted> for Actor<O,
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
 {
-    async fn handle(&mut self, _: RolloverCompleted, _ctx: &mut Context<Self>) -> Result<()> {
-        // TODO: Implement this in terms of event sourcing
+    async fn handle(&mut self, msg: RolloverCompleted, _ctx: &mut Context<Self>) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let order_id = msg.order_id();
+
+        let cfd = load_cfd(order_id, &mut conn).await?;
+
+        let event = match cfd.rollover(msg)? {
+            Some(event) => event,
+            None => return Ok(()),
+        };
+
+        match self
+            .process_manager
+            .send(process_manager::Event::new(event.clone()))
+            .await?
+        {
+            Ok(()) => {
+                tracing::info!("Rollover completed");
+            }
+            Err(e) => {
+                tracing::warn!("Failed to process {:?}: {:#}", event, e);
+            }
+        }
 
         Ok(())
     }
