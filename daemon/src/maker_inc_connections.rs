@@ -11,6 +11,7 @@ use crate::model::Identity;
 use crate::noise;
 use crate::noise::TransportStateExt;
 use crate::rollover_maker;
+use crate::send_async_safe::SendAsyncSafe;
 use crate::setup_maker;
 use crate::tokio_ext::FutureExt;
 use crate::wire;
@@ -24,17 +25,17 @@ use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use async_trait::async_trait;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
 use std::collections::HashMap;
-use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 use xtra::prelude::*;
-use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 
 pub struct BroadcastOrder(pub Option<Order>);
@@ -85,16 +86,6 @@ pub struct TakerMessage {
     pub msg: wire::MakerToTaker,
 }
 
-pub enum ListenerMessage {
-    NewConnection {
-        stream: TcpStream,
-        address: SocketAddr,
-    },
-    Error {
-        source: io::Error,
-    },
-}
-
 pub struct Actor {
     connections: HashMap<Identity, Connection>,
     taker_connected_channel: Box<dyn MessageChannel<TakerConnected>>,
@@ -102,6 +93,7 @@ pub struct Actor {
     taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
+    p2p_socket: SocketAddr,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
     rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
@@ -137,6 +129,7 @@ impl Actor {
         taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
         noise_priv_key: x25519_dalek::StaticSecret,
         heartbeat_interval: Duration,
+        p2p_socket: SocketAddr,
     ) -> Self {
         Self {
             connections: HashMap::new(),
@@ -145,6 +138,7 @@ impl Actor {
             taker_msg_channel: taker_msg_channel.clone_channel(),
             noise_priv_key,
             heartbeat_interval,
+            p2p_socket,
             setup_actors: AddressMap::default(),
             settlement_actors: AddressMap::default(),
             rollover_actors: AddressMap::default(),
@@ -179,6 +173,59 @@ impl Actor {
         }
 
         Ok(())
+    }
+
+    async fn start_listener(&mut self, ctx: &mut xtra::Context<Self>) {
+        let this = ctx.address().expect("we are alive");
+        let address = self.p2p_socket;
+
+        let listener = match TcpListener::bind(address)
+            .await
+            .with_context(|| format!("Failed to bind to socket {}", address))
+        {
+            Ok(listener) => listener,
+            Err(error) => {
+                let _ = this.send_async_safe(ListenerFailed { error }).await;
+                return;
+            }
+        };
+
+        tracing::info!(
+            "Listening on {}",
+            listener
+                .local_addr()
+                .expect("listener to have local address")
+        );
+
+        let noise_priv_key = self.noise_priv_key.clone();
+        let heartbeat_interval = self.heartbeat_interval;
+
+        self.tasks.add(async move {
+            let mut tasks = Tasks::default();
+
+            loop {
+                let new_connection = listener
+                    .accept()
+                    .await
+                    .context("Failed to accept new connection");
+
+                match new_connection {
+                    Ok((stream, address)) => {
+                        tasks.add(setup_new_connection(
+                            this.clone(),
+                            noise_priv_key.clone(),
+                            heartbeat_interval,
+                            stream,
+                            address,
+                        ));
+                    }
+                    Err(error) => {
+                        let _ = this.send(ListenerFailed { error }).await;
+                        return;
+                    }
+                }
+            }
+        });
     }
 }
 
@@ -263,33 +310,6 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle(&mut self, msg: ListenerMessage, ctx: &mut xtra::Context<Self>) -> KeepRunning {
-        let this = ctx.address().expect("we are alive");
-        let noise_priv_key = self.noise_priv_key.clone();
-        let heartbeat_interval = self.heartbeat_interval;
-
-        match msg {
-            ListenerMessage::NewConnection { stream, address } => {
-                self.tasks.add(setup_new_connection(
-                    this,
-                    noise_priv_key,
-                    heartbeat_interval,
-                    stream,
-                    address,
-                ));
-
-                KeepRunning::Yes
-            }
-            ListenerMessage::Error { source } => {
-                tracing::warn!("TCP listener produced an error: {}", source);
-
-                // Maybe we should move the actual listening on the socket into here and restart the
-                // actor upon an error?
-                KeepRunning::Yes
-            }
-        }
-    }
-
     async fn handle_read_fail(&mut self, msg: ReadFail) {
         let taker_id = msg.0;
         tracing::error!(%taker_id, "Failed to read incoming messages from taker");
@@ -307,6 +327,11 @@ impl Actor {
             })
             .await;
         self.connections.insert(connection.taker, connection);
+    }
+
+    async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
+        tracing::warn!("TCP listener failed: {:#}", msg.error);
+        ctx.stop();
     }
 
     async fn handle_rollover_proposed(&mut self, message: maker_cfd::RollOverProposed) {
@@ -492,4 +517,13 @@ struct ConnectionReady(Connection);
 
 struct ReadFail(Identity);
 
-impl xtra::Actor for Actor {}
+struct ListenerFailed {
+    error: anyhow::Error,
+}
+
+#[async_trait]
+impl xtra::Actor for Actor {
+    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        self.start_listener(ctx).await;
+    }
+}

@@ -6,7 +6,6 @@ use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
 use daemon::maker_cfd;
-use daemon::maker_inc_connections;
 use daemon::model;
 use daemon::model::cfd::OrderId;
 use daemon::model::cfd::Role;
@@ -26,6 +25,8 @@ use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
 use rust_decimal_macros::dec;
 use sqlx::SqlitePool;
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
@@ -52,8 +53,7 @@ fn oracle_pk() -> schnorrsig::PublicKey {
 }
 
 pub async fn start_both() -> (Maker, Taker) {
-    let maker_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let maker = Maker::start(&MakerConfig::default(), maker_listener).await;
+    let maker = Maker::start(&MakerConfig::default()).await;
     let taker = Taker::start(&TakerConfig::default(), maker.listen_addr, maker.identity).await;
     (maker, taker)
 }
@@ -63,12 +63,20 @@ pub struct MakerConfig {
     seed: Seed,
     pub heartbeat_interval: Duration,
     n_payouts: usize,
+    dedicated_port: Option<u16>,
 }
 
 impl MakerConfig {
     pub fn with_heartbeat_interval(self, interval: Duration) -> Self {
         Self {
             heartbeat_interval: interval,
+            ..self
+        }
+    }
+
+    pub fn with_dedicated_port(self, port: u16) -> Self {
+        Self {
+            dedicated_port: Some(port),
             ..self
         }
     }
@@ -81,6 +89,7 @@ impl Default for MakerConfig {
             seed: Seed::default(),
             heartbeat_interval: HEARTBEAT_INTERVAL_FOR_TEST,
             n_payouts: N_PAYOUTS_FOR_TEST,
+            dedicated_port: None,
         }
     }
 }
@@ -115,7 +124,7 @@ impl Default for TakerConfig {
 
 /// Maker Test Setup
 pub struct Maker {
-    pub system: MakerActorSystem<OracleActor, maker_inc_connections::Actor, WalletActor>,
+    pub system: MakerActorSystem<OracleActor, WalletActor>,
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     pub listen_addr: SocketAddr,
@@ -136,7 +145,21 @@ impl Maker {
         &mut self.feeds.connected_takers
     }
 
-    pub async fn start(config: &MakerConfig, listener: TcpListener) -> Self {
+    pub async fn start(config: &MakerConfig) -> Self {
+        let port = match config.dedicated_port {
+            Some(port) => port,
+            None => {
+                // If not explicitly given, get a random free port
+                TcpListener::bind("127.0.0.1:0")
+                    .await
+                    .unwrap()
+                    .local_addr()
+                    .unwrap()
+                    .port()
+            }
+        };
+        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+
         let db = in_memory_db().await;
 
         let mut mocks = mocks::Mocks::default();
@@ -155,34 +178,24 @@ impl Maker {
 
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
-        let mut maker = daemon::MakerActorSystem::new(
+        let maker = daemon::MakerActorSystem::new(
             db.clone(),
             wallet_addr,
             config.oracle_pk,
             |_| async { Ok(oracle) },
             |_| async { Ok(monitor) },
-            |channel0, channel1, channel2| {
-                maker_inc_connections::Actor::new(
-                    channel0,
-                    channel1,
-                    channel2,
-                    identity_sk,
-                    config.heartbeat_interval,
-                )
-            },
             settlement_interval,
             config.n_payouts,
             projection_actor.clone(),
+            identity_sk,
+            config.heartbeat_interval,
+            address,
         )
         .await
         .unwrap();
 
         let (proj_actor, feeds) = projection::Actor::new(db, Role::Maker, Network::Testnet);
         tasks.add(projection_context.run(proj_actor));
-
-        let address = listener.local_addr().unwrap();
-
-        maker.listen_on(listener);
 
         Self {
             system: maker,

@@ -1,7 +1,6 @@
 use anyhow::Result;
 use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
-use daemon::maker_inc_connections;
 use daemon::model::cfd::OrderId;
 use daemon::model::Identity;
 use daemon::model::Price;
@@ -31,7 +30,7 @@ use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
 
-pub type Maker = MakerActorSystem<oracle::Actor, maker_inc_connections::Actor, wallet::Actor>;
+pub type Maker = MakerActorSystem<oracle::Actor, wallet::Actor>;
 
 #[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]

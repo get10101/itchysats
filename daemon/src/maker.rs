@@ -10,7 +10,6 @@ use daemon::auth;
 use daemon::bitmex_price_feed;
 use daemon::db;
 use daemon::logger;
-use daemon::maker_inc_connections;
 use daemon::model::cfd::Role;
 use daemon::monitor;
 use daemon::oracle;
@@ -215,12 +214,6 @@ async fn main() -> Result<()> {
     let p2p_socket = format!("0.0.0.0:{}", opts.p2p_port)
         .parse::<SocketAddr>()
         .unwrap();
-    let listener = tokio::net::TcpListener::bind(p2p_socket)
-        .await
-        .with_context(|| format!("Failed to listen on {}", p2p_socket))?;
-    let local_addr = listener.local_addr().unwrap();
-
-    tracing::info!("Listening on {}", local_addr);
 
     let db = SqlitePool::connect_with(
         SqliteConnectOptions::new()
@@ -237,7 +230,7 @@ async fn main() -> Result<()> {
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
-    let mut maker = MakerActorSystem::new(
+    let maker = MakerActorSystem::new(
         db.clone(),
         wallet.clone(),
         oracle,
@@ -248,18 +241,12 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(db.clone(), electrum, channel)
             }
         },
-        |channel0, channel1, channel2| {
-            maker_inc_connections::Actor::new(
-                channel0,
-                channel1,
-                channel2,
-                identity_sk,
-                HEARTBEAT_INTERVAL,
-            )
-        },
         SETTLEMENT_INTERVAL,
         N_PAYOUTS,
         projection_actor.clone(),
+        identity_sk,
+        HEARTBEAT_INTERVAL,
+        p2p_socket,
     )
     .await?;
 
@@ -274,8 +261,6 @@ async fn main() -> Result<()> {
     let (proj_actor, projection_feeds) =
         projection::Actor::new(db.clone(), Role::Maker, bitcoin_network);
     tasks.add(projection_context.run(proj_actor));
-
-    maker.listen_on(listener);
 
     rocket::custom(figment)
         .manage(projection_feeds)

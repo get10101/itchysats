@@ -1,8 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![warn(clippy::disallowed_method)]
 use crate::bitcoin::Txid;
-use crate::maker_cfd::FromTaker;
-use crate::maker_cfd::TakerConnected;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
@@ -20,14 +18,11 @@ use bdk::FeeRate;
 use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
-use maker_cfd::TakerDisconnected;
 use sqlx::SqlitePool;
 use std::future::Future;
-use std::task::Poll;
+use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::net::TcpListener;
 use tokio::sync::watch;
-use xtra::message_channel::MessageChannel;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
 use xtra::Address;
@@ -111,27 +106,17 @@ impl Tasks {
     }
 }
 
-pub struct MakerActorSystem<O, T, W> {
-    pub cfd_actor_addr: Address<maker_cfd::Actor<O, T, W>>,
+pub struct MakerActorSystem<O, W> {
+    pub cfd_actor_addr: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
     wallet_actor_addr: Address<W>,
-    inc_conn_addr: Address<T>,
     _tasks: Tasks,
 }
 
-impl<O, T, W> MakerActorSystem<O, T, W>
+impl<O, W> MakerActorSystem<O, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
         + xtra::Handler<oracle::Sync>,
-    T: xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>
-        + xtra::Handler<maker_inc_connections::ConfirmOrder>
-        + xtra::Handler<Stopping<setup_maker::Actor>>
-        + xtra::Handler<maker_inc_connections::settlement::Response>
-        + xtra::Handler<Stopping<collab_settlement_maker::Actor>>
-        + xtra::Handler<Stopping<rollover_maker::Actor>>
-        + xtra::Handler<maker_cfd::RollOverProposed>
-        + xtra::Handler<maker_inc_connections::ListenerMessage>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::TryBroadcastTransaction>
@@ -144,14 +129,12 @@ where
         oracle_pk: schnorrsig::PublicKey,
         oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> FO,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> FM,
-        inc_conn_constructor: impl FnOnce(
-            Box<dyn MessageChannel<TakerConnected>>,
-            Box<dyn MessageChannel<TakerDisconnected>>,
-            Box<dyn MessageChannel<FromTaker>>,
-        ) -> T,
         settlement_interval: time::Duration,
         n_payouts: usize,
         projection_actor: Address<projection::Actor>,
+        identity: x25519_dalek::StaticSecret,
+        heartbeat_interval: Duration,
+        p2p_socket: SocketAddr,
     ) -> Result<Self>
     where
         M: xtra::Handler<monitor::StartMonitoring>
@@ -194,10 +177,13 @@ where
 
         tasks.add(cfd_actor_fut);
 
-        tasks.add(inc_conn_ctx.run(inc_conn_constructor(
+        tasks.add(inc_conn_ctx.run(maker_inc_connections::Actor::new(
             Box::new(cfd_actor_addr.clone()),
             Box::new(cfd_actor_addr.clone()),
             Box::new(cfd_actor_addr.clone()),
+            identity,
+            heartbeat_interval,
+            p2p_socket,
         )));
 
         tasks.add(monitor_ctx.run(monitor_constructor(Box::new(cfd_actor_addr.clone())).await?));
@@ -217,25 +203,8 @@ where
         Ok(Self {
             cfd_actor_addr,
             wallet_actor_addr: wallet_addr,
-            inc_conn_addr,
             _tasks: tasks,
         })
-    }
-
-    pub fn listen_on(&mut self, listener: TcpListener) {
-        let listener_stream = futures::stream::poll_fn(move |ctx| {
-            let message = match futures::ready!(listener.poll_accept(ctx)) {
-                Ok((stream, address)) => {
-                    maker_inc_connections::ListenerMessage::NewConnection { stream, address }
-                }
-                Err(e) => maker_inc_connections::ListenerMessage::Error { source: e },
-            };
-
-            Poll::Ready(Some(message))
-        });
-
-        self._tasks
-            .add(self.inc_conn_addr.clone().attach_stream(listener_stream));
     }
 
     pub async fn new_order(

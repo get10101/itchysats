@@ -187,16 +187,12 @@ async fn taker_notices_lack_of_maker() {
 
     let _guard = init_tracing();
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-
-    let local_addr = listener.local_addr().unwrap();
-
-    let maker_config = MakerConfig::default().with_heartbeat_interval(short_interval);
-
-    let maker = Maker::start(&maker_config, listener).await;
+    let maker_config = MakerConfig::default()
+        .with_heartbeat_interval(short_interval)
+        .with_dedicated_port(35123); // set a fixed port so the taker can reconnect
+    let maker = Maker::start(&maker_config).await;
 
     let taker_config = TakerConfig::default().with_heartbeat_timeout(short_interval * 2);
-
     let mut taker = Taker::start(&taker_config, maker.listen_addr, maker.identity).await;
 
     assert_eq!(
@@ -213,9 +209,7 @@ async fn taker_notices_lack_of_maker() {
         next(taker.maker_status_feed()).await.unwrap(),
     );
 
-    let listener = tokio::net::TcpListener::bind(local_addr).await.unwrap();
-
-    let _maker = Maker::start(&maker_config, listener).await;
+    let _maker = Maker::start(&maker_config).await;
 
     sleep(taker_config.heartbeat_timeout).await;
 
@@ -249,12 +243,8 @@ async fn maker_notices_lack_of_taker() {
 /// `announcement` is used during Cfd's creation.
 async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker, Taker, OrderId) {
     let heartbeat_interval = Duration::from_secs(60);
-    let maker_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let mut maker = Maker::start(
-        &MakerConfig::default().with_heartbeat_interval(heartbeat_interval),
-        maker_listener,
-    )
-    .await;
+    let mut maker =
+        Maker::start(&MakerConfig::default().with_heartbeat_interval(heartbeat_interval)).await;
     let mut taker = Taker::start(
         &TakerConfig::default().with_heartbeat_timeout(heartbeat_interval * 2),
         maker.listen_addr,
