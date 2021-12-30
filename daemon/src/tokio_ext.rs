@@ -29,7 +29,8 @@ pub trait FutureExt: Future + Sized {
     /// The task will be stopped when the handle gets dropped.
     fn spawn_with_handle(self) -> RemoteHandle<Self::Output>
     where
-        Self: Future<Output = ()> + Send + Any + 'static;
+        Self: Send + Any + 'static,
+        Self::Output: Send;
 }
 
 impl<F> FutureExt for F
@@ -40,12 +41,13 @@ where
         timeout(duration, self)
     }
 
-    fn spawn_with_handle(self) -> RemoteHandle<()>
+    fn spawn_with_handle(self) -> RemoteHandle<F::Output>
     where
-        Self: Future<Output = ()> + Send + Any + 'static,
+        Self: Send + Any + 'static,
+        F::Output: Send,
     {
         debug_assert!(
-            TypeId::of::<RemoteHandle<()>>() != self.type_id(),
+            TypeId::of::<RemoteHandle<Self::Output>>() != self.type_id(),
             "RemoteHandle<()> is a handle to already spawned task",
         );
 
