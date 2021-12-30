@@ -248,7 +248,7 @@ impl Maker {
     pub async fn accept_rollover_proposal(&self, order_id: OrderId) {
         self.system
             .cfd_actor_addr
-            .send(maker_cfd::AcceptRollOver { order_id })
+            .send(maker_cfd::AcceptRollover { order_id })
             .await
             .unwrap()
             .unwrap();
@@ -257,7 +257,7 @@ impl Maker {
     pub async fn reject_rollover_proposal(&self, order_id: OrderId) {
         self.system
             .cfd_actor_addr
-            .send(maker_cfd::RejectRollOver { order_id })
+            .send(maker_cfd::RejectRollover { order_id })
             .await
             .unwrap()
             .unwrap();

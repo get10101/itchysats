@@ -423,7 +423,7 @@ impl Actor {
                     tracing::error!(%order_id, "No active contract setup");
                 }
             },
-            RollOverProtocol { order_id, msg } => {
+            RolloverProtocol { order_id, msg } => {
                 if self
                     .rollover_actors
                     .send(&order_id, rollover_maker::ProtocolMsg(msg))

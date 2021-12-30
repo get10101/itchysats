@@ -201,7 +201,7 @@ pub struct ProposeSettlement {
     pub address: xtra::Address<collab_settlement_taker::Actor>,
 }
 
-pub struct ProposeRollOver {
+pub struct ProposeRollover {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
     pub address: xtra::Address<rollover_taker::Actor>,
@@ -295,15 +295,15 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_propose_roll_over(&mut self, msg: ProposeRollOver) -> Result<()> {
-        let ProposeRollOver {
+    async fn handle_propose_rollover(&mut self, msg: ProposeRollover) -> Result<()> {
+        let ProposeRollover {
             order_id,
             timestamp,
             address,
         } = msg;
 
         self.state
-            .send(wire::TakerToMaker::ProposeRollOver {
+            .send(wire::TakerToMaker::ProposeRollover {
                 order_id,
                 timestamp,
             })
@@ -482,7 +482,7 @@ impl Actor {
                     tracing::warn!(%order_id, "No active collaborative settlement");
                 }
             }
-            wire::MakerToTaker::ConfirmRollOver {
+            wire::MakerToTaker::ConfirmRollover {
                 order_id,
                 oracle_event_id,
             } => {
@@ -490,7 +490,7 @@ impl Actor {
                     .rollover_actors
                     .send(
                         &order_id,
-                        rollover_taker::RollOverAccepted { oracle_event_id },
+                        rollover_taker::RolloverAccepted { oracle_event_id },
                     )
                     .await
                     .is_err()
@@ -498,17 +498,17 @@ impl Actor {
                     tracing::warn!(%order_id, "No active rollover");
                 }
             }
-            wire::MakerToTaker::RejectRollOver(order_id) => {
+            wire::MakerToTaker::RejectRollover(order_id) => {
                 if self
                     .rollover_actors
-                    .send(&order_id, rollover_taker::RollOverRejected)
+                    .send(&order_id, rollover_taker::RolloverRejected)
                     .await
                     .is_err()
                 {
                     tracing::warn!(%order_id, "No active rollover");
                 }
             }
-            wire::MakerToTaker::RollOverProtocol { order_id, msg } => {
+            wire::MakerToTaker::RolloverProtocol { order_id, msg } => {
                 if self.rollover_actors.send(&order_id, msg).await.is_err() {
                     tracing::warn!(%order_id, "No active rollover");
                 }

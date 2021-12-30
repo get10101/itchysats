@@ -17,7 +17,7 @@ use crate::schnorrsig;
 use crate::setup_contract;
 use crate::wire;
 use crate::wire::MakerToTaker;
-use crate::wire::RollOverMsg;
+use crate::wire::RolloverMsg;
 use crate::Stopping;
 use crate::Tasks;
 use anyhow::Context as _;
@@ -31,11 +31,11 @@ use xtra::Context;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 
-pub struct AcceptRollOver;
+pub struct AcceptRollover;
 
-pub struct RejectRollOver;
+pub struct RejectRollover;
 
-pub struct ProtocolMsg(pub wire::RollOverMsg);
+pub struct ProtocolMsg(pub wire::RolloverMsg);
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has finished successfully.
@@ -55,7 +55,7 @@ pub struct Actor {
     n_payouts: usize,
     taker_id: Identity,
     oracle_pk: schnorrsig::PublicKey,
-    sent_from_taker: Option<UnboundedSender<RollOverMsg>>,
+    sent_from_taker: Option<UnboundedSender<RolloverMsg>>,
     oracle_actor: Box<dyn MessageChannel<GetAnnouncement>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     process_manager: xtra::Address<process_manager::Actor>,
@@ -152,7 +152,7 @@ impl Actor {
 
         self.sent_from_taker = Some(sender);
 
-        tracing::debug!(%order_id, "Maker accepts a roll_over proposal" );
+        tracing::debug!(%order_id, "Maker accepts a rollover proposal" );
 
         let mut conn = self.db.acquire().await.context("Failed to connect to DB")?;
         let cfd = load_cfd(self.order_id, &mut conn)
@@ -175,7 +175,7 @@ impl Actor {
         self.send_to_taker_actor
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::ConfirmRollOver {
+                msg: wire::MakerToTaker::ConfirmRollover {
                     order_id,
                     oracle_event_id,
                 },
@@ -195,7 +195,7 @@ impl Actor {
             self.send_to_taker_actor.sink().with(move |msg| {
                 future::ok(maker_inc_connections::TakerMessage {
                     taker_id,
-                    msg: wire::MakerToTaker::RollOverProtocol { order_id, msg },
+                    msg: wire::MakerToTaker::RolloverProtocol { order_id, msg },
                 })
             }),
             receiver,
@@ -229,7 +229,7 @@ impl Actor {
         self.send_to_taker_actor
             .send(TakerMessage {
                 taker_id: self.taker_id,
-                msg: MakerToTaker::RejectRollOver(self.order_id),
+                msg: MakerToTaker::RejectRollover(self.order_id),
             })
             .await
             .context("Maker connection actor disconnected")?
@@ -309,7 +309,7 @@ impl xtra::Actor for Actor {
 impl Actor {
     async fn handle_accept_rollover(
         &mut self,
-        _msg: AcceptRollOver,
+        _msg: AcceptRollover,
         ctx: &mut xtra::Context<Self>,
     ) {
         if let Err(error) = self.accept(ctx).await {
@@ -326,7 +326,7 @@ impl Actor {
 
     async fn handle_reject_rollover(
         &mut self,
-        _msg: RejectRollOver,
+        _msg: RejectRollover,
         ctx: &mut xtra::Context<Self>,
     ) {
         if let Err(error) = self.reject(ctx).await {

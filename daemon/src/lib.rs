@@ -275,14 +275,14 @@ where
 
     pub async fn accept_rollover(&self, order_id: OrderId) -> Result<()> {
         self.cfd_actor_addr
-            .send(maker_cfd::AcceptRollOver { order_id })
+            .send(maker_cfd::AcceptRollover { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn reject_rollover(&self, order_id: OrderId) -> Result<()> {
         self.cfd_actor_addr
-            .send(maker_cfd::RejectRollOver { order_id })
+            .send(maker_cfd::RejectRollover { order_id })
             .await??;
         Ok(())
     }

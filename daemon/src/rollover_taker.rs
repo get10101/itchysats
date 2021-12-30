@@ -14,7 +14,7 @@ use crate::oracle::GetAnnouncement;
 use crate::process_manager;
 use crate::setup_contract;
 use crate::wire;
-use crate::wire::RollOverMsg;
+use crate::wire::RolloverMsg;
 use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
@@ -40,7 +40,7 @@ pub struct Actor {
     get_announcement: Box<dyn MessageChannel<GetAnnouncement>>,
     process_manager: xtra::Address<process_manager::Actor>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
-    rollover_msg_sender: Option<UnboundedSender<RollOverMsg>>,
+    rollover_msg_sender: Option<UnboundedSender<RolloverMsg>>,
     tasks: Tasks,
     db: sqlx::SqlitePool,
 }
@@ -90,7 +90,7 @@ impl Actor {
 
         tracing::trace!(order_id=%self.id, "Proposing rollover");
         self.maker
-            .send(connection::ProposeRollOver {
+            .send(connection::ProposeRollover {
                 order_id: self.id,
                 timestamp: Timestamp::now(),
                 address: this,
@@ -103,10 +103,10 @@ impl Actor {
 
     async fn handle_confirmed(
         &mut self,
-        msg: RollOverAccepted,
+        msg: RolloverAccepted,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<(), RolloverError> {
-        let RollOverAccepted { oracle_event_id } = msg;
+        let RolloverAccepted { oracle_event_id } = msg;
         let order_id = self.id;
 
         let mut conn = self.db.acquire().await.context("Failed to connect to DB")?;
@@ -130,14 +130,14 @@ impl Actor {
 
         tracing::info!(%order_id, "Rollover proposal got accepted");
 
-        let (sender, receiver) = mpsc::unbounded::<RollOverMsg>();
+        let (sender, receiver) = mpsc::unbounded::<RolloverMsg>();
         // store the writing end to forward messages from the maker to
         // the spawned rollover task
         self.rollover_msg_sender = Some(sender);
 
         let rollover_fut = setup_contract::roll_over(
             xtra::message_channel::MessageChannel::sink(&self.maker).with(move |msg| {
-                future::ok(wire::TakerToMaker::RollOverProtocol { order_id, msg })
+                future::ok(wire::TakerToMaker::RolloverProtocol { order_id, msg })
             }),
             receiver,
             (self.oracle_pk, announcement),
@@ -160,7 +160,7 @@ impl Actor {
         Ok(())
     }
 
-    async fn forward_protocol_msg(&mut self, msg: wire::RollOverMsg) -> Result<(), RolloverError> {
+    async fn forward_protocol_msg(&mut self, msg: wire::RolloverMsg) -> Result<(), RolloverError> {
         self.rollover_msg_sender
             .as_mut()
             .context("Rollover task is not active")? // Sender is set once `Accepted` is received.
@@ -255,7 +255,7 @@ impl xtra::Actor for Actor {
 impl Actor {
     pub async fn handle_confirm_rollover(
         &mut self,
-        msg: RollOverAccepted,
+        msg: RolloverAccepted,
         ctx: &mut xtra::Context<Self>,
     ) {
         if let Err(error) = self.handle_confirmed(msg, ctx).await {
@@ -270,7 +270,7 @@ impl Actor {
         }
     }
 
-    pub async fn reject_rollover(&mut self, _: RollOverRejected, ctx: &mut xtra::Context<Self>) {
+    pub async fn reject_rollover(&mut self, _: RolloverRejected, ctx: &mut xtra::Context<Self>) {
         let order_id = self.id;
 
         tracing::info!(%order_id, "Rollover proposal got rejected");
@@ -328,7 +328,7 @@ impl Actor {
 
     pub async fn handle_protocol_msg(
         &mut self,
-        msg: wire::RollOverMsg,
+        msg: wire::RolloverMsg,
         ctx: &mut xtra::Context<Self>,
     ) {
         if let Err(error) = self.forward_protocol_msg(msg).await {
@@ -347,14 +347,14 @@ impl Actor {
 /// Message sent from the `connection::Actor` to the
 /// `rollover_taker::Actor` to notify that the maker has accepted the
 /// rollover proposal.
-pub struct RollOverAccepted {
+pub struct RolloverAccepted {
     pub oracle_event_id: BitMexPriceEventId,
 }
 
 /// Message sent from the `connection::Actor` to the
 /// `rollover_taker::Actor` to notify that the maker has rejected the
 /// rollover proposal.
-pub struct RollOverRejected;
+pub struct RolloverRejected;
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has finished successfully.

@@ -201,8 +201,8 @@ async fn rollover_an_open_cfd() {
     taker.trigger_rollover(order_id).await;
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert_eq!(taker_cfd.state, CfdState::OutgoingRollOverProposal);
-    assert_eq!(maker_cfd.state, CfdState::IncomingRollOverProposal);
+    assert_eq!(taker_cfd.state, CfdState::OutgoingRolloverProposal);
+    assert_eq!(maker_cfd.state, CfdState::IncomingRolloverProposal);
 
     maker.accept_rollover_proposal(order_id).await;
 
@@ -220,8 +220,8 @@ async fn maker_rejects_rollover_of_open_cfd() {
     taker.trigger_rollover(order_id).await;
 
     let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert_eq!(taker_cfd.state, CfdState::OutgoingRollOverProposal);
-    assert_eq!(maker_cfd.state, CfdState::IncomingRollOverProposal);
+    assert_eq!(taker_cfd.state, CfdState::OutgoingRolloverProposal);
+    assert_eq!(maker_cfd.state, CfdState::IncomingRolloverProposal);
 
     maker.reject_rollover_proposal(order_id).await;
 

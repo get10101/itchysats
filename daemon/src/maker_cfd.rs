@@ -52,10 +52,10 @@ pub struct AcceptSettlement {
 pub struct RejectSettlement {
     pub order_id: OrderId,
 }
-pub struct AcceptRollOver {
+pub struct AcceptRollover {
     pub order_id: OrderId,
 }
-pub struct RejectRollOver {
+pub struct RejectRollover {
     pub order_id: OrderId,
 }
 pub struct Commit {
@@ -86,14 +86,14 @@ pub struct Actor<O, T, W> {
     wallet: Address<W>,
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
-    projection_actor: Address<projection::Actor>,
-    process_manager_actor: Address<process_manager::Actor>,
+    projection: Address<projection::Actor>,
+    process_manager: Address<process_manager::Actor>,
     rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
     takers: Address<T>,
     current_order: Option<Order>,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
-    oracle_actor: Address<O>,
+    oracle: Address<O>,
     connected_takers: HashSet<Identity>,
     n_payouts: usize,
     tasks: Tasks,
@@ -106,10 +106,10 @@ impl<O, T, W> Actor<O, T, W> {
         wallet: Address<W>,
         settlement_interval: Duration,
         oracle_pk: schnorrsig::PublicKey,
-        projection_actor: Address<projection::Actor>,
-        process_manager_actor: Address<process_manager::Actor>,
+        projection: Address<projection::Actor>,
+        process_manager: Address<process_manager::Actor>,
         takers: Address<T>,
-        oracle_actor: Address<O>,
+        oracle: Address<O>,
         n_payouts: usize,
     ) -> Self {
         Self {
@@ -117,13 +117,13 @@ impl<O, T, W> Actor<O, T, W> {
             wallet,
             settlement_interval,
             oracle_pk,
-            projection_actor,
-            process_manager_actor,
+            projection,
+            process_manager,
             rollover_actors: AddressMap::default(),
             takers,
             current_order: None,
             setup_actors: AddressMap::default(),
-            oracle_actor,
+            oracle,
             n_payouts,
             connected_takers: HashSet::new(),
             settlement_actors: AddressMap::default(),
@@ -132,7 +132,7 @@ impl<O, T, W> Actor<O, T, W> {
     }
 
     async fn update_connected_takers(&mut self) -> Result<()> {
-        self.projection_actor
+        self.projection
             .send(Update(
                 self.connected_takers
                     .clone()
@@ -181,7 +181,7 @@ where
     W: 'static,
     Self: xtra::Handler<Stopping<rollover_maker::Actor>>,
 {
-    async fn handle_propose_roll_over(
+    async fn handle_propose_rollover(
         &mut self,
         RolloverProposal { order_id, .. }: RolloverProposal,
         taker_id: Identity,
@@ -196,9 +196,9 @@ where
             &self.takers,
             taker_id,
             self.oracle_pk,
-            &self.oracle_actor,
+            &self.oracle,
             (&self.takers, &this),
-            self.process_manager_actor.clone(),
+            self.process_manager.clone(),
             &self.takers,
             self.db.clone(),
         )
@@ -284,13 +284,13 @@ where
             .send_async_safe(maker_inc_connections::BroadcastOrder(None))
             .await?;
 
-        self.projection_actor.send(projection::Update(None)).await?;
-        insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
+        self.projection.send(projection::Update(None)).await?;
+        insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection).await?;
 
         // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any
         // state
         let announcement = self
-            .oracle_actor
+            .oracle
             .send(oracle::GetAnnouncement(current_order.oracle_event_id))
             .await??;
 
@@ -301,7 +301,7 @@ where
 
         let (addr, fut) = setup_maker::Actor::new(
             self.db.clone(),
-            self.process_manager_actor.clone(),
+            self.process_manager.clone(),
             (current_order, cfd.quantity(), self.n_payouts),
             (self.oracle_pk, announcement),
             &self.wallet,
@@ -371,10 +371,10 @@ impl<O, T, W> Actor<O, T, W> {
         Ok(())
     }
 
-    async fn handle_accept_rollover(&mut self, msg: AcceptRollOver) -> Result<()> {
+    async fn handle_accept_rollover(&mut self, msg: AcceptRollover) -> Result<()> {
         if self
             .rollover_actors
-            .send(&msg.order_id, rollover_maker::AcceptRollOver)
+            .send(&msg.order_id, rollover_maker::AcceptRollover)
             .await
             .is_err()
         {
@@ -384,10 +384,10 @@ impl<O, T, W> Actor<O, T, W> {
         Ok(())
     }
 
-    async fn handle_reject_rollover(&mut self, msg: RejectRollOver) -> Result<()> {
+    async fn handle_reject_rollover(&mut self, msg: RejectRollover) -> Result<()> {
         if self
             .rollover_actors
-            .send(&msg.order_id, rollover_maker::RejectRollOver)
+            .send(&msg.order_id, rollover_maker::RejectRollover)
             .await
             .is_err()
         {
@@ -401,7 +401,7 @@ impl<O, T, W> Actor<O, T, W> {
         let Commit { order_id } = msg;
 
         let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_commit(order_id, &mut conn, &self.process_manager_actor).await?;
+        cfd_actors::handle_commit(order_id, &mut conn, &self.process_manager).await?;
 
         Ok(())
     }
@@ -415,7 +415,7 @@ impl<O, T, W> Actor<O, T, W> {
 
         let cfd = load_cfd(order_id, &mut conn).await?;
         let event = cfd.setup_contract(msg)?;
-        apply_event(&self.process_manager_actor, event).await?;
+        apply_event(&self.process_manager, event).await?;
 
         Ok(())
     }
@@ -433,7 +433,7 @@ impl<O, T, W> Actor<O, T, W> {
 
     async fn handle_monitor(&mut self, msg: monitor::Event) {
         if let Err(e) =
-            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager_actor).await
+            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager).await
         {
             tracing::error!("Unable to handle monotoring event: {:#}", e)
         }
@@ -441,7 +441,7 @@ impl<O, T, W> Actor<O, T, W> {
 
     async fn handle_attestation(&mut self, msg: oracle::Attestation) {
         if let Err(e) =
-            cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager_actor).await
+            cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager).await
         {
             tracing::warn!("Failed to handle oracle attestation: {:#}", e)
         }
@@ -480,7 +480,7 @@ where
             proposal,
             taker_id,
             &self.takers,
-            self.process_manager_actor.clone(),
+            self.process_manager.clone(),
             (&self.takers, &this),
             self.db.clone(),
         )
@@ -525,7 +525,7 @@ where
         self.current_order.replace(order.clone());
 
         // 2. Notify UI via feed
-        self.projection_actor
+        self.projection
             .send(projection::Update(Some(order.clone())))
             .await?;
 
@@ -617,12 +617,12 @@ where
             } => {
                 unreachable!("Handled within `collab_settlement_maker::Actor");
             }
-            wire::TakerToMaker::ProposeRollOver {
+            wire::TakerToMaker::ProposeRollover {
                 order_id,
                 timestamp,
             } => {
                 if let Err(e) = self
-                    .handle_propose_roll_over(
+                    .handle_propose_rollover(
                         RolloverProposal {
                             order_id,
                             timestamp,
@@ -635,7 +635,7 @@ where
                     tracing::warn!("Failed to handle rollover proposal: {:#}", e);
                 }
             }
-            wire::TakerToMaker::RollOverProtocol { .. } => {
+            wire::TakerToMaker::RolloverProtocol { .. } => {
                 unreachable!("This kind of message should be sent to the rollover_maker::Actor`")
             }
             wire::TakerToMaker::Protocol { .. } => {

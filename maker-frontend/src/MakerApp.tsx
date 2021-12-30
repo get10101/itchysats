@@ -70,7 +70,7 @@ export default function App() {
 
     const pendingOrders = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_ORDER);
     const pendingSettlements = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_SETTLEMENT);
-    const pendingRollOvers = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_ROLL_OVER);
+    const pendingRollovers = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_ROLLOVER);
     const opening = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPENING);
     const open = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPEN);
     const closed = cfds.filter((value) => value.state.getGroup() === StateGroupKey.CLOSED);
@@ -166,7 +166,7 @@ export default function App() {
                     <Tab>Open [{open.length}]</Tab>
                     <Tab>Pending Orders [{pendingOrders.length}]</Tab>
                     <Tab>Pending Settlements [{pendingSettlements.length}]</Tab>
-                    <Tab>Pending Roll Overs [{pendingRollOvers.length}]</Tab>
+                    <Tab>Pending Roll Overs [{pendingRollovers.length}]</Tab>
                     <Tab>Opening [{opening.length}]</Tab>
                     <Tab>Closed [{closed.length}]</Tab>
                 </TabList>
@@ -182,7 +182,7 @@ export default function App() {
                         <CfdTable data={pendingSettlements} />
                     </TabPanel>
                     <TabPanel>
-                        <CfdTable data={pendingRollOvers} />
+                        <CfdTable data={pendingRollovers} />
                     </TabPanel>
                     <TabPanel>
                         <CfdTable data={opening} />

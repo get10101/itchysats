@@ -401,10 +401,10 @@ impl Cfd {
             RevokeConfirmed => todo!("Deal with revoked"),
             RolloverStarted { .. } => match role {
                 Role::Maker => (
-                    CfdState::IncomingRollOverProposal,
-                    vec![CfdAction::AcceptRollOver, CfdAction::RejectRollOver],
+                    CfdState::IncomingRolloverProposal,
+                    vec![CfdAction::AcceptRollover, CfdAction::RejectRollover],
                 ),
-                Role::Taker => (CfdState::OutgoingRollOverProposal, vec![]),
+                Role::Taker => (CfdState::OutgoingRolloverProposal, vec![]),
             },
             RolloverAccepted => (CfdState::ContractSetup, vec![]),
         };
@@ -584,8 +584,8 @@ pub enum CfdState {
     OpenCommitted,
     IncomingSettlementProposal,
     OutgoingSettlementProposal,
-    IncomingRollOverProposal,
-    OutgoingRollOverProposal,
+    IncomingRolloverProposal,
+    OutgoingRolloverProposal,
     Closed,
     PendingRefund,
     Refunded,
@@ -610,8 +610,8 @@ pub enum CfdAction {
     Settle,
     AcceptSettlement,
     RejectSettlement,
-    AcceptRollOver,
-    RejectRollOver,
+    AcceptRollover,
+    RejectRollover,
 }
 
 mod round_to_two_dp {
