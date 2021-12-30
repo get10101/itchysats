@@ -65,7 +65,7 @@ impl Actor {
         let order_id = self.cfd.id();
         tracing::info!(%order_id, "Order got accepted");
 
-        let (setup_params, _) = self.cfd.start_contract_setup()?;
+        let setup_params = self.cfd.start_contract_setup()?;
         let (sender, receiver) = mpsc::unbounded::<SetupMsg>();
         // store the writing end to forward messages from the maker to
         // the spawned contract setup task
