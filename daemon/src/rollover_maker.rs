@@ -62,7 +62,7 @@ pub struct Actor {
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
     sent_from_taker: Option<UnboundedSender<RollOverMsg>>,
-    maker_cfd_actor: Box<dyn MessageChannel<Completed>>,
+    on_completed: Box<dyn MessageChannel<Completed>>,
     oracle_actor: Box<dyn MessageChannel<GetAnnouncement>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     projection_actor: xtra::Address<projection::Actor>,
@@ -103,7 +103,7 @@ impl Actor {
         cfd: Cfd,
         taker_id: Identity,
         oracle_pk: schnorrsig::PublicKey,
-        maker_cfd_actor: &(impl MessageChannel<Completed> + 'static),
+        on_completed: &(impl MessageChannel<Completed> + 'static),
         oracle_actor: &(impl MessageChannel<GetAnnouncement> + 'static),
         (on_stopping0, on_stopping1): (
             &(impl MessageChannel<Stopping<Self>> + 'static),
@@ -120,7 +120,7 @@ impl Actor {
             n_payouts,
             oracle_pk,
             sent_from_taker: None,
-            maker_cfd_actor: maker_cfd_actor.clone_channel(),
+            on_completed: on_completed.clone_channel(),
             oracle_actor: oracle_actor.clone_channel(),
             on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
             projection_actor,
@@ -133,7 +133,7 @@ impl Actor {
             order_id: self.cfd.id(),
             dlc,
         };
-        self.maker_cfd_actor
+        self.on_completed
             .send(msg)
             .log_failure("Failed to report rollover completion")
             .await?;
