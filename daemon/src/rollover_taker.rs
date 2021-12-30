@@ -126,7 +126,7 @@ impl Actor {
             .send(oracle::GetAnnouncement(oracle_event_id))
             .await
             .context("Oracle actor disconnected")?
-            .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
+            .context("Failed to get announcement")?;
 
         tracing::info!(%order_id, "Rollover proposal got accepted");
 
