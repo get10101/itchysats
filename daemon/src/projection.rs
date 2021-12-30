@@ -289,15 +289,16 @@ impl Cfd {
         role: Role,
     ) -> Self {
         // First, try to set state based on event.
+        use CfdEvent::*;
         let (state, actions) = match event.event {
-            CfdEvent::ContractSetupStarted => {
+            ContractSetupStarted => {
                 // Don't display profit for contracts that are not yet created.
                 self.profit_btc = None;
                 self.profit_percent = None;
 
                 (CfdState::ContractSetup, vec![])
             }
-            CfdEvent::ContractSetupCompleted { dlc } => {
+            ContractSetupCompleted { dlc } => {
                 self.details.tx_url_list.push(TxUrl::new(
                     dlc.lock.0.txid(),
                     network,
@@ -307,28 +308,31 @@ impl Cfd {
 
                 (CfdState::PendingOpen, vec![])
             }
-            CfdEvent::ContractSetupFailed => {
+            ContractSetupFailed => {
                 // Don't display profit for failed contracts.
                 self.profit_btc = None;
                 self.profit_percent = None;
 
                 (CfdState::SetupFailed, vec![])
             }
-            CfdEvent::OfferRejected => {
+            OfferRejected => {
                 // Don't display profit for rejected contracts.
                 self.profit_btc = None;
                 self.profit_percent = None;
 
                 (CfdState::Rejected, vec![])
             }
-            CfdEvent::RolloverCompleted { dlc } => {
+            RolloverCompleted { dlc } => {
                 self.latest_dlc = Some(dlc);
 
                 (CfdState::Open, vec![])
             }
-            CfdEvent::RolloverRejected => (CfdState::Open, vec![]),
-            CfdEvent::RolloverFailed => (CfdState::Open, vec![]),
-            CfdEvent::CollaborativeSettlementCompleted {
+            RolloverRejected => (CfdState::Open, vec![]),
+            RolloverFailed => (CfdState::Open, vec![]),
+            CollaborativeSettlementProposed { .. } => {
+                (CfdState::OutgoingSettlementProposal, vec![])
+            }
+            CollaborativeSettlementCompleted {
                 spend_tx, price, ..
             } => {
                 self.details.tx_url_list.push(TxUrl::new(
@@ -343,7 +347,7 @@ impl Cfd {
 
                 (CfdState::PendingClose, vec![])
             }
-            CfdEvent::CollaborativeSettlementRejected { commit_tx } => {
+            CollaborativeSettlementRejected { commit_tx } => {
                 self.details.tx_url_list.push(TxUrl::new(
                     commit_tx.txid(),
                     network,
@@ -352,7 +356,7 @@ impl Cfd {
 
                 (CfdState::PendingCommit, vec![])
             }
-            CfdEvent::CollaborativeSettlementFailed { commit_tx } => {
+            CollaborativeSettlementFailed { commit_tx } => {
                 self.details.tx_url_list.push(TxUrl::new(
                     commit_tx.txid(),
                     network,
@@ -361,8 +365,8 @@ impl Cfd {
 
                 (CfdState::PendingCommit, vec![])
             }
-            CfdEvent::LockConfirmed => (CfdState::Open, vec![CfdAction::Commit, CfdAction::Settle]),
-            CfdEvent::CommitConfirmed => {
+            LockConfirmed => (CfdState::Open, vec![CfdAction::Commit, CfdAction::Settle]),
+            CommitConfirmed => {
                 // pretty weird if this is not defined ...
                 if let Some(dlc) = self.latest_dlc.as_ref() {
                     self.details.tx_url_list.push(TxUrl::new(
@@ -373,8 +377,8 @@ impl Cfd {
                 }
                 (CfdState::OpenCommitted, vec![])
             }
-            CfdEvent::CetConfirmed => (CfdState::Closed, vec![]),
-            CfdEvent::RefundConfirmed => {
+            CetConfirmed => (CfdState::Closed, vec![]),
+            RefundConfirmed => {
                 if let Some(dlc) = self.latest_dlc.as_ref() {
                     self.details.tx_url_list.push(TxUrl::new(
                         dlc.refund.0.txid(),
@@ -384,15 +388,13 @@ impl Cfd {
                 }
                 (CfdState::Refunded, vec![])
             }
-            CfdEvent::CollaborativeSettlementConfirmed => (CfdState::Closed, vec![]),
-            CfdEvent::CetTimelockConfirmedPriorOracleAttestation => {
-                (CfdState::OpenCommitted, self.actions)
-            }
-            CfdEvent::CetTimelockConfirmedPostOracleAttestation { .. } => {
+            CollaborativeSettlementConfirmed => (CfdState::Closed, vec![]),
+            CetTimelockConfirmedPriorOracleAttestation => (CfdState::OpenCommitted, self.actions),
+            CetTimelockConfirmedPostOracleAttestation { .. } => {
                 (CfdState::PendingCet, self.actions)
             }
-            CfdEvent::RefundTimelockConfirmed { .. } => (self.state, self.actions),
-            CfdEvent::OracleAttestedPriorCetTimelock {
+            RefundTimelockConfirmed { .. } => (self.state, self.actions),
+            OracleAttestedPriorCetTimelock {
                 price, commit_tx, ..
             } => {
                 let (profit_btc, profit_percent) = self.maybe_calculate_profit(price);
@@ -408,7 +410,7 @@ impl Cfd {
                 // Only allow committing once the oracle attested.
                 (CfdState::PendingCommit, vec![])
             }
-            CfdEvent::OracleAttestedPostCetTimelock { cet, price } => {
+            OracleAttestedPostCetTimelock { cet, price } => {
                 self.details
                     .tx_url_list
                     .push(TxUrl::new(cet.txid(), network, TxLabel::Cet));
@@ -420,14 +422,14 @@ impl Cfd {
                 // Only allow committing once the oracle attested.
                 (CfdState::PendingCet, vec![CfdAction::Commit])
             }
-            CfdEvent::ManualCommit { tx } => {
+            ManualCommit { tx } => {
                 self.details
                     .tx_url_list
                     .push(TxUrl::new(tx.txid(), network, TxLabel::Commit));
 
                 (CfdState::PendingCommit, vec![])
             }
-            CfdEvent::RevokeConfirmed => todo!("Deal with revoked"),
+            RevokeConfirmed => todo!("Deal with revoked"),
         };
 
         self.state = state;

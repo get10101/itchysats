@@ -99,8 +99,9 @@ impl Cfd {
     // At the moment, neither of those two is the case which is why we set everything to true that
     // might become relevant. See also https://github.com/itchysats/itchysats/issues/605 and https://github.com/itchysats/itchysats/issues/236.
     fn apply(self, event: cfd::Event) -> Self {
+        use CfdEvent::*;
         match event.event {
-            CfdEvent::ContractSetupCompleted { dlc, .. } => Self {
+            ContractSetupCompleted { dlc, .. } => Self {
                 params: Some(MonitorParams::new(dlc)),
                 monitor_lock_finality: true,
                 monitor_commit_finality: true,
@@ -110,7 +111,7 @@ impl Cfd {
                 monitor_revoked_commit_transactions: false,
                 monitor_collaborative_settlement_finality: None,
             },
-            CfdEvent::RolloverCompleted { dlc } => {
+            RolloverCompleted { dlc } => {
                 Self {
                     params: Some(MonitorParams::new(dlc)),
                     monitor_lock_finality: false, // Lock is already final after rollover.
@@ -123,7 +124,7 @@ impl Cfd {
                     monitor_collaborative_settlement_finality: None,
                 }
             }
-            CfdEvent::CollaborativeSettlementCompleted {
+            CollaborativeSettlementCompleted {
                 spend_tx, script, ..
             } => {
                 Self {
@@ -133,40 +134,36 @@ impl Cfd {
                     ..self
                 }
             }
-            CfdEvent::ContractSetupStarted
-            | CfdEvent::ContractSetupFailed
-            | CfdEvent::OfferRejected
-            | CfdEvent::RolloverRejected => {
+            ContractSetupStarted | ContractSetupFailed | OfferRejected | RolloverRejected => {
                 Self::default() // all false / empty
             }
-            CfdEvent::LockConfirmed => Self {
+            LockConfirmed => Self {
                 monitor_lock_finality: false,
                 ..self
             },
-            CfdEvent::CommitConfirmed => Self {
+            CommitConfirmed => Self {
                 monitor_commit_finality: false,
                 ..self
             },
             // final states, don't monitor anything
-            CfdEvent::CetConfirmed
-            | CfdEvent::RefundConfirmed
-            | CfdEvent::CollaborativeSettlementConfirmed => Self::default(),
-            CfdEvent::CetTimelockConfirmedPriorOracleAttestation
-            | CfdEvent::CetTimelockConfirmedPostOracleAttestation { .. } => Self {
+            CetConfirmed | RefundConfirmed | CollaborativeSettlementConfirmed => Self::default(),
+            CetTimelockConfirmedPriorOracleAttestation
+            | CetTimelockConfirmedPostOracleAttestation { .. } => Self {
                 monitor_cet_timelock: false,
                 ..self
             },
-            CfdEvent::RefundTimelockConfirmed { .. } => Self {
+            RefundTimelockConfirmed { .. } => Self {
                 monitor_refund_timelock: false,
                 ..self
             },
-            CfdEvent::RolloverFailed
-            | CfdEvent::ManualCommit { .. }
-            | CfdEvent::OracleAttestedPostCetTimelock { .. }
-            | CfdEvent::OracleAttestedPriorCetTimelock { .. }
-            | CfdEvent::CollaborativeSettlementRejected { .. }
-            | CfdEvent::CollaborativeSettlementFailed { .. } => self,
-            CfdEvent::RevokeConfirmed => todo!("Deal with revoked"),
+            RolloverFailed
+            | ManualCommit { .. }
+            | OracleAttestedPostCetTimelock { .. }
+            | OracleAttestedPriorCetTimelock { .. }
+            | CollaborativeSettlementRejected { .. }
+            | CollaborativeSettlementFailed { .. }
+            | CollaborativeSettlementProposed { .. } => self,
+            RevokeConfirmed => todo!("Deal with revoked"),
         }
     }
 }

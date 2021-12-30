@@ -5,8 +5,6 @@ use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_taker;
 use crate::connection;
 use crate::model::cfd::Cfd;
-use crate::model::cfd::CollaborativeSettlement;
-use crate::model::cfd::Completed;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
@@ -132,11 +130,7 @@ where
         Ok(())
     }
 
-    async fn handle_propose_settlement(
-        &mut self,
-        msg: ProposeSettlement,
-        ctx: &mut xtra::Context<Self>,
-    ) -> Result<()> {
+    async fn handle_propose_settlement(&mut self, msg: ProposeSettlement) -> Result<()> {
         let ProposeSettlement {
             order_id,
             current_price,
@@ -147,25 +141,20 @@ where
             .get_disconnected(order_id)
             .with_context(|| format!("Settlement for order {} is already in progress", order_id))?;
 
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(order_id, &mut conn).await?;
-
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
         let (addr, fut) = collab_settlement_taker::Actor::new(
-            cfd,
-            self.projection_actor.clone(),
-            this,
+            order_id,
             current_price,
-            self.conn_actor.clone(),
             self.n_payouts,
-        )?
+            self.conn_actor.clone(),
+            self.process_manager_actor.clone(),
+            self.projection_actor.clone(),
+            self.db.clone(),
+        )
         .create(None)
         .run();
 
-        disconnected.insert(addr);
         self.tasks.add(fut);
+        disconnected.insert(addr);
 
         Ok(())
     }
@@ -179,26 +168,6 @@ impl<O, W> Actor<O, W> {
 
         let cfd = load_cfd(order_id, &mut conn).await?;
         let event = cfd.setup_contract(msg)?;
-        if let Err(e) = self
-            .process_manager_actor
-            .send(process_manager::Event::new(event.clone()))
-            .await?
-        {
-            tracing::error!("Sending event to process manager failed: {:#}", e);
-        }
-
-        Ok(())
-    }
-
-    async fn handle_settlement_completed(
-        &mut self,
-        msg: Completed<CollaborativeSettlement>,
-    ) -> Result<()> {
-        let order_id = msg.order_id();
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(order_id, &mut conn).await?;
-
-        let event = cfd.settle_collaboratively(msg)?;
         if let Err(e) = self
             .process_manager_actor
             .send(process_manager::Event::new(event.clone()))

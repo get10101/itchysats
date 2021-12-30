@@ -1,78 +1,106 @@
 use crate::address_map::ActorName;
 use crate::address_map::Stopping;
+use crate::cfd_actors::load_cfd;
 use crate::connection;
-use crate::model::cfd::Cfd;
+use crate::model::cfd;
+use crate::model::cfd::CfdEvent;
 use crate::model::cfd::CollaborativeSettlement;
 use crate::model::cfd::Completed;
+use crate::model::cfd::OrderId;
 use crate::model::cfd::SettlementKind;
 use crate::model::cfd::SettlementProposal;
 use crate::model::Price;
+use crate::process_manager;
 use crate::projection;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::wire;
 use anyhow::Result;
 use async_trait::async_trait;
-use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
-    cfd: Cfd,
-    projection: xtra::Address<projection::Actor>,
-    on_completed: Box<dyn MessageChannel<Completed<CollaborativeSettlement>>>,
+    proposal: Option<SettlementProposal>,
+    order_id: OrderId,
+    current_price: Price,
+    n_payouts: usize,
     connection: xtra::Address<connection::Actor>,
-    proposal: SettlementProposal,
+    process_manager: xtra::Address<process_manager::Actor>,
+    projection: xtra::Address<projection::Actor>,
+    db: sqlx::SqlitePool,
 }
 
 impl Actor {
     pub fn new(
-        cfd: Cfd,
-        projection: xtra::Address<projection::Actor>,
-        on_completed: impl MessageChannel<Completed<CollaborativeSettlement>> + 'static,
+        order_id: OrderId,
         current_price: Price,
-        connection: xtra::Address<connection::Actor>,
         n_payouts: usize,
-    ) -> Result<Self> {
-        let proposal = cfd.start_collaborative_settlement_taker(current_price, n_payouts)?;
-
-        Ok(Self {
-            cfd,
-            projection,
-            on_completed: Box::new(on_completed),
+        connection: xtra::Address<connection::Actor>,
+        process_manager: xtra::Address<process_manager::Actor>,
+        projection: xtra::Address<projection::Actor>,
+        db: sqlx::SqlitePool,
+    ) -> Self {
+        Self {
+            proposal: None,
+            order_id,
+            n_payouts,
+            current_price,
             connection,
-            proposal,
-        })
+            process_manager,
+            projection,
+            db,
+        }
     }
 
     async fn propose(&mut self, this: xtra::Address<Self>) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(self.order_id, &mut conn).await?;
+
+        let event = cfd.propose_collaborative_settlement(self.current_price, self.n_payouts)?;
+        let proposal = if let cfd::Event {
+            event: CfdEvent::CollaborativeSettlementProposed { ref proposal },
+            ..
+        } = event
+        {
+            proposal
+        } else {
+            unreachable!()
+        };
+
+        self.proposal = Some(proposal.clone());
+
         self.connection
             .send(connection::ProposeSettlement {
-                timestamp: self.proposal.timestamp,
-                taker: self.proposal.taker,
-                maker: self.proposal.maker,
-                price: self.proposal.price,
+                timestamp: proposal.timestamp,
+                taker: proposal.taker,
+                maker: proposal.maker,
+                price: proposal.price,
                 address: this,
-                order_id: self.cfd.id(),
+                order_id: self.order_id,
             })
             .await??;
 
-        self.update_proposal(Some((self.proposal.clone(), SettlementKind::Outgoing)))
-            .await?;
+        self.process_manager
+            .send(process_manager::Event::new(event))
+            .await??;
 
         Ok(())
     }
 
     async fn handle_confirmed(&mut self) -> Result<CollaborativeSettlement> {
-        let order_id = self.cfd.id();
+        let order_id = self.order_id;
 
         tracing::info!(%order_id, "Settlement proposal got accepted");
 
         self.update_proposal(None).await?;
 
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(order_id, &mut conn).await?;
+
         // TODO: This should happen within a dedicated state machine returned from
         // start_collaborative_settlement
-        let (tx, sig, payout_script_pubkey) = self
-            .cfd
-            .sign_collaborative_close_transaction_taker(&self.proposal)?;
+        let proposal = self.proposal.take().expect("proposal to exist");
+        let (tx, sig, payout_script_pubkey) =
+            cfd.sign_collaborative_close_transaction_taker(&proposal)?;
 
         self.connection
             .send_async_safe(wire::TakerToMaker::Settlement {
@@ -84,12 +112,12 @@ impl Actor {
         Ok(CollaborativeSettlement::new(
             tx,
             payout_script_pubkey,
-            self.proposal.price,
+            self.current_price,
         )?)
     }
 
     async fn handle_rejected(&mut self) -> Result<()> {
-        let order_id = self.cfd.id();
+        let order_id = self.order_id;
 
         tracing::info!(%order_id, "Settlement proposal got rejected");
 
@@ -104,7 +132,7 @@ impl Actor {
     ) -> Result<()> {
         self.projection
             .send(projection::UpdateSettlementProposal {
-                order: self.cfd.id(),
+                order: self.order_id,
                 proposal,
             })
             .await?;
@@ -117,7 +145,26 @@ impl Actor {
         completed: Completed<CollaborativeSettlement>,
         ctx: &mut xtra::Context<Self>,
     ) {
-        let _ = self.on_completed.send(completed).await;
+        let order_id = self.order_id;
+        let event_fut = async {
+            let mut conn = self.db.acquire().await?;
+            let cfd = load_cfd(order_id, &mut conn).await?;
+            let event = cfd.settle_collaboratively(completed)?;
+
+            anyhow::Ok(event)
+        };
+
+        match event_fut.await {
+            Ok(event) => {
+                let _ = self
+                    .process_manager
+                    .send(process_manager::Event::new(event))
+                    .await;
+            }
+            Err(e) => {
+                tracing::warn!(%order_id, "Failed to report completion of collab settlement: {:#}", e)
+            }
+        };
 
         ctx.stop();
     }
@@ -131,7 +178,7 @@ impl xtra::Actor for Actor {
         if let Err(e) = self.propose(this).await {
             self.complete(
                 Completed::Failed {
-                    order_id: self.cfd.id(),
+                    order_id: self.order_id,
                     error: e,
                 },
                 ctx,
@@ -160,7 +207,7 @@ impl Actor {
         msg: wire::maker_to_taker::Settlement,
         ctx: &mut xtra::Context<Self>,
     ) {
-        let order_id = self.cfd.id();
+        let order_id = self.order_id;
 
         let completed = match msg {
             wire::maker_to_taker::Settlement::Confirm => match self.handle_confirmed().await {

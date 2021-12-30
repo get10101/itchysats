@@ -63,8 +63,9 @@ impl Actor {
         append_event(event.clone(), &mut conn).await?;
 
         // 2. Post process event
+        use CfdEvent::*;
         match event.event {
-            CfdEvent::ContractSetupCompleted { dlc } => {
+            ContractSetupCompleted { dlc } => {
                 tracing::info!("Setup complete, publishing on chain now");
 
                 let lock_tx = dlc.lock.0.clone();
@@ -88,7 +89,7 @@ impl Actor {
                     })
                     .await?;
             }
-            CfdEvent::CollaborativeSettlementCompleted {
+            CollaborativeSettlementCompleted {
                 spend_tx, script, ..
             } => {
                 let txid = match self.role {
@@ -119,7 +120,7 @@ impl Actor {
                     })
                     .await?;
             }
-            CfdEvent::CollaborativeSettlementRejected { commit_tx } => {
+            CollaborativeSettlementRejected { commit_tx } => {
                 let txid = self
                     .try_broadcast_transaction
                     .send(wallet::TryBroadcastTransaction { tx: commit_tx })
@@ -131,7 +132,7 @@ impl Actor {
                     txid
                 )
             }
-            CfdEvent::CollaborativeSettlementFailed { commit_tx } => {
+            CollaborativeSettlementFailed { commit_tx } => {
                 let txid = self
                     .try_broadcast_transaction
                     .send(wallet::TryBroadcastTransaction { tx: commit_tx })
@@ -143,8 +144,8 @@ impl Actor {
                     txid
                 )
             }
-            CfdEvent::OracleAttestedPostCetTimelock { cet, .. }
-            | CfdEvent::CetTimelockConfirmedPostOracleAttestation { cet } => {
+            OracleAttestedPostCetTimelock { cet, .. }
+            | CetTimelockConfirmedPostOracleAttestation { cet } => {
                 let txid = self
                     .try_broadcast_transaction
                     .send(wallet::TryBroadcastTransaction { tx: cet })
@@ -153,8 +154,7 @@ impl Actor {
 
                 tracing::info!(%txid, "CET published");
             }
-            CfdEvent::OracleAttestedPriorCetTimelock { commit_tx: tx, .. }
-            | CfdEvent::ManualCommit { tx } => {
+            OracleAttestedPriorCetTimelock { commit_tx: tx, .. } | ManualCommit { tx } => {
                 let txid = self
                     .try_broadcast_transaction
                     .send(wallet::TryBroadcastTransaction { tx })
@@ -163,7 +163,7 @@ impl Actor {
 
                 tracing::info!(%txid, "Commit transaction published");
             }
-
+            CollaborativeSettlementProposed { .. } => {}
             _ => {} // TODO: Monitor post processing for rollover
         }
 
