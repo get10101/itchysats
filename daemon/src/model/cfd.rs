@@ -187,11 +187,13 @@ impl Order {
 }
 
 /// Proposed collaborative settlement
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SettlementProposal {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub taker: Amount,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub maker: Amount,
     pub price: Price,
 }
@@ -256,6 +258,9 @@ pub enum CfdEvent {
     RolloverRejected,
     RolloverFailed,
 
+    CollaborativeSettlementProposed {
+        proposal: SettlementProposal,
+    },
     CollaborativeSettlementCompleted {
         #[serde(with = "hex_transaction")]
         spend_tx: Transaction,
@@ -380,6 +385,7 @@ pub struct Cfd {
     /// This does _not_ imply that the transaction is actually confirmed.
     commit_tx: Option<Transaction>,
 
+    is_settling_collaboratively: bool,
     collaborative_settlement_spend_tx: Option<Transaction>,
 
     refund_tx: Option<Transaction>,
@@ -423,6 +429,7 @@ impl Cfd {
             dlc: None,
             cet: None,
             commit_tx: None,
+            is_settling_collaboratively: false,
             collaborative_settlement_spend_tx: None,
             refund_tx: None,
             lock_finality: false,
@@ -623,14 +630,17 @@ impl Cfd {
         Ok(settlement)
     }
 
-    pub fn start_collaborative_settlement_taker(
+    pub fn propose_collaborative_settlement(
         &self,
         current_price: Price,
         n_payouts: usize,
-    ) -> Result<SettlementProposal> {
-        if !self.can_settle_collaboratively() {
-            bail!("Start collaborative settlement only allowed when open")
-        }
+    ) -> Result<Event> {
+        anyhow::ensure!(
+            !self.is_settling_collaboratively
+                && self.role == Role::Taker
+                && self.can_settle_collaboratively(),
+            "Failed to start collaborative settlement"
+        );
 
         let payout_curve = payout_curve::calculate(
             // TODO: Is this correct? Does rollover change the price? (I think currently not)
@@ -648,7 +658,7 @@ impl Cfd {
                 .context("find current price on the payout curve")?
         };
 
-        let settlement_proposal = SettlementProposal {
+        let proposal = SettlementProposal {
             order_id: self.id,
             timestamp: Timestamp::now(),
             taker: *payout.taker_amount(),
@@ -656,7 +666,10 @@ impl Cfd {
             price: current_price,
         };
 
-        Ok(settlement_proposal)
+        Ok(Event::new(
+            self.id,
+            CfdEvent::CollaborativeSettlementProposed { proposal },
+        ))
     }
 
     pub fn setup_contract(self, completed: SetupCompleted) -> Result<Event> {
@@ -895,10 +908,13 @@ impl Cfd {
     }
 
     pub fn sign_collaborative_close_transaction_taker(
-        &mut self,
+        &self,
         proposal: &SettlementProposal,
     ) -> Result<(Transaction, Signature, Script)> {
-        let dlc = self.dlc.take().context("Collaborative close without DLC")?;
+        let dlc = self
+            .dlc
+            .as_ref()
+            .context("Collaborative close without DLC")?;
 
         let (tx, sig) = dlc.close_transaction(proposal)?;
         let script_pk = dlc.script_pubkey_for(Role::Taker);
@@ -934,12 +950,17 @@ impl Cfd {
             }
             RolloverFailed { .. } => todo!(),
             RolloverRejected => todo!(),
-            CollaborativeSettlementCompleted { spend_tx, .. } => {
-                self.collaborative_settlement_spend_tx = Some(spend_tx)
-            }
-            CollaborativeSettlementRejected { commit_tx } => self.commit_tx = Some(commit_tx),
-            CollaborativeSettlementFailed { commit_tx } => self.commit_tx = Some(commit_tx),
 
+            CollaborativeSettlementProposed { .. } => self.is_settling_collaboratively = true,
+            CollaborativeSettlementCompleted { spend_tx, .. } => {
+                self.is_settling_collaboratively = false;
+                self.collaborative_settlement_spend_tx = Some(spend_tx);
+            }
+            CollaborativeSettlementRejected { commit_tx }
+            | CollaborativeSettlementFailed { commit_tx } => {
+                self.is_settling_collaboratively = false;
+                self.commit_tx = Some(commit_tx);
+            }
             CetConfirmed => self.cet_finality = true,
             RefundConfirmed => self.refund_finality = true,
             CollaborativeSettlementConfirmed => self.collaborative_settlement_finality = true,

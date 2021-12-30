@@ -329,6 +329,9 @@ impl Cfd {
             }
             RolloverRejected => (CfdState::Open, vec![]),
             RolloverFailed => (CfdState::Open, vec![]),
+            CollaborativeSettlementProposed { .. } => {
+                (CfdState::OutgoingSettlementProposal, vec![])
+            }
             CollaborativeSettlementCompleted {
                 spend_tx, price, ..
             } => {
