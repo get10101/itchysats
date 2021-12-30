@@ -244,7 +244,10 @@ impl Event {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(tag = "name", content = "data")]
 pub enum CfdEvent {
-    ContractSetupStarted,
+    ContractSetupProposed,
+    ContractSetupStarted {
+        params: SetupParams,
+    },
     ContractSetupCompleted {
         dlc: Dlc,
     },
@@ -399,7 +402,7 @@ pub struct Cfd {
     cet_timelock_expired: bool,
     refund_timelock_expired: bool,
 
-    during_contract_setup: bool,
+    during_contract_setup: bool, // from contract setup proposal until completion
 }
 
 impl Cfd {
@@ -556,10 +559,21 @@ impl Cfd {
         self.collaborative_settlement_finality || self.cet_finality || self.refund_finality
     }
 
-    pub fn start_contract_setup(&self) -> Result<(Event, SetupParams)> {
+    /// Initial event on the Cfd - when the order got requested, but maker
+    /// didn't yet accept its terms.
+    pub fn propose_contract_setup(&self) -> Result<Event> {
         if self.version > 0 {
             bail!("Start contract not allowed in version {}", self.version)
         }
+        Ok(Event::new(self.id(), CfdEvent::ContractSetupProposed))
+    }
+
+    /// Return SetupParams for convenience as it will be immediately used by the protocol
+    pub fn start_contract_setup(&self) -> Result<(Event, SetupParams)> {
+        anyhow::ensure!(
+            self.during_contract_setup,
+            "contract setup was not prepared"
+        );
 
         let margin = match self.position {
             Position::Long => {
@@ -575,18 +589,25 @@ impl Cfd {
             }
         };
 
+        let params = SetupParams::new(
+            margin,
+            counterparty_margin,
+            self.counterparty_network_identity,
+            self.initial_price,
+            self.quantity,
+            self.leverage,
+            self.refund_timelock_in_blocks(),
+            1, // TODO: Where should I get the fee rate from?
+        );
+
         Ok((
-            Event::new(self.id(), CfdEvent::ContractSetupStarted),
-            SetupParams::new(
-                margin,
-                counterparty_margin,
-                self.counterparty_network_identity,
-                self.initial_price,
-                self.quantity,
-                self.leverage,
-                self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+            Event::new(
+                self.id(),
+                CfdEvent::ContractSetupStarted {
+                    params: params.clone(),
+                },
             ),
+            params,
         ))
     }
 
@@ -673,15 +694,10 @@ impl Cfd {
     }
 
     pub fn setup_contract(self, completed: SetupCompleted) -> Result<Event> {
-        // Version 1 is acceptable, as it means that we started contract setup
-        // TODO: Use self.during_contract_setup after introducing
-        // ContractSetupAccepted event
-        if self.version > 1 {
-            bail!(
-                "Complete contract setup not allowed because cfd in version {}",
-                self.version
-            )
-        }
+        anyhow::ensure!(
+            self.during_contract_setup,
+            "Cannot start contract setup if it was not proposed - missing preceding ContractSetupStarted event"
+        );
 
         let event = match completed {
             SetupCompleted::Succeeded {
@@ -932,7 +948,10 @@ impl Cfd {
         self.version += 1;
 
         match evt.event {
-            ContractSetupStarted => self.during_contract_setup = true,
+            ContractSetupProposed => self.during_contract_setup = true,
+            ContractSetupStarted { .. } => {
+                // No special handling during setup
+            }
             ContractSetupCompleted { dlc } => {
                 self.dlc = Some(dlc);
                 self.during_contract_setup = false;

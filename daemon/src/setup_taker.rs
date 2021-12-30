@@ -1,6 +1,7 @@
 use crate::address_map;
 use crate::cfd_actors::apply_event;
 use crate::cfd_actors::load_cfd;
+use crate::cfd_actors::propose_contract_setup;
 use crate::connection;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
@@ -67,6 +68,16 @@ impl Actor {
             on_completed: on_completed.clone_channel(),
             setup_msg_sender: None,
         }
+    }
+
+    async fn complete(&mut self, completed: SetupCompleted, ctx: &mut xtra::Context<Self>) {
+        let _ = self
+            .on_completed
+            .send(completed)
+            .log_failure("Failed to inform about contract setup completion")
+            .await;
+
+        ctx.stop();
     }
 }
 
@@ -170,13 +181,21 @@ impl Actor {
 #[async_trait]
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        let order_id = self.order_id;
+        if let Err(error) =
+            propose_contract_setup(order_id, &self.db, &self.process_manager_actor).await
+        {
+            self.complete(SetupCompleted::Failed { order_id, error }, ctx)
+                .await;
+        }
+
         let address = ctx
             .address()
             .expect("actor to be able to give address to itself");
         let res = self
             .maker
             .send(connection::TakeOrder {
-                order_id: self.order_id,
+                order_id,
                 quantity: self.quantity,
                 address,
             })

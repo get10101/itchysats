@@ -154,3 +154,16 @@ pub async fn handle_oracle_attestation(
 
     Ok(())
 }
+
+/// Necessary precondition to start contract setup protocol
+pub async fn propose_contract_setup(
+    order_id: OrderId,
+    db: &SqlitePool,
+    process_manager: &xtra::Address<process_manager::Actor>,
+) -> Result<()> {
+    let mut conn = db.acquire().await?;
+    let cfd = load_cfd(order_id, &mut conn).await?;
+    let event = cfd.propose_contract_setup()?;
+    apply_event(process_manager, event).await?;
+    Ok(())
+}

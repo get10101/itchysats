@@ -2,6 +2,7 @@ use crate::address_map::ActorName;
 use crate::address_map::Stopping;
 use crate::cfd_actors::apply_event;
 use crate::cfd_actors::load_cfd;
+use crate::cfd_actors::propose_contract_setup;
 use crate::maker_inc_connections;
 use crate::maker_inc_connections::TakerMessage;
 use crate::model::cfd::Dlc;
@@ -240,6 +241,14 @@ impl Actor {
 #[async_trait]
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        let order_id = self.order.id;
+        if let Err(error) =
+            propose_contract_setup(order_id, &self.db, &self.process_manager_actor).await
+        {
+            self.complete(SetupCompleted::Failed { order_id, error }, ctx)
+                .await;
+        }
+
         let quantity = self.quantity;
         if quantity < self.order.min_quantity || quantity > self.order.max_quantity {
             let reason = format!(
@@ -252,12 +261,12 @@ impl xtra::Actor for Actor {
                 .taker
                 .send(maker_inc_connections::TakerMessage {
                     taker_id: self.taker_id,
-                    msg: wire::MakerToTaker::RejectOrder(self.order.id),
+                    msg: wire::MakerToTaker::RejectOrder(order_id),
                 })
                 .await;
 
             self.complete(
-                SetupCompleted::rejected_due_to(self.order.id, anyhow::format_err!(reason)),
+                SetupCompleted::rejected_due_to(order_id, anyhow::format_err!(reason)),
                 ctx,
             )
             .await;

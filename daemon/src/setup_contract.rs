@@ -48,14 +48,19 @@ use maia::spending_tx_sighash;
 use maia::Announcement;
 use maia::PartyParams;
 use maia::PunishParams;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::ops::RangeInclusive;
 use std::time::Duration;
 use xtra::prelude::MessageChannel;
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetupParams {
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     margin: Amount,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     counterparty_margin: Amount,
     counterparty_identity: Identity,
     price: Price,

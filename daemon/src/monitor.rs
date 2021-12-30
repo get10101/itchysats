@@ -134,7 +134,11 @@ impl Cfd {
                     ..self
                 }
             }
-            ContractSetupStarted | ContractSetupFailed | OfferRejected | RolloverRejected => {
+            ContractSetupProposed
+            | ContractSetupStarted { .. }
+            | ContractSetupFailed
+            | OfferRejected
+            | RolloverRejected => {
                 Self::default() // all false / empty
             }
             LockConfirmed => Self {

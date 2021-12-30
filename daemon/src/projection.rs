@@ -291,7 +291,13 @@ impl Cfd {
         // First, try to set state based on event.
         use CfdEvent::*;
         let (state, actions) = match event.event {
-            ContractSetupStarted => {
+            ContractSetupProposed => {
+                // Don't display profit for contracts that are not yet created.
+                self.profit_btc = None;
+                self.profit_percent = None;
+                (CfdState::PendingSetup, vec![])
+            }
+            ContractSetupStarted { .. } => {
                 // Don't display profit for contracts that are not yet created.
                 self.profit_btc = None;
                 self.profit_percent = None;
@@ -661,7 +667,9 @@ impl From<Order> for CfdOrder {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum CfdState {
-    PendingSetup,
+    // this one should allow for "accept" action
+    PendingSetup, // TODO: change to Offered?
+    // this one should *not* allow for that action
     ContractSetup,
     Rejected,
     PendingOpen,
