@@ -128,21 +128,6 @@ impl Actor {
         }
     }
 
-    async fn complete(&mut self, dlc: Dlc, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let msg = Completed {
-            order_id: self.cfd.id(),
-            dlc,
-        };
-        self.on_completed
-            .send(msg)
-            .log_failure("Failed to report rollover completion")
-            .await?;
-
-        ctx.stop();
-
-        Ok(())
-    }
-
     async fn update_proposal(
         &self,
         proposal: Option<(RolloverProposal, SettlementKind)>,
@@ -293,9 +278,16 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        if let Err(err) = self.complete(msg.dlc.clone(), ctx).await {
-            self.fail(ctx, err).await;
-        }
+        let _: Result<(), xtra::Disconnected> = self
+            .on_completed
+            .send(Completed {
+                order_id: self.cfd.id(),
+                dlc: msg.dlc,
+            })
+            .log_failure("Failed to report rollover completion")
+            .await;
+
+        ctx.stop();
     }
 }
 
