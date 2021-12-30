@@ -242,6 +242,7 @@ impl Event {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(tag = "name", content = "data")]
 pub enum CfdEvent {
+    ContractSetupStarted,
     ContractSetupCompleted {
         dlc: Dlc,
     },
@@ -391,6 +392,8 @@ pub struct Cfd {
 
     cet_timelock_expired: bool,
     refund_timelock_expired: bool,
+
+    during_contract_setup: bool,
 }
 
 impl Cfd {
@@ -429,6 +432,7 @@ impl Cfd {
             collaborative_settlement_finality: false,
             cet_timelock_expired: false,
             refund_timelock_expired: false,
+            during_contract_setup: false,
         }
     }
 
@@ -545,7 +549,7 @@ impl Cfd {
         self.collaborative_settlement_finality || self.cet_finality || self.refund_finality
     }
 
-    pub fn start_contract_setup(&self) -> Result<SetupParams> {
+    pub fn start_contract_setup(&self) -> Result<(Event, SetupParams)> {
         if self.version > 0 {
             bail!("Start contract not allowed in version {}", self.version)
         }
@@ -564,15 +568,18 @@ impl Cfd {
             }
         };
 
-        Ok(SetupParams::new(
-            margin,
-            counterparty_margin,
-            self.counterparty_network_identity,
-            self.initial_price,
-            self.quantity,
-            self.leverage,
-            self.refund_timelock_in_blocks(),
-            1, // TODO: Where should I get the fee rate from?
+        Ok((
+            Event::new(self.id(), CfdEvent::ContractSetupStarted),
+            SetupParams::new(
+                margin,
+                counterparty_margin,
+                self.counterparty_network_identity,
+                self.initial_price,
+                self.quantity,
+                self.leverage,
+                self.refund_timelock_in_blocks(),
+                1, // TODO: Where should I get the fee rate from?
+            ),
         ))
     }
 
@@ -653,9 +660,12 @@ impl Cfd {
     }
 
     pub fn setup_contract(self, completed: SetupCompleted) -> Result<Event> {
-        if self.version > 0 {
+        // Version 1 is acceptable, as it means that we started contract setup
+        // TODO: Use self.during_contract_setup after introducing
+        // ContractSetupAccepted event
+        if self.version > 1 {
             bail!(
-                "Complete contract setup not allowed because cfd already in version {}",
+                "Complete contract setup not allowed because cfd in version {}",
                 self.version
             )
         }
@@ -906,13 +916,18 @@ impl Cfd {
         self.version += 1;
 
         match evt.event {
-            ContractSetupCompleted { dlc } => self.dlc = Some(dlc),
+            ContractSetupStarted => self.during_contract_setup = true,
+            ContractSetupCompleted { dlc } => {
+                self.dlc = Some(dlc);
+                self.during_contract_setup = false;
+            }
             OracleAttestedPostCetTimelock { cet, .. } => self.cet = Some(cet),
             OracleAttestedPriorCetTimelock { timelocked_cet, .. } => {
                 self.cet = Some(timelocked_cet);
             }
             ContractSetupFailed { .. } => {
                 // TODO: Deal with failed contract setup
+                self.during_contract_setup = false;
             }
             RolloverCompleted { dlc } => {
                 self.dlc = Some(dlc);

@@ -1,11 +1,14 @@
 use crate::address_map;
+use crate::cfd_actors::apply_event;
+use crate::cfd_actors::load_cfd;
 use crate::connection;
-use crate::model::cfd::Cfd;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::SetupCompleted;
+use crate::model::Usd;
 use crate::oracle::Announcement;
+use crate::process_manager;
 use crate::setup_contract;
 use crate::tokio_ext::spawn_fallible;
 use crate::wallet;
@@ -24,7 +27,10 @@ use xtra::prelude::*;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
-    cfd: Cfd,
+    db: sqlx::SqlitePool,
+    process_manager_actor: Address<process_manager::Actor>,
+    order_id: OrderId,
+    quantity: Usd,
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
     announcement: Announcement,
@@ -38,7 +44,9 @@ pub struct Actor {
 impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        (cfd, n_payouts): (Cfd, usize),
+        db: sqlx::SqlitePool,
+        process_manager_actor: Address<process_manager::Actor>,
+        (order_id, quantity, n_payouts): (OrderId, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
@@ -46,7 +54,10 @@ impl Actor {
         on_completed: &(impl MessageChannel<SetupCompleted> + 'static),
     ) -> Self {
         Self {
-            cfd,
+            db,
+            process_manager_actor,
+            order_id,
+            quantity,
             n_payouts,
             oracle_pk,
             announcement,
@@ -62,10 +73,14 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     fn handle(&mut self, _: Accepted, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let order_id = self.cfd.id();
+        let order_id = self.order_id;
         tracing::info!(%order_id, "Order got accepted");
 
-        let setup_params = self.cfd.start_contract_setup()?;
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(order_id, &mut conn).await?;
+        let (event, setup_params) = cfd.start_contract_setup()?;
+        apply_event(&self.process_manager_actor, event).await?;
+
         let (sender, receiver) = mpsc::unbounded::<SetupMsg>();
         // store the writing end to forward messages from the maker to
         // the spawned contract setup task
@@ -97,7 +112,7 @@ impl Actor {
     }
 
     fn handle(&mut self, msg: Rejected, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let order_id = self.cfd.id();
+        let order_id = self.order_id;
         tracing::info!(%order_id, "Order got rejected");
 
         let reason = if msg.is_invalid_order {
@@ -161,14 +176,14 @@ impl xtra::Actor for Actor {
         let res = self
             .maker
             .send(connection::TakeOrder {
-                order_id: self.cfd.id(),
-                quantity: self.cfd.quantity(),
+                order_id: self.order_id,
+                quantity: self.quantity,
                 address,
             })
             .await;
 
         if let Err(e) = res {
-            tracing::warn!(id = %self.cfd.id(), "Stopping setup_taker actor: {}", e);
+            tracing::warn!(id = %self.order_id, "Stopping setup_taker actor: {}", e);
             ctx.stop()
         }
     }

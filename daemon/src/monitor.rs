@@ -133,7 +133,8 @@ impl Cfd {
                     ..self
                 }
             }
-            CfdEvent::ContractSetupFailed
+            CfdEvent::ContractSetupStarted
+            | CfdEvent::ContractSetupFailed
             | CfdEvent::OfferRejected
             | CfdEvent::RolloverRejected => {
                 Self::default() // all false / empty

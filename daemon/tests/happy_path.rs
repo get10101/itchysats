@@ -116,6 +116,9 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
     maker.accept_take_request(received.clone()).await;
+    assert_next_state!(CfdState::ContractSetup, maker, taker, received.id);
+
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     assert_next_state!(CfdState::PendingOpen, maker, taker, received.id);
 
     deliver_event!(maker, taker, Event::LockFinality(received.id));
@@ -288,6 +291,9 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
     maker.accept_take_request(received.clone()).await;
+    assert_next_state!(CfdState::ContractSetup, maker, taker, received.id);
+
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     assert_next_state!(CfdState::PendingOpen, maker, taker, received.id);
 
     deliver_event!(maker, taker, Event::LockFinality(received.id));

@@ -1,6 +1,7 @@
 use crate::address_map::AddressMap;
 use crate::address_map::Stopping;
 use crate::cfd_actors;
+use crate::cfd_actors::apply_event;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_maker;
@@ -326,7 +327,9 @@ where
             .expect("actor to be able to give address to itself");
 
         let (addr, fut) = setup_maker::Actor::new(
-            (cfd, current_order, self.n_payouts),
+            self.db.clone(),
+            self.process_manager_actor.clone(),
+            (current_order, cfd.quantity(), self.n_payouts),
             (self.oracle_pk, announcement),
             &self.wallet,
             &self.wallet,
@@ -439,13 +442,7 @@ impl<O, T, W> Actor<O, T, W> {
 
         let cfd = load_cfd(order_id, &mut conn).await?;
         let event = cfd.setup_contract(msg)?;
-        if let Err(e) = self
-            .process_manager_actor
-            .send(process_manager::Event::new(event.clone()))
-            .await?
-        {
-            tracing::error!("Sending event to process manager failed: {:#}", e);
-        }
+        apply_event(&self.process_manager_actor, event).await?;
 
         Ok(())
     }
