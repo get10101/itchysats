@@ -184,8 +184,7 @@ impl Actor {
         let announcement = self
             .oracle_actor
             .send(oracle::GetAnnouncement(oracle_event_id))
-            .await?
-            .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
+            .await??;
 
         let rollover_fut = setup_contract::roll_over(
             self.send_to_taker_actor.sink().with(move |msg| {
