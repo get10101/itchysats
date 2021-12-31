@@ -33,10 +33,18 @@ macro_rules! assert_next_state {
         let (taker_cfd, maker_cfd) = next_cfd($taker.cfd_feed(), $maker.cfd_feed())
             .await
             .unwrap();
-        assert_eq!(taker_cfd.order_id, $id);
-        assert_eq!(maker_cfd.order_id, $id);
-        assert_eq!(taker_cfd.state, $state);
-        assert_eq!(maker_cfd.state, $state);
+        assert_eq!(
+            taker_cfd.order_id, maker_cfd.order_id,
+            "order id mismatch between maker and taker"
+        );
+        assert_eq!(
+            taker_cfd.state, maker_cfd.state,
+            "cfd state mismatch between maker and taker"
+        );
+        assert_eq!(taker_cfd.order_id, $id, "unexpected order id in the taker");
+        assert_eq!(maker_cfd.order_id, $id, "unexpected order id in the maker");
+        assert_eq!(taker_cfd.state, $state, "unexpected cfd state in the taker");
+        assert_eq!(maker_cfd.state, $state, "unexpected cfd state in the maker");
     };
 }
 
