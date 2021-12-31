@@ -110,7 +110,6 @@ impl Actor {
             &mut conn,
             self.state.quote,
             self.state.network,
-            &self.state.settlement_proposals,
             &self.state.rollover_proposals,
         )
         .await
@@ -130,7 +129,6 @@ async fn load_and_hydrate_cfds(
     conn: &mut PoolConnection<sqlx::Sqlite>,
     quote: Option<bitmex_price_feed::Quote>,
     network: Network,
-    settlement_proposals: &HashMap<OrderId, (SettlementProposal, SettlementKind)>,
     rollover_proposals: &HashMap<OrderId, (RolloverProposal, SettlementKind)>,
 ) -> Result<Vec<Cfd>> {
     let ids = db::load_all_cfd_ids(conn).await?;
@@ -142,13 +140,7 @@ async fn load_and_hydrate_cfds(
         let role = cfd.role;
 
         let cfd = events.into_iter().fold(Cfd::new(cfd, quote), |cfd, event| {
-            cfd.apply(
-                event,
-                network,
-                settlement_proposals.get(&id),
-                rollover_proposals.get(&id),
-                role,
-            )
+            cfd.apply(event, network, rollover_proposals.get(&id), role)
         });
 
         cfds.push(cfd);
@@ -284,7 +276,6 @@ impl Cfd {
         mut self,
         event: Event,
         network: Network,
-        pending_settlement_proposal: Option<&(SettlementProposal, SettlementKind)>,
         pending_rollover_proposal: Option<&(RolloverProposal, SettlementKind)>,
         role: Role,
     ) -> Self {
@@ -329,8 +320,15 @@ impl Cfd {
             }
             RolloverRejected => (CfdState::Open, vec![]),
             RolloverFailed => (CfdState::Open, vec![]),
-            CollaborativeSettlementProposed { .. } => {
-                (CfdState::OutgoingSettlementProposal, vec![])
+            CollaborativeSettlementStarted { .. } => match role {
+                Role::Maker => (
+                    CfdState::IncomingSettlementProposal,
+                    vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement],
+                ),
+                Role::Taker => (CfdState::OutgoingSettlementProposal, vec![]),
+            },
+            CollaborativeSettlementProposalAccepted => {
+                (CfdState::IncomingSettlementProposal, vec![])
             }
             CollaborativeSettlementCompleted {
                 spend_tx, price, ..
@@ -436,20 +434,6 @@ impl Cfd {
         self.actions = actions;
 
         // If we have pending proposals, override the state
-
-        match pending_settlement_proposal {
-            Some((_, SettlementKind::Incoming)) => {
-                self.state = CfdState::IncomingSettlementProposal;
-
-                if role == Role::Maker {
-                    self.actions = vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement];
-                }
-            }
-            Some((_, SettlementKind::Outgoing)) => {
-                self.state = CfdState::OutgoingSettlementProposal;
-            }
-            None => {}
-        }
         match pending_rollover_proposal {
             Some((_, SettlementKind::Incoming)) => {
                 self.state = CfdState::IncomingRollOverProposal;
@@ -503,7 +487,6 @@ struct Tx {
 struct State {
     network: Network,
     quote: Option<bitmex_price_feed::Quote>,
-    settlement_proposals: HashMap<OrderId, (SettlementProposal, SettlementKind)>,
     rollover_proposals: HashMap<OrderId, (RolloverProposal, SettlementKind)>,
 }
 
@@ -512,19 +495,7 @@ impl State {
         Self {
             network,
             quote: None,
-            settlement_proposals: Default::default(),
             rollover_proposals: Default::default(),
-        }
-    }
-
-    fn amend_settlement_proposal(&mut self, update: UpdateSettlementProposal) {
-        match update.proposal {
-            Some(proposal) => {
-                self.settlement_proposals.insert(update.order, proposal);
-            }
-            None => {
-                self.settlement_proposals.remove(&update.order);
-            }
         }
     }
 
@@ -562,11 +533,6 @@ impl Actor {
 
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
         let _ = self.tx.connected_takers.send(msg.0);
-    }
-
-    fn handle(&mut self, msg: UpdateSettlementProposal) {
-        self.state.amend_settlement_proposal(msg);
-        self.refresh_cfds().await;
     }
 
     fn handle(&mut self, msg: UpdateRollOverProposal) {

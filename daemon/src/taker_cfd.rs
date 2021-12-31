@@ -147,7 +147,6 @@ where
             self.n_payouts,
             self.conn_actor.clone(),
             self.process_manager_actor.clone(),
-            self.projection_actor.clone(),
             self.db.clone(),
         )
         .create(None)

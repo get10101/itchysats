@@ -7,11 +7,9 @@ use crate::model::cfd::CfdEvent;
 use crate::model::cfd::CollaborativeSettlement;
 use crate::model::cfd::Completed;
 use crate::model::cfd::OrderId;
-use crate::model::cfd::SettlementKind;
 use crate::model::cfd::SettlementProposal;
 use crate::model::Price;
 use crate::process_manager;
-use crate::projection;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::wire;
 use anyhow::Result;
@@ -25,7 +23,6 @@ pub struct Actor {
     n_payouts: usize,
     connection: xtra::Address<connection::Actor>,
     process_manager: xtra::Address<process_manager::Actor>,
-    projection: xtra::Address<projection::Actor>,
     db: sqlx::SqlitePool,
 }
 
@@ -36,7 +33,6 @@ impl Actor {
         n_payouts: usize,
         connection: xtra::Address<connection::Actor>,
         process_manager: xtra::Address<process_manager::Actor>,
-        projection: xtra::Address<projection::Actor>,
         db: sqlx::SqlitePool,
     ) -> Self {
         Self {
@@ -46,7 +42,6 @@ impl Actor {
             current_price,
             connection,
             process_manager,
-            projection,
             db,
         }
     }
@@ -57,7 +52,7 @@ impl Actor {
 
         let event = cfd.propose_collaborative_settlement(self.current_price, self.n_payouts)?;
         let proposal = if let cfd::Event {
-            event: CfdEvent::CollaborativeSettlementProposed { ref proposal },
+            event: CfdEvent::CollaborativeSettlementStarted { ref proposal },
             ..
         } = event
         {
@@ -91,16 +86,13 @@ impl Actor {
 
         tracing::info!(%order_id, "Settlement proposal got accepted");
 
-        self.update_proposal(None).await?;
-
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd(order_id, &mut conn).await?;
 
         // TODO: This should happen within a dedicated state machine returned from
         // start_collaborative_settlement
         let proposal = self.proposal.take().expect("proposal to exist");
-        let (tx, sig, payout_script_pubkey) =
-            cfd.sign_collaborative_close_transaction_taker(&proposal)?;
+        let (tx, sig, payout_script_pubkey) = cfd.sign_collaborative_settlement_taker(&proposal)?;
 
         self.connection
             .send_async_safe(wire::TakerToMaker::Settlement {
@@ -114,30 +106,6 @@ impl Actor {
             payout_script_pubkey,
             self.current_price,
         )?)
-    }
-
-    async fn handle_rejected(&mut self) -> Result<()> {
-        let order_id = self.order_id;
-
-        tracing::info!(%order_id, "Settlement proposal got rejected");
-
-        self.update_proposal(None).await?;
-
-        Ok(())
-    }
-
-    async fn update_proposal(
-        &mut self,
-        proposal: Option<(SettlementProposal, SettlementKind)>,
-    ) -> Result<()> {
-        self.projection
-            .send(projection::UpdateSettlementProposal {
-                order: self.order_id,
-                proposal,
-            })
-            .await?;
-
-        Ok(())
     }
 
     async fn complete(
@@ -194,10 +162,6 @@ impl xtra::Actor for Actor {
 
         xtra::KeepRunning::StopAll
     }
-
-    async fn stopped(mut self) {
-        let _ = self.update_proposal(None).await;
-    }
 }
 
 #[xtra_productivity]
@@ -218,12 +182,8 @@ impl Actor {
                 Err(e) => Completed::Failed { error: e, order_id },
             },
             wire::maker_to_taker::Settlement::Reject => {
-                if let Err(e) = self.handle_rejected().await {
-                    // XXX: Should this be rejected_due_to(order_id, e) instead?
-                    Completed::Failed { error: e, order_id }
-                } else {
-                    Completed::rejected(order_id)
-                }
+                tracing::info!(%order_id, "Settlement proposal got rejected");
+                Completed::rejected(order_id)
             }
         };
 

@@ -258,9 +258,10 @@ pub enum CfdEvent {
     RolloverRejected,
     RolloverFailed,
 
-    CollaborativeSettlementProposed {
+    CollaborativeSettlementStarted {
         proposal: SettlementProposal,
     },
+    CollaborativeSettlementProposalAccepted,
     CollaborativeSettlementCompleted {
         #[serde(with = "hex_transaction")]
         spend_tx: Transaction,
@@ -385,7 +386,7 @@ pub struct Cfd {
     /// This does _not_ imply that the transaction is actually confirmed.
     commit_tx: Option<Transaction>,
 
-    is_settling_collaboratively: bool,
+    settlement_proposal: Option<SettlementProposal>,
     collaborative_settlement_spend_tx: Option<Transaction>,
 
     refund_tx: Option<Transaction>,
@@ -429,7 +430,7 @@ impl Cfd {
             dlc: None,
             cet: None,
             commit_tx: None,
-            is_settling_collaboratively: false,
+            settlement_proposal: None,
             collaborative_settlement_spend_tx: None,
             refund_tx: None,
             lock_finality: false,
@@ -493,6 +494,10 @@ impl Cfd {
         self.dlc
             .as_ref()
             .map(|dlc| dlc.settlement_event_id.timestamp)
+    }
+
+    fn is_in_collaborative_settlement(&self) -> bool {
+        self.settlement_proposal.is_some()
     }
 
     /// Only cfds in state `Open` that have not received an attestation and are within 23 hours
@@ -611,7 +616,7 @@ impl Cfd {
         ))
     }
 
-    pub fn start_collaborative_settlement_maker(
+    pub fn sign_collaborative_settlement_maker(
         &self,
         proposal: SettlementProposal,
         sig_taker: Signature,
@@ -636,10 +641,10 @@ impl Cfd {
         n_payouts: usize,
     ) -> Result<Event> {
         anyhow::ensure!(
-            !self.is_settling_collaboratively
+            !self.is_in_collaborative_settlement()
                 && self.role == Role::Taker
                 && self.can_settle_collaboratively(),
-            "Failed to start collaborative settlement"
+            "Failed to propose collaborative settlement"
         );
 
         let payout_curve = payout_curve::calculate(
@@ -668,7 +673,39 @@ impl Cfd {
 
         Ok(Event::new(
             self.id,
-            CfdEvent::CollaborativeSettlementProposed { proposal },
+            CfdEvent::CollaborativeSettlementStarted { proposal },
+        ))
+    }
+
+    pub fn receive_collaborative_settlement_proposal(
+        self,
+        proposal: SettlementProposal,
+    ) -> Result<Event> {
+        anyhow::ensure!(
+            !self.is_in_collaborative_settlement()
+                && self.role == Role::Maker
+                && self.can_settle_collaboratively()
+                && proposal.order_id == self.id,
+            "Failed to start collaborative settlement"
+        );
+
+        Ok(Event::new(
+            self.id,
+            CfdEvent::CollaborativeSettlementStarted { proposal },
+        ))
+    }
+
+    pub fn accept_collaborative_settlement_proposal(
+        self,
+        proposal: &SettlementProposal,
+    ) -> Result<Event> {
+        anyhow::ensure!(
+            self.role == Role::Maker && self.settlement_proposal.as_ref() == Some(proposal)
+        );
+
+        Ok(Event::new(
+            self.id,
+            CfdEvent::CollaborativeSettlementProposalAccepted,
         ))
     }
 
@@ -907,7 +944,7 @@ impl Cfd {
         self.role
     }
 
-    pub fn sign_collaborative_close_transaction_taker(
+    pub fn sign_collaborative_settlement_taker(
         &self,
         proposal: &SettlementProposal,
     ) -> Result<(Transaction, Signature, Script)> {
@@ -951,14 +988,17 @@ impl Cfd {
             RolloverFailed { .. } => todo!(),
             RolloverRejected => todo!(),
 
-            CollaborativeSettlementProposed { .. } => self.is_settling_collaboratively = true,
+            CollaborativeSettlementStarted { proposal } => {
+                self.settlement_proposal = Some(proposal)
+            }
+            CollaborativeSettlementProposalAccepted { .. } => {}
             CollaborativeSettlementCompleted { spend_tx, .. } => {
-                self.is_settling_collaboratively = false;
+                self.settlement_proposal = None;
                 self.collaborative_settlement_spend_tx = Some(spend_tx);
             }
             CollaborativeSettlementRejected { commit_tx }
             | CollaborativeSettlementFailed { commit_tx } => {
-                self.is_settling_collaboratively = false;
+                self.settlement_proposal = None;
                 self.commit_tx = Some(commit_tx);
             }
             CetConfirmed => self.cet_finality = true,

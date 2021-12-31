@@ -162,7 +162,8 @@ impl Cfd {
             | OracleAttestedPriorCetTimelock { .. }
             | CollaborativeSettlementRejected { .. }
             | CollaborativeSettlementFailed { .. }
-            | CollaborativeSettlementProposed { .. } => self,
+            | CollaborativeSettlementStarted { .. }
+            | CollaborativeSettlementProposalAccepted => self,
             RevokeConfirmed => todo!("Deal with revoked"),
         }
     }
