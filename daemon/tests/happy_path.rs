@@ -89,7 +89,6 @@ async fn taker_takes_order_and_maker_rejects() {
 }
 
 #[tokio::test]
-#[ignore = "expensive, runs on CI"]
 async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
