@@ -163,8 +163,39 @@ impl Actor {
 
                 tracing::info!(%txid, "Commit transaction published");
             }
-            CollaborativeSettlementStarted { .. } => {}
-            _ => {} // TODO: Monitor post processing for rollover
+            RolloverCompleted { dlc } => {
+                tracing::info!(order_id=%event.id, "Rollover complete");
+
+                self.start_monitoring
+                    .send(monitor::StartMonitoring {
+                        id: event.id,
+                        params: MonitorParams::new(dlc.clone()),
+                    })
+                    .await?;
+
+                self.monitor_attestation
+                    .send(oracle::MonitorAttestation {
+                        event_id: dlc.settlement_event_id,
+                    })
+                    .await?;
+            }
+            CollaborativeSettlementStarted { .. }
+            | ContractSetupStarted
+            | ContractSetupFailed
+            | OfferRejected
+            | RolloverStarted
+            | RolloverAccepted
+            | RolloverRejected
+            | RolloverFailed
+            | CollaborativeSettlementProposalAccepted
+            | LockConfirmed
+            | CommitConfirmed
+            | CetConfirmed
+            | RefundConfirmed
+            | RevokeConfirmed
+            | CollaborativeSettlementConfirmed
+            | CetTimelockConfirmedPriorOracleAttestation
+            | RefundTimelockConfirmed { .. } => {}
         }
 
         // 3. Update UI

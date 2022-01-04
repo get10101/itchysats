@@ -86,6 +86,11 @@ pub struct TakerMessage {
     pub msg: wire::MakerToTaker,
 }
 
+pub struct RegisterRollover {
+    pub order_id: OrderId,
+    pub address: xtra::Address<rollover_maker::Actor>,
+}
+
 pub struct Actor {
     connections: HashMap<Identity, Connection>,
     taker_connected_channel: Box<dyn MessageChannel<TakerConnected>>,
@@ -396,9 +401,8 @@ impl Actor {
         ctx.stop();
     }
 
-    async fn handle_rollover_proposed(&mut self, message: maker_cfd::RollOverProposed) {
-        self.rollover_actors
-            .insert(message.order_id, message.address);
+    async fn handle_rollover_proposed(&mut self, msg: RegisterRollover) {
+        self.rollover_actors.insert(msg.order_id, msg.address);
     }
 }
 

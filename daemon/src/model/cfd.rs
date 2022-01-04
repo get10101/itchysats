@@ -199,7 +199,7 @@ pub struct SettlementProposal {
 }
 
 /// Proposed collaborative settlement
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RolloverProposal {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
@@ -212,15 +212,27 @@ pub enum SettlementKind {
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
+pub enum CannotAutoRollover {
+    #[error("Is too recent to auto-rollover")]
+    TooRecent,
+    #[error("Cfd does not have a dlc")]
+    NoDlc,
+}
+
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum CannotRollover {
     #[error("Cfd does not have a dlc")]
     NoDlc,
     #[error("The Cfd is already expired")]
     AlreadyExpired,
-    #[error("The Cfd was just rolled over")]
-    WasJustRolledOver,
-    #[error("Cannot roll over in state {state}")]
-    WrongState { state: String },
+    #[error("Cannot roll over when CFD not locked yet")]
+    NotLocked,
+    #[error("Cannot roll over when CFD is committed")]
+    Committed,
+    #[error("Cannot roll over when CFD is attested by oracle")]
+    Attested,
+    #[error("Cannot roll over when CFD is final")]
+    Final,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -252,10 +264,12 @@ pub enum CfdEvent {
     ContractSetupFailed,
     OfferRejected,
 
+    RolloverStarted,
+    RolloverAccepted,
+    RolloverRejected,
     RolloverCompleted {
         dlc: Dlc,
     },
-    RolloverRejected,
     RolloverFailed,
 
     CollaborativeSettlementStarted {
@@ -386,21 +400,22 @@ pub struct Cfd {
     /// This does _not_ imply that the transaction is actually confirmed.
     commit_tx: Option<Transaction>,
 
-    settlement_proposal: Option<SettlementProposal>,
     collaborative_settlement_spend_tx: Option<Transaction>,
-
     refund_tx: Option<Transaction>,
 
     lock_finality: bool,
+
     commit_finality: bool,
     refund_finality: bool,
     cet_finality: bool,
     collaborative_settlement_finality: bool,
-
     cet_timelock_expired: bool,
+
     refund_timelock_expired: bool,
 
     during_contract_setup: bool,
+    during_rollover: bool,
+    settlement_proposal: Option<SettlementProposal>,
 }
 
 impl Cfd {
@@ -430,7 +445,6 @@ impl Cfd {
             dlc: None,
             cet: None,
             commit_tx: None,
-            settlement_proposal: None,
             collaborative_settlement_spend_tx: None,
             refund_tx: None,
             lock_finality: false,
@@ -441,6 +455,8 @@ impl Cfd {
             cet_timelock_expired: false,
             refund_timelock_expired: false,
             during_contract_setup: false,
+            during_rollover: false,
+            settlement_proposal: None,
         }
     }
 
@@ -500,53 +516,34 @@ impl Cfd {
         self.settlement_proposal.is_some()
     }
 
-    /// Only cfds in state `Open` that have not received an attestation and are within 23 hours
-    /// until expiry are eligible for rollover
-    pub fn is_rollover_possible(&self, now: OffsetDateTime) -> Result<(), CannotRollover> {
-        if self.is_final() {
-            return Err(CannotRollover::WrongState {
-                state: "final".to_owned(),
-            });
-        }
-
-        if self.commit_tx.is_some() {
-            return Err(CannotRollover::WrongState {
-                state: "committed".to_owned(),
-            });
-        }
-
-        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
-
-        if now > expiry_timestamp {
-            return Err(CannotRollover::AlreadyExpired);
-        }
-
+    pub fn can_auto_rollover_taker(&self, now: OffsetDateTime) -> Result<(), CannotAutoRollover> {
+        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotAutoRollover::NoDlc)?;
         let time_until_expiry = expiry_timestamp - now;
-
         if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
-            return Err(CannotRollover::WasJustRolledOver);
+            return Err(CannotAutoRollover::TooRecent);
         }
-
-        // only state open with no attestation is acceptable for rollover
-        // TODO: Rewrite it terms of events
-        // if !matches!(
-        //     self.state(),
-        //     CfdState::Open {
-        //         attestation: None,
-        //         ..
-        //     }
-        // ) {
-        //     // TODO: how to derive state for these messages?
-        //     return Err(CannotRollover::WrongState {
-        //         state: "Insert state here (how do to it?)".into(),
-        //     });
-        // }
 
         Ok(())
     }
 
-    fn can_roll_over(&self) -> bool {
-        self.lock_finality && !self.commit_finality && !self.is_final() && !self.is_attested()
+    fn can_rollover(&self) -> Result<(), CannotRollover> {
+        if self.is_final() {
+            return Err(CannotRollover::Final);
+        }
+
+        if self.is_attested() {
+            return Err(CannotRollover::Attested);
+        }
+
+        if self.commit_finality {
+            return Err(CannotRollover::Committed);
+        }
+
+        if !self.lock_finality {
+            return Err(CannotRollover::NotLocked);
+        }
+
+        Ok(())
     }
 
     fn can_settle_collaboratively(&self) -> bool {
@@ -595,24 +592,53 @@ impl Cfd {
         ))
     }
 
-    pub fn start_rollover(&self) -> Result<(RolloverParams, Dlc, Duration)> {
-        if !self.can_roll_over() {
-            bail!("Start rollover only allowed when open")
-        }
+    pub fn start_rollover(&self) -> Result<Event> {
+        anyhow::ensure!(!self.during_rollover);
+
+        self.can_rollover()?;
+
+        Ok(Event::new(self.id, CfdEvent::RolloverStarted))
+    }
+
+    pub fn accept_rollover_proposal(self) -> Result<(Event, (RolloverParams, Dlc, Duration))> {
+        anyhow::ensure!(
+            self.during_rollover && self.role == Role::Maker,
+            "Failed to accept rollover"
+        );
 
         Ok((
-            RolloverParams::new(
-                self.initial_price,
-                self.quantity,
-                self.leverage,
-                self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+            Event::new(self.id, CfdEvent::RolloverAccepted),
+            (
+                RolloverParams::new(
+                    self.initial_price,
+                    self.quantity,
+                    self.leverage,
+                    self.refund_timelock_in_blocks(),
+                    1, // TODO: Where should I get the fee rate from?
+                ),
+                self.dlc.as_ref().ok_or(CannotRollover::NoDlc)?.clone(),
+                self.settlement_interval,
             ),
-            self.dlc
-                .as_ref()
-                .context("dlc has to be available for rollover")?
-                .clone(),
-            self.settlement_interval,
+        ))
+    }
+
+    pub fn handle_rollover_accepted_taker(&self) -> Result<(Event, (RolloverParams, Dlc))> {
+        anyhow::ensure!(self.during_rollover && self.role == Role::Taker);
+
+        self.can_rollover()?;
+
+        Ok((
+            self.event(CfdEvent::RolloverAccepted),
+            (
+                RolloverParams::new(
+                    self.initial_price,
+                    self.quantity,
+                    self.leverage,
+                    self.refund_timelock_in_blocks(),
+                    1, // TODO: Where should I get the fee rate from?
+                ),
+                self.dlc.as_ref().ok_or(CannotRollover::NoDlc)?.clone(),
+            ),
         ))
     }
 
@@ -735,22 +761,17 @@ impl Cfd {
         Ok(self.event(event))
     }
 
-    // TODO: Pass the entire enum
-    pub fn roll_over(self, rollover_result: Result<Dlc>) -> Result<Event> {
-        // TODO: Compare that the version that we started the rollover with is the same as the
-        // version now. For that to work we should pass the version into the state machine
-        // that will handle rollover and the pass it back in here for comparison.
-        if !self.can_roll_over() {
-            bail!("Complete rollover only allowed when open")
+    pub fn roll_over(self, completed: RolloverCompleted) -> Result<Event> {
+        if let (Err(e), RolloverCompleted::Succeeded { .. }) = (self.can_rollover(), &completed) {
+            bail!(e)
         }
 
-        let event = match rollover_result {
-            Ok(dlc) => CfdEvent::RolloverCompleted { dlc },
-            Err(err) => {
-                tracing::error!("Rollover failed: {:#}", err);
-
-                CfdEvent::RolloverFailed
-            }
+        let event = match completed {
+            Completed::Succeeded {
+                payload: (dlc, _), ..
+            } => CfdEvent::RolloverCompleted { dlc },
+            Completed::Rejected { .. } => CfdEvent::RolloverRejected,
+            Completed::Failed { .. } => CfdEvent::RolloverFailed,
         };
 
         Ok(self.event(event))
@@ -982,11 +1003,20 @@ impl Cfd {
                 // TODO: Deal with failed contract setup
                 self.during_contract_setup = false;
             }
+            RolloverStarted => {
+                self.during_rollover = true;
+            }
+            RolloverAccepted => {}
             RolloverCompleted { dlc } => {
                 self.dlc = Some(dlc);
+                self.during_rollover = false;
             }
-            RolloverFailed { .. } => todo!(),
-            RolloverRejected => todo!(),
+            RolloverFailed { .. } => {
+                self.during_rollover = false;
+            }
+            RolloverRejected => {
+                self.during_rollover = false;
+            }
 
             CollaborativeSettlementStarted { proposal } => {
                 self.settlement_proposal = Some(proposal)
@@ -1476,6 +1506,10 @@ impl<P> Completed<P> {
     pub fn rejected_due_to(order_id: OrderId, reason: anyhow::Error) -> Self {
         Self::Rejected { order_id, reason }
     }
+
+    pub fn failed(order_id: OrderId, error: anyhow::Error) -> Self {
+        Self::Failed { order_id, error }
+    }
 }
 
 pub mod marker {
@@ -1540,7 +1574,13 @@ mod hex_transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::seed::Seed;
+    use bdk::bitcoin::util::psbt::Global;
+    use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
     use rust_decimal_macros::dec;
+    use std::collections::BTreeMap;
+    use std::str::FromStr;
+    use time::macros::datetime;
 
     #[test]
     fn given_default_values_then_expected_liquidation_price() {
@@ -1816,5 +1856,329 @@ mod tests {
         let event = CfdEvent::from_json(name, data).unwrap();
 
         assert_eq!(event, CfdEvent::OfferRejected);
+    }
+
+    #[tokio::test]
+    async fn given_cfd_expires_now_then_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //                                                          now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+        let result = cfd.can_auto_rollover_taker(datetime!(2021-11-19 10:00:00).assume_utc());
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn given_cfd_expires_within_23hours_then_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //        now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let result = cfd.can_auto_rollover_taker(datetime!(2021-11-18 11:00:00).assume_utc());
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn given_cfd_was_just_rolled_over_then_no_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //    now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+        let cannot_roll_over = cfd
+            .can_auto_rollover_taker(datetime!(2021-11-18 10:00:01).assume_utc())
+            .unwrap_err();
+
+        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
+    }
+
+    #[tokio::test]
+    async fn given_cfd_out_of_bounds_expiry_then_no_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //  now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+        let cannot_roll_over = cfd
+            .can_auto_rollover_taker(datetime!(2021-11-18 09:59:59).assume_utc())
+            .unwrap_err();
+
+        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
+    }
+
+    #[tokio::test]
+    async fn given_cfd_was_renewed_less_than_1h_ago_then_no_rollover() {
+        // --|----|-------------------------------------------------|--> time
+        //   ct   1h                                                24h
+        // --|----|<--------------------rollover------------------->|--
+        //       now
+
+        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+        let cannot_roll_over = cfd
+            .can_auto_rollover_taker(datetime!(2021-11-18 10:59:59).assume_utc())
+            .unwrap_err();
+
+        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
+    }
+
+    #[tokio::test]
+    async fn given_cfd_not_locked_then_no_rollover() {
+        let cfd = Cfd::dummy_not_open_yet();
+
+        let cannot_roll_over = cfd.can_rollover().unwrap_err();
+
+        assert!(matches!(cannot_roll_over, CannotRollover::NotLocked { .. }))
+    }
+
+    #[tokio::test]
+    async fn given_cfd_has_attestation_then_no_rollover() {
+        let cfd = Cfd::dummy_with_attestation(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let cannot_roll_over = cfd.can_rollover().unwrap_err();
+
+        assert!(matches!(cannot_roll_over, CannotRollover::Attested { .. }))
+    }
+
+    #[tokio::test]
+    async fn given_cfd_final_then_no_rollover() {
+        let cfd = Cfd::dummy_final(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let cannot_roll_over = cfd.can_rollover().unwrap_err();
+
+        assert!(matches!(cannot_roll_over, CannotRollover::Final))
+    }
+
+    impl Event {
+        fn dummy_open(event_id: BitMexPriceEventId) -> Vec<Self> {
+            vec![
+                Event {
+                    timestamp: Timestamp::now(),
+                    id: Default::default(),
+                    event: CfdEvent::ContractSetupStarted,
+                },
+                Event {
+                    timestamp: Timestamp::now(),
+                    id: Default::default(),
+                    event: CfdEvent::ContractSetupCompleted {
+                        dlc: Dlc::dummy(Some(event_id)),
+                    },
+                },
+                Event {
+                    timestamp: Timestamp::now(),
+                    id: Default::default(),
+                    event: CfdEvent::LockConfirmed,
+                },
+            ]
+        }
+
+        fn dummy_attestation_prior_timelock(event_id: BitMexPriceEventId) -> Vec<Self> {
+            let mut open = Self::dummy_open(event_id);
+            open.push(Event {
+                timestamp: Timestamp::now(),
+                id: Default::default(),
+                event: CfdEvent::OracleAttestedPriorCetTimelock {
+                    timelocked_cet: dummy_transaction(),
+                    commit_tx: dummy_transaction(),
+                    price: Price(dec!(10000)),
+                },
+            });
+
+            open
+        }
+
+        fn dummy_final_cet(event_id: BitMexPriceEventId) -> Vec<Self> {
+            let mut open = Self::dummy_open(event_id);
+            open.push(Event {
+                timestamp: Timestamp::now(),
+                id: Default::default(),
+                event: CfdEvent::CetConfirmed,
+            });
+
+            open
+        }
+    }
+
+    impl Cfd {
+        fn dummy_not_open_yet() -> Self {
+            Cfd::from_order(
+                Order::dummy_model(),
+                Position::Long,
+                Usd::new(dec!(1000)),
+                dummy_identity(),
+                Role::Taker,
+            )
+        }
+
+        fn dummy_open(event_id: BitMexPriceEventId) -> Self {
+            let cfd = Cfd::from_order(
+                Order::dummy_model(),
+                Position::Long,
+                Usd::new(dec!(1000)),
+                dummy_identity(),
+                Role::Taker,
+            );
+
+            Event::dummy_open(event_id)
+                .into_iter()
+                .fold(cfd, Cfd::apply)
+        }
+
+        fn dummy_with_attestation(event_id: BitMexPriceEventId) -> Self {
+            let cfd = Cfd::from_order(
+                Order::dummy_model(),
+                Position::Long,
+                Usd::new(dec!(1000)),
+                dummy_identity(),
+                Role::Taker,
+            );
+
+            Event::dummy_attestation_prior_timelock(event_id)
+                .into_iter()
+                .fold(cfd, Cfd::apply)
+        }
+
+        fn dummy_final(event_id: BitMexPriceEventId) -> Self {
+            let cfd = Cfd::from_order(
+                Order::dummy_model(),
+                Position::Long,
+                Usd::new(dec!(1000)),
+                dummy_identity(),
+                Role::Taker,
+            );
+
+            Event::dummy_final_cet(event_id)
+                .into_iter()
+                .fold(cfd, Cfd::apply)
+        }
+    }
+
+    impl Order {
+        fn dummy_model() -> Self {
+            Order::new_short(
+                Price::new(dec!(1000)).unwrap(),
+                Usd::new(dec!(100)),
+                Usd::new(dec!(1000)),
+                Origin::Theirs,
+                dummy_event_id(),
+                time::Duration::hours(24),
+                1,
+            )
+            .unwrap()
+        }
+    }
+
+    impl Dlc {
+        fn dummy(event_id: Option<BitMexPriceEventId>) -> Self {
+            let dummy_sk = SecretKey::from_slice(&[1; 32]).unwrap();
+            let dummy_pk = PublicKey::from_slice(&[
+                3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51,
+                41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
+            ])
+            .unwrap();
+
+            let dummy_addr = Address::from_str("132F25rTsvBdp9JzLLBHP5mvGY66i1xdiM").unwrap();
+
+            let dummy_tx = dummy_partially_signed_transaction().extract_tx();
+            let dummy_adapter_sig = "03424d14a5471c048ab87b3b83f6085d125d5864249ae4297a57c84e74710bb6730223f325042fce535d040fee52ec13231bf709ccd84233c6944b90317e62528b2527dff9d659a96db4c99f9750168308633c1867b70f3a18fb0f4539a1aecedcd1fc0148fc22f36b6303083ece3f872b18e35d368b3958efe5fb081f7716736ccb598d269aa3084d57e1855e1ea9a45efc10463bbf32ae378029f5763ceb40173f"
+                .parse()
+                .unwrap();
+
+            let dummy_sig = Signature::from_str("3046022100839c1fbc5304de944f697c9f4b1d01d1faeba32d751c0f7acb21ac8a0f436a72022100e89bd46bb3a5a62adc679f659b7ce876d83ee297c7a5587b2011c4fcc72eab45").unwrap();
+
+            let mut dummy_cet_with_zero_price_range = HashMap::new();
+            dummy_cet_with_zero_price_range.insert(
+                BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
+                vec![Cet {
+                    tx: dummy_tx.clone(),
+                    adaptor_sig: dummy_adapter_sig,
+                    range: RangeInclusive::new(0, 1),
+                    n_bits: 0,
+                }],
+            );
+
+            Dlc {
+                identity: dummy_sk,
+                identity_counterparty: dummy_pk,
+                revocation: dummy_sk,
+                revocation_pk_counterparty: dummy_pk,
+                publish: dummy_sk,
+                publish_pk_counterparty: dummy_pk,
+                maker_address: dummy_addr.clone(),
+                taker_address: dummy_addr,
+                lock: (dummy_tx.clone(), Descriptor::new_pk(dummy_pk)),
+                commit: (
+                    dummy_tx.clone(),
+                    dummy_adapter_sig,
+                    Descriptor::new_pk(dummy_pk),
+                ),
+                cets: dummy_cet_with_zero_price_range,
+                refund: (dummy_tx, dummy_sig),
+                maker_lock_amount: Default::default(),
+                taker_lock_amount: Default::default(),
+                revoked_commit: vec![],
+                settlement_event_id: match event_id {
+                    Some(event_id) => event_id,
+                    None => dummy_event_id(),
+                },
+                refund_timelock: 0,
+            }
+        }
+    }
+
+    pub fn dummy_transaction() -> Transaction {
+        dummy_partially_signed_transaction().extract_tx()
+    }
+
+    pub fn dummy_partially_signed_transaction() -> PartiallySignedTransaction {
+        // very simple dummy psbt that does not contain anything
+        // pulled in from github.com-1ecc6299db9ec823/bitcoin-0.27.1/src/util/psbt/mod.rs:238
+
+        PartiallySignedTransaction {
+            global: Global {
+                unsigned_tx: Transaction {
+                    version: 2,
+                    lock_time: 0,
+                    input: vec![],
+                    output: vec![],
+                },
+                xpub: Default::default(),
+                version: 0,
+                proprietary: BTreeMap::new(),
+                unknown: BTreeMap::new(),
+            },
+            inputs: vec![],
+            outputs: vec![],
+        }
+    }
+
+    pub fn dummy_identity() -> Identity {
+        Identity::new(Seed::default().derive_identity().0)
+    }
+
+    pub fn dummy_event_id() -> BitMexPriceEventId {
+        BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc())
     }
 }

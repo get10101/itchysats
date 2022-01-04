@@ -192,6 +192,43 @@ async fn force_close_an_open_cfd() {
 }
 
 #[tokio::test]
+async fn rollover_an_open_cfd() {
+    let _guard = init_tracing();
+    let oracle_data = OliviaData::example_0();
+    let (mut maker, mut taker, order_id) =
+        start_from_open_cfd_state(oracle_data.announcement()).await;
+
+    taker.trigger_rollover(order_id).await;
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert_eq!(taker_cfd.state, CfdState::OutgoingRollOverProposal);
+    assert_eq!(maker_cfd.state, CfdState::IncomingRollOverProposal);
+
+    maker.accept_rollover_proposal(order_id).await;
+
+    assert_next_state!(CfdState::ContractSetup, maker, taker, order_id);
+    assert_next_state!(CfdState::Open, maker, taker, order_id);
+}
+
+#[tokio::test]
+async fn maker_rejects_rollover_of_open_cfd() {
+    let _guard = init_tracing();
+    let oracle_data = OliviaData::example_0();
+    let (mut maker, mut taker, order_id) =
+        start_from_open_cfd_state(oracle_data.announcement()).await;
+
+    taker.trigger_rollover(order_id).await;
+
+    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
+    assert_eq!(taker_cfd.state, CfdState::OutgoingRollOverProposal);
+    assert_eq!(maker_cfd.state, CfdState::IncomingRollOverProposal);
+
+    maker.reject_rollover_proposal(order_id).await;
+
+    assert_next_state!(CfdState::Open, maker, taker, order_id);
+}
+
+#[tokio::test]
 async fn taker_notices_lack_of_maker() {
     let short_interval = Duration::from_secs(1);
 
