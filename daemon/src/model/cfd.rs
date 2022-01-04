@@ -219,8 +219,14 @@ pub enum CannotRollover {
     AlreadyExpired,
     #[error("The Cfd was just rolled over")]
     WasJustRolledOver,
-    #[error("Cannot roll over in state {state}")]
-    WrongState { state: String },
+    #[error("Cannot roll over when CFD not locked yet")]
+    NotLocked,
+    #[error("Cannot roll over when CFD is committed")]
+    Committed,
+    #[error("Cannot roll over when CFD is attested by oracle")]
+    Attested,
+    #[error("Cannot roll over when CFD is final")]
+    Final,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -500,20 +506,8 @@ impl Cfd {
         self.settlement_proposal.is_some()
     }
 
-    /// Only cfds in state `Open` that have not received an attestation and are within 23 hours
-    /// until expiry are eligible for rollover
-    pub fn is_rollover_possible(&self, now: OffsetDateTime) -> Result<(), CannotRollover> {
-        if self.is_final() {
-            return Err(CannotRollover::WrongState {
-                state: "final".to_owned(),
-            });
-        }
-
-        if self.commit_tx.is_some() {
-            return Err(CannotRollover::WrongState {
-                state: "committed".to_owned(),
-            });
-        }
+    pub fn is_rollover_possible_taker(&self, now: OffsetDateTime) -> Result<(), CannotRollover> {
+        self.can_roll_over()?;
 
         let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
 
@@ -527,26 +521,31 @@ impl Cfd {
             return Err(CannotRollover::WasJustRolledOver);
         }
 
-        // only state open with no attestation is acceptable for rollover
-        // TODO: Rewrite it terms of events
-        // if !matches!(
-        //     self.state(),
-        //     CfdState::Open {
-        //         attestation: None,
-        //         ..
-        //     }
-        // ) {
-        //     // TODO: how to derive state for these messages?
-        //     return Err(CannotRollover::WrongState {
-        //         state: "Insert state here (how do to it?)".into(),
-        //     });
-        // }
-
         Ok(())
     }
 
-    fn can_roll_over(&self) -> bool {
-        self.lock_finality && !self.commit_finality && !self.is_final() && !self.is_attested()
+    pub fn is_rollover_possible_maker(&self) -> Result<(), CannotRollover> {
+        self.can_roll_over()
+    }
+
+    fn can_roll_over(&self) -> Result<(), CannotRollover> {
+        if self.is_final() {
+            return Err(CannotRollover::Final);
+        }
+
+        if self.is_attested() {
+            return Err(CannotRollover::Attested);
+        }
+
+        if self.commit_finality {
+            return Err(CannotRollover::Committed);
+        }
+
+        if !self.lock_finality {
+            return Err(CannotRollover::NotLocked);
+        }
+
+        Ok(())
     }
 
     fn can_settle_collaboratively(&self) -> bool {
@@ -596,8 +595,8 @@ impl Cfd {
     }
 
     pub fn start_rollover(&self) -> Result<(RolloverParams, Dlc, Duration)> {
-        if !self.can_roll_over() {
-            bail!("Start rollover only allowed when open")
+        if let Err(e) = self.can_roll_over() {
+            bail!(e)
         }
 
         Ok((
@@ -740,8 +739,8 @@ impl Cfd {
         // TODO: Compare that the version that we started the rollover with is the same as the
         // version now. For that to work we should pass the version into the state machine
         // that will handle rollover and the pass it back in here for comparison.
-        if !self.can_roll_over() {
-            bail!("Complete rollover only allowed when open")
+        if let Err(e) = self.can_roll_over() {
+            bail!(e)
         }
 
         let event = match rollover_result {

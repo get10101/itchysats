@@ -39,7 +39,6 @@ use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use std::collections::HashSet;
 use time::Duration;
-use time::OffsetDateTime;
 use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
@@ -205,7 +204,7 @@ where
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd(proposal.order_id, &mut conn).await?;
 
-        cfd.is_rollover_possible(OffsetDateTime::now_utc())?;
+        cfd.is_rollover_possible_maker()?;
 
         let this = ctx.address().expect("acquired own address");
 

@@ -181,7 +181,10 @@ impl Actor {
 #[async_trait]
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        if let Err(e) = self.cfd.is_rollover_possible(OffsetDateTime::now_utc()) {
+        if let Err(e) = self
+            .cfd
+            .is_rollover_possible_taker(OffsetDateTime::now_utc())
+        {
             self.complete(
                 match e {
                     CannotRollover::NoDlc => RolloverCompleted::Failed {
@@ -190,10 +193,19 @@ impl xtra::Actor for Actor {
                     },
                     CannotRollover::AlreadyExpired
                     | CannotRollover::WasJustRolledOver
-                    | CannotRollover::WrongState { .. } => RolloverCompleted::Rejected {
-                        order_id: self.cfd.id(),
-                        reason: e.into(),
-                    },
+                    | CannotRollover::NotLocked { .. }
+                    | CannotRollover::Committed
+                    | CannotRollover::Attested
+                    | CannotRollover::Final => {
+                        // TODO: This is actually somewhat incorrect. The rollover is not rejected
+                        // but not possible!  Previously we distinguished
+                        // between Rejected / NotPossible, but the Completed abstraction makes that
+                        // difficult.
+                        RolloverCompleted::Rejected {
+                            order_id: self.cfd.id(),
+                            reason: e.into(),
+                        }
+                    }
                 },
                 ctx,
             )
