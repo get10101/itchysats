@@ -17,7 +17,9 @@ use daemon::model::Identity;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
+use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
+use daemon::seed::UmbrelSeed;
 use daemon::supervisor;
 use daemon::wallet;
 use daemon::TakerActorSystem;
@@ -70,12 +72,21 @@ struct Opts {
 
     #[clap(subcommand)]
     network: Network,
+
+    #[clap(short, long, parse(try_from_str = parse_umbrel_seed))]
+    umbrel_seed: Option<[u8; 32]>,
 }
 
 fn parse_x25519_pubkey(s: &str) -> Result<x25519_dalek::PublicKey> {
     let mut bytes = [0u8; 32];
     hex::decode_to_slice(s, &mut bytes)?;
     Ok(x25519_dalek::PublicKey::from(bytes))
+}
+
+fn parse_umbrel_seed(s: &str) -> Result<[u8; 32]> {
+    let mut bytes = [0u8; 32];
+    hex::decode_to_slice(s, &mut bytes)?;
+    Ok(bytes)
 }
 
 #[derive(Parser)]
@@ -182,12 +193,23 @@ async fn main() -> Result<()> {
 
     let maker_identity = Identity::new(opts.maker_id);
 
-    let seed = Seed::initialize(&data_dir.join("taker_seed")).await?;
-
     let bitcoin_network = opts.network.bitcoin_network();
-    let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
-    let (_, identity_sk) = seed.derive_identity();
-    let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
+    let (ext_priv_key, identity_sk, web_password) = match opts.umbrel_seed {
+        Some(seed_bytes) => {
+            let seed = UmbrelSeed::from(seed_bytes);
+            let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
+            let (_, identity_sk) = seed.derive_identity();
+            let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
+            (ext_priv_key, identity_sk, web_password)
+        }
+        None => {
+            let seed = RandomSeed::initialize(&data_dir.join("taker_seed")).await?;
+            let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
+            let (_, identity_sk) = seed.derive_identity();
+            let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
+            (ext_priv_key, identity_sk, web_password)
+        }
+    };
 
     let mut tasks = Tasks::default();
 
@@ -291,7 +313,6 @@ async fn main() -> Result<()> {
                 routes_taker::margin_calc,
                 routes_taker::post_cfd_action,
                 routes_taker::post_withdraw_request,
-                routes_taker::post_wallet_reinitialise,
             ],
         )
         .register("/api", rocket::catchers![auth::unauthorized])

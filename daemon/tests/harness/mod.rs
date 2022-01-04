@@ -17,6 +17,7 @@ use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::CfdOrder;
 use daemon::projection::Feeds;
+use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::MakerActorSystem;
 use daemon::Tasks;
@@ -59,7 +60,7 @@ pub async fn start_both() -> (Maker, Taker) {
 
 pub struct MakerConfig {
     oracle_pk: schnorrsig::PublicKey,
-    seed: Seed,
+    seed: RandomSeed,
     pub heartbeat_interval: Duration,
     n_payouts: usize,
     dedicated_port: Option<u16>,
@@ -85,7 +86,7 @@ impl Default for MakerConfig {
     fn default() -> Self {
         Self {
             oracle_pk: oracle_pk(),
-            seed: Seed::default(),
+            seed: RandomSeed::default(),
             heartbeat_interval: HEARTBEAT_INTERVAL_FOR_TEST,
             n_payouts: N_PAYOUTS_FOR_TEST,
             dedicated_port: None,
@@ -96,7 +97,7 @@ impl Default for MakerConfig {
 #[derive(Clone)]
 pub struct TakerConfig {
     oracle_pk: schnorrsig::PublicKey,
-    seed: Seed,
+    seed: RandomSeed,
     pub heartbeat_interval: Duration,
     n_payouts: usize,
 }
@@ -114,7 +115,7 @@ impl Default for TakerConfig {
     fn default() -> Self {
         Self {
             oracle_pk: oracle_pk(),
-            seed: Seed::default(),
+            seed: RandomSeed::default(),
             heartbeat_interval: HEARTBEAT_INTERVAL_FOR_TEST,
             n_payouts: N_PAYOUTS_FOR_TEST,
         }

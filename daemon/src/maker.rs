@@ -14,6 +14,7 @@ use daemon::model::cfd::Role;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
+use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::supervisor;
 use daemon::wallet;
@@ -160,7 +161,7 @@ async fn main() -> Result<()> {
         tokio::fs::create_dir_all(&data_dir).await?;
     }
 
-    let seed = Seed::initialize(&data_dir.join("maker_seed")).await?;
+    let seed = RandomSeed::initialize(&data_dir.join("maker_seed")).await?;
 
     let bitcoin_network = opts.network.bitcoin_network();
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;

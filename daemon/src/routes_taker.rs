@@ -178,29 +178,6 @@ pub async fn post_cfd_action(
     Ok(status::Accepted(None))
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct WalletReinitialiseRequest {
-    pub seed_words: String,
-}
-
-#[rocket::post("/wallet/reinitialise", data = "<wallet_reinitialise_request>")]
-pub async fn post_wallet_reinitialise(
-    wallet_reinitialise_request: Json<WalletReinitialiseRequest>,
-    taker: &State<Taker>,
-    _auth: Authenticated,
-) -> Result<status::Accepted<()>, HttpApiProblem> {
-    taker
-        .reinitialise_wallet(&wallet_reinitialise_request.seed_words)
-        .await
-        .map_err(|e| {
-            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .title("Wallet recover request failed")
-                .detail(e.to_string())
-        })?;
-
-    Ok(status::Accepted(None))
-}
-
 #[rocket::get("/alive")]
 pub fn get_health_check() {}
 
