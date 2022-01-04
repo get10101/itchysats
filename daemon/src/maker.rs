@@ -5,7 +5,7 @@ use bdk::{bitcoin, FeeRate};
 use clap::{Parser, Subcommand};
 use daemon::auth::USERNAME;
 use daemon::model::cfd::Role;
-use daemon::seed::Seed;
+use daemon::seed::{RandomSeed, Seed};
 use daemon::{
     auth, bitmex_price_feed, db, housekeeping, logger, maker_inc_connections, monitor, oracle,
     projection, wallet, MakerActorSystem, Tasks, HEARTBEAT_INTERVAL, N_PAYOUTS,
@@ -152,7 +152,7 @@ async fn main() -> Result<()> {
         tokio::fs::create_dir_all(&data_dir).await?;
     }
 
-    let seed = Seed::initialize(&data_dir.join("maker_seed")).await?;
+    let seed = RandomSeed::initialize(&data_dir.join("maker_seed")).await?;
 
     let bitcoin_network = opts.network.bitcoin_network();
     let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;

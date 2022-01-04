@@ -8,7 +8,7 @@ use daemon::connection::{connect, ConnectionStatus};
 use daemon::model::cfd::{OrderId, Role};
 use daemon::model::{self, Price, Timestamp, Usd};
 use daemon::projection::{Cfd, CfdOrder, Feeds, Identity};
-use daemon::seed::Seed;
+use daemon::seed::{RandomSeed, Seed};
 use daemon::{
     db, maker_cfd, maker_inc_connections, projection, taker_cfd, MakerActorSystem, Tasks,
     HEARTBEAT_INTERVAL, N_PAYOUTS,
@@ -50,7 +50,7 @@ pub async fn start_both() -> (Maker, Taker) {
 
 pub struct MakerConfig {
     oracle_pk: schnorrsig::PublicKey,
-    seed: Seed,
+    seed: RandomSeed,
     pub heartbeat_interval: Duration,
     n_payouts: usize,
 }
@@ -68,7 +68,7 @@ impl Default for MakerConfig {
     fn default() -> Self {
         Self {
             oracle_pk: oracle_pk(),
-            seed: Seed::default(),
+            seed: RandomSeed::default(),
             heartbeat_interval: HEARTBEAT_INTERVAL_FOR_TEST,
             n_payouts: N_PAYOUTS_FOR_TEST,
         }
@@ -78,7 +78,7 @@ impl Default for MakerConfig {
 #[derive(Clone)]
 pub struct TakerConfig {
     oracle_pk: schnorrsig::PublicKey,
-    seed: Seed,
+    seed: RandomSeed,
     pub heartbeat_timeout: Duration,
     n_payouts: usize,
 }
@@ -96,7 +96,7 @@ impl Default for TakerConfig {
     fn default() -> Self {
         Self {
             oracle_pk: oracle_pk(),
-            seed: Seed::default(),
+            seed: RandomSeed::default(),
             heartbeat_timeout: HEARTBEAT_INTERVAL_FOR_TEST * 2,
             n_payouts: N_PAYOUTS_FOR_TEST,
         }

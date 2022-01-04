@@ -560,7 +560,7 @@ mod tests {
     use crate::db::insert_order;
     use crate::model::cfd::{Cfd, CfdState, Order, Origin};
     use crate::model::{Identity, Price, Usd};
-    use crate::seed::Seed;
+    use crate::seed::{RandomSeed, Seed};
     use pretty_assertions::assert_eq;
     use rand::Rng;
     use rust_decimal_macros::dec;
@@ -767,7 +767,7 @@ mod tests {
 
     impl Cfd {
         fn dummy() -> Self {
-            let (pub_key, _) = Seed::default().derive_identity();
+            let (pub_key, _) = RandomSeed::default().derive_identity();
             let dummy_identity = Identity::new(pub_key);
 
             Cfd::new(
