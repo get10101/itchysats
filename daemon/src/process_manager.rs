@@ -163,7 +163,7 @@ impl Actor {
 
                 tracing::info!(%txid, "Commit transaction published");
             }
-            CollaborativeSettlementProposed { .. } => {}
+            CollaborativeSettlementStarted { .. } => {}
             _ => {} // TODO: Monitor post processing for rollover
         }
 

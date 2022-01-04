@@ -533,18 +533,14 @@ where
                 )
             })?;
 
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(proposal.order_id, &mut conn).await?;
-
         let this = ctx.address().expect("self to be alive");
         let (addr, task) = collab_settlement_maker::Actor::new(
-            cfd,
             proposal,
-            self.projection_actor.clone(),
-            &ctx.address().expect("we are alive"),
             taker_id,
             &self.takers,
+            self.process_manager_actor.clone(),
             (&self.takers, &this),
+            self.db.clone(),
         )
         .create(None)
         .run();
