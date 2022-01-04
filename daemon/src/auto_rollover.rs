@@ -14,6 +14,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use maia::secp256k1_zkp::schnorrsig;
 use std::time::Duration;
+use time::OffsetDateTime;
 use xtra::Actor as _;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
@@ -83,6 +84,11 @@ where
 
             // TODO: Shall this have a try_continue?
             let cfd = load_cfd(id, &mut conn).await?;
+
+            if let Err(e) = cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
+                tracing::trace!(%id, "Cannot roll over: {:#}", e);
+                continue;
+            }
 
             let (addr, fut) = rollover_taker::Actor::new(
                 (cfd, self.n_payouts),

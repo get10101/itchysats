@@ -32,7 +32,6 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde::Serialize;
 use sqlx::pool::PoolConnection;
-use std::collections::HashMap;
 use time::OffsetDateTime;
 use tokio::sync::watch;
 use xtra::Context;
@@ -106,20 +105,14 @@ impl Actor {
                 return;
             }
         };
-        let cfds = match load_and_hydrate_cfds(
-            &mut conn,
-            self.state.quote,
-            self.state.network,
-            &self.state.rollover_proposals,
-        )
-        .await
-        {
-            Ok(cfds) => cfds,
-            Err(e) => {
-                tracing::warn!("Failed to load CFDs: {:#}", e);
-                return;
-            }
-        };
+        let cfds =
+            match load_and_hydrate_cfds(&mut conn, self.state.quote, self.state.network).await {
+                Ok(cfds) => cfds,
+                Err(e) => {
+                    tracing::warn!("Failed to load CFDs: {:#}", e);
+                    return;
+                }
+            };
 
         let _ = self.tx.cfds.send(cfds);
     }
@@ -129,7 +122,6 @@ async fn load_and_hydrate_cfds(
     conn: &mut PoolConnection<sqlx::Sqlite>,
     quote: Option<bitmex_price_feed::Quote>,
     network: Network,
-    rollover_proposals: &HashMap<OrderId, (RolloverProposal, SettlementKind)>,
 ) -> Result<Vec<Cfd>> {
     let ids = db::load_all_cfd_ids(conn).await?;
 
@@ -140,7 +132,7 @@ async fn load_and_hydrate_cfds(
         let role = cfd.role;
 
         let cfd = events.into_iter().fold(Cfd::new(cfd, quote), |cfd, event| {
-            cfd.apply(event, network, rollover_proposals.get(&id), role)
+            cfd.apply(event, network, role)
         });
 
         cfds.push(cfd);
@@ -272,13 +264,7 @@ impl Cfd {
     // TODO: There is probably a better way of doing this?
     // The issue is, we need to re-hydrate the CFD to get the latest state but at the same time
     // incorporate other data like network, current price, etc ...
-    fn apply(
-        mut self,
-        event: Event,
-        network: Network,
-        pending_rollover_proposal: Option<&(RolloverProposal, SettlementKind)>,
-        role: Role,
-    ) -> Self {
+    fn apply(mut self, event: Event, network: Network, role: Role) -> Self {
         // First, try to set state based on event.
         use CfdEvent::*;
         let (state, actions) = match event.event {
@@ -428,25 +414,21 @@ impl Cfd {
                 (CfdState::PendingCommit, vec![])
             }
             RevokeConfirmed => todo!("Deal with revoked"),
+            RolloverStarted => match role {
+                Role::Maker => (
+                    CfdState::IncomingRollOverProposal,
+                    vec![CfdAction::AcceptRollOver, CfdAction::RejectRollOver],
+                ),
+                Role::Taker => (CfdState::OutgoingRollOverProposal, vec![]),
+            },
+            RolloverAccepted => {
+                // TODO: Might wanna introduce a separate state there...?
+                (CfdState::ContractSetup, vec![])
+            }
         };
 
         self.state = state;
         self.actions = actions;
-
-        // If we have pending proposals, override the state
-        match pending_rollover_proposal {
-            Some((_, SettlementKind::Incoming)) => {
-                self.state = CfdState::IncomingRollOverProposal;
-
-                if role == Role::Maker {
-                    self.actions = vec![CfdAction::AcceptRollOver, CfdAction::RejectRollOver];
-                }
-            }
-            Some((_, SettlementKind::Outgoing)) => {
-                self.state = CfdState::OutgoingRollOverProposal;
-            }
-            None => {}
-        }
 
         self
     }
@@ -487,7 +469,6 @@ struct Tx {
 struct State {
     network: Network,
     quote: Option<bitmex_price_feed::Quote>,
-    rollover_proposals: HashMap<OrderId, (RolloverProposal, SettlementKind)>,
 }
 
 impl State {
@@ -495,18 +476,6 @@ impl State {
         Self {
             network,
             quote: None,
-            rollover_proposals: Default::default(),
-        }
-    }
-
-    fn amend_rollover_proposal(&mut self, update: UpdateRollOverProposal) {
-        match update.proposal {
-            Some(proposal) => {
-                self.rollover_proposals.insert(update.order, proposal);
-            }
-            None => {
-                self.rollover_proposals.remove(&update.order);
-            }
         }
     }
 
@@ -533,11 +502,6 @@ impl Actor {
 
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
         let _ = self.tx.connected_takers.send(msg.0);
-    }
-
-    fn handle(&mut self, msg: UpdateRollOverProposal) {
-        self.state.amend_rollover_proposal(msg);
-        self.refresh_cfds().await;
     }
 }
 

@@ -1,19 +1,15 @@
 use crate::address_map::ActorName;
 use crate::address_map::Stopping;
 use crate::connection;
-use crate::model::cfd::CannotRollover;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
-use crate::model::cfd::RolloverProposal;
-use crate::model::cfd::SettlementKind;
 use crate::model::BitMexPriceEventId;
 use crate::model::Timestamp;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
 use crate::projection;
-use crate::projection::UpdateRollOverProposal;
 use crate::setup_contract;
 use crate::tokio_ext::spawn_fallible;
 use crate::wire;
@@ -29,7 +25,6 @@ use futures::future;
 use futures::SinkExt;
 use maia::secp256k1_zkp::schnorrsig;
 use std::time::Duration;
-use time::OffsetDateTime;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -78,6 +73,12 @@ impl Actor {
     }
 
     async fn propose(&self, this: xtra::Address<Self>) -> Result<()> {
+        let (event, (rollover_params, dlc, _)) = self.cfd.start_rollover()?;
+
+        todo!("Keep the params around");
+        todo!("Remove the cfd from this actor");
+        todo!("Handle the event");
+
         tracing::trace!(order_id=%self.cfd.id(), "Proposing rollover");
         self.maker
             .send(connection::ProposeRollOver {
@@ -86,15 +87,6 @@ impl Actor {
                 address: this,
             })
             .await??;
-
-        self.update_proposal(Some((
-            RolloverProposal {
-                order_id: self.cfd.id(),
-                timestamp: self.timestamp,
-            },
-            SettlementKind::Outgoing,
-        )))
-        .await?;
 
         Ok(())
     }
@@ -114,9 +106,6 @@ impl Actor {
         let order_id = self.cfd.id();
         tracing::info!(%order_id, "Rollover proposal got accepted");
 
-        self.update_proposal(None).await?;
-
-        let (rollover_params, dlc, _) = self.cfd.start_rollover()?;
         let (sender, receiver) = mpsc::unbounded::<RollOverMsg>();
         // store the writing end to forward messages from the maker to
         // the spawned rollover task
@@ -128,9 +117,9 @@ impl Actor {
             }),
             receiver,
             (self.oracle_pk, announcement),
-            rollover_params,
+            todo!("plug in rollover params from self once we have them"),
             Role::Taker,
-            dlc,
+            todo!("plug in rollover params from self once we have them"),
             self.n_payouts,
         );
 
@@ -157,20 +146,6 @@ impl Actor {
         Ok(())
     }
 
-    async fn update_proposal(
-        &self,
-        proposal: Option<(RolloverProposal, SettlementKind)>,
-    ) -> Result<()> {
-        self.projection
-            .send(UpdateRollOverProposal {
-                order: self.cfd.id(),
-                proposal,
-            })
-            .await?;
-
-        Ok(())
-    }
-
     async fn complete(&mut self, completed: RolloverCompleted, ctx: &mut xtra::Context<Self>) {
         let _ = self.on_completed.send(completed).await;
 
@@ -181,39 +156,6 @@ impl Actor {
 #[async_trait]
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        if let Err(e) = self
-            .cfd
-            .is_rollover_possible_taker(OffsetDateTime::now_utc())
-        {
-            self.complete(
-                match e {
-                    CannotRollover::NoDlc => RolloverCompleted::Failed {
-                        order_id: self.cfd.id(),
-                        error: e.into(),
-                    },
-                    CannotRollover::AlreadyExpired
-                    | CannotRollover::WasJustRolledOver
-                    | CannotRollover::NotLocked { .. }
-                    | CannotRollover::Committed
-                    | CannotRollover::Attested
-                    | CannotRollover::Final => {
-                        // TODO: This is actually somewhat incorrect. The rollover is not rejected
-                        // but not possible!  Previously we distinguished
-                        // between Rejected / NotPossible, but the Completed abstraction makes that
-                        // difficult.
-                        RolloverCompleted::Rejected {
-                            order_id: self.cfd.id(),
-                            reason: e.into(),
-                        }
-                    }
-                },
-                ctx,
-            )
-            .await;
-
-            return;
-        }
-
         let this = ctx.address().expect("self to be alive");
 
         if let Err(e) = self.propose(this).await {
@@ -258,10 +200,6 @@ impl xtra::Actor for Actor {
         }
 
         xtra::KeepRunning::StopAll
-    }
-
-    async fn stopped(self) {
-        let _ = self.update_proposal(None).await;
     }
 }
 

@@ -212,13 +212,19 @@ pub enum SettlementKind {
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
+pub enum CannotAutoRollover {
+    #[error("Is too recent to auto-rollover")]
+    TooRecent,
+    #[error("Cfd does not have a dlc")]
+    NoDlc,
+}
+
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum CannotRollover {
     #[error("Cfd does not have a dlc")]
     NoDlc,
     #[error("The Cfd is already expired")]
     AlreadyExpired,
-    #[error("The Cfd was just rolled over")]
-    WasJustRolledOver,
     #[error("Cannot roll over when CFD not locked yet")]
     NotLocked,
     #[error("Cannot roll over when CFD is committed")]
@@ -258,10 +264,12 @@ pub enum CfdEvent {
     ContractSetupFailed,
     OfferRejected,
 
+    RolloverStarted,
+    RolloverAccepted,
+    RolloverRejected,
     RolloverCompleted {
         dlc: Dlc,
     },
-    RolloverRejected,
     RolloverFailed,
 
     CollaborativeSettlementStarted {
@@ -506,29 +514,17 @@ impl Cfd {
         self.settlement_proposal.is_some()
     }
 
-    pub fn is_rollover_possible_taker(&self, now: OffsetDateTime) -> Result<(), CannotRollover> {
-        self.can_roll_over()?;
-
-        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
-
-        if now > expiry_timestamp {
-            return Err(CannotRollover::AlreadyExpired);
-        }
-
+    pub fn can_auto_rollover_taker(&self, now: OffsetDateTime) -> Result<(), CannotAutoRollover> {
+        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotAutoRollover::NoDlc)?;
         let time_until_expiry = expiry_timestamp - now;
-
         if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
-            return Err(CannotRollover::WasJustRolledOver);
+            return Err(CannotAutoRollover::TooRecent);
         }
 
         Ok(())
     }
 
-    pub fn is_rollover_possible_maker(&self) -> Result<(), CannotRollover> {
-        self.can_roll_over()
-    }
-
-    fn can_roll_over(&self) -> Result<(), CannotRollover> {
+    fn can_rollover(&self) -> Result<(), CannotRollover> {
         if self.is_final() {
             return Err(CannotRollover::Final);
         }
@@ -543,6 +539,13 @@ impl Cfd {
 
         if !self.lock_finality {
             return Err(CannotRollover::NotLocked);
+        }
+
+        // This is for the edge case where the attestation timestamp is already reached, but we have
+        // not received the attestation yet
+        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
+        if OffsetDateTime::now_utc() > expiry_timestamp {
+            return Err(CannotRollover::AlreadyExpired);
         }
 
         Ok(())
@@ -594,24 +597,24 @@ impl Cfd {
         ))
     }
 
-    pub fn start_rollover(&self) -> Result<(RolloverParams, Dlc, Duration)> {
-        if let Err(e) = self.can_roll_over() {
-            bail!(e)
-        }
+    pub fn start_rollover(
+        &self,
+    ) -> Result<(Event, (RolloverParams, Dlc, Duration)), CannotRollover> {
+        self.can_rollover()?;
 
         Ok((
-            RolloverParams::new(
-                self.initial_price,
-                self.quantity,
-                self.leverage,
-                self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+            Event::new(self.id, CfdEvent::RolloverStarted),
+            (
+                RolloverParams::new(
+                    self.initial_price,
+                    self.quantity,
+                    self.leverage,
+                    self.refund_timelock_in_blocks(),
+                    1, // TODO: Where should I get the fee rate from?
+                ),
+                self.dlc.as_ref().ok_or(CannotRollover::NoDlc)?.clone(),
+                self.settlement_interval,
             ),
-            self.dlc
-                .as_ref()
-                .context("dlc has to be available for rollover")?
-                .clone(),
-            self.settlement_interval,
         ))
     }
 
@@ -739,7 +742,7 @@ impl Cfd {
         // TODO: Compare that the version that we started the rollover with is the same as the
         // version now. For that to work we should pass the version into the state machine
         // that will handle rollover and the pass it back in here for comparison.
-        if let Err(e) = self.can_roll_over() {
+        if let Err(e) = self.can_rollover() {
             bail!(e)
         }
 
@@ -980,6 +983,12 @@ impl Cfd {
             ContractSetupFailed { .. } => {
                 // TODO: Deal with failed contract setup
                 self.during_contract_setup = false;
+            }
+            RolloverStarted => {
+                todo!()
+            }
+            RolloverAccepted => {
+                todo!()
             }
             RolloverCompleted { dlc } => {
                 self.dlc = Some(dlc);
@@ -1833,7 +1842,7 @@ mod tests {
         let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
-        let result = cfd.is_rollover_possible_taker(datetime!(2021-11-19 10:00:00).assume_utc());
+        let result = cfd.can_auto_rollover_taker(datetime!(2021-11-19 10:00:00).assume_utc());
 
         assert!(result.is_ok());
     }
@@ -1849,26 +1858,9 @@ mod tests {
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
 
-        let result = cfd.is_rollover_possible_taker(datetime!(2021-11-18 11:00:00).assume_utc());
+        let result = cfd.can_auto_rollover_taker(datetime!(2021-11-18 11:00:00).assume_utc());
 
         assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn given_cfd_past_expiry_time_then_no_rollover() {
-        // --|----|-------------------------------------------------|--> time
-        //   ct   1h                                                24h
-        // --|----|<--------------------rollover------------------->|--
-        //                                                           now
-
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
-        let cannot_roll_over = cfd
-            .is_rollover_possible_taker(datetime!(2021-11-19 10:00:01).assume_utc())
-            .unwrap_err();
-
-        assert_eq!(cannot_roll_over, CannotRollover::AlreadyExpired)
     }
 
     #[tokio::test]
@@ -1882,10 +1874,10 @@ mod tests {
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let cannot_roll_over = cfd
-            .is_rollover_possible_taker(datetime!(2021-11-18 10:00:01).assume_utc())
+            .can_auto_rollover_taker(datetime!(2021-11-18 10:00:01).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, CannotRollover::WasJustRolledOver)
+        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
     }
 
     #[tokio::test]
@@ -1899,10 +1891,10 @@ mod tests {
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let cannot_roll_over = cfd
-            .is_rollover_possible_taker(datetime!(2021-11-18 09:59:59).assume_utc())
+            .can_auto_rollover_taker(datetime!(2021-11-18 09:59:59).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, CannotRollover::WasJustRolledOver)
+        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
     }
 
     #[tokio::test]
@@ -1916,17 +1908,17 @@ mod tests {
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let cannot_roll_over = cfd
-            .is_rollover_possible_taker(datetime!(2021-11-18 10:59:59).assume_utc())
+            .can_auto_rollover_taker(datetime!(2021-11-18 10:59:59).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, CannotRollover::WasJustRolledOver)
+        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
     }
 
     #[tokio::test]
     async fn given_cfd_not_locked_then_no_rollover() {
         let cfd = Cfd::dummy_not_open_yet();
 
-        let cannot_roll_over = cfd.can_roll_over().unwrap_err();
+        let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
         assert!(matches!(cannot_roll_over, CannotRollover::NotLocked { .. }))
     }
@@ -1937,7 +1929,7 @@ mod tests {
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
 
-        let cannot_roll_over = cfd.can_roll_over().unwrap_err();
+        let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
         assert!(matches!(cannot_roll_over, CannotRollover::Attested { .. }))
     }
@@ -1948,7 +1940,7 @@ mod tests {
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
 
-        let cannot_roll_over = cfd.can_roll_over().unwrap_err();
+        let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
         assert!(matches!(cannot_roll_over, CannotRollover::Final))
     }

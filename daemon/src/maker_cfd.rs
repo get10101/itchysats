@@ -204,8 +204,6 @@ where
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd(proposal.order_id, &mut conn).await?;
 
-        cfd.is_rollover_possible_maker()?;
-
         let this = ctx.address().expect("acquired own address");
 
         let (rollover_actor_addr, rollover_actor_future) = rollover_maker::Actor::new(
