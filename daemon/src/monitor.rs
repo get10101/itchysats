@@ -1,3 +1,5 @@
+use crate::bitcoin::consensus::encode::serialize_hex;
+use crate::bitcoin::Transaction;
 use crate::db;
 use crate::model;
 use crate::model::cfd;
@@ -9,6 +11,7 @@ use crate::model::BitMexPriceEventId;
 use crate::oracle;
 use crate::oracle::Attestation;
 use crate::try_continue;
+use crate::wallet::RpcErrorCode;
 use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::Context;
@@ -18,10 +21,14 @@ use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Script;
 use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
+use bdk::electrum_client;
 use bdk::electrum_client::ElectrumApi;
 use bdk::electrum_client::GetHistoryRes;
 use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
+use serde_json::Value;
+use sqlx::pool::PoolConnection;
+use sqlx::Sqlite;
 use sqlx::SqlitePool;
 use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
@@ -58,6 +65,29 @@ pub struct MonitorParams {
     refund: (Txid, Script, u32),
     revoked_commits: Vec<(Txid, Script)>,
     event_id: BitMexPriceEventId,
+}
+
+pub struct TryBroadcastTransaction {
+    pub tx: Transaction,
+}
+
+fn parse_rpc_protocol_error(error_value: &Value) -> Result<RpcError> {
+    let json = error_value
+        .as_str()
+        .context("Not a string")?
+        .split_terminator("RPC error: ")
+        .nth(1)
+        .context("Unknown error code format")?;
+
+    let error = serde_json::from_str::<RpcError>(json).context("Error has unexpected format")?;
+
+    Ok(error)
+}
+
+#[derive(serde::Deserialize)]
+struct RpcError {
+    code: i64,
+    message: String,
 }
 
 pub struct Sync;
@@ -103,6 +133,11 @@ struct Cfd {
 
     // Ideally, all of the above would be like this.
     monitor_collaborative_settlement_finality: Option<(Txid, Script)>,
+
+    // Rebroadcast transactions upon startup
+    lock_tx: Option<Transaction>,
+    cet: Option<Transaction>,
+    commit_tx: Option<Transaction>,
 }
 
 impl Cfd {
@@ -118,7 +153,7 @@ impl Cfd {
         use CfdEvent::*;
         match event.event {
             ContractSetupCompleted { dlc, .. } => Self {
-                params: Some(MonitorParams::new(dlc)),
+                params: Some(MonitorParams::new(dlc.clone())),
                 monitor_lock_finality: true,
                 monitor_commit_finality: true,
                 monitor_cet_timelock: true,
@@ -126,6 +161,9 @@ impl Cfd {
                 monitor_refund_finality: true,
                 monitor_revoked_commit_transactions: false,
                 monitor_collaborative_settlement_finality: None,
+                lock_tx: Some(dlc.lock.0),
+                cet: None,
+                commit_tx: None,
             },
             RolloverCompleted { dlc } => {
                 Self {
@@ -138,6 +176,9 @@ impl Cfd {
                     monitor_revoked_commit_transactions: true, /* After rollover, the other party
                                                                 * might publish old states. */
                     monitor_collaborative_settlement_finality: None,
+                    lock_tx: None,
+                    cet: self.cet,
+                    commit_tx: self.commit_tx,
                 }
             }
             CollaborativeSettlementCompleted {
@@ -145,6 +186,7 @@ impl Cfd {
             } => {
                 Self {
                     monitor_lock_finality: false, // Lock is already final if we collab settle.
+                    lock_tx: None,
                     monitor_commit_finality: true, // The other party might still want to race us.
                     monitor_collaborative_settlement_finality: Some((spend_tx.txid(), script)),
                     ..self
@@ -155,10 +197,12 @@ impl Cfd {
             }
             LockConfirmed => Self {
                 monitor_lock_finality: false,
+                lock_tx: None,
                 ..self
             },
             CommitConfirmed => Self {
                 monitor_commit_finality: false,
+                commit_tx: None,
                 ..self
             },
             // final states, don't monitor anything
@@ -172,14 +216,23 @@ impl Cfd {
                 monitor_refund_timelock: false,
                 ..self
             },
+            OracleAttestedPostCetTimelock { cet, .. } => Self {
+                cet: Some(cet),
+                ..self
+            },
+            OracleAttestedPriorCetTimelock { timelocked_cet, .. } => Self {
+                cet: Some(timelocked_cet),
+                ..self
+            },
+            CollaborativeSettlementRejected { commit_tx }
+            | CollaborativeSettlementFailed { commit_tx } => Self {
+                commit_tx: Some(commit_tx),
+                ..self
+            },
             RolloverStarted { .. }
             | RolloverAccepted
             | RolloverFailed
             | ManualCommit { .. }
-            | OracleAttestedPostCetTimelock { .. }
-            | OracleAttestedPriorCetTimelock { .. }
-            | CollaborativeSettlementRejected { .. }
-            | CollaborativeSettlementFailed { .. }
             | CollaborativeSettlementStarted { .. }
             | CollaborativeSettlementProposalAccepted => self,
             RevokeConfirmed => todo!("Deal with revoked"),
@@ -224,6 +277,7 @@ impl Actor<bdk::electrum_client::Client> {
                 monitor_refund_finality,
                 monitor_revoked_commit_transactions,
                 monitor_collaborative_settlement_finality,
+                ..
             } = events.into_iter().fold(Cfd::default(), Cfd::apply);
 
             let params = match params {
@@ -262,8 +316,84 @@ impl Actor<bdk::electrum_client::Client> {
             }
         }
 
+        actor.rebroadcast_transactions(conn).await?;
+
         Ok(actor)
     }
+
+    async fn rebroadcast_transactions(&mut self, mut conn: PoolConnection<Sqlite>) -> Result<()> {
+        for id in db::load_all_cfd_ids(&mut conn).await? {
+            let (_, events) = db::load_cfd(id, &mut conn).await?;
+
+            let Cfd {
+                cet,
+                commit_tx,
+                lock_tx,
+                ..
+            } = events.into_iter().fold(Cfd::default(), Cfd::apply);
+
+            if let Some(commit_tx) = commit_tx {
+                let txid = broadcast_transaction(&self.client, commit_tx)?;
+                tracing::info!("Commit transaction published on chain: {}", txid);
+            }
+
+            if let Some(cet) = cet {
+                // Double question mark OK because if we are in PendingCet we must have been
+                // Ready before
+                let txid = broadcast_transaction(&self.client, cet)?;
+                tracing::info!("CET published on chain: {}", txid);
+            }
+
+            if let Some(lock_tx) = lock_tx {
+                let txid = broadcast_transaction(&self.client, lock_tx)?;
+                tracing::info!("Lock tx transaction published on chain: {}", txid);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn broadcast_transaction(client: &impl ElectrumApi, tx: Transaction) -> Result<Txid> {
+    let result = client.transaction_broadcast(&tx);
+
+    if let Err(electrum_client::Error::Protocol(ref value)) = result {
+        let rpc_error = parse_rpc_protocol_error(value)
+            .with_context(|| format!("Failed to parse electrum error response '{:?}'", value))?;
+
+        if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
+            let txid = tx.txid();
+            tracing::trace!(
+                %txid, "Attempted to broadcast transaction that was already on-chain",
+            );
+
+            return Ok(txid);
+        }
+
+        // We do this check because electrum sometimes returns an RpcVerifyError when it should
+        // be returning a RpcVerifyAlreadyInChain error,
+        if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyError)
+            && rpc_error.message == "bad-txns-inputs-missingorspent"
+        {
+            if let Ok(tx) = client.transaction_get(&tx.txid()) {
+                let txid = tx.txid();
+                tracing::trace!(
+                    %txid, "Attempted to broadcast transaction that was already on-chain",
+                );
+                return Ok(txid);
+            }
+        }
+    }
+
+    let txid = result.with_context(|| {
+        format!(
+            "Broadcasting transaction failed. Txid: {}. Raw transaction: {}",
+            tx.txid(),
+            serialize_hex(&tx)
+        )
+    })?;
+
+    Ok(txid)
 }
 
 impl State {
@@ -774,6 +904,11 @@ where
             collaborative_settlement.tx,
             collaborative_settlement.order_id,
         );
+    }
+
+    async fn handle_try_broadcast_transaction(&self, msg: TryBroadcastTransaction) -> Result<Txid> {
+        let txid = broadcast_transaction(&self.client, msg.tx)?;
+        Ok(txid)
     }
 }
 

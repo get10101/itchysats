@@ -35,9 +35,6 @@ impl WalletActor {
     async fn handle(&mut self, msg: wallet::Sign) -> Result<PartiallySignedTransaction> {
         self.mock.lock().await.sign(msg)
     }
-    async fn handle(&mut self, msg: wallet::TryBroadcastTransaction) -> Result<Txid> {
-        self.mock.lock().await.broadcast(msg)
-    }
     async fn handle(&mut self, msg: wallet::Withdraw) -> Result<Txid> {
         self.mock.lock().await.withdraw(msg)
     }
@@ -53,10 +50,6 @@ pub trait Wallet {
     }
 
     fn sign(&mut self, _msg: wallet::Sign) -> Result<PartiallySignedTransaction> {
-        unreachable!("mockall will reimplement this method")
-    }
-
-    fn broadcast(&mut self, _msg: wallet::TryBroadcastTransaction) -> Result<Txid> {
         unreachable!("mockall will reimplement this method")
     }
 

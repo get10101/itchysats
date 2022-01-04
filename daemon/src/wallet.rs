@@ -7,7 +7,6 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use bdk::bitcoin::consensus::encode::serialize_hex;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Address;
@@ -16,11 +15,9 @@ use bdk::bitcoin::OutPoint;
 use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
-use bdk::blockchain::Blockchain;
 use bdk::blockchain::ElectrumBlockchain;
 use bdk::blockchain::NoopProgress;
 use bdk::database::BatchDatabase;
-use bdk::electrum_client;
 use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
@@ -28,7 +25,6 @@ use bdk::KeychainKind;
 use bdk::SignOptions;
 use maia::PartyParams;
 use maia::TxBuilderExt;
-use rocket::serde::json::Value;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::watch;
@@ -178,55 +174,6 @@ impl Actor {
         })
     }
 
-    pub fn handle_try_broadcast_transaction(
-        &mut self,
-        msg: TryBroadcastTransaction,
-    ) -> Result<Txid> {
-        let tx = msg.tx;
-        let txid = tx.txid();
-
-        let result = self.wallet.broadcast(&tx);
-
-        if let Err(&bdk::Error::Electrum(electrum_client::Error::Protocol(ref value))) =
-            result.as_ref()
-        {
-            let rpc_error = parse_rpc_protocol_error(value).with_context(|| {
-                format!("Failed to parse electrum error response '{:?}'", value)
-            })?;
-
-            if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
-                tracing::trace!(
-                    %txid, "Attempted to broadcast transaction that was already on-chain",
-                );
-
-                return Ok(txid);
-            }
-
-            // We do this check because electrum sometimes returns an RpcVerifyError when it should
-            // be returning a RpcVerifyAlreadyInChain error,
-            if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyError)
-                && rpc_error.message == "bad-txns-inputs-missingorspent"
-            {
-                if let Ok(Some(_)) = self.wallet.client().get_tx(&txid) {
-                    tracing::trace!(
-                        %txid, "Attempted to broadcast transaction that was already on-chain",
-                    );
-                    return Ok(txid);
-                }
-            }
-        }
-
-        let txid = result.with_context(|| {
-            format!(
-                "Broadcasting transaction failed. Txid: {}. Raw transaction: {}",
-                txid,
-                serialize_hex(&tx)
-            )
-        })?;
-
-        Ok(txid)
-    }
-
     pub fn handle_withdraw(&mut self, msg: Withdraw) -> Result<Txid> {
         self.sync_internal()?;
 
@@ -313,25 +260,6 @@ pub struct Withdraw {
     pub address: Address,
 }
 
-fn parse_rpc_protocol_error(error_value: &Value) -> Result<RpcError> {
-    let json = error_value
-        .as_str()
-        .context("Not a string")?
-        .split_terminator("RPC error: ")
-        .nth(1)
-        .context("Unknown error code format")?;
-
-    let error = serde_json::from_str::<RpcError>(json).context("Error has unexpected format")?;
-
-    Ok(error)
-}
-
-#[derive(serde::Deserialize)]
-struct RpcError {
-    code: i64,
-    message: String,
-}
-
 /// Bitcoin error codes: <https://github.com/bitcoin/bitcoin/blob/97d3500601c1d28642347d014a6de1e38f53ae4e/src/rpc/protocol.h#L23>
 pub enum RpcErrorCode {
     /// General error during transaction or block submission Error code -25.
@@ -400,16 +328,6 @@ mod tests {
     use crate::bdk_ext::new_test_wallet;
     use rand::thread_rng;
     use std::collections::HashSet;
-
-    #[test]
-    fn parse_error_response() {
-        let response = serde_json::Value::String(r#"sendrawtransaction RPC error: {"code":-27,"message":"Transaction already in block chain"}"#.to_owned());
-
-        let rpc_error = parse_rpc_protocol_error(&response).unwrap();
-
-        assert_eq!(rpc_error.code, -27);
-        assert_eq!(rpc_error.message, "Transaction already in block chain");
-    }
 
     #[test]
     fn creating_two_lock_transactions_uses_different_utxos() {
