@@ -156,7 +156,7 @@ impl Cfd {
                 monitor_refund_timelock: false,
                 ..self
             },
-            RolloverStarted
+            RolloverStarted { .. }
             | RolloverAccepted
             | RolloverFailed
             | ManualCommit { .. }

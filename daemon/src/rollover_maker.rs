@@ -1,22 +1,22 @@
 use crate::address_map::ActorName;
+use crate::cfd_actors::load_cfd;
 use crate::maker_inc_connections;
 use crate::maker_inc_connections::TakerMessage;
+use crate::model::cfd::Completed;
 use crate::model::cfd::Dlc;
-use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
+use crate::model::cfd::RolloverCompleted;
 use crate::model::cfd::RolloverProposal;
 use crate::model::Identity;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
-use crate::projection;
+use crate::process_manager;
 use crate::schnorrsig;
 use crate::setup_contract;
 use crate::tokio_ext::spawn_fallible;
 use crate::wire;
 use crate::wire::MakerToTaker;
 use crate::wire::RollOverMsg;
-use crate::xtra_ext::LogFailure;
-use crate::Cfd;
 use crate::Stopping;
 use anyhow::Context as _;
 use anyhow::Result;
@@ -47,102 +47,94 @@ pub struct RolloverFailed {
     error: anyhow::Error,
 }
 
-#[allow(clippy::large_enum_variant)]
-pub struct Completed {
-    pub order_id: OrderId,
-    pub dlc: Dlc,
-}
-
 pub struct Actor {
+    proposal: RolloverProposal,
     send_to_taker_actor: Box<dyn MessageChannel<TakerMessage>>,
-    cfd: Cfd,
-    taker_id: Identity,
     n_payouts: usize,
+    taker_id: Identity,
     oracle_pk: schnorrsig::PublicKey,
     sent_from_taker: Option<UnboundedSender<RollOverMsg>>,
-    maker_cfd_actor: Box<dyn MessageChannel<Completed>>,
     oracle_actor: Box<dyn MessageChannel<GetAnnouncement>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
-    projection_actor: xtra::Address<projection::Actor>,
-    proposal: RolloverProposal,
-}
-
-#[async_trait::async_trait]
-impl xtra::Actor for Actor {
-    async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
-        let address = ctx.address().expect("acquired own actor address");
-
-        for channel in self.on_stopping.iter() {
-            let _ = channel
-                .send(Stopping {
-                    me: address.clone(),
-                })
-                .await;
-        }
-
-        KeepRunning::StopAll
-    }
-
-    async fn started(&mut self, _ctx: &mut Context<Self>) {
-        todo!()
-    }
+    process_manager: xtra::Address<process_manager::Actor>,
+    db: sqlx::SqlitePool,
 }
 
 impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        proposal: RolloverProposal,
+        n_payouts: usize,
         send_to_taker_actor: &(impl MessageChannel<TakerMessage> + 'static),
-        cfd: Cfd,
         taker_id: Identity,
         oracle_pk: schnorrsig::PublicKey,
-        maker_cfd_actor: &(impl MessageChannel<Completed> + 'static),
         oracle_actor: &(impl MessageChannel<GetAnnouncement> + 'static),
         (on_stopping0, on_stopping1): (
             &(impl MessageChannel<Stopping<Self>> + 'static),
             &(impl MessageChannel<Stopping<Self>> + 'static),
         ),
-        projection_actor: xtra::Address<projection::Actor>,
-        proposal: RolloverProposal,
-        n_payouts: usize,
+        process_manager: xtra::Address<process_manager::Actor>,
+        db: sqlx::SqlitePool,
     ) -> Self {
         Self {
-            send_to_taker_actor: send_to_taker_actor.clone_channel(),
-            cfd,
-            taker_id,
+            proposal,
             n_payouts,
+            send_to_taker_actor: send_to_taker_actor.clone_channel(),
+            taker_id,
             oracle_pk,
             sent_from_taker: None,
-            maker_cfd_actor: maker_cfd_actor.clone_channel(),
             oracle_actor: oracle_actor.clone_channel(),
             on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
-            projection_actor,
-            proposal,
+            process_manager,
+            db,
         }
     }
 
-    async fn complete(&mut self, dlc: Dlc, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let msg = Completed {
-            order_id: self.cfd.id(),
-            dlc,
-        };
-        self.maker_cfd_actor
-            .send(msg)
-            .log_failure("Failed to report rollover completion")
-            .await?;
+    async fn handle_proposal(&mut self) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(self.proposal.order_id, &mut conn).await?;
 
-        ctx.stop();
+        let event = cfd.receive_rollover_proposal(self.proposal.clone())?;
+        self.process_manager
+            .send(process_manager::Event::new(event))
+            .await??;
 
         Ok(())
     }
 
+    async fn complete(&mut self, completed: RolloverCompleted, ctx: &mut xtra::Context<Self>) {
+        let order_id = self.proposal.order_id;
+        let event_fut = async {
+            let mut conn = self.db.acquire().await?;
+            let cfd = load_cfd(order_id, &mut conn).await?;
+            let event = cfd.roll_over(completed)?;
+
+            anyhow::Ok(event)
+        };
+
+        match event_fut.await {
+            Ok(event) => {
+                let _ = self
+                    .process_manager
+                    .send(process_manager::Event::new(event))
+                    .await;
+            }
+            Err(e) => {
+                tracing::warn!(%order_id, "Failed to report completion of collab settlement: {:#}", e)
+            }
+        }
+
+        ctx.stop();
+    }
+
     async fn fail(&mut self, ctx: &mut xtra::Context<Self>, error: anyhow::Error) {
-        tracing::info!(id = %self.cfd.id(), %error, "Rollover failed");
+        tracing::info!(id = %self.proposal.order_id, %error, "Rollover failed");
 
         ctx.stop();
     }
 
     async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let order_id = self.cfd.id();
+        let order_id = self.proposal.order_id;
 
         if self.sent_from_taker.is_some() {
             tracing::warn!(%order_id, "Rollover already active");
@@ -155,7 +147,14 @@ impl Actor {
 
         tracing::debug!(%order_id, "Maker accepts a roll_over proposal" );
 
-        let (event, (rollover_params, dlc, interval)) = self.cfd.start_rollover()?;
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(self.proposal.order_id, &mut conn).await?;
+
+        let (event, (rollover_params, dlc, interval)) =
+            cfd.accept_rollover_proposal(&self.proposal)?;
+        self.process_manager
+            .send(process_manager::Event::new(event))
+            .await??;
 
         let oracle_event_id =
             oracle::next_announcement_after(time::OffsetDateTime::now_utc() + interval)?;
@@ -208,14 +207,17 @@ impl Actor {
     }
 
     async fn reject(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        tracing::info!(id = %self.cfd.id(), "Maker rejects a roll_over proposal" );
+        tracing::info!(id = %self.proposal.order_id, "Maker rejects a roll_over proposal" );
 
         self.send_to_taker_actor
             .send(TakerMessage {
                 taker_id: self.taker_id,
-                msg: MakerToTaker::RejectRollOver(self.cfd.id()),
+                msg: MakerToTaker::RejectRollOver(self.proposal.order_id),
             })
             .await??;
+
+        self.complete(RolloverCompleted::rejected(self.proposal.order_id), ctx)
+            .await;
 
         ctx.stop();
 
@@ -229,6 +231,37 @@ impl Actor {
             .context("cannot forward message to rollover task")?;
         sender.send(msg.0).await?;
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl xtra::Actor for Actor {
+    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        let order_id = self.proposal.order_id;
+
+        tracing::info!(
+            %order_id,
+            "Received rollover proposal"
+        );
+
+        if let Err(error) = self.handle_proposal().await {
+            self.complete(Completed::Failed { order_id, error }, ctx)
+                .await;
+        }
+    }
+
+    async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
+        let address = ctx.address().expect("acquired own actor address");
+
+        for channel in self.on_stopping.iter() {
+            let _ = channel
+                .send(Stopping {
+                    me: address.clone(),
+                })
+                .await;
+        }
+
+        KeepRunning::StopAll
     }
 }
 
@@ -261,7 +294,11 @@ impl Actor {
     }
 
     async fn handle_rollover_failed(&mut self, msg: RolloverFailed, ctx: &mut xtra::Context<Self>) {
-        self.fail(ctx, msg.error).await;
+        self.complete(
+            RolloverCompleted::failed(self.proposal.order_id, msg.error),
+            ctx,
+        )
+        .await
     }
 
     async fn handle_rollover_succeeded(
@@ -269,9 +306,11 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        if let Err(err) = self.complete(msg.dlc.clone(), ctx).await {
-            self.fail(ctx, err).await;
-        }
+        self.complete(
+            RolloverCompleted::succeeded(self.proposal.order_id, msg.dlc),
+            ctx,
+        )
+        .await
     }
 }
 

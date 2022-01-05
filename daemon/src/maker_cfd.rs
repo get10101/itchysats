@@ -26,7 +26,6 @@ use crate::process_manager;
 use crate::projection;
 use crate::projection::Update;
 use crate::rollover_maker;
-use crate::rollover_maker::Completed;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::setup_maker;
 use crate::wallet;
@@ -200,35 +199,23 @@ where
             proposal,
             proposal.order_id
         );
-
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(proposal.order_id, &mut conn).await?;
-
         let this = ctx.address().expect("acquired own address");
 
         let (rollover_actor_addr, rollover_actor_future) = rollover_maker::Actor::new(
-            &self.takers,
-            cfd,
-            taker_id,
-            self.oracle_pk,
-            &this,
-            &self.oracle_actor,
-            (&self.takers, &this),
-            self.projection_actor.clone(),
             proposal.clone(),
             self.n_payouts,
+            &self.takers,
+            taker_id,
+            self.oracle_pk,
+            &self.oracle_actor,
+            (&self.takers, &this),
+            self.process_manager_actor.clone(),
+            self.db.clone(),
         )
         .create(None)
         .run();
 
         self.tasks.add(rollover_actor_future);
-
-        self.takers
-            .send(RollOverProposed {
-                order_id: proposal.order_id,
-                address: rollover_actor_addr.clone(),
-            })
-            .await?;
 
         self.rollover_actors
             .insert(proposal.order_id, rollover_actor_addr);
@@ -499,17 +486,6 @@ impl<O, T, W> Actor<O, T, W> {
 impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
-{
-    async fn handle_roll_over_completed(&mut self, _: Completed) -> Result<()> {
-        // TODO: Implement this in terms of event sourcing
-
-        Ok(())
-    }
-}
-
-impl<O, T, W> Actor<O, T, W>
-where
-    O: xtra::Handler<oracle::MonitorAttestation>,
     T: xtra::Handler<maker_inc_connections::settlement::Response>
         + xtra::Handler<Stopping<collab_settlement_maker::Actor>>,
     W: xtra::Handler<wallet::TryBroadcastTransaction>,
@@ -614,16 +590,6 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, T: 'static, W: 'static> Handler<Completed> for Actor<O, T, W>
-where
-    O: xtra::Handler<oracle::MonitorAttestation>,
-{
-    async fn handle(&mut self, msg: Completed, _ctx: &mut Context<Self>) -> Result<()> {
-        self.handle_roll_over_completed(msg).await
-    }
-}
-
-#[async_trait]
 impl<O: 'static, T: 'static, W: 'static> Handler<FromTaker> for Actor<O, T, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
@@ -718,10 +684,6 @@ impl Message for TakerConnected {
 }
 
 impl Message for TakerDisconnected {
-    type Result = Result<()>;
-}
-
-impl Message for Completed {
     type Result = Result<()>;
 }
 

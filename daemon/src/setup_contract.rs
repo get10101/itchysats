@@ -349,6 +349,7 @@ pub async fn new(
     })
 }
 
+#[derive(Debug, Clone)]
 pub struct RolloverParams {
     price: Price,
     quantity: Usd,

@@ -3,13 +3,9 @@ use crate::address_map::Stopping;
 use crate::cfd_actors::load_cfd;
 use crate::connection;
 use crate::db;
-use crate::db::append_event;
 use crate::model::cfd::OrderId;
-use crate::model::cfd::RolloverCompleted;
-use crate::monitor;
 use crate::oracle;
 use crate::process_manager;
-use crate::projection;
 use crate::rollover_taker;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::try_continue;
@@ -26,7 +22,6 @@ use xtra_productivity::xtra_productivity;
 pub struct Actor<O> {
     db: sqlx::SqlitePool,
     oracle_pk: schnorrsig::PublicKey,
-    projection_actor: Address<projection::Actor>,
     process_manager_actor: Address<process_manager::Actor>,
     conn_actor: Address<connection::Actor>,
     oracle_actor: Address<O>,
@@ -41,7 +36,6 @@ impl<O> Actor<O> {
     pub fn new(
         db: sqlx::SqlitePool,
         oracle_pk: schnorrsig::PublicKey,
-        projection_actor: Address<projection::Actor>,
         process_manager_actor: Address<process_manager::Actor>,
         conn_actor: Address<connection::Actor>,
         oracle_actor: Address<O>,
@@ -50,7 +44,6 @@ impl<O> Actor<O> {
         Self {
             db,
             oracle_pk,
-            projection_actor,
             process_manager_actor,
             conn_actor,
             oracle_actor,
@@ -109,49 +102,20 @@ where
         };
 
         let (addr, fut) = rollover_taker::Actor::new(
-            (cfd, self.n_payouts),
+            cfd.id(),
+            self.n_payouts,
             self.oracle_pk,
             self.conn_actor.clone(),
             &self.oracle_actor,
-            self.projection_actor.clone(),
-            &this,
+            self.process_manager_actor.clone(),
             (&this, &self.conn_actor),
+            self.db.clone(),
         )
         .create(None)
         .run();
 
         disconnected.insert(addr);
         self.tasks.add(fut);
-
-        Ok(())
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O> Actor<O>
-where
-    O: 'static,
-    O: xtra::Handler<oracle::GetAnnouncement>,
-{
-    async fn handle_rollover_completed(
-        &mut self,
-        rollover_completed: RolloverCompleted,
-    ) -> Result<()> {
-        let id = rollover_completed.order_id();
-
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(id, &mut conn).await?;
-
-        let event = cfd.roll_over(rollover_completed)?;
-        append_event(event.clone(), &mut conn).await?;
-
-        if let Err(e) = self
-            .process_manager_actor
-            .send(process_manager::Event::new(event.clone()))
-            .await?
-        {
-            tracing::error!("Sending event to process manager failed: {:#}", e);
-        }
 
         Ok(())
     }

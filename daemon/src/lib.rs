@@ -1,7 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![warn(clippy::disallowed_method)]
 use crate::bitcoin::Txid;
-use crate::model::cfd::Cfd;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
@@ -391,7 +390,6 @@ where
         let (auto_rollover_address, auto_rollover_fut) = auto_rollover::Actor::new(
             db,
             oracle_pk,
-            projection_actor,
             process_manager_addr,
             connection_actor_addr.clone(),
             oracle_addr,

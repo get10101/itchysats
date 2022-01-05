@@ -1,4 +1,3 @@
-use crate::model::cfd::marker::Rollover;
 use crate::model::BitMexPriceEventId;
 use crate::model::Identity;
 use crate::model::InversePrice;
@@ -200,7 +199,7 @@ pub struct SettlementProposal {
 }
 
 /// Proposed collaborative settlement
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RolloverProposal {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
@@ -401,21 +400,22 @@ pub struct Cfd {
     /// This does _not_ imply that the transaction is actually confirmed.
     commit_tx: Option<Transaction>,
 
-    settlement_proposal: Option<SettlementProposal>,
     collaborative_settlement_spend_tx: Option<Transaction>,
-
     refund_tx: Option<Transaction>,
 
     lock_finality: bool,
+
     commit_finality: bool,
     refund_finality: bool,
     cet_finality: bool,
     collaborative_settlement_finality: bool,
-
     cet_timelock_expired: bool,
+
     refund_timelock_expired: bool,
 
     during_contract_setup: bool,
+    during_rollover: bool,
+    settlement_proposal: Option<SettlementProposal>,
 }
 
 impl Cfd {
@@ -445,7 +445,6 @@ impl Cfd {
             dlc: None,
             cet: None,
             commit_tx: None,
-            settlement_proposal: None,
             collaborative_settlement_spend_tx: None,
             refund_tx: None,
             lock_finality: false,
@@ -456,6 +455,8 @@ impl Cfd {
             cet_timelock_expired: false,
             refund_timelock_expired: false,
             during_contract_setup: false,
+            during_rollover: false,
+            settlement_proposal: None,
         }
     }
 
@@ -598,13 +599,48 @@ impl Cfd {
         ))
     }
 
-    pub fn start_rollover(
-        &self,
-    ) -> Result<(Event, (RolloverParams, Dlc, Duration)), CannotRollover> {
+    pub fn start_rollover_taker(&self) -> Result<(Event, (RolloverParams, Dlc))> {
+        anyhow::ensure!(!self.during_rollover && self.role == Role::Taker);
+
         self.can_rollover()?;
 
         Ok((
             Event::new(self.id, CfdEvent::RolloverStarted),
+            (
+                RolloverParams::new(
+                    self.initial_price,
+                    self.quantity,
+                    self.leverage,
+                    self.refund_timelock_in_blocks(),
+                    1, // TODO: Where should I get the fee rate from?
+                ),
+                self.dlc.as_ref().ok_or(CannotRollover::NoDlc)?.clone(),
+            ),
+        ))
+    }
+
+    pub fn receive_rollover_proposal(self, proposal: RolloverProposal) -> Result<Event> {
+        anyhow::ensure!(
+            !self.during_rollover && self.role == Role::Maker && proposal.order_id == self.id,
+            "Failed to start rollover"
+        );
+
+        self.can_rollover()?;
+
+        Ok(Event::new(self.id, CfdEvent::RolloverStarted))
+    }
+
+    pub fn accept_rollover_proposal(
+        self,
+        proposal: &RolloverProposal,
+    ) -> Result<(Event, (RolloverParams, Dlc, Duration))> {
+        anyhow::ensure!(
+            self.during_rollover && self.role == Role::Maker && proposal.order_id == self.id,
+            "Failed to accept rollover"
+        );
+
+        Ok((
+            Event::new(self.id, CfdEvent::CollaborativeSettlementProposalAccepted),
             (
                 RolloverParams::new(
                     self.initial_price,
@@ -988,16 +1024,21 @@ impl Cfd {
                 self.during_contract_setup = false;
             }
             RolloverStarted => {
-                todo!()
+                self.during_rollover = true;
             }
-            RolloverAccepted => {
-                todo!()
-            }
+            RolloverAccepted => {} /* TODO: It's weird we have no state change for applying an */
+            // event...
             RolloverCompleted { dlc } => {
                 self.dlc = Some(dlc);
+                self.during_rollover = false;
             }
-            RolloverFailed { .. } => todo!(),
-            RolloverRejected => todo!(),
+            RolloverFailed { .. } => {
+                // TODO: Deal with failed rollover
+                self.during_rollover = false;
+            }
+            RolloverRejected => {
+                self.during_rollover = false;
+            }
 
             CollaborativeSettlementStarted { proposal } => {
                 self.settlement_proposal = Some(proposal)
@@ -1486,6 +1527,10 @@ impl<P> Completed<P> {
     }
     pub fn rejected_due_to(order_id: OrderId, reason: anyhow::Error) -> Self {
         Self::Rejected { order_id, reason }
+    }
+
+    pub fn failed(order_id: OrderId, error: anyhow::Error) -> Self {
+        Self::Failed { order_id, error }
     }
 }
 

@@ -414,7 +414,7 @@ impl Cfd {
                 (CfdState::PendingCommit, vec![])
             }
             RevokeConfirmed => todo!("Deal with revoked"),
-            RolloverStarted => match role {
+            RolloverStarted { .. } => match role {
                 Role::Maker => (
                     CfdState::IncomingRollOverProposal,
                     vec![CfdAction::AcceptRollOver, CfdAction::RejectRollOver],

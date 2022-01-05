@@ -1,16 +1,18 @@
 use crate::address_map::ActorName;
 use crate::address_map::Stopping;
+use crate::cfd_actors::load_cfd;
 use crate::connection;
-use crate::model::cfd::Cfd;
 use crate::model::cfd::Dlc;
+use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
 use crate::model::BitMexPriceEventId;
 use crate::model::Timestamp;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
-use crate::projection;
+use crate::process_manager;
 use crate::setup_contract;
+use crate::setup_contract::RolloverParams;
 use crate::tokio_ext::spawn_fallible;
 use crate::wire;
 use crate::wire::RollOverMsg;
@@ -31,59 +33,78 @@ use xtra_productivity::xtra_productivity;
 pub const MAX_ROLLOVER_DURATION: Duration = Duration::from_secs(4 * 60);
 
 pub struct Actor {
-    cfd: Cfd,
+    id: OrderId,
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
-    timestamp: Timestamp,
     maker: xtra::Address<connection::Actor>,
     get_announcement: Box<dyn MessageChannel<GetAnnouncement>>,
-    projection: xtra::Address<projection::Actor>,
-    on_completed: Box<dyn MessageChannel<RolloverCompleted>>,
+    process_manager: xtra::Address<process_manager::Actor>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     rollover_msg_sender: Option<UnboundedSender<RollOverMsg>>,
     tasks: Tasks,
+
+    // TODO: It's a weird indirection to have the params and dlc in here
+    //  We do this, because it is "ephemeral" and we cannot easily retrieve it from the Cfd in the
+    // context of a rollover.  We could potentially have a "current rollover" in the Cfd itself
+    // that is set upon RolloverStarted. Not sure that's better.
+    rollover_params: Option<RolloverParams>,
+    dlc: Option<Dlc>,
+    db: sqlx::SqlitePool,
 }
 
 impl Actor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        (cfd, n_payouts): (Cfd, usize),
+        id: OrderId,
+        n_payouts: usize,
         oracle_pk: schnorrsig::PublicKey,
         maker: xtra::Address<connection::Actor>,
         get_announcement: &(impl MessageChannel<GetAnnouncement> + 'static),
-        projection: xtra::Address<projection::Actor>,
-        on_completed: &(impl MessageChannel<RolloverCompleted> + 'static),
+        process_manager: xtra::Address<process_manager::Actor>,
         (on_stopping0, on_stopping1): (
             &(impl MessageChannel<Stopping<Self>> + 'static),
             &(impl MessageChannel<Stopping<Self>> + 'static),
         ),
+        db: sqlx::SqlitePool,
     ) -> Self {
         Self {
-            cfd,
+            id,
             n_payouts,
             oracle_pk,
-            timestamp: Timestamp::now(),
             maker,
             get_announcement: get_announcement.clone_channel(),
-            projection,
-            on_completed: on_completed.clone_channel(),
+            process_manager,
             on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
             rollover_msg_sender: None,
             tasks: Tasks::default(),
+            rollover_params: None,
+            dlc: None,
+            db,
         }
     }
 
-    async fn propose(&self, this: xtra::Address<Self>) -> Result<()> {
-        let (event, (rollover_params, dlc, _)) = self.cfd.start_rollover()?;
+    async fn propose(&mut self, this: xtra::Address<Self>) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(self.id, &mut conn).await?;
 
-        todo!("Keep the params around");
-        todo!("Remove the cfd from this actor");
-        todo!("Handle the event");
+        let (event, (rollover_params, dlc)) = cfd.start_rollover_taker()?;
 
-        tracing::trace!(order_id=%self.cfd.id(), "Proposing rollover");
+        if let Err(e) = self
+            .process_manager
+            .send(process_manager::Event::new(event))
+            .await?
+        {
+            tracing::error!("Sending event to process manager failed: {:#}", e);
+        }
+
+        self.rollover_params = Some(rollover_params);
+        self.dlc = Some(dlc);
+
+        tracing::trace!(order_id=%self.id, "Proposing rollover");
         self.maker
             .send(connection::ProposeRollOver {
-                order_id: self.cfd.id(),
-                timestamp: self.timestamp,
+                order_id: self.id,
+                timestamp: Timestamp::now(),
                 address: this,
             })
             .await??;
@@ -96,6 +117,8 @@ impl Actor {
         msg: RollOverAccepted,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
+        // TODO: Check the oracle event id for sanity (i.e. is in the future according to settlement
+        // interval)
         let RollOverAccepted { oracle_event_id } = msg;
         let announcement = self
             .get_announcement
@@ -103,13 +126,23 @@ impl Actor {
             .await?
             .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
 
-        let order_id = self.cfd.id();
+        let order_id = self.id;
         tracing::info!(%order_id, "Rollover proposal got accepted");
 
         let (sender, receiver) = mpsc::unbounded::<RollOverMsg>();
         // store the writing end to forward messages from the maker to
         // the spawned rollover task
         self.rollover_msg_sender = Some(sender);
+        let rollover_params = self
+            .rollover_params
+            .as_ref()
+            .context("Rollover parameters not set upon completion - what is happening?!")?
+            .clone();
+        let dlc = self
+            .dlc
+            .as_ref()
+            .context("Dlc not set upon completion - what is happening?!")?
+            .clone();
 
         let rollover_fut = setup_contract::roll_over(
             xtra::message_channel::MessageChannel::sink(&self.maker).with(move |msg| {
@@ -117,9 +150,9 @@ impl Actor {
             }),
             receiver,
             (self.oracle_pk, announcement),
-            todo!("plug in rollover params from self once we have them"),
+            rollover_params,
             Role::Taker,
-            todo!("plug in rollover params from self once we have them"),
+            dlc,
             self.n_payouts,
         );
 
@@ -147,7 +180,26 @@ impl Actor {
     }
 
     async fn complete(&mut self, completed: RolloverCompleted, ctx: &mut xtra::Context<Self>) {
-        let _ = self.on_completed.send(completed).await;
+        let order_id = self.id;
+        let event_fut = async {
+            let mut conn = self.db.acquire().await?;
+            let cfd = load_cfd(order_id, &mut conn).await?;
+            let event = cfd.roll_over(completed)?;
+
+            anyhow::Ok(event)
+        };
+
+        match event_fut.await {
+            Ok(event) => {
+                let _ = self
+                    .process_manager
+                    .send(process_manager::Event::new(event))
+                    .await;
+            }
+            Err(e) => {
+                tracing::warn!(%order_id, "Failed to report completion of collab settlement: {:#}", e)
+            }
+        }
 
         ctx.stop();
     }
@@ -161,7 +213,7 @@ impl xtra::Actor for Actor {
         if let Err(e) = self.propose(this).await {
             self.complete(
                 RolloverCompleted::Failed {
-                    order_id: self.cfd.id(),
+                    order_id: self.id,
                     error: e,
                 },
                 ctx,
@@ -213,7 +265,7 @@ impl Actor {
         if let Err(error) = self.handle_confirmed(msg, ctx).await {
             self.complete(
                 RolloverCompleted::Failed {
-                    order_id: self.cfd.id(),
+                    order_id: self.id,
                     error,
                 },
                 ctx,
@@ -223,7 +275,7 @@ impl Actor {
     }
 
     pub async fn reject_rollover(&mut self, _: RollOverRejected, ctx: &mut xtra::Context<Self>) {
-        let order_id = self.cfd.id();
+        let order_id = self.id;
 
         tracing::info!(%order_id, "Rollover proposal got rejected");
 
@@ -236,7 +288,7 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        self.complete(RolloverCompleted::succeeded(self.cfd.id(), msg.dlc), ctx)
+        self.complete(RolloverCompleted::succeeded(self.id, msg.dlc), ctx)
             .await;
     }
 
@@ -247,7 +299,7 @@ impl Actor {
     ) {
         self.complete(
             RolloverCompleted::Failed {
-                order_id: self.cfd.id(),
+                order_id: self.id,
                 error: msg.error,
             },
             ctx,
@@ -263,7 +315,7 @@ impl Actor {
         if let Err(error) = self.forward_protocol_msg(msg).await {
             self.complete(
                 RolloverCompleted::Failed {
-                    order_id: self.cfd.id(),
+                    order_id: self.id,
                     error,
                 },
                 ctx,
