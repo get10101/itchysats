@@ -10,7 +10,7 @@ atty = "0.2"
 bdk = { version = "0.15", default-features = false, features = ["electrum"] }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
-clap = { version = "3.0.0", features = ["derive"] }
+clap = { version = "3.0.4", features = ["derive"] }
 derive_more = { version = "0.99.17", default-features = false, features = ["display"] }
 futures = { version = "0.3", default-features = false }
 hex = "0.4"
