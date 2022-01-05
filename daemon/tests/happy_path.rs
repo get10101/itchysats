@@ -202,7 +202,7 @@ async fn taker_notices_lack_of_maker() {
         .with_dedicated_port(35123); // set a fixed port so the taker can reconnect
     let maker = Maker::start(&maker_config).await;
 
-    let taker_config = TakerConfig::default().with_heartbeat_timeout(short_interval * 2);
+    let taker_config = TakerConfig::default().with_heartbeat_interval(short_interval);
     let mut taker = Taker::start(&taker_config, maker.listen_addr, maker.identity).await;
 
     assert_eq!(
@@ -212,7 +212,7 @@ async fn taker_notices_lack_of_maker() {
 
     std::mem::drop(maker);
 
-    sleep(taker_config.heartbeat_timeout).await;
+    sleep(taker_config.heartbeat_interval).await;
 
     assert_eq!(
         ConnectionStatus::Offline { reason: None },
@@ -221,7 +221,7 @@ async fn taker_notices_lack_of_maker() {
 
     let _maker = Maker::start(&maker_config).await;
 
-    sleep(taker_config.heartbeat_timeout).await;
+    sleep(taker_config.heartbeat_interval).await;
 
     assert_eq!(
         ConnectionStatus::Online,
@@ -256,7 +256,7 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
     let mut maker =
         Maker::start(&MakerConfig::default().with_heartbeat_interval(heartbeat_interval)).await;
     let mut taker = Taker::start(
-        &TakerConfig::default().with_heartbeat_timeout(heartbeat_interval * 2),
+        &TakerConfig::default().with_heartbeat_interval(heartbeat_interval * 2),
         maker.listen_addr,
         maker.identity,
     )

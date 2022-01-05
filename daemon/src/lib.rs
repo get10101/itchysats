@@ -404,11 +404,16 @@ where
         tasks.add(cfd_actor_fut);
         tasks.add(auto_rollover_fut);
 
+        // Timeout happens when taker did not receive two consecutive heartbeats
+        let taker_heartbeat_timeout = maker_heartbeat_interval
+            .checked_mul(2)
+            .expect("not to overflow");
+
         tasks.add(connection_actor_ctx.run(connection::Actor::new(
             maker_online_status_feed_sender,
             &cfd_actor_addr,
             identity_sk,
-            maker_heartbeat_interval,
+            taker_heartbeat_timeout,
             connect_timeout,
         )));
 
