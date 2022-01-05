@@ -27,6 +27,7 @@ use futures::TryStreamExt;
 use std::net::SocketAddr;
 use std::time::Duration;
 use std::time::SystemTime;
+use time::OffsetDateTime;
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio_util::codec::Framed;
@@ -95,6 +96,13 @@ impl State {
         *self = State::Disconnected;
 
         true
+    }
+
+    fn last_heartbeat(&self) -> Option<OffsetDateTime> {
+        match self {
+            State::Connected { last_heartbeat, .. } => Some((*last_heartbeat).into()),
+            State::Disconnected => None,
+        }
     }
 }
 
@@ -483,10 +491,17 @@ impl Actor {
     }
 
     fn handle_measure_pulse(&mut self, _: MeasurePulse) {
+        tracing::trace!(target: "wire", "measuring heartbeat pulse");
+
         if self
             .state
             .disconnect_if_last_heartbeat_older_than(self.heartbeat_timeout)
         {
+            tracing::warn!(
+                "Disconnecting due to lack of heartbeat. Last heartbeat: {:?}",
+                self.state.last_heartbeat()
+            );
+
             self.status_sender
                 .send(ConnectionStatus::Offline { reason: None })
                 .expect("watch receiver to outlive the actor");

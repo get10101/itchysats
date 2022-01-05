@@ -370,8 +370,14 @@ impl Actor {
 
             async move {
                 while let Ok(()) = this.send(SendHeartbeat(identity)).await {
+                    tracing::trace!(
+                        target: "wire",
+                        "Sent heartbeat message. Sleeping for {}",
+                        heartbeat_interval.as_secs()
+                    );
                     tokio::time::sleep(heartbeat_interval).await;
                 }
+                tracing::warn!("Failed to send a heartbeat, stopping heartbeat transmission");
             }
         });
 
