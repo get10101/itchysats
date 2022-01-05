@@ -143,6 +143,8 @@ export class State {
     public getGroup(): StateGroupKey {
         switch (this.key) {
             case StateKey.PENDING_SETUP:
+                return StateGroupKey.PENDING_ORDER;
+
             case StateKey.CONTRACT_SETUP:
                 return StateGroupKey.OPENING;
 
