@@ -543,13 +543,6 @@ impl Cfd {
             return Err(CannotRollover::NotLocked);
         }
 
-        // This is for the edge case where the attestation timestamp is already reached, but we have
-        // not received the attestation yet
-        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
-        if OffsetDateTime::now_utc() > expiry_timestamp {
-            return Err(CannotRollover::AlreadyExpired);
-        }
-
         Ok(())
     }
 
@@ -640,7 +633,7 @@ impl Cfd {
         );
 
         Ok((
-            Event::new(self.id, CfdEvent::CollaborativeSettlementProposalAccepted),
+            Event::new(self.id, CfdEvent::RolloverAccepted),
             (
                 RolloverParams::new(
                     self.initial_price,
@@ -653,6 +646,14 @@ impl Cfd {
                 self.settlement_interval,
             ),
         ))
+    }
+
+    pub fn handle_rollover_accepted_taker(&self) -> Result<Event> {
+        anyhow::ensure!(self.during_rollover && self.role == Role::Taker);
+
+        self.can_rollover()?;
+
+        Ok(self.event(CfdEvent::RolloverAccepted))
     }
 
     pub fn sign_collaborative_settlement_maker(
@@ -774,7 +775,7 @@ impl Cfd {
         Ok(self.event(event))
     }
 
-    pub fn roll_over(self, rollover_completed: RolloverCompleted) -> Result<Event> {
+    pub fn roll_over(self, completed: RolloverCompleted) -> Result<Event> {
         // TODO: Compare that the version that we started the rollover with is the same as the
         // version now. For that to work we should pass the version into the state machine
         // that will handle rollover and the pass it back in here for comparison.
@@ -782,11 +783,11 @@ impl Cfd {
         // can_rollover. What difference would it make? If we are completed rollover and are
         // still able to apply it we should, otherwise we might produce inconsistent state with the
         // other party.
-        if let Err(e) = self.can_rollover() {
+        if let (Err(e), RolloverCompleted::Succeeded { .. }) = (self.can_rollover(), &completed) {
             bail!(e)
         }
 
-        let event = match rollover_completed {
+        let event = match completed {
             Completed::Succeeded {
                 payload: (dlc, _), ..
             } => CfdEvent::RolloverCompleted { dlc },

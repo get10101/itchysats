@@ -317,6 +317,7 @@ pub struct TakerActorSystem<O, W> {
     pub connection_actor_addr: Address<connection::Actor>,
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     wallet_actor_addr: Address<W>,
+    pub auto_rollover_addr: Address<auto_rollover::Actor<O>>,
     _tasks: Tasks,
 }
 
@@ -387,7 +388,7 @@ where
         .create(None)
         .run();
 
-        let (auto_rollover_address, auto_rollover_fut) = auto_rollover::Actor::new(
+        let (auto_rollover_addr, auto_rollover_fut) = auto_rollover::Actor::new(
             db,
             oracle_pk,
             process_manager_addr,
@@ -397,7 +398,6 @@ where
         )
         .create(None)
         .run();
-        std::mem::forget(auto_rollover_address); // leak this address to avoid shutdown
 
         tasks.add(cfd_actor_fut);
         tasks.add(auto_rollover_fut);
@@ -428,6 +428,7 @@ where
             connection_actor_addr,
             maker_online_status_feed_receiver,
             wallet_actor_addr,
+            auto_rollover_addr,
             _tasks: tasks,
         })
     }

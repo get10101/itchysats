@@ -217,6 +217,13 @@ where
 
         self.tasks.add(rollover_actor_future);
 
+        self.takers
+            .send(RollOverProposed {
+                order_id: proposal.order_id,
+                address: rollover_actor_addr.clone(),
+            })
+            .await?;
+
         self.rollover_actors
             .insert(proposal.order_id, rollover_actor_addr);
 

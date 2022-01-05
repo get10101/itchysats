@@ -7,7 +7,6 @@ use crate::model::cfd::OrderId;
 use crate::oracle;
 use crate::process_manager;
 use crate::rollover_taker;
-use crate::send_async_safe::SendAsyncSafe;
 use crate::try_continue;
 use crate::Tasks;
 use anyhow::Result;
@@ -70,39 +69,40 @@ where
             .expect("actor to be able to give address to itself");
 
         for id in cfd_ids {
-            let cfd = try_continue!(load_cfd(id, &mut conn).await);
+            try_continue!(
+                async {
+                    let cfd = load_cfd(id, &mut conn).await?;
+                    cfd.can_auto_rollover_taker(OffsetDateTime::now_utc())?;
 
-            if let Err(e) = cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
-                tracing::trace!(%id, "Cannot roll over: {:#}", e);
-                continue;
-            }
+                    this.send(Rollover(id)).await??;
 
-            this.send_async_safe(Rollover { id }).await?;
+                    anyhow::Ok(())
+                }
+                .await
+            );
         }
 
         Ok(())
     }
 
-    async fn handle(&mut self, msg: Rollover, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let id = msg.id;
-
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(id, &mut conn).await?;
-
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
-
-        let disconnected = match self.rollover_actors.get_disconnected(id) {
+    async fn handle(
+        &mut self,
+        Rollover(order_id): Rollover,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
+        let disconnected = match self.rollover_actors.get_disconnected(order_id) {
             Ok(disconnected) => disconnected,
             Err(_) => {
-                tracing::debug!(order_id=%id, "Rollover already in progress");
+                tracing::debug!(%order_id, "Rollover already in progress");
                 return Ok(());
             }
         };
 
+        let this = ctx
+            .address()
+            .expect("actor to be able to give address to itself");
         let (addr, fut) = rollover_taker::Actor::new(
-            cfd.id(),
+            order_id,
             self.n_payouts,
             self.oracle_pk,
             self.conn_actor.clone(),
@@ -149,12 +149,11 @@ where
     }
 }
 
-/// Message to trigger auto-rollover on a regular interval
+/// Message sent to ourselves at an interval to check if rollover can
+/// be triggered for any of the CFDs in the database.
 pub struct AutoRollover;
 
 /// Message used to trigger rollover internally within the `auto_rollover::Actor`
 ///
 /// This helps us trigger rollover in the tests unconditionally of time.
-pub struct Rollover {
-    id: OrderId,
-}
+pub struct Rollover(pub OrderId);

@@ -120,13 +120,22 @@ impl Actor {
         // TODO: Check the oracle event id for sanity (i.e. is in the future according to settlement
         // interval)
         let RollOverAccepted { oracle_event_id } = msg;
+        let order_id = self.id;
+
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(order_id, &mut conn).await?;
+
+        let event = cfd.handle_rollover_accepted_taker()?;
+        self.process_manager
+            .send(process_manager::Event::new(event))
+            .await??;
+
         let announcement = self
             .get_announcement
             .send(oracle::GetAnnouncement(oracle_event_id))
             .await?
             .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
 
-        let order_id = self.id;
         tracing::info!(%order_id, "Rollover proposal got accepted");
 
         let (sender, receiver) = mpsc::unbounded::<RollOverMsg>();
