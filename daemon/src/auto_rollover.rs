@@ -3,10 +3,12 @@ use crate::address_map::Stopping;
 use crate::cfd_actors::load_cfd;
 use crate::connection;
 use crate::db;
+use crate::db::append_event;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::RolloverCompleted;
 use crate::monitor;
 use crate::oracle;
+use crate::process_manager;
 use crate::projection;
 use crate::rollover_taker;
 use crate::send_async_safe::SendAsyncSafe;
@@ -21,12 +23,12 @@ use xtra::Actor as _;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
 
-pub struct Actor<O, M> {
+pub struct Actor<O> {
     db: sqlx::SqlitePool,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: Address<projection::Actor>,
+    process_manager_actor: Address<process_manager::Actor>,
     conn_actor: Address<connection::Actor>,
-    _monitor_actor: Address<M>,
     oracle_actor: Address<O>,
     n_payouts: usize,
 
@@ -35,13 +37,13 @@ pub struct Actor<O, M> {
     tasks: Tasks,
 }
 
-impl<O, M> Actor<O, M> {
+impl<O> Actor<O> {
     pub fn new(
         db: sqlx::SqlitePool,
         oracle_pk: schnorrsig::PublicKey,
         projection_actor: Address<projection::Actor>,
+        process_manager_actor: Address<process_manager::Actor>,
         conn_actor: Address<connection::Actor>,
-        monitor_actor: Address<M>,
         oracle_actor: Address<O>,
         n_payouts: usize,
     ) -> Self {
@@ -49,8 +51,8 @@ impl<O, M> Actor<O, M> {
             db,
             oracle_pk,
             projection_actor,
+            process_manager_actor,
             conn_actor,
-            _monitor_actor: monitor_actor,
             oracle_actor,
             n_payouts,
             rollover_actors: AddressMap::default(),
@@ -60,10 +62,9 @@ impl<O, M> Actor<O, M> {
 }
 
 #[xtra_productivity]
-impl<O, M> Actor<O, M>
+impl<O> Actor<O>
 where
-    M: xtra::Handler<monitor::StartMonitoring>,
-    O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
+    O: xtra::Handler<oracle::GetAnnouncement>,
 {
     async fn handle(&mut self, _msg: AutoRollover, ctx: &mut xtra::Context<Self>) -> Result<()> {
         tracing::trace!("Checking all CFDs for rollover eligibility");
@@ -127,25 +128,39 @@ where
 }
 
 #[xtra_productivity(message_impl = false)]
-impl<O, M> Actor<O, M>
+impl<O> Actor<O>
 where
     O: 'static,
-    M: 'static,
-    M: xtra::Handler<monitor::StartMonitoring>,
-    O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
+    O: xtra::Handler<oracle::GetAnnouncement>,
 {
-    async fn handle_rollover_completed(&mut self, _: RolloverCompleted) -> Result<()> {
-        // TODO: Implement this in terms of event sourcing
+    async fn handle_rollover_completed(
+        &mut self,
+        rollover_completed: RolloverCompleted,
+    ) -> Result<()> {
+        let id = rollover_completed.order_id();
+
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(id, &mut conn).await?;
+
+        let event = cfd.roll_over(rollover_completed)?;
+        append_event(event.clone(), &mut conn).await?;
+
+        if let Err(e) = self
+            .process_manager_actor
+            .send(process_manager::Event::new(event.clone()))
+            .await?
+        {
+            tracing::error!("Sending event to process manager failed: {:#}", e);
+        }
 
         Ok(())
     }
 }
 
 #[xtra_productivity(message_impl = false)]
-impl<O, M> Actor<O, M>
+impl<O> Actor<O>
 where
-    M: xtra::Handler<monitor::StartMonitoring>,
-    O: xtra::Handler<oracle::MonitorAttestation> + xtra::Handler<oracle::GetAnnouncement>,
+    O: xtra::Handler<oracle::GetAnnouncement>,
 {
     async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_taker::Actor>) {
         self.rollover_actors.gc(msg);
@@ -153,10 +168,9 @@ where
 }
 
 #[async_trait]
-impl<O, M> xtra::Actor for Actor<O, M>
+impl<O> xtra::Actor for Actor<O>
 where
     O: 'static,
-    M: 'static,
     Self: xtra::Handler<AutoRollover>,
 {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {

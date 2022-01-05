@@ -1,3 +1,4 @@
+use crate::model::cfd::marker::Rollover;
 use crate::model::BitMexPriceEventId;
 use crate::model::Identity;
 use crate::model::InversePrice;
@@ -737,22 +738,24 @@ impl Cfd {
         Ok(self.event(event))
     }
 
-    // TODO: Pass the entire enum
-    pub fn roll_over(self, rollover_result: Result<Dlc>) -> Result<Event> {
+    pub fn roll_over(self, rollover_completed: RolloverCompleted) -> Result<Event> {
         // TODO: Compare that the version that we started the rollover with is the same as the
         // version now. For that to work we should pass the version into the state machine
         // that will handle rollover and the pass it back in here for comparison.
+        // Daniel says: I don't think the version check will help in addition to what we check in
+        // can_rollover. What difference would it make? If we are completed rollover and are
+        // still able to apply it we should, otherwise we might produce inconsistent state with the
+        // other party.
         if let Err(e) = self.can_rollover() {
             bail!(e)
         }
 
-        let event = match rollover_result {
-            Ok(dlc) => CfdEvent::RolloverCompleted { dlc },
-            Err(err) => {
-                tracing::error!("Rollover failed: {:#}", err);
-
-                CfdEvent::RolloverFailed
-            }
+        let event = match rollover_completed {
+            Completed::Succeeded {
+                payload: (dlc, _), ..
+            } => CfdEvent::RolloverCompleted { dlc },
+            Completed::Rejected { .. } => CfdEvent::RolloverRejected,
+            Completed::Failed { .. } => CfdEvent::RolloverFailed,
         };
 
         Ok(self.event(event))
@@ -1486,6 +1489,7 @@ impl<P> Completed<P> {
     }
 }
 
+// TODO: Re-evaluate why we need these markers, they don't seem to be used?
 pub mod marker {
     /// Marker type for contract setup completion
     #[derive(Debug)]

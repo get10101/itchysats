@@ -379,7 +379,7 @@ where
             wallet_actor_addr.clone(),
             oracle_pk,
             projection_actor.clone(),
-            process_manager_addr,
+            process_manager_addr.clone(),
             connection_actor_addr.clone(),
             oracle_addr.clone(),
             n_payouts,
@@ -392,8 +392,8 @@ where
             db,
             oracle_pk,
             projection_actor,
+            process_manager_addr,
             connection_actor_addr.clone(),
-            monitor_addr.clone(),
             oracle_addr,
             n_payouts,
         )
