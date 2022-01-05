@@ -394,6 +394,7 @@ pub fn init_tracing() -> DefaultGuard {
                 .parse()
                 .unwrap(),
         )
+        .add_directive(format!("wire={}", LevelFilter::TRACE).parse().unwrap())
         .add_directive(format!("taker={}", LevelFilter::DEBUG).parse().unwrap())
         .add_directive(format!("maker={}", LevelFilter::DEBUG).parse().unwrap())
         .add_directive(format!("daemon={}", LevelFilter::DEBUG).parse().unwrap())
