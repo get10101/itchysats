@@ -126,7 +126,6 @@ jobs:
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v1.3.0
-      - run: cargo build --release --bins --tests
       - run: cargo test --release --workspace
 
   daemons_arm_build:
