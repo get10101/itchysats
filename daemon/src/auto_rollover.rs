@@ -9,6 +9,8 @@ use crate::monitor;
 use crate::oracle;
 use crate::projection;
 use crate::rollover_taker;
+use crate::send_async_safe::SendAsyncSafe;
+use crate::try_continue;
 use crate::Tasks;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -74,37 +76,51 @@ where
             .expect("actor to be able to give address to itself");
 
         for id in cfd_ids {
-            let disconnected = match self.rollover_actors.get_disconnected(id) {
-                Ok(disconnected) => disconnected,
-                Err(_) => {
-                    tracing::debug!(order_id=%id, "Rollover already in progress");
-                    continue;
-                }
-            };
-
-            // TODO: Shall this have a try_continue?
-            let cfd = load_cfd(id, &mut conn).await?;
+            let cfd = try_continue!(load_cfd(id, &mut conn).await);
 
             if let Err(e) = cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
                 tracing::trace!(%id, "Cannot roll over: {:#}", e);
                 continue;
             }
 
-            let (addr, fut) = rollover_taker::Actor::new(
-                (cfd, self.n_payouts),
-                self.oracle_pk,
-                self.conn_actor.clone(),
-                &self.oracle_actor,
-                self.projection_actor.clone(),
-                &this,
-                (&this, &self.conn_actor),
-            )
-            .create(None)
-            .run();
-
-            disconnected.insert(addr);
-            self.tasks.add(fut);
+            this.send_async_safe(Rollover { id }).await?;
         }
+
+        Ok(())
+    }
+
+    async fn handle(&mut self, msg: Rollover, ctx: &mut xtra::Context<Self>) -> Result<()> {
+        let id = msg.id;
+
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(id, &mut conn).await?;
+
+        let this = ctx
+            .address()
+            .expect("actor to be able to give address to itself");
+
+        let disconnected = match self.rollover_actors.get_disconnected(id) {
+            Ok(disconnected) => disconnected,
+            Err(_) => {
+                tracing::debug!(order_id=%id, "Rollover already in progress");
+                return Ok(());
+            }
+        };
+
+        let (addr, fut) = rollover_taker::Actor::new(
+            (cfd, self.n_payouts),
+            self.oracle_pk,
+            self.conn_actor.clone(),
+            &self.oracle_actor,
+            self.projection_actor.clone(),
+            &this,
+            (&this, &self.conn_actor),
+        )
+        .create(None)
+        .run();
+
+        disconnected.insert(addr);
+        self.tasks.add(fut);
 
         Ok(())
     }
@@ -155,5 +171,12 @@ where
     }
 }
 
-/// Message to trigger roll-over on a regular interval
+/// Message to trigger auto-rollover on a regular interval
 pub struct AutoRollover;
+
+/// Message used to trigger rollover internally within the `auto_rollover::Actor`
+///
+/// This helps us trigger rollover in the tests unconditionally of time.
+pub struct Rollover {
+    id: OrderId,
+}
