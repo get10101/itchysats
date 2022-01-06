@@ -65,10 +65,12 @@ where
     rx.changed()
         .timeout(NEXT_WAIT_TIME)
         .await
-        .context(format!(
-            "No change in channel within {} seconds",
-            NEXT_WAIT_TIME.as_secs()
-        ))??;
+        .with_context(|| {
+            format!(
+                "No change in channel within {} seconds",
+                NEXT_WAIT_TIME.as_secs()
+            )
+        })??;
 
     Ok(rx.borrow().clone())
 }

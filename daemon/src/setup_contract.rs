@@ -137,7 +137,7 @@ pub async fn new(
         .select_next_some()
         .timeout(MSG_TIMEOUT)
         .await
-        .context(format_expect_msg_within("Msg0"))?
+        .with_context(|| format_expect_msg_within("Msg0"))?
         .try_into_msg0()
         .context("Failed to read Msg0")?;
 
@@ -187,7 +187,7 @@ pub async fn new(
         .select_next_some()
         .timeout(MSG_TIMEOUT)
         .await
-        .context(format_expect_msg_within("Msg1"))?
+        .with_context(|| format_expect_msg_within("Msg1"))?
         .try_into_msg1()
         .context("Failed to read Msg1")?;
 
@@ -270,7 +270,7 @@ pub async fn new(
         .select_next_some()
         .timeout(MSG_TIMEOUT)
         .await
-        .context(format_expect_msg_within("Msg2"))?
+        .with_context(|| format_expect_msg_within("Msg2"))?
         .try_into_msg2()
         .context("Failed to read Msg2")?;
     signed_lock_tx
@@ -328,7 +328,7 @@ pub async fn new(
         .select_next_some()
         .timeout(MSG_TIMEOUT)
         .await
-        .context(format_expect_msg_within("Msg3"))?
+        .with_context(|| format_expect_msg_within("Msg3"))?
         .try_into_msg3()
         .context("Failed to read Msg3")?;
 
@@ -409,7 +409,7 @@ pub async fn roll_over(
         .select_next_some()
         .timeout(MSG_TIMEOUT)
         .await
-        .context(format_expect_msg_within("Msg0"))?
+        .with_context(|| format_expect_msg_within("Msg0"))?
         .try_into_msg0()
         .context("Failed to read Msg0")?;
 
@@ -480,9 +480,9 @@ pub async fn roll_over(
 
     let msg1 = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
-        .context("Expected Msg1 within 60 seconds")?
+        .with_context(|| format_expect_msg_within("Msg1"))?
         .try_into_msg1()
         .context("Failed to read Msg1")?;
 
@@ -599,9 +599,9 @@ pub async fn roll_over(
 
     let msg2 = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
-        .context("Expected Msg2 within 60 seconds")?
+        .with_context(|| format_expect_msg_within("Msg2"))?
         .try_into_msg2()
         .context("Failed to read Msg2")?;
     let revocation_sk_theirs = msg2.revocation_sk;
@@ -633,9 +633,9 @@ pub async fn roll_over(
         .context("Failed to send Msg3")?;
     let _ = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
-        .context("Expected Msg3 within 60 seconds")?
+        .with_context(|| format_expect_msg_within("Msg3"))?
         .try_into_msg3()
         .context("Failed to read Msg3")?;
 
