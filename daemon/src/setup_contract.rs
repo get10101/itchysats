@@ -54,6 +54,10 @@ use std::ops::RangeInclusive;
 use std::time::Duration;
 use xtra::prelude::MessageChannel;
 
+/// How long protocol waits for the next message before giving up
+// TODO: Analyse why event sourcing refactor made us change the timeout from 60 to 70 secs.
+const MSG_TIMEOUT: Duration = Duration::from_secs(70);
+
 pub struct SetupParams {
     margin: Amount,
     counterparty_margin: Amount,
@@ -131,9 +135,9 @@ pub async fn new(
         .context("Failed to send Msg0")?;
     let msg0 = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
-        .context("Expected Msg0 within 60 seconds")?
+        .context(format_expect_msg_within("Msg0"))?
         .try_into_msg0()
         .context("Failed to read Msg0")?;
 
@@ -181,9 +185,9 @@ pub async fn new(
 
     let msg1 = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
-        .context("Expected Msg1 within 60 seconds")?
+        .context(format_expect_msg_within("Msg1"))?
         .try_into_msg1()
         .context("Failed to read Msg1")?;
 
@@ -264,9 +268,9 @@ pub async fn new(
     .context("Failed to send Msg2")?;
     let msg2 = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
-        .context("Expected Msg2 within 60 seconds")?
+        .context(format_expect_msg_within("Msg2"))?
         .try_into_msg2()
         .context("Failed to read Msg2")?;
     signed_lock_tx
@@ -322,9 +326,9 @@ pub async fn new(
         .context("Failed to send Msg3")?;
     let _ = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
-        .context("Expected Msg3 within 60 seconds")?
+        .context(format_expect_msg_within("Msg3"))?
         .try_into_msg3()
         .context("Failed to read Msg3")?;
 
@@ -403,9 +407,9 @@ pub async fn roll_over(
     .context("Failed to send Msg0")?;
     let msg0 = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
-        .context("Expected Msg0 within 60 seconds")?
+        .context(format_expect_msg_within("Msg0"))?
         .try_into_msg0()
         .context("Failed to read Msg0")?;
 
@@ -795,4 +799,9 @@ fn verify_cet_encsig(
         &PublicKey::new(adaptor_point),
         pk,
     )
+}
+
+/// Wrapper for the msg
+fn format_expect_msg_within(msg: &str) -> String {
+    format!("Expected {} within {} seconds", msg, MSG_TIMEOUT.as_secs())
 }
