@@ -793,23 +793,47 @@ impl Cfd {
         Ok(self.event(event))
     }
 
-    pub fn roll_over(self, completed: RolloverCompleted) -> Result<Event> {
-        if let (Err(e), RolloverCompleted::Succeeded { .. }) = (self.can_rollover(), &completed) {
-            bail!(e)
-        }
-
+    pub fn roll_over(self, completed: RolloverCompleted) -> Result<Option<Event>, RolloverError> {
         let event = match completed {
+            // These are a bit weird but should go away with
+            // https://github.com/itchysats/itchysats/issues/958
+            // because we should never get here.
+            Completed::Failed {
+                error:
+                    error
+                    @
+                    (RolloverError::NoDlc
+                    | RolloverError::WasJustRolledOver
+                    | RolloverError::AlreadyRollingOver
+                    | RolloverError::NotRollingOver
+                    | RolloverError::Committed
+                    | RolloverError::Attested
+                    | RolloverError::Final
+                    | RolloverError::AlreadyExpired),
+                ..
+            } => {
+                tracing::debug!(order_id = %self.id, "Rollover was not started: {:#}", error);
+                return Ok(None);
+            }
             Completed::Succeeded {
                 payload: (dlc, _), ..
             } => {
                 self.can_rollover()?;
                 CfdEvent::RolloverCompleted { dlc }
             }
-            Completed::Rejected { .. } => CfdEvent::RolloverRejected,
-            Completed::Failed { .. } => CfdEvent::RolloverFailed,
+            Completed::Rejected { reason, .. } => {
+                tracing::info!(order_id = %self.id, "Rollover was rejected: {:#}", reason);
+
+                CfdEvent::RolloverRejected
+            }
+            Completed::Failed { error, .. } => {
+                tracing::warn!(order_id = %self.id, "Rollover failed: {:#}", error);
+
+                CfdEvent::RolloverFailed
+            }
         };
 
-        Ok(self.event(event))
+        Ok(Some(self.event(event)))
     }
 
     pub fn settle_collaboratively(
@@ -1563,7 +1587,6 @@ pub type SetupCompleted = Completed<(Dlc, marker::Setup), anyhow::Error>;
 
 /// Message sent from a rollover actor to the
 /// cfd actor to notify that the rollover has finished (contract got updated).
-/// TODO: Roll it out in the maker rollover actor
 pub type RolloverCompleted = Completed<(Dlc, marker::Rollover), RolloverError>;
 
 pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;

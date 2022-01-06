@@ -183,10 +183,12 @@ impl Actor {
 
         match event_fut.await {
             Ok(event) => {
-                let _ = self
-                    .process_manager
-                    .send(process_manager::Event::new(event))
-                    .await;
+                if let Some(event) = event {
+                    let _ = self
+                        .process_manager
+                        .send(process_manager::Event::new(event))
+                        .await;
+                }
             }
             Err(e) => {
                 tracing::warn!(%order_id, "Failed to report completion of collab settlement: {:#}", e)
