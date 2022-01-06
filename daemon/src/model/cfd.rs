@@ -1,3 +1,4 @@
+use crate::maker_inc_connections::NoConnection;
 use crate::model::BitMexPriceEventId;
 use crate::model::Identity;
 use crate::model::InversePrice;
@@ -9,6 +10,7 @@ use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
 use crate::oracle;
+use crate::oracle::NoAnnouncement;
 use crate::payout_curve;
 use crate::setup_contract::RolloverParams;
 use crate::setup_contract::SetupParams;
@@ -219,6 +221,10 @@ pub enum CannotAutoRollover {
     NoDlc,
 }
 
+/// Various error cases that can happen during rollover.
+///
+/// This enum is expected to go away once we handle the entire protocol within the actor and not
+/// report back the result to the `{taker,maker}_cfd::Actor`.
 #[derive(thiserror::Error, Debug)]
 pub enum RolloverError {
     #[error("CFD does not have a DLC")]
@@ -243,6 +249,16 @@ pub enum RolloverError {
     WrongRole,
     #[error("Maker did not respond within {timeout} seconds")]
     MakerDidNotRespond { timeout: u64 },
+    #[error(transparent)]
+    NoAnnouncement {
+        #[from]
+        source: NoAnnouncement,
+    },
+    #[error(transparent)]
+    TakerDisconnected {
+        #[from]
+        source: NoConnection,
+    },
     #[error("Rollover protocol failed")]
     Protocol { source: anyhow::Error },
     #[error(transparent)]

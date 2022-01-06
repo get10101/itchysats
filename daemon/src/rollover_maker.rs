@@ -15,11 +15,11 @@ use crate::oracle::GetAnnouncement;
 use crate::process_manager;
 use crate::schnorrsig;
 use crate::setup_contract;
-use crate::tokio_ext::spawn_fallible;
 use crate::wire;
 use crate::wire::MakerToTaker;
 use crate::wire::RollOverMsg;
 use crate::Stopping;
+use crate::Tasks;
 use anyhow::Context as _;
 use anyhow::Result;
 use futures::channel::mpsc;
@@ -61,6 +61,7 @@ pub struct Actor {
     process_manager: xtra::Address<process_manager::Actor>,
     register: Box<dyn MessageChannel<RegisterRollover>>,
     db: sqlx::SqlitePool,
+    tasks: Tasks,
 }
 
 impl Actor {
@@ -92,6 +93,7 @@ impl Actor {
             process_manager,
             register: register.clone_channel(),
             db,
+            tasks: Tasks::default(),
         }
     }
 
@@ -138,12 +140,6 @@ impl Actor {
         ctx.stop();
     }
 
-    async fn fail(&mut self, ctx: &mut xtra::Context<Self>, error: RolloverError) {
-        tracing::warn!(id = %self.order_id, "Rollover failed: {}", error);
-
-        ctx.stop();
-    }
-
     async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<(), RolloverError> {
         let order_id = self.order_id;
 
@@ -171,7 +167,8 @@ impl Actor {
             .with_context(|| format!("Process manager failed to process event {:?}", event))?;
 
         let oracle_event_id =
-            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + interval)?;
+            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + interval)
+                .context("Failed to calculate next BitMexPriceEventId")?;
 
         let taker_id = self.taker_id;
 
@@ -211,25 +208,23 @@ impl Actor {
 
         let this = ctx.address().expect("self to be alive");
 
-        spawn_fallible::<_, anyhow::Error>(async move {
-            let _ = match rollover_fut.await {
-                Ok(dlc) => this.send(RolloverSucceeded { dlc }).await?,
+        self.tasks.add(async move {
+            let _: Result<(), xtra::Disconnected> = match rollover_fut.await {
+                Ok(dlc) => this.send(RolloverSucceeded { dlc }).await,
                 Err(source) => {
                     this.send(RolloverFailed {
                         error: RolloverError::Protocol { source },
                     })
-                    .await?
+                    .await
                 }
             };
-
-            Ok(())
         });
 
         Ok(())
     }
 
-    async fn reject(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        tracing::info!(id = %self.order_id, "Maker rejects rollover proposal" );
+    async fn reject(&mut self, ctx: &mut xtra::Context<Self>) -> Result<(), RolloverError> {
+        tracing::info!(id = %self.order_id, "Rejecting rollover proposal" );
 
         self.send_to_taker_actor
             .send(TakerMessage {
@@ -248,7 +243,7 @@ impl Actor {
         Ok(())
     }
 
-    pub async fn forward_protocol_msg(&mut self, msg: ProtocolMsg) -> Result<()> {
+    pub async fn forward_protocol_msg(&mut self, msg: ProtocolMsg) -> Result<(), RolloverError> {
         self.sent_from_taker
             .as_mut()
             .context("Rollover task is not active")? // Sender is set once `Accepted` is sent.
@@ -317,8 +312,15 @@ impl Actor {
         _msg: AcceptRollOver,
         ctx: &mut xtra::Context<Self>,
     ) {
-        if let Err(err) = self.accept(ctx).await {
-            self.fail(ctx, err).await;
+        if let Err(error) = self.accept(ctx).await {
+            self.complete(
+                RolloverCompleted::Failed {
+                    order_id: self.order_id,
+                    error,
+                },
+                ctx,
+            )
+            .await;
         };
     }
 
@@ -327,14 +329,28 @@ impl Actor {
         _msg: RejectRollOver,
         ctx: &mut xtra::Context<Self>,
     ) {
-        if let Err(source) = self.reject(ctx).await {
-            self.fail(ctx, RolloverError::Other { source }).await;
+        if let Err(error) = self.reject(ctx).await {
+            self.complete(
+                RolloverCompleted::Failed {
+                    order_id: self.order_id,
+                    error,
+                },
+                ctx,
+            )
+            .await;
         };
     }
 
     async fn handle_protocol_msg(&mut self, msg: ProtocolMsg, ctx: &mut xtra::Context<Self>) {
-        if let Err(source) = self.forward_protocol_msg(msg).await {
-            self.fail(ctx, RolloverError::Other { source }).await;
+        if let Err(error) = self.forward_protocol_msg(msg).await {
+            self.complete(
+                RolloverCompleted::Failed {
+                    order_id: self.order_id,
+                    error,
+                },
+                ctx,
+            )
+            .await;
         };
     }
 
