@@ -480,7 +480,7 @@ pub async fn roll_over(
 
     let msg1 = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
         .context("Expected Msg1 within 60 seconds")?
         .try_into_msg1()
@@ -599,7 +599,7 @@ pub async fn roll_over(
 
     let msg2 = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
         .context("Expected Msg2 within 60 seconds")?
         .try_into_msg2()
@@ -633,7 +633,7 @@ pub async fn roll_over(
         .context("Failed to send Msg3")?;
     let _ = stream
         .select_next_some()
-        .timeout(Duration::from_secs(60))
+        .timeout(MSG_TIMEOUT)
         .await
         .context("Expected Msg3 within 60 seconds")?
         .try_into_msg3()
