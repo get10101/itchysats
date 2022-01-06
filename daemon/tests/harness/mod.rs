@@ -97,14 +97,14 @@ impl Default for MakerConfig {
 pub struct TakerConfig {
     oracle_pk: schnorrsig::PublicKey,
     seed: Seed,
-    pub heartbeat_timeout: Duration,
+    pub heartbeat_interval: Duration,
     n_payouts: usize,
 }
 
 impl TakerConfig {
-    pub fn with_heartbeat_timeout(self, timeout: Duration) -> Self {
+    pub fn with_heartbeat_interval(self, timeout: Duration) -> Self {
         Self {
-            heartbeat_timeout: timeout,
+            heartbeat_interval: timeout,
             ..self
         }
     }
@@ -115,7 +115,7 @@ impl Default for TakerConfig {
         Self {
             oracle_pk: oracle_pk(),
             seed: Seed::default(),
-            heartbeat_timeout: HEARTBEAT_INTERVAL_FOR_TEST * 2,
+            heartbeat_interval: HEARTBEAT_INTERVAL_FOR_TEST,
             n_payouts: N_PAYOUTS_FOR_TEST,
         }
     }
@@ -296,7 +296,7 @@ impl Taker {
             |_| async { Ok(oracle) },
             |_| async { Ok(monitor) },
             config.n_payouts,
-            config.heartbeat_timeout,
+            config.heartbeat_interval,
             Duration::from_secs(10),
             projection_actor,
             maker_identity,

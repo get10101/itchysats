@@ -93,6 +93,11 @@ impl State {
             return false;
         }
 
+        tracing::warn!(
+            "Disconnecting due to lack of heartbeat. Last heartbeat: {:?}",
+            self.last_heartbeat()
+        );
+
         *self = State::Disconnected;
 
         true
@@ -110,8 +115,12 @@ pub struct Actor {
     status_sender: watch::Sender<ConnectionStatus>,
     identity_sk: x25519_dalek::StaticSecret,
     current_order: Box<dyn MessageChannel<CurrentOrder>>,
+    /// How often we check ("measure pulse") for heartbeat
+    /// It should not be greater than maker's `heartbeat interval`
+    heartbeat_measuring_rate: Duration,
     /// Max duration since the last heartbeat until we die.
     heartbeat_timeout: Duration,
+    /// TCP connection timeout
     connect_timeout: Duration,
     state: State,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
@@ -180,14 +189,17 @@ impl Actor {
         status_sender: watch::Sender<ConnectionStatus>,
         current_order: &(impl MessageChannel<CurrentOrder> + 'static),
         identity_sk: x25519_dalek::StaticSecret,
-        hearthbeat_timeout: Duration,
+        maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
     ) -> Self {
         Self {
             status_sender,
             identity_sk,
             current_order: current_order.clone_channel(),
-            heartbeat_timeout: hearthbeat_timeout,
+            heartbeat_measuring_rate: maker_heartbeat_interval.checked_div(2).expect("to divide"),
+            heartbeat_timeout: maker_heartbeat_interval
+                .checked_mul(2)
+                .expect("to not overflow"),
             state: State::Disconnected,
             setup_actors: AddressMap::default(),
             connect_timeout,
@@ -360,7 +372,7 @@ impl Actor {
         let mut tasks = Tasks::default();
         tasks.add(this.attach_stream(read.map(move |item| MakerStreamMessage { item })));
         tasks.add(
-            ctx.notify_interval(self.heartbeat_timeout, || MeasurePulse)
+            ctx.notify_interval(self.heartbeat_measuring_rate, || MeasurePulse)
                 .expect("we just started"),
         );
 
@@ -497,11 +509,6 @@ impl Actor {
             .state
             .disconnect_if_last_heartbeat_older_than(self.heartbeat_timeout)
         {
-            tracing::warn!(
-                "Disconnecting due to lack of heartbeat. Last heartbeat: {:?}",
-                self.state.last_heartbeat()
-            );
-
             self.status_sender
                 .send(ConnectionStatus::Offline { reason: None })
                 .expect("watch receiver to outlive the actor");

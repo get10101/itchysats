@@ -247,7 +247,7 @@ async fn main() -> Result<()> {
             }
         },
         N_PAYOUTS,
-        HEARTBEAT_INTERVAL * 2,
+        HEARTBEAT_INTERVAL,
         Duration::from_secs(10),
         projection_actor.clone(),
         maker_identity,
