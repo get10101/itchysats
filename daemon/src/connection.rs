@@ -43,6 +43,9 @@ const CONNECT_TO_MAKER_INTERVAL: Duration = Duration::from_secs(5);
 enum State {
     Connected {
         last_heartbeat: SystemTime,
+        /// Last pulse measurement time. Used for checking whether measuring
+        /// task is not lagging too much.
+        last_pulse: SystemTime,
         write: wire::Write<wire::MakerToTaker, wire::TakerToMaker>,
         _tasks: Tasks,
     },
@@ -77,6 +80,24 @@ impl State {
             }
             State::Disconnected => {
                 debug_assert!(false, "Received heartbeat in disconnected state")
+            }
+        }
+    }
+
+    /// Record the time of the last pulse measurement.
+    /// Returns the time difference between the last two pulses.
+    fn update_last_pulse_time(&mut self) -> Result<Duration> {
+        match self {
+            State::Connected { last_pulse, .. } => {
+                let new_pulse = SystemTime::now();
+                let time_delta = new_pulse
+                    .duration_since(*last_pulse)
+                    .expect("clock is monotonic");
+                *last_pulse = new_pulse;
+                Ok(time_delta)
+            }
+            State::Disconnected => {
+                bail!("Measuring pulse in disconnected state");
             }
         }
     }
@@ -118,6 +139,8 @@ pub struct Actor {
     /// How often we check ("measure pulse") for heartbeat
     /// It should not be greater than maker's `heartbeat interval`
     heartbeat_measuring_rate: Duration,
+    /// The interval of heartbeats from the maker
+    maker_heartbeat_interval: Duration,
     /// Max duration since the last heartbeat until we die.
     heartbeat_timeout: Duration,
     /// TCP connection timeout
@@ -197,6 +220,7 @@ impl Actor {
             identity_sk,
             current_order: current_order.clone_channel(),
             heartbeat_measuring_rate: maker_heartbeat_interval.checked_div(2).expect("to divide"),
+            maker_heartbeat_interval,
             heartbeat_timeout: maker_heartbeat_interval
                 .checked_mul(2)
                 .expect("to not overflow"),
@@ -378,6 +402,7 @@ impl Actor {
 
         self.state = State::Connected {
             last_heartbeat: SystemTime::now(),
+            last_pulse: SystemTime::now(),
             write,
             _tasks: tasks,
         };
@@ -504,6 +529,22 @@ impl Actor {
 
     fn handle_measure_pulse(&mut self, _: MeasurePulse) {
         tracing::trace!(target: "wire", "measuring heartbeat pulse");
+
+        match self.state.update_last_pulse_time() {
+            Ok(duration) => {
+                if duration >= self.maker_heartbeat_interval {
+                    tracing::warn!(
+                        "Heartbeat pulse measurements fell behind more than heartbeat interval ({}), likely missing a heartbeat from the maker. Diff between pulses: {}",
+                        self.maker_heartbeat_interval.as_secs(),
+                        duration.as_secs()
+                    );
+                    return; // Don't try to disconnect if the measurements fell behind
+                }
+            }
+            Err(e) => {
+                tracing::debug!("{}", e);
+            }
+        }
 
         if self
             .state
