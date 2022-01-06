@@ -6,9 +6,7 @@ use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_maker;
 use crate::maker_inc_connections;
-use crate::model;
 use crate::model::cfd::Cfd;
-use crate::model::cfd::CollaborativeSettlement;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
@@ -449,26 +447,6 @@ impl<O, T, W> Actor<O, T, W> {
 
     async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
         self.setup_actors.gc(message);
-    }
-
-    async fn handle_settlement_completed(
-        &mut self,
-        msg: model::cfd::Completed<CollaborativeSettlement>,
-    ) -> Result<()> {
-        let order_id = msg.order_id();
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(order_id, &mut conn).await?;
-
-        let event = cfd.settle_collaboratively(msg)?;
-        if let Err(e) = self
-            .process_manager_actor
-            .send(process_manager::Event::new(event.clone()))
-            .await?
-        {
-            tracing::error!("Sending event to process manager failed: {:#}", e);
-        }
-
-        Ok(())
     }
 
     async fn handle_settlement_actor_stopping(
