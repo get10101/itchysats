@@ -55,7 +55,8 @@ use std::time::Duration;
 use xtra::prelude::MessageChannel;
 
 /// How long protocol waits for the next message before giving up
-const MSG_TIMEOUT: Duration = Duration::from_secs(60);
+// TODO: Analyse why event sourcing refactor made us change the timeout from 60 to 70 secs.
+const MSG_TIMEOUT: Duration = Duration::from_secs(70);
 
 pub struct SetupParams {
     margin: Amount,
