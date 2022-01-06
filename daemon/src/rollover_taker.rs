@@ -191,7 +191,7 @@ impl Actor {
                 }
             }
             Err(e) => {
-                tracing::warn!(%order_id, "Failed to report completion of collab settlement: {:#}", e)
+                tracing::warn!(%order_id, "Failed to complete rollover: {:#}", e)
             }
         }
 
