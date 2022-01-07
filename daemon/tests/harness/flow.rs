@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use tokio::time::sleep;
 
 /// Waiting time for the time on the watch channel before returning error
-const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 180 } else { 30 });
+const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 120 } else { 30 });
 
 /// Returns the first `Cfd` from both channels
 ///
