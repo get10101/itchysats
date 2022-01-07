@@ -27,7 +27,7 @@ mod harness;
 
 /// Assert the next state of the single cfd present at both maker and taker
 macro_rules! assert_next_state {
-    ($state:expr, $maker:expr, $taker:expr, $id:expr) => {
+    ($id:expr, $maker:expr, $taker:expr, $state:expr) => {
         // TODO: Allow fetching cfd with the specified id if there is more than
         // one on the cfd feed
         let (taker_cfd, maker_cfd) = next_cfd($taker.cfd_feed(), $maker.cfd_feed())
@@ -81,11 +81,11 @@ async fn taker_takes_order_and_maker_rejects() {
     maker.mocks.mock_oracle_announcement().await;
     taker.take_order(received.clone(), Usd::new(dec!(10))).await;
 
-    assert_next_state!(CfdState::PendingSetup, maker, taker, received.id);
+    assert_next_state!(received.id, maker, taker, CfdState::PendingSetup);
 
     maker.reject_take_request(received.clone()).await;
 
-    assert_next_state!(CfdState::Rejected, maker, taker, received.id);
+    assert_next_state!(received.id, maker, taker, CfdState::Rejected);
 }
 
 #[tokio::test]
@@ -105,7 +105,7 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     maker.mocks.mock_oracle_announcement().await;
 
     taker.take_order(received.clone(), Usd::new(dec!(5))).await;
-    assert_next_state!(CfdState::PendingSetup, maker, taker, received.id);
+    assert_next_state!(received.id, maker, taker, CfdState::PendingSetup);
 
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
@@ -123,13 +123,13 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
     maker.accept_take_request(received.clone()).await;
-    assert_next_state!(CfdState::ContractSetup, maker, taker, received.id);
+    assert_next_state!(received.id, maker, taker, CfdState::ContractSetup);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-    assert_next_state!(CfdState::PendingOpen, maker, taker, received.id);
+    assert_next_state!(received.id, maker, taker, CfdState::PendingOpen);
 
     deliver_event!(maker, taker, Event::LockFinality(received.id));
-    assert_next_state!(CfdState::Open, maker, taker, received.id);
+    assert_next_state!(received.id, maker, taker, CfdState::Open);
 }
 
 #[tokio::test]
@@ -150,13 +150,13 @@ async fn collaboratively_close_an_open_cfd() {
     maker.accept_settlement_proposal(order_id).await;
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 
-    assert_next_state!(CfdState::PendingClose, maker, taker, order_id);
+    assert_next_state!(order_id, maker, taker, CfdState::PendingClose);
 
     deliver_event!(maker, taker, Event::CloseFinality(order_id));
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 
-    assert_next_state!(CfdState::Closed, maker, taker, order_id);
+    assert_next_state!(order_id, maker, taker, CfdState::Closed);
 }
 
 #[tokio::test]
@@ -171,7 +171,7 @@ async fn force_close_an_open_cfd() {
 
     deliver_event!(maker, taker, Event::CommitFinality(order_id));
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-    assert_next_state!(CfdState::OpenCommitted, maker, taker, order_id);
+    assert_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
     // After CetTimelockExpired, we're only waiting for attestation
     deliver_event!(maker, taker, Event::CetTimelockExpired(order_id));
@@ -179,16 +179,16 @@ async fn force_close_an_open_cfd() {
     // Delivering the wrong attestation does not move state to `PendingCet`
     deliver_event!(maker, taker, dummy_wrong_attestation());
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-    assert_next_state!(CfdState::OpenCommitted, maker, taker, order_id);
+    assert_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
     // Delivering correct attestation moves the state `PendingCet`
     deliver_event!(maker, taker, oracle_data.attestation());
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-    assert_next_state!(CfdState::PendingCet, maker, taker, order_id);
+    assert_next_state!(order_id, maker, taker, CfdState::PendingCet);
 
     deliver_event!(maker, taker, Event::CetFinality(order_id));
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-    assert_next_state!(CfdState::Closed, maker, taker, order_id);
+    assert_next_state!(order_id, maker, taker, CfdState::Closed);
 }
 
 #[tokio::test]
@@ -206,8 +206,8 @@ async fn rollover_an_open_cfd() {
 
     maker.accept_rollover_proposal(order_id).await;
 
-    assert_next_state!(CfdState::ContractSetup, maker, taker, order_id);
-    assert_next_state!(CfdState::Open, maker, taker, order_id);
+    assert_next_state!(order_id, maker, taker, CfdState::ContractSetup);
+    assert_next_state!(order_id, maker, taker, CfdState::Open);
 }
 
 #[tokio::test]
@@ -225,7 +225,7 @@ async fn maker_rejects_rollover_of_open_cfd() {
 
     maker.reject_rollover_proposal(order_id).await;
 
-    assert_next_state!(CfdState::Open, maker, taker, order_id);
+    assert_next_state!(order_id, maker, taker, CfdState::Open);
 }
 
 #[tokio::test]
@@ -317,7 +317,7 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
         .await;
 
     taker.take_order(received.clone(), Usd::new(dec!(5))).await;
-    assert_next_state!(CfdState::PendingSetup, maker, taker, received.id);
+    assert_next_state!(received.id, maker, taker, CfdState::PendingSetup);
 
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
@@ -335,13 +335,13 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
     maker.accept_take_request(received.clone()).await;
-    assert_next_state!(CfdState::ContractSetup, maker, taker, received.id);
+    assert_next_state!(received.id, maker, taker, CfdState::ContractSetup);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-    assert_next_state!(CfdState::PendingOpen, maker, taker, received.id);
+    assert_next_state!(received.id, maker, taker, CfdState::PendingOpen);
 
     deliver_event!(maker, taker, Event::LockFinality(received.id));
-    assert_next_state!(CfdState::Open, maker, taker, received.id);
+    assert_next_state!(received.id, maker, taker, CfdState::Open);
 
     (maker, taker, received.id)
 }
