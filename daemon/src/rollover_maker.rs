@@ -8,6 +8,7 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
+use crate::model::cfd::RolloverError;
 use crate::model::Identity;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
@@ -45,7 +46,7 @@ pub struct RolloverSucceeded {
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has failed.
 pub struct RolloverFailed {
-    error: anyhow::Error,
+    error: RolloverError,
 }
 
 pub struct Actor {
@@ -94,14 +95,18 @@ impl Actor {
         }
     }
 
-    async fn handle_proposal(&mut self) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(self.order_id, &mut conn).await?;
+    async fn handle_proposal(&mut self) -> Result<(), RolloverError> {
+        let mut conn = self.db.acquire().await.context("Failed to connect to DB")?;
+        let cfd = load_cfd(self.order_id, &mut conn)
+            .await
+            .context("Failed to load CFD")?;
 
         let event = cfd.start_rollover()?;
         self.process_manager
-            .send(process_manager::Event::new(event))
-            .await??;
+            .send(process_manager::Event::new(event.clone()))
+            .await
+            .context("Process manager disconnected")?
+            .with_context(|| format!("Process manager failed to process event {:?}", event))?;
 
         Ok(())
     }
@@ -131,13 +136,13 @@ impl Actor {
         ctx.stop();
     }
 
-    async fn fail(&mut self, ctx: &mut xtra::Context<Self>, error: anyhow::Error) {
+    async fn fail(&mut self, ctx: &mut xtra::Context<Self>, error: RolloverError) {
         tracing::warn!(id = %self.order_id, "Rollover failed: {}", error);
 
         ctx.stop();
     }
 
-    async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<(), RolloverError> {
         let order_id = self.order_id;
 
         if self.sent_from_taker.is_some() {
@@ -151,13 +156,17 @@ impl Actor {
 
         tracing::debug!(%order_id, "Maker accepts a roll_over proposal" );
 
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(self.order_id, &mut conn).await?;
+        let mut conn = self.db.acquire().await.context("Failed to connect to DB")?;
+        let cfd = load_cfd(self.order_id, &mut conn)
+            .await
+            .context("Failed to load CFD")?;
 
         let (event, (rollover_params, dlc, interval)) = cfd.accept_rollover_proposal()?;
         self.process_manager
-            .send(process_manager::Event::new(event))
-            .await??;
+            .send(process_manager::Event::new(event.clone()))
+            .await
+            .context("Process manager actor disconnected")?
+            .with_context(|| format!("Process manager failed to process event {:?}", event))?;
 
         let oracle_event_id =
             oracle::next_announcement_after(time::OffsetDateTime::now_utc() + interval)?;
@@ -172,12 +181,15 @@ impl Actor {
                     oracle_event_id,
                 },
             })
-            .await??;
+            .await
+            .context("Maker connection actor disconnected")?
+            .context("Failed to send confirm rollover message")?;
 
         let announcement = self
             .oracle_actor
             .send(oracle::GetAnnouncement(oracle_event_id))
-            .await?
+            .await
+            .context("Oracle actor disconnected")?
             .with_context(|| format!("Announcement {} not found", oracle_event_id))?;
 
         let rollover_fut = setup_contract::roll_over(
@@ -200,7 +212,12 @@ impl Actor {
         spawn_fallible::<_, anyhow::Error>(async move {
             let _ = match rollover_fut.await {
                 Ok(dlc) => this.send(RolloverSucceeded { dlc }).await?,
-                Err(error) => this.send(RolloverFailed { error }).await?,
+                Err(source) => {
+                    this.send(RolloverFailed {
+                        error: RolloverError::Protocol { source },
+                    })
+                    .await?
+                }
             };
 
             Ok(())
@@ -210,14 +227,16 @@ impl Actor {
     }
 
     async fn reject(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        tracing::info!(id = %self.order_id, "Maker rejects a roll_over proposal" );
+        tracing::info!(id = %self.order_id, "Maker rejects rollover proposal" );
 
         self.send_to_taker_actor
             .send(TakerMessage {
                 taker_id: self.taker_id,
                 msg: MakerToTaker::RejectRollOver(self.order_id),
             })
-            .await??;
+            .await
+            .context("Maker connection actor disconnected")?
+            .context("Failed to send reject rollover message")?;
 
         self.complete(RolloverCompleted::rejected(self.order_id), ctx)
             .await;
@@ -264,9 +283,15 @@ impl xtra::Actor for Actor {
             anyhow::Ok(())
         };
 
-        if let Err(error) = fut.await {
-            self.complete(Completed::Failed { order_id, error }, ctx)
-                .await;
+        if let Err(source) = fut.await {
+            self.complete(
+                Completed::Failed {
+                    order_id,
+                    error: RolloverError::Other { source },
+                },
+                ctx,
+            )
+            .await;
         }
     }
 
@@ -298,14 +323,14 @@ impl Actor {
         _msg: RejectRollOver,
         ctx: &mut xtra::Context<Self>,
     ) {
-        if let Err(err) = self.reject(ctx).await {
-            self.fail(ctx, err).await;
+        if let Err(source) = self.reject(ctx).await {
+            self.fail(ctx, RolloverError::Other { source }).await;
         };
     }
 
     async fn handle_protocol_msg(&mut self, msg: ProtocolMsg, ctx: &mut xtra::Context<Self>) {
-        if let Err(err) = self.forward_protocol_msg(msg).await {
-            self.fail(ctx, err).await;
+        if let Err(source) = self.forward_protocol_msg(msg).await {
+            self.fail(ctx, RolloverError::Other { source }).await;
         };
     }
 
