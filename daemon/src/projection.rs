@@ -23,8 +23,12 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Network;
+use bdk::bitcoin::Script;
 use bdk::bitcoin::SignedAmount;
+use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
+use bdk::miniscript::DescriptorTrait;
+use maia::TransactionExt;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde::Serialize;
@@ -261,11 +265,17 @@ impl Cfd {
                 (CfdState::ContractSetup, vec![])
             }
             ContractSetupCompleted { dlc } => {
-                self.details.tx_url_list.push(TxUrl::new(
-                    dlc.lock.0.txid(),
+                // We can highlight the shared output, but cannot discern between our change outputs
+                // and the other party's.
+                let (lock_tx, lock_desc) = &dlc.lock;
+
+                let tx_url = TxUrl::from_transaction(
+                    lock_tx,
+                    &lock_desc.script_pubkey(),
                     network,
                     TxLabel::Lock,
-                ));
+                );
+                self.details.tx_url_list.push(tx_url);
                 self.latest_dlc = Some(dlc);
 
                 (CfdState::PendingOpen, vec![])
@@ -302,10 +312,13 @@ impl Cfd {
                 (CfdState::IncomingSettlementProposal, vec![])
             }
             CollaborativeSettlementCompleted {
-                spend_tx, price, ..
+                spend_tx,
+                price,
+                script,
             } => {
-                self.details.tx_url_list.push(TxUrl::new(
-                    spend_tx.txid(),
+                self.details.tx_url_list.push(TxUrl::from_transaction(
+                    &spend_tx,
+                    &script,
                     network,
                     TxLabel::Collaborative,
                 ));
@@ -349,8 +362,9 @@ impl Cfd {
             CetConfirmed => (CfdState::Closed, vec![]),
             RefundConfirmed => {
                 if let Some(dlc) = self.latest_dlc.as_ref() {
-                    self.details.tx_url_list.push(TxUrl::new(
-                        dlc.refund.0.txid(),
+                    self.details.tx_url_list.push(TxUrl::from_transaction(
+                        &dlc.refund.0,
+                        &dlc.script_pubkey_for(role),
                         network,
                         TxLabel::Refund,
                     ));
@@ -380,9 +394,17 @@ impl Cfd {
                 (CfdState::PendingCommit, vec![])
             }
             OracleAttestedPostCetTimelock { cet, price } => {
-                self.details
-                    .tx_url_list
-                    .push(TxUrl::new(cet.txid(), network, TxLabel::Cet));
+                let tx_url = if let Some(dlc) = self.latest_dlc.as_ref() {
+                    TxUrl::from_transaction(
+                        &cet,
+                        &dlc.script_pubkey_for(role),
+                        network,
+                        TxLabel::Cet,
+                    )
+                } else {
+                    TxUrl::new(cet.txid(), network, TxLabel::Cet)
+                };
+                self.details.tx_url_list.push(tx_url);
 
                 let (profit_btc, profit_percent) = self.maybe_calculate_profit(price);
                 self.profit_btc = profit_btc;
@@ -678,12 +700,6 @@ mod round_to_two_dp {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct TxUrl {
-    pub label: TxLabel,
-    pub url: String,
-}
-
 /// Construct a mempool.space URL for a given txid
 pub fn to_mempool_url(txid: Txid, network: Network) -> String {
     match network {
@@ -694,16 +710,46 @@ pub fn to_mempool_url(txid: Txid, network: Network) -> String {
     }
 }
 
+/// Link to transaction on mempool.space for UI representation
+#[derive(Debug, Clone, Serialize)]
+struct TxUrl {
+    pub label: TxLabel,
+    pub url: String,
+}
+
 impl TxUrl {
-    pub fn new(txid: Txid, network: Network, label: TxLabel) -> Self {
+    fn new(txid: Txid, network: Network, label: TxLabel) -> Self {
         Self {
             label,
             url: to_mempool_url(txid, network),
         }
     }
+
+    /// Highlight particular transaction output in the TxUrl
+    fn with_output_index(mut self, index: u32) -> Self {
+        self.url.push_str(&("#".to_string() + &index.to_string()));
+        self
+    }
+
+    /// If the Transaction contains the script_pubkey, output will be selected
+    /// in the URL. Otherwise, fall back to the main txid URL.
+    fn from_transaction(
+        transaction: &Transaction,
+        script_pubkey: &Script,
+        network: Network,
+        label: TxLabel,
+    ) -> Self {
+        debug_assert!(label != TxLabel::Commit, "commit transaction has a single output which does not belong to either party - this won't highlight anything");
+        let tx_url = Self::new(transaction.txid(), network, label);
+        if let Ok(outpoint) = transaction.outpoint(script_pubkey) {
+            tx_url.with_output_index(outpoint.vout)
+        } else {
+            tx_url
+        }
+    }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum TxLabel {
     Lock,
     Commit,
