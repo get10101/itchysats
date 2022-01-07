@@ -15,11 +15,11 @@ use crate::wire::Msg0;
 use crate::wire::Msg1;
 use crate::wire::Msg2;
 use crate::wire::Msg3;
-use crate::wire::RollOverMsg;
-use crate::wire::RollOverMsg0;
-use crate::wire::RollOverMsg1;
-use crate::wire::RollOverMsg2;
-use crate::wire::RollOverMsg3;
+use crate::wire::RolloverMsg;
+use crate::wire::RolloverMsg0;
+use crate::wire::RolloverMsg1;
+use crate::wire::RolloverMsg2;
+use crate::wire::RolloverMsg3;
 use crate::wire::SetupMsg;
 use anyhow::Context;
 use anyhow::Result;
@@ -353,6 +353,7 @@ pub async fn new(
     })
 }
 
+#[derive(Debug, Clone)]
 pub struct RolloverParams {
     price: Price,
     quantity: Usd,
@@ -380,8 +381,8 @@ impl RolloverParams {
 }
 
 pub async fn roll_over(
-    mut sink: impl Sink<RollOverMsg, Error = anyhow::Error> + Unpin,
-    mut stream: impl FusedStream<Item = RollOverMsg> + Unpin,
+    mut sink: impl Sink<RolloverMsg, Error = anyhow::Error> + Unpin,
+    mut stream: impl FusedStream<Item = RolloverMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
     rollover_params: RolloverParams,
     our_role: Role,
@@ -399,7 +400,7 @@ pub async fn roll_over(
         publish_pk,
     };
 
-    sink.send(RollOverMsg::Msg0(RollOverMsg0 {
+    sink.send(RolloverMsg::Msg0(RolloverMsg0 {
         revocation_pk: rev_pk,
         publish_pk,
     }))
@@ -474,7 +475,7 @@ pub async fn roll_over(
     )
     .context("Failed to create new CFD transactions")?;
 
-    sink.send(RollOverMsg::Msg1(RollOverMsg1::from(own_cfd_txs.clone())))
+    sink.send(RolloverMsg::Msg1(RolloverMsg1::from(own_cfd_txs.clone())))
         .await
         .context("Failed to send Msg1")?;
 
@@ -591,7 +592,7 @@ pub async fn roll_over(
         .collect::<Result<HashMap<_, _>>>()?;
 
     // reveal revocation secrets to the other party
-    sink.send(RollOverMsg::Msg2(RollOverMsg2 {
+    sink.send(RolloverMsg::Msg2(RolloverMsg2 {
         revocation_sk: dlc.revocation,
     }))
     .await
@@ -628,7 +629,7 @@ pub async fn roll_over(
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
     // monitoring
-    sink.send(RollOverMsg::Msg3(RollOverMsg3))
+    sink.send(RolloverMsg::Msg3(RolloverMsg3))
         .await
         .context("Failed to send Msg3")?;
     let _ = stream

@@ -136,8 +136,8 @@ pub async fn post_cfd_action(
         CfdAction::RejectOrder => maker.reject_order(id).await,
         CfdAction::AcceptSettlement => maker.accept_settlement(id).await,
         CfdAction::RejectSettlement => maker.reject_settlement(id).await,
-        CfdAction::AcceptRollOver => maker.accept_rollover(id).await,
-        CfdAction::RejectRollOver => maker.reject_rollover(id).await,
+        CfdAction::AcceptRollover => maker.accept_rollover(id).await,
+        CfdAction::RejectRollover => maker.reject_rollover(id).await,
         CfdAction::Commit => maker.commit(id).await,
         CfdAction::Settle => {
             let msg = "Collaborative settlement can only be triggered by taker";

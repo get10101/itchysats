@@ -28,7 +28,7 @@ PendingRefund --> Closed: CloseFinality \nCetFinality
 
 PendingOpen --> Open: LockFinality
 Open --> Open: LockFinality \nOracleAttestation \nProposalSigned
-note left of Open: handle_cfd_roll_over_completed \ntransitions every state into Open; \nnot depicted here for simplicity
+note left of Open: handle_cfd_rollover_completed \ntransitions every state into Open; \nnot depicted here for simplicity
 
 PendingOpen --> PendingOpen: OracleAttestation
 ContractSetup --> PendingOpen: handle_cfd_setup_completed

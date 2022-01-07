@@ -83,7 +83,7 @@ pub enum TakerToMaker {
         order_id: OrderId,
         quantity: Usd,
     },
-    ProposeRollOver {
+    ProposeRollover {
         order_id: OrderId,
         timestamp: Timestamp,
     },
@@ -91,9 +91,9 @@ pub enum TakerToMaker {
         order_id: OrderId,
         msg: SetupMsg,
     },
-    RollOverProtocol {
+    RolloverProtocol {
         order_id: OrderId,
-        msg: RollOverMsg,
+        msg: RolloverMsg,
     },
     Settlement {
         order_id: OrderId,
@@ -106,8 +106,8 @@ impl fmt::Display for TakerToMaker {
         match self {
             TakerToMaker::TakeOrder { .. } => write!(f, "TakeOrder"),
             TakerToMaker::Protocol { .. } => write!(f, "Protocol"),
-            TakerToMaker::ProposeRollOver { .. } => write!(f, "ProposeRollOver"),
-            TakerToMaker::RollOverProtocol { .. } => write!(f, "RollOverProtocol"),
+            TakerToMaker::ProposeRollover { .. } => write!(f, "ProposeRollover"),
+            TakerToMaker::RolloverProtocol { .. } => write!(f, "RolloverProtocol"),
             TakerToMaker::Settlement { .. } => write!(f, "Settlement"),
             TakerToMaker::Hello(_) => write!(f, "Hello"),
         }
@@ -129,15 +129,15 @@ pub enum MakerToTaker {
         order_id: OrderId,
         msg: SetupMsg,
     },
-    RollOverProtocol {
+    RolloverProtocol {
         order_id: OrderId,
-        msg: RollOverMsg,
+        msg: RolloverMsg,
     },
-    ConfirmRollOver {
+    ConfirmRollover {
         order_id: OrderId,
         oracle_event_id: BitMexPriceEventId,
     },
-    RejectRollOver(OrderId),
+    RejectRollover(OrderId),
     Settlement {
         order_id: OrderId,
         msg: maker_to_taker::Settlement,
@@ -165,9 +165,9 @@ impl fmt::Display for MakerToTaker {
             MakerToTaker::RejectOrder(_) => write!(f, "RejectOrder"),
             MakerToTaker::InvalidOrderId(_) => write!(f, "InvalidOrderId"),
             MakerToTaker::Protocol { .. } => write!(f, "Protocol"),
-            MakerToTaker::ConfirmRollOver { .. } => write!(f, "ConfirmRollOver"),
-            MakerToTaker::RejectRollOver(_) => write!(f, "RejectRollOver"),
-            MakerToTaker::RollOverProtocol { .. } => write!(f, "RollOverProtocol"),
+            MakerToTaker::ConfirmRollover { .. } => write!(f, "ConfirmRollover"),
+            MakerToTaker::RejectRollover(_) => write!(f, "RejectRollover"),
+            MakerToTaker::RolloverProtocol { .. } => write!(f, "RolloverProtocol"),
             MakerToTaker::Settlement { .. } => write!(f, "Settlement"),
         }
     }
@@ -413,21 +413,21 @@ pub struct Msg3;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
-pub enum RollOverMsg {
-    Msg0(RollOverMsg0),
-    Msg1(RollOverMsg1),
-    Msg2(RollOverMsg2),
-    Msg3(RollOverMsg3),
+pub enum RolloverMsg {
+    Msg0(RolloverMsg0),
+    Msg1(RolloverMsg1),
+    Msg2(RolloverMsg2),
+    Msg3(RolloverMsg3),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RollOverMsg0 {
+pub struct RolloverMsg0 {
     pub revocation_pk: PublicKey,
     pub publish_pk: PublicKey,
 }
 
-impl RollOverMsg {
-    pub fn try_into_msg0(self) -> Result<RollOverMsg0> {
+impl RolloverMsg {
+    pub fn try_into_msg0(self) -> Result<RolloverMsg0> {
         if let Self::Msg0(v) = self {
             Ok(v)
         } else {
@@ -435,7 +435,7 @@ impl RollOverMsg {
         }
     }
 
-    pub fn try_into_msg1(self) -> Result<RollOverMsg1> {
+    pub fn try_into_msg1(self) -> Result<RolloverMsg1> {
         if let Self::Msg1(v) = self {
             Ok(v)
         } else {
@@ -443,7 +443,7 @@ impl RollOverMsg {
         }
     }
 
-    pub fn try_into_msg2(self) -> Result<RollOverMsg2> {
+    pub fn try_into_msg2(self) -> Result<RolloverMsg2> {
         if let Self::Msg2(v) = self {
             Ok(v)
         } else {
@@ -451,7 +451,7 @@ impl RollOverMsg {
         }
     }
 
-    pub fn try_into_msg3(self) -> Result<RollOverMsg3> {
+    pub fn try_into_msg3(self) -> Result<RolloverMsg3> {
         if let Self::Msg3(v) = self {
             Ok(v)
         } else {
@@ -461,21 +461,21 @@ impl RollOverMsg {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RollOverMsg1 {
+pub struct RolloverMsg1 {
     pub commit: EcdsaAdaptorSignature,
     pub cets: HashMap<String, Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>>,
     pub refund: Signature,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RollOverMsg2 {
+pub struct RolloverMsg2 {
     pub revocation_sk: SecretKey,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RollOverMsg3;
+pub struct RolloverMsg3;
 
-impl From<CfdTransactions> for RollOverMsg1 {
+impl From<CfdTransactions> for RolloverMsg1 {
     fn from(txs: CfdTransactions) -> Self {
         let cets = txs
             .cets

@@ -156,7 +156,9 @@ impl Cfd {
                 monitor_refund_timelock: false,
                 ..self
             },
-            RolloverFailed
+            RolloverStarted { .. }
+            | RolloverAccepted
+            | RolloverFailed
             | ManualCommit { .. }
             | OracleAttestedPostCetTimelock { .. }
             | OracleAttestedPriorCetTimelock { .. }

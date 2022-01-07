@@ -1,7 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![warn(clippy::disallowed_method)]
 use crate::bitcoin::Txid;
-use crate::model::cfd::Cfd;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
@@ -276,14 +275,14 @@ where
 
     pub async fn accept_rollover(&self, order_id: OrderId) -> Result<()> {
         self.cfd_actor_addr
-            .send(maker_cfd::AcceptRollOver { order_id })
+            .send(maker_cfd::AcceptRollover { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn reject_rollover(&self, order_id: OrderId) -> Result<()> {
         self.cfd_actor_addr
-            .send(maker_cfd::RejectRollOver { order_id })
+            .send(maker_cfd::RejectRollover { order_id })
             .await??;
         Ok(())
     }
@@ -315,6 +314,7 @@ pub struct TakerActorSystem<O, W> {
     pub connection_actor_addr: Address<connection::Actor>,
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     wallet_actor_addr: Address<W>,
+    pub auto_rollover_addr: Address<auto_rollover::Actor<O>>,
     _tasks: Tasks,
 }
 
@@ -376,7 +376,7 @@ where
             wallet_actor_addr.clone(),
             oracle_pk,
             projection_actor.clone(),
-            process_manager_addr,
+            process_manager_addr.clone(),
             connection_actor_addr.clone(),
             oracle_addr.clone(),
             n_payouts,
@@ -385,18 +385,16 @@ where
         .create(None)
         .run();
 
-        let (auto_rollover_address, auto_rollover_fut) = auto_rollover::Actor::new(
+        let (auto_rollover_addr, auto_rollover_fut) = auto_rollover::Actor::new(
             db,
             oracle_pk,
-            projection_actor,
+            process_manager_addr,
             connection_actor_addr.clone(),
-            monitor_addr.clone(),
             oracle_addr,
             n_payouts,
         )
         .create(None)
         .run();
-        std::mem::forget(auto_rollover_address); // leak this address to avoid shutdown
 
         tasks.add(cfd_actor_fut);
         tasks.add(auto_rollover_fut);
@@ -432,6 +430,7 @@ where
             connection_actor_addr,
             maker_online_status_feed_receiver,
             wallet_actor_addr,
+            auto_rollover_addr,
             _tasks: tasks,
         })
     }

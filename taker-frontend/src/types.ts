@@ -106,9 +106,9 @@ export class State {
                 return "Settlement Proposed";
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
                 return "Settlement Proposed";
-            case StateKey.INCOMING_ROLL_OVER_PROPOSAL:
+            case StateKey.INCOMING_ROLLOVER_PROPOSAL:
                 return "Rollover Proposed";
-            case StateKey.OUTGOING_ROLL_OVER_PROPOSAL:
+            case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
                 return "Rollover Proposed";
             case StateKey.MUST_REFUND:
                 return "Refunding";
@@ -147,8 +147,8 @@ export class State {
             case StateKey.CONTRACT_SETUP:
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
-            case StateKey.INCOMING_ROLL_OVER_PROPOSAL:
-            case StateKey.OUTGOING_ROLL_OVER_PROPOSAL:
+            case StateKey.INCOMING_ROLLOVER_PROPOSAL:
+            case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
             case StateKey.PENDING_OPEN:
             case StateKey.REFUNDED:
             case StateKey.SETUP_FAILED:
@@ -169,7 +169,7 @@ export class State {
             case StateKey.OPEN_COMMITTED:
             case StateKey.MUST_REFUND:
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
-            case StateKey.OUTGOING_ROLL_OVER_PROPOSAL:
+            case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
             case StateKey.PENDING_CET:
             case StateKey.PENDING_CLOSE:
                 return StateGroupKey.OPEN;
@@ -177,8 +177,8 @@ export class State {
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
                 return StateGroupKey.PENDING_SETTLEMENT;
 
-            case StateKey.INCOMING_ROLL_OVER_PROPOSAL:
-                return StateGroupKey.PENDING_ROLL_OVER;
+            case StateKey.INCOMING_ROLLOVER_PROPOSAL:
+                return StateGroupKey.PENDING_ROLLOVER;
 
             case StateKey.REJECTED:
             case StateKey.REFUNDED:
@@ -201,8 +201,8 @@ export const enum StateKey {
     OPEN_COMMITTED = "OpenCommitted",
     OUTGOING_SETTLEMENT_PROPOSAL = "OutgoingSettlementProposal",
     INCOMING_SETTLEMENT_PROPOSAL = "IncomingSettlementProposal",
-    OUTGOING_ROLL_OVER_PROPOSAL = "OutgoingRollOverProposal",
-    INCOMING_ROLL_OVER_PROPOSAL = "IncomingRollOverProposal",
+    OUTGOING_ROLLOVER_PROPOSAL = "OutgoingRolloverProposal",
+    INCOMING_ROLLOVER_PROPOSAL = "IncomingRolloverProposal",
     MUST_REFUND = "MustRefund",
     REFUNDED = "Refunded",
     SETUP_FAILED = "SetupFailed",
@@ -215,7 +215,7 @@ export enum StateGroupKey {
     /// A CFD that is an ongoing open position (on chain)
     OPEN = "Open",
     PENDING_SETTLEMENT = "Pending Settlement",
-    PENDING_ROLL_OVER = "Pending Roll Over",
+    PENDING_ROLLOVER = "Pending Roll Over",
     /// A CFD that has been successfully or not-successfully terminated
     CLOSED = "Closed",
 }

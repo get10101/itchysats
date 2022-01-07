@@ -2,6 +2,7 @@ use crate::harness::mocks::oracle::OracleActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use ::bdk::bitcoin::Network;
+use daemon::auto_rollover;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
@@ -243,6 +244,24 @@ impl Maker {
             .unwrap()
             .unwrap();
     }
+
+    pub async fn accept_rollover_proposal(&self, order_id: OrderId) {
+        self.system
+            .cfd_actor_addr
+            .send(maker_cfd::AcceptRollover { order_id })
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    pub async fn reject_rollover_proposal(&self, order_id: OrderId) {
+        self.system
+            .cfd_actor_addr
+            .send(maker_cfd::RejectRollover { order_id })
+            .await
+            .unwrap()
+            .unwrap();
+    }
 }
 
 /// Taker Test Setup
@@ -354,6 +373,15 @@ impl Taker {
             .await
             .unwrap()
             .unwrap();
+    }
+
+    pub async fn trigger_rollover(&self, id: OrderId) {
+        self.system
+            .auto_rollover_addr
+            .send(auto_rollover::Rollover(id))
+            .await
+            .unwrap()
+            .unwrap()
     }
 }
 
