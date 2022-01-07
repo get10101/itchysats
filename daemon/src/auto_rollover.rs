@@ -8,6 +8,7 @@ use crate::oracle;
 use crate::process_manager;
 use crate::rollover_taker;
 use crate::try_continue;
+use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
@@ -57,30 +58,14 @@ impl<O> Actor<O>
 where
     O: xtra::Handler<oracle::GetAnnouncement>,
 {
-    async fn handle(&mut self, _msg: AutoRollover, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    async fn handle(&mut self, _msg: AutoRollover, ctx: &mut xtra::Context<Self>) {
         tracing::trace!("Checking all CFDs for rollover eligibility");
 
-        let mut conn = self.db.acquire().await?;
-        let cfd_ids = db::load_all_cfd_ids(&mut conn).await?;
-
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
-
-        for id in cfd_ids {
-            try_continue!(async {
-                let cfd = load_cfd(id, &mut conn).await?;
-                cfd.can_auto_rollover_taker(OffsetDateTime::now_utc())?;
-
-                this.send(Rollover(id)).await??;
-
-                anyhow::Ok(())
-            }
-            .await
-            .context("Cannot roll over"));
+        // Auto-rollover is invoked periodically by `addr.send_interval()`,
+        // which does not handle errors - forward implementation to allow `?` inside
+        if let Err(e) = self.handle_auto_rollover_impl(ctx).await {
+            tracing::error!("Auto-rollover failed: {:#}", e);
         }
-
-        Ok(())
     }
 
     async fn handle(
@@ -119,6 +104,35 @@ where
     }
 }
 
+impl<O> Actor<O>
+where
+    O: xtra::Handler<oracle::GetAnnouncement>,
+{
+    async fn handle_auto_rollover_impl(
+        &mut self,
+        ctx: &mut xtra::Context<Actor<O>>,
+    ) -> Result<(), anyhow::Error> {
+        let mut conn = self.db.acquire().await?;
+        let cfd_ids = db::load_all_cfd_ids(&mut conn).await?;
+        let this = ctx
+            .address()
+            .expect("actor to be able to give address to itself");
+        for id in cfd_ids {
+            try_continue!(async {
+                let cfd = load_cfd(id, &mut conn).await?;
+                cfd.can_auto_rollover_taker(OffsetDateTime::now_utc())?;
+
+                this.send(Rollover(id)).await??;
+
+                anyhow::Ok(())
+            }
+            .await
+            .context("Cannot roll over"));
+        }
+        Ok(())
+    }
+}
+
 #[xtra_productivity(message_impl = false)]
 impl<O> Actor<O>
 where
@@ -136,11 +150,9 @@ where
     Self: xtra::Handler<AutoRollover>,
 {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        let fut = ctx
-            .notify_interval(Duration::from_secs(5 * 60), || AutoRollover)
-            .expect("we are alive");
-
-        self.tasks.add(fut);
+        let this = ctx.address().expect("we are alive");
+        self.tasks
+            .add(this.send_interval(Duration::from_secs(5 * 60), || AutoRollover));
     }
 }
 

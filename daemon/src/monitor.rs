@@ -9,6 +9,7 @@ use crate::model::BitMexPriceEventId;
 use crate::oracle;
 use crate::oracle::Attestation;
 use crate::try_continue;
+use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
@@ -714,11 +715,9 @@ where
     Self: xtra::Handler<Sync>,
 {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        let fut = ctx
-            .notify_interval(Duration::from_secs(20), || Sync)
-            .expect("we just started");
-
-        self.tasks.add(fut);
+        let this = ctx.address().expect("we are alive");
+        self.tasks
+            .add(this.send_interval(Duration::from_secs(20), || Sync));
     }
 }
 
