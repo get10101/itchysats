@@ -46,6 +46,25 @@ macro_rules! assert_next_state {
         assert_eq!(taker_cfd.state, $state, "unexpected cfd state in the taker");
         assert_eq!(maker_cfd.state, $state, "unexpected cfd state in the maker");
     };
+    ($id:expr, $maker:expr, $taker:expr, $maker_state:expr, $taker_state:expr) => {
+        let (taker_cfd, maker_cfd) = next_cfd($taker.cfd_feed(), $maker.cfd_feed())
+            .await
+            .unwrap();
+        assert_eq!(
+            taker_cfd.order_id, maker_cfd.order_id,
+            "order id mismatch between maker and taker"
+        );
+        assert_eq!(taker_cfd.order_id, $id, "unexpected order id in the taker");
+        assert_eq!(maker_cfd.order_id, $id, "unexpected order id in the maker");
+        assert_eq!(
+            taker_cfd.state, $taker_state,
+            "unexpected cfd state in the taker"
+        );
+        assert_eq!(
+            maker_cfd.state, $maker_state,
+            "unexpected cfd state in the maker"
+        );
+    };
 }
 
 #[tokio::test]
@@ -140,9 +159,13 @@ async fn collaboratively_close_an_open_cfd() {
 
     taker.propose_settlement(order_id).await;
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert_eq!(taker_cfd.state, CfdState::OutgoingSettlementProposal);
-    assert_eq!(maker_cfd.state, CfdState::IncomingSettlementProposal);
+    assert_next_state!(
+        order_id,
+        maker,
+        taker,
+        CfdState::IncomingSettlementProposal,
+        CfdState::OutgoingSettlementProposal
+    );
 
     maker.mocks.mock_monitor_collaborative_settlement().await;
     taker.mocks.mock_monitor_collaborative_settlement().await;
@@ -200,9 +223,13 @@ async fn rollover_an_open_cfd() {
 
     taker.trigger_rollover(order_id).await;
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert_eq!(taker_cfd.state, CfdState::OutgoingRolloverProposal);
-    assert_eq!(maker_cfd.state, CfdState::IncomingRolloverProposal);
+    assert_next_state!(
+        order_id,
+        maker,
+        taker,
+        CfdState::IncomingRolloverProposal,
+        CfdState::OutgoingRolloverProposal
+    );
 
     maker.accept_rollover_proposal(order_id).await;
 
@@ -219,9 +246,13 @@ async fn maker_rejects_rollover_of_open_cfd() {
 
     taker.trigger_rollover(order_id).await;
 
-    let (taker_cfd, maker_cfd) = next_cfd(taker.cfd_feed(), maker.cfd_feed()).await.unwrap();
-    assert_eq!(taker_cfd.state, CfdState::OutgoingRolloverProposal);
-    assert_eq!(maker_cfd.state, CfdState::IncomingRolloverProposal);
+    assert_next_state!(
+        order_id,
+        maker,
+        taker,
+        CfdState::IncomingRolloverProposal,
+        CfdState::OutgoingRolloverProposal
+    );
 
     maker.reject_rollover_proposal(order_id).await;
 
