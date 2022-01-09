@@ -195,7 +195,7 @@ impl Actor {
             | RevokeConfirmed
             | CollaborativeSettlementConfirmed
             | CetTimelockConfirmedPriorOracleAttestation
-            | RefundTimelockConfirmed { .. } => {}
+            | RefundTimelockExpired { .. } => {}
         }
 
         // 3. Update UI

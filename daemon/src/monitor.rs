@@ -152,7 +152,7 @@ impl Cfd {
                 monitor_cet_timelock: false,
                 ..self
             },
-            RefundTimelockConfirmed { .. } => Self {
+            RefundTimelockExpired { .. } => Self {
                 monitor_refund_timelock: false,
                 ..self
             },

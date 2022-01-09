@@ -340,7 +340,7 @@ pub enum CfdEvent {
         cet: Transaction,
     },
 
-    RefundTimelockConfirmed {
+    RefundTimelockExpired {
         #[serde(with = "hex_transaction")]
         refund_tx: Transaction,
     },
@@ -1109,7 +1109,7 @@ impl Cfd {
             CetConfirmed => self.cet_finality = true,
             RefundConfirmed => self.refund_finality = true,
             CollaborativeSettlementConfirmed => self.collaborative_settlement_finality = true,
-            RefundTimelockConfirmed { .. } => self.refund_timelock_expired = true,
+            RefundTimelockExpired { .. } => self.refund_timelock_expired = true,
             LockConfirmed => self.lock_finality = true,
             CommitConfirmed => self.commit_finality = true,
             CetTimelockConfirmedPriorOracleAttestation
