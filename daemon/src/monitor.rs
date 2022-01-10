@@ -68,10 +68,25 @@ pub struct Actor<C = bdk::electrum_client::Client> {
     cfds: HashMap<OrderId, MonitorParams>,
     event_channel: Box<dyn StrongMessageChannel<Event>>,
     client: C,
+    tasks: Tasks,
+    state: State,
+}
+
+/// Internal data structure encapsulating the monitoring state without performing any IO.
+struct State {
     latest_block_height: BlockHeight,
     current_status: BTreeMap<(Txid, Script), ScriptStatus>,
     awaiting_status: HashMap<(Txid, Script), Vec<(ScriptStatus, Event)>>,
-    tasks: Tasks,
+}
+
+impl State {
+    fn new(latest_block_height: BlockHeight) -> Self {
+        State {
+            latest_block_height,
+            current_status: BTreeMap::default(),
+            awaiting_status: HashMap::default(),
+        }
+    }
 }
 
 /// Read-model of the CFD for the monitoring actor.
@@ -191,9 +206,7 @@ impl Actor<bdk::electrum_client::Client> {
             cfds: HashMap::new(),
             event_channel,
             client,
-            latest_block_height: BlockHeight::try_from(latest_block)?,
-            current_status: BTreeMap::default(),
-            awaiting_status: HashMap::default(),
+            state: State::new(BlockHeight::try_from(latest_block)?),
             tasks: Tasks::default(),
         };
 
@@ -221,31 +234,31 @@ impl Actor<bdk::electrum_client::Client> {
             actor.cfds.insert(id, params.clone());
 
             if monitor_lock_finality {
-                actor.monitor_lock_finality(&params, id);
+                actor.state.monitor_lock_finality(&params, id);
             }
 
             if monitor_commit_finality {
-                actor.monitor_commit_finality(&params, id)
+                actor.state.monitor_commit_finality(&params, id)
             }
 
             if monitor_cet_timelock {
-                actor.monitor_commit_cet_timelock(&params, id);
+                actor.state.monitor_commit_cet_timelock(&params, id);
             }
 
             if monitor_refund_timelock {
-                actor.monitor_commit_refund_timelock(&params, id);
+                actor.state.monitor_commit_refund_timelock(&params, id);
             }
 
             if monitor_refund_finality {
-                actor.monitor_refund_finality(&params, id);
+                actor.state.monitor_refund_finality(&params, id);
             }
 
             if monitor_revoked_commit_transactions {
-                actor.monitor_revoked_commit_transactions(&params, id);
+                actor.state.monitor_revoked_commit_transactions(&params, id);
             }
 
             if let Some(params) = monitor_collaborative_settlement_finality {
-                actor.monitor_close_finality(params, id);
+                actor.state.monitor_close_finality(params, id);
             }
         }
 
@@ -253,10 +266,7 @@ impl Actor<bdk::electrum_client::Client> {
     }
 }
 
-impl<C> Actor<C>
-where
-    C: bdk::electrum_client::ElectrumApi,
-{
+impl State {
     fn monitor_all(&mut self, params: &MonitorParams, order_id: OrderId) {
         self.monitor_lock_finality(params, order_id);
         self.monitor_commit_finality(params, order_id);
@@ -359,7 +369,12 @@ where
                 ));
         }
     }
+}
 
+impl<C> Actor<C>
+where
+    C: bdk::electrum_client::ElectrumApi,
+{
     async fn sync(&mut self) -> Result<()> {
         // Fetch the latest block for storing the height.
         // We do not act on this subscription after this call, as we cannot rely on
@@ -374,18 +389,23 @@ where
 
         tracing::trace!(
             "Updating status of {} transactions",
-            self.awaiting_status.len()
+            self.state.awaiting_status.len()
         );
 
         let histories = self
             .client
-            .batch_script_get_history(self.awaiting_status.keys().map(|(_, script)| script))
+            .batch_script_get_history(self.state.awaiting_status.keys().map(|(_, script)| script))
             .context("Failed to get script histories")?;
 
-        let mut ready_events = self.update_state(latest_block_height, histories);
+        let mut ready_events = self.state.update(latest_block_height, histories);
 
         while let Some(event) = ready_events.pop() {
-            self.event_channel.send(event).await?;
+            match self.event_channel.send(event).await {
+                Ok(()) => {}
+                Err(_) => {
+                    tracing::warn!("Address is disconnected, cannot deliver monitoring event");
+                }
+            }
         }
 
         Ok(())
@@ -398,11 +418,15 @@ where
             .into_iter()
             .filter(|(_, params)| params.event_id == attestation.id)
         {
-            try_continue!(self.monitor_cet_finality(cets, attestation.clone(), order_id))
+            try_continue!(self
+                .state
+                .monitor_cet_finality(cets, attestation.clone(), order_id))
         }
     }
+}
 
-    fn update_state(
+impl State {
+    fn update(
         &mut self,
         latest_block_height: BlockHeight,
         response: Vec<Vec<GetHistoryRes>>,
@@ -738,7 +762,7 @@ where
     ) {
         let StartMonitoring { id, params } = msg;
 
-        self.monitor_all(&params, id);
+        self.state.monitor_all(&params, id);
         self.cfds.insert(id, params);
     }
 
@@ -746,7 +770,7 @@ where
         &mut self,
         collaborative_settlement: CollaborativeSettlement,
     ) {
-        self.monitor_close_finality(
+        self.state.monitor_close_finality(
             collaborative_settlement.tx,
             collaborative_settlement.order_id,
         );
@@ -776,16 +800,6 @@ impl xtra::Handler<oracle::Attestation> for Actor {
 mod tests {
     use super::*;
     use crate::model::cfd::CET_TIMELOCK;
-    use bdk::bitcoin::blockdata::block;
-    use bdk::electrum_client::Batch;
-    use bdk::electrum_client::Error;
-    use bdk::electrum_client::GetBalanceRes;
-    use bdk::electrum_client::GetHeadersRes;
-    use bdk::electrum_client::GetMerkleRes;
-    use bdk::electrum_client::ListUnspentRes;
-    use bdk::electrum_client::RawHeaderNotification;
-    use bdk::electrum_client::ServerFeaturesRes;
-    use std::iter::FromIterator;
     use tracing_subscriber::prelude::*;
 
     #[tokio::test]
@@ -795,43 +809,42 @@ mod tests {
             .with_test_writer()
             .set_default();
 
-        let (recorder_address, mut recorder_context) =
-            xtra::Context::<MessageRecordingActor>::new(None);
-        let mut recorder = MessageRecordingActor::default();
-
         let commit_finality = Event::CommitFinality(OrderId::default());
         let refund_expired = Event::RefundTimelockExpired(OrderId::default());
 
-        let mut monitor = Actor::for_test(
-            Box::new(recorder_address),
-            [(
-                (txid1(), script1()),
-                vec![
-                    (ScriptStatus::finality(), commit_finality.clone()),
-                    (
-                        ScriptStatus::with_confirmations(CET_TIMELOCK),
-                        refund_expired.clone(),
-                    ),
-                ],
-            )],
+        let mut state = State::new(BlockHeight(0));
+        state.awaiting_status = HashMap::from_iter([(
+            (txid1(), script1()),
+            vec![
+                (ScriptStatus::finality(), commit_finality.clone()),
+                (
+                    ScriptStatus::with_confirmations(CET_TIMELOCK),
+                    refund_expired.clone(),
+                ),
+            ],
+        )]);
+
+        let ready_events = state.update(
+            BlockHeight(10),
+            vec![vec![GetHistoryRes {
+                height: 5,
+                tx_hash: txid1(),
+                fee: None,
+            }]],
         );
-        monitor.client.include_tx(txid1(), 5);
 
-        monitor.client.advance_to_height(10);
-        recorder_context
-            .handle_while(&mut recorder, monitor.sync())
-            .await
-            .unwrap();
+        assert_eq!(ready_events, vec![commit_finality]);
 
-        assert_eq!(recorder.events[0], commit_finality);
+        let ready_events = state.update(
+            BlockHeight(20),
+            vec![vec![GetHistoryRes {
+                height: 5,
+                tx_hash: txid1(),
+                fee: None,
+            }]],
+        );
 
-        monitor.client.advance_to_height(20);
-        recorder_context
-            .handle_while(&mut recorder, monitor.sync())
-            .await
-            .unwrap();
-
-        assert_eq!(recorder.events[1], refund_expired);
+        assert_eq!(ready_events, vec![refund_expired]);
     }
 
     #[tokio::test]
@@ -841,35 +854,31 @@ mod tests {
             .with_test_writer()
             .set_default();
 
-        let (recorder_address, mut recorder_context) =
-            xtra::Context::<MessageRecordingActor>::new(None);
-        let mut recorder = MessageRecordingActor::default();
-
         let cet_finality = Event::CetFinality(OrderId::default());
         let refund_finality = Event::RefundFinality(OrderId::default());
 
-        let mut monitor = Actor::for_test(
-            Box::new(recorder_address),
-            [
-                (
-                    (txid1(), script1()),
-                    vec![(ScriptStatus::finality(), cet_finality.clone())],
-                ),
-                (
-                    (txid2(), script1()),
-                    vec![(ScriptStatus::finality(), refund_finality.clone())],
-                ),
-            ],
+        let mut state = State::new(BlockHeight(0));
+        state.awaiting_status = HashMap::from_iter([
+            (
+                (txid1(), script1()),
+                vec![(ScriptStatus::finality(), cet_finality.clone())],
+            ),
+            (
+                (txid2(), script1()),
+                vec![(ScriptStatus::finality(), refund_finality)],
+            ),
+        ]);
+
+        let ready_events = state.update(
+            BlockHeight(0),
+            vec![vec![GetHistoryRes {
+                height: 5,
+                tx_hash: txid1(),
+                fee: None,
+            }]],
         );
-        monitor.client.include_tx(txid1(), 5);
 
-        recorder_context
-            .handle_while(&mut recorder, monitor.sync())
-            .await
-            .unwrap();
-
-        assert!(recorder.events.contains(&cet_finality));
-        assert!(!recorder.events.contains(&refund_finality));
+        assert_eq!(ready_events, vec![cet_finality]);
     }
 
     #[tokio::test]
@@ -879,46 +888,25 @@ mod tests {
             .with_test_writer()
             .set_default();
 
-        let (recorder_address, mut recorder_context) =
-            xtra::Context::<MessageRecordingActor>::new(None);
-        let mut recorder = MessageRecordingActor::default();
-
         let cet_finality = Event::CetFinality(OrderId::default());
 
-        let mut monitor = Actor::for_test(
-            Box::new(recorder_address),
-            [(
-                (txid1(), script1()),
-                vec![(ScriptStatus::finality(), cet_finality.clone())],
-            )],
+        let mut state = State::new(BlockHeight(0));
+        state.awaiting_status = HashMap::from_iter([(
+            (txid1(), script1()),
+            vec![(ScriptStatus::finality(), cet_finality.clone())],
+        )]);
+
+        let ready_events = state.update(
+            BlockHeight(0),
+            vec![vec![GetHistoryRes {
+                height: 5,
+                tx_hash: txid1(),
+                fee: None,
+            }]],
         );
-        monitor.client.include_tx(txid1(), 5);
 
-        recorder_context
-            .handle_while(&mut recorder, monitor.sync())
-            .await
-            .unwrap();
-
-        assert!(recorder.events.contains(&cet_finality));
-        assert!(monitor.awaiting_status.is_empty());
-    }
-
-    impl Actor<stub::Client> {
-        #[allow(clippy::type_complexity)]
-        fn for_test<const N: usize>(
-            event_channel: Box<dyn StrongMessageChannel<Event>>,
-            subscriptions: [((Txid, Script), Vec<(ScriptStatus, Event)>); N],
-        ) -> Self {
-            Actor {
-                cfds: HashMap::default(),
-                event_channel,
-                client: stub::Client::default(),
-                latest_block_height: BlockHeight(0),
-                current_status: BTreeMap::default(),
-                awaiting_status: HashMap::from_iter(subscriptions),
-                tasks: Tasks::default(),
-            }
-        }
+        assert_eq!(ready_events, vec![cet_finality]);
+        assert!(state.awaiting_status.is_empty());
     }
 
     fn txid1() -> Txid {
@@ -935,186 +923,5 @@ mod tests {
 
     fn script1() -> Script {
         "6a4c50001d97ca0002d3829148f63cc8ee21241e3f1c5eaee58781dd45a7d814710fac571b92aadff583e85d5a295f61856f469b401efe615657bf040c32f1000065bce011a420ca9ea3657fff154d95d1a95c".parse().unwrap()
-    }
-
-    #[derive(Default)]
-    struct MessageRecordingActor {
-        events: Vec<Event>,
-    }
-
-    impl xtra::Actor for MessageRecordingActor {}
-
-    #[async_trait]
-    impl xtra::Handler<Event> for MessageRecordingActor {
-        async fn handle(&mut self, message: Event, _ctx: &mut xtra::Context<Self>) {
-            self.events.push(message);
-        }
-    }
-
-    mod stub {
-        use super::*;
-        use bdk::electrum_client::ScriptStatus;
-
-        #[derive(Default)]
-        pub struct Client {
-            transactions: HashMap<Txid, i32>,
-            block_height: usize,
-        }
-
-        impl Client {
-            pub fn include_tx(&mut self, tx: Txid, height: i32) {
-                self.transactions.insert(tx, height);
-            }
-
-            pub fn advance_to_height(&mut self, height: usize) {
-                self.block_height = height;
-            }
-        }
-
-        impl ElectrumApi for Client {
-            fn block_headers_subscribe(&self) -> Result<HeaderNotification, Error> {
-                Ok(HeaderNotification {
-                    height: self.block_height,
-                    header: block::BlockHeader {
-                        version: 0,
-                        prev_blockhash: Default::default(),
-                        merkle_root: Default::default(),
-                        time: 0,
-                        bits: 0,
-                        nonce: 0,
-                    },
-                })
-            }
-
-            fn batch_script_get_history<'s, I>(
-                &self,
-                _: I,
-            ) -> Result<Vec<Vec<GetHistoryRes>>, Error>
-            where
-                I: IntoIterator<Item = &'s Script> + Clone,
-            {
-                Ok(self
-                    .transactions
-                    .iter()
-                    .map(|(tx, included_at)| {
-                        vec![GetHistoryRes {
-                            height: *included_at,
-                            tx_hash: *tx,
-                            fee: None,
-                        }]
-                    })
-                    .collect())
-            }
-
-            fn batch_call(&self, _batch: &Batch) -> Result<Vec<serde_json::Value>, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn block_headers_subscribe_raw(&self) -> Result<RawHeaderNotification, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn block_headers_pop_raw(&self) -> Result<Option<RawHeaderNotification>, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn block_header_raw(&self, _height: usize) -> Result<Vec<u8>, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn block_headers(&self, _: usize, _: usize) -> Result<GetHeadersRes, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn estimate_fee(&self, _number: usize) -> Result<f64, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn relay_fee(&self) -> Result<f64, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn script_subscribe(&self, _script: &Script) -> Result<Option<ScriptStatus>, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn script_unsubscribe(&self, _script: &Script) -> Result<bool, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn script_pop(&self, _: &Script) -> Result<Option<ScriptStatus>, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn script_get_balance(&self, _script: &Script) -> Result<GetBalanceRes, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn batch_script_get_balance<'s, I>(&self, _: I) -> Result<Vec<GetBalanceRes>, Error>
-            where
-                I: IntoIterator<Item = &'s Script> + Clone,
-            {
-                unreachable!("This is a test.")
-            }
-
-            fn script_get_history(&self, _script: &Script) -> Result<Vec<GetHistoryRes>, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn script_list_unspent(&self, _script: &Script) -> Result<Vec<ListUnspentRes>, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn batch_script_list_unspent<'s, I>(
-                &self,
-                _: I,
-            ) -> Result<Vec<Vec<ListUnspentRes>>, Error>
-            where
-                I: IntoIterator<Item = &'s Script> + Clone,
-            {
-                unreachable!("This is a test.")
-            }
-
-            fn transaction_get_raw(&self, _txid: &Txid) -> Result<Vec<u8>, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn batch_transaction_get_raw<'t, I>(&self, _txids: I) -> Result<Vec<Vec<u8>>, Error>
-            where
-                I: IntoIterator<Item = &'t Txid> + Clone,
-            {
-                unreachable!("This is a test.")
-            }
-
-            fn batch_block_header_raw<I>(&self, _heights: I) -> Result<Vec<Vec<u8>>, Error>
-            where
-                I: IntoIterator<Item = u32> + Clone,
-            {
-                unreachable!("This is a test.")
-            }
-
-            fn batch_estimate_fee<I>(&self, _numbers: I) -> Result<Vec<f64>, Error>
-            where
-                I: IntoIterator<Item = usize> + Clone,
-            {
-                unreachable!("This is a test.")
-            }
-
-            fn transaction_broadcast_raw(&self, _raw_tx: &[u8]) -> Result<Txid, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn transaction_get_merkle(&self, _: &Txid, _: usize) -> Result<GetMerkleRes, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn server_features(&self) -> Result<ServerFeaturesRes, Error> {
-                unreachable!("This is a test.")
-            }
-
-            fn ping(&self) -> Result<(), Error> {
-                unreachable!("This is a test.")
-            }
-        }
     }
 }
