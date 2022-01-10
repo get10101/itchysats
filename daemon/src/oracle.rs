@@ -2,7 +2,6 @@ use crate::db;
 use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Event;
 use crate::model::BitMexPriceEventId;
-use crate::tokio_ext;
 use crate::try_continue;
 use crate::xtra_ext::LogFailure;
 use crate::xtra_ext::SendInterval;
@@ -141,33 +140,38 @@ impl Actor {
             }
             let this = ctx.address().expect("self to be alive");
 
-            tokio_ext::spawn_fallible(async move {
-                let url = event_id.to_olivia_url();
+            self.tasks.add_fallible(
+                async move {
+                    let url = event_id.to_olivia_url();
 
-                tracing::debug!("Fetching announcement for {}", event_id);
+                    tracing::debug!("Fetching announcement for {}", event_id);
 
-                let response = reqwest::get(url.clone())
-                    .await
-                    .with_context(|| format!("Failed to GET {}", url))?;
+                    let response = reqwest::get(url.clone())
+                        .await
+                        .with_context(|| format!("Failed to GET {}", url))?;
 
-                if !response.status().is_success() {
-                    anyhow::bail!("GET {} responded with {}", url, response.status());
-                }
+                    if !response.status().is_success() {
+                        anyhow::bail!("GET {} responded with {}", url, response.status());
+                    }
 
-                let announcement = response
-                    .json::<Announcement>()
-                    .await
-                    .context("Failed to deserialize as Announcement")?;
+                    let announcement = response
+                        .json::<Announcement>()
+                        .await
+                        .context("Failed to deserialize as Announcement")?;
 
-                this.send(NewAnnouncementFetched {
-                    id: event_id,
-                    nonce_pks: announcement.nonce_pks,
-                    expected_outcome_time: announcement.expected_outcome_time,
-                })
-                .await?;
+                    this.send(NewAnnouncementFetched {
+                        id: event_id,
+                        nonce_pks: announcement.nonce_pks,
+                        expected_outcome_time: announcement.expected_outcome_time,
+                    })
+                    .await?;
 
-                Ok(())
-            });
+                    Ok(())
+                },
+                |e| async move {
+                    tracing::debug!("Failed to fetch announcement: {:#}", e);
+                },
+            );
         }
     }
 
@@ -184,33 +188,38 @@ impl Actor {
 
             let this = ctx.address().expect("self to be alive");
 
-            tokio_ext::spawn_fallible(async move {
-                let url = event_id.to_olivia_url();
+            self.tasks.add_fallible(
+                async move {
+                    let url = event_id.to_olivia_url();
 
-                tracing::debug!("Fetching attestation for {}", event_id);
+                    tracing::debug!("Fetching attestation for {}", event_id);
 
-                let response = reqwest::get(url.clone())
-                    .await
-                    .with_context(|| format!("Failed to GET {}", url))?;
+                    let response = reqwest::get(url.clone())
+                        .await
+                        .with_context(|| format!("Failed to GET {}", url))?;
 
-                if !response.status().is_success() {
-                    anyhow::bail!("GET {} responded with {}", url, response.status());
-                }
+                    if !response.status().is_success() {
+                        anyhow::bail!("GET {} responded with {}", url, response.status());
+                    }
 
-                let attestation = response
-                    .json::<Attestation>()
-                    .await
-                    .context("Failed to deserialize as Attestation")?;
+                    let attestation = response
+                        .json::<Attestation>()
+                        .await
+                        .context("Failed to deserialize as Attestation")?;
 
-                this.send(NewAttestationFetched {
-                    id: event_id,
-                    attestation,
-                })
-                .log_failure("Failed to send attestation to oracle::Actor")
-                .await?;
+                    this.send(NewAttestationFetched {
+                        id: event_id,
+                        attestation,
+                    })
+                    .log_failure("Failed to send attestation to oracle::Actor")
+                    .await?;
 
-                Ok(())
-            });
+                    Ok(())
+                },
+                |e| async move {
+                    tracing::debug!("Failed to fetch attestation: {:#}", e);
+                },
+            )
         }
     }
 
