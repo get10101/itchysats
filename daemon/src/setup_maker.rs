@@ -1,4 +1,3 @@
-use crate::address_map::ActorName;
 use crate::address_map::Stopping;
 use crate::cfd_actors::apply_event;
 use crate::cfd_actors::load_cfd;
@@ -307,10 +306,4 @@ pub struct SetupFailed {
 
 impl xtra::Message for Started {
     type Result = ();
-}
-
-impl ActorName for Actor {
-    fn actor_name() -> String {
-        "Maker contract setup".to_string()
-    }
 }

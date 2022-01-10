@@ -1,3 +1,4 @@
+use crate::xtra_ext::ActorName;
 use crate::Tasks;
 use async_trait::async_trait;
 use std::fmt;
@@ -50,22 +51,6 @@ where
     }
 }
 
-trait ActorName {
-    fn name() -> String;
-}
-
-impl<T> ActorName for T
-where
-    T: xtra::Actor,
-{
-    /// Devise the name of an actor from its type on a best-effort basis.
-    ///
-    /// To reduce some noise, we strip `daemon::` out of all module names contained in the type.
-    fn name() -> String {
-        std::any::type_name::<T>().replace("daemon::", "")
-    }
-}
-
 #[async_trait]
 impl<T, R> xtra::Actor for Actor<T, R>
 where
@@ -111,23 +96,4 @@ where
 /// yields `true`, a new instance of the actor will be spawned.
 pub struct Stopped<R> {
     pub reason: R,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn actor_name_from_type() {
-        let name = Actor::<Dummy, String>::name();
-
-        assert_eq!(
-            name,
-            "supervisor::Actor<supervisor::tests::Dummy, alloc::string::String>"
-        )
-    }
-
-    struct Dummy;
-
-    impl xtra::Actor for Dummy {}
 }

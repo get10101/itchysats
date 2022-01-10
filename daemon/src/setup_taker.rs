@@ -1,4 +1,3 @@
-use crate::address_map;
 use crate::cfd_actors::apply_event;
 use crate::cfd_actors::load_cfd;
 use crate::connection;
@@ -231,11 +230,5 @@ impl Rejected {
         Rejected {
             is_invalid_order: true,
         }
-    }
-}
-
-impl address_map::ActorName for Actor {
-    fn actor_name() -> String {
-        "Taker contract setup".to_string()
     }
 }

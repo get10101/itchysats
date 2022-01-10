@@ -1,3 +1,4 @@
+use crate::xtra_ext::ActorName;
 use anyhow::Result;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -94,7 +95,7 @@ impl NotConnected {
     where
         A: ActorName,
     {
-        NotConnected(A::actor_name())
+        NotConnected(A::name())
     }
 }
 
@@ -129,10 +130,6 @@ impl<'a, K, A> Disconnected<'a, K, A> {
             }
         };
     }
-}
-
-pub trait ActorName {
-    fn actor_name() -> String;
 }
 
 #[cfg(test)]

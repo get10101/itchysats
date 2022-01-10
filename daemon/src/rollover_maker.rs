@@ -1,4 +1,3 @@
-use crate::address_map::ActorName;
 use crate::cfd_actors::load_cfd;
 use crate::maker_inc_connections;
 use crate::maker_inc_connections::RegisterRollover;
@@ -366,11 +365,5 @@ impl Actor {
     ) {
         self.complete(RolloverCompleted::succeeded(self.order_id, msg.dlc), ctx)
             .await
-    }
-}
-
-impl ActorName for Actor {
-    fn actor_name() -> String {
-        "Maker rollover".to_string()
     }
 }
