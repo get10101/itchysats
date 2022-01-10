@@ -118,24 +118,6 @@ pub async fn apply_event(
     Ok(())
 }
 
-pub async fn handle_commit(
-    order_id: OrderId,
-    conn: &mut PoolConnection<Sqlite>,
-    process_manager: &xtra::Address<process_manager::Actor>,
-) -> Result<()> {
-    let cfd = load_cfd(order_id, conn).await?;
-
-    let event = cfd.manual_commit_to_blockchain()?;
-    if let Err(e) = process_manager
-        .send(process_manager::Event::new(event.clone()))
-        .await?
-    {
-        tracing::error!("Sending event to process manager failed: {:#}", e);
-    }
-
-    Ok(())
-}
-
 pub async fn handle_oracle_attestation(
     attestation: oracle::Attestation,
     db: &SqlitePool,

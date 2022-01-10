@@ -36,6 +36,7 @@ pub mod bitmex_price_feed;
 pub mod cfd_actors;
 pub mod collab_settlement_maker;
 pub mod collab_settlement_taker;
+pub mod command;
 pub mod connection;
 pub mod db;
 pub mod fan_out;
