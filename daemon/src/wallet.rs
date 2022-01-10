@@ -234,9 +234,7 @@ impl Actor {
     }
 
     pub fn handle_withdraw(&mut self, msg: Withdraw) -> Result<Txid> {
-        self.wallet
-            .sync(NoopProgress, None)
-            .context("Failed to sync wallet")?;
+        self.sync_internal()?;
 
         if msg.address.network != self.wallet.network() {
             bail!(
