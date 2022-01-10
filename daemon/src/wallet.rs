@@ -1,6 +1,7 @@
 use crate::model::Timestamp;
 use crate::model::WalletInfo;
 use crate::tokio_ext::spawn_fallible;
+use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
@@ -169,7 +170,7 @@ impl Actor {
         Ok(())
     }
 
-    pub fn handle_sync(&mut self, _msg: Sync) -> Result<()> {
+    pub fn handle_sync(&mut self, _msg: Sync) {
         let wallet_info_update = match self.sync_internal() {
             Ok(wallet_info) => Some(wallet_info),
             Err(e) => {
@@ -180,8 +181,6 @@ impl Actor {
         };
 
         let _ = self.sender.send(wallet_info_update);
-
-        Ok(())
     }
 
     pub fn handle_sign(&mut self, msg: Sign) -> Result<PartiallySignedTransaction> {
@@ -321,15 +320,8 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
 
-        self.tasks.add(async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(10)).await;
-
-                if this.send(Sync).await.is_err() {
-                    return; // we are disconnected, meaning actor stopped, just exit the loop.
-                }
-            }
-        });
+        self.tasks
+            .add(this.send_interval(Duration::from_secs(10), || Sync));
     }
 }
 
