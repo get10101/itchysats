@@ -286,10 +286,6 @@ pub struct Accepted;
 /// the taker order request from the taker.
 pub struct Rejected;
 
-/// Message sent from the `setup_maker::Actor` to the
-/// `maker_cfd::Actor` to notify that the contract setup has started.
-pub struct Started(pub OrderId);
-
 /// Message sent from the spawned task to `setup_maker::Actor` to
 /// notify that the contract setup has finished successfully.
 pub struct SetupSucceeded {
@@ -302,8 +298,4 @@ pub struct SetupSucceeded {
 pub struct SetupFailed {
     order_id: OrderId,
     error: anyhow::Error,
-}
-
-impl xtra::Message for Started {
-    type Result = ();
 }
