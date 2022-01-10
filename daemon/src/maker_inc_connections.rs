@@ -21,6 +21,7 @@ use crate::wire::MakerToTaker;
 use crate::wire::TakerToMaker;
 use crate::wire::Version;
 use crate::xtra_ext::LogFailure;
+use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
@@ -369,22 +370,7 @@ impl Actor {
                 let _ = this.send(ReadFail(identity)).await;
             }
         });
-        tasks.add({
-            let this = this.clone();
-            let heartbeat_interval = self.heartbeat_interval;
-
-            async move {
-                while let Ok(()) = this.send(SendHeartbeat(identity)).await {
-                    tracing::trace!(
-                        target: "wire",
-                        "Sent heartbeat message. Sleeping for {}",
-                        heartbeat_interval.as_secs()
-                    );
-                    tokio::time::sleep(heartbeat_interval).await;
-                }
-                tracing::warn!("Failed to send a heartbeat, stopping heartbeat transmission");
-            }
-        });
+        tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)));
 
         self.connections.insert(
             identity,
