@@ -16,6 +16,7 @@ use crate::wire::EncryptedJsonCodec;
 use crate::wire::TakerToMaker;
 use crate::wire::Version;
 use crate::xtra_ext::LogFailure;
+use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
@@ -394,11 +395,11 @@ impl Actor {
         let this = ctx.address().expect("self to be alive");
 
         let mut tasks = Tasks::default();
-        tasks.add(this.attach_stream(read.map(move |item| MakerStreamMessage { item })));
         tasks.add(
-            ctx.notify_interval(self.heartbeat_measuring_rate, || MeasurePulse)
-                .expect("we just started"),
+            this.clone()
+                .attach_stream(read.map(move |item| MakerStreamMessage { item })),
         );
+        tasks.add(this.send_interval(self.heartbeat_measuring_rate, || MeasurePulse));
 
         self.state = State::Connected {
             last_heartbeat: SystemTime::now(),

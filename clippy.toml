@@ -2,4 +2,5 @@ disallowed-methods = [
   "xtra::Address::do_send_async", # discards the return value, possibly swallowing an error
   "xtra::Address::do_send", # discards the return value, possibly swallowing an error
   "xtra::message_channel::MessageChannel::do_send", # discards the return value, possibly swallowing an error
+  "xtra::Context::notify_interval", # does not wait for response from the previous handler, prefer `xtra_ext::Address::send_interval`
 ]
