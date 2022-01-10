@@ -54,15 +54,12 @@ where
         M: Message<Result = ()>,
         A: Handler<M> + ActorName,
     {
-        match self.inner.get(key) {
-            Some(addr) if addr.is_connected() => {
-                addr.send(msg)
-                    .await
-                    .expect("we checked that we are connected");
-                Ok(())
-            }
-            _ => Err(NotConnected::new::<A>()),
-        }
+        self.get(key)?
+            .send(msg)
+            .await
+            .map_err(|_| NotConnected::new::<A>())?;
+
+        Ok(())
     }
 
     /// Sends a message to the actor stored with the given key.
@@ -71,16 +68,20 @@ where
         M: Message<Result = anyhow::Result<()>>,
         A: Handler<M> + ActorName,
     {
-        match self.inner.get(key) {
-            Some(addr) if addr.is_connected() => {
-                let res = addr
-                    .send(msg)
-                    .await
-                    .expect("we checked that we are connected");
-                Ok(res)
-            }
-            _ => Err(NotConnected::new::<A>()),
-        }
+        let result = self
+            .get(key)?
+            .send(msg)
+            .await
+            .map_err(|_| NotConnected::new::<A>())?;
+
+        Ok(result)
+    }
+
+    fn get(&self, key: &K) -> Result<&Address<A>, NotConnected>
+    where
+        A: ActorName,
+    {
+        self.inner.get(key).ok_or_else(|| NotConnected::new::<A>())
     }
 }
 
