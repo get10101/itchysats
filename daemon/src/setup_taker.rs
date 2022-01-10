@@ -204,14 +204,14 @@ pub struct Rejected {
 
 /// Message sent from the spawned task to `setup_taker::Actor` to
 /// notify that the contract setup has finished successfully.
-pub struct SetupSucceeded {
+struct SetupSucceeded {
     order_id: OrderId,
     dlc: Dlc,
 }
 
 /// Message sent from the spawned task to `setup_taker::Actor` to
 /// notify that the contract setup has failed.
-pub struct SetupFailed {
+struct SetupFailed {
     order_id: OrderId,
     error: anyhow::Error,
 }
