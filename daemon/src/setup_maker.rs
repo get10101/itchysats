@@ -14,12 +14,12 @@ use crate::oracle::Announcement;
 use crate::process_manager;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::setup_contract;
-use crate::tokio_ext::spawn_fallible;
 use crate::wallet;
 use crate::wire;
 use crate::wire::MakerToTaker;
 use crate::wire::SetupMsg;
 use crate::xtra_ext::LogFailure;
+use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -48,6 +48,7 @@ pub struct Actor {
     on_completed: Box<dyn MessageChannel<SetupCompleted>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
+    tasks: Tasks,
 }
 
 impl Actor {
@@ -86,6 +87,7 @@ impl Actor {
             on_completed: on_completed.clone_channel(),
             on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
             setup_msg_sender: None,
+            tasks: Tasks::default(),
         }
     }
 
@@ -120,13 +122,11 @@ impl Actor {
             self.n_payouts,
         );
 
-        spawn_fallible::<_, anyhow::Error>(async move {
-            let _ = match contract_future.await {
-                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await?,
-                Err(error) => this.send(SetupFailed { order_id, error }).await?,
+        self.tasks.add(async move {
+            let _: Result<(), xtra::Disconnected> = match contract_future.await {
+                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await,
+                Err(error) => this.send(SetupFailed { order_id, error }).await,
             };
-
-            Ok(())
         });
 
         Ok(())
