@@ -34,7 +34,7 @@ use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
     db: sqlx::SqlitePool,
-    process_manager_actor: Address<process_manager::Actor>,
+    process_manager: Address<process_manager::Actor>,
     order: Order,
     quantity: Usd,
     n_payouts: usize,
@@ -55,7 +55,7 @@ impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        process_manager_actor: Address<process_manager::Actor>,
+        process_manager: Address<process_manager::Actor>,
         (order, quantity, n_payouts): (Order, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
@@ -73,7 +73,7 @@ impl Actor {
     ) -> Self {
         Self {
             db,
-            process_manager_actor,
+            process_manager,
             order,
             quantity,
             n_payouts,
@@ -102,7 +102,7 @@ impl Actor {
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd(order_id, &mut conn).await?;
         let (event, setup_params) = cfd.start_contract_setup()?;
-        apply_event(&self.process_manager_actor, event).await?;
+        apply_event(&self.process_manager, event).await?;
 
         let taker_id = setup_params.counterparty_identity();
 
