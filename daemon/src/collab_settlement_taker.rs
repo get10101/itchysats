@@ -1,4 +1,3 @@
-use crate::address_map::ActorName;
 use crate::address_map::Stopping;
 use crate::cfd_actors::load_cfd;
 use crate::connection;
@@ -189,11 +188,5 @@ impl Actor {
         };
 
         self.complete(completed, ctx).await;
-    }
-}
-
-impl ActorName for Actor {
-    fn actor_name() -> String {
-        "Taker collab settlement".to_string()
     }
 }

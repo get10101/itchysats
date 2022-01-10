@@ -90,3 +90,35 @@ where
         );
     }
 }
+
+pub trait ActorName {
+    fn name() -> String;
+}
+
+impl<T> ActorName for T
+where
+    T: xtra::Actor,
+{
+    /// Devise the name of an actor from its type on a best-effort basis.
+    ///
+    /// To reduce some noise, we strip `daemon::` out of all module names contained in the type.
+    fn name() -> String {
+        std::any::type_name::<T>().replace("daemon::", "")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actor_name_from_type() {
+        let name = Dummy::name();
+
+        assert_eq!(name, "xtra_ext::tests::Dummy")
+    }
+
+    struct Dummy;
+
+    impl xtra::Actor for Dummy {}
+}
