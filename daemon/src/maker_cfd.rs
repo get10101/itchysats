@@ -1,9 +1,7 @@
 use crate::address_map::AddressMap;
 use crate::address_map::Stopping;
 use crate::cfd_actors;
-use crate::cfd_actors::apply_event;
 use crate::cfd_actors::insert_cfd_and_update_feed;
-use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_maker;
 use crate::maker_inc_connections;
 use crate::model::cfd::Cfd;
@@ -13,7 +11,6 @@ use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementProposal;
-use crate::model::cfd::SetupCompleted;
 use crate::model::Identity;
 use crate::model::Position;
 use crate::model::Price;
@@ -307,7 +304,6 @@ where
             &self.wallet,
             &self.wallet,
             (&self.takers, &self.takers, taker_id),
-            &this,
             (&self.takers, &this),
         )
         .create(None)
@@ -409,17 +405,6 @@ impl<O, T, W> Actor<O, T, W> {
 
 #[xtra_productivity(message_impl = false)]
 impl<O, T, W> Actor<O, T, W> {
-    async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
-        let order_id = msg.order_id();
-        let mut conn = self.db.acquire().await?;
-
-        let cfd = load_cfd(order_id, &mut conn).await?;
-        let event = cfd.setup_contract(msg)?;
-        apply_event(&self.process_manager, event).await?;
-
-        Ok(())
-    }
-
     async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
         self.setup_actors.gc(message);
     }

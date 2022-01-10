@@ -12,7 +12,6 @@ use crate::model::Identity;
 use crate::model::Usd;
 use crate::oracle::Announcement;
 use crate::process_manager;
-use crate::send_async_safe::SendAsyncSafe;
 use crate::setup_contract;
 use crate::wallet;
 use crate::wire;
@@ -45,7 +44,6 @@ pub struct Actor {
     taker: Box<dyn MessageChannel<maker_inc_connections::TakerMessage>>,
     confirm_order: Box<dyn MessageChannel<maker_inc_connections::ConfirmOrder>>,
     taker_id: Identity,
-    on_completed: Box<dyn MessageChannel<SetupCompleted>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
     tasks: Tasks,
@@ -65,7 +63,6 @@ impl Actor {
             &(impl MessageChannel<maker_inc_connections::ConfirmOrder> + 'static),
             Identity,
         ),
-        on_completed: &(impl MessageChannel<SetupCompleted> + 'static),
         (on_stopping0, on_stopping1): (
             &(impl MessageChannel<Stopping<Self>> + 'static),
             &(impl MessageChannel<Stopping<Self>> + 'static),
@@ -84,7 +81,6 @@ impl Actor {
             taker: taker.clone_channel(),
             confirm_order: confirm_order.clone_channel(),
             taker_id,
-            on_completed: on_completed.clone_channel(),
             on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
             setup_msg_sender: None,
             tasks: Tasks::default(),
@@ -133,13 +129,27 @@ impl Actor {
     }
 
     async fn complete(&mut self, completed: SetupCompleted, ctx: &mut xtra::Context<Self>) {
-        let _ = self
-            .on_completed
-            .send(completed)
-            .log_failure("Failed to inform about contract setup completion")
-            .await;
+        match self.execute_setup_contract_command(completed).await {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::error!("Failed to execute `contract_setup` command: {:#}", e);
+            }
+        }
 
         ctx.stop();
+    }
+
+    async fn execute_setup_contract_command(&mut self, completed: SetupCompleted) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(self.order.id, &mut conn).await?;
+
+        let event = cfd.setup_contract(completed)?;
+
+        self.process_manager
+            .send(process_manager::Event::new(event))
+            .await??;
+
+        Ok(())
     }
 }
 
@@ -196,14 +206,8 @@ impl Actor {
             .log_failure("Failed to reject order to taker")
             .await;
 
-        // We cannot use completed here because we are sending a message to ourselves and using
-        // `send` would be a deadlock!
-        let _ = self
-            .on_completed
-            .send_async_safe(SetupCompleted::rejected(self.order.id))
-            .await;
-
-        ctx.stop();
+        self.complete(SetupCompleted::rejected(self.order.id), ctx)
+            .await
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
