@@ -260,6 +260,26 @@ async fn maker_rejects_rollover_of_open_cfd() {
 }
 
 #[tokio::test]
+async fn open_cfd_is_refunded() {
+    let _guard = init_tracing();
+    let oracle_data = OliviaData::example_0();
+    let (mut maker, mut taker, order_id) =
+        start_from_open_cfd_state(oracle_data.announcement()).await;
+
+    deliver_event!(maker, taker, Event::CommitFinality(order_id));
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    assert_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
+
+    deliver_event!(maker, taker, Event::RefundTimelockExpired(order_id));
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    assert_next_state!(order_id, maker, taker, CfdState::PendingRefund);
+
+    deliver_event!(maker, taker, Event::RefundFinality(order_id));
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    assert_next_state!(order_id, maker, taker, CfdState::Refunded);
+}
+
+#[tokio::test]
 async fn taker_notices_lack_of_maker() {
     let short_interval = Duration::from_secs(1);
 

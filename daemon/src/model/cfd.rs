@@ -268,6 +268,18 @@ pub enum RolloverError {
     },
 }
 
+/// Errors that can happen when handling the expiry of the refund
+/// timelock on the commit transaciton.
+#[derive(thiserror::Error, Debug)]
+pub enum RefundTimelockExpiryError {
+    #[error("CFD is already final")]
+    AlreadyFinal,
+    #[error("CFD does not have a DLC")]
+    NoDlc,
+    #[error("Failed to sign refund transaction")]
+    Signing(#[from] anyhow::Error),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
     pub timestamp: Timestamp,
@@ -340,7 +352,7 @@ pub enum CfdEvent {
         cet: Transaction,
     },
 
-    RefundTimelockConfirmed {
+    RefundTimelockExpired {
         #[serde(with = "hex_transaction")]
         refund_tx: Transaction,
     },
@@ -944,8 +956,19 @@ impl Cfd {
         Ok(self.event(cfd_event))
     }
 
-    pub fn handle_refund_timelock_expired(self) -> Event {
-        todo!()
+    pub fn handle_refund_timelock_expired(self) -> Result<Event, RefundTimelockExpiryError> {
+        use RefundTimelockExpiryError::*;
+
+        if self.is_final() {
+            return Err(AlreadyFinal);
+        }
+
+        let dlc = self.dlc.as_ref().ok_or(NoDlc)?;
+        let refund_tx = dlc.signed_refund_tx()?;
+
+        let event = self.event(CfdEvent::RefundTimelockExpired { refund_tx });
+
+        Ok(event)
     }
 
     pub fn handle_lock_confirmed(self) -> Event {
@@ -1109,7 +1132,7 @@ impl Cfd {
             CetConfirmed => self.cet_finality = true,
             RefundConfirmed => self.refund_finality = true,
             CollaborativeSettlementConfirmed => self.collaborative_settlement_finality = true,
-            RefundTimelockConfirmed { .. } => self.refund_timelock_expired = true,
+            RefundTimelockExpired { .. } => self.refund_timelock_expired = true,
             LockConfirmed => self.lock_finality = true,
             CommitConfirmed => self.commit_finality = true,
             CetTimelockConfirmedPriorOracleAttestation

@@ -362,7 +362,7 @@ impl Cfd {
             CetTimelockConfirmedPostOracleAttestation { .. } => {
                 (CfdState::PendingCet, self.actions)
             }
-            RefundTimelockConfirmed { .. } => (self.state, self.actions),
+            RefundTimelockExpired { .. } => (CfdState::PendingRefund, self.actions),
             OracleAttestedPriorCetTimelock {
                 price, commit_tx, ..
             } => {

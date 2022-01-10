@@ -179,6 +179,18 @@ impl Actor {
                     })
                     .await?;
             }
+            RefundTimelockExpired { refund_tx: tx } => {
+                let txid = self
+                    .try_broadcast_transaction
+                    .send(wallet::TryBroadcastTransaction { tx })
+                    .await?
+                    .context("Failed to broadcast refund transaction")?;
+
+                tracing::info!(order_id=%event.id, "Refund transaction published: {}", txid);
+            }
+            RefundConfirmed => {
+                tracing::info!(order_id=%event.id, "Refund transaction confirmed");
+            }
             CollaborativeSettlementStarted { .. }
             | ContractSetupStarted
             | ContractSetupFailed
@@ -191,11 +203,9 @@ impl Actor {
             | LockConfirmed
             | CommitConfirmed
             | CetConfirmed
-            | RefundConfirmed
             | RevokeConfirmed
             | CollaborativeSettlementConfirmed
-            | CetTimelockConfirmedPriorOracleAttestation
-            | RefundTimelockConfirmed { .. } => {}
+            | CetTimelockConfirmedPriorOracleAttestation => {}
         }
 
         // 3. Update UI
