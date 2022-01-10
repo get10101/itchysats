@@ -140,29 +140,27 @@ impl Actor {
         Ok(())
     }
 
-    fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        self.on_completed
+    fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
+        let _: Result<(), xtra::Disconnected> = self
+            .on_completed
             .send(SetupCompleted::succeeded(msg.order_id, msg.dlc))
             .log_failure("Failed to inform about contract setup completion")
-            .await?;
+            .await;
 
         ctx.stop();
-
-        Ok(())
     }
 
-    fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        self.on_completed
+    fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
+        let _: Result<(), xtra::Disconnected> = self
+            .on_completed
             .send(SetupCompleted::Failed {
                 order_id: msg.order_id,
                 error: msg.error,
             })
             .log_failure("Failed to inform about contract setup failure")
-            .await?;
+            .await;
 
         ctx.stop();
-
-        Ok(())
     }
 }
 
