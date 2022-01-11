@@ -1,6 +1,6 @@
 use crate::model::Timestamp;
 use crate::model::WalletInfo;
-use crate::tokio_ext::spawn_fallible;
+use crate::send_async_safe::SendAsyncSafe;
 use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::bail;
@@ -119,15 +119,10 @@ impl Actor {
         )?;
 
         self.wallet = wallet;
-
         self.used_utxos.clear();
 
         let this = ctx.address().expect("self to be alive");
-
-        spawn_fallible::<_, anyhow::Error>(async move {
-            let _ = this.send(Sync).await?;
-            Ok(())
-        });
+        let _: Result<(), xtra::Disconnected> = this.send_async_safe(Sync).await;
 
         Ok(())
     }

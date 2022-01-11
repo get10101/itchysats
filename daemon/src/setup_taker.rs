@@ -9,11 +9,11 @@ use crate::model::Usd;
 use crate::oracle::Announcement;
 use crate::process_manager;
 use crate::setup_contract;
-use crate::tokio_ext::spawn_fallible;
 use crate::wallet;
 use crate::wire;
 use crate::wire::SetupMsg;
 use crate::xtra_ext::LogFailure;
+use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -38,6 +38,7 @@ pub struct Actor {
     maker: xtra::Address<connection::Actor>,
     on_completed: Box<dyn MessageChannel<SetupCompleted>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
+    tasks: Tasks,
 }
 
 impl Actor {
@@ -65,6 +66,7 @@ impl Actor {
             maker,
             on_completed: on_completed.clone_channel(),
             setup_msg_sender: None,
+            tasks: Tasks::default(),
         }
     }
 }
@@ -98,13 +100,11 @@ impl Actor {
         );
 
         let this = ctx.address().expect("self to be alive");
-        spawn_fallible::<_, anyhow::Error>(async move {
-            let _ = match contract_future.await {
-                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await?,
-                Err(error) => this.send(SetupFailed { order_id, error }).await?,
+        self.tasks.add(async move {
+            let _: Result<(), xtra::Disconnected> = match contract_future.await {
+                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await,
+                Err(error) => this.send(SetupFailed { order_id, error }).await,
             };
-
-            Ok(())
         });
 
         Ok(())
@@ -140,29 +140,27 @@ impl Actor {
         Ok(())
     }
 
-    fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        self.on_completed
+    fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
+        let _: Result<(), xtra::Disconnected> = self
+            .on_completed
             .send(SetupCompleted::succeeded(msg.order_id, msg.dlc))
             .log_failure("Failed to inform about contract setup completion")
-            .await?;
+            .await;
 
         ctx.stop();
-
-        Ok(())
     }
 
-    fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        self.on_completed
+    fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
+        let _: Result<(), xtra::Disconnected> = self
+            .on_completed
             .send(SetupCompleted::Failed {
                 order_id: msg.order_id,
                 error: msg.error,
             })
             .log_failure("Failed to inform about contract setup failure")
-            .await?;
+            .await;
 
         ctx.stop();
-
-        Ok(())
     }
 }
 
@@ -204,14 +202,14 @@ pub struct Rejected {
 
 /// Message sent from the spawned task to `setup_taker::Actor` to
 /// notify that the contract setup has finished successfully.
-pub struct SetupSucceeded {
+struct SetupSucceeded {
     order_id: OrderId,
     dlc: Dlc,
 }
 
 /// Message sent from the spawned task to `setup_taker::Actor` to
 /// notify that the contract setup has failed.
-pub struct SetupFailed {
+struct SetupFailed {
     order_id: OrderId,
     error: anyhow::Error,
 }

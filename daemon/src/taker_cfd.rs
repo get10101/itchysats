@@ -3,6 +3,7 @@ use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_taker;
+use crate::command;
 use crate::connection;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Order;
@@ -54,6 +55,7 @@ pub struct Actor<O, W> {
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
     oracle_actor: Address<O>,
+    executor: command::Executor,
     n_payouts: usize,
     tasks: Tasks,
     current_order: Option<Order>,
@@ -79,6 +81,7 @@ where
         maker_identity: Identity,
     ) -> Self {
         Self {
+            executor: command::Executor::new(db.clone(), process_manager_actor.clone()),
             db,
             wallet,
             oracle_pk,
@@ -123,10 +126,10 @@ where
     }
 
     async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
-        let Commit { order_id } = msg;
+        self.executor
+            .execute(msg.order_id, |cfd| cfd.manual_commit_to_blockchain())
+            .await?;
 
-        let mut conn = self.db.acquire().await?;
-        cfd_actors::handle_commit(order_id, &mut conn, &self.process_manager_actor).await?;
         Ok(())
     }
 

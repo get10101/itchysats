@@ -12,14 +12,13 @@ use crate::model::Identity;
 use crate::model::Usd;
 use crate::oracle::Announcement;
 use crate::process_manager;
-use crate::send_async_safe::SendAsyncSafe;
 use crate::setup_contract;
-use crate::tokio_ext::spawn_fallible;
 use crate::wallet;
 use crate::wire;
 use crate::wire::MakerToTaker;
 use crate::wire::SetupMsg;
 use crate::xtra_ext::LogFailure;
+use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -34,7 +33,7 @@ use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
     db: sqlx::SqlitePool,
-    process_manager_actor: Address<process_manager::Actor>,
+    process_manager: Address<process_manager::Actor>,
     order: Order,
     quantity: Usd,
     n_payouts: usize,
@@ -45,16 +44,16 @@ pub struct Actor {
     taker: Box<dyn MessageChannel<maker_inc_connections::TakerMessage>>,
     confirm_order: Box<dyn MessageChannel<maker_inc_connections::ConfirmOrder>>,
     taker_id: Identity,
-    on_completed: Box<dyn MessageChannel<SetupCompleted>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
+    tasks: Tasks,
 }
 
 impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        process_manager_actor: Address<process_manager::Actor>,
+        process_manager: Address<process_manager::Actor>,
         (order, quantity, n_payouts): (Order, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
@@ -64,7 +63,6 @@ impl Actor {
             &(impl MessageChannel<maker_inc_connections::ConfirmOrder> + 'static),
             Identity,
         ),
-        on_completed: &(impl MessageChannel<SetupCompleted> + 'static),
         (on_stopping0, on_stopping1): (
             &(impl MessageChannel<Stopping<Self>> + 'static),
             &(impl MessageChannel<Stopping<Self>> + 'static),
@@ -72,7 +70,7 @@ impl Actor {
     ) -> Self {
         Self {
             db,
-            process_manager_actor,
+            process_manager,
             order,
             quantity,
             n_payouts,
@@ -83,9 +81,9 @@ impl Actor {
             taker: taker.clone_channel(),
             confirm_order: confirm_order.clone_channel(),
             taker_id,
-            on_completed: on_completed.clone_channel(),
             on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
             setup_msg_sender: None,
+            tasks: Tasks::default(),
         }
     }
 
@@ -100,7 +98,7 @@ impl Actor {
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd(order_id, &mut conn).await?;
         let (event, setup_params) = cfd.start_contract_setup()?;
-        apply_event(&self.process_manager_actor, event).await?;
+        apply_event(&self.process_manager, event).await?;
 
         let taker_id = setup_params.counterparty_identity();
 
@@ -120,26 +118,38 @@ impl Actor {
             self.n_payouts,
         );
 
-        spawn_fallible::<_, anyhow::Error>(async move {
-            let _ = match contract_future.await {
-                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await?,
-                Err(error) => this.send(SetupFailed { order_id, error }).await?,
+        self.tasks.add(async move {
+            let _: Result<(), xtra::Disconnected> = match contract_future.await {
+                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await,
+                Err(error) => this.send(SetupFailed { order_id, error }).await,
             };
-
-            Ok(())
         });
 
         Ok(())
     }
 
     async fn complete(&mut self, completed: SetupCompleted, ctx: &mut xtra::Context<Self>) {
-        let _ = self
-            .on_completed
-            .send(completed)
-            .log_failure("Failed to inform about contract setup completion")
-            .await;
+        match self.execute_setup_contract_command(completed).await {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::error!("Failed to execute `contract_setup` command: {:#}", e);
+            }
+        }
 
         ctx.stop();
+    }
+
+    async fn execute_setup_contract_command(&mut self, completed: SetupCompleted) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(self.order.id, &mut conn).await?;
+
+        let event = cfd.setup_contract(completed)?;
+
+        self.process_manager
+            .send(process_manager::Event::new(event))
+            .await??;
+
+        Ok(())
     }
 }
 
@@ -196,14 +206,8 @@ impl Actor {
             .log_failure("Failed to reject order to taker")
             .await;
 
-        // We cannot use completed here because we are sending a message to ourselves and using
-        // `send` would be a deadlock!
-        let _ = self
-            .on_completed
-            .send_async_safe(SetupCompleted::rejected(self.order.id))
-            .await;
-
-        ctx.stop();
+        self.complete(SetupCompleted::rejected(self.order.id), ctx)
+            .await
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
@@ -286,24 +290,16 @@ pub struct Accepted;
 /// the taker order request from the taker.
 pub struct Rejected;
 
-/// Message sent from the `setup_maker::Actor` to the
-/// `maker_cfd::Actor` to notify that the contract setup has started.
-pub struct Started(pub OrderId);
-
 /// Message sent from the spawned task to `setup_maker::Actor` to
 /// notify that the contract setup has finished successfully.
-pub struct SetupSucceeded {
+struct SetupSucceeded {
     order_id: OrderId,
     dlc: Dlc,
 }
 
 /// Message sent from the spawned task to `setup_maker::Actor` to
 /// notify that the contract setup has failed.
-pub struct SetupFailed {
+struct SetupFailed {
     order_id: OrderId,
     error: anyhow::Error,
-}
-
-impl xtra::Message for Started {
-    type Result = ();
 }
