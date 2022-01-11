@@ -18,7 +18,6 @@ use daemon::projection::Cfd;
 use daemon::projection::CfdOrder;
 use daemon::projection::Feeds;
 use daemon::seed::Seed;
-use daemon::taker_cfd;
 use daemon::MakerActorSystem;
 use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
@@ -217,51 +216,6 @@ impl Maker {
             .unwrap()
             .unwrap();
     }
-
-    pub async fn reject_take_request(&self, order: CfdOrder) {
-        self.system
-            .cfd_actor_addr
-            .send(maker_cfd::RejectOrder { order_id: order.id })
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    pub async fn accept_take_request(&self, order: CfdOrder) {
-        self.system
-            .cfd_actor_addr
-            .send(maker_cfd::AcceptOrder { order_id: order.id })
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    pub async fn accept_settlement_proposal(&self, order_id: OrderId) {
-        self.system
-            .cfd_actor_addr
-            .send(maker_cfd::AcceptSettlement { order_id })
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    pub async fn accept_rollover_proposal(&self, order_id: OrderId) {
-        self.system
-            .cfd_actor_addr
-            .send(maker_cfd::AcceptRollover { order_id })
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    pub async fn reject_rollover_proposal(&self, order_id: OrderId) {
-        self.system
-            .cfd_actor_addr
-            .send(maker_cfd::RejectRollover { order_id })
-            .await
-            .unwrap()
-            .unwrap();
-    }
 }
 
 /// Taker Test Setup
@@ -340,39 +294,6 @@ impl Taker {
             mocks,
             _tasks: tasks,
         }
-    }
-
-    pub async fn take_order(&self, order: CfdOrder, quantity: Usd) {
-        self.system
-            .cfd_actor_addr
-            .send(taker_cfd::TakeOffer {
-                order_id: order.id,
-                quantity,
-            })
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    pub async fn propose_settlement(&self, order_id: OrderId) {
-        self.system
-            .cfd_actor_addr
-            .send(taker_cfd::ProposeSettlement {
-                order_id,
-                current_price: dummy_price(),
-            })
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    pub async fn force_close(&self, order_id: OrderId) {
-        self.system
-            .cfd_actor_addr
-            .send(taker_cfd::Commit { order_id })
-            .await
-            .unwrap()
-            .unwrap();
     }
 
     pub async fn trigger_rollover(&self, id: OrderId) {
