@@ -34,6 +34,10 @@ impl Mocks {
         self.oracle.lock().await
     }
 
+    pub async fn price_feed(&mut self) -> MutexGuard<'_, price_feed::MockPriceFeed> {
+        self.price_feed.lock().await
+    }
+
     pub async fn mock_sync_handlers(&mut self) {
         self.oracle().await.expect_sync().return_const(());
         self.monitor().await.expect_sync().return_const(());
@@ -100,6 +104,10 @@ impl Mocks {
             .await
             .expect_collaborative_settlement()
             .return_const(());
+    }
+
+    pub async fn mock_latest_quote(&mut self, latest_quote: Option<bitmex_price_feed::Quote>) {
+        self.price_feed().await.set_latest_quote(latest_quote);
     }
 }
 

@@ -1,11 +1,11 @@
 use daemon::bitmex_price_feed;
-use mockall::*;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;
 
+#[derive(Clone)]
 pub struct PriceFeedActor {
-    pub mock: Arc<Mutex<dyn PriceFeed + Send>>,
+    pub mock: Arc<Mutex<MockPriceFeed>>,
 }
 
 impl xtra::Actor for PriceFeedActor {}
@@ -20,9 +20,20 @@ impl PriceFeedActor {
     }
 }
 
-#[automock]
-pub trait PriceFeed {
-    fn latest_quote(&mut self) -> Option<bitmex_price_feed::Quote> {
-        unreachable!("mockall will reimplement this method")
+pub struct MockPriceFeed {
+    latest_quote: Option<bitmex_price_feed::Quote>,
+}
+
+impl MockPriceFeed {
+    pub fn new() -> Self {
+        MockPriceFeed { latest_quote: None }
+    }
+
+    pub fn latest_quote(&self) -> Option<bitmex_price_feed::Quote> {
+        self.latest_quote
+    }
+
+    pub fn set_latest_quote(&mut self, new_quote: Option<bitmex_price_feed::Quote>) {
+        self.latest_quote = new_quote;
     }
 }

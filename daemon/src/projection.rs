@@ -580,17 +580,6 @@ impl From<bitmex_price_feed::Quote> for Quote {
     }
 }
 
-// FIXME: Remove this hack when it's not needed
-impl From<Quote> for bitmex_price_feed::Quote {
-    fn from(quote: Quote) -> Self {
-        Self {
-            timestamp: quote.last_updated_at,
-            bid: quote.bid,
-            ask: quote.ask,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CfdOrder {
     pub id: OrderId,
