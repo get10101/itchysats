@@ -1,5 +1,5 @@
 use crate::harness::dummy_new_order;
-use crate::harness::dummy_price;
+use crate::harness::dummy_quote;
 use crate::harness::flow::is_next_none;
 use crate::harness::flow::next;
 use crate::harness::flow::next_order;
@@ -147,11 +147,11 @@ async fn collaboratively_close_an_open_cfd() {
     let (mut maker, mut taker, order_id) =
         start_from_open_cfd_state(OliviaData::example_0().announcement()).await;
 
-    taker
-        .system
-        .propose_settlement(order_id, dummy_price())
-        .await
-        .unwrap();
+    taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
+    maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
+    next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
+
+    taker.system.propose_settlement(order_id).await.unwrap();
 
     wait_next_state!(
         order_id,

@@ -20,7 +20,6 @@ use daemon::projection;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::seed::UmbrelSeed;
-use daemon::supervisor;
 use daemon::wallet;
 use daemon::TakerActorSystem;
 use daemon::Tasks;
@@ -268,6 +267,7 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(db.clone(), electrum, channel)
             }
         },
+        bitmex_price_feed::Actor::new,
         N_PAYOUTS,
         HEARTBEAT_INTERVAL,
         Duration::from_secs(10),
@@ -276,16 +276,12 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let (supervisor, price_feed) = supervisor::Actor::new(
-        bitmex_price_feed::Actor::new,
-        |_| true, // always restart price feed actor
+    let (proj_actor, projection_feeds) = projection::Actor::new(
+        db.clone(),
+        Role::Taker,
+        bitcoin_network,
+        &taker.price_feed_actor,
     );
-
-    let (_supervisor_address, task) = supervisor.create(None).run();
-    tasks.add(task);
-
-    let (proj_actor, projection_feeds) =
-        projection::Actor::new(db.clone(), Role::Taker, bitcoin_network, &price_feed);
     tasks.add(projection_context.run(proj_actor));
 
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;

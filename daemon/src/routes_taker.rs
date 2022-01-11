@@ -34,7 +34,7 @@ use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
 
-type Taker = TakerActorSystem<oracle::Actor, wallet::Actor>;
+type Taker = TakerActorSystem<oracle::Actor, wallet::Actor, bitmex_price_feed::Actor>;
 
 #[rocket::get("/feed")]
 pub async fn feed(
@@ -126,7 +126,6 @@ pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
     taker: &State<Taker>,
-    feeds: &State<Feeds>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
     let result = match action {
@@ -140,20 +139,7 @@ pub async fn post_cfd_action(
                 .detail(format!("taker cannot invoke action {}", action)));
         }
         CfdAction::Commit => taker.commit(id).await,
-        CfdAction::Settle => {
-            let quote: bitmex_price_feed::Quote = match feeds.quote.borrow().as_ref() {
-                Some(quote) => quote.clone().into(),
-                None => {
-                    return Err(HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-                        .title("Quote unavailable")
-                        .detail("Cannot settle without current price information."))
-                }
-            };
-
-            let current_price = quote.for_taker();
-
-            taker.propose_settlement(id, current_price).await
-        }
+        CfdAction::Settle => taker.propose_settlement(id).await,
     };
 
     result.map_err(|e| {

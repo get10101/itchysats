@@ -1,8 +1,10 @@
 use crate::harness::mocks::oracle::OracleActor;
+use crate::harness::mocks::price_feed::PriceFeedActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use ::bdk::bitcoin::Network;
 use daemon::auto_rollover;
+use daemon::bitmex_price_feed::Quote;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
@@ -12,6 +14,7 @@ use daemon::model::cfd::OrderId;
 use daemon::model::cfd::Role;
 use daemon::model::Identity;
 use daemon::model::Price;
+use daemon::model::Timestamp;
 use daemon::model::Usd;
 use daemon::projection;
 use daemon::projection::Cfd;
@@ -178,6 +181,7 @@ impl Maker {
 
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
+
         let maker = daemon::MakerActorSystem::new(
             db.clone(),
             wallet_addr,
@@ -223,7 +227,7 @@ impl Maker {
 /// Taker Test Setup
 pub struct Taker {
     pub id: Identity,
-    pub system: daemon::TakerActorSystem<OracleActor, WalletActor>,
+    pub system: daemon::TakerActorSystem<OracleActor, WalletActor, PriceFeedActor>,
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     _tasks: Tasks,
@@ -236,6 +240,10 @@ impl Taker {
 
     pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<CfdOrder>> {
         &mut self.feeds.order
+    }
+
+    pub fn quote_feed(&mut self) -> &mut watch::Receiver<Option<projection::Quote>> {
+        &mut self.feeds.quote
     }
 
     pub fn maker_status_feed(&mut self) -> &mut watch::Receiver<ConnectionStatus> {
@@ -259,13 +267,11 @@ impl Taker {
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tasks.add(wallet_fut);
 
-        let (price_feed_addr, price_feed_fut) = price_feed.create(None).run();
-        tasks.add(price_feed_fut);
-
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
+
         let taker = daemon::TakerActorSystem::new(
             db.clone(),
             wallet_addr,
@@ -273,6 +279,7 @@ impl Taker {
             identity_sk,
             |_| async { Ok(oracle) },
             |_| async { Ok(monitor) },
+            move |_| price_feed.clone(),
             config.n_payouts,
             config.heartbeat_interval,
             Duration::from_secs(10),
@@ -283,7 +290,7 @@ impl Taker {
         .unwrap();
 
         let (proj_actor, feeds) =
-            projection::Actor::new(db, Role::Taker, Network::Testnet, &price_feed_addr);
+            projection::Actor::new(db, Role::Taker, Network::Testnet, &taker.price_feed_actor);
         tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(
@@ -325,6 +332,14 @@ macro_rules! deliver_event {
 
 pub fn dummy_price() -> Price {
     Price::new(dec!(50_000)).expect("to not fail")
+}
+
+pub fn dummy_quote() -> Quote {
+    Quote {
+        timestamp: Timestamp::now(),
+        bid: Price::new(dec!(50_000)).expect("to not fail"),
+        ask: Price::new(dec!(50_000)).expect("to not fail"),
+    }
 }
 
 pub fn dummy_new_order() -> maker_cfd::NewOrder {

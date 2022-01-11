@@ -10,6 +10,7 @@ use crate::model::Usd;
 use crate::oracle::Attestation;
 use crate::tokio_ext::FutureExt;
 use address_map::Stopping;
+use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
@@ -311,18 +312,22 @@ where
     }
 }
 
-pub struct TakerActorSystem<O, W> {
+pub struct TakerActorSystem<O, W, P> {
     pub cfd_actor: Address<taker_cfd::Actor<O, W>>,
     pub connection_actor: Address<connection::Actor>,
     wallet_actor: Address<W>,
     pub auto_rollover_actor: Address<auto_rollover::Actor<O>>,
+    pub price_feed_actor: Address<P>,
+    /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
+    /// address.
+    _price_feed_supervisor: Address<supervisor::Actor<P, bitmex_price_feed::StopReason>>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
     _tasks: Tasks,
 }
 
-impl<O, W> TakerActorSystem<O, W>
+impl<O, W, P> TakerActorSystem<O, W, P>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
@@ -330,6 +335,7 @@ where
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::Withdraw>,
+    P: xtra::Handler<bitmex_price_feed::LatestQuote>,
 {
     #[allow(clippy::too_many_arguments)]
     pub async fn new<FM, FO, M>(
@@ -339,6 +345,9 @@ where
         identity_sk: x25519_dalek::StaticSecret,
         oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> FO,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> FM,
+        price_feed_constructor: impl (Fn(Address<supervisor::Actor<P, bitmex_price_feed::StopReason>>) -> P)
+            + Send
+            + 'static,
         n_payouts: usize,
         maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
@@ -426,6 +435,14 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor)).await?));
 
+        let (supervisor, price_feed_actor) = supervisor::Actor::new(
+            price_feed_constructor,
+            |_| true, // always restart price feed actor
+        );
+
+        let (price_feed_supervisor, supervisor_fut) = supervisor.create(None).run();
+        tasks.add(supervisor_fut);
+
         tracing::debug!("Taker actor system ready");
 
         Ok(Self {
@@ -433,8 +450,10 @@ where
             connection_actor: connection_actor_addr,
             wallet_actor: wallet_actor_addr,
             auto_rollover_actor: auto_rollover_addr,
-            maker_online_status_feed_receiver,
+            price_feed_actor,
+            _price_feed_supervisor: price_feed_supervisor,
             _tasks: tasks,
+            maker_online_status_feed_receiver,
         })
     }
 
@@ -449,11 +468,18 @@ where
         self.cfd_actor.send(taker_cfd::Commit { order_id }).await?
     }
 
-    pub async fn propose_settlement(&self, order_id: OrderId, current_price: Price) -> Result<()> {
+    pub async fn propose_settlement(&self, order_id: OrderId) -> Result<()> {
+        let latest_quote = self
+            .price_feed_actor
+            .send(bitmex_price_feed::LatestQuote)
+            .await
+            .context("Price feed not available")?
+            .context("No quote available")?;
+
         self.cfd_actor
             .send(taker_cfd::ProposeSettlement {
                 order_id,
-                current_price,
+                current_price: latest_quote.for_taker(),
             })
             .await?
     }
