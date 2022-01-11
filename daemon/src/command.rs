@@ -38,11 +38,13 @@ impl Executor {
 
         let (event, rest) = return_val.extract_event();
 
-        self.process_manager
-            .send(process_manager::Event::new(event))
-            .await
-            .context("ProcessManager is disconnected")?
-            .context("Failed to process new domain event")?;
+        if let Some(event) = event {
+            self.process_manager
+                .send(process_manager::Event::new(event))
+                .await
+                .context("ProcessManager is disconnected")?
+                .context("Failed to process new domain event")?;
+        }
 
         Ok(rest)
     }
@@ -53,29 +55,37 @@ impl Executor {
 pub trait ExtractEventFromTuple {
     type Rest;
 
-    fn extract_event(self) -> (Event, Self::Rest);
+    fn extract_event(self) -> (Option<Event>, Self::Rest);
+}
+
+impl ExtractEventFromTuple for Option<Event> {
+    type Rest = ();
+
+    fn extract_event(self) -> (Option<Event>, Self::Rest) {
+        (self, ())
+    }
 }
 
 impl ExtractEventFromTuple for Event {
     type Rest = ();
 
-    fn extract_event(self) -> (Event, Self::Rest) {
-        (self, ())
+    fn extract_event(self) -> (Option<Event>, Self::Rest) {
+        (Some(self), ())
     }
 }
 
 impl<TOne> ExtractEventFromTuple for (Event, TOne) {
     type Rest = TOne;
 
-    fn extract_event(self) -> (Event, Self::Rest) {
-        self
+    fn extract_event(self) -> (Option<Event>, Self::Rest) {
+        (Some(self.0), self.1)
     }
 }
 
 impl<TOne, TTwo> ExtractEventFromTuple for (Event, TOne, TTwo) {
     type Rest = (TOne, TTwo);
 
-    fn extract_event(self) -> (Event, Self::Rest) {
-        (self.0, (self.1, self.2))
+    fn extract_event(self) -> (Option<Event>, Self::Rest) {
+        (Some(self.0), (self.1, self.2))
     }
 }

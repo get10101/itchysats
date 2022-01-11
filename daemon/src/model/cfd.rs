@@ -676,7 +676,7 @@ impl Cfd {
 
     pub fn handle_rollover_accepted_taker(
         &self,
-    ) -> Result<(Event, (RolloverParams, Dlc)), RolloverError> {
+    ) -> Result<(Event, RolloverParams, Dlc), RolloverError> {
         if !self.during_rollover {
             return Err(RolloverError::NotRollingOver);
         }
@@ -689,16 +689,14 @@ impl Cfd {
 
         Ok((
             self.event(CfdEvent::RolloverAccepted),
-            (
-                RolloverParams::new(
-                    self.initial_price,
-                    self.quantity,
-                    self.leverage,
-                    self.refund_timelock_in_blocks(),
-                    1, // TODO: Where should I get the fee rate from?
-                ),
-                self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
+            RolloverParams::new(
+                self.initial_price,
+                self.quantity,
+                self.leverage,
+                self.refund_timelock_in_blocks(),
+                1, // TODO: Where should I get the fee rate from?
             ),
+            self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
         ))
     }
 
