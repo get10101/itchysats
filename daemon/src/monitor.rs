@@ -377,37 +377,12 @@ where
             self.awaiting_status.len()
         );
 
-        let txid_to_script = self
-            .awaiting_status
-            .keys()
-            .cloned()
-            .collect::<HashMap<_, _>>();
-
         let histories = self
             .client
             .batch_script_get_history(self.awaiting_status.keys().map(|(_, script)| script))
             .context("Failed to get script histories")?;
 
-        let mut histories_grouped_by_txid = HashMap::new();
-        for history in histories {
-            for response in history {
-                let txid = response.tx_hash;
-                let script = match txid_to_script.get(&txid) {
-                    None => {
-                        tracing::trace!(
-                            "Could not find script in own state for txid {}, ignoring",
-                            txid
-                        );
-                        continue;
-                    }
-                    Some(script) => script,
-                };
-                histories_grouped_by_txid.insert((txid, script.clone()), response);
-            }
-        }
-
-        self.update_state(latest_block_height, histories_grouped_by_txid)
-            .await?;
+        self.update_state(latest_block_height, histories).await?;
 
         Ok(())
     }
@@ -426,8 +401,32 @@ where
     async fn update_state(
         &mut self,
         latest_block_height: BlockHeight,
-        histories: HashMap<(Txid, Script), GetHistoryRes>,
+        response: Vec<Vec<GetHistoryRes>>,
     ) -> Result<()> {
+        let txid_to_script = self
+            .awaiting_status
+            .keys()
+            .cloned()
+            .collect::<HashMap<_, _>>();
+
+        let mut histories = HashMap::new();
+        for history in response {
+            for response in history {
+                let txid = response.tx_hash;
+                let script = match txid_to_script.get(&txid) {
+                    None => {
+                        tracing::trace!(
+                            "Could not find script in own state for txid {}, ignoring",
+                            txid
+                        );
+                        continue;
+                    }
+                    Some(script) => script,
+                };
+                histories.insert((txid, script.clone()), response);
+            }
+        }
+
         if latest_block_height > self.latest_block_height {
             tracing::debug!(
                 block_height = u32::from(latest_block_height),
