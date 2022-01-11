@@ -1,4 +1,5 @@
 use crate::harness::dummy_new_order;
+use crate::harness::dummy_price;
 use crate::harness::flow::is_next_none;
 use crate::harness::flow::next;
 use crate::harness::flow::next_cfd;
@@ -98,11 +99,15 @@ async fn taker_takes_order_and_maker_rejects() {
 
     taker.mocks.mock_oracle_announcement().await;
     maker.mocks.mock_oracle_announcement().await;
-    taker.take_order(received.clone(), Usd::new(dec!(10))).await;
+    taker
+        .system
+        .take_offer(received.id, Usd::new(dec!(10)))
+        .await
+        .unwrap();
 
     assert_next_state!(received.id, maker, taker, CfdState::PendingSetup);
 
-    maker.reject_take_request(received.clone()).await;
+    maker.system.reject_order(received.id).await.unwrap();
 
     assert_next_state!(received.id, maker, taker, CfdState::Rejected);
 }
@@ -123,7 +128,11 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     taker.mocks.mock_oracle_announcement().await;
     maker.mocks.mock_oracle_announcement().await;
 
-    taker.take_order(received.clone(), Usd::new(dec!(5))).await;
+    taker
+        .system
+        .take_offer(received.id, Usd::new(dec!(5)))
+        .await
+        .unwrap();
     assert_next_state!(received.id, maker, taker, CfdState::PendingSetup);
 
     maker.mocks.mock_party_params().await;
@@ -141,7 +150,7 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
-    maker.accept_take_request(received.clone()).await;
+    maker.system.accept_order(received.id).await.unwrap();
     assert_next_state!(received.id, maker, taker, CfdState::ContractSetup);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
@@ -157,7 +166,11 @@ async fn collaboratively_close_an_open_cfd() {
     let (mut maker, mut taker, order_id) =
         start_from_open_cfd_state(OliviaData::example_0().announcement()).await;
 
-    taker.propose_settlement(order_id).await;
+    taker
+        .system
+        .propose_settlement(order_id, dummy_price())
+        .await
+        .unwrap();
 
     assert_next_state!(
         order_id,
@@ -170,7 +183,7 @@ async fn collaboratively_close_an_open_cfd() {
     maker.mocks.mock_monitor_collaborative_settlement().await;
     taker.mocks.mock_monitor_collaborative_settlement().await;
 
-    maker.accept_settlement_proposal(order_id).await;
+    maker.system.accept_settlement(order_id).await.unwrap();
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 
     assert_next_state!(order_id, maker, taker, CfdState::PendingClose);
@@ -190,7 +203,7 @@ async fn force_close_an_open_cfd() {
         start_from_open_cfd_state(oracle_data.announcement()).await;
 
     // Taker initiates force-closing
-    taker.force_close(order_id).await;
+    taker.system.commit(order_id).await.unwrap();
 
     deliver_event!(maker, taker, Event::CommitFinality(order_id));
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
@@ -231,7 +244,7 @@ async fn rollover_an_open_cfd() {
         CfdState::OutgoingRolloverProposal
     );
 
-    maker.accept_rollover_proposal(order_id).await;
+    maker.system.accept_rollover(order_id).await.unwrap();
 
     assert_next_state!(order_id, maker, taker, CfdState::ContractSetup);
     assert_next_state!(order_id, maker, taker, CfdState::Open);
@@ -254,7 +267,7 @@ async fn maker_rejects_rollover_of_open_cfd() {
         CfdState::OutgoingRolloverProposal
     );
 
-    maker.reject_rollover_proposal(order_id).await;
+    maker.system.reject_rollover(order_id).await.unwrap();
 
     assert_next_state!(order_id, maker, taker, CfdState::Open);
 }
@@ -367,7 +380,11 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
         .mock_oracle_announcement_with(announcement)
         .await;
 
-    taker.take_order(received.clone(), Usd::new(dec!(5))).await;
+    taker
+        .system
+        .take_offer(received.id, Usd::new(dec!(5)))
+        .await
+        .unwrap();
     assert_next_state!(received.id, maker, taker, CfdState::PendingSetup);
 
     maker.mocks.mock_party_params().await;
@@ -385,7 +402,7 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
-    maker.accept_take_request(received.clone()).await;
+    maker.system.accept_order(received.id).await.unwrap();
     assert_next_state!(received.id, maker, taker, CfdState::ContractSetup);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
