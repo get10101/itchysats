@@ -14,7 +14,6 @@ use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::OutPoint;
 use bdk::bitcoin::PublicKey;
-use bdk::bitcoin::Script;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
 use bdk::blockchain::Blockchain;
@@ -34,8 +33,6 @@ use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
-
-const DUST_AMOUNT: u64 = 546;
 
 pub struct Actor {
     wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::MemoryDatabase>,
@@ -77,41 +74,6 @@ impl Actor {
         };
 
         Ok((actor, receiver))
-    }
-
-    /// Calculates the maximum "giveable" amount of this wallet.
-    ///
-    /// We define this as the maximum amount we can pay to a single output,
-    /// given a fee rate.
-    pub fn max_giveable(&self, locking_script_size: usize, fee_rate: FeeRate) -> Result<Amount> {
-        let balance = self.wallet.get_balance()?;
-
-        // TODO: Do we have to deal with the min_relay_fee here as well, i.e. if balance below
-        // min_relay_fee we should return Amount::ZERO?
-        if balance < DUST_AMOUNT {
-            return Ok(Amount::ZERO);
-        }
-
-        let mut tx_builder = self.wallet.build_tx();
-
-        let dummy_script = Script::from(vec![0u8; locking_script_size]);
-        tx_builder.drain_to(dummy_script);
-        tx_builder.fee_rate(fee_rate);
-        tx_builder.unspendable(self.used_utxos.iter().copied().collect());
-        tx_builder.drain_wallet();
-
-        let response = tx_builder.finish();
-        match response {
-            Ok((_, details)) => {
-                let max_giveable = details.sent
-                    - details
-                        .fee
-                        .expect("fees are always present with Electrum backend");
-                Ok(Amount::from_sat(max_giveable))
-            }
-            Err(bdk::Error::InsufficientFunds { .. }) => Ok(Amount::ZERO),
-            Err(e) => bail!("Failed to build transaction. {:#}", e),
-        }
     }
 
     fn sync_internal(&mut self) -> Result<WalletInfo> {
@@ -271,9 +233,7 @@ impl Actor {
     }
 
     pub fn handle_withdraw(&mut self, msg: Withdraw) -> Result<Txid> {
-        self.wallet
-            .sync(NoopProgress, None)
-            .context("Failed to sync wallet")?;
+        self.sync_internal()?;
 
         if msg.address.network != self.wallet.network() {
             bail!(
@@ -286,27 +246,33 @@ impl Actor {
         let fee_rate = msg.fee.unwrap_or_else(FeeRate::default_min_relay_fee);
         let address = msg.address;
 
-        let amount = if let Some(amount) = msg.amount {
-            amount
-        } else {
-            self.max_giveable(address.script_pubkey().len(), fee_rate)
-                .context("Unable to drain wallet")?
+        let mut psbt = {
+            let mut tx_builder = self.wallet.build_tx();
+
+            tx_builder
+                .fee_rate(fee_rate)
+                // Turn on RBF signaling
+                .enable_rbf();
+
+            match msg.amount {
+                Some(amount) => {
+                    tracing::info!(%amount, %address, "Withdrawing from wallet");
+
+                    tx_builder.add_recipient(address.script_pubkey(), amount.as_sat());
+                }
+                None => {
+                    tracing::info!(%address, "Draining wallet");
+
+                    tx_builder.drain_wallet().drain_to(address.script_pubkey());
+                }
+            }
+
+            let (psbt, _) = tx_builder.finish()?;
+
+            psbt
         };
 
-        tracing::info!(%amount, %address, "Amount to be sent to address");
-
-        let mut tx_builder = self.wallet.build_tx();
-
-        tx_builder
-            .add_recipient(address.script_pubkey(), amount.as_sat())
-            .fee_rate(fee_rate)
-            // Turn on RBF signaling
-            .enable_rbf();
-
-        let (mut psbt, _) = tx_builder.finish()?;
-
         self.wallet.sign(&mut psbt, SignOptions::default())?;
-
         let txid = self.wallet.broadcast(&psbt.extract_tx())?;
 
         tracing::info!(%txid, "Withdraw successful");
