@@ -1,7 +1,6 @@
 use crate::address_map::AddressMap;
 use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
-use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_taker;
 use crate::command;
 use crate::connection;
@@ -10,7 +9,6 @@ use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
-use crate::model::cfd::SetupCompleted;
 use crate::model::Identity;
 use crate::model::Position;
 use crate::model::Price;
@@ -164,23 +162,6 @@ where
 
 #[xtra_productivity(message_impl = false)]
 impl<O, W> Actor<O, W> {
-    async fn handle_setup_completed(&mut self, msg: SetupCompleted) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let order_id = msg.order_id();
-
-        let cfd = load_cfd(order_id, &mut conn).await?;
-        let event = cfd.setup_contract(msg)?;
-        if let Err(e) = self
-            .process_manager_actor
-            .send(process_manager::Event::new(event.clone()))
-            .await?
-        {
-            tracing::error!("Sending event to process manager failed: {:#}", e);
-        }
-
-        Ok(())
-    }
-
     async fn handle_monitor(&mut self, msg: monitor::Event) {
         if let Err(e) =
             cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager_actor).await
@@ -201,11 +182,10 @@ impl<O, W> Actor<O, W> {
 #[xtra_productivity]
 impl<O, W> Actor<O, W>
 where
-    Self: xtra::Handler<SetupCompleted>,
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
 {
-    async fn handle_take_offer(&mut self, msg: TakeOffer, ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle_take_offer(&mut self, msg: TakeOffer) -> Result<()> {
         let TakeOffer { order_id, quantity } = msg;
 
         let disconnected = self
@@ -251,9 +231,6 @@ where
             .await?
             .with_context(|| format!("Announcement {} not found", current_order.oracle_event_id))?;
 
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
         let (addr, fut) = setup_taker::Actor::new(
             self.db.clone(),
             self.process_manager_actor.clone(),
@@ -262,7 +239,6 @@ where
             &self.wallet,
             &self.wallet,
             self.conn_actor.clone(),
-            &this,
         )
         .create(None)
         .run();
