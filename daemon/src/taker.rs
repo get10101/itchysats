@@ -292,7 +292,7 @@ async fn main() -> Result<()> {
 
     tasks.add(connect(
         taker.maker_online_status_feed_receiver.clone(),
-        taker.connection_actor_addr.clone(),
+        taker.connection_actor.clone(),
         maker_identity,
         possible_addresses,
     ));

@@ -208,7 +208,7 @@ impl Maker {
         self.mocks.mock_monitor_oracle_attestation().await;
 
         self.system
-            .cfd_actor_addr
+            .cfd_actor
             .send(new_order_params)
             .await
             .unwrap()
@@ -280,7 +280,7 @@ impl Taker {
 
         tasks.add(connect(
             taker.maker_online_status_feed_receiver.clone(),
-            taker.connection_actor_addr.clone(),
+            taker.connection_actor.clone(),
             maker_identity,
             vec![maker_address],
         ));
@@ -296,7 +296,7 @@ impl Taker {
 
     pub async fn trigger_rollover(&self, id: OrderId) {
         self.system
-            .auto_rollover_addr
+            .auto_rollover_actor
             .send(auto_rollover::Rollover(id))
             .await
             .unwrap()
@@ -310,8 +310,8 @@ macro_rules! deliver_event {
     ($maker:expr, $taker:expr, $event:expr) => {{
         tracing::debug!("Delivering event: {:?}", $event);
 
-        $taker.system.cfd_actor_addr.send($event).await.unwrap();
-        $maker.system.cfd_actor_addr.send($event).await.unwrap();
+        $taker.system.cfd_actor.send($event).await.unwrap();
+        $maker.system.cfd_actor.send($event).await.unwrap();
     }};
 }
 
