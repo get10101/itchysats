@@ -41,7 +41,7 @@ impl Mocks {
             .await
             .expect_sign()
             .returning(|sign_msg| Ok(sign_msg.psbt));
-        self.wallet()
+        self.monitor()
             .await
             .expect_broadcast()
             .returning(|broadcast_msg| Ok(broadcast_msg.tx.txid()));

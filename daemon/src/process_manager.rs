@@ -6,7 +6,6 @@ use crate::monitor;
 use crate::monitor::MonitorParams;
 use crate::oracle;
 use crate::projection;
-use crate::wallet;
 use anyhow::Context;
 use anyhow::Result;
 use xtra::prelude::MessageChannel;
@@ -16,7 +15,7 @@ pub struct Actor {
     db: sqlx::SqlitePool,
     role: Role,
     cfds_changed: Box<dyn MessageChannel<projection::CfdsChanged>>,
-    try_broadcast_transaction: Box<dyn MessageChannel<wallet::TryBroadcastTransaction>>,
+    try_broadcast_transaction: Box<dyn MessageChannel<monitor::TryBroadcastTransaction>>,
     start_monitoring: Box<dyn MessageChannel<monitor::StartMonitoring>>,
     monitor_collaborative_settlement: Box<dyn MessageChannel<monitor::CollaborativeSettlement>>,
     monitor_attestation: Box<dyn MessageChannel<oracle::MonitorAttestation>>,
@@ -35,7 +34,7 @@ impl Actor {
         db: sqlx::SqlitePool,
         role: Role,
         cfds_changed: &(impl MessageChannel<projection::CfdsChanged> + 'static),
-        try_broadcast_transaction: &(impl MessageChannel<wallet::TryBroadcastTransaction> + 'static),
+        try_broadcast_transaction: &(impl MessageChannel<monitor::TryBroadcastTransaction> + 'static),
         start_monitoring: &(impl MessageChannel<monitor::StartMonitoring> + 'static),
         monitor_collaborative_settlement: &(impl MessageChannel<monitor::CollaborativeSettlement>
               + 'static),
@@ -71,7 +70,7 @@ impl Actor {
                 let lock_tx = dlc.lock.0.clone();
                 let txid = self
                     .try_broadcast_transaction
-                    .send(wallet::TryBroadcastTransaction { tx: lock_tx })
+                    .send(monitor::TryBroadcastTransaction { tx: lock_tx })
                     .await??;
 
                 tracing::info!("Lock transaction published with txid {}", txid);
@@ -96,7 +95,7 @@ impl Actor {
                     Role::Maker => {
                         let txid = self
                             .try_broadcast_transaction
-                            .send(wallet::TryBroadcastTransaction { tx: spend_tx })
+                            .send(monitor::TryBroadcastTransaction { tx: spend_tx })
                             .await?
                             .context("Broadcasting close transaction")?;
 
@@ -123,7 +122,7 @@ impl Actor {
             CollaborativeSettlementRejected { commit_tx } => {
                 let txid = self
                     .try_broadcast_transaction
-                    .send(wallet::TryBroadcastTransaction { tx: commit_tx })
+                    .send(monitor::TryBroadcastTransaction { tx: commit_tx })
                     .await?
                     .context("Broadcasting commit transaction")?;
 
@@ -135,7 +134,7 @@ impl Actor {
             CollaborativeSettlementFailed { commit_tx } => {
                 let txid = self
                     .try_broadcast_transaction
-                    .send(wallet::TryBroadcastTransaction { tx: commit_tx })
+                    .send(monitor::TryBroadcastTransaction { tx: commit_tx })
                     .await?
                     .context("Broadcasting commit transaction")?;
 
@@ -148,7 +147,7 @@ impl Actor {
             | CetTimelockConfirmedPostOracleAttestation { cet } => {
                 let txid = self
                     .try_broadcast_transaction
-                    .send(wallet::TryBroadcastTransaction { tx: cet })
+                    .send(monitor::TryBroadcastTransaction { tx: cet })
                     .await?
                     .context("Failed to broadcast CET")?;
 
@@ -157,7 +156,7 @@ impl Actor {
             OracleAttestedPriorCetTimelock { commit_tx: tx, .. } | ManualCommit { tx } => {
                 let txid = self
                     .try_broadcast_transaction
-                    .send(wallet::TryBroadcastTransaction { tx })
+                    .send(monitor::TryBroadcastTransaction { tx })
                     .await?
                     .context("Failed to broadcast commit transaction")?;
 
@@ -182,7 +181,7 @@ impl Actor {
             RefundTimelockExpired { refund_tx: tx } => {
                 let txid = self
                     .try_broadcast_transaction
-                    .send(wallet::TryBroadcastTransaction { tx })
+                    .send(monitor::TryBroadcastTransaction { tx })
                     .await?
                     .context("Failed to broadcast refund transaction")?;
 

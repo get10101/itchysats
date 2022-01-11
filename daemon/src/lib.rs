@@ -139,7 +139,6 @@ where
         + xtra::Handler<oracle::Sync>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::TryBroadcastTransaction>
         + xtra::Handler<wallet::Withdraw>,
 {
     #[allow(clippy::too_many_arguments)]
@@ -160,6 +159,7 @@ where
         M: xtra::Handler<monitor::StartMonitoring>
             + xtra::Handler<monitor::Sync>
             + xtra::Handler<monitor::CollaborativeSettlement>
+            + xtra::Handler<monitor::TryBroadcastTransaction>
             + xtra::Handler<oracle::Attestation>,
         FO: Future<Output = Result<O>>,
         FM: Future<Output = Result<M>>,
@@ -175,14 +175,14 @@ where
             db.clone(),
             Role::Maker,
             &projection_actor,
-            &wallet_addr,
+            &monitor_addr,
             &monitor_addr,
             &monitor_addr,
             &oracle_addr,
         )));
 
         let (cfd_actor_addr, cfd_actor_fut) = maker_cfd::Actor::new(
-            db,
+            db.clone(),
             wallet_addr.clone(),
             settlement_interval,
             oracle_pk,
@@ -326,7 +326,6 @@ where
         + xtra::Handler<oracle::Sync>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::TryBroadcastTransaction>
         + xtra::Handler<wallet::Withdraw>
         + xtra::Handler<wallet::Reinitialise>,
 {
@@ -348,7 +347,8 @@ where
         M: xtra::Handler<monitor::StartMonitoring>
             + xtra::Handler<monitor::Sync>
             + xtra::Handler<monitor::CollaborativeSettlement>
-            + xtra::Handler<oracle::Attestation>,
+            + xtra::Handler<oracle::Attestation>
+            + xtra::Handler<monitor::TryBroadcastTransaction>,
         FO: Future<Output = Result<O>>,
         FM: Future<Output = Result<M>>,
     {
@@ -365,7 +365,7 @@ where
             db.clone(),
             Role::Taker,
             &projection_actor,
-            &wallet_actor_addr,
+            &monitor_addr,
             &monitor_addr,
             &monitor_addr,
             &oracle_addr,

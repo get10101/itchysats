@@ -220,9 +220,7 @@ where
         + xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>
         + xtra::Handler<Stopping<setup_maker::Actor>>,
-    W: xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::BuildPartyParams>
-        + xtra::Handler<wallet::TryBroadcastTransaction>,
+    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle_take_order(
         &mut self,
@@ -444,7 +442,7 @@ where
     O: xtra::Handler<oracle::MonitorAttestation>,
     T: xtra::Handler<maker_inc_connections::settlement::Response>
         + xtra::Handler<Stopping<collab_settlement_maker::Actor>>,
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
+    W: 'static + Send,
 {
     async fn handle_propose_settlement(
         &mut self,
@@ -557,9 +555,7 @@ where
         + xtra::Handler<maker_inc_connections::settlement::Response>
         + xtra::Handler<Stopping<collab_settlement_maker::Actor>>
         + xtra::Handler<maker_inc_connections::RegisterRollover>,
-    W: xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::BuildPartyParams>
-        + xtra::Handler<wallet::TryBroadcastTransaction>,
+    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker, ctx: &mut Context<Self>) {
         match msg {

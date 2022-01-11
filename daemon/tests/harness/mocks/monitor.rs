@@ -1,3 +1,5 @@
+use anyhow::Result;
+use bdk::bitcoin::Txid;
 use daemon::monitor;
 use daemon::oracle;
 use mockall::*;
@@ -31,6 +33,10 @@ impl MonitorActor {
     async fn handle(&mut self, msg: oracle::Attestation) {
         self.mock.lock().await.oracle_attestation(msg);
     }
+
+    async fn handle(&mut self, msg: monitor::TryBroadcastTransaction) -> Result<Txid> {
+        self.mock.lock().await.broadcast(msg)
+    }
 }
 
 #[automock]
@@ -48,6 +54,10 @@ pub trait Monitor {
     }
 
     fn oracle_attestation(&mut self, _msg: oracle::Attestation) {
+        unreachable!("mockall will reimplement this method")
+    }
+
+    fn broadcast(&mut self, _msg: monitor::TryBroadcastTransaction) -> Result<Txid> {
         unreachable!("mockall will reimplement this method")
     }
 }

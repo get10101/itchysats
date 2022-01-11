@@ -64,9 +64,7 @@ pub struct Actor<O, W> {
 
 impl<O, W> Actor<O, W>
 where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>
-        + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::BuildPartyParams>,
+    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -100,10 +98,7 @@ where
 }
 
 #[xtra_productivity]
-impl<O, W> Actor<O, W>
-where
-    W: xtra::Handler<wallet::TryBroadcastTransaction>,
-{
+impl<O, W> Actor<O, W> {
     async fn handle_current_order(&mut self, msg: CurrentOrder) -> Result<()> {
         let order = msg.0;
 
