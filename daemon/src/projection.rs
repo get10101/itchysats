@@ -42,7 +42,6 @@ use serde::Serialize;
 use sqlx::pool::PoolConnection;
 use std::collections::HashSet;
 use std::time::Duration;
-use time::macros::datetime;
 use time::OffsetDateTime;
 use tokio::sync::watch;
 use xtra::prelude::MessageChannel;
@@ -697,7 +696,7 @@ pub struct CfdOrder {
     /// Note: It's the minimum possible fee, we cannot calculate the exact
     /// amount until we know the quantity taken by the taker
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
-    pub opening_fee: Option<Amount>,
+    pub opening_fee_per_parcel: Option<Amount>,
 
     /// The interest as annualized percentage
     ///
@@ -709,10 +708,6 @@ pub struct CfdOrder {
     /// This represents the current funding rate of the maker.
     /// The funding rate fluctuates with market movements.
     pub funding_rate_hourly_percent: String,
-
-    /// Timestamp when the next fee will be collected
-    #[serde(with = "::time::serde::timestamp")]
-    pub next_funding_event: OffsetDateTime,
 
     #[serde(with = "round_to_two_dp")]
     pub min_quantity: Usd,
@@ -767,12 +762,10 @@ impl From<Order> for CfdOrder {
                 .expect("settlement_time_interval_hours is always positive number"),
             // XXX: We cannot calculate full fee here, best we can do is to give
             // minimal fee
-            opening_fee: calculate_min_opening_fee(&order),
+            opening_fee_per_parcel: calculate_min_opening_fee(&order),
             funding_rate_annualized_percent: AnnualisedFundingRate::from(order.funding_rate)
                 .to_string(),
             funding_rate_hourly_percent: HourlyFundingRate::from(order.funding_rate).to_string(),
-            // FIXME: Replace dummy value for next funding event
-            next_funding_event: datetime!(2030-09-23 10:00:00).assume_utc(),
         }
     }
 }

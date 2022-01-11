@@ -79,27 +79,26 @@ export class State {
             case StateKey.OPEN:
                 return "Open";
             case StateKey.PENDING_COMMIT:
-                return "Pending Commit";
-            case StateKey.PENDING_CLOSE:
-                return "Pending Close";
+                return "Pending Force";
             case StateKey.OPEN_COMMITTED:
-                return "Open (commit-tx published)";
+                return "Force Close";
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
-                return "Settlement Proposed";
+                return "Close Proposed";
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
-                return "Settlement Proposed";
+                return "Close Proposed";
             case StateKey.INCOMING_ROLLOVER_PROPOSAL:
                 return "Rollover Proposed";
             case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
                 return "Rollover Proposed";
             case StateKey.PENDING_REFUND:
-                return "Refunding";
+                return "Pending Refund";
             case StateKey.REFUNDED:
                 return "Refunded";
             case StateKey.SETUP_FAILED:
                 return "Setup Failed";
             case StateKey.PENDING_CET:
-                return "Pending CET";
+            case StateKey.PENDING_CLOSE:
+                return "Pending Payout";
             case StateKey.CLOSED:
                 return "Closed";
         }

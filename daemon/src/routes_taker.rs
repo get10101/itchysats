@@ -161,6 +161,9 @@ pub struct MarginRequest {
     pub price: Price,
     pub quantity: Usd,
     pub leverage: Leverage,
+
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub opening_fee: Amount,
 }
 
 /// Represents the collateral that has to be put up
@@ -168,6 +171,10 @@ pub struct MarginRequest {
 pub struct MarginResponse {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub margin: Amount,
+
+    /// Margin + fees
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub complete_initial_costs: Amount,
 }
 
 #[derive(RustEmbed)]

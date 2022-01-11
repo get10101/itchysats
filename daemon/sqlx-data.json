@@ -1,12 +1,17 @@
 {
   "db": "SQLite",
-  "7f977cdcbd7287d249b0a467e48f6788d196b267e3df3970d614848b8c899a61": {
-    "query": "\n            select\n                uuid as \"uuid: crate::model::cfd::OrderId\"\n            from\n                cfds\n            ",
+  "45eee9716b6df670e4211ac924ea98127254dea442e309d4b8e769779212e87f": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: crate::model::cfd::OrderId\"\n            from\n                cfds\n            order by cfd_id desc\n            ",
     "describe": {
       "columns": [
         {
-          "name": "uuid: crate::model::cfd::OrderId",
+          "name": "cfd_id",
           "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "uuid: crate::model::cfd::OrderId",
+          "ordinal": 1,
           "type_info": "Text"
         }
       ],
@@ -14,6 +19,7 @@
         "Right": 0
       },
       "nullable": [
+        false,
         false
       ]
     }

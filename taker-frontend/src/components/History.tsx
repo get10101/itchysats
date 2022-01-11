@@ -1,8 +1,6 @@
-import { ExternalLinkIcon, Icon } from "@chakra-ui/icons";
+import { ExternalLinkIcon } from "@chakra-ui/icons";
 import {
     Badge,
-    Center,
-    Divider,
     GridItem,
     Heading,
     HStack,
@@ -14,12 +12,13 @@ import {
     Tbody,
     Td,
     Text,
+    Tooltip,
     Tr,
     useColorModeValue,
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { Cfd, ConnectionStatus, Tx, TxLabel } from "../types";
+import { Cfd, ConnectionStatus, isClosed, Tx, TxLabel } from "../types";
 import usePostRequest from "../usePostRequest";
 import CloseButton from "./CloseButton";
 
@@ -36,11 +35,15 @@ const History = ({ cfds, title, connectedToMaker }: HistoryProps) => {
                 && <Heading size={"lg"} padding={2}>{title}</Heading>}
             <SimpleGrid
                 columns={{ sm: 2, md: 4 }}
-                gap={4}
+                gap={6}
             >
                 {cfds.map((cfd) => {
                     return (<GridItem rowSpan={1} colSpan={2} key={cfd.order_id}>
-                        <CfdDetails cfd={cfd} connectedToMaker={connectedToMaker} />
+                        <CfdDetails
+                            cfd={cfd}
+                            connectedToMaker={connectedToMaker}
+                            displayCloseButton={!isClosed(cfd)}
+                        />
                     </GridItem>);
                 })}
             </SimpleGrid>
@@ -53,13 +56,14 @@ export default History;
 interface CfdDetailsProps {
     cfd: Cfd;
     connectedToMaker: ConnectionStatus;
+    displayCloseButton: boolean;
 }
 
-const CfdDetails = ({ cfd, connectedToMaker }: CfdDetailsProps) => {
+const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsProps) => {
     const initialPrice = `$${cfd.initial_price.toLocaleString()}`;
-    const quantity = `$${cfd.quantity_usd}`;
     const margin = `₿${Math.round((cfd.margin) * 1_000_000) / 1_000_000}`;
     const liquidationPrice = `$${cfd.liquidation_price}`;
+    const contracts = `${cfd.quantity_usd}`;
 
     const txLock = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Lock);
     const txCommit = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Commit);
@@ -67,28 +71,70 @@ const CfdDetails = ({ cfd, connectedToMaker }: CfdDetailsProps) => {
     const txCet = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Cet);
     const txSettled = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Collaborative);
 
+    const accumulatedCosts = `₿${cfd.accumulated_fees}`;
+
     let [settle, isSettling] = usePostRequest(`/api/cfd/${cfd.order_id}/settle`);
     let [commit, isCommiting] = usePostRequest(`/api/cfd/${cfd.order_id}/commit`);
 
     const closeButton = connectedToMaker.online
-        ? <CloseButton request={settle} status={isSettling} cfd={cfd} buttonTitle="Close" isForceCloseButton={false} />
+        ? <CloseButton
+            request={settle}
+            status={isSettling}
+            cfd={cfd}
+            buttonTitle="Close Position"
+            isForceCloseButton={false}
+        />
         : <CloseButton
             request={commit}
             status={isCommiting}
             cfd={cfd}
-            buttonTitle="Force Close"
+            buttonTitle="Force Close Position"
             isForceCloseButton={true}
         />;
 
+    let profitColors = !cfd || !cfd.profit_btc || cfd.profit_btc === 0
+        ? ["gray.500", "gray.400"]
+        : cfd.profit_btc > 0
+        ? ["green.600", "green.300"]
+        : ["red.600", "red.300"];
+
     return (
-        <HStack bg={useColorModeValue("gray.100", "gray.700")} rounded={5} padding={2}>
-            <Center>
-                <Table variant="striped" colorScheme="gray" size="sm">
+        <HStack
+            bg={useColorModeValue("white", "gray.700")}
+            rounded={"md"}
+            padding={5}
+            alignItems={"stretch"}
+            boxShadow={"lg"}
+        >
+            <VStack>
+                <Table size="sm" variant={"unstyled"}>
                     <Tbody>
+                        <Tr textColor={useColorModeValue(profitColors[0], profitColors[1])}>
+                            <Td><Text as={"b"}>Unrealized P/L</Text></Td>
+                            <Td textAlign="right">
+                                <Tooltip label={`${cfd.profit_btc}`} placement={"right"}>
+                                    <Skeleton isLoaded={cfd.profit_btc != null}>
+                                        {(cfd.profit_percent && cfd.profit_percent > 0) ? "+" : ""}
+                                        {cfd.profit_percent}%
+                                    </Skeleton>
+                                </Tooltip>
+                            </Td>
+                        </Tr>
+                        <Tr textColor={useColorModeValue(profitColors[0], profitColors[1])}>
+                            <Td><Text as={"b"}>Payout</Text></Td>
+                            <Td textAlign="right">
+                                <Skeleton isLoaded={cfd.profit_btc != null}>
+                                    <Payout profitBtc={cfd.profit_btc!} margin={cfd.margin} />
+                                </Skeleton>
+                            </Td>
+                        </Tr>
                         <Tr>
-                            <Td><Text as={"b"}>Quantity</Text></Td>
-                            {/*TODO: Fix textAlign right hacks by using a grid instead ... */}
-                            <Td textAlign="right">{quantity}</Td>
+                            <Td><Text as={"b"}>Margin</Text></Td>
+                            <Td textAlign="right">{margin}</Td>
+                        </Tr>
+                        <Tr>
+                            <Td><Text as={"b"}>Contracts</Text></Td>
+                            <Td textAlign="right">{contracts}</Td>
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Opening price</Text></Td>
@@ -98,89 +144,58 @@ const CfdDetails = ({ cfd, connectedToMaker }: CfdDetailsProps) => {
                             <Td><Text as={"b"}>Liquidation</Text></Td>
                             <Td textAlign="right">{liquidationPrice}</Td>
                         </Tr>
+                    </Tbody>
+                </Table>
+                <Table size="sm" variant={"unstyled"}>
+                    <Tbody>
                         <Tr>
-                            <Td><Text as={"b"}>Margin</Text></Td>
-                            <Td textAlign="right">{margin}</Td>
-                        </Tr>
-                        <Tr>
-                            <Td><Text as={"b"}>Unrealized P/L</Text></Td>
-                            <Td textAlign="right">
-                                <Skeleton isLoaded={cfd.profit_btc != null}>
-                                    <ProfitAndLoss profitBtc={cfd.profit_btc!} />
-                                </Skeleton>
-                            </Td>
-                        </Tr>
-                        <Tr>
-                            <Td><Text as={"b"}>Payout</Text></Td>
-                            <Td textAlign="right">
-                                <Skeleton isLoaded={cfd.profit_btc != null}>
-                                    <Payout profitBtc={cfd.profit_btc!} margin={cfd.margin} />
-                                </Skeleton>
-                            </Td>
+                            <Td><Text as={"b"}>Total fees</Text></Td>
+                            <Td textAlign="right">{accumulatedCosts}</Td>
                         </Tr>
                     </Tbody>
                 </Table>
-            </Center>
-            <VStack>
-                <Badge colorScheme={cfd.state.getColorScheme()}>{cfd.state.getLabel()}</Badge>
-                <HStack>
-                    <VStack>
-                        <TxIcon tx={txLock} />
-                        <Text>Lock</Text>
-                    </VStack>
-                    {txSettled
-                        ? <>
-                            <Divider variant={txSettled ? "solid" : "dashed"} />
-                            <VStack>
-                                <TxIcon tx={txSettled} />
-                                <Text>Payout</Text>
-                            </VStack>
-                        </>
-                        : <>
-                            <Divider variant={txCommit ? "solid" : "dashed"} />
-                            <VStack>
-                                <TxIcon tx={txCommit} />
-                                <Text>Commit</Text>
-                            </VStack>
-
-                            {txRefund
-                                ? <>
-                                    <Divider variant={txRefund ? "solid" : "dashed"} />
-                                    <VStack>
-                                        <TxIcon tx={txRefund} />
-                                        <Text>Refund</Text>
-                                    </VStack>
-                                </>
-                                : <>
-                                    <Divider variant={txCet ? "solid" : "dashed"} />
-                                    <VStack>
-                                        <TxIcon tx={txCet} />
-                                        <Text>Payout</Text>
-                                    </VStack>
-                                </>}
-                        </>}
-                </HStack>
-                <HStack>
-                    {closeButton}
-                </HStack>
+            </VStack>
+            <VStack justifyContent={"space-between"}>
+                <Badge marginTop={5} variant={"outline"} ml={1} fontSize="sm" colorScheme={cfd.state.getColorScheme()}>
+                    {cfd.state.getLabel()}
+                </Badge>
+                <Table size="sm" variant={"unstyled"}>
+                    <Tbody>
+                        <Tr>
+                            <Td><Text>Lock</Text></Td>
+                            <Td><TxIcon tx={txLock} /></Td>
+                        </Tr>
+                        {txRefund
+                            ? <Tr>
+                                <Td><Text>Refund</Text></Td>
+                                <Td><TxIcon tx={txRefund} /></Td>
+                            </Tr>
+                            : txCommit || !connectedToMaker.online
+                            ? <>
+                                <Tr>
+                                    <Td><Text>Force</Text></Td>
+                                    <Td><TxIcon tx={txCommit} /></Td>
+                                </Tr>
+                                <Tr>
+                                    <Td><Text>Payout</Text></Td>
+                                    <Td><TxIcon tx={txCet} /></Td>
+                                </Tr>
+                            </>
+                            : <Tr>
+                                <Td><Text>Payout</Text></Td>
+                                <Td><TxIcon tx={txSettled} /></Td>
+                            </Tr>}
+                    </Tbody>
+                </Table>
+                {displayCloseButton
+                    ? <HStack width={"100%"} paddingBottom={2} justifyContent={"flex-end"}>
+                        {closeButton}
+                    </HStack>
+                    : <></>}
             </VStack>
         </HStack>
     );
 };
-
-interface ProfitAndLossProps {
-    profitBtc: number;
-}
-
-function ProfitAndLoss({ profitBtc }: ProfitAndLossProps) {
-    const pAndLNumber = Math.round((profitBtc) * 1_000_000) / 1_000_000;
-    const absPAndL = Math.abs(pAndLNumber);
-    const negativeSign = pAndLNumber < 0 ? "-" : "";
-
-    return <Text>
-        {negativeSign}₿{absPAndL}
-    </Text>;
-}
 
 interface PayoutProps {
     profitBtc: number;
@@ -195,30 +210,26 @@ function Payout({ profitBtc, margin }: PayoutProps) {
     </Text>;
 }
 
-const CircleIcon = (props: any) => (
-    <Icon viewBox="0 0 200 200" {...props}>
-        <path
-            stroke="currentColor"
-            fill="transparent"
-            d="M 100, 100 m -75, 0 a 75,75 0 1,0 150,0 a 75,75 0 1,0 -150,0"
-        />
-    </Icon>
-);
-
 interface TxIconProps {
     tx?: Tx;
 }
 
 const TxIcon = ({ tx }: TxIconProps) => {
-    const iconColor = useColorModeValue("white.200", "white.600");
+    const colors = !tx
+        ? ["gray.200", "gray.600"]
+        : tx && !tx.url
+        ? ["gray.200", "gray.600"]
+        : ["white.200", "white.600"];
+
+    const color = useColorModeValue(colors[0], colors[1]);
 
     if (!tx) {
-        return (<CircleIcon boxSize={5} color={iconColor} />);
+        return (<ExternalLinkIcon boxSize={5} color={color} />);
     } else if (tx && !tx.url) {
-        return (<Spinner mx="2px" color={iconColor} speed="1.65s" />);
+        return (<Spinner mx="2px" color={color} speed="1.65s" />);
     } else {
         return (<Link href={tx.url!} isExternal>
-            <ExternalLinkIcon mx="2px" color={iconColor} />
+            <ExternalLinkIcon boxSize={5} color={color} />
         </Link>);
     }
 };

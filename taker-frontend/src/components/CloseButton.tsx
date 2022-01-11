@@ -48,7 +48,7 @@ export default function CloseButton({ cfd, request, status, buttonTitle, isForce
         </>;
     }
 
-    return <Box w={"45%"}>
+    return <Box>
         <Popover
             placement="bottom"
             closeOnBlur={true}

@@ -7,8 +7,11 @@ import {
     Box,
     Center,
     StackDivider,
+    useColorModeValue,
     VStack,
 } from "@chakra-ui/react";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
 import * as React from "react";
 import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
@@ -20,7 +23,7 @@ import History from "./components/History";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
 import { Wallet, WalletInfoBar } from "./components/Wallet";
-import { BXBTData, Cfd, ConnectionStatus, intoCfd, intoOrder, Order, StateGroupKey, WalletInfo } from "./types";
+import { BXBTData, Cfd, ConnectionStatus, intoCfd, intoOrder, isClosed, Order, WalletInfo } from "./types";
 import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
 
@@ -41,7 +44,6 @@ export const App = () => {
     const order = useLatestEvent<Order>(source, "order", intoOrder);
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
-    cfds.sort((a, b) => a.order_id.localeCompare(b.order_id));
     const connectedToMakerOrUndefined = useLatestEvent<ConnectionStatus>(source, "maker_status");
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
@@ -51,6 +53,18 @@ export const App = () => {
     const parcelSize = parseOptionalNumber(order?.parcel_size) || 0;
     const liquidationPrice = parseOptionalNumber(order?.liquidation_price);
     const marginPerParcel = order?.margin_per_parcel || 0;
+    const openingFeePerParcel = order?.opening_fee_per_parcel || 0;
+    const fundingRateAnnualized = order?.funding_rate_annualized_percent || "0";
+
+    const fundingRateHourly = order
+        ? Number.parseFloat(order.funding_rate_hourly_percent).toFixed(5)
+        : null;
+
+    dayjs.extend(relativeTime);
+
+    // TODO: Eventually this should be calculated with what the maker defines in the offer, for now we assume full hour
+    const nextFullHour = dayjs().minute(0).add(1, "hour");
+    const nextFundingEvent = order ? dayjs().to(nextFullHour) : null;
 
     function parseOptionalNumber(val: string | undefined): number | undefined {
         if (!val) {
@@ -71,8 +85,13 @@ export const App = () => {
     return (
         <>
             <Disclaimer />
-            <Nav walletInfo={walletInfo} connectedToMaker={connectedToMaker} />
-            <Box textAlign="center" padding={3}>
+            <Nav
+                walletInfo={walletInfo}
+                connectedToMaker={connectedToMaker}
+                fundingRate={fundingRateHourly}
+                nextFundingEvent={nextFundingEvent}
+            />
+            <Box textAlign="center" padding={3} bg={useColorModeValue("gray.50", "gray.800")}>
                 <Routes>
                     <Route
                         path="/wallet"
@@ -88,7 +107,7 @@ export const App = () => {
                     <Route
                         path="/"
                         element={<>
-                            <Center>
+                            <Center marginTop={20}>
                                 <VStack>
                                     {connectionStatus}
                                     <WalletInfoBar walletInfo={walletInfo} />
@@ -107,11 +126,13 @@ export const App = () => {
                                     leverage={order?.leverage}
                                     liquidationPrice={liquidationPrice}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
+                                    openingFeePerParcel={openingFeePerParcel}
+                                    fundingRateAnnualized={fundingRateAnnualized}
+                                    fundingRateHourly={fundingRateHourly || "0"}
                                 />
                                 <History
                                     connectedToMaker={connectedToMaker}
-                                    cfds={cfds.filter((cfd) => cfd.state.getGroup() !== StateGroupKey.CLOSED)}
-                                    title={"Open Positions"}
+                                    cfds={cfds.filter((cfd) => !isClosed(cfd))}
                                 />
 
                                 <Accordion allowToggle width={"100%"}>
@@ -127,9 +148,7 @@ export const App = () => {
                                         </h2>
                                         <AccordionPanel pb={4}>
                                             <History
-                                                cfds={cfds.filter((cfd) =>
-                                                    cfd.state.getGroup() === StateGroupKey.CLOSED
-                                                )}
+                                                cfds={cfds.filter((cfd) => isClosed(cfd))}
                                                 connectedToMaker={connectedToMaker}
                                             />
                                         </AccordionPanel>

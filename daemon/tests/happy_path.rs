@@ -14,6 +14,7 @@ use crate::harness::MakerConfig;
 use crate::harness::Taker;
 use crate::harness::TakerConfig;
 use daemon::connection::ConnectionStatus;
+use daemon::model::cfd::calculate_long_margin;
 use daemon::model::cfd::OrderId;
 use daemon::model::Identity;
 use daemon::model::Usd;
@@ -61,6 +62,15 @@ async fn taker_receives_order_from_maker_on_publication() {
     let (published, received) = next_order(maker.order_feed(), taker.order_feed())
         .await
         .unwrap();
+
+    assert_eq_order(published, received);
+}
+
+fn assert_eq_order(mut published: CfdOrder, received: CfdOrder) {
+    // align margin_per_parcel to be the long margin_per_parcel
+    let long_margin_per_parcel =
+        calculate_long_margin(published.price, published.parcel_size, published.leverage);
+    published.margin_per_parcel = long_margin_per_parcel;
 
     assert_eq!(published, received);
 

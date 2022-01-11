@@ -35,6 +35,8 @@ import {
     Tbody,
     Td,
     Text,
+    Tfoot,
+    Th,
     Tooltip,
     Tr,
     useColorModeValue,
@@ -43,7 +45,7 @@ import {
 } from "@chakra-ui/react";
 import { motion } from "framer-motion";
 import * as React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
@@ -63,13 +65,15 @@ interface TradeProps {
     leverage?: number;
     liquidationPrice?: number;
     walletBalance: number;
+    openingFeePerParcel: number;
+    fundingRateAnnualized: string;
+    fundingRateHourly: string;
 }
 
 export default function Trade({
     connectedToMaker,
     minQuantity,
     maxQuantity,
-    referencePrice: referencePriceAsNumber,
     askPrice: askPriceAsNumber,
     parcelSize,
     marginPerParcel,
@@ -77,6 +81,9 @@ export default function Trade({
     liquidationPrice: liquidationPriceAsNumber,
     orderId,
     walletBalance,
+    openingFeePerParcel,
+    fundingRateAnnualized,
+    fundingRateHourly,
 }: TradeProps) {
     let [quantity, setQuantity] = useState(0);
     let [userHasEdited, setUserHasEdited] = useState(false);
@@ -93,15 +100,19 @@ export default function Trade({
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
 
-    const referencePrice = `$${referencePriceAsNumber?.toLocaleString() || "0.0"}`;
-    const askPrice = `$${askPriceAsNumber?.toLocaleString() || "0.0"}`;
-    const liquidationPrice = `$${liquidationPriceAsNumber?.toLocaleString() || "0.0"}`;
+    // Use `Number` wrapper here to ensure the "," separator is printed.
+    const askPrice = `$${Number(askPriceAsNumber)?.toLocaleString() || "0.0"}`;
+    const liquidationPrice = `$${Number(liquidationPriceAsNumber)?.toLocaleString() || "0.0"}`;
 
     const { isOpen, onOpen, onClose } = useDisclosure();
 
     const margin = (quantity / parcelSize) * marginPerParcel;
 
-    const balanceTooLow = walletBalance < margin;
+    const openingFee = (quantity / parcelSize) * openingFeePerParcel;
+
+    let btcToOpenPosition = margin + openingFee;
+
+    const balanceTooLow = walletBalance < btcToOpenPosition;
     const quantityTooHigh = maxQuantity < quantity;
     const quantityTooLow = minQuantity > quantity;
     const quantityGreaterZero = quantity > 0;
@@ -147,6 +158,8 @@ export default function Trade({
         }
     }
 
+    const confirmRef = useRef<HTMLButtonElement | null>(null);
+
     return (
         <VStack>
             <Center>
@@ -175,8 +188,8 @@ export default function Trade({
                                 <Circle size="256px" bg={outerCircleBg}>
                                     <Circle size="180px" bg={innerCircleBg}>
                                         <MotionBox>
-                                            <Skeleton isLoaded={!!referencePriceAsNumber && referencePriceAsNumber > 0}>
-                                                <Text fontSize={"4xl"} as="b">{referencePrice}</Text>
+                                            <Skeleton isLoaded={!!askPriceAsNumber && askPriceAsNumber > 0}>
+                                                <Text fontSize={"4xl"} as="b">{askPrice}</Text>
                                             </Skeleton>
                                         </MotionBox>
                                     </Circle>
@@ -200,7 +213,11 @@ export default function Trade({
                         <Leverage leverage={leverage} />
                     </GridItem>
                     <GridItem colSpan={1}>
-                        <Margin margin={margin} />
+                        <OpeningDetails
+                            margin={margin}
+                            openingFee={openingFee}
+                            marginAndOpeningFee={btcToOpenPosition}
+                        />
                     </GridItem>
                     <GridItem colSpan={1}>
                         <Center>
@@ -209,11 +226,8 @@ export default function Trade({
                                 padding="3"
                                 spacing="6"
                             >
-                                <Button colorScheme="red" size="lg" disabled h={16} w={"40"}>
-                                    <VStack>
-                                        <Text as="b">Short</Text>
-                                        <Text fontSize={"sm"}>{quantity}@{askPrice}</Text>
-                                    </VStack>
+                                <Button colorScheme="red" size="lg" disabled h={16} w={"40"} fontSize={"xl"}>
+                                    Short
                                 </Button>
                                 <Button
                                     disabled={!canSubmit}
@@ -222,14 +236,12 @@ export default function Trade({
                                     onClick={onOpen}
                                     h={16}
                                     w={"40"}
+                                    fontSize={"xl"}
                                 >
-                                    <VStack>
-                                        <Text as="b">Long</Text>
-                                        <Text fontSize={"sm"}>{quantity}@{askPrice}</Text>
-                                    </VStack>
+                                    Long
                                 </Button>
 
-                                <Modal isOpen={isOpen} onClose={onClose}>
+                                <Modal isOpen={isOpen} onClose={onClose} size={"lg"} initialFocusRef={confirmRef}>
                                     <ModalOverlay />
                                     <ModalContent>
                                         <ModalHeader>
@@ -239,12 +251,16 @@ export default function Trade({
                                         <ModalBody>
                                             <Table variant="striped" colorScheme="gray" size="sm">
                                                 <TableCaption>
-                                                    By submitting, ₿{margin} will be locked on-chain in a contract.
+                                                    {`By submitting, ₿${btcToOpenPosition} will be locked on-chain in a contract.`}
                                                 </TableCaption>
                                                 <Tbody>
                                                     <Tr>
-                                                        <Td><Text as={"b"}>Margin</Text></Td>
-                                                        <Td>₿{margin}</Td>
+                                                        <Td><Text as={"b"}>Your Margin</Text></Td>
+                                                        <Td><BitcoinAmount btc={margin} /></Td>
+                                                    </Tr>
+                                                    <Tr>
+                                                        <Td><Text as={"b"}>Opening Fee</Text></Td>
+                                                        <Td><BitcoinAmount btc={openingFee} /></Td>
                                                     </Tr>
                                                     <Tr>
                                                         <Td><Text as={"b"}>Leverage</Text></Td>
@@ -254,6 +270,16 @@ export default function Trade({
                                                         <Td><Text as={"b"}>Liquidation Price</Text></Td>
                                                         <Td>{liquidationPrice}</Td>
                                                     </Tr>
+                                                    <Tooltip
+                                                        label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}%, annualized that is ${fundingRateAnnualized}. The funding rate can fluctuate depending on the market movements.`}
+                                                        hasArrow
+                                                        placement={"right"}
+                                                    >
+                                                        <Tr>
+                                                            <Td><Text as={"b"}>Perpetual Costs</Text></Td>
+                                                            <Td>Hourly @ {fundingRateHourly}%</Td>
+                                                        </Tr>
+                                                    </Tooltip>
                                                 </Tbody>
                                             </Table>
                                         </ModalBody>
@@ -261,6 +287,7 @@ export default function Trade({
                                         <ModalFooter>
                                             <HStack>
                                                 <Button
+                                                    ref={confirmRef}
                                                     colorScheme="teal"
                                                     isLoading={isLongSubmitting}
                                                     onClick={() => {
@@ -335,17 +362,15 @@ function Leverage({ leverage }: LeverageProps) {
     return (
         <FormControl id="leverage">
             <FormLabel>Leverage</FormLabel>
-            <Tooltip label="Configurable leverage is in the making." shouldWrapChildren hasArrow>
-                <Slider disabled value={leverage} min={1} max={5} step={1}>
-                    <SliderTrack>
-                        <Box position="relative" right={10} />
-                        <SliderFilledTrack />
-                    </SliderTrack>
-                    <SliderThumb boxSize={6}>
-                        <Text color="black">{leverage}</Text>
-                    </SliderThumb>
-                </Slider>
-            </Tooltip>
+            <Slider disabled value={leverage} min={1} max={5} step={1}>
+                <SliderTrack>
+                    <Box position="relative" right={10} />
+                    <SliderFilledTrack />
+                </SliderTrack>
+                <SliderThumb boxSize={6}>
+                    <Text color="black">{leverage}</Text>
+                </SliderThumb>
+            </Slider>
             <FormHelperText>
                 How much do you want to leverage your position?
             </FormHelperText>
@@ -353,19 +378,34 @@ function Leverage({ leverage }: LeverageProps) {
     );
 }
 
-interface MarginProps {
+interface OpeningDetailsProps {
     margin: number;
+    openingFee: number;
+    marginAndOpeningFee: number;
 }
 
-function Margin({ margin }: MarginProps) {
+function OpeningDetails({ margin, marginAndOpeningFee, openingFee }: OpeningDetailsProps) {
     return (
-        <VStack>
-            <HStack>
-                <Text as={"b"}>Required margin:</Text>
-                <BitcoinAmount btc={margin} />
-            </HStack>
-            <Text fontSize={"sm"} color={"darkgrey"}>The collateral you will need to provide</Text>
-        </VStack>
+        <Table variant="simple">
+            <Tbody>
+                <Tr>
+                    <Td>Your Margin</Td>
+                    <Td isNumeric><BitcoinAmount btc={margin} /></Td>
+                </Tr>
+                <Tr>
+                    <Td>Opening Fee</Td>
+                    <Td isNumeric><BitcoinAmount btc={openingFee} /></Td>
+                </Tr>
+            </Tbody>
+            <Tfoot>
+                <Tr>
+                    <Th fontSize={"md"} textTransform={"none"}>
+                        Required to open position
+                    </Th>
+                    <Th fontSize={"md"} isNumeric><BitcoinAmount btc={marginAndOpeningFee} /></Th>
+                </Tr>
+            </Tfoot>
+        </Table>
     );
 }
 
