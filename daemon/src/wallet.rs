@@ -116,7 +116,7 @@ impl Actor {
 
     fn sync_internal(&mut self) -> Result<WalletInfo> {
         self.wallet
-            .sync(NoopProgress, None)
+            .sync(NoopProgress, Some(1000))
             .context("Failed to sync wallet")?;
 
         let balance = self.wallet.get_balance()?;
