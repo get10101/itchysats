@@ -127,8 +127,8 @@ impl Tasks {
 }
 
 pub struct MakerActorSystem<O, W> {
-    pub cfd_actor_addr: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
-    wallet_actor_addr: Address<W>,
+    pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
+    wallet_actor: Address<W>,
     _tasks: Tasks,
 }
 
@@ -221,8 +221,8 @@ where
         tracing::debug!("Maker actor system ready");
 
         Ok(Self {
-            cfd_actor_addr,
-            wallet_actor_addr: wallet_addr,
+            cfd_actor: cfd_actor_addr,
+            wallet_actor: wallet_addr,
             _tasks: tasks,
         })
     }
@@ -234,7 +234,7 @@ where
         max_quantity: Usd,
         fee_rate: Option<u32>,
     ) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::NewOrder {
                 price,
                 min_quantity,
@@ -247,48 +247,48 @@ where
     }
 
     pub async fn accept_order(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::AcceptOrder { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn reject_order(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::RejectOrder { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn accept_settlement(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::AcceptSettlement { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn reject_settlement(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::RejectSettlement { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn accept_rollover(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::AcceptRollover { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn reject_rollover(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::RejectRollover { order_id })
             .await??;
         Ok(())
     }
     pub async fn commit(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::Commit { order_id })
             .await??;
         Ok(())
@@ -300,7 +300,7 @@ where
         address: bitcoin::Address,
         fee: f32,
     ) -> Result<Txid> {
-        self.wallet_actor_addr
+        self.wallet_actor
             .send(wallet::Withdraw {
                 amount,
                 address,
@@ -311,11 +311,11 @@ where
 }
 
 pub struct TakerActorSystem<O, W> {
-    pub cfd_actor_addr: Address<taker_cfd::Actor<O, W>>,
-    pub connection_actor_addr: Address<connection::Actor>,
+    pub cfd_actor: Address<taker_cfd::Actor<O, W>>,
+    pub connection_actor: Address<connection::Actor>,
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
-    wallet_actor_addr: Address<W>,
-    pub auto_rollover_addr: Address<auto_rollover::Actor<O>>,
+    wallet_actor: Address<W>,
+    pub auto_rollover_actor: Address<auto_rollover::Actor<O>>,
     _tasks: Tasks,
 }
 
@@ -426,30 +426,28 @@ where
         tracing::debug!("Taker actor system ready");
 
         Ok(Self {
-            cfd_actor_addr,
-            connection_actor_addr,
+            cfd_actor: cfd_actor_addr,
+            connection_actor: connection_actor_addr,
             maker_online_status_feed_receiver,
-            wallet_actor_addr,
-            auto_rollover_addr,
+            wallet_actor: wallet_actor_addr,
+            auto_rollover_actor: auto_rollover_addr,
             _tasks: tasks,
         })
     }
 
     pub async fn take_offer(&self, order_id: OrderId, quantity: Usd) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(taker_cfd::TakeOffer { order_id, quantity })
             .await??;
         Ok(())
     }
 
     pub async fn commit(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
-            .send(taker_cfd::Commit { order_id })
-            .await?
+        self.cfd_actor.send(taker_cfd::Commit { order_id }).await?
     }
 
     pub async fn propose_settlement(&self, order_id: OrderId, current_price: Price) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(taker_cfd::ProposeSettlement {
                 order_id,
                 current_price,
@@ -463,7 +461,7 @@ where
         address: bitcoin::Address,
         fee_rate: FeeRate,
     ) -> Result<Txid> {
-        self.wallet_actor_addr
+        self.wallet_actor
             .send(wallet::Withdraw {
                 amount,
                 address,
