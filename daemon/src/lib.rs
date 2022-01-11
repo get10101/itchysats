@@ -129,6 +129,7 @@ impl Tasks {
 pub struct MakerActorSystem<O, W> {
     pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
     wallet_actor: Address<W>,
+
     _tasks: Tasks,
 }
 
@@ -313,9 +314,11 @@ where
 pub struct TakerActorSystem<O, W> {
     pub cfd_actor: Address<taker_cfd::Actor<O, W>>,
     pub connection_actor: Address<connection::Actor>,
-    pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     wallet_actor: Address<W>,
     pub auto_rollover_actor: Address<auto_rollover::Actor<O>>,
+
+    pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
+
     _tasks: Tasks,
 }
 
@@ -428,9 +431,9 @@ where
         Ok(Self {
             cfd_actor: cfd_actor_addr,
             connection_actor: connection_actor_addr,
-            maker_online_status_feed_receiver,
             wallet_actor: wallet_actor_addr,
             auto_rollover_actor: auto_rollover_addr,
+            maker_online_status_feed_receiver,
             _tasks: tasks,
         })
     }
