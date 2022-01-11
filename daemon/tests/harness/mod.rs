@@ -388,15 +388,12 @@ impl Taker {
 /// Deliver monitor event to both actor systems
 #[macro_export]
 macro_rules! deliver_event {
-    ($maker:expr, $taker:expr, $event:expr) => {
-        #[allow(unused_must_use)]
-        {
-            tracing::debug!("Delivering event: {:?}", $event);
+    ($maker:expr, $taker:expr, $event:expr) => {{
+        tracing::debug!("Delivering event: {:?}", $event);
 
-            $taker.system.cfd_actor_addr.send($event).await.unwrap();
-            $maker.system.cfd_actor_addr.send($event).await.unwrap();
-        }
-    };
+        $taker.system.cfd_actor_addr.send($event).await.unwrap();
+        $maker.system.cfd_actor_addr.send($event).await.unwrap();
+    }};
 }
 
 pub fn dummy_price() -> Price {
