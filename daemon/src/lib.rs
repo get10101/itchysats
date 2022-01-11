@@ -326,8 +326,7 @@ where
         + xtra::Handler<oracle::Sync>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::Withdraw>
-        + xtra::Handler<wallet::Reinitialise>,
+        + xtra::Handler<wallet::Withdraw>,
 {
     #[allow(clippy::too_many_arguments)]
     pub async fn new<FM, FO, M>(
@@ -469,14 +468,6 @@ where
                 amount,
                 address,
                 fee: Some(fee_rate),
-            })
-            .await?
-    }
-
-    pub async fn reinitialise_wallet(&self, seed_words: &str) -> Result<()> {
-        self.wallet_actor_addr
-            .send(wallet::Reinitialise {
-                seed_words: seed_words.to_string(),
             })
             .await?
     }

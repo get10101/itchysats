@@ -1674,6 +1674,7 @@ mod hex_transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::seed::RandomSeed;
     use crate::seed::Seed;
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -2275,7 +2276,7 @@ mod tests {
     }
 
     pub fn dummy_identity() -> Identity {
-        Identity::new(Seed::default().derive_identity().0)
+        Identity::new(RandomSeed::default().derive_identity().0)
     }
 
     pub fn dummy_event_id() -> BitMexPriceEventId {
