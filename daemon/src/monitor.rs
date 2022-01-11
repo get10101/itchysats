@@ -382,7 +382,11 @@ where
             .batch_script_get_history(self.awaiting_status.keys().map(|(_, script)| script))
             .context("Failed to get script histories")?;
 
-        self.update_state(latest_block_height, histories).await?;
+        let mut ready_events = self.update_state(latest_block_height, histories);
+
+        while let Some(event) = ready_events.pop() {
+            self.event_channel.send(event).await?;
+        }
 
         Ok(())
     }
@@ -398,11 +402,11 @@ where
         }
     }
 
-    async fn update_state(
+    fn update_state(
         &mut self,
         latest_block_height: BlockHeight,
         response: Vec<Vec<GetHistoryRes>>,
-    ) -> Result<()> {
+    ) -> Vec<Event> {
         let txid_to_script = self
             .awaiting_status
             .keys()
@@ -469,6 +473,8 @@ where
         // 3. update local state
         self.current_status = new_status;
 
+        let mut ready_events = Vec::new();
+
         // 4. check for finished monitoring tasks
         for ((txid, script), status) in self.current_status.iter() {
             match self.awaiting_status.entry((*txid, script.clone())) {
@@ -509,13 +515,13 @@ where
 
                     for (target_status, event) in reached_monitoring_target {
                         tracing::info!(%txid, target = %target_status, current = %status, "Bitcoin transaction reached monitoring target");
-                        self.event_channel.send(event).await?;
+                        ready_events.push(event);
                     }
                 }
             }
         }
 
-        Ok(())
+        ready_events
     }
 }
 
