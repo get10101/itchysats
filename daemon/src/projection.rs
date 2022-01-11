@@ -19,6 +19,7 @@ use crate::model::TradingPair;
 use crate::model::Usd;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::Order;
+use crate::Tasks;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::Amount;
@@ -34,8 +35,10 @@ use rust_decimal_macros::dec;
 use serde::Deserialize;
 use serde::Serialize;
 use sqlx::pool::PoolConnection;
+use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
+use xtra::prelude::MessageChannel;
 use xtra::Context;
 use xtra_productivity::xtra_productivity;
 
@@ -51,6 +54,8 @@ pub struct Actor {
     db: sqlx::SqlitePool,
     tx: Tx,
     state: State,
+    price_feed: Box<dyn MessageChannel<bitmex_price_feed::LatestQuote>>,
+    tasks: Tasks,
 }
 
 pub struct Feeds {
@@ -61,7 +66,12 @@ pub struct Feeds {
 }
 
 impl Actor {
-    pub fn new(db: sqlx::SqlitePool, _role: Role, network: Network) -> (Self, Feeds) {
+    pub fn new(
+        db: sqlx::SqlitePool,
+        _role: Role,
+        network: Network,
+        price_feed: &(impl MessageChannel<bitmex_price_feed::LatestQuote> + 'static),
+    ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(Vec::new());
         let (tx_order, rx_order) = watch::channel(None);
         let (tx_quote, rx_quote) = watch::channel(None);
@@ -76,6 +86,8 @@ impl Actor {
                 connected_takers: tx_connected_takers,
             },
             state: State::new(network),
+            price_feed: price_feed.clone_channel(),
+            tasks: Tasks::default(),
         };
         let feeds = Feeds {
             cfds: rx_cfds,
@@ -494,8 +506,8 @@ impl State {
         }
     }
 
-    fn update_quote(&mut self, quote: bitmex_price_feed::Quote) {
-        self.quote = Some(quote);
+    fn update_quote(&mut self, quote: Option<bitmex_price_feed::Quote>) {
+        self.quote = quote;
     }
 }
 
@@ -509,9 +521,9 @@ impl Actor {
         let _ = self.tx.order.send(msg.0.map(|x| x.into()));
     }
 
-    fn handle(&mut self, msg: Update<bitmex_price_feed::Quote>) {
+    fn handle(&mut self, msg: Update<Option<bitmex_price_feed::Quote>>) {
         self.state.update_quote(msg.0);
-        let _ = self.tx.quote.send(Some(msg.0.into()));
+        let _ = self.tx.quote.send(msg.0.map(|q| q.into()));
         self.refresh_cfds().await;
     }
 
@@ -529,6 +541,25 @@ impl xtra::Actor for Actor {
         this.send_async_safe(CfdsChanged)
             .await
             .expect("we just started");
+
+        self.tasks.add({
+            let price_feed = self.price_feed.clone_channel();
+
+            async move {
+                loop {
+                    match price_feed.send(bitmex_price_feed::LatestQuote).await {
+                        Ok(quote) => {
+                            let _ = this.send(Update(quote)).await;
+                        }
+                        Err(_) => {
+                            tracing::trace!("Price feed actor currently unreachable");
+                        }
+                    }
+
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                }
+            }
+        })
     }
 }
 

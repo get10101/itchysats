@@ -276,8 +276,8 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let (supervisor, _price_feed) = supervisor::Actor::new(
-        move |supervisor| bitmex_price_feed::Actor::new(projection_actor.clone(), supervisor),
+    let (supervisor, price_feed) = supervisor::Actor::new(
+        bitmex_price_feed::Actor::new,
         |_| true, // always restart price feed actor
     );
 
@@ -285,7 +285,7 @@ async fn main() -> Result<()> {
     tasks.add(task);
 
     let (proj_actor, projection_feeds) =
-        projection::Actor::new(db.clone(), Role::Taker, bitcoin_network);
+        projection::Actor::new(db.clone(), Role::Taker, bitcoin_network, &price_feed);
     tasks.add(projection_context.run(proj_actor));
 
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;

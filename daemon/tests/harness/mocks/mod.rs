@@ -2,12 +2,15 @@ use self::monitor::MonitorActor;
 use self::oracle::OracleActor;
 use self::wallet::WalletActor;
 use super::maia::OliviaData;
+use crate::harness::mocks::price_feed::PriceFeedActor;
+use daemon::bitmex_price_feed;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
 
 pub mod monitor;
 pub mod oracle;
+pub mod price_feed;
 pub mod wallet;
 
 #[derive(Clone)]
@@ -15,6 +18,7 @@ pub struct Mocks {
     pub wallet: Arc<Mutex<wallet::MockWallet>>,
     pub monitor: Arc<Mutex<monitor::MockMonitor>>,
     pub oracle: Arc<Mutex<oracle::MockOracle>>,
+    pub price_feed: Arc<Mutex<price_feed::MockPriceFeed>>,
 }
 
 impl Mocks {
@@ -105,12 +109,13 @@ impl Default for Mocks {
             oracle: Arc::new(Mutex::new(oracle::MockOracle::new())),
             monitor: Arc::new(Mutex::new(monitor::MockMonitor::new())),
             wallet: Arc::new(Mutex::new(wallet::MockWallet::new())),
+            price_feed: Arc::new(Mutex::new(price_feed::MockPriceFeed::new())),
         }
     }
 }
 
 /// Creates actors with embedded mock handlers
-pub fn create_actors(mocks: &Mocks) -> (OracleActor, MonitorActor, WalletActor) {
+pub fn create_actors(mocks: &Mocks) -> (OracleActor, MonitorActor, WalletActor, PriceFeedActor) {
     let oracle = OracleActor {
         mock: mocks.oracle.clone(),
     };
@@ -120,5 +125,8 @@ pub fn create_actors(mocks: &Mocks) -> (OracleActor, MonitorActor, WalletActor) 
     let wallet = WalletActor {
         mock: mocks.wallet.clone(),
     };
-    (oracle, monitor, wallet)
+    let price_feed = PriceFeedActor {
+        mock: mocks.price_feed.clone(),
+    };
+    (oracle, monitor, wallet, price_feed)
 }
