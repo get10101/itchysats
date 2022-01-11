@@ -20,11 +20,11 @@ impl Executor {
         }
     }
 
-    pub async fn execute(
+    pub async fn execute<T: ExtractEventFromTuple>(
         &self,
         id: OrderId,
-        command: impl FnOnce(Cfd) -> Result<Event>,
-    ) -> Result<()> {
+        command: impl FnOnce(Cfd) -> Result<T>,
+    ) -> Result<T::Rest> {
         let mut connection = self
             .db
             .acquire()
@@ -34,7 +34,9 @@ impl Executor {
             .await
             .context("Failed to load CFD")?;
 
-        let event = command(cfd).context("Failed to execute command on CFD")?;
+        let return_val = command(cfd).context("Failed to execute command on CFD")?;
+
+        let (event, rest) = return_val.extract_event();
 
         self.process_manager
             .send(process_manager::Event::new(event))
@@ -42,6 +44,38 @@ impl Executor {
             .context("ProcessManager is disconnected")?
             .context("Failed to process new domain event")?;
 
-        Ok(())
+        Ok(rest)
+    }
+}
+
+// TODO: Delete this weird thing once all our commands return only an `Event` and not other stuff as
+// well.
+pub trait ExtractEventFromTuple {
+    type Rest;
+
+    fn extract_event(self) -> (Event, Self::Rest);
+}
+
+impl ExtractEventFromTuple for Event {
+    type Rest = ();
+
+    fn extract_event(self) -> (Event, Self::Rest) {
+        (self, ())
+    }
+}
+
+impl<TOne> ExtractEventFromTuple for (Event, TOne) {
+    type Rest = TOne;
+
+    fn extract_event(self) -> (Event, Self::Rest) {
+        self
+    }
+}
+
+impl<TOne, TTwo> ExtractEventFromTuple for (Event, TOne, TTwo) {
+    type Rest = (TOne, TTwo);
+
+    fn extract_event(self) -> (Event, Self::Rest) {
+        (self.0, (self.1, self.2))
     }
 }
