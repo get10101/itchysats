@@ -282,7 +282,9 @@ where
             .send_async_safe(maker_inc_connections::BroadcastOrder(None))
             .await?;
 
-        self.projection.send(projection::Update(None)).await?;
+        self.projection
+            .send(projection::Update(Option::<Order>::None))
+            .await?;
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection).await?;
 
         // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any

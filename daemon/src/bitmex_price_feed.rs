@@ -1,6 +1,5 @@
 use crate::model::Price;
 use crate::model::Timestamp;
-use crate::projection;
 use crate::supervisor;
 use crate::Tasks;
 use anyhow::Result;
@@ -11,25 +10,21 @@ use rust_decimal::Decimal;
 use std::convert::TryFrom;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite;
-use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
 const URL: &str = "wss://www.bitmex.com/realtime?subscribe=quoteBin1m:XBTUSD";
 
 pub struct Actor {
     tasks: Tasks,
-    receiver: Box<dyn MessageChannel<projection::Update<Quote>>>,
+    latest_quote: Option<Quote>,
     supervisor: xtra::Address<supervisor::Actor<Self, StopReason>>,
 }
 
 impl Actor {
-    pub fn new(
-        receiver: impl MessageChannel<projection::Update<Quote>> + 'static,
-        supervisor: xtra::Address<supervisor::Actor<Self, StopReason>>,
-    ) -> Self {
+    pub fn new(supervisor: xtra::Address<supervisor::Actor<Self, StopReason>>) -> Self {
         Self {
             tasks: Tasks::default(),
-            receiver: Box::new(receiver),
+            latest_quote: None,
             supervisor,
         }
     }
@@ -40,7 +35,6 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         self.tasks.add({
             let this = ctx.address().expect("we are alive");
-            let receiver = self.receiver.clone_channel();
 
             async move {
                 tracing::debug!("Connecting to BitMex realtime API");
@@ -73,8 +67,10 @@ impl xtra::Actor for Actor {
                                             continue;
                                         }
                                         Ok(Some(quote)) => {
-                                            if receiver.send(projection::Update(quote)).await.is_err() {
-                                                return; // if the receiver dies, our job is done
+                                            let is_our_address_disconnected = this.send(NewQuoteReceived(quote)).await.is_err();
+
+                                            if is_our_address_disconnected {
+                                                return;
                                             }
                                         }
                                         Err(e) => {
@@ -113,6 +109,14 @@ impl Actor {
             .await;
         ctx.stop();
     }
+
+    async fn handle(&mut self, msg: NewQuoteReceived) {
+        self.latest_quote = Some(msg.0);
+    }
+
+    async fn handle(&mut self, _: LatestQuote) -> Option<Quote> {
+        self.latest_quote
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -124,6 +128,14 @@ pub enum StopReason {
     #[error("Websocket stream to BitMex API closed")]
     StreamEnded,
 }
+
+/// Private message to update our internal state with the latest quote.
+#[derive(Debug)]
+struct NewQuoteReceived(Quote);
+
+/// Request the latest quote from the price feed.
+#[derive(Debug)]
+pub struct LatestQuote;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Quote {

@@ -160,12 +160,15 @@ impl Maker {
         let db = db::memory().await.unwrap();
 
         let mut mocks = mocks::Mocks::default();
-        let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
+        let (oracle, monitor, wallet, price_feed) = mocks::create_actors(&mocks);
 
         let mut tasks = Tasks::default();
 
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tasks.add(wallet_fut);
+
+        let (price_feed_addr, price_feed_fut) = price_feed.create(None).run();
+        tasks.add(price_feed_fut);
 
         let settlement_interval = SETTLEMENT_INTERVAL;
 
@@ -191,7 +194,8 @@ impl Maker {
         .await
         .unwrap();
 
-        let (proj_actor, feeds) = projection::Actor::new(db, Role::Maker, Network::Testnet);
+        let (proj_actor, feeds) =
+            projection::Actor::new(db, Role::Maker, Network::Testnet, &price_feed_addr);
         tasks.add(projection_context.run(proj_actor));
 
         Self {
@@ -248,12 +252,15 @@ impl Taker {
         let db = db::memory().await.unwrap();
 
         let mut mocks = mocks::Mocks::default();
-        let (oracle, monitor, wallet) = mocks::create_actors(&mocks);
+        let (oracle, monitor, wallet, price_feed) = mocks::create_actors(&mocks);
 
         let mut tasks = Tasks::default();
 
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tasks.add(wallet_fut);
+
+        let (price_feed_addr, price_feed_fut) = price_feed.create(None).run();
+        tasks.add(price_feed_fut);
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
@@ -275,7 +282,8 @@ impl Taker {
         .await
         .unwrap();
 
-        let (proj_actor, feeds) = projection::Actor::new(db, Role::Taker, Network::Testnet);
+        let (proj_actor, feeds) =
+            projection::Actor::new(db, Role::Taker, Network::Testnet, &price_feed_addr);
         tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(
