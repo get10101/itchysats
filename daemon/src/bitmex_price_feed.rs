@@ -9,10 +9,11 @@ use futures::TryStreamExt;
 use rust_decimal::Decimal;
 use std::convert::TryFrom;
 use std::time::Duration;
+use time::OffsetDateTime;
 use tokio_tungstenite::tungstenite;
 use xtra_productivity::xtra_productivity;
 
-const URL: &str = "wss://www.bitmex.com/realtime?subscribe=quoteBin1m:XBTUSD";
+pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
 
 pub struct Actor {
     tasks: Tasks,
@@ -39,7 +40,7 @@ impl xtra::Actor for Actor {
             async move {
                 tracing::debug!("Connecting to BitMex realtime API");
 
-                let mut connection = match tokio_tungstenite::connect_async(URL).await {
+                let mut connection = match tokio_tungstenite::connect_async(format!("wss://www.bitmex.com/realtime?subscribe=quoteBin{}m:XBTUSD", QUOTE_INTERVAL_MINUTES)).await {
                     Ok((connection, _)) => connection,
                     Err(e) => {
                         let _ = this.send(StopReason::FailedToConnect { source: e }).await;
@@ -174,6 +175,12 @@ impl Quote {
     fn mid_range(&self) -> Price {
         (self.bid + self.ask) / 2
     }
+
+    pub fn is_older_than(&self, duration: time::Duration) -> bool {
+        let required_quote_timestamp = (OffsetDateTime::now_utc() - duration).unix_timestamp();
+
+        self.timestamp.seconds() < required_quote_timestamp
+    }
 }
 
 mod wire {
@@ -202,6 +209,7 @@ mod wire {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+    use time::ext::NumericalDuration;
 
     #[test]
     fn can_deserialize_quote_message() {
@@ -210,5 +218,31 @@ mod tests {
         assert_eq!(quote.bid, Price::new(dec!(42640.5)).unwrap());
         assert_eq!(quote.ask, Price::new(dec!(42641)).unwrap());
         assert_eq!(quote.timestamp.seconds(), 1632192000)
+    }
+
+    #[test]
+    fn quote_from_now_is_not_old() {
+        let quote = dummy_quote_at(OffsetDateTime::now_utc());
+
+        let is_older = quote.is_older_than(1.minutes());
+
+        assert!(!is_older)
+    }
+
+    #[test]
+    fn quote_from_one_hour_ago_is_old() {
+        let quote = dummy_quote_at(OffsetDateTime::now_utc() - 1.hours());
+
+        let is_older = quote.is_older_than(1.minutes());
+
+        assert!(is_older)
+    }
+
+    fn dummy_quote_at(time: OffsetDateTime) -> Quote {
+        Quote {
+            timestamp: Timestamp::new(time.unix_timestamp()),
+            bid: Price::new(dec!(10)).unwrap(),
+            ask: Price::new(dec!(10)).unwrap(),
+        }
     }
 }
