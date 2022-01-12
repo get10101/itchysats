@@ -12,11 +12,16 @@ export function useEventSource(url: string, withCredentials?: boolean) {
 
         es.addEventListener("error", () => {
             setIsConnected(false);
+            // we call set source here which changes the state of this component causing a re-render
+            // as far as i understand this will be called everytime an event is sent from the backend
+            // have not investigated whether the backend is sending this event multiple times
             setSource(null);
         });
 
         return () => {
             setSource(null);
+            // should we call es.removeEventListener() in the cleanup or does es.close() handle this?
+            es.removeEventListener("error");
             es.close();
         };
     }, [url, withCredentials]);
@@ -53,6 +58,8 @@ export function useEventSource(url: string, withCredentials?: boolean) {
     }, [source]);
 
     const toast = useToast();
+    // I dont think should be a hook.
+    // We should just conditionally render a component that displays this message
     useEffect(() => {
         if (!isConnected) {
             toast(
