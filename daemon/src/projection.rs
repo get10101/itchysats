@@ -273,6 +273,7 @@ impl Cfd {
                     TxLabel::Lock,
                 );
                 self.details.tx_url_list.push(tx_url);
+                self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
                 self.latest_dlc = Some(dlc);
 
                 (CfdState::PendingOpen, vec![])
@@ -292,6 +293,7 @@ impl Cfd {
                 (CfdState::Rejected, vec![])
             }
             RolloverCompleted { dlc } => {
+                self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
                 self.latest_dlc = Some(dlc);
 
                 (CfdState::Open, vec![])
