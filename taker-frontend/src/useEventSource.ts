@@ -10,6 +10,12 @@ export function useEventSource(url: string, withCredentials?: boolean) {
         const es = new EventSource(url, { withCredentials });
         setSource(es);
 
+        if (es.OPEN === 1) {
+            setIsConnected(true);
+        } else if (es.CLOSED || es.CONNECTING === 1) {
+            setIsConnected(false);
+        }
+
         es.addEventListener("error", () => {
             setIsConnected(false);
             setSource(null);
@@ -17,6 +23,7 @@ export function useEventSource(url: string, withCredentials?: boolean) {
 
         return () => {
             setSource(null);
+            es.removeEventListener("error", () => {});
             es.close();
         };
     }, [url, withCredentials]);
