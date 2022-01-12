@@ -1,9 +1,8 @@
 import { useToast } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 
-export function useEventSource(url: string, withCredentials?: boolean) {
+export function useEventSource(url: string, withCredentials?: boolean, setIsConnected) {
     const [source, setSource] = useState<EventSource | null>(null);
-    const [isConnected, setIsConnected] = useState<boolean>(true);
 
     // Construct a new event source if the arguments to this hook change
     useEffect(() => {
@@ -56,24 +55,6 @@ export function useEventSource(url: string, withCredentials?: boolean) {
         }
         return undefined;
     }, [source]);
-
-    const toast = useToast();
-    // I dont think should be a hook.
-    // We should just conditionally render a component that displays this message
-    useEffect(() => {
-        if (!isConnected) {
-            toast(
-                {
-                    title: "Connection error",
-                    description: "Please ensure taker daemon is up and refresh the page to reconnect.",
-                    status: "error",
-                    position: "top",
-                    duration: null,
-                    isClosable: false,
-                },
-            );
-        }
-    }, [isConnected, toast]);
 
     return source;
 }

@@ -49,7 +49,9 @@ export const App = () => {
         },
     });
 
-    const source = useEventSource("/api/feed", true);
+    const [isConnected, setIsConnected] = useState<boolean>(false);
+    const source = useEventSource("/api/feed", true, setIsConnected);
+
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const order = useLatestEvent<Order>(source, "order", intoOrder);
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
@@ -96,6 +98,7 @@ export const App = () => {
         <>
             <Disclaimer />
             <Nav walletInfo={walletInfo} connectedToMaker={connectedToMaker} />
+            <p>connected to taker: {isConnected.toString()}</p>
             <Box textAlign="center" padding={3}>
                 <Routes>
                     <Route path="/wallet" element={<Wallet walletInfo={walletInfo} />} />
