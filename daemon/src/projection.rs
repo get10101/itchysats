@@ -17,6 +17,8 @@ use crate::model::Price;
 use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
+use crate::routes_maker;
+use crate::routes_taker;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::Order;
 use crate::Tasks;
@@ -26,10 +28,12 @@ use bdk::bitcoin::Amount;
 use bdk::bitcoin::Network;
 use bdk::bitcoin::SignedAmount;
 use bdk::bitcoin::Txid;
+use rocket::http::uri;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde::Serialize;
 use sqlx::pool::PoolConnection;
+use std::collections::HashMap;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
@@ -163,7 +167,7 @@ pub struct Cfd {
     pub profit_percent: Option<String>,
 
     pub state: CfdState,
-    pub actions: Vec<CfdAction>, // TODO: This should be a HashMap.
+    pub actions: HashMap<CfdAction, uri::Origin<'static>>,
     pub state_transition_timestamp: i64,
 
     pub details: CfdDetails,
@@ -225,9 +229,18 @@ impl Cfd {
             });
 
         let initial_actions = if role == Role::Maker {
-            vec![CfdAction::AcceptOrder, CfdAction::RejectOrder]
+            HashMap::from_iter([
+                (
+                    CfdAction::AcceptOrder,
+                    rocket::uri!(routes_maker::accept_order(id)),
+                ),
+                (
+                    CfdAction::RejectOrder,
+                    rocket::uri!(routes_maker::reject_order(id)),
+                ),
+            ])
         } else {
-            vec![]
+            HashMap::new()
         };
 
         Self {
@@ -270,7 +283,7 @@ impl Cfd {
                 self.profit_btc = None;
                 self.profit_percent = None;
 
-                (CfdState::ContractSetup, vec![])
+                (CfdState::ContractSetup, HashMap::new())
             }
             ContractSetupCompleted { dlc } => {
                 self.details.tx_url_list.push(TxUrl::new(
@@ -280,38 +293,47 @@ impl Cfd {
                 ));
                 self.latest_dlc = Some(dlc);
 
-                (CfdState::PendingOpen, vec![])
+                (CfdState::PendingOpen, HashMap::new())
             }
             ContractSetupFailed => {
                 // Don't display profit for failed contracts.
                 self.profit_btc = None;
                 self.profit_percent = None;
 
-                (CfdState::SetupFailed, vec![])
+                (CfdState::SetupFailed, HashMap::new())
             }
             OfferRejected => {
                 // Don't display profit for rejected contracts.
                 self.profit_btc = None;
                 self.profit_percent = None;
 
-                (CfdState::Rejected, vec![])
+                (CfdState::Rejected, HashMap::new())
             }
             RolloverCompleted { dlc } => {
                 self.latest_dlc = Some(dlc);
 
-                (CfdState::Open, vec![])
+                (CfdState::Open, HashMap::new())
             }
-            RolloverRejected => (CfdState::Open, vec![]),
-            RolloverFailed => (CfdState::Open, vec![]),
+            RolloverRejected => (CfdState::Open, HashMap::new()),
+            RolloverFailed => (CfdState::Open, HashMap::new()),
             CollaborativeSettlementStarted { .. } => match role {
                 Role::Maker => (
                     CfdState::IncomingSettlementProposal,
-                    vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement],
+                    HashMap::from_iter([
+                        (
+                            CfdAction::AcceptSettlement,
+                            rocket::uri!(routes_maker::accept_settlement(self.order_id)),
+                        ),
+                        (
+                            CfdAction::RejectSettlement,
+                            rocket::uri!(routes_maker::reject_settlement(self.order_id)),
+                        ),
+                    ]),
                 ),
-                Role::Taker => (CfdState::OutgoingSettlementProposal, vec![]),
+                Role::Taker => (CfdState::OutgoingSettlementProposal, HashMap::new()),
             },
             CollaborativeSettlementProposalAccepted => {
-                (CfdState::IncomingSettlementProposal, vec![])
+                (CfdState::IncomingSettlementProposal, HashMap::new())
             }
             CollaborativeSettlementCompleted {
                 spend_tx, price, ..
@@ -326,7 +348,7 @@ impl Cfd {
                 self.profit_btc = profit_btc;
                 self.profit_percent = profit_percent;
 
-                (CfdState::PendingClose, vec![])
+                (CfdState::PendingClose, HashMap::new())
             }
             CollaborativeSettlementRejected { commit_tx } => {
                 self.details.tx_url_list.push(TxUrl::new(
@@ -335,7 +357,7 @@ impl Cfd {
                     TxLabel::Commit,
                 ));
 
-                (CfdState::PendingCommit, vec![])
+                (CfdState::PendingCommit, HashMap::new())
             }
             CollaborativeSettlementFailed { commit_tx } => {
                 self.details.tx_url_list.push(TxUrl::new(
@@ -344,9 +366,21 @@ impl Cfd {
                     TxLabel::Commit,
                 ));
 
-                (CfdState::PendingCommit, vec![])
+                (CfdState::PendingCommit, HashMap::new())
             }
-            LockConfirmed => (CfdState::Open, vec![CfdAction::Commit, CfdAction::Settle]),
+            LockConfirmed => (
+                CfdState::Open,
+                HashMap::from_iter([
+                    (
+                        CfdAction::Commit,
+                        rocket::uri!(routes_taker::commit(self.order_id)),
+                    ),
+                    (
+                        CfdAction::Settle,
+                        rocket::uri!(routes_taker::settle(self.order_id)),
+                    ),
+                ]),
+            ),
             CommitConfirmed => {
                 // pretty weird if this is not defined ...
                 if let Some(dlc) = self.latest_dlc.as_ref() {
@@ -356,9 +390,9 @@ impl Cfd {
                         TxLabel::Commit,
                     ));
                 }
-                (CfdState::OpenCommitted, vec![])
+                (CfdState::OpenCommitted, HashMap::new())
             }
-            CetConfirmed => (CfdState::Closed, vec![]),
+            CetConfirmed => (CfdState::Closed, HashMap::new()),
             RefundConfirmed => {
                 if let Some(dlc) = self.latest_dlc.as_ref() {
                     self.details.tx_url_list.push(TxUrl::new(
@@ -367,9 +401,9 @@ impl Cfd {
                         TxLabel::Refund,
                     ));
                 }
-                (CfdState::Refunded, vec![])
+                (CfdState::Refunded, HashMap::new())
             }
-            CollaborativeSettlementConfirmed => (CfdState::Closed, vec![]),
+            CollaborativeSettlementConfirmed => (CfdState::Closed, HashMap::new()),
             CetTimelockConfirmedPriorOracleAttestation => (CfdState::OpenCommitted, self.actions),
             CetTimelockConfirmedPostOracleAttestation { .. } => {
                 (CfdState::PendingCet, self.actions)
@@ -389,7 +423,7 @@ impl Cfd {
                 ));
 
                 // Only allow committing once the oracle attested.
-                (CfdState::PendingCommit, vec![])
+                (CfdState::PendingCommit, HashMap::new())
             }
             OracleAttestedPostCetTimelock { cet, price } => {
                 self.details
@@ -401,24 +435,39 @@ impl Cfd {
                 self.profit_percent = profit_percent;
 
                 // Only allow committing once the oracle attested.
-                (CfdState::PendingCet, vec![CfdAction::Commit])
+                (
+                    CfdState::PendingCet,
+                    HashMap::from_iter([(
+                        CfdAction::Commit,
+                        rocket::uri!(routes_taker::commit(self.order_id)),
+                    )]),
+                )
             }
             ManualCommit { tx } => {
                 self.details
                     .tx_url_list
                     .push(TxUrl::new(tx.txid(), network, TxLabel::Commit));
 
-                (CfdState::PendingCommit, vec![])
+                (CfdState::PendingCommit, HashMap::new())
             }
             RevokeConfirmed => todo!("Deal with revoked"),
             RolloverStarted { .. } => match role {
                 Role::Maker => (
                     CfdState::IncomingRolloverProposal,
-                    vec![CfdAction::AcceptRollover, CfdAction::RejectRollover],
+                    HashMap::from_iter([
+                        (
+                            CfdAction::AcceptRollover,
+                            rocket::uri!(routes_maker::accept_rollover(self.order_id)),
+                        ),
+                        (
+                            CfdAction::RejectRollover,
+                            rocket::uri!(routes_maker::reject_rollover(self.order_id)),
+                        ),
+                    ]),
                 ),
-                Role::Taker => (CfdState::OutgoingRolloverProposal, vec![]),
+                Role::Taker => (CfdState::OutgoingRolloverProposal, HashMap::new()),
             },
-            RolloverAccepted => (CfdState::ContractSetup, vec![]),
+            RolloverAccepted => (CfdState::ContractSetup, HashMap::new()),
         };
 
         self.state = state;
@@ -621,7 +670,7 @@ pub struct CfdDetails {
     payout: Option<Amount>,
 }
 
-#[derive(Debug, derive_more::Display, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, derive_more::Display, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub enum CfdAction {
     AcceptOrder,

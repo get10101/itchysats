@@ -6,7 +6,6 @@ use crate::model::Usd;
 use crate::model::WalletInfo;
 use crate::oracle;
 use crate::projection::Cfd;
-use crate::projection::CfdAction;
 use crate::projection::Feeds;
 use crate::routes::EmbeddedFileExt;
 use crate::to_sse_event::ToSseEvent;
@@ -123,31 +122,105 @@ pub async fn post_sell_order(
     Ok(())
 }
 
-#[rocket::post("/cfd/<id>/<action>")]
-pub async fn post_cfd_action(
+#[rocket::post("/cfd/<id>/accept")]
+pub async fn accept_order(
     id: OrderId,
-    action: CfdAction,
     maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
-    let result = match action {
-        CfdAction::AcceptOrder => maker.accept_order(id).await,
-        CfdAction::RejectOrder => maker.reject_order(id).await,
-        CfdAction::AcceptSettlement => maker.accept_settlement(id).await,
-        CfdAction::RejectSettlement => maker.reject_settlement(id).await,
-        CfdAction::AcceptRollover => maker.accept_rollover(id).await,
-        CfdAction::RejectRollover => maker.reject_rollover(id).await,
-        CfdAction::Commit => maker.commit(id).await,
-        CfdAction::Settle => {
-            let msg = "Collaborative settlement can only be triggered by taker";
-            tracing::error!(msg);
-            return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST).detail(msg));
-        }
-    };
-
-    result.map_err(|e| {
+    maker.accept_order(id).await.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-            .title(action.to_string() + " failed")
+            .title("Failed to accept order")
+            .detail(e.to_string())
+    })?;
+
+    Ok(())
+}
+
+#[rocket::post("/cfd/<id>/reject")]
+pub async fn reject_order(
+    id: OrderId,
+    maker: &State<Maker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    maker.reject_order(id).await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Failed to reject order")
+            .detail(e.to_string())
+    })?;
+
+    Ok(())
+}
+
+#[rocket::post("/cfd/<id>/acceptSettlement")]
+pub async fn accept_settlement(
+    id: OrderId,
+    maker: &State<Maker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    maker.accept_settlement(id).await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Failed to accept settlement")
+            .detail(e.to_string())
+    })?;
+
+    Ok(())
+}
+
+#[rocket::post("/cfd/<id>/rejectSettlement")]
+pub async fn reject_settlement(
+    id: OrderId,
+    maker: &State<Maker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    maker.reject_settlement(id).await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Failed to accept settlement")
+            .detail(e.to_string())
+    })?;
+
+    Ok(())
+}
+
+#[rocket::post("/cfd/<id>/acceptRollover")]
+pub async fn accept_rollover(
+    id: OrderId,
+    maker: &State<Maker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    maker.accept_rollover(id).await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Failed to accept rollover")
+            .detail(e.to_string())
+    })?;
+
+    Ok(())
+}
+
+#[rocket::post("/cfd/<id>/rejectRollover")]
+pub async fn reject_rollover(
+    id: OrderId,
+    maker: &State<Maker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    maker.reject_rollover(id).await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Failed to accept rollover")
+            .detail(e.to_string())
+    })?;
+
+    Ok(())
+}
+
+#[rocket::post("/cfd/<id>/commit")]
+pub async fn commit(
+    id: OrderId,
+    maker: &State<Maker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    maker.commit(id).await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Failed to commit CFD")
             .detail(e.to_string())
     })?;
 

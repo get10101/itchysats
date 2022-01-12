@@ -262,7 +262,12 @@ async fn main() -> Result<()> {
             rocket::routes![
                 routes_maker::maker_feed,
                 routes_maker::post_sell_order,
-                routes_maker::post_cfd_action,
+                routes_maker::accept_order,
+                routes_maker::reject_order,
+                routes_maker::accept_rollover,
+                routes_maker::reject_rollover,
+                routes_maker::accept_settlement,
+                routes_maker::reject_settlement,
                 routes_maker::get_health_check,
                 routes_maker::post_withdraw_request,
                 routes_maker::get_cfds,

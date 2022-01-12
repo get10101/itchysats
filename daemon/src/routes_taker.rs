@@ -9,7 +9,6 @@ use crate::model::Usd;
 use crate::model::WalletInfo;
 use crate::oracle;
 use crate::projection;
-use crate::projection::CfdAction;
 use crate::projection::Feeds;
 use crate::routes::EmbeddedFileExt;
 use crate::to_sse_event::Heartbeat;
@@ -121,30 +120,30 @@ pub async fn post_order_request(
     Ok(())
 }
 
-#[rocket::post("/cfd/<id>/<action>")]
-pub async fn post_cfd_action(
+#[rocket::post("/cfd/<id>/commit")]
+pub async fn commit(
     id: OrderId,
-    action: CfdAction,
     taker: &State<Taker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
-    let result = match action {
-        CfdAction::AcceptOrder
-        | CfdAction::RejectOrder
-        | CfdAction::AcceptSettlement
-        | CfdAction::RejectSettlement
-        | CfdAction::AcceptRollover
-        | CfdAction::RejectRollover => {
-            return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
-                .detail(format!("taker cannot invoke action {}", action)));
-        }
-        CfdAction::Commit => taker.commit(id).await,
-        CfdAction::Settle => taker.propose_settlement(id).await,
-    };
-
-    result.map_err(|e| {
+    taker.commit(id).await.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-            .title(action.to_string() + " failed")
+            .title("Failed to commit CFD")
+            .detail(e.to_string())
+    })?;
+
+    Ok(())
+}
+
+#[rocket::post("/cfd/<id>/settle")]
+pub async fn settle(
+    id: OrderId,
+    taker: &State<Taker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    taker.propose_settlement(id).await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Failed to settle CFD")
             .detail(e.to_string())
     })?;
 

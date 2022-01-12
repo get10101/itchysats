@@ -35,6 +35,7 @@ use maia::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia::secp256k1_zkp::SECP256K1;
 use maia::spending_tx_sighash;
 use maia::TransactionExt;
+use rocket::http::uri;
 use rocket::request::FromParam;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -43,6 +44,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
+use std::fmt::Write;
 use std::ops::RangeInclusive;
 use std::str;
 use time::Duration;
@@ -86,6 +88,20 @@ impl Default for OrderId {
 impl fmt::Display for OrderId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl uri::fmt::UriDisplay<uri::fmt::Path> for OrderId {
+    fn fmt(&self, f: &mut uri::fmt::Formatter<'_, uri::fmt::Path>) -> fmt::Result {
+        f.write_str(&self.to_string())
+    }
+}
+
+impl uri::fmt::FromUriParam<uri::fmt::Path, OrderId> for OrderId {
+    type Target = OrderId;
+
+    fn from_uri_param(param: OrderId) -> Self::Target {
+        param
     }
 }
 

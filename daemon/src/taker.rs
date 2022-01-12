@@ -306,7 +306,8 @@ async fn main() -> Result<()> {
                 routes_taker::post_order_request,
                 routes_taker::get_health_check,
                 routes_taker::margin_calc,
-                routes_taker::post_cfd_action,
+                routes_taker::commit,
+                routes_taker::settle,
                 routes_taker::post_withdraw_request,
             ],
         )
