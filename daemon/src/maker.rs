@@ -14,6 +14,7 @@ use daemon::model::cfd::Role;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
+use daemon::routes_maker;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::supervisor;
@@ -28,8 +29,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::Actor;
-
-mod routes_maker;
 
 #[derive(Parser)]
 struct Opts {

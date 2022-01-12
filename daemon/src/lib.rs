@@ -58,6 +58,8 @@ pub mod projection;
 pub mod rollover_maker;
 pub mod rollover_taker;
 pub mod routes;
+pub mod routes_maker;
+pub mod routes_taker;
 pub mod seed;
 pub mod send_async_safe;
 pub mod setup_contract;

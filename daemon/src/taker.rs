@@ -17,6 +17,7 @@ use daemon::model::Identity;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
+use daemon::routes_taker;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::seed::UmbrelSeed;
@@ -32,8 +33,6 @@ use std::str::FromStr;
 use std::time::Duration;
 use tracing_subscriber::filter::LevelFilter;
 use xtra::Actor;
-
-mod routes_taker;
 
 pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 
