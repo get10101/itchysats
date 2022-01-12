@@ -49,18 +49,7 @@ pub async fn feed(
     let mut rx_quote = rx.quote.clone();
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_maker_status = rx_maker_status.inner().clone();
-
-    let (sx_keep_alive, mut rx_keep_alive) = watch::channel(Heartbeat::new());
-
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            if sx_keep_alive.send(Heartbeat::new()).is_err() {
-                break;
-            }
-        }
-    });
+    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(5));
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -100,9 +89,8 @@ pub async fn feed(
                     let quote = rx_quote.borrow().clone();
                     yield quote.to_sse_event();
                 }
-                Ok(()) = rx_keep_alive.changed() => {
-                    let keep_alive = *rx_keep_alive.borrow();
-                    yield keep_alive.to_sse_event();
+                _ = heartbeat.tick() => {
+                    yield Heartbeat::new().to_sse_event();
                 }
             }
         }
