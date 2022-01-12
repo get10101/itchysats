@@ -156,8 +156,6 @@ pub struct Cfd {
 
     pub state: CfdState,
     pub actions: Vec<CfdAction>, // TODO: This should be a HashMap.
-    pub state_transition_timestamp: i64,
-
     pub details: CfdDetails,
 
     #[serde(with = "::time::serde::timestamp::option")]
@@ -239,7 +237,6 @@ impl Cfd {
 
             state: CfdState::PendingSetup,
             actions: initial_actions,
-            state_transition_timestamp: 0,
             details: CfdDetails {
                 tx_url_list: vec![],
                 payout: None,

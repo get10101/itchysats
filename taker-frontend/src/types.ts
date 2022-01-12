@@ -56,7 +56,6 @@ export interface Cfd {
     profit_percent?: number;
 
     state: State;
-    state_transition_timestamp: number;
     details: CfdDetails;
     expiry_timestamp?: number;
 
