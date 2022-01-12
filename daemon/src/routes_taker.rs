@@ -21,7 +21,6 @@ use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
 use rocket::http::ContentType;
 use rocket::http::Status;
-use rocket::response::status;
 use rocket::response::stream::EventStream;
 use rocket::response::Responder;
 use rocket::serde::json::Json;
@@ -120,7 +119,7 @@ pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
     taker: &State<Taker>,
     _auth: Authenticated,
-) -> Result<status::Accepted<()>, HttpApiProblem> {
+) -> Result<(), HttpApiProblem> {
     taker
         .take_offer(cfd_order_request.order_id, cfd_order_request.quantity)
         .await
@@ -130,7 +129,7 @@ pub async fn post_order_request(
                 .detail(e.to_string())
         })?;
 
-    Ok(status::Accepted(None))
+    Ok(())
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
@@ -140,7 +139,7 @@ pub async fn post_cfd_action(
     taker: &State<Taker>,
     feeds: &State<Feeds>,
     _auth: Authenticated,
-) -> Result<status::Accepted<()>, HttpApiProblem> {
+) -> Result<(), HttpApiProblem> {
     let result = match action {
         CfdAction::AcceptOrder
         | CfdAction::RejectOrder
@@ -174,7 +173,7 @@ pub async fn post_cfd_action(
             .detail(e.to_string())
     })?;
 
-    Ok(status::Accepted(None))
+    Ok(())
 }
 
 #[rocket::get("/alive")]
