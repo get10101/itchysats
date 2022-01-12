@@ -1,6 +1,5 @@
 use crate::address_map::Stopping;
-use crate::cfd_actors::apply_event;
-use crate::cfd_actors::load_cfd;
+use crate::command;
 use crate::maker_inc_connections;
 use crate::maker_inc_connections::TakerMessage;
 use crate::model::cfd::Dlc;
@@ -32,8 +31,6 @@ use xtra::Address;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
-    db: sqlx::SqlitePool,
-    process_manager: Address<process_manager::Actor>,
     order: Order,
     quantity: Usd,
     n_payouts: usize,
@@ -47,6 +44,7 @@ pub struct Actor {
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
     tasks: Tasks,
+    executor: command::Executor,
 }
 
 impl Actor {
@@ -69,8 +67,7 @@ impl Actor {
         ),
     ) -> Self {
         Self {
-            db,
-            process_manager,
+            executor: command::Executor::new(db, process_manager),
             order,
             quantity,
             n_payouts,
@@ -95,10 +92,10 @@ impl Actor {
         // the spawned contract setup task
         self.setup_msg_sender = Some(sender);
 
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(order_id, &mut conn).await?;
-        let (event, setup_params) = cfd.start_contract_setup()?;
-        apply_event(&self.process_manager, event).await?;
+        let setup_params = self
+            .executor
+            .execute(order_id, |cfd| cfd.start_contract_setup())
+            .await?;
 
         let taker_id = setup_params.counterparty_identity();
 
@@ -129,7 +126,11 @@ impl Actor {
     }
 
     async fn complete(&mut self, completed: SetupCompleted, ctx: &mut xtra::Context<Self>) {
-        match self.execute_setup_contract_command(completed).await {
+        match self
+            .executor
+            .execute(completed.order_id(), |cfd| cfd.setup_contract(completed))
+            .await
+        {
             Ok(()) => {}
             Err(e) => {
                 tracing::error!("Failed to execute `contract_setup` command: {:#}", e);
@@ -137,19 +138,6 @@ impl Actor {
         }
 
         ctx.stop();
-    }
-
-    async fn execute_setup_contract_command(&mut self, completed: SetupCompleted) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(self.order.id, &mut conn).await?;
-
-        let event = cfd.setup_contract(completed)?;
-
-        self.process_manager
-            .send(process_manager::Event::new(event))
-            .await??;
-
-        Ok(())
     }
 }
 

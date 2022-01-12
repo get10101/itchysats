@@ -1,6 +1,5 @@
 use crate::db;
 use crate::model::cfd::Cfd;
-use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::RefundTimelockExpiryError;
 use crate::monitor;
@@ -101,21 +100,6 @@ pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> R
         events,
     );
     Ok(cfd)
-}
-
-pub async fn apply_event(
-    process_manager: &xtra::Address<process_manager::Actor>,
-    event: Event,
-) -> Result<()> {
-    // FIXME: Failing to apply an event is a serious error and should not result
-    // in Ok() return from this function
-    if let Err(e) = process_manager
-        .send(process_manager::Event::new(event.clone()))
-        .await?
-    {
-        tracing::error!("Sending event to process manager failed: {:#}", e);
-    }
-    Ok(())
 }
 
 pub async fn handle_oracle_attestation(

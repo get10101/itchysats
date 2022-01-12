@@ -1,5 +1,5 @@
 use crate::address_map::Stopping;
-use crate::cfd_actors::load_cfd;
+use crate::command;
 use crate::connection;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
@@ -37,11 +37,10 @@ pub struct Actor {
     oracle_pk: schnorrsig::PublicKey,
     maker: xtra::Address<connection::Actor>,
     get_announcement: Box<dyn MessageChannel<GetAnnouncement>>,
-    process_manager: xtra::Address<process_manager::Actor>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     rollover_msg_sender: Option<UnboundedSender<RolloverMsg>>,
+    executor: command::Executor,
     tasks: Tasks,
-    db: sqlx::SqlitePool,
 }
 
 impl Actor {
@@ -65,29 +64,20 @@ impl Actor {
             oracle_pk,
             maker,
             get_announcement: get_announcement.clone_channel(),
-            process_manager,
             on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
             rollover_msg_sender: None,
             tasks: Tasks::default(),
-            db,
+            executor: command::Executor::new(db, process_manager),
         }
     }
 
     async fn propose(&mut self, this: xtra::Address<Self>) -> Result<(), RolloverError> {
-        let mut conn = self.db.acquire().await.context("Failed to connect to DB")?;
-        let cfd = load_cfd(self.id, &mut conn)
-            .await
-            .context("Failed to load CFD")?;
-
-        let event = cfd.start_rollover()?;
-
-        self.process_manager
-            .send(process_manager::Event::new(event.clone()))
-            .await
-            .context("Process manager actor disconnected")?
-            .with_context(|| format!("Process manager failed to process event {:?}", event))?;
+        self.executor
+            .execute(self.id, |cfd| Ok(cfd.start_rollover()?))
+            .await?;
 
         tracing::trace!(order_id=%self.id, "Proposing rollover");
+
         self.maker
             .send(connection::ProposeRollover {
                 order_id: self.id,
@@ -108,17 +98,10 @@ impl Actor {
         let RolloverAccepted { oracle_event_id } = msg;
         let order_id = self.id;
 
-        let mut conn = self.db.acquire().await.context("Failed to connect to DB")?;
-        let cfd = load_cfd(self.id, &mut conn)
-            .await
-            .context("Failed to load CFD")?;
-
-        let (event, (rollover_params, dlc)) = cfd.handle_rollover_accepted_taker()?;
-        self.process_manager
-            .send(process_manager::Event::new(event.clone()))
-            .await
-            .context("Process manager actor disconnected")?
-            .with_context(|| format!("Process manager failed to process event {:?}", event))?;
+        let (rollover_params, dlc) = self
+            .executor
+            .execute(self.id, |cfd| Ok(cfd.handle_rollover_accepted_taker()?))
+            .await?;
 
         let announcement = self
             .get_announcement
@@ -171,27 +154,13 @@ impl Actor {
     }
 
     async fn complete(&mut self, completed: RolloverCompleted, ctx: &mut xtra::Context<Self>) {
-        let order_id = self.id;
-        let event_fut = async {
-            let mut conn = self.db.acquire().await?;
-            let cfd = load_cfd(order_id, &mut conn).await?;
-            let event = cfd.roll_over(completed)?;
+        let result = self
+            .executor
+            .execute(self.id, |cfd| Ok(cfd.roll_over(completed)?))
+            .await;
 
-            anyhow::Ok(event)
-        };
-
-        match event_fut.await {
-            Ok(event) => {
-                if let Some(event) = event {
-                    let _ = self
-                        .process_manager
-                        .send(process_manager::Event::new(event))
-                        .await;
-                }
-            }
-            Err(e) => {
-                tracing::warn!(%order_id, "Failed to complete rollover: {:#}", e)
-            }
+        if let Err(e) = result {
+            tracing::warn!(order_id = %self.id, "Failed to complete rollover: {:#}", e)
         }
 
         ctx.stop();

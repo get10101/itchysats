@@ -1,5 +1,4 @@
-use crate::cfd_actors::apply_event;
-use crate::cfd_actors::load_cfd;
+use crate::command;
 use crate::connection;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
@@ -12,7 +11,6 @@ use crate::setup_contract;
 use crate::wallet;
 use crate::wire;
 use crate::wire::SetupMsg;
-use crate::xtra_ext::LogFailure;
 use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
@@ -26,8 +24,6 @@ use xtra::prelude::*;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
-    db: sqlx::SqlitePool,
-    process_manager_actor: Address<process_manager::Actor>,
     order_id: OrderId,
     quantity: Usd,
     n_payouts: usize,
@@ -36,26 +32,23 @@ pub struct Actor {
     build_party_params: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign: Box<dyn MessageChannel<wallet::Sign>>,
     maker: xtra::Address<connection::Actor>,
-    on_completed: Box<dyn MessageChannel<SetupCompleted>>,
     setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
     tasks: Tasks,
+    executor: command::Executor,
 }
 
 impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        process_manager_actor: Address<process_manager::Actor>,
+        process_manager: Address<process_manager::Actor>,
         (order_id, quantity, n_payouts): (OrderId, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
         maker: xtra::Address<connection::Actor>,
-        on_completed: &(impl MessageChannel<SetupCompleted> + 'static),
     ) -> Self {
         Self {
-            db,
-            process_manager_actor,
             order_id,
             quantity,
             n_payouts,
@@ -64,9 +57,9 @@ impl Actor {
             build_party_params: build_party_params.clone_channel(),
             sign: sign.clone_channel(),
             maker,
-            on_completed: on_completed.clone_channel(),
             setup_msg_sender: None,
             tasks: Tasks::default(),
+            executor: command::Executor::new(db, process_manager),
         }
     }
 }
@@ -77,10 +70,10 @@ impl Actor {
         let order_id = self.order_id;
         tracing::info!(%order_id, "Order got accepted");
 
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(order_id, &mut conn).await?;
-        let (event, setup_params) = cfd.start_contract_setup()?;
-        apply_event(&self.process_manager_actor, event).await?;
+        let setup_params = self
+            .executor
+            .execute(order_id, |cfd| cfd.start_contract_setup())
+            .await?;
 
         let (sender, receiver) = mpsc::unbounded::<SetupMsg>();
         // store the writing end to forward messages from the maker to
@@ -120,10 +113,15 @@ impl Actor {
             anyhow::format_err!("Unknown")
         };
 
-        self.on_completed
-            .send(SetupCompleted::rejected_due_to(order_id, reason))
-            .log_failure("Failed to inform about contract setup rejection")
-            .await?;
+        if let Err(e) = self
+            .executor
+            .execute(order_id, |cfd| {
+                cfd.setup_contract(SetupCompleted::rejected_due_to(order_id, reason))
+            })
+            .await
+        {
+            tracing::warn!("{:#}", e);
+        }
 
         ctx.stop();
 
@@ -141,24 +139,32 @@ impl Actor {
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
-        let _: Result<(), xtra::Disconnected> = self
-            .on_completed
-            .send(SetupCompleted::succeeded(msg.order_id, msg.dlc))
-            .log_failure("Failed to inform about contract setup completion")
-            .await;
+        if let Err(e) = self
+            .executor
+            .execute(self.order_id, |cfd| {
+                cfd.setup_contract(SetupCompleted::succeeded(msg.order_id, msg.dlc))
+            })
+            .await
+        {
+            tracing::warn!("{:#}", e);
+        }
 
         ctx.stop();
     }
 
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
-        let _: Result<(), xtra::Disconnected> = self
-            .on_completed
-            .send(SetupCompleted::Failed {
-                order_id: msg.order_id,
-                error: msg.error,
+        if let Err(e) = self
+            .executor
+            .execute(self.order_id, |cfd| {
+                cfd.setup_contract(SetupCompleted::Failed {
+                    order_id: msg.order_id,
+                    error: msg.error,
+                })
             })
-            .log_failure("Failed to inform about contract setup failure")
-            .await;
+            .await
+        {
+            tracing::warn!("{:#}", e);
+        }
 
         ctx.stop();
     }
