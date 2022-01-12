@@ -1,5 +1,6 @@
 use crate::impl_sqlx_type_display_from_str;
 use crate::olivia;
+use crate::SETTLEMENT_INTERVAL;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::Address;
@@ -39,6 +40,7 @@ pub enum Error {
     NegativePrice,
 }
 
+/// Represents "quantity" or "contract size" in Cfd terms
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Usd(Decimal);
 
@@ -600,6 +602,80 @@ impl Timestamp {
     }
 }
 
+/// Funding rate per SETTLEMENT_INTERVAL
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FundingRate(Decimal);
+
+impl FundingRate {
+    pub fn new(rate: Decimal) -> Result<Self> {
+        anyhow::ensure!(
+            rate.is_sign_positive(),
+            "Negative funding rates (ie. paid by the maker) are not supported yet"
+        );
+        anyhow::ensure!(
+            rate <= Decimal::ONE,
+            "Funding rate can't be higher than 100%"
+        );
+
+        Ok(Self(rate))
+    }
+
+    pub fn to_decimal(&self) -> Decimal {
+        self.0
+    }
+}
+
+/// Fee paid on every contract renewal (a fraction of it if rolling over)
+#[derive(Debug, Clone)]
+pub struct FundingFee(u64);
+
+impl FundingFee {
+    pub fn as_u64(&self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for FundingFee {
+    fn default() -> Self {
+        Self::new(Amount::ZERO, FundingRate(Decimal::ZERO), 1)
+            .expect("hard-coded values to be valid")
+    }
+}
+
+impl FundingFee {
+    pub fn new(margin: Amount, funding_rate: FundingRate, hours_to_charge: i64) -> Result<Self> {
+        anyhow::ensure!(hours_to_charge >= 1, "Can't charge for less than one hour");
+        anyhow::ensure!(
+            hours_to_charge <= SETTLEMENT_INTERVAL.whole_hours(),
+            "Can't change for more than a full settlement interval"
+        );
+        let fraction_of_funding_period =
+            if hours_to_charge as i64 == SETTLEMENT_INTERVAL.whole_hours() {
+                Decimal::ONE
+            } else {
+                Decimal::from(hours_to_charge)
+                    .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
+                    .context("can't establish a fraction")?
+            };
+        Ok(Self(calculate_funding_fee(
+            margin,
+            funding_rate,
+            fraction_of_funding_period,
+        )?))
+    }
+}
+
+fn calculate_funding_fee(
+    margin: Amount,
+    funding_rate: FundingRate,
+    fraction_of_funding_period: Decimal,
+) -> Result<u64> {
+    (Decimal::from(margin.as_sat()) * funding_rate.to_decimal() * fraction_of_funding_period)
+        .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::AwayFromZero)
+        .to_u64()
+        .context("Failed to represent as u64")
+}
+
 #[cfg(test)]
 mod tests {
     use rust_decimal_macros::dec;
@@ -722,5 +798,52 @@ mod tests {
                 "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
             )],
         );
+    }
+
+    #[test]
+    fn no_funding_fees() {
+        let funding_fee = FundingFee::new(
+            Amount::from_sat(100),
+            FundingRate::new(Decimal::ZERO).unwrap(),
+            SETTLEMENT_INTERVAL.whole_hours(),
+        )
+        .unwrap();
+
+        assert_eq!(funding_fee.as_u64(), 0);
+    }
+
+    #[test]
+    fn initial_funding_fee() {
+        // Initial funding fee is taken for the whole settlement period, in this
+        // case 1%
+
+        let funding_fee = FundingFee::new(
+            Amount::from_sat(100),
+            FundingRate::new(dec!(0.01)).unwrap(),
+            SETTLEMENT_INTERVAL.whole_hours(),
+        )
+        .unwrap();
+
+        assert_eq!(funding_fee.as_u64(), 1);
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn rollover_funding_fee_collected_incrementally_should_not_be_smaller_than_collected_once_per_settlement_interval(amount_sat in 1_000u64..1_000_000u64) {
+            let funding_fee_for_whole_interval =
+                FundingFee::new(Amount::from_sat(amount_sat), FundingRate::new(dec!(0.01)).unwrap(), SETTLEMENT_INTERVAL.whole_hours()).unwrap();
+            let funding_fee_for_one_hour =
+                FundingFee::new(Amount::from_sat(amount_sat), FundingRate::new(dec!(0.01)).unwrap(), 1).unwrap();
+
+            let total_when_collected_hourly = SETTLEMENT_INTERVAL.whole_hours() as u64 * funding_fee_for_one_hour.as_u64();
+            let total_when_collected_for_whole_interval = funding_fee_for_whole_interval.as_u64();
+
+            prop_assert!(
+                total_when_collected_hourly >= total_when_collected_for_whole_interval,
+                "when charged per hour we should not be at loss as compared to charging once per settlement interval"
+            );
+        }
     }
 }

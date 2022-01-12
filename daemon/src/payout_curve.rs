@@ -1,3 +1,4 @@
+use crate::model::FundingFee;
 use crate::model::Leverage;
 use crate::model::Price;
 use crate::model::Usd;
@@ -52,8 +53,9 @@ pub fn calculate(
     quantity: Usd,
     leverage: Leverage,
     n_payouts: usize,
+    funding_fee: FundingFee,
 ) -> Result<Vec<Payout>> {
-    let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts, 0)?
+    let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts, funding_fee)?
         .into_iter()
         .map(PayoutParameter::into_payouts)
         .flatten_ok()
@@ -74,7 +76,7 @@ fn calculate_payout_parameters(
     quantity: Usd,
     long_leverage: Leverage,
     n_payouts: usize,
-    funding_fee: u64,
+    funding_fee: FundingFee,
 ) -> Result<Vec<PayoutParameter>> {
     let initial_rate = price
         .try_into_f64()
@@ -101,8 +103,10 @@ fn calculate_payout_parameters(
             let right_bound = row[1] as u64;
             let long_amount_btc = row[2];
 
+            // TODO: cover the case where the maker pays funding fees
+
             let long_amount = to_sats(long_amount_btc)?;
-            let long_amount_adjusted = long_amount.saturating_sub(funding_fee);
+            let long_amount_adjusted = long_amount.saturating_sub(funding_fee.as_u64());
             let adjustment = long_amount - long_amount_adjusted;
 
             let short_amount = to_sats(payout_curve.total_value - long_amount_btc)?;
@@ -459,6 +463,8 @@ fn create_long_payout_function(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::FundingRate;
+    use crate::SETTLEMENT_INTERVAL;
     use rust_decimal_macros::dec;
     use std::ops::RangeInclusive;
 
@@ -516,7 +522,7 @@ mod tests {
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
             200,
-            0,
+            FundingFee::default(),
         )
         .unwrap();
 
@@ -729,22 +735,29 @@ mod tests {
 
     #[test]
     fn verify_effect_of_funding_fee() {
+        let price = Price::new(dec!(54000.00)).unwrap();
+        let quantity = Usd::new(dec!(3500.00));
+
         let payouts = calculate_payout_parameters(
-            Price::new(dec!(54000.00)).unwrap(),
-            Usd::new(dec!(3500.00)),
+            price,
+            quantity,
             Leverage::new(5).unwrap(),
             200,
-            0,
+            FundingFee::default(),
         )
         .unwrap();
 
-        let funding_fee = 100;
+        let margin = quantity / price;
+        let funding_rate = FundingRate::new(dec!(0.002)).unwrap();
+        let funding_fee =
+            FundingFee::new(margin, funding_rate, SETTLEMENT_INTERVAL.whole_hours()).unwrap();
+
         let payouts_with_fee = calculate_payout_parameters(
-            Price::new(dec!(54000.00)).unwrap(),
-            Usd::new(dec!(3500.00)),
+            price,
+            quantity,
             Leverage::new(5).unwrap(),
             200,
-            funding_fee,
+            funding_fee.clone(),
         )
         .unwrap();
         assert_eq!(payouts.len(), payouts_with_fee.len());
@@ -758,6 +771,8 @@ mod tests {
             .map(|payout| payout.short_amount + payout.long_amount)
             .collect::<Vec<_>>();
         assert_eq!(total_per_payout, total_per_payout_with_fee);
+
+        let funding_fee = funding_fee.as_u64();
 
         let fees = payouts
             .iter()
@@ -978,7 +993,7 @@ mod tests {
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
             200,
-            0,
+            FundingFee::default(),
         )
         .unwrap();
 
