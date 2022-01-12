@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![warn(clippy::disallowed_method)]
 use crate::bitcoin::Txid;
+use crate::bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
@@ -22,6 +23,7 @@ use sqlx::SqlitePool;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::time::Duration;
+use time::ext::NumericalDuration;
 use tokio::sync::watch;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
@@ -475,6 +477,13 @@ where
             .await
             .context("Price feed not available")?
             .context("No quote available")?;
+
+        if latest_quote.is_older_than(QUOTE_INTERVAL_MINUTES.minutes()) {
+            anyhow::bail!(
+                "Latest quote is older than {} minutes. Refusing to settle with old price.",
+                QUOTE_INTERVAL_MINUTES
+            )
+        }
 
         self.cfd_actor
             .send(taker_cfd::ProposeSettlement {
