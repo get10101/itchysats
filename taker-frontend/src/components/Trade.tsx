@@ -1,9 +1,5 @@
 import { BoxProps } from "@chakra-ui/layout";
 import {
-    Alert,
-    AlertDescription,
-    AlertIcon,
-    AlertTitle,
     Box,
     Button,
     ButtonGroup,
@@ -48,6 +44,7 @@ import {
 import { motion } from "framer-motion";
 import * as React from "react";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
+import AlertBox from "./AlertBox";
 
 const MotionBox = motion<BoxProps>(Box);
 
@@ -66,19 +63,6 @@ interface TradeProps {
     walletBalance: number;
     onLongSubmit: (payload: CfdOrderRequestPayload) => void;
     isLongSubmitting: boolean;
-}
-
-interface AlertBoxProps {
-    title: string;
-    description: string;
-}
-
-function AlertBox({ title, description }: AlertBoxProps) {
-    return (<Alert status="error">
-        <AlertIcon />
-        <AlertTitle mr={2}>{title}</AlertTitle>
-        <AlertDescription>{description}</AlertDescription>
-    </Alert>);
 }
 
 export default function Trade({

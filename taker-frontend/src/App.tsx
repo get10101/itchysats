@@ -13,6 +13,7 @@ import * as React from "react";
 import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
+import AlertBox from "./components/AlertBox";
 import Disclaimer from "./components/Disclaimer";
 import Footer from "./components/Footer";
 import History from "./components/History";
@@ -49,7 +50,7 @@ export const App = () => {
         },
     });
 
-    const source = useEventSource("/api/feed", true);
+    const [source, isConnected] = useEventSource("/api/feed", true);
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const order = useLatestEvent<Order>(source, "order", intoOrder);
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
@@ -92,18 +93,39 @@ export const App = () => {
         500,
     );
 
+    let connectionStatus;
+    if (!isConnected) {
+        connectionStatus = <AlertBox
+            title={"Connection error!"}
+            description={"Please ensure taker daemon is running and refresh page"}
+        />;
+    }
+
     return (
         <>
             <Disclaimer />
             <Nav walletInfo={walletInfo} connectedToMaker={connectedToMaker} />
             <Box textAlign="center" padding={3}>
                 <Routes>
-                    <Route path="/wallet" element={<Wallet walletInfo={walletInfo} />} />
+                    <Route
+                        path="/wallet"
+                        element={<>
+                            <Center>
+                                <VStack>
+                                    {connectionStatus}
+                                    <Wallet walletInfo={walletInfo} />
+                                </VStack>
+                            </Center>
+                        </>}
+                    />
                     <Route
                         path="/"
                         element={<>
                             <Center>
-                                <WalletInfoBar walletInfo={walletInfo} />
+                                <VStack>
+                                    {connectionStatus}
+                                    <WalletInfoBar walletInfo={walletInfo} />
+                                </VStack>
                             </Center>
                             <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
                                 <Trade
