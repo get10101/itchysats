@@ -50,7 +50,7 @@ export const App = () => {
         },
     });
 
-    const [source, isConnected] = useEventSource("/api/feed", true);
+    const [source, isConnected] = useEventSource("/api/feed");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const order = useLatestEvent<Order>(source, "order", intoOrder);
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);

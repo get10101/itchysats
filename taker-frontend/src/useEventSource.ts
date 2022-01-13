@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 
-export function useEventSource(url: string, withCredentials?: boolean): [EventSource | null, boolean] {
+export function useEventSource(url: string): [EventSource | null, boolean] {
     const [source, setSource] = useState<EventSource | null>(null);
     const [isConnected, setIsConnected] = useState<boolean>(true);
 
     // Construct a new event source if the arguments to this hook change
     useEffect(() => {
-        const es = new EventSource(url, { withCredentials });
+        const es = new EventSource(url, { withCredentials: true });
         setSource(es);
 
         const errorHandler = () => {
@@ -37,7 +37,7 @@ export function useEventSource(url: string, withCredentials?: boolean): [EventSo
             clearTimeout(timer);
             es.close();
         };
-    }, [url, withCredentials]);
+    }, [url]);
 
     return [source, isConnected];
 }
