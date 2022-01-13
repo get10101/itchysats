@@ -62,9 +62,15 @@ export const App = () => {
     let [margin, setMargin] = useState(0);
     let [userHasEdited, setUserHasEdited] = useState(false);
 
-    const { price: askPrice, min_quantity, max_quantity, leverage, liquidation_price: liquidationPrice } = order || {};
+    const {
+        price: askPrice,
+        min_quantity: minQuantity,
+        max_quantity: maxQuantity,
+        leverage,
+        liquidation_price: liquidationPrice,
+    } = order || {};
 
-    let effectiveQuantity = userHasEdited ? quantity : (min_quantity?.toString() || "0");
+    let effectiveQuantity = userHasEdited ? quantity : (minQuantity?.toString() || "0");
 
     let [calculateMargin] = usePostRequest<MarginRequestPayload, MarginResponse>(
         "/api/calculate/margin",
@@ -110,8 +116,8 @@ export const App = () => {
                                     connectedToMaker={connectedToMaker}
                                     orderId={order?.id}
                                     quantity={effectiveQuantity}
-                                    maxQuantity={max_quantity || 0}
-                                    minQuantity={min_quantity || 0}
+                                    maxQuantity={maxQuantity || 0}
+                                    minQuantity={minQuantity || 0}
                                     referencePrice={referencePrice}
                                     askPrice={askPrice}
                                     margin={margin}
