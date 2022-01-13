@@ -3,7 +3,6 @@ use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
 use daemon::bitmex_price_feed;
 use daemon::connection::ConnectionStatus;
-use daemon::model::cfd::calculate_long_margin;
 use daemon::model::cfd::OrderId;
 use daemon::model::Leverage;
 use daemon::model::Price;
@@ -193,22 +192,6 @@ pub struct MarginRequest {
 pub struct MarginResponse {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub margin: Amount,
-}
-
-// TODO: Consider moving this into wasm and load it into the UI instead of triggering this endpoint
-// upon every quantity keystroke
-#[rocket::post("/calculate/margin", data = "<margin_request>")]
-pub fn margin_calc(
-    margin_request: Json<MarginRequest>,
-    _auth: Authenticated,
-) -> Result<status::Accepted<Json<MarginResponse>>, HttpApiProblem> {
-    let margin = calculate_long_margin(
-        margin_request.price,
-        margin_request.quantity,
-        margin_request.leverage,
-    );
-
-    Ok(status::Accepted(Some(Json(MarginResponse { margin }))))
 }
 
 #[derive(RustEmbed)]

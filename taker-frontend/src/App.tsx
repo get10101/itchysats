@@ -26,13 +26,10 @@ import {
     ConnectionStatus,
     intoCfd,
     intoOrder,
-    MarginRequestPayload,
-    MarginResponse,
     Order,
     StateGroupKey,
     WalletInfo,
 } from "./types";
-import useDebouncedEffect from "./useDebouncedEffect";
 import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
 import usePostRequest from "./usePostRequest";
@@ -59,7 +56,6 @@ export const App = () => {
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
     let [quantity, setQuantity] = useState("0");
-    let [margin, setMargin] = useState(0);
     let [userHasEdited, setUserHasEdited] = useState(false);
 
     const {
@@ -67,35 +63,14 @@ export const App = () => {
         min_quantity: minQuantity,
         max_quantity: maxQuantity,
         leverage,
+        margin_per_parcel: marginPerParcel,
+        parcel_size: parcelSize,
         liquidation_price: liquidationPrice,
     } = order || {};
 
     let effectiveQuantity = userHasEdited ? quantity : (minQuantity?.toString() || "0");
 
-    let [calculateMargin] = usePostRequest<MarginRequestPayload, MarginResponse>(
-        "/api/calculate/margin",
-        (response) => {
-            setMargin(response.margin);
-        },
-    );
     let [makeNewOrderRequest, isCreatingNewOrderRequest] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
-
-    useDebouncedEffect(
-        () => {
-            if (!order) {
-                return;
-            }
-            let payload: MarginRequestPayload = {
-                leverage: order.leverage,
-                price: order.price,
-                quantity: effectiveQuantity,
-            };
-
-            calculateMargin(payload);
-        },
-        [margin, effectiveQuantity, order],
-        500,
-    );
 
     function parseOptionalNumber(val: string | undefined): number | undefined {
         if (!val) {
@@ -127,7 +102,8 @@ export const App = () => {
                                     minQuantity={parseOptionalNumber(minQuantity) || 0}
                                     referencePrice={referencePrice}
                                     askPrice={parseOptionalNumber(askPrice)}
-                                    margin={margin}
+                                    parcelSize={parseOptionalNumber(parcelSize) || 0}
+                                    marginPerParcel={marginPerParcel || 0}
                                     leverage={leverage}
                                     liquidationPrice={parseOptionalNumber(liquidationPrice)}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}

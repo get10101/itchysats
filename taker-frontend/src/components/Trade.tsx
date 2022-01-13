@@ -58,7 +58,8 @@ interface TradeProps {
     maxQuantity: number;
     referencePrice?: number;
     askPrice?: number;
-    margin: number;
+    parcelSize: number;
+    marginPerParcel: number;
     leverage?: number;
     quantity: string;
     liquidationPrice?: number;
@@ -89,7 +90,8 @@ export default function Trade({
     askPrice: askPriceAsNumber,
     quantity,
     onQuantityChange,
-    margin,
+    parcelSize,
+    marginPerParcel,
     leverage,
     liquidationPrice: liquidationPriceAsNumber,
     onLongSubmit,
@@ -108,12 +110,13 @@ export default function Trade({
 
     const parse = (val: any) => Number.parseInt(val.replace(/^\$/, ""));
 
+    const margin = (parse(quantity) / parcelSize) * marginPerParcel;
+
     const balanceTooLow = walletBalance < margin;
     const quantityTooHigh = maxQuantity < parse(quantity);
     const quantityTooLow = minQuantity > parse(quantity);
     const quantityGreaterZero = parse(quantity) > 0;
-    const quantityIncrement = 100;
-    const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(parse(quantity), quantityIncrement);
+    const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(parse(quantity), parcelSize);
 
     const canSubmit = orderId && !isLongSubmitting && !balanceTooLow
         && !quantityTooHigh && !quantityTooLow && quantityGreaterZero && quantityIsEvenlyDivisibleByIncrement;
@@ -134,8 +137,8 @@ export default function Trade({
         }
         if (!quantityIsEvenlyDivisibleByIncrement) {
             alertBox = <AlertBox
-                title={`Quantity is not in increments of ${quantityIncrement}!`}
-                description={`Increment is ${quantityIncrement}`}
+                title={`Quantity is not in increments of ${parcelSize}!`}
+                description={`Increment is ${parcelSize}`}
             />;
         }
         if (quantityTooHigh) {
@@ -198,7 +201,7 @@ export default function Trade({
                             max={maxQuantity}
                             quantity={quantity}
                             onChange={onQuantityChange}
-                            quantityIncrement={quantityIncrement}
+                            parcelSize={parcelSize}
                         />
                     </GridItem>
                     <GridItem colSpan={1}>
@@ -299,11 +302,11 @@ interface QuantityProps {
     min: number;
     max: number;
     quantity: string;
-    quantityIncrement: number;
+    parcelSize: number;
     onChange: any;
 }
 
-function Quantity({ min, max, onChange, quantity, quantityIncrement }: QuantityProps) {
+function Quantity({ min, max, onChange, quantity, parcelSize }: QuantityProps) {
     return (
         <FormControl id="quantity">
             <FormLabel>Quantity</FormLabel>
@@ -313,7 +316,7 @@ function Quantity({ min, max, onChange, quantity, quantityIncrement }: QuantityP
                     min={min}
                     max={max}
                     default={min}
-                    step={quantityIncrement}
+                    step={parcelSize}
                     onChange={onChange}
                     value={quantity}
                     w={"100%"}

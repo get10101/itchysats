@@ -15,6 +15,8 @@ export interface Order {
     price: string;
     min_quantity: string;
     max_quantity: string;
+    parcel_size: string;
+    margin_per_parcel: number;
     leverage: number;
     liquidation_price: string;
     creation_timestamp: number;
@@ -218,16 +220,6 @@ export enum StateGroupKey {
     PENDING_ROLLOVER = "Pending Roll Over",
     /// A CFD that has been successfully or not-successfully terminated
     CLOSED = "Closed",
-}
-
-export interface MarginRequestPayload {
-    price: string;
-    quantity: string;
-    leverage: number;
-}
-
-export interface MarginResponse {
-    margin: number;
 }
 
 export interface CfdOrderRequestPayload {
