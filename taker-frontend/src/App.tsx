@@ -85,11 +85,10 @@ export const App = () => {
             if (!order) {
                 return;
             }
-            let quantity = effectiveQuantity ? Number.parseFloat(effectiveQuantity) : 0;
             let payload: MarginRequestPayload = {
                 leverage: order.leverage,
                 price: order.price,
-                quantity,
+                quantity: effectiveQuantity,
             };
 
             calculateMargin(payload);
@@ -97,6 +96,14 @@ export const App = () => {
         [margin, effectiveQuantity, order],
         500,
     );
+
+    function parseOptionalNumber(val: string | undefined): number | undefined {
+        if (!val) {
+            return undefined;
+        }
+
+        return Number.parseFloat(val);
+    }
 
     return (
         <>
@@ -116,13 +123,13 @@ export const App = () => {
                                     connectedToMaker={connectedToMaker}
                                     orderId={order?.id}
                                     quantity={effectiveQuantity}
-                                    maxQuantity={maxQuantity || 0}
-                                    minQuantity={minQuantity || 0}
+                                    maxQuantity={parseOptionalNumber(maxQuantity) || 0}
+                                    minQuantity={parseOptionalNumber(minQuantity) || 0}
                                     referencePrice={referencePrice}
-                                    askPrice={askPrice}
+                                    askPrice={parseOptionalNumber(askPrice)}
                                     margin={margin}
                                     leverage={leverage}
-                                    liquidationPrice={liquidationPrice}
+                                    liquidationPrice={parseOptionalNumber(liquidationPrice)}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
                                     onQuantityChange={(valueString: string) => {
                                         setUserHasEdited(true);

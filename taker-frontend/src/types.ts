@@ -12,11 +12,11 @@ export interface Order {
     id: string;
     trading_pair: string;
     position: Position;
-    price: number;
-    min_quantity: number;
-    max_quantity: number;
+    price: string;
+    min_quantity: string;
+    max_quantity: string;
     leverage: number;
-    liquidation_price: number;
+    liquidation_price: string;
     creation_timestamp: number;
     settlement_time_interval_in_secs: number;
 }
@@ -221,8 +221,8 @@ export enum StateGroupKey {
 }
 
 export interface MarginRequestPayload {
-    price: number;
-    quantity: number;
+    price: string;
+    quantity: string;
     leverage: number;
 }
 
