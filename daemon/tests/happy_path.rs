@@ -4,7 +4,6 @@ use crate::harness::flow::is_next_none;
 use crate::harness::flow::next;
 use crate::harness::flow::next_cfd;
 use crate::harness::flow::next_order;
-use crate::harness::flow::next_some;
 use crate::harness::init_tracing;
 use crate::harness::maia::OliviaData;
 use crate::harness::mocks::oracle::dummy_wrong_attestation;
@@ -77,10 +76,11 @@ async fn taker_receives_order_from_maker_on_publication() {
 
     maker.publish_order(dummy_new_order()).await;
 
-    let (published, received) =
-        tokio::join!(next_some(maker.order_feed()), next_some(taker.order_feed()));
+    let (published, received) = next_order(maker.order_feed(), taker.order_feed())
+        .await
+        .unwrap();
 
-    assert_eq!(published.unwrap(), received.unwrap());
+    assert_eq!(published, received);
 }
 
 #[tokio::test]
