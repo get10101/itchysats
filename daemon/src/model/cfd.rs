@@ -557,6 +557,24 @@ impl Cfd {
             .map(|dlc| dlc.settlement_event_id.timestamp)
     }
 
+    fn margin(&self) -> Amount {
+        match self.position {
+            Position::Long => {
+                calculate_long_margin(self.initial_price, self.quantity, self.leverage)
+            }
+            Position::Short => calculate_short_margin(self.initial_price, self.quantity),
+        }
+    }
+
+    fn counterparty_margin(&self) -> Amount {
+        match self.position {
+            Position::Short => {
+                calculate_long_margin(self.initial_price, self.quantity, self.leverage)
+            }
+            Position::Long => calculate_short_margin(self.initial_price, self.quantity),
+        }
+    }
+
     fn is_in_collaborative_settlement(&self) -> bool {
         self.settlement_proposal.is_some()
     }
@@ -608,19 +626,8 @@ impl Cfd {
             bail!("Start contract not allowed in version {}", self.version)
         }
 
-        let margin = match self.position {
-            Position::Long => {
-                calculate_long_margin(self.initial_price, self.quantity, self.leverage)
-            }
-            Position::Short => calculate_short_margin(self.initial_price, self.quantity),
-        };
-
-        let counterparty_margin = match self.position {
-            Position::Long => calculate_short_margin(self.initial_price, self.quantity),
-            Position::Short => {
-                calculate_long_margin(self.initial_price, self.quantity, self.leverage)
-            }
-        };
+        let margin = self.margin();
+        let counterparty_margin = self.counterparty_margin();
 
         Ok((
             Event::new(self.id(), CfdEvent::ContractSetupStarted),
