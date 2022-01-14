@@ -165,10 +165,6 @@ export function CfdTable(
                 isNumeric: true,
             },
             {
-                Header: "Timestamp",
-                accessor: "state_transition_timestamp",
-            },
-            {
                 Header: "State",
                 accessor: ({ state }) => {
                     return (
@@ -199,7 +195,7 @@ export function CfdTable(
     );
 
     // if we mark certain columns only as hidden, they are still around and we can render them in the sub-row
-    const hiddenColumns = ["order_id", "leverage", "state_transition_timestamp", "Details"];
+    const hiddenColumns = ["order_id", "leverage", "Details"];
 
     return (
         <Table
