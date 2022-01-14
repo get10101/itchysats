@@ -28,7 +28,6 @@ use bdk::bitcoin::Script;
 use bdk::bitcoin::SignedAmount;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
-use bdk::miniscript::DescriptorTrait;
 use maia::TransactionExt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -180,10 +179,33 @@ pub struct Cfd {
     #[serde(with = "round_to_two_dp::opt")]
     pub pending_settlement_proposal_price: Option<Price>,
 
-    // This is a bit awkward but we need this to compute the appropriate state as more events are
-    // processed.
     #[serde(skip)]
+    aggregated: Aggregated,
+}
+
+/// Bundle all state extracted from the events in one struct.
+///
+/// This struct is not serialized but simply carries all state we are interested in from the events.
+/// The [`Cfd`] struct above fulfills two roles currently:
+/// - It represents the API model that is serialized.
+/// - It serves as an aggregate that is hydrated from events.
+///
+/// This dual-role motivates the existence of this struct.
+#[derive(Default, Clone, Debug)]
+struct Aggregated {
+    /// If this is present, we have an active DLC.
     latest_dlc: Option<Dlc>,
+    /// If this is present, it should have been published.
+    lock_tx: Option<Transaction>,
+    /// If this is present, it should have been published.
+    commit_tx: Option<Transaction>,
+    /// If this is present, it should have been published.
+    collab_settlement_tx: Option<(Transaction, Script)>,
+    /// If this is present, it should have been published.
+    cet: Option<Transaction>,
+    /// If this is present, it should have been published.
+    refund_tx: Option<Transaction>,
+    closing_price: Option<Price>,
 }
 
 impl Cfd {
@@ -261,54 +283,30 @@ impl Cfd {
             expiry_timestamp: None,
             counterparty: counterparty_network_identity,
             pending_settlement_proposal_price: None,
-            latest_dlc: None,
+            aggregated: Aggregated::default(),
         }
     }
 
-    // TODO: There is probably a better way of doing this?
-    // The issue is, we need to re-hydrate the CFD to get the latest state but at the same time
-    // incorporate other data like network, current price, etc ...
     fn apply(mut self, event: Event, network: Network, role: Role) -> Self {
         // First, try to set state based on event.
         use CfdEvent::*;
         match event.event {
             ContractSetupStarted => {
-                // Don't display profit for contracts that are not yet created.
-                self.profit_btc = None;
-                self.profit_percent = None;
                 self.state = CfdState::ContractSetup;
             }
             ContractSetupCompleted { dlc } => {
-                // We can highlight the shared output, but cannot discern between our change outputs
-                // and the other party's.
-                let (lock_tx, lock_desc) = &dlc.lock;
+                self.aggregated.latest_dlc = Some(dlc);
 
-                let tx_url = TxUrl::from_transaction(
-                    lock_tx,
-                    &lock_desc.script_pubkey(),
-                    network,
-                    TxLabel::Lock,
-                );
-                self.details.tx_url_list.insert(tx_url);
-                self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
-                self.latest_dlc = Some(dlc);
                 self.state = CfdState::PendingOpen;
             }
             ContractSetupFailed => {
-                // Don't display profit for failed contracts.
-                self.profit_btc = None;
-                self.profit_percent = None;
                 self.state = CfdState::SetupFailed;
             }
             OfferRejected => {
-                // Don't display profit for rejected contracts.
-                self.profit_btc = None;
-                self.profit_percent = None;
                 self.state = CfdState::Rejected;
             }
             RolloverCompleted { dlc } => {
-                self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
-                self.latest_dlc = Some(dlc);
+                self.aggregated.latest_dlc = Some(dlc);
 
                 self.state = CfdState::Open;
             }
@@ -321,6 +319,7 @@ impl Cfd {
             CollaborativeSettlementStarted { proposal } => match role {
                 Role::Maker => {
                     self.pending_settlement_proposal_price = Some(proposal.price);
+
                     self.state = CfdState::IncomingSettlementProposal;
                 }
                 Role::Taker => {
@@ -329,6 +328,7 @@ impl Cfd {
             },
             CollaborativeSettlementProposalAccepted => {
                 self.pending_settlement_proposal_price = None;
+
                 self.state = CfdState::IncomingSettlementProposal;
             }
             CollaborativeSettlementCompleted {
@@ -336,60 +336,32 @@ impl Cfd {
                 price,
                 script,
             } => {
-                self.details.tx_url_list.insert(TxUrl::from_transaction(
-                    &spend_tx,
-                    &script,
-                    network,
-                    TxLabel::Collaborative,
-                ));
+                self.aggregated.collab_settlement_tx = Some((spend_tx, script));
+                self.aggregated.closing_price = Some(price);
 
-                let (profit_btc, profit_percent) = self.maybe_calculate_profit(price);
-                self.profit_btc = profit_btc;
-                self.profit_percent = profit_percent;
                 self.state = CfdState::PendingClose;
             }
             CollaborativeSettlementRejected { commit_tx } => {
+                self.aggregated.commit_tx = Some(commit_tx);
                 self.pending_settlement_proposal_price = None;
-                self.details.tx_url_list.insert(TxUrl::new(
-                    commit_tx.txid(),
-                    network,
-                    TxLabel::Commit,
-                ));
+
                 self.state = CfdState::PendingCommit;
             }
             CollaborativeSettlementFailed { commit_tx } => {
-                self.details.tx_url_list.insert(TxUrl::new(
-                    commit_tx.txid(),
-                    network,
-                    TxLabel::Commit,
-                ));
+                self.aggregated.commit_tx = Some(commit_tx);
+
                 self.state = CfdState::PendingCommit;
             }
             LockConfirmed => {
                 self.state = CfdState::Open;
             }
             CommitConfirmed => {
-                if let Some(dlc) = self.latest_dlc.as_ref() {
-                    self.details.tx_url_list.insert(TxUrl::new(
-                        dlc.commit.0.txid(),
-                        network,
-                        TxLabel::Commit,
-                    ));
-                }
                 self.state = CfdState::OpenCommitted;
             }
             CetConfirmed => {
                 self.state = CfdState::Closed;
             }
             RefundConfirmed => {
-                if let Some(dlc) = self.latest_dlc.as_ref() {
-                    self.details.tx_url_list.insert(TxUrl::from_transaction(
-                        &dlc.refund.0,
-                        &dlc.script_pubkey_for(role),
-                        network,
-                        TxLabel::Refund,
-                    ));
-                }
                 self.state = CfdState::Refunded;
             }
             CollaborativeSettlementConfirmed => {
@@ -398,67 +370,30 @@ impl Cfd {
             CetTimelockConfirmedPriorOracleAttestation => {
                 self.state = CfdState::OpenCommitted;
             }
-            CetTimelockConfirmedPostOracleAttestation { cet, .. } => {
-                if let Some(dlc) = self.latest_dlc.as_ref() {
-                    self.details.tx_url_list.insert(TxUrl::from_transaction(
-                        &cet,
-                        &dlc.script_pubkey_for(role),
-                        network,
-                        TxLabel::Cet,
-                    ));
-                }
+            CetTimelockConfirmedPostOracleAttestation { cet } => {
+                self.aggregated.cet = Some(cet);
 
                 self.state = CfdState::PendingCet;
             }
-            RefundTimelockExpired { .. } => {
-                if let Some(dlc) = self.latest_dlc.as_ref() {
-                    self.details.tx_url_list.insert(TxUrl::from_transaction(
-                        &dlc.refund.0,
-                        &dlc.script_pubkey_for(role),
-                        network,
-                        TxLabel::Refund,
-                    ));
-                }
+            RefundTimelockExpired { refund_tx } => {
+                self.aggregated.refund_tx = Some(refund_tx);
+
                 self.state = CfdState::PendingRefund;
             }
-            OracleAttestedPriorCetTimelock {
-                price, commit_tx, ..
-            } => {
-                let (profit_btc, profit_percent) = self.maybe_calculate_profit(price);
-                self.profit_btc = profit_btc;
-                self.profit_percent = profit_percent;
+            OracleAttestedPriorCetTimelock { price, .. } => {
+                self.aggregated.closing_price = Some(price);
 
-                if let Some(commit_tx) = commit_tx {
-                    self.details.tx_url_list.insert(TxUrl::new(
-                        commit_tx.txid(),
-                        network,
-                        TxLabel::Commit,
-                    ));
-                }
                 self.state = CfdState::PendingCommit;
             }
             OracleAttestedPostCetTimelock { cet, price } => {
-                let tx_url = if let Some(dlc) = self.latest_dlc.as_ref() {
-                    TxUrl::from_transaction(
-                        &cet,
-                        &dlc.script_pubkey_for(role),
-                        network,
-                        TxLabel::Cet,
-                    )
-                } else {
-                    TxUrl::new(cet.txid(), network, TxLabel::Cet)
-                };
-                self.details.tx_url_list.insert(tx_url);
+                self.aggregated.cet = Some(cet);
+                self.aggregated.closing_price = Some(price);
 
-                let (profit_btc, profit_percent) = self.maybe_calculate_profit(price);
-                self.profit_btc = profit_btc;
-                self.profit_percent = profit_percent;
                 self.state = CfdState::PendingCet;
             }
             ManualCommit { tx } => {
-                self.details
-                    .tx_url_list
-                    .insert(TxUrl::new(tx.txid(), network, TxLabel::Commit));
+                self.aggregated.commit_tx = Some(tx);
+
                 self.state = CfdState::PendingCommit;
             }
             RevokeConfirmed => todo!("Deal with revoked"),
@@ -477,28 +412,32 @@ impl Cfd {
 
         self.actions = self.derive_actions(role);
 
-        self
-    }
+        // If we don't have a dedicated closing price, keep the one that is set (which is
+        // based on current price).
+        if let Some(closing_price) = self.aggregated.closing_price {
+            let (profit_btc, profit_percent) = self.compute_profit(closing_price);
 
-    fn maybe_calculate_profit(
-        &self,
-        closing_price: Price,
-    ) -> (Option<SignedAmount>, Option<String>) {
-        match calculate_profit(
-            self.initial_price,
-            closing_price,
-            self.quantity_usd,
-            self.leverage,
-            self.position,
-        ) {
-            Ok((profit_btc, profit_percent)) => {
-                (Some(profit_btc), Some(profit_percent.to_string()))
-            }
-            Err(err) => {
-                tracing::error!(initial_price=%self.initial_price, closing_price=%closing_price, quantity=%self.quantity_usd, leverage=%self.leverage, position=%self.position, "Profit calculation failed: {:#}", err);
-                (None, None)
-            }
+            self.profit_btc = profit_btc;
+            self.profit_percent = profit_percent;
         }
+
+        if let Some(lock_tx_url) = self.lock_tx_url(network, role) {
+            self.details.tx_url_list.insert(lock_tx_url);
+        }
+        if let Some(commit_tx_url) = self.commit_tx_url(network) {
+            self.details.tx_url_list.insert(commit_tx_url);
+        }
+        if let Some(collab_settlement_tx_url) = self.collab_settlement_tx_url(network) {
+            self.details.tx_url_list.insert(collab_settlement_tx_url);
+        }
+        if let Some(refund_tx_url) = self.refund_tx_url(network, role) {
+            self.details.tx_url_list.insert(refund_tx_url);
+        }
+        if let Some(cet_url) = self.cet_url(network, role) {
+            self.details.tx_url_list.insert(cet_url);
+        }
+
+        self
     }
 
     fn derive_actions(&self, role: Role) -> HashSet<CfdAction> {
@@ -530,6 +469,85 @@ impl Cfd {
             (CfdState::Refunded, _) => HashSet::new(),
             (CfdState::SetupFailed, _) => HashSet::new(),
         }
+    }
+
+    fn compute_profit(&self, closing_price: Price) -> (Option<SignedAmount>, Option<String>) {
+        use CfdState::*;
+
+        match self.state {
+            SetupFailed | PendingSetup | ContractSetup | Rejected | PendingRefund | Refunded => {
+                (None, None) // For failed states, we don't want to display profit.
+            }
+            PendingOpen
+            | Open
+            | PendingCommit
+            | PendingCet
+            | PendingClose
+            | OpenCommitted
+            | IncomingSettlementProposal
+            | OutgoingSettlementProposal
+            | IncomingRolloverProposal
+            | OutgoingRolloverProposal
+            | Closed => {
+                match calculate_profit(
+                    self.initial_price,
+                    closing_price,
+                    self.quantity_usd,
+                    self.leverage,
+                    self.position,
+                ) {
+                    Ok((profit_btc, profit_percent)) => {
+                        (Some(profit_btc), Some(profit_percent.to_string()))
+                    }
+                    Err(err) => {
+                        tracing::error!(initial_price=%self.initial_price, closing_price=%closing_price, quantity=%self.quantity_usd, leverage=%self.leverage, position=%self.position, "Profit calculation failed: {:#}", err);
+                        (None, None)
+                    }
+                }
+            }
+        }
+    }
+
+    fn lock_tx_url(&self, network: Network, role: Role) -> Option<TxUrl> {
+        let tx = self.aggregated.lock_tx.as_ref()?;
+        let dlc = self.aggregated.latest_dlc.as_ref()?;
+
+        let url = TxUrl::from_transaction(tx, &dlc.script_pubkey_for(role), network, TxLabel::Lock);
+
+        Some(url)
+    }
+
+    fn commit_tx_url(&self, network: Network) -> Option<TxUrl> {
+        let tx = self.aggregated.commit_tx.as_ref()?;
+        let url = TxUrl::new(tx.txid(), network, TxLabel::Commit);
+
+        Some(url)
+    }
+
+    fn collab_settlement_tx_url(&self, network: Network) -> Option<TxUrl> {
+        let (tx, script) = self.aggregated.collab_settlement_tx.as_ref()?;
+        let url = TxUrl::from_transaction(tx, script, network, TxLabel::Collaborative);
+
+        Some(url)
+    }
+
+    fn refund_tx_url(&self, network: Network, role: Role) -> Option<TxUrl> {
+        let tx = self.aggregated.refund_tx.as_ref()?;
+        let dlc = self.aggregated.latest_dlc.as_ref()?;
+
+        let url =
+            TxUrl::from_transaction(tx, &dlc.script_pubkey_for(role), network, TxLabel::Refund);
+
+        Some(url)
+    }
+
+    fn cet_url(&self, network: Network, role: Role) -> Option<TxUrl> {
+        let tx = self.aggregated.cet.as_ref()?;
+        let dlc = self.aggregated.latest_dlc.as_ref()?;
+
+        let url = TxUrl::from_transaction(tx, &dlc.script_pubkey_for(role), network, TxLabel::Cet);
+
+        Some(url)
     }
 }
 
