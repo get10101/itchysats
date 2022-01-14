@@ -433,16 +433,16 @@ pub struct Cfd {
     // dynamic (based on events)
     dlc: Option<Dlc>,
 
-    /// Holds the decrypted CET transaction once it is available in the CFD lifecycle
+    /// Holds the decrypted CET transaction if we have previously emitted it as part of an event.
     ///
-    /// Only `Some` in case we receive the attestation after the CET timelock expiry.
-    /// This does _not_ imply that the transaction is actually confirmed.
+    /// There is not guarantee that the transaction is confirmed if this is set to `Some`.
+    /// However, if this is set to `Some`, there is no need to re-emit it as part of another event.
     cet: Option<Transaction>,
 
-    /// Holds the decrypted commit transaction once it is available in the CFD lifecycle
+    /// Holds the decrypted commit transaction if we have previously emitted it as part of an event.
     ///
-    /// Only `Some` in case we receive the attestation before the CET timelock expiry.
-    /// This does _not_ imply that the transaction is actually confirmed.
+    /// There is not guarantee that the transaction is confirmed if this is set to `Some`.
+    /// However, if this is set to `Some`, there is no need to re-emit it as part of another event.
     commit_tx: Option<Transaction>,
 
     collaborative_settlement_spend_tx: Option<Transaction>,
