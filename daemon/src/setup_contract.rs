@@ -431,7 +431,6 @@ pub async fn roll_over(
     let maker_lock_amount = dlc.maker_lock_amount;
     let taker_lock_amount = dlc.taker_lock_amount;
     let payouts = HashMap::from_iter([(
-        // TODO : we want to support multiple announcements
         Announcement {
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
