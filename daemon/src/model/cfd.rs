@@ -632,7 +632,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+                1,
             ),
         ))
     }
@@ -665,7 +665,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+                1,
             ),
             self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
             self.settlement_interval,
@@ -692,7 +692,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+                1,
             ),
             self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
         ))
