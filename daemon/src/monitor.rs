@@ -207,8 +207,12 @@ impl Cfd {
             },
             // final states, don't monitor anything
             CetConfirmed | RefundConfirmed | CollaborativeSettlementConfirmed => Self::default(),
-            CetTimelockConfirmedPriorOracleAttestation
-            | CetTimelockConfirmedPostOracleAttestation { .. } => Self {
+            CetTimelockConfirmedPriorOracleAttestation => Self {
+                monitor_cet_timelock: false,
+                ..self
+            },
+            CetTimelockConfirmedPostOracleAttestation { cet, .. } => Self {
+                cet: Some(cet),
                 monitor_cet_timelock: false,
                 ..self
             },
@@ -220,10 +224,6 @@ impl Cfd {
                 cet: Some(cet),
                 ..self
             },
-            OracleAttestedPriorCetTimelock { timelocked_cet, .. } => Self {
-                cet: Some(timelocked_cet),
-                ..self
-            },
             CollaborativeSettlementRejected { commit_tx }
             | CollaborativeSettlementFailed { commit_tx } => Self {
                 commit_tx: Some(commit_tx),
@@ -233,6 +233,7 @@ impl Cfd {
             | RolloverAccepted
             | RolloverFailed
             | ManualCommit { .. }
+            | OracleAttestedPriorCetTimelock { .. }
             | CollaborativeSettlementStarted { .. }
             | CollaborativeSettlementProposalAccepted => self,
             RevokeConfirmed => todo!("Deal with revoked"),
