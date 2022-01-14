@@ -153,7 +153,11 @@ impl Actor {
 
                 tracing::info!(%txid, "CET published");
             }
-            OracleAttestedPriorCetTimelock { commit_tx: tx, .. } | ManualCommit { tx } => {
+            OracleAttestedPriorCetTimelock {
+                commit_tx: Some(tx),
+                ..
+            }
+            | ManualCommit { tx } => {
                 let txid = self
                     .try_broadcast_transaction
                     .send(monitor::TryBroadcastTransaction { tx })
@@ -161,6 +165,12 @@ impl Actor {
                     .context("Failed to broadcast commit transaction")?;
 
                 tracing::info!(%txid, "Commit transaction published");
+            }
+            OracleAttestedPriorCetTimelock {
+                commit_tx: None, ..
+            } => {
+                // Nothing to do: The commit transaction has already been published but the timelock
+                // hasn't expired yet. We just need to wait.
             }
             RolloverCompleted { dlc } => {
                 tracing::info!(order_id=%event.id, "Rollover complete");

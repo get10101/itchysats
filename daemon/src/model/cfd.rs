@@ -364,8 +364,12 @@ pub enum CfdEvent {
     OracleAttestedPriorCetTimelock {
         #[serde(with = "hex_transaction")]
         timelocked_cet: Transaction,
-        #[serde(with = "hex_transaction")]
-        commit_tx: Transaction,
+        /// The commit transaction for the DLC of this CFD.
+        ///
+        /// If this is set to `Some`, we haven't previously attempted broadcast `commit_tx` and
+        /// need to broadcast it as a result of this event.
+        #[serde(with = "hex_transaction::opt")]
+        commit_tx: Option<Transaction>,
         price: Price,
     },
     OracleAttestedPostCetTimelock {
@@ -439,7 +443,8 @@ pub struct Cfd {
     /// However, if this is set to `Some`, there is no need to re-emit it as part of another event.
     cet: Option<Transaction>,
 
-    /// Holds the decrypted commit transaction if we have previously emitted it as part of an event.
+    /// Holds the decrypted commit transaction if we have previously emitted it as part of an
+    /// event.
     ///
     /// There is not guarantee that the transaction is confirmed if this is set to `Some`.
     /// However, if this is set to `Some`, there is no need to re-emit it as part of another event.
@@ -932,9 +937,15 @@ impl Cfd {
             ));
         }
 
+        // If we haven't yet emitted the commit tx, we need to emit it now.
+        let commit_tx_to_emit = match self.commit_tx {
+            Some(_) => None,
+            None => Some(dlc.signed_commit_tx()?),
+        };
+
         Ok(Some(self.event(CfdEvent::OracleAttestedPriorCetTimelock {
             timelocked_cet: cet,
-            commit_tx: dlc.signed_commit_tx()?,
+            commit_tx: commit_tx_to_emit,
             price,
         })))
     }
@@ -1665,6 +1676,35 @@ mod hex_transaction {
         let tx = bitcoin::consensus::deserialize(&bytes).map_err(D::Error::custom)?;
         Ok(tx)
     }
+
+    pub mod opt {
+        use super::*;
+
+        pub fn serialize<S: Serializer>(
+            value: &Option<Transaction>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error> {
+            match value {
+                None => serializer.serialize_none(),
+                Some(value) => super::serialize(value, serializer),
+            }
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Transaction>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let hex = match Option::<String>::deserialize(deserializer).map_err(D::Error::custom)? {
+                None => return Ok(None),
+                Some(hex) => hex,
+            };
+
+            let bytes = hex::decode(hex).map_err(D::Error::custom)?;
+            let tx = bitcoin::consensus::deserialize(&bytes).map_err(D::Error::custom)?;
+
+            Ok(Some(tx))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2098,7 +2138,7 @@ mod tests {
                 id: Default::default(),
                 event: CfdEvent::OracleAttestedPriorCetTimelock {
                     timelocked_cet: dummy_transaction(),
-                    commit_tx: dummy_transaction(),
+                    commit_tx: Some(dummy_transaction()),
                     price: Price(dec!(10000)),
                 },
             });

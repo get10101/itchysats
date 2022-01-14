@@ -407,11 +407,13 @@ impl Cfd {
                 self.profit_btc = profit_btc;
                 self.profit_percent = profit_percent;
 
-                self.details.tx_url_list.push(TxUrl::new(
-                    commit_tx.txid(),
-                    network,
-                    TxLabel::Commit,
-                ));
+                if let Some(commit_tx) = commit_tx {
+                    self.details.tx_url_list.push(TxUrl::new(
+                        commit_tx.txid(),
+                        network,
+                        TxLabel::Commit,
+                    ));
+                }
 
                 // Only allow committing once the oracle attested.
                 (CfdState::PendingCommit, vec![])
