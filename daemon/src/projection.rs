@@ -35,6 +35,7 @@ use rust_decimal_macros::dec;
 use serde::Deserialize;
 use serde::Serialize;
 use sqlx::pool::PoolConnection;
+use std::collections::HashSet;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
@@ -168,7 +169,7 @@ pub struct Cfd {
     pub profit_percent: Option<String>,
 
     pub state: CfdState,
-    pub actions: Vec<CfdAction>, // TODO: This should be a HashMap.
+    pub actions: HashSet<CfdAction>,
     pub details: CfdDetails,
 
     #[serde(with = "::time::serde::timestamp::option")]
@@ -231,9 +232,9 @@ impl Cfd {
             });
 
         let initial_actions = if role == Role::Maker {
-            vec![CfdAction::AcceptOrder, CfdAction::RejectOrder]
+            HashSet::from([CfdAction::AcceptOrder, CfdAction::RejectOrder])
         } else {
-            vec![]
+            HashSet::new()
         };
 
         Self {
@@ -254,7 +255,7 @@ impl Cfd {
             state: CfdState::PendingSetup,
             actions: initial_actions,
             details: CfdDetails {
-                tx_url_list: vec![],
+                tx_url_list: HashSet::new(),
                 payout: None,
             },
             expiry_timestamp: None,
@@ -270,13 +271,12 @@ impl Cfd {
     fn apply(mut self, event: Event, network: Network, role: Role) -> Self {
         // First, try to set state based on event.
         use CfdEvent::*;
-        let (state, actions) = match event.event {
+        match event.event {
             ContractSetupStarted => {
                 // Don't display profit for contracts that are not yet created.
                 self.profit_btc = None;
                 self.profit_percent = None;
-
-                (CfdState::ContractSetup, vec![])
+                self.state = CfdState::ContractSetup;
             }
             ContractSetupCompleted { dlc } => {
                 // We can highlight the shared output, but cannot discern between our change outputs
@@ -289,56 +289,54 @@ impl Cfd {
                     network,
                     TxLabel::Lock,
                 );
-                self.details.tx_url_list.push(tx_url);
+                self.details.tx_url_list.insert(tx_url);
                 self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
                 self.latest_dlc = Some(dlc);
-
-                (CfdState::PendingOpen, vec![])
+                self.state = CfdState::PendingOpen;
             }
             ContractSetupFailed => {
                 // Don't display profit for failed contracts.
                 self.profit_btc = None;
                 self.profit_percent = None;
-
-                (CfdState::SetupFailed, vec![])
+                self.state = CfdState::SetupFailed;
             }
             OfferRejected => {
                 // Don't display profit for rejected contracts.
                 self.profit_btc = None;
                 self.profit_percent = None;
-
-                (CfdState::Rejected, vec![])
+                self.state = CfdState::Rejected;
             }
             RolloverCompleted { dlc } => {
                 self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
                 self.latest_dlc = Some(dlc);
 
-                (CfdState::Open, vec![])
+                self.state = CfdState::Open;
             }
-            RolloverRejected => (CfdState::Open, vec![]),
-            RolloverFailed => (CfdState::Open, vec![]),
+            RolloverRejected => {
+                self.state = CfdState::Open;
+            }
+            RolloverFailed => {
+                self.state = CfdState::Open;
+            }
             CollaborativeSettlementStarted { proposal } => match role {
                 Role::Maker => {
                     self.pending_settlement_proposal_price = Some(proposal.price);
-
-                    (
-                        CfdState::IncomingSettlementProposal,
-                        vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement],
-                    )
+                    self.state = CfdState::IncomingSettlementProposal;
                 }
-                Role::Taker => (CfdState::OutgoingSettlementProposal, vec![]),
+                Role::Taker => {
+                    self.state = CfdState::OutgoingSettlementProposal;
+                }
             },
             CollaborativeSettlementProposalAccepted => {
                 self.pending_settlement_proposal_price = None;
-
-                (CfdState::IncomingSettlementProposal, vec![])
+                self.state = CfdState::IncomingSettlementProposal;
             }
             CollaborativeSettlementCompleted {
                 spend_tx,
                 price,
                 script,
             } => {
-                self.details.tx_url_list.push(TxUrl::from_transaction(
+                self.details.tx_url_list.insert(TxUrl::from_transaction(
                     &spend_tx,
                     &script,
                     network,
@@ -348,58 +346,81 @@ impl Cfd {
                 let (profit_btc, profit_percent) = self.maybe_calculate_profit(price);
                 self.profit_btc = profit_btc;
                 self.profit_percent = profit_percent;
-
-                (CfdState::PendingClose, vec![])
+                self.state = CfdState::PendingClose;
             }
             CollaborativeSettlementRejected { commit_tx } => {
                 self.pending_settlement_proposal_price = None;
-                self.details.tx_url_list.push(TxUrl::new(
+                self.details.tx_url_list.insert(TxUrl::new(
                     commit_tx.txid(),
                     network,
                     TxLabel::Commit,
                 ));
-
-                (CfdState::PendingCommit, vec![])
+                self.state = CfdState::PendingCommit;
             }
             CollaborativeSettlementFailed { commit_tx } => {
-                self.details.tx_url_list.push(TxUrl::new(
+                self.details.tx_url_list.insert(TxUrl::new(
                     commit_tx.txid(),
                     network,
                     TxLabel::Commit,
                 ));
-
-                (CfdState::PendingCommit, vec![])
+                self.state = CfdState::PendingCommit;
             }
-            LockConfirmed => (CfdState::Open, vec![CfdAction::Commit, CfdAction::Settle]),
+            LockConfirmed => {
+                self.state = CfdState::Open;
+            }
             CommitConfirmed => {
-                // pretty weird if this is not defined ...
                 if let Some(dlc) = self.latest_dlc.as_ref() {
-                    self.details.tx_url_list.push(TxUrl::new(
+                    self.details.tx_url_list.insert(TxUrl::new(
                         dlc.commit.0.txid(),
                         network,
                         TxLabel::Commit,
                     ));
                 }
-                (CfdState::OpenCommitted, vec![])
+                self.state = CfdState::OpenCommitted;
             }
-            CetConfirmed => (CfdState::Closed, vec![]),
+            CetConfirmed => {
+                self.state = CfdState::Closed;
+            }
             RefundConfirmed => {
                 if let Some(dlc) = self.latest_dlc.as_ref() {
-                    self.details.tx_url_list.push(TxUrl::from_transaction(
+                    self.details.tx_url_list.insert(TxUrl::from_transaction(
                         &dlc.refund.0,
                         &dlc.script_pubkey_for(role),
                         network,
                         TxLabel::Refund,
                     ));
                 }
-                (CfdState::Refunded, vec![])
+                self.state = CfdState::Refunded;
             }
-            CollaborativeSettlementConfirmed => (CfdState::Closed, vec![]),
-            CetTimelockConfirmedPriorOracleAttestation => (CfdState::OpenCommitted, self.actions),
-            CetTimelockConfirmedPostOracleAttestation { .. } => {
-                (CfdState::PendingCet, self.actions)
+            CollaborativeSettlementConfirmed => {
+                self.state = CfdState::Closed;
             }
-            RefundTimelockExpired { .. } => (CfdState::PendingRefund, self.actions),
+            CetTimelockConfirmedPriorOracleAttestation => {
+                self.state = CfdState::OpenCommitted;
+            }
+            CetTimelockConfirmedPostOracleAttestation { cet, .. } => {
+                if let Some(dlc) = self.latest_dlc.as_ref() {
+                    self.details.tx_url_list.insert(TxUrl::from_transaction(
+                        &cet,
+                        &dlc.script_pubkey_for(role),
+                        network,
+                        TxLabel::Cet,
+                    ));
+                }
+
+                self.state = CfdState::PendingCet;
+            }
+            RefundTimelockExpired { .. } => {
+                if let Some(dlc) = self.latest_dlc.as_ref() {
+                    self.details.tx_url_list.insert(TxUrl::from_transaction(
+                        &dlc.refund.0,
+                        &dlc.script_pubkey_for(role),
+                        network,
+                        TxLabel::Refund,
+                    ));
+                }
+                self.state = CfdState::PendingRefund;
+            }
             OracleAttestedPriorCetTimelock {
                 price, commit_tx, ..
             } => {
@@ -408,15 +429,13 @@ impl Cfd {
                 self.profit_percent = profit_percent;
 
                 if let Some(commit_tx) = commit_tx {
-                    self.details.tx_url_list.push(TxUrl::new(
+                    self.details.tx_url_list.insert(TxUrl::new(
                         commit_tx.txid(),
                         network,
                         TxLabel::Commit,
                     ));
                 }
-
-                // Only allow committing once the oracle attested.
-                (CfdState::PendingCommit, vec![])
+                self.state = CfdState::PendingCommit;
             }
             OracleAttestedPostCetTimelock { cet, price } => {
                 let tx_url = if let Some(dlc) = self.latest_dlc.as_ref() {
@@ -429,34 +448,34 @@ impl Cfd {
                 } else {
                     TxUrl::new(cet.txid(), network, TxLabel::Cet)
                 };
-                self.details.tx_url_list.push(tx_url);
+                self.details.tx_url_list.insert(tx_url);
 
                 let (profit_btc, profit_percent) = self.maybe_calculate_profit(price);
                 self.profit_btc = profit_btc;
                 self.profit_percent = profit_percent;
-
-                (CfdState::PendingCet, vec![])
+                self.state = CfdState::PendingCet;
             }
             ManualCommit { tx } => {
                 self.details
                     .tx_url_list
-                    .push(TxUrl::new(tx.txid(), network, TxLabel::Commit));
-
-                (CfdState::PendingCommit, vec![])
+                    .insert(TxUrl::new(tx.txid(), network, TxLabel::Commit));
+                self.state = CfdState::PendingCommit;
             }
             RevokeConfirmed => todo!("Deal with revoked"),
             RolloverStarted { .. } => match role {
-                Role::Maker => (
-                    CfdState::IncomingRolloverProposal,
-                    vec![CfdAction::AcceptRollover, CfdAction::RejectRollover],
-                ),
-                Role::Taker => (CfdState::OutgoingRolloverProposal, vec![]),
+                Role::Maker => {
+                    self.state = CfdState::IncomingRolloverProposal;
+                }
+                Role::Taker => {
+                    self.state = CfdState::OutgoingRolloverProposal;
+                }
             },
-            RolloverAccepted => (CfdState::ContractSetup, vec![]),
+            RolloverAccepted => {
+                self.state = CfdState::ContractSetup;
+            }
         };
 
-        self.state = state;
-        self.actions = actions;
+        self.actions = self.derive_actions(role);
 
         self
     }
@@ -479,6 +498,37 @@ impl Cfd {
                 tracing::error!(initial_price=%self.initial_price, closing_price=%closing_price, quantity=%self.quantity_usd, leverage=%self.leverage, position=%self.position, "Profit calculation failed: {:#}", err);
                 (None, None)
             }
+        }
+    }
+
+    fn derive_actions(&self, role: Role) -> HashSet<CfdAction> {
+        match (self.state, role) {
+            (CfdState::PendingSetup, Role::Maker) => {
+                HashSet::from([CfdAction::AcceptOrder, CfdAction::RejectOrder])
+            }
+            (CfdState::PendingSetup, Role::Taker) => HashSet::new(),
+            (CfdState::ContractSetup, _) => HashSet::new(),
+            (CfdState::Rejected, _) => HashSet::new(),
+            (CfdState::PendingOpen, _) => HashSet::new(),
+            (CfdState::Open, _) => HashSet::from([CfdAction::Commit, CfdAction::Settle]),
+            (CfdState::PendingCommit, _) => HashSet::new(),
+            (CfdState::PendingCet, _) => HashSet::new(),
+            (CfdState::PendingClose, _) => HashSet::new(),
+            (CfdState::OpenCommitted, _) => HashSet::new(),
+            (CfdState::IncomingSettlementProposal, Role::Maker) => {
+                HashSet::from([CfdAction::AcceptSettlement, CfdAction::RejectSettlement])
+            }
+            (CfdState::IncomingSettlementProposal, Role::Taker) => HashSet::new(),
+            (CfdState::OutgoingSettlementProposal, _) => HashSet::new(),
+            (CfdState::IncomingRolloverProposal, Role::Maker) => {
+                HashSet::from([CfdAction::AcceptRollover, CfdAction::RejectRollover])
+            }
+            (CfdState::IncomingRolloverProposal, Role::Taker) => HashSet::new(),
+            (CfdState::OutgoingRolloverProposal, _) => HashSet::new(),
+            (CfdState::Closed, _) => HashSet::new(),
+            (CfdState::PendingRefund, _) => HashSet::new(),
+            (CfdState::Refunded, _) => HashSet::new(),
+            (CfdState::SetupFailed, _) => HashSet::new(),
         }
     }
 }
@@ -642,7 +692,7 @@ impl From<Order> for CfdOrder {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum CfdState {
     PendingSetup,
     ContractSetup,
@@ -665,14 +715,12 @@ pub enum CfdState {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CfdDetails {
-    // TODO: I think there should be one field per tx URL otherwise we can add duplicate entries
-    // easily ...
-    tx_url_list: Vec<TxUrl>,
+    tx_url_list: HashSet<TxUrl>,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
     payout: Option<Amount>,
 }
 
-#[derive(Debug, derive_more::Display, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, derive_more::Display, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub enum CfdAction {
     AcceptOrder,
@@ -774,7 +822,7 @@ pub fn to_mempool_url(txid: Txid, network: Network) -> String {
 }
 
 /// Link to transaction on mempool.space for UI representation
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 struct TxUrl {
     pub label: TxLabel,
     pub url: String,
@@ -812,7 +860,7 @@ impl TxUrl {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Eq, Hash)]
 pub enum TxLabel {
     Lock,
     Commit,
