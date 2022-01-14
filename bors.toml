@@ -6,5 +6,7 @@ status = [
   "build_and_test_maker_frontend",
   "test_daemons (ubuntu-latest)",
   "test_daemons (macos-latest)",
+  "test_daemons_release_mode (ubuntu-latest)",
+  "test_daemons_release_mode (macos-latest)",
   "daemons_arm_build",
 ]
