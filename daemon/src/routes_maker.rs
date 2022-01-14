@@ -90,7 +90,6 @@ pub async fn maker_feed(
 }
 
 /// The maker POSTs this to create a new CfdOrder
-// TODO: Use Rocket form?
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfdNewOrderRequest {
     pub price: Price,

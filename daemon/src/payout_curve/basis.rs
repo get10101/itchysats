@@ -165,7 +165,7 @@ impl BSplineBasis {
     pub fn knot_spans(&self, include_ghosts: bool) -> Array1<f64> {
         let p = &self.order;
 
-        // TODO: this is VERY sloppy!
+        // XXX this is VERY sloppy!
         let mut res: Vec<f64> = vec![];
         if include_ghosts {
             res.push(self.knots[0]);

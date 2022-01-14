@@ -156,7 +156,6 @@ impl Quote {
     }
 
     pub fn for_taker(&self) -> Price {
-        // TODO: verify whether this is correct
         self.mid_range()
     }
 
