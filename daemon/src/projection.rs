@@ -435,8 +435,7 @@ impl Cfd {
                 self.profit_btc = profit_btc;
                 self.profit_percent = profit_percent;
 
-                // Only allow committing once the oracle attested.
-                (CfdState::PendingCet, vec![CfdAction::Commit])
+                (CfdState::PendingCet, vec![])
             }
             ManualCommit { tx } => {
                 self.details
