@@ -26,13 +26,10 @@ import {
     ConnectionStatus,
     intoCfd,
     intoOrder,
-    MarginRequestPayload,
-    MarginResponse,
     Order,
     StateGroupKey,
     WalletInfo,
 } from "./types";
-import useDebouncedEffect from "./useDebouncedEffect";
 import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
 import usePostRequest from "./usePostRequest";
@@ -59,38 +56,29 @@ export const App = () => {
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
     let [quantity, setQuantity] = useState("0");
-    let [margin, setMargin] = useState(0);
     let [userHasEdited, setUserHasEdited] = useState(false);
 
-    const { price: askPrice, min_quantity, max_quantity, leverage, liquidation_price: liquidationPrice } = order || {};
+    const {
+        price: askPrice,
+        min_quantity: minQuantity,
+        max_quantity: maxQuantity,
+        leverage,
+        margin_per_parcel: marginPerParcel,
+        parcel_size: parcelSize,
+        liquidation_price: liquidationPrice,
+    } = order || {};
 
-    let effectiveQuantity = userHasEdited ? quantity : (min_quantity?.toString() || "0");
+    let effectiveQuantity = userHasEdited ? quantity : (minQuantity?.toString() || "0");
 
-    let [calculateMargin] = usePostRequest<MarginRequestPayload, MarginResponse>(
-        "/api/calculate/margin",
-        (response) => {
-            setMargin(response.margin);
-        },
-    );
     let [makeNewOrderRequest, isCreatingNewOrderRequest] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
 
-    useDebouncedEffect(
-        () => {
-            if (!order) {
-                return;
-            }
-            let quantity = effectiveQuantity ? Number.parseFloat(effectiveQuantity) : 0;
-            let payload: MarginRequestPayload = {
-                leverage: order.leverage,
-                price: order.price,
-                quantity,
-            };
+    function parseOptionalNumber(val: string | undefined): number | undefined {
+        if (!val) {
+            return undefined;
+        }
 
-            calculateMargin(payload);
-        },
-        [margin, effectiveQuantity, order],
-        500,
-    );
+        return Number.parseFloat(val);
+    }
 
     return (
         <>
@@ -110,13 +98,14 @@ export const App = () => {
                                     connectedToMaker={connectedToMaker}
                                     orderId={order?.id}
                                     quantity={effectiveQuantity}
-                                    maxQuantity={max_quantity || 0}
-                                    minQuantity={min_quantity || 0}
+                                    maxQuantity={parseOptionalNumber(maxQuantity) || 0}
+                                    minQuantity={parseOptionalNumber(minQuantity) || 0}
                                     referencePrice={referencePrice}
-                                    askPrice={askPrice}
-                                    margin={margin}
+                                    askPrice={parseOptionalNumber(askPrice)}
+                                    parcelSize={parseOptionalNumber(parcelSize) || 0}
+                                    marginPerParcel={marginPerParcel || 0}
                                     leverage={leverage}
-                                    liquidationPrice={liquidationPrice}
+                                    liquidationPrice={parseOptionalNumber(liquidationPrice)}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
                                     onQuantityChange={(valueString: string) => {
                                         setUserHasEdited(true);

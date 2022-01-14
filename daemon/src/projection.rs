@@ -30,6 +30,7 @@ use bdk::bitcoin::Txid;
 use bdk::miniscript::DescriptorTrait;
 use maia::TransactionExt;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::Deserialize;
 use serde::Serialize;
 use sqlx::pool::PoolConnection;
@@ -564,6 +565,16 @@ pub struct CfdOrder {
     #[serde(with = "round_to_two_dp")]
     pub max_quantity: Usd,
 
+    /// The user can only buy contracts in multiples of this.
+    ///
+    /// For example, if `parcel_size` is 100, `min_quantity` is 300 and `max_quantity`is 800, then
+    /// the user can buy 300, 400, 500, 600, 700 or 800 contracts.
+    #[serde(with = "round_to_two_dp")]
+    pub parcel_size: Usd,
+
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub margin_per_parcel: Amount,
+
     pub leverage: Leverage,
     #[serde(with = "round_to_two_dp")]
     pub liquidation_price: Price,
@@ -574,6 +585,8 @@ pub struct CfdOrder {
 
 impl From<Order> for CfdOrder {
     fn from(order: Order) -> Self {
+        let parcel_size = Usd::new(dec!(100)); // TODO: Have the maker tell us this.
+
         Self {
             id: order.id,
             trading_pair: order.trading_pair,
@@ -581,6 +594,11 @@ impl From<Order> for CfdOrder {
             price: order.price,
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
+            parcel_size,
+            margin_per_parcel: match order.position {
+                Position::Long => calculate_long_margin(order.price, parcel_size, order.leverage),
+                Position::Short => calculate_short_margin(order.price, parcel_size),
+            },
             leverage: order.leverage,
             liquidation_price: order.liquidation_price,
             creation_timestamp: order.creation_timestamp,
