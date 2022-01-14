@@ -164,6 +164,9 @@ pub struct Cfd {
 
     pub counterparty: Identity,
 
+    #[serde(with = "round_to_two_dp::opt")]
+    pub pending_settlement_proposal_price: Option<Price>,
+
     // This is a bit awkward but we need this to compute the appropriate state as more events are
     // processed.
     #[serde(skip)]
@@ -244,6 +247,7 @@ impl Cfd {
             },
             expiry_timestamp: None,
             counterparty: counterparty_network_identity,
+            pending_settlement_proposal_price: None,
             latest_dlc: None,
         }
     }
@@ -301,14 +305,20 @@ impl Cfd {
             }
             RolloverRejected => (CfdState::Open, vec![]),
             RolloverFailed => (CfdState::Open, vec![]),
-            CollaborativeSettlementStarted { .. } => match role {
-                Role::Maker => (
-                    CfdState::IncomingSettlementProposal,
-                    vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement],
-                ),
+            CollaborativeSettlementStarted { proposal } => match role {
+                Role::Maker => {
+                    self.pending_settlement_proposal_price = Some(proposal.price);
+
+                    (
+                        CfdState::IncomingSettlementProposal,
+                        vec![CfdAction::AcceptSettlement, CfdAction::RejectSettlement],
+                    )
+                }
                 Role::Taker => (CfdState::OutgoingSettlementProposal, vec![]),
             },
             CollaborativeSettlementProposalAccepted => {
+                self.pending_settlement_proposal_price = None;
+
                 (CfdState::IncomingSettlementProposal, vec![])
             }
             CollaborativeSettlementCompleted {
@@ -330,6 +340,7 @@ impl Cfd {
                 (CfdState::PendingClose, vec![])
             }
             CollaborativeSettlementRejected { commit_tx } => {
+                self.pending_settlement_proposal_price = None;
                 self.details.tx_url_list.push(TxUrl::new(
                     commit_tx.txid(),
                     network,
@@ -681,6 +692,20 @@ mod round_to_two_dp {
         let decimal = decimal.round_dp(2);
 
         Serialize::serialize(&decimal, serializer)
+    }
+
+    pub mod opt {
+        use super::*;
+
+        pub fn serialize<D: ToDecimal, S: Serializer>(
+            value: &Option<D>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error> {
+            match value {
+                None => serializer.serialize_none(),
+                Some(value) => super::serialize(value, serializer),
+            }
+        }
     }
 
     #[cfg(test)]
