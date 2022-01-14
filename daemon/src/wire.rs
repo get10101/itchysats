@@ -72,6 +72,15 @@ pub mod taker_to_maker {
             sig_taker: Signature,
         },
     }
+
+    impl fmt::Display for Settlement {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Settlement::Propose { .. } => write!(f, "Propose"),
+                Settlement::Initiate { .. } => write!(f, "Initiate"),
+            }
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -105,10 +114,10 @@ impl fmt::Display for TakerToMaker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TakerToMaker::TakeOrder { .. } => write!(f, "TakeOrder"),
-            TakerToMaker::Protocol { .. } => write!(f, "Protocol"),
+            TakerToMaker::Protocol { msg, .. } => write!(f, "Protocol::{}", msg),
             TakerToMaker::ProposeRollover { .. } => write!(f, "ProposeRollover"),
-            TakerToMaker::RolloverProtocol { .. } => write!(f, "RolloverProtocol"),
-            TakerToMaker::Settlement { .. } => write!(f, "Settlement"),
+            TakerToMaker::RolloverProtocol { msg, .. } => write!(f, "RolloverProtocol::{}", msg),
+            TakerToMaker::Settlement { msg, .. } => write!(f, "Settlement::{}", msg),
             TakerToMaker::Hello(_) => write!(f, "Hello"),
         }
     }
@@ -153,6 +162,15 @@ pub mod maker_to_taker {
         Confirm,
         Reject,
     }
+
+    impl fmt::Display for Settlement {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Settlement::Confirm => write!(f, "Confirm"),
+                Settlement::Reject => write!(f, "Reject"),
+            }
+        }
+    }
 }
 
 impl fmt::Display for MakerToTaker {
@@ -164,11 +182,11 @@ impl fmt::Display for MakerToTaker {
             MakerToTaker::ConfirmOrder(_) => write!(f, "ConfirmOrder"),
             MakerToTaker::RejectOrder(_) => write!(f, "RejectOrder"),
             MakerToTaker::InvalidOrderId(_) => write!(f, "InvalidOrderId"),
-            MakerToTaker::Protocol { .. } => write!(f, "Protocol"),
+            MakerToTaker::Protocol { msg, .. } => write!(f, "Protocol::{}", msg),
             MakerToTaker::ConfirmRollover { .. } => write!(f, "ConfirmRollover"),
             MakerToTaker::RejectRollover(_) => write!(f, "RejectRollover"),
-            MakerToTaker::RolloverProtocol { .. } => write!(f, "RolloverProtocol"),
-            MakerToTaker::Settlement { .. } => write!(f, "Settlement"),
+            MakerToTaker::RolloverProtocol { msg, .. } => write!(f, "RolloverProtocol::{}", msg),
+            MakerToTaker::Settlement { msg, .. } => write!(f, "Settlement::{}", msg),
         }
     }
 }
@@ -275,6 +293,17 @@ pub enum SetupMsg {
     /// This is used to avoid one party publishing the lock transaction while the other party ran
     /// into a timeout.
     Msg3(Msg3),
+}
+
+impl fmt::Display for SetupMsg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SetupMsg::Msg0(_) => write!(f, "Msg0"),
+            SetupMsg::Msg1(_) => write!(f, "Msg1"),
+            SetupMsg::Msg2(_) => write!(f, "Msg2"),
+            SetupMsg::Msg3(_) => write!(f, "Msg3"),
+        }
+    }
 }
 
 impl SetupMsg {
@@ -418,6 +447,17 @@ pub enum RolloverMsg {
     Msg1(RolloverMsg1),
     Msg2(RolloverMsg2),
     Msg3(RolloverMsg3),
+}
+
+impl fmt::Display for RolloverMsg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RolloverMsg::Msg0(_) => write!(f, "Msg0"),
+            RolloverMsg::Msg1(_) => write!(f, "Msg1"),
+            RolloverMsg::Msg2(_) => write!(f, "Msg2"),
+            RolloverMsg::Msg3(_) => write!(f, "Msg3"),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -166,15 +166,25 @@ pub async fn new(
         )?,
     )]);
 
-    let own_cfd_txs = create_cfd_transactions(
-        (params.maker().clone(), *params.maker_punish()),
-        (params.taker().clone(), *params.taker_punish()),
-        oracle_pk,
-        (CET_TIMELOCK, setup_params.refund_timelock),
-        payouts,
-        sk,
-        setup_params.fee_rate,
-    )
+    let own_cfd_txs = tokio::task::spawn_blocking({
+        let maker_params = params.maker().clone();
+        let taker_params = params.taker().clone();
+        let maker_punish = *params.maker_punish();
+        let taker_punish = *params.taker_punish();
+
+        move || {
+            create_cfd_transactions(
+                (maker_params, maker_punish),
+                (taker_params, taker_punish),
+                oracle_pk,
+                (CET_TIMELOCK, setup_params.refund_timelock),
+                payouts,
+                sk,
+                setup_params.fee_rate,
+            )
+        }
+    })
+    .await?
     .context("Failed to create CFD transactions")?;
 
     tracing::info!("Created CFD transactions");
@@ -225,20 +235,22 @@ pub async fn new(
     )
     .context("Commit adaptor signature does not verify")?;
 
-    for own_grouped_cets in &own_cets {
+    for own_grouped_cets in own_cets.clone() {
         let other_cets = msg1
             .cets
             .get(&own_grouped_cets.event.id)
+            .cloned()
             .context("Expect event to exist in msg")?;
 
         verify_cets(
-            (&oracle_pk, &own_grouped_cets.event.nonce_pks),
-            &params.other,
-            own_grouped_cets.cets.as_slice(),
-            other_cets.as_slice(),
-            &commit_desc,
+            (oracle_pk, own_grouped_cets.event.nonce_pks.clone()),
+            params.other.clone(),
+            own_grouped_cets.cets,
+            other_cets,
+            commit_desc.clone(),
             commit_amount,
         )
+        .await
         .context("CET signatures don't verify")?;
     }
 
@@ -283,41 +295,43 @@ pub async fn new(
     // need some fallback handling (after x time) to spend the outputs in a different way so the
     // other party cannot hold us hostage
 
-    let cets = own_cets
-        .into_iter()
-        .map(|grouped_cets| {
-            let event_id = grouped_cets.event.id;
-            let other_cets = msg1
-                .cets
-                .get(&event_id)
-                .with_context(|| format!("Counterparty CETs for event {} missing", event_id))?;
-            let cets = grouped_cets
-                .cets
-                .into_iter()
-                .map(|(tx, _, digits)| {
-                    let other_encsig = other_cets
-                        .iter()
-                        .find_map(|(other_range, other_encsig)| {
-                            (other_range == &digits.range()).then(|| other_encsig)
+    let cets = tokio::task::spawn_blocking(move || {
+        own_cets
+            .into_iter()
+            .map(|grouped_cets| {
+                let event_id = grouped_cets.event.id;
+                let other_cets = msg1
+                    .cets
+                    .get(&event_id)
+                    .with_context(|| format!("Counterparty CETs for event {} missing", event_id))?;
+                let cets = grouped_cets
+                    .cets
+                    .into_iter()
+                    .map(|(tx, _, digits)| {
+                        let other_encsig = other_cets
+                            .iter()
+                            .find_map(|(other_range, other_encsig)| {
+                                (other_range == &digits.range()).then(|| other_encsig)
+                            })
+                            .with_context(|| {
+                                format!(
+                                    "Missing counterparty adaptor signature for CET corresponding to price range {:?}",
+                                    digits.range()
+                                )
+                            })?;
+                        Ok(Cet {
+                            tx,
+                            adaptor_sig: *other_encsig,
+                            range: digits.range(),
+                            n_bits: digits.len(),
                         })
-                        .with_context(|| {
-                            format!(
-                                "Missing counterparty adaptor signature for CET corresponding to
-                                 price range {:?}",
-                                digits.range()
-                            )
-                        })?;
-                    Ok(Cet {
-                        tx,
-                        adaptor_sig: *other_encsig,
-                        range: digits.range(),
-                        n_bits: digits.len(),
                     })
-                })
-                .collect::<Result<Vec<_>>>()?;
-            Ok((event_id.parse()?, cets))
-        })
-        .collect::<Result<HashMap<_, _>>>()?;
+                    .collect::<Result<Vec<_>>>()?;
+                Ok((event_id.parse()?, cets))
+            })
+            .collect::<Result<HashMap<_, _>>>()
+    })
+    .await??;
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
     // monitoring
@@ -453,26 +467,35 @@ pub async fn roll_over(
                 (pk, own_punish),
             ),
         };
-    let own_cfd_txs = renew_cfd_transactions(
-        lock_tx.clone(),
-        (
-            maker_identity,
-            maker_lock_amount,
-            dlc.maker_address.clone(),
-            maker_punish_params,
-        ),
-        (
-            taker_identity,
-            taker_lock_amount,
-            dlc.taker_address.clone(),
-            taker_punish_params,
-        ),
-        oracle_pk,
-        (CET_TIMELOCK, rollover_params.refund_timelock),
-        payouts,
-        sk,
-        rollover_params.fee_rate,
-    )
+    let own_cfd_txs = tokio::task::spawn_blocking({
+        let maker_address = dlc.maker_address.clone();
+        let taker_address = dlc.taker_address.clone();
+        let lock_tx = lock_tx.clone();
+
+        move || {
+            renew_cfd_transactions(
+                lock_tx,
+                (
+                    maker_identity,
+                    maker_lock_amount,
+                    maker_address,
+                    maker_punish_params,
+                ),
+                (
+                    taker_identity,
+                    taker_lock_amount,
+                    taker_address,
+                    taker_punish_params,
+                ),
+                oracle_pk,
+                (CET_TIMELOCK, rollover_params.refund_timelock),
+                payouts,
+                sk,
+                rollover_params.fee_rate,
+            )
+        }
+    })
+    .await?
     .context("Failed to create new CFD transactions")?;
 
     sink.send(RolloverMsg::Msg1(RolloverMsg1::from(own_cfd_txs.clone())))
@@ -522,25 +545,27 @@ pub async fn roll_over(
         Role::Taker => dlc.maker_address.clone(),
     };
 
-    for own_grouped_cets in &own_cets {
+    for own_grouped_cets in own_cets.clone() {
         let other_cets = msg1
             .cets
             .get(&own_grouped_cets.event.id)
+            .cloned()
             .context("Expect event to exist in msg")?;
 
         verify_cets(
-            (&oracle_pk, &announcement.nonce_pks),
-            &PartyParams {
+            (oracle_pk, announcement.nonce_pks.clone()),
+            PartyParams {
                 lock_psbt: lock_tx.clone(),
                 identity_pk: dlc.identity_counterparty,
                 lock_amount,
                 address: other_address.clone(),
             },
-            own_grouped_cets.cets.as_slice(),
-            other_cets.as_slice(),
-            &commit_desc,
+            own_grouped_cets.cets,
+            other_cets,
+            commit_desc.clone(),
             commit_amount,
         )
+        .await
         .context("CET signatures don't verify")?;
     }
 
@@ -716,36 +741,42 @@ impl AllParams {
     }
 }
 
-fn verify_cets(
-    oracle_params: (&schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
-    other: &PartyParams,
-    own_cets: &[(Transaction, EcdsaAdaptorSignature, interval::Digits)],
-    cets: &[(RangeInclusive<u64>, EcdsaAdaptorSignature)],
-    commit_desc: &Descriptor<PublicKey>,
+async fn verify_cets(
+    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),
+    other: PartyParams,
+    own_cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
+    cets: Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>,
+    commit_desc: Descriptor<PublicKey>,
     commit_amount: Amount,
 ) -> Result<()> {
-    for (tx, _, digits) in own_cets.iter() {
-        let other_encsig = cets
-            .iter()
-            .find_map(|(range, encsig)| (range == &digits.range()).then(|| encsig))
-            .with_context(|| {
-                format!(
-                    "no enc sig from other party for price range {:?}",
-                    digits.range()
-                )
-            })?;
+    tokio::task::spawn_blocking(move || {
+        for (tx, _, digits) in own_cets.iter() {
+            let other_encsig = cets
+                .iter()
+                .find_map(|(range, encsig)| (range == &digits.range()).then(|| encsig))
+                .with_context(|| {
+                    format!(
+                        "no enc sig from other party for price range {:?}",
+                        digits.range()
+                    )
+                })?;
 
-        verify_cet_encsig(
-            tx,
-            other_encsig,
-            digits,
-            &other.identity_pk,
-            oracle_params,
-            commit_desc,
-            commit_amount,
-        )
-        .context("enc sig on CET does not verify")?;
-    }
+            verify_cet_encsig(
+                tx,
+                other_encsig,
+                digits,
+                &other.identity_pk,
+                (&oracle_pk, &nonce_pks),
+                &commit_desc,
+                commit_amount,
+            )
+            .context("enc sig on CET does not verify")?;
+        }
+
+        anyhow::Ok(())
+    })
+    .await??;
+
     Ok(())
 }
 

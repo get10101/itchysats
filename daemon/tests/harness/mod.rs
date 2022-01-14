@@ -42,9 +42,6 @@ pub mod flow;
 pub mod maia;
 pub mod mocks;
 
-pub const HEARTBEAT_INTERVAL_FOR_TEST: Duration = HEARTBEAT_INTERVAL;
-const N_PAYOUTS_FOR_TEST: usize = N_PAYOUTS;
-
 fn oracle_pk() -> schnorrsig::PublicKey {
     schnorrsig::PublicKey::from_str(
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
@@ -87,8 +84,8 @@ impl Default for MakerConfig {
         Self {
             oracle_pk: oracle_pk(),
             seed: RandomSeed::default(),
-            heartbeat_interval: HEARTBEAT_INTERVAL_FOR_TEST,
-            n_payouts: N_PAYOUTS_FOR_TEST,
+            heartbeat_interval: HEARTBEAT_INTERVAL,
+            n_payouts: N_PAYOUTS,
             dedicated_port: None,
         }
     }
@@ -116,8 +113,8 @@ impl Default for TakerConfig {
         Self {
             oracle_pk: oracle_pk(),
             seed: RandomSeed::default(),
-            heartbeat_interval: HEARTBEAT_INTERVAL_FOR_TEST,
-            n_payouts: N_PAYOUTS_FOR_TEST,
+            heartbeat_interval: HEARTBEAT_INTERVAL,
+            n_payouts: N_PAYOUTS,
         }
     }
 }

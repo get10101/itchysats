@@ -353,15 +353,8 @@ async fn maker_notices_lack_of_taker() {
 /// For convenience, returns also OrderId of the opened Cfd.
 /// `announcement` is used during Cfd's creation.
 async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker, Taker, OrderId) {
-    let heartbeat_interval = Duration::from_secs(60);
-    let mut maker =
-        Maker::start(&MakerConfig::default().with_heartbeat_interval(heartbeat_interval)).await;
-    let mut taker = Taker::start(
-        &TakerConfig::default().with_heartbeat_interval(heartbeat_interval * 2),
-        maker.listen_addr,
-        maker.identity,
-    )
-    .await;
+    let mut maker = Maker::start(&MakerConfig::default()).await;
+    let mut taker = Taker::start(&TakerConfig::default(), maker.listen_addr, maker.identity).await;
 
     is_next_none(taker.order_feed()).await.unwrap();
 
