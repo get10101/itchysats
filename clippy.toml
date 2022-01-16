@@ -2,5 +2,6 @@ disallowed-methods = [
   { path = "xtra::Address::do_send_async", reason = "discards the return value, possibly swallowing an error" },
   { path = "xtra::Address::do_send", reason = "discards the return value, possibly swallowing an error" },
   { path = "xtra::message_channel::MessageChannel::do_send", reason = "discards the return value, possibly swallowing an error" },
-  { pant = "xtra::Context::notify_interval", reason = "does not wait for response from the previous handler, prefer `xtra_ext::Address::send_interval`" },
+  { path = "xtra::Context::notify_interval", reason = "does not wait for response from the previous handler, prefer `xtra_ext::Address::send_interval`" },
+  { path = "tokio::spawn", reason = "tasks can outlive the actor system, prefer spawn_with_handle()" },
 ]
