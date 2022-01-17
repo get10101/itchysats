@@ -40,6 +40,7 @@
     "framer-motion": "^4",
     "history": ">=5",
     "jest": "^27",
+    "npm-package-json-lint": "^5.4.2",
     "prettier": "^2.4.1",
     "react": "^17.0.2",
     "react-async": "^10.0.1",
@@ -53,6 +54,11 @@
     "vite": "^2.7.12",
     "vite-jest": "^0.0.4",
     "web-vitals": "^2.1.2"
+  },
+  "npmpackagejsonlint": {
+    "rules": {
+      "prefer-no-devDependencies": "error"
+    }
   },
   "eslintConfig": {
     "parser": "@typescript-eslint/parser",
