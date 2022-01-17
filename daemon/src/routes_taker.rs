@@ -173,7 +173,7 @@ struct Asset;
 
 #[rocket::get("/assets/<file..>")]
 pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
-    let filename = format!("assets/{}", file.display().to_string());
+    let filename = format!("assets/{}", file.display());
     Asset::get(&filename).into_response(file)
 }
 
