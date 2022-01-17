@@ -44,6 +44,7 @@ import {
 import { motion } from "framer-motion";
 import * as React from "react";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
+import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
 
 const MotionBox = motion<BoxProps>(Box);
@@ -62,8 +63,6 @@ interface TradeProps {
     liquidationPrice?: number;
     onQuantityChange: any;
     walletBalance: number;
-    onLongSubmit: (payload: CfdOrderRequestPayload) => void;
-    isLongSubmitting: boolean;
 }
 
 export default function Trade({
@@ -78,11 +77,11 @@ export default function Trade({
     marginPerParcel,
     leverage,
     liquidationPrice: liquidationPriceAsNumber,
-    onLongSubmit,
-    isLongSubmitting,
     orderId,
     walletBalance,
 }: TradeProps) {
+    let [onLongSubmit, isLongSubmitting] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
+
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
 

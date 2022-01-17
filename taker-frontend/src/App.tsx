@@ -20,20 +20,9 @@ import History from "./components/History";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
 import { Wallet, WalletInfoBar } from "./components/Wallet";
-import {
-    BXBTData,
-    Cfd,
-    CfdOrderRequestPayload,
-    ConnectionStatus,
-    intoCfd,
-    intoOrder,
-    Order,
-    StateGroupKey,
-    WalletInfo,
-} from "./types";
+import { BXBTData, Cfd, ConnectionStatus, intoCfd, intoOrder, Order, StateGroupKey, WalletInfo } from "./types";
 import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
-import usePostRequest from "./usePostRequest";
 
 export const App = () => {
     let [referencePrice, setReferencePrice] = useState<number>();
@@ -70,8 +59,6 @@ export const App = () => {
     } = order || {};
 
     let effectiveQuantity = userHasEdited ? quantity : (minQuantity?.toString() || "0");
-
-    let [makeNewOrderRequest, isCreatingNewOrderRequest] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
 
     function parseOptionalNumber(val: string | undefined): number | undefined {
         if (!val) {
@@ -133,8 +120,6 @@ export const App = () => {
                                         setUserHasEdited(true);
                                         setQuantity(valueString);
                                     }}
-                                    onLongSubmit={makeNewOrderRequest}
-                                    isLongSubmitting={isCreatingNewOrderRequest}
                                 />
                                 <History
                                     connectedToMaker={connectedToMaker}
