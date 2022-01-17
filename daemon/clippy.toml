@@ -1,3 +1,0 @@
-disallowed-methods = [
-  { path = "tokio::spawn", reason = "tasks can outlive the actor system, prefer spawn_with_handle()" },
-]
