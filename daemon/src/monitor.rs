@@ -339,8 +339,6 @@ impl Actor<bdk::electrum_client::Client> {
             }
 
             if let Some(cet) = cet {
-                // Double question mark OK because if we are in PendingCet we must have been
-                // Ready before
                 let txid = broadcast_transaction(&self.client, cet)?;
                 tracing::info!("CET published on chain: {}", txid);
             }
