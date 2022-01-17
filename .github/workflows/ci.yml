@@ -26,65 +26,26 @@ jobs:
       - uses: Swatinem/rust-cache@v1.3.0
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
-  check_maker_frontend:
+  frontend:
+    strategy:
+      matrix:
+        bin: [ maker, taker ]
+    runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: maker-frontend
-    runs-on: ubuntu-latest
+        working-directory: ${{ matrix.bin }}-frontend
     steps:
       - uses: actions/checkout@v2.4.0
       - uses: actions/setup-node@v2
         with:
           cache: 'yarn'
-          cache-dependency-path: maker-frontend/yarn.lock
-      - run: yarn install
-      - run: yarn run eslint
-      - run: yarn run tsc
-
-  check_taker_frontend:
-    defaults:
-      run:
-        working-directory: taker-frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2.4.0
-      - uses: actions/setup-node@v2
-        with:
-          cache: 'yarn'
-          cache-dependency-path: taker-frontend/yarn.lock
+          cache-dependency-path: ${{ matrix.bin }}-frontend/yarn.lock
       - run: yarn install
       - run: yarn run eslint
       - run: yarn run tsc
       - run: yarn run npmPkgJsonLint .
-
-  build_and_test_maker_frontend:
-    defaults:
-      run:
-        working-directory: maker-frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2.4.0
-      - uses: actions/setup-node@v2
-        with:
-          cache: 'yarn'
-          cache-dependency-path: maker-frontend/yarn.lock
-      - run: yarn install
-      - run: yarn test
-      - run: yarn build
-
-  build_and_test_taker_frontend:
-    defaults:
-      run:
-        working-directory: taker-frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2.4.0
-      - uses: actions/setup-node@v2
-        with:
-          cache: 'yarn'
-          cache-dependency-path: taker-frontend/yarn.lock
-      - run: yarn install
-      - run: yarn build
+      - run: yarn run test
+      - run: yarn run build
 
   test_daemons:
     strategy:
