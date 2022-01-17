@@ -59,7 +59,7 @@ interface TradeProps {
     parcelSize: number;
     marginPerParcel: number;
     leverage?: number;
-    quantity: string;
+    quantity: number;
     liquidationPrice?: number;
     onQuantityChange: (valueAsString: string, valueAsNumber: number) => void;
     walletBalance: number;
@@ -91,15 +91,13 @@ export default function Trade({
 
     const { isOpen, onOpen, onClose } = useDisclosure();
 
-    const parse = (val: any) => Number.parseInt(val.replace(/^\$/, ""));
-
-    const margin = (parse(quantity) / parcelSize) * marginPerParcel;
+    const margin = (quantity / parcelSize) * marginPerParcel;
 
     const balanceTooLow = walletBalance < margin;
-    const quantityTooHigh = maxQuantity < parse(quantity);
-    const quantityTooLow = minQuantity > parse(quantity);
-    const quantityGreaterZero = parse(quantity) > 0;
-    const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(parse(quantity), parcelSize);
+    const quantityTooHigh = maxQuantity < quantity;
+    const quantityTooLow = minQuantity > quantity;
+    const quantityGreaterZero = quantity > 0;
+    const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(quantity, parcelSize);
 
     const canSubmit = orderId && !isLongSubmitting && !balanceTooLow
         && !quantityTooHigh && !quantityTooLow && quantityGreaterZero && quantityIsEvenlyDivisibleByIncrement;
@@ -203,7 +201,7 @@ export default function Trade({
                                 <Button colorScheme="red" size="lg" disabled h={16} w={"40"}>
                                     <VStack>
                                         <Text as="b">Short</Text>
-                                        <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
+                                        <Text fontSize={"sm"}>{quantity}@{askPrice}</Text>
                                     </VStack>
                                 </Button>
                                 <Button
@@ -216,7 +214,7 @@ export default function Trade({
                                 >
                                     <VStack>
                                         <Text as="b">Long</Text>
-                                        <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
+                                        <Text fontSize={"sm"}>{quantity}@{askPrice}</Text>
                                     </VStack>
                                 </Button>
 
@@ -255,11 +253,9 @@ export default function Trade({
                                                     colorScheme="teal"
                                                     isLoading={isLongSubmitting}
                                                     onClick={() => {
-                                                        const quantityAsNumber = quantity.replace("$", "");
-
                                                         let payload: CfdOrderRequestPayload = {
                                                             order_id: orderId!,
-                                                            quantity: Number.parseFloat(quantityAsNumber),
+                                                            quantity,
                                                         };
                                                         onLongSubmit(payload);
                                                         onClose();
@@ -284,7 +280,7 @@ export default function Trade({
 interface QuantityProps {
     min: number;
     max: number;
-    quantity: string;
+    quantity: number;
     parcelSize: number;
     onChange: (valueAsString: string, valueAsNumber: number) => void;
 }
