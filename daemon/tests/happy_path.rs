@@ -19,6 +19,7 @@ use daemon::model::Identity;
 use daemon::model::Usd;
 use daemon::monitor::Event;
 use daemon::oracle;
+use daemon::projection::CfdOrder;
 use daemon::projection::CfdState;
 use maia::secp256k1_zkp::schnorrsig;
 use rust_decimal_macros::dec;

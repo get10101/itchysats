@@ -9,6 +9,7 @@ use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
+use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
 use crate::model::FundingFee;
 use crate::model::FundingRate;
@@ -748,9 +749,13 @@ impl From<Order> for CfdOrder {
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
             parcel_size,
-            margin_per_parcel: match order.position {
-                Position::Long => calculate_long_margin(order.price, parcel_size, order.leverage),
-                Position::Short => calculate_short_margin(order.price, parcel_size),
+            margin_per_parcel: match (order.origin, order.position) {
+                (Origin::Theirs, Position::Short) | (Origin::Ours, Position::Long) => {
+                    calculate_long_margin(order.price, parcel_size, order.leverage)
+                }
+                (Origin::Ours, Position::Short) | (Origin::Theirs, Position::Long) => {
+                    calculate_short_margin(order.price, parcel_size)
+                }
             },
             leverage: order.leverage,
             liquidation_price: order.liquidation_price,
