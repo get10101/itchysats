@@ -112,7 +112,9 @@ impl<O, W> Actor<O, W> {
                     .await?;
             }
             None => {
-                self.projection_actor.send(projection::Update(None)).await?;
+                self.projection_actor
+                    .send(projection::Update(Option::<Order>::None))
+                    .await?;
             }
         }
         Ok(())
@@ -218,7 +220,9 @@ where
         // Cleanup own order feed, after inserting the cfd.
         // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
         // same order id.
-        self.projection_actor.send(projection::Update(None)).await?;
+        self.projection_actor
+            .send(projection::Update(Option::<Order>::None))
+            .await?;
 
         let announcement = self
             .oracle_actor

@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![warn(clippy::disallowed_method)]
 use crate::bitcoin::Txid;
+use crate::bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
@@ -10,6 +11,7 @@ use crate::model::Usd;
 use crate::oracle::Attestation;
 use crate::tokio_ext::FutureExt;
 use address_map::Stopping;
+use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
@@ -21,6 +23,7 @@ use sqlx::SqlitePool;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::time::Duration;
+use time::ext::NumericalDuration;
 use tokio::sync::watch;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
@@ -127,8 +130,9 @@ impl Tasks {
 }
 
 pub struct MakerActorSystem<O, W> {
-    pub cfd_actor_addr: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
-    wallet_actor_addr: Address<W>,
+    pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
+    wallet_actor: Address<W>,
+
     _tasks: Tasks,
 }
 
@@ -221,8 +225,8 @@ where
         tracing::debug!("Maker actor system ready");
 
         Ok(Self {
-            cfd_actor_addr,
-            wallet_actor_addr: wallet_addr,
+            cfd_actor: cfd_actor_addr,
+            wallet_actor: wallet_addr,
             _tasks: tasks,
         })
     }
@@ -234,7 +238,7 @@ where
         max_quantity: Usd,
         fee_rate: Option<u32>,
     ) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::NewOrder {
                 price,
                 min_quantity,
@@ -247,48 +251,48 @@ where
     }
 
     pub async fn accept_order(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::AcceptOrder { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn reject_order(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::RejectOrder { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn accept_settlement(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::AcceptSettlement { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn reject_settlement(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::RejectSettlement { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn accept_rollover(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::AcceptRollover { order_id })
             .await??;
         Ok(())
     }
 
     pub async fn reject_rollover(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::RejectRollover { order_id })
             .await??;
         Ok(())
     }
     pub async fn commit(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(maker_cfd::Commit { order_id })
             .await??;
         Ok(())
@@ -300,7 +304,7 @@ where
         address: bitcoin::Address,
         fee: f32,
     ) -> Result<Txid> {
-        self.wallet_actor_addr
+        self.wallet_actor
             .send(wallet::Withdraw {
                 amount,
                 address,
@@ -310,16 +314,22 @@ where
     }
 }
 
-pub struct TakerActorSystem<O, W> {
-    pub cfd_actor_addr: Address<taker_cfd::Actor<O, W>>,
-    pub connection_actor_addr: Address<connection::Actor>,
+pub struct TakerActorSystem<O, W, P> {
+    pub cfd_actor: Address<taker_cfd::Actor<O, W>>,
+    pub connection_actor: Address<connection::Actor>,
+    wallet_actor: Address<W>,
+    pub auto_rollover_actor: Address<auto_rollover::Actor<O>>,
+    pub price_feed_actor: Address<P>,
+    /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
+    /// address.
+    _price_feed_supervisor: Address<supervisor::Actor<P, bitmex_price_feed::StopReason>>,
+
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
-    wallet_actor_addr: Address<W>,
-    pub auto_rollover_addr: Address<auto_rollover::Actor<O>>,
+
     _tasks: Tasks,
 }
 
-impl<O, W> TakerActorSystem<O, W>
+impl<O, W, P> TakerActorSystem<O, W, P>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
@@ -327,6 +337,7 @@ where
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::Withdraw>,
+    P: xtra::Handler<bitmex_price_feed::LatestQuote>,
 {
     #[allow(clippy::too_many_arguments)]
     pub async fn new<FM, FO, M>(
@@ -336,6 +347,9 @@ where
         identity_sk: x25519_dalek::StaticSecret,
         oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> FO,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> FM,
+        price_feed_constructor: impl (Fn(Address<supervisor::Actor<P, bitmex_price_feed::StopReason>>) -> P)
+            + Send
+            + 'static,
         n_payouts: usize,
         maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
@@ -423,36 +437,58 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor)).await?));
 
+        let (supervisor, price_feed_actor) = supervisor::Actor::new(
+            price_feed_constructor,
+            |_| true, // always restart price feed actor
+        );
+
+        let (price_feed_supervisor, supervisor_fut) = supervisor.create(None).run();
+        tasks.add(supervisor_fut);
+
         tracing::debug!("Taker actor system ready");
 
         Ok(Self {
-            cfd_actor_addr,
-            connection_actor_addr,
-            maker_online_status_feed_receiver,
-            wallet_actor_addr,
-            auto_rollover_addr,
+            cfd_actor: cfd_actor_addr,
+            connection_actor: connection_actor_addr,
+            wallet_actor: wallet_actor_addr,
+            auto_rollover_actor: auto_rollover_addr,
+            price_feed_actor,
+            _price_feed_supervisor: price_feed_supervisor,
             _tasks: tasks,
+            maker_online_status_feed_receiver,
         })
     }
 
     pub async fn take_offer(&self, order_id: OrderId, quantity: Usd) -> Result<()> {
-        self.cfd_actor_addr
+        self.cfd_actor
             .send(taker_cfd::TakeOffer { order_id, quantity })
             .await??;
         Ok(())
     }
 
     pub async fn commit(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor_addr
-            .send(taker_cfd::Commit { order_id })
-            .await?
+        self.cfd_actor.send(taker_cfd::Commit { order_id }).await?
     }
 
-    pub async fn propose_settlement(&self, order_id: OrderId, current_price: Price) -> Result<()> {
-        self.cfd_actor_addr
+    pub async fn propose_settlement(&self, order_id: OrderId) -> Result<()> {
+        let latest_quote = self
+            .price_feed_actor
+            .send(bitmex_price_feed::LatestQuote)
+            .await
+            .context("Price feed not available")?
+            .context("No quote available")?;
+
+        if latest_quote.is_older_than(QUOTE_INTERVAL_MINUTES.minutes()) {
+            anyhow::bail!(
+                "Latest quote is older than {} minutes. Refusing to settle with old price.",
+                QUOTE_INTERVAL_MINUTES
+            )
+        }
+
+        self.cfd_actor
             .send(taker_cfd::ProposeSettlement {
                 order_id,
-                current_price,
+                current_price: latest_quote.for_taker(),
             })
             .await?
     }
@@ -463,7 +499,7 @@ where
         address: bitcoin::Address,
         fee_rate: FeeRate,
     ) -> Result<Txid> {
-        self.wallet_actor_addr
+        self.wallet_actor
             .send(wallet::Withdraw {
                 amount,
                 address,

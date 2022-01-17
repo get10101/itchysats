@@ -21,7 +21,6 @@ use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
 use rocket::http::ContentType;
 use rocket::http::Status;
-use rocket::response::status;
 use rocket::response::stream::EventStream;
 use rocket::response::Responder;
 use rocket::serde::json::Json;
@@ -34,7 +33,7 @@ use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
 
-type Taker = TakerActorSystem<oracle::Actor, wallet::Actor>;
+type Taker = TakerActorSystem<oracle::Actor, wallet::Actor, bitmex_price_feed::Actor>;
 
 #[rocket::get("/feed")]
 pub async fn feed(
@@ -49,18 +48,7 @@ pub async fn feed(
     let mut rx_quote = rx.quote.clone();
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_maker_status = rx_maker_status.inner().clone();
-
-    let (sx_keep_alive, mut rx_keep_alive) = watch::channel(Heartbeat::new());
-
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            if sx_keep_alive.send(Heartbeat::new()).is_err() {
-                break;
-            }
-        }
-    });
+    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(5));
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -100,9 +88,8 @@ pub async fn feed(
                     let quote = rx_quote.borrow().clone();
                     yield quote.to_sse_event();
                 }
-                Ok(()) = rx_keep_alive.changed() => {
-                    let keep_alive = *rx_keep_alive.borrow();
-                    yield keep_alive.to_sse_event();
+                _ = heartbeat.tick() => {
+                    yield Heartbeat::new().to_sse_event();
                 }
             }
         }
@@ -120,7 +107,7 @@ pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
     taker: &State<Taker>,
     _auth: Authenticated,
-) -> Result<status::Accepted<()>, HttpApiProblem> {
+) -> Result<(), HttpApiProblem> {
     taker
         .take_offer(cfd_order_request.order_id, cfd_order_request.quantity)
         .await
@@ -130,7 +117,7 @@ pub async fn post_order_request(
                 .detail(e.to_string())
         })?;
 
-    Ok(status::Accepted(None))
+    Ok(())
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
@@ -138,9 +125,8 @@ pub async fn post_cfd_action(
     id: OrderId,
     action: CfdAction,
     taker: &State<Taker>,
-    feeds: &State<Feeds>,
     _auth: Authenticated,
-) -> Result<status::Accepted<()>, HttpApiProblem> {
+) -> Result<(), HttpApiProblem> {
     let result = match action {
         CfdAction::AcceptOrder
         | CfdAction::RejectOrder
@@ -152,20 +138,7 @@ pub async fn post_cfd_action(
                 .detail(format!("taker cannot invoke action {}", action)));
         }
         CfdAction::Commit => taker.commit(id).await,
-        CfdAction::Settle => {
-            let quote: bitmex_price_feed::Quote = match feeds.quote.borrow().as_ref() {
-                Some(quote) => quote.clone().into(),
-                None => {
-                    return Err(HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-                        .title("Quote unavailable")
-                        .detail("Cannot settle without current price information."))
-                }
-            };
-
-            let current_price = quote.for_taker();
-
-            taker.propose_settlement(id, current_price).await
-        }
+        CfdAction::Settle => taker.propose_settlement(id).await,
     };
 
     result.map_err(|e| {
@@ -174,7 +147,7 @@ pub async fn post_cfd_action(
             .detail(e.to_string())
     })?;
 
-    Ok(status::Accepted(None))
+    Ok(())
 }
 
 #[rocket::get("/alive")]
