@@ -329,7 +329,7 @@ impl Cfd {
             CollaborativeSettlementProposalAccepted => {
                 self.pending_settlement_proposal_price = None;
 
-                self.state = CfdState::IncomingSettlementProposal;
+                self.state = CfdState::PendingClose;
             }
             CollaborativeSettlementCompleted {
                 spend_tx,
