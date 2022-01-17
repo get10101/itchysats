@@ -337,8 +337,8 @@ pub fn dummy_price() -> Price {
 pub fn dummy_quote() -> Quote {
     Quote {
         timestamp: Timestamp::now(),
-        bid: Price::new(dec!(50_000)).expect("to not fail"),
-        ask: Price::new(dec!(50_000)).expect("to not fail"),
+        bid: dummy_price(),
+        ask: dummy_price(),
     }
 }
 
