@@ -61,7 +61,7 @@ interface TradeProps {
     leverage?: number;
     quantity: string;
     liquidationPrice?: number;
-    onQuantityChange: any;
+    onQuantityChange: (valueAsString: string, valueAsNumber: number) => void;
     walletBalance: number;
 }
 
@@ -286,7 +286,7 @@ interface QuantityProps {
     max: number;
     quantity: string;
     parcelSize: number;
-    onChange: any;
+    onChange: (valueAsString: string, valueAsNumber: number) => void;
 }
 
 function Quantity({ min, max, onChange, quantity, parcelSize }: QuantityProps) {
