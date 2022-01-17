@@ -4,7 +4,7 @@
     "useDefineForClassFields": true,
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "allowJs": false,
-    "skipLibCheck": false,
+    "skipLibCheck": true, // Flip this to false once we use yarn 3.
     "esModuleInterop": false,
     "allowSyntheticDefaultImports": true,
     "strict": true,
