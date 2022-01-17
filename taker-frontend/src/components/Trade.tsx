@@ -268,6 +268,10 @@ export default function Trade({
                                                             quantity,
                                                         };
                                                         onLongSubmit(payload);
+
+                                                        setQuantity(minQuantity);
+                                                        setUserHasEdited(false);
+
                                                         onClose();
                                                     }}
                                                 >
