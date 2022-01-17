@@ -950,20 +950,20 @@ impl Cfd {
 
     /// Given an attestation, find and decrypt the relevant CET.
     pub fn decrypt_cet(self, attestation: &oracle::Attestation) -> Result<Option<Event>> {
-        anyhow::ensure!(!self.is_final());
+        if self.is_final() {
+            return Ok(None);
+        }
 
         let dlc = match self.dlc.as_ref() {
             Some(dlc) => dlc,
-            None => {
-                tracing::warn!(order_id = %self.id(), "Handling attestation without a DLC is a no-op");
-                return Ok(None);
-            }
+            None => return Ok(None),
         };
 
-        let cet = match dlc.signed_cet(attestation)? {
+        let cet = dlc.signed_cet(attestation)?;
+
+        let cet = match cet {
             Ok(cet) => cet,
-            Err(e @ IrrelevantAttestation { .. }) => {
-                tracing::debug!("{}", e);
+            Err(IrrelevantAttestation { .. }) => {
                 return Ok(None);
             }
         };
