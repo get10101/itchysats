@@ -47,6 +47,7 @@ import { useEffect, useState } from "react";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
+import BitcoinAmount from "./BitcoinAmount";
 
 const MotionBox = motion<BoxProps>(Box);
 
@@ -361,7 +362,7 @@ function Margin({ margin }: MarginProps) {
         <VStack>
             <HStack>
                 <Text as={"b"}>Required margin:</Text>
-                <Text>₿{margin}</Text>
+                <BitcoinAmount btc={margin} />
             </HStack>
             <Text fontSize={"sm"} color={"darkgrey"}>The collateral you will need to provide</Text>
         </VStack>
