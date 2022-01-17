@@ -6,7 +6,8 @@
     "build": "vite build",
     "serve": "vite preview",
     "eslint": "eslint src/**/*.{ts,tsx}",
-    "tsc": "tsc"
+    "tsc": "tsc",
+    "test": "vite-jest"
   },
   "dependencies": {
     "@chakra-ui/icons": "^1.1.1",
@@ -26,6 +27,7 @@
     "eslint": "^8.6.0",
     "eslint-config-react-app": "^7.0.0",
     "framer-motion": "^5",
+    "jest": "^27.4.7",
     "npm-package-json-lint": "^5.4.2",
     "react": "^17.0.2",
     "react-async": "^10.0.1",
@@ -36,6 +38,7 @@
     "react-use-websocket": "^2.9.1",
     "typescript": "^4.5.4",
     "vite": "^2.7.12",
+    "vite-jest": "^0.1.4",
     "web-vitals": "^2.1.3"
   },
   "dependenciesComments": {
