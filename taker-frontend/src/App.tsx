@@ -48,15 +48,14 @@ export const App = () => {
     let [quantity, setQuantity] = useState("0");
     let [userHasEdited, setUserHasEdited] = useState(false);
 
-    const {
-        price: askPrice,
-        min_quantity: minQuantity,
-        max_quantity: maxQuantity,
-        leverage,
-        margin_per_parcel: marginPerParcel,
-        parcel_size: parcelSize,
-        liquidation_price: liquidationPrice,
-    } = order || {};
+    const { leverage } = order || {};
+
+    const minQuantity = parseOptionalNumber(order?.min_quantity) || 0;
+    const maxQuantity = parseOptionalNumber(order?.max_quantity) || 0;
+    const askPrice = parseOptionalNumber(order?.price);
+    const parcelSize = parseOptionalNumber(order?.parcel_size) || 0;
+    const liquidationPrice = parseOptionalNumber(order?.liquidation_price);
+    const marginPerParcel = order?.margin_per_parcel || 0;
 
     let effectiveQuantity = userHasEdited ? quantity : (minQuantity?.toString() || "0");
 
@@ -107,14 +106,14 @@ export const App = () => {
                                     connectedToMaker={connectedToMaker}
                                     orderId={order?.id}
                                     quantity={effectiveQuantity}
-                                    maxQuantity={parseOptionalNumber(maxQuantity) || 0}
-                                    minQuantity={parseOptionalNumber(minQuantity) || 0}
+                                    maxQuantity={maxQuantity}
+                                    minQuantity={minQuantity}
                                     referencePrice={referencePrice}
-                                    askPrice={parseOptionalNumber(askPrice)}
-                                    parcelSize={parseOptionalNumber(parcelSize) || 0}
-                                    marginPerParcel={marginPerParcel || 0}
+                                    askPrice={askPrice}
+                                    parcelSize={parcelSize}
+                                    marginPerParcel={marginPerParcel}
                                     leverage={leverage}
-                                    liquidationPrice={parseOptionalNumber(liquidationPrice)}
+                                    liquidationPrice={liquidationPrice}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
                                     onQuantityChange={(valueString: string) => {
                                         setUserHasEdited(true);
