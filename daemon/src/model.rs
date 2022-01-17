@@ -603,7 +603,7 @@ impl Timestamp {
 }
 
 /// Funding rate per SETTLEMENT_INTERVAL
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct FundingRate(Decimal);
 
 impl FundingRate {
@@ -622,6 +622,12 @@ impl FundingRate {
 
     pub fn to_decimal(&self) -> Decimal {
         self.0
+    }
+}
+
+impl Default for FundingRate {
+    fn default() -> Self {
+        Self::new(Decimal::ZERO).expect("hard-coded values to be valid")
     }
 }
 

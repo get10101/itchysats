@@ -145,6 +145,8 @@ export default function App() {
                                         price: Number.parseFloat(orderPrice),
                                         min_quantity: Number.parseFloat(minQuantity),
                                         max_quantity: Number.parseFloat(maxQuantity),
+                                        // TODO: Populate funding rate from the UI
+                                        funding_rate: Number.parseFloat("0.0"),
                                     };
                                     makeNewCfdSellOrder(payload);
                                 }}

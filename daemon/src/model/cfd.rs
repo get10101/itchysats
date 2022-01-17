@@ -156,10 +156,12 @@ pub struct Order {
     /// The maker includes this into the Order based on the Oracle announcement to be used.
     pub oracle_event_id: BitMexPriceEventId,
 
-    pub fee_rate: u32,
+    pub tx_fee_rate: u32,
+    pub funding_rate: FundingRate,
 }
 
 impl Order {
+    #[allow(clippy::too_many_arguments)]
     pub fn new_short(
         price: Price,
         min_quantity: Usd,
@@ -167,7 +169,8 @@ impl Order {
         origin: Origin,
         oracle_event_id: BitMexPriceEventId,
         settlement_interval: Duration,
-        fee_rate: u32,
+        tx_fee_rate: u32,
+        funding_rate: FundingRate,
     ) -> Result<Self> {
         let leverage = Leverage::new(2)?;
         let liquidation_price = calculate_long_liquidation_price(leverage, price);
@@ -185,7 +188,8 @@ impl Order {
             settlement_interval,
             origin,
             oracle_event_id,
-            fee_rate,
+            tx_fee_rate,
+            funding_rate,
         })
     }
 }
@@ -2257,6 +2261,7 @@ mod tests {
                 dummy_event_id(),
                 time::Duration::hours(24),
                 1,
+                FundingRate::default(),
             )
             .unwrap()
         }

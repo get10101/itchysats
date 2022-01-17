@@ -12,6 +12,7 @@ use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementProposal;
+use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::Position;
 use crate::model::Price;
@@ -63,7 +64,8 @@ pub struct NewOrder {
     pub price: Price,
     pub min_quantity: Usd,
     pub max_quantity: Usd,
-    pub fee_rate: u32,
+    pub tx_fee_rate: u32,
+    pub funding_rate: FundingRate,
 }
 
 pub struct TakerConnected {
@@ -491,7 +493,8 @@ where
             price,
             min_quantity,
             max_quantity,
-            fee_rate,
+            tx_fee_rate,
+            funding_rate,
         } = msg;
 
         let oracle_event_id = oracle::next_announcement_after(
@@ -505,7 +508,8 @@ where
             Origin::Ours,
             oracle_event_id,
             self.settlement_interval,
-            fee_rate,
+            tx_fee_rate,
+            funding_rate,
         )?;
 
         // 1. Update actor state to current order

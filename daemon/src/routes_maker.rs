@@ -2,6 +2,7 @@ use anyhow::Result;
 use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
 use daemon::model::cfd::OrderId;
+use daemon::model::FundingRate;
 use daemon::model::Identity;
 use daemon::model::Price;
 use daemon::model::Usd;
@@ -96,7 +97,8 @@ pub struct CfdNewOrderRequest {
     // always 1 USD
     pub min_quantity: Usd,
     pub max_quantity: Usd,
-    pub fee_rate: Option<u32>,
+    pub tx_fee_rate: Option<u32>,
+    pub funding_rate: Option<FundingRate>,
 }
 
 #[rocket::post("/order/sell", data = "<order>")]
@@ -110,7 +112,8 @@ pub async fn post_sell_order(
             order.price,
             order.min_quantity,
             order.max_quantity,
-            order.fee_rate,
+            order.tx_fee_rate,
+            order.funding_rate,
         )
         .await
         .map_err(|e| {
