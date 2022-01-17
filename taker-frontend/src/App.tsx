@@ -48,8 +48,6 @@ export const App = () => {
     let [quantity, setQuantity] = useState("0");
     let [userHasEdited, setUserHasEdited] = useState(false);
 
-    const { leverage } = order || {};
-
     const minQuantity = parseOptionalNumber(order?.min_quantity) || 0;
     const maxQuantity = parseOptionalNumber(order?.max_quantity) || 0;
     const askPrice = parseOptionalNumber(order?.price);
@@ -112,7 +110,7 @@ export const App = () => {
                                     askPrice={askPrice}
                                     parcelSize={parcelSize}
                                     marginPerParcel={marginPerParcel}
-                                    leverage={leverage}
+                                    leverage={order?.leverage}
                                     liquidationPrice={liquidationPrice}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
                                     onQuantityChange={(valueString: string) => {
