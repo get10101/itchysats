@@ -3,6 +3,8 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::RevokedCommit;
 use crate::model::cfd::Role;
 use crate::model::cfd::CET_TIMELOCK;
+use crate::model::FundingFee;
+use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::Leverage;
 use crate::model::Price;
@@ -21,6 +23,7 @@ use crate::wire::RolloverMsg1;
 use crate::wire::RolloverMsg2;
 use crate::wire::RolloverMsg3;
 use crate::wire::SetupMsg;
+use crate::SETTLEMENT_INTERVAL;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -66,7 +69,8 @@ pub struct SetupParams {
     quantity: Usd,
     leverage: Leverage,
     refund_timelock: u32,
-    fee_rate: u32,
+    tx_fee_rate: u32,
+    funding_fee: FundingFee,
 }
 
 impl SetupParams {
@@ -79,9 +83,10 @@ impl SetupParams {
         quantity: Usd,
         leverage: Leverage,
         refund_timelock: u32,
-        fee_rate: u32,
-    ) -> Self {
-        Self {
+        tx_fee_rate: u32,
+        funding_rate: FundingRate,
+    ) -> Result<Self> {
+        Ok(Self {
             margin,
             counterparty_margin,
             counterparty_identity,
@@ -89,8 +94,9 @@ impl SetupParams {
             quantity,
             leverage,
             refund_timelock,
-            fee_rate,
-        }
+            tx_fee_rate,
+            funding_fee: FundingFee::new(margin, funding_rate, SETTLEMENT_INTERVAL.whole_hours())?,
+        })
     }
 
     pub fn counterparty_identity(&self) -> Identity {
@@ -119,7 +125,7 @@ pub async fn new(
         .send(wallet::BuildPartyParams {
             amount: setup_params.margin,
             identity_pk: pk,
-            fee_rate: setup_params.fee_rate,
+            fee_rate: setup_params.tx_fee_rate,
         })
         .await
         .context("Failed to send message to wallet actor")?
@@ -163,6 +169,7 @@ pub async fn new(
             setup_params.quantity,
             setup_params.leverage,
             n_payouts,
+            setup_params.funding_fee,
         )?,
     )]);
 
@@ -180,7 +187,7 @@ pub async fn new(
                 (CET_TIMELOCK, setup_params.refund_timelock),
                 payouts,
                 sk,
-                setup_params.fee_rate,
+                setup_params.tx_fee_rate,
             )
         }
     })
@@ -374,6 +381,7 @@ pub struct RolloverParams {
     leverage: Leverage,
     refund_timelock: u32,
     fee_rate: u32,
+    funding_fee: FundingFee,
 }
 
 impl RolloverParams {
@@ -383,6 +391,7 @@ impl RolloverParams {
         leverage: Leverage,
         refund_timelock: u32,
         fee_rate: u32,
+        funding_fee: FundingFee,
     ) -> Self {
         Self {
             price,
@@ -390,6 +399,7 @@ impl RolloverParams {
             leverage,
             refund_timelock,
             fee_rate,
+            funding_fee,
         }
     }
 }
@@ -440,6 +450,7 @@ pub async fn roll_over(
             rollover_params.quantity,
             rollover_params.leverage,
             n_payouts,
+            rollover_params.funding_fee,
         )?,
     )]);
 

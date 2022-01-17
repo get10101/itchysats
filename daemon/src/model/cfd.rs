@@ -1,5 +1,7 @@
 use crate::maker_inc_connections::NoConnection;
 use crate::model::BitMexPriceEventId;
+use crate::model::FundingFee;
+use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::InversePrice;
 use crate::model::Leverage;
@@ -424,6 +426,7 @@ pub struct Cfd {
     id: OrderId,
     position: Position,
     initial_price: Price,
+    funding_rate: FundingRate,
     leverage: Leverage,
     settlement_interval: Duration,
     quantity: Usd,
@@ -502,6 +505,7 @@ impl Cfd {
             during_contract_setup: false,
             during_rollover: false,
             settlement_proposal: None,
+            funding_rate: FundingRate::new(Decimal::ZERO).expect("be valid"),
         }
     }
 
@@ -557,6 +561,24 @@ impl Cfd {
             .map(|dlc| dlc.settlement_event_id.timestamp)
     }
 
+    fn margin(&self) -> Amount {
+        match self.position {
+            Position::Long => {
+                calculate_long_margin(self.initial_price, self.quantity, self.leverage)
+            }
+            Position::Short => calculate_short_margin(self.initial_price, self.quantity),
+        }
+    }
+
+    fn counterparty_margin(&self) -> Amount {
+        match self.position {
+            Position::Short => {
+                calculate_long_margin(self.initial_price, self.quantity, self.leverage)
+            }
+            Position::Long => calculate_short_margin(self.initial_price, self.quantity),
+        }
+    }
+
     fn is_in_collaborative_settlement(&self) -> bool {
         self.settlement_proposal.is_some()
     }
@@ -608,19 +630,8 @@ impl Cfd {
             bail!("Start contract not allowed in version {}", self.version)
         }
 
-        let margin = match self.position {
-            Position::Long => {
-                calculate_long_margin(self.initial_price, self.quantity, self.leverage)
-            }
-            Position::Short => calculate_short_margin(self.initial_price, self.quantity),
-        };
-
-        let counterparty_margin = match self.position {
-            Position::Long => calculate_short_margin(self.initial_price, self.quantity),
-            Position::Short => {
-                calculate_long_margin(self.initial_price, self.quantity, self.leverage)
-            }
-        };
+        let margin = self.margin();
+        let counterparty_margin = self.counterparty_margin();
 
         Ok((
             Event::new(self.id(), CfdEvent::ContractSetupStarted),
@@ -633,7 +644,8 @@ impl Cfd {
                 self.leverage,
                 self.refund_timelock_in_blocks(),
                 1, // TODO: Where should I get the fee rate from?
-            ),
+                self.funding_rate,
+            )?,
         ))
     }
 
@@ -658,6 +670,16 @@ impl Cfd {
             return Err(RolloverError::WrongRole);
         }
 
+        // TODO: Adjust for total paid fees
+        let margin_minus_total_fees = self.margin();
+
+        // TODO: Calculate the time from the last rollover, don't just assume
+        // it's up-to-date
+        let hours_to_charge = 1;
+
+        let funding_fee =
+            FundingFee::new(margin_minus_total_fees, self.funding_rate, hours_to_charge)?;
+
         Ok((
             Event::new(self.id, CfdEvent::RolloverAccepted),
             RolloverParams::new(
@@ -666,6 +688,7 @@ impl Cfd {
                 self.leverage,
                 self.refund_timelock_in_blocks(),
                 1, // TODO: Where should I get the fee rate from?
+                funding_fee,
             ),
             self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
             self.settlement_interval,
@@ -685,6 +708,12 @@ impl Cfd {
 
         self.can_rollover()?;
 
+        // TODO: Taker should take this from the maker, optionally calculate and verify
+        // whether they match
+        let hours_to_charge = 1;
+
+        let funding_fee = FundingFee::new(self.margin(), self.funding_rate, hours_to_charge)?;
+
         Ok((
             self.event(CfdEvent::RolloverAccepted),
             RolloverParams::new(
@@ -693,6 +722,7 @@ impl Cfd {
                 self.leverage,
                 self.refund_timelock_in_blocks(),
                 1, // TODO: Where should I get the fee rate from?
+                funding_fee,
             ),
             self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
         ))
@@ -735,6 +765,11 @@ impl Cfd {
             self.quantity,
             self.leverage,
             n_payouts,
+            FundingFee::new(
+                self.margin(),
+                self.funding_rate,
+                SETTLEMENT_INTERVAL.whole_hours(),
+            )?,
         )?;
 
         let payout = {
