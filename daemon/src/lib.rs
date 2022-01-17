@@ -20,6 +20,7 @@ use bdk::FeeRate;
 use connection::ConnectionStatus;
 use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
+use model::FundingRate;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -238,13 +239,15 @@ where
         min_quantity: Usd,
         max_quantity: Usd,
         fee_rate: Option<u32>,
+        funding_rate: Option<FundingRate>,
     ) -> Result<()> {
         self.cfd_actor
             .send(maker_cfd::NewOrder {
                 price,
                 min_quantity,
                 max_quantity,
-                fee_rate: fee_rate.unwrap_or(1),
+                tx_fee_rate: fee_rate.unwrap_or(1),
+                funding_rate: funding_rate.unwrap_or_default(),
             })
             .await??;
 
