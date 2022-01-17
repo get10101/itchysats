@@ -43,6 +43,7 @@ import {
 } from "@chakra-ui/react";
 import { motion } from "framer-motion";
 import * as React from "react";
+import { useEffect, useState } from "react";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
@@ -59,9 +60,7 @@ interface TradeProps {
     parcelSize: number;
     marginPerParcel: number;
     leverage?: number;
-    quantity: number;
     liquidationPrice?: number;
-    onQuantityChange: (valueAsString: string, valueAsNumber: number) => void;
     walletBalance: number;
 }
 
@@ -71,8 +70,6 @@ export default function Trade({
     maxQuantity,
     referencePrice: referencePriceAsNumber,
     askPrice: askPriceAsNumber,
-    quantity,
-    onQuantityChange,
     parcelSize,
     marginPerParcel,
     leverage,
@@ -80,6 +77,16 @@ export default function Trade({
     orderId,
     walletBalance,
 }: TradeProps) {
+    let [quantity, setQuantity] = useState(0);
+    let [userHasEdited, setUserHasEdited] = useState(false);
+
+    // We update the quantity because the offer can change any time.
+    useEffect(() => {
+        if (!userHasEdited) {
+            setQuantity(minQuantity);
+        }
+    }, [userHasEdited, minQuantity, setQuantity]);
+
     let [onLongSubmit, isLongSubmitting] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
 
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
@@ -181,7 +188,10 @@ export default function Trade({
                             min={minQuantity}
                             max={maxQuantity}
                             quantity={quantity}
-                            onChange={onQuantityChange}
+                            onChange={(_valueAsString: string, valueAsNumber: number) => {
+                                setQuantity(Number.isNaN(valueAsNumber) ? 0 : valueAsNumber);
+                                setUserHasEdited(true);
+                            }}
                             parcelSize={parcelSize}
                         />
                     </GridItem>

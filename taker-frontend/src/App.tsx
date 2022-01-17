@@ -45,17 +45,12 @@ export const App = () => {
     const connectedToMakerOrUndefined = useLatestEvent<ConnectionStatus>(source, "maker_status");
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
-    let [quantity, setQuantity] = useState(0);
-    let [userHasEdited, setUserHasEdited] = useState(false);
-
     const minQuantity = parseOptionalNumber(order?.min_quantity) || 0;
     const maxQuantity = parseOptionalNumber(order?.max_quantity) || 0;
     const askPrice = parseOptionalNumber(order?.price);
     const parcelSize = parseOptionalNumber(order?.parcel_size) || 0;
     const liquidationPrice = parseOptionalNumber(order?.liquidation_price);
     const marginPerParcel = order?.margin_per_parcel || 0;
-
-    let effectiveQuantity = userHasEdited ? quantity : minQuantity;
 
     function parseOptionalNumber(val: string | undefined): number | undefined {
         if (!val) {
@@ -103,7 +98,6 @@ export const App = () => {
                                 <Trade
                                     connectedToMaker={connectedToMaker}
                                     orderId={order?.id}
-                                    quantity={effectiveQuantity}
                                     maxQuantity={maxQuantity}
                                     minQuantity={minQuantity}
                                     referencePrice={referencePrice}
@@ -113,10 +107,6 @@ export const App = () => {
                                     leverage={order?.leverage}
                                     liquidationPrice={liquidationPrice}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
-                                    onQuantityChange={(_valueAsString: string, valueAsNumber: number) => {
-                                        setQuantity(Number.isNaN(valueAsNumber) ? 0 : valueAsNumber);
-                                        setUserHasEdited(true);
-                                    }}
                                 />
                                 <History
                                     connectedToMaker={connectedToMaker}
