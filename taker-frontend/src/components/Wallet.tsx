@@ -20,6 +20,7 @@ import {
     Skeleton,
     Text,
     useClipboard,
+    useColorModeValue,
     useToast,
     VStack,
 } from "@chakra-ui/react";
@@ -61,7 +62,7 @@ export default function Wallet(
 
     return (
         <Center>
-            <Box shadow={"md"} marginBottom={5} padding={5}>
+            <Box shadow={"lg"} rounded={"md"} marginBottom={5} padding={5} bg={useColorModeValue("white", "gray.700")}>
                 <Center>
                     <Heading size="sm">Wallet Details</Heading>
                 </Center>
@@ -76,6 +77,7 @@ export default function Wallet(
                     <HStack>
                         <Text isTruncated>{address}</Text>
                         <IconButton
+                            variant={"outline"}
                             aria-label="Copy to clipboard"
                             icon={hasCopied ? <CheckIcon /> : <CopyIcon />}
                             onClick={onCopy}
@@ -155,7 +157,15 @@ export default function Wallet(
                                 <FormHelperText>In sats/vbyte</FormHelperText>
                             </FormControl>
                         </HStack>
-                        <Button type="submit" isLoading={isWithdrawing}>Withdraw</Button>
+                        <Button
+                            marginTop={5}
+                            variant={"solid"}
+                            colorScheme={"blue"}
+                            type="submit"
+                            isLoading={isWithdrawing}
+                        >
+                            Withdraw
+                        </Button>
                     </form>
                 </VStack>
             </Box>
@@ -176,7 +186,7 @@ const WalletInfoBar = ({
                 <HStack>
                     <Text>{balance} BTC</Text>
                     <IconButton
-                        bg={"transparent"}
+                        variant={"unstyled"}
                         aria-label="Go to wallet"
                         icon={<ExternalLinkIcon />}
                         onClick={() => navigate("/wallet")}

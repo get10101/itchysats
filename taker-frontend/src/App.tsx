@@ -96,7 +96,7 @@ export const App = () => {
                     <Route
                         path="/wallet"
                         element={<>
-                            <Center>
+                            <Center marginTop={20}>
                                 <VStack>
                                     {connectionStatus}
                                     <Wallet walletInfo={walletInfo} />
