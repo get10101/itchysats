@@ -28,6 +28,7 @@ use bdk::bitcoin::Script;
 use bdk::bitcoin::SignedAmount;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
+use bdk::miniscript::DescriptorTrait;
 use maia::TransactionExt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -196,16 +197,13 @@ struct Aggregated {
     /// If this is present, we have an active DLC.
     latest_dlc: Option<Dlc>,
     /// If this is present, it should have been published.
-    lock_tx: Option<Transaction>,
-    /// If this is present, it should have been published.
-    commit_tx: Option<Transaction>,
-    /// If this is present, it should have been published.
     collab_settlement_tx: Option<(Transaction, Script)>,
     /// If this is present, it should have been published.
     cet: Option<Transaction>,
-    /// If this is present, it should have been published.
-    refund_tx: Option<Transaction>,
     closing_price: Option<Price>,
+
+    commit_published: bool,
+    refund_published: bool,
 }
 
 impl Cfd {
@@ -341,14 +339,14 @@ impl Cfd {
 
                 self.state = CfdState::PendingClose;
             }
-            CollaborativeSettlementRejected { commit_tx } => {
-                self.aggregated.commit_tx = Some(commit_tx);
+            CollaborativeSettlementRejected { .. } => {
+                self.aggregated.commit_published = true;
                 self.pending_settlement_proposal_price = None;
 
                 self.state = CfdState::PendingCommit;
             }
-            CollaborativeSettlementFailed { commit_tx } => {
-                self.aggregated.commit_tx = Some(commit_tx);
+            CollaborativeSettlementFailed { .. } => {
+                self.aggregated.commit_published = true;
 
                 self.state = CfdState::PendingCommit;
             }
@@ -356,6 +354,10 @@ impl Cfd {
                 self.state = CfdState::Open;
             }
             CommitConfirmed => {
+                // Commit can be published by either party, meaning it being confirmed might be the
+                // first time we hear about it!
+                self.aggregated.commit_published = true;
+
                 self.state = CfdState::OpenCommitted;
             }
             CetConfirmed => {
@@ -375,8 +377,8 @@ impl Cfd {
 
                 self.state = CfdState::PendingCet;
             }
-            RefundTimelockExpired { refund_tx } => {
-                self.aggregated.refund_tx = Some(refund_tx);
+            RefundTimelockExpired { .. } => {
+                self.aggregated.refund_published = true;
 
                 self.state = CfdState::PendingRefund;
             }
@@ -391,8 +393,8 @@ impl Cfd {
 
                 self.state = CfdState::PendingCet;
             }
-            ManualCommit { tx } => {
-                self.aggregated.commit_tx = Some(tx);
+            ManualCommit { .. } => {
+                self.aggregated.commit_published = true;
 
                 self.state = CfdState::PendingCommit;
             }
@@ -421,7 +423,7 @@ impl Cfd {
             self.profit_percent = profit_percent;
         }
 
-        if let Some(lock_tx_url) = self.lock_tx_url(network, role) {
+        if let Some(lock_tx_url) = self.lock_tx_url(network) {
             self.details.tx_url_list.insert(lock_tx_url);
         }
         if let Some(commit_tx_url) = self.commit_tx_url(network) {
@@ -508,18 +510,28 @@ impl Cfd {
         }
     }
 
-    fn lock_tx_url(&self, network: Network, role: Role) -> Option<TxUrl> {
-        let tx = self.aggregated.lock_tx.as_ref()?;
+    /// Returns the URL to the lock transaction.
+    ///
+    /// If we have a DLC, we also have a lock transaction.
+    fn lock_tx_url(&self, network: Network) -> Option<TxUrl> {
         let dlc = self.aggregated.latest_dlc.as_ref()?;
-
-        let url = TxUrl::from_transaction(tx, &dlc.script_pubkey_for(role), network, TxLabel::Lock);
+        let url = TxUrl::from_transaction(
+            &dlc.lock.0,
+            &dlc.lock.1.script_pubkey(),
+            network,
+            TxLabel::Lock,
+        );
 
         Some(url)
     }
 
     fn commit_tx_url(&self, network: Network) -> Option<TxUrl> {
-        let tx = self.aggregated.commit_tx.as_ref()?;
-        let url = TxUrl::new(tx.txid(), network, TxLabel::Commit);
+        if !self.aggregated.commit_published {
+            return None;
+        }
+
+        let dlc = self.aggregated.latest_dlc.as_ref()?;
+        let url = TxUrl::new(dlc.commit.0.txid(), network, TxLabel::Commit);
 
         Some(url)
     }
@@ -532,11 +544,18 @@ impl Cfd {
     }
 
     fn refund_tx_url(&self, network: Network, role: Role) -> Option<TxUrl> {
-        let tx = self.aggregated.refund_tx.as_ref()?;
+        if !self.aggregated.refund_published {
+            return None;
+        }
+
         let dlc = self.aggregated.latest_dlc.as_ref()?;
 
-        let url =
-            TxUrl::from_transaction(tx, &dlc.script_pubkey_for(role), network, TxLabel::Refund);
+        let url = TxUrl::from_transaction(
+            &dlc.refund.0,
+            &dlc.script_pubkey_for(role),
+            network,
+            TxLabel::Refund,
+        );
 
         Some(url)
     }
