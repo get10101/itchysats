@@ -148,11 +148,11 @@ where
         + xtra::Handler<wallet::Withdraw>,
 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new<FO, FM, M>(
+    pub async fn new<FM, M>(
         db: SqlitePool,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> FO,
+        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> FM,
         settlement_interval: time::Duration,
         n_payouts: usize,
@@ -167,7 +167,6 @@ where
             + xtra::Handler<monitor::CollaborativeSettlement>
             + xtra::Handler<monitor::TryBroadcastTransaction>
             + xtra::Handler<oracle::Attestation>,
-        FO: Future<Output = Result<O>>,
         FM: Future<Output = Result<M>>,
     {
         let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
@@ -220,7 +219,7 @@ where
                 .run();
         tasks.add(fan_out_actor_fut);
 
-        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor)).await?));
+        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
 
         oracle_addr.send(oracle::Sync).await?;
 
@@ -344,12 +343,12 @@ where
     P: xtra::Handler<bitmex_price_feed::LatestQuote>,
 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new<FM, FO, M>(
+    pub async fn new<FM, M>(
         db: SqlitePool,
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         identity_sk: x25519_dalek::StaticSecret,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> FO,
+        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> FM,
         price_feed_constructor: impl (Fn(Address<supervisor::Actor<P, bitmex_price_feed::StopReason>>) -> P)
             + Send
@@ -366,7 +365,6 @@ where
             + xtra::Handler<monitor::CollaborativeSettlement>
             + xtra::Handler<oracle::Attestation>
             + xtra::Handler<monitor::TryBroadcastTransaction>,
-        FO: Future<Output = Result<O>>,
         FM: Future<Output = Result<M>>,
     {
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
@@ -439,7 +437,7 @@ where
 
         tasks.add(fan_out_actor_fut);
 
-        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor)).await?));
+        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
 
         let (supervisor, price_feed_actor) = supervisor::Actor::new(
             price_feed_constructor,
