@@ -113,19 +113,15 @@ impl ToSseEvent for Option<Quote> {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Heartbeat {
     timestamp: Timestamp,
+    interval: u64,
 }
 
 impl Heartbeat {
-    pub fn new() -> Self {
+    pub fn new(interval: u64) -> Self {
         Self {
             timestamp: Timestamp::now(),
+            interval,
         }
-    }
-}
-
-impl Default for Heartbeat {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -144,6 +140,7 @@ mod tests {
     fn heartbeat_serialization() {
         let heartbeat = Heartbeat {
             timestamp: Timestamp::new(0),
+            interval: 1,
         };
 
         serde_test::assert_ser_tokens(
@@ -151,11 +148,13 @@ mod tests {
             &[
                 Token::Struct {
                     name: "Heartbeat",
-                    len: 1,
+                    len: 2,
                 },
                 Token::Str("timestamp"),
                 Token::NewtypeStruct { name: "Timestamp" },
                 Token::I64(0),
+                Token::Str("interval"),
+                Token::U64(1),
                 Token::StructEnd,
             ],
         );

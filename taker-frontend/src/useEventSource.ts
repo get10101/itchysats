@@ -18,14 +18,18 @@ export function useEventSource(url: string): [EventSource | null, boolean] {
 
         let timer = setTimeout(() => {
             setIsConnected(false);
-        }, 5000);
+        }, 10000);
 
-        const heartbeatHandler = () => {
+        const heartbeatHandler = (event: Event) => {
             clearTimeout(timer);
             setIsConnected(true);
+
+            const hearbeat: Heartbeat = JSON.parse((event as EventSourceEvent).data);
+            const interval_msecs = hearbeat.interval * 1000;
+            const buffered_interval_msecs = interval_msecs * 2;
             timer = setTimeout(() => {
                 setIsConnected(false);
-            }, 5000);
+            }, buffered_interval_msecs);
         };
 
         es.addEventListener("heartbeat", heartbeatHandler);
@@ -40,4 +44,10 @@ export function useEventSource(url: string): [EventSource | null, boolean] {
     }, [url]);
 
     return [source, isConnected];
+}
+
+type EventSourceEvent = Event & { data: string };
+interface Heartbeat {
+    timestamp: number;
+    interval: number;
 }

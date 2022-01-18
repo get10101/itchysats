@@ -42,13 +42,16 @@ pub async fn feed(
     rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
     _auth: Authenticated,
 ) -> EventStream![] {
+    const HEARTBEAT_INTERVAL_SECS: u64 = 5;
+
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
     let mut rx_order = rx.order.clone();
     let mut rx_quote = rx.quote.clone();
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_maker_status = rx_maker_status.inner().clone();
-    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(5));
+    let mut heartbeat =
+        tokio::time::interval(std::time::Duration::from_secs(HEARTBEAT_INTERVAL_SECS));
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -89,7 +92,7 @@ pub async fn feed(
                     yield quote.to_sse_event();
                 }
                 _ = heartbeat.tick() => {
-                    yield Heartbeat::new().to_sse_event();
+                    yield Heartbeat::new(HEARTBEAT_INTERVAL_SECS).to_sse_event();
                 }
             }
         }
