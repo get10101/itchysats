@@ -120,10 +120,9 @@ where
         for id in cfd_ids {
             try_continue!(async {
                 let cfd = load_cfd(id, &mut conn).await?;
-                cfd.can_auto_rollover_taker(OffsetDateTime::now_utc())?;
-
-                this.send(Rollover(id)).await??;
-
+                if let Ok(()) = cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
+                    this.send(Rollover(id)).await??;
+                }
                 anyhow::Ok(())
             }
             .await
