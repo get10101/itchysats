@@ -37,6 +37,7 @@ use serde::Serialize;
 use sqlx::pool::PoolConnection;
 use std::collections::HashSet;
 use std::time::Duration;
+use time::macros::datetime;
 use time::OffsetDateTime;
 use tokio::sync::watch;
 use xtra::prelude::MessageChannel;
@@ -150,6 +151,12 @@ pub struct Cfd {
     #[serde(with = "round_to_two_dp")]
     pub initial_price: Price,
 
+    /// Sum of all costs
+    ///
+    /// Includes the opening fee and all fees that were already charged.
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub accumulated_fees: Amount,
+
     pub leverage: Leverage,
     pub trading_pair: TradingPair,
     pub position: Position,
@@ -260,6 +267,7 @@ impl Cfd {
         Self {
             order_id: id,
             initial_price,
+            accumulated_fees: Amount::from_sat(123456), // FIXME: calculate
             leverage,
             trading_pair: TradingPair::BtcUsd,
             position,
@@ -675,8 +683,28 @@ pub struct CfdOrder {
     pub trading_pair: TradingPair,
     pub position: Position,
 
+    /// The maker's price for opening a position
     #[serde(with = "round_to_two_dp")]
     pub price: Price,
+
+    /// Fee charged by the maker for opening a position
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub opening_fee: Amount,
+
+    /// The interest as annualized percentage
+    ///
+    /// This is an estimate as the funding rate can fluctuate
+    pub funding_rate_annualized_percent: String,
+
+    /// The current estimated funding rate by the hour
+    ///
+    /// This represents the current funding rate of the maker.
+    /// The funding rate fluctuates with market movements.
+    pub funding_rate_hourly_percent: String,
+
+    /// Timestamp when the next fee will be collected
+    #[serde(with = "::time::serde::timestamp")]
+    pub next_funding_event: OffsetDateTime,
 
     #[serde(with = "round_to_two_dp")]
     pub min_quantity: Usd,
@@ -725,6 +753,11 @@ impl From<Order> for CfdOrder {
                 .whole_seconds()
                 .try_into()
                 .expect("settlement_time_interval_hours is always positive number"),
+            // FIXME: Replace dummy values for opening fee, funding rates and time
+            opening_fee: Amount::from_sat(123 * 24),
+            funding_rate_annualized_percent: "18.5".to_string(),
+            funding_rate_hourly_percent: "0.002345".to_string(),
+            next_funding_event: datetime!(2030-09-23 10:00:00).assume_utc(),
         }
     }
 }
