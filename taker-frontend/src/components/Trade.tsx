@@ -43,8 +43,11 @@ import {
 } from "@chakra-ui/react";
 import { motion } from "framer-motion";
 import * as React from "react";
+import { useEffect, useState } from "react";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
+import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
+import BitcoinAmount from "./BitcoinAmount";
 
 const MotionBox = motion<BoxProps>(Box);
 
@@ -58,12 +61,8 @@ interface TradeProps {
     parcelSize: number;
     marginPerParcel: number;
     leverage?: number;
-    quantity: string;
     liquidationPrice?: number;
-    onQuantityChange: any;
     walletBalance: number;
-    onLongSubmit: (payload: CfdOrderRequestPayload) => void;
-    isLongSubmitting: boolean;
 }
 
 export default function Trade({
@@ -72,17 +71,25 @@ export default function Trade({
     maxQuantity,
     referencePrice: referencePriceAsNumber,
     askPrice: askPriceAsNumber,
-    quantity,
-    onQuantityChange,
     parcelSize,
     marginPerParcel,
     leverage,
     liquidationPrice: liquidationPriceAsNumber,
-    onLongSubmit,
-    isLongSubmitting,
     orderId,
     walletBalance,
 }: TradeProps) {
+    let [quantity, setQuantity] = useState(0);
+    let [userHasEdited, setUserHasEdited] = useState(false);
+
+    // We update the quantity because the offer can change any time.
+    useEffect(() => {
+        if (!userHasEdited) {
+            setQuantity(minQuantity);
+        }
+    }, [userHasEdited, minQuantity, setQuantity]);
+
+    let [onLongSubmit, isLongSubmitting] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
+
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
 
@@ -92,15 +99,13 @@ export default function Trade({
 
     const { isOpen, onOpen, onClose } = useDisclosure();
 
-    const parse = (val: any) => Number.parseInt(val.replace(/^\$/, ""));
-
-    const margin = (parse(quantity) / parcelSize) * marginPerParcel;
+    const margin = (quantity / parcelSize) * marginPerParcel;
 
     const balanceTooLow = walletBalance < margin;
-    const quantityTooHigh = maxQuantity < parse(quantity);
-    const quantityTooLow = minQuantity > parse(quantity);
-    const quantityGreaterZero = parse(quantity) > 0;
-    const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(parse(quantity), parcelSize);
+    const quantityTooHigh = maxQuantity < quantity;
+    const quantityTooLow = minQuantity > quantity;
+    const quantityGreaterZero = quantity > 0;
+    const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(quantity, parcelSize);
 
     const canSubmit = orderId && !isLongSubmitting && !balanceTooLow
         && !quantityTooHigh && !quantityTooLow && quantityGreaterZero && quantityIsEvenlyDivisibleByIncrement;
@@ -184,7 +189,10 @@ export default function Trade({
                             min={minQuantity}
                             max={maxQuantity}
                             quantity={quantity}
-                            onChange={onQuantityChange}
+                            onChange={(_valueAsString: string, valueAsNumber: number) => {
+                                setQuantity(Number.isNaN(valueAsNumber) ? 0 : valueAsNumber);
+                                setUserHasEdited(true);
+                            }}
                             parcelSize={parcelSize}
                         />
                     </GridItem>
@@ -204,7 +212,7 @@ export default function Trade({
                                 <Button colorScheme="red" size="lg" disabled h={16} w={"40"}>
                                     <VStack>
                                         <Text as="b">Short</Text>
-                                        <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
+                                        <Text fontSize={"sm"}>{quantity}@{askPrice}</Text>
                                     </VStack>
                                 </Button>
                                 <Button
@@ -217,7 +225,7 @@ export default function Trade({
                                 >
                                     <VStack>
                                         <Text as="b">Long</Text>
-                                        <Text fontSize={"sm"}>{quantity.replace("$", "")}@{askPrice}</Text>
+                                        <Text fontSize={"sm"}>{quantity}@{askPrice}</Text>
                                     </VStack>
                                 </Button>
 
@@ -256,13 +264,15 @@ export default function Trade({
                                                     colorScheme="teal"
                                                     isLoading={isLongSubmitting}
                                                     onClick={() => {
-                                                        const quantityAsNumber = quantity.replace("$", "");
-
                                                         let payload: CfdOrderRequestPayload = {
                                                             order_id: orderId!,
-                                                            quantity: Number.parseFloat(quantityAsNumber),
+                                                            quantity,
                                                         };
                                                         onLongSubmit(payload);
+
+                                                        setQuantity(minQuantity);
+                                                        setUserHasEdited(false);
+
                                                         onClose();
                                                     }}
                                                 >
@@ -285,9 +295,9 @@ export default function Trade({
 interface QuantityProps {
     min: number;
     max: number;
-    quantity: string;
+    quantity: number;
     parcelSize: number;
-    onChange: any;
+    onChange: (valueAsString: string, valueAsNumber: number) => void;
 }
 
 function Quantity({ min, max, onChange, quantity, parcelSize }: QuantityProps) {
@@ -352,7 +362,7 @@ function Margin({ margin }: MarginProps) {
         <VStack>
             <HStack>
                 <Text as={"b"}>Required margin:</Text>
-                <Text>₿{margin}</Text>
+                <BitcoinAmount btc={margin} />
             </HStack>
             <Text fontSize={"sm"} color={"darkgrey"}>The collateral you will need to provide</Text>
         </VStack>

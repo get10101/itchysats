@@ -20,20 +20,9 @@ import History from "./components/History";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
 import { Wallet, WalletInfoBar } from "./components/Wallet";
-import {
-    BXBTData,
-    Cfd,
-    CfdOrderRequestPayload,
-    ConnectionStatus,
-    intoCfd,
-    intoOrder,
-    Order,
-    StateGroupKey,
-    WalletInfo,
-} from "./types";
+import { BXBTData, Cfd, ConnectionStatus, intoCfd, intoOrder, Order, StateGroupKey, WalletInfo } from "./types";
 import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
-import usePostRequest from "./usePostRequest";
 
 export const App = () => {
     let [referencePrice, setReferencePrice] = useState<number>();
@@ -56,22 +45,12 @@ export const App = () => {
     const connectedToMakerOrUndefined = useLatestEvent<ConnectionStatus>(source, "maker_status");
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
-    let [quantity, setQuantity] = useState("0");
-    let [userHasEdited, setUserHasEdited] = useState(false);
-
-    const {
-        price: askPrice,
-        min_quantity: minQuantity,
-        max_quantity: maxQuantity,
-        leverage,
-        margin_per_parcel: marginPerParcel,
-        parcel_size: parcelSize,
-        liquidation_price: liquidationPrice,
-    } = order || {};
-
-    let effectiveQuantity = userHasEdited ? quantity : (minQuantity?.toString() || "0");
-
-    let [makeNewOrderRequest, isCreatingNewOrderRequest] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
+    const minQuantity = parseOptionalNumber(order?.min_quantity) || 0;
+    const maxQuantity = parseOptionalNumber(order?.max_quantity) || 0;
+    const askPrice = parseOptionalNumber(order?.price);
+    const parcelSize = parseOptionalNumber(order?.parcel_size) || 0;
+    const liquidationPrice = parseOptionalNumber(order?.liquidation_price);
+    const marginPerParcel = order?.margin_per_parcel || 0;
 
     function parseOptionalNumber(val: string | undefined): number | undefined {
         if (!val) {
@@ -119,22 +98,15 @@ export const App = () => {
                                 <Trade
                                     connectedToMaker={connectedToMaker}
                                     orderId={order?.id}
-                                    quantity={effectiveQuantity}
-                                    maxQuantity={parseOptionalNumber(maxQuantity) || 0}
-                                    minQuantity={parseOptionalNumber(minQuantity) || 0}
+                                    maxQuantity={maxQuantity}
+                                    minQuantity={minQuantity}
                                     referencePrice={referencePrice}
-                                    askPrice={parseOptionalNumber(askPrice)}
-                                    parcelSize={parseOptionalNumber(parcelSize) || 0}
-                                    marginPerParcel={marginPerParcel || 0}
-                                    leverage={leverage}
-                                    liquidationPrice={parseOptionalNumber(liquidationPrice)}
+                                    askPrice={askPrice}
+                                    parcelSize={parcelSize}
+                                    marginPerParcel={marginPerParcel}
+                                    leverage={order?.leverage}
+                                    liquidationPrice={liquidationPrice}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
-                                    onQuantityChange={(valueString: string) => {
-                                        setUserHasEdited(true);
-                                        setQuantity(valueString);
-                                    }}
-                                    onLongSubmit={makeNewOrderRequest}
-                                    isLongSubmitting={isCreatingNewOrderRequest}
                                 />
                                 <History
                                     connectedToMaker={connectedToMaker}
