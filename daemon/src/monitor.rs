@@ -27,8 +27,6 @@ use bdk::electrum_client::GetHistoryRes;
 use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
 use serde_json::Value;
-use sqlx::pool::PoolConnection;
-use sqlx::Sqlite;
 use sqlx::SqlitePool;
 use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
@@ -100,6 +98,7 @@ pub struct Actor<C = bdk::electrum_client::Client> {
     client: C,
     tasks: Tasks,
     state: State,
+    db: sqlx::SqlitePool,
 }
 
 /// Internal data structure encapsulating the monitoring state without performing any IO.
@@ -242,7 +241,7 @@ impl Cfd {
 }
 
 impl Actor<bdk::electrum_client::Client> {
-    pub async fn new(
+    pub fn new(
         db: SqlitePool,
         electrum_rpc_url: String,
         event_channel: Box<dyn StrongMessageChannel<Event>>,
@@ -256,142 +255,15 @@ impl Actor<bdk::electrum_client::Client> {
             .block_headers_subscribe()
             .context("Failed to subscribe to header notifications")?;
 
-        let mut actor = Self {
+        Ok(Self {
             cfds: HashMap::new(),
             event_channel,
             client,
             state: State::new(BlockHeight::try_from(latest_block)?),
             tasks: Tasks::default(),
-        };
-
-        let mut conn = db.acquire().await?;
-
-        for id in db::load_all_cfd_ids(&mut conn).await? {
-            let (_, events) = db::load_cfd(id, &mut conn).await?;
-
-            let Cfd {
-                params,
-                monitor_lock_finality,
-                monitor_commit_finality,
-                monitor_cet_timelock,
-                monitor_refund_timelock,
-                monitor_refund_finality,
-                monitor_revoked_commit_transactions,
-                monitor_collaborative_settlement_finality,
-                ..
-            } = events.into_iter().fold(Cfd::default(), Cfd::apply);
-
-            let params = match params {
-                None => continue,
-                Some(params) => params,
-            };
-
-            actor.cfds.insert(id, params.clone());
-
-            if monitor_lock_finality {
-                actor.state.monitor_lock_finality(&params, id);
-            }
-
-            if monitor_commit_finality {
-                actor.state.monitor_commit_finality(&params, id)
-            }
-
-            if monitor_cet_timelock {
-                actor.state.monitor_commit_cet_timelock(&params, id);
-            }
-
-            if monitor_refund_timelock {
-                actor.state.monitor_commit_refund_timelock(&params, id);
-            }
-
-            if monitor_refund_finality {
-                actor.state.monitor_refund_finality(&params, id);
-            }
-
-            if monitor_revoked_commit_transactions {
-                actor.state.monitor_revoked_commit_transactions(&params, id);
-            }
-
-            if let Some(params) = monitor_collaborative_settlement_finality {
-                actor.state.monitor_close_finality(params, id);
-            }
-        }
-
-        actor.rebroadcast_transactions(conn).await?;
-
-        Ok(actor)
+            db,
+        })
     }
-
-    async fn rebroadcast_transactions(&mut self, mut conn: PoolConnection<Sqlite>) -> Result<()> {
-        for id in db::load_all_cfd_ids(&mut conn).await? {
-            let (_, events) = db::load_cfd(id, &mut conn).await?;
-
-            let Cfd {
-                cet,
-                commit_tx,
-                lock_tx,
-                ..
-            } = events.into_iter().fold(Cfd::default(), Cfd::apply);
-
-            if let Some(commit_tx) = commit_tx {
-                let txid = broadcast_transaction(&self.client, commit_tx)?;
-                tracing::info!("Commit transaction published on chain: {txid}");
-            }
-
-            if let Some(cet) = cet {
-                let txid = broadcast_transaction(&self.client, cet)?;
-                tracing::info!("CET published on chain: {txid}");
-            }
-
-            if let Some(lock_tx) = lock_tx {
-                let txid = broadcast_transaction(&self.client, lock_tx)?;
-                tracing::info!("Lock tx transaction published on chain: {txid}");
-            }
-        }
-
-        Ok(())
-    }
-}
-
-fn broadcast_transaction(client: &impl ElectrumApi, tx: Transaction) -> Result<Txid> {
-    let result = client.transaction_broadcast(&tx);
-
-    if let Err(electrum_client::Error::Protocol(ref value)) = result {
-        let rpc_error = parse_rpc_protocol_error(value)
-            .with_context(|| format!("Failed to parse electrum error response '{value:?}'"))?;
-
-        if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
-            let txid = tx.txid();
-            tracing::trace!(
-                %txid, "Attempted to broadcast transaction that was already on-chain",
-            );
-
-            return Ok(txid);
-        }
-
-        // We do this check because electrum sometimes returns an RpcVerifyError when it should
-        // be returning a RpcVerifyAlreadyInChain error,
-        if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyError)
-            && rpc_error.message == "bad-txns-inputs-missingorspent"
-        {
-            if let Ok(tx) = client.transaction_get(&tx.txid()) {
-                let txid = tx.txid();
-                tracing::trace!(
-                    %txid, "Attempted to broadcast transaction that was already on-chain",
-                );
-                return Ok(txid);
-            }
-        }
-    }
-    let txid = tx.txid();
-
-    result.with_context(|| {
-        let tx_hex = serialize_hex(&tx);
-
-        format!("Broadcasting transaction failed. Txid: {txid}. Raw transaction: {tx_hex}")
-    })?;
-
-    Ok(txid)
 }
 
 impl State {
@@ -864,13 +736,121 @@ impl xtra::Message for Sync {
 #[async_trait]
 impl<C> xtra::Actor for Actor<C>
 where
-    C: Send + 'static,
-    Self: xtra::Handler<Sync>,
+    C: bdk::electrum_client::ElectrumApi + Send + 'static,
 {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
         self.tasks
-            .add(this.send_interval(Duration::from_secs(20), || Sync));
+            .add(this.clone().send_interval(Duration::from_secs(20), || Sync));
+
+        self.tasks.add_fallible(
+            {
+                let db = self.db.clone();
+                let this = this.clone();
+
+                async move {
+                    let mut conn = db.acquire().await?;
+
+                    for id in db::load_all_cfd_ids(&mut conn).await? {
+                        let (_, events) = db::load_cfd(id, &mut conn).await?;
+
+                        let Cfd {
+                            cet,
+                            commit_tx,
+                            lock_tx,
+                            ..
+                        } = events.into_iter().fold(Cfd::default(), Cfd::apply);
+
+                        if let Some(tx) = commit_tx {
+                            match this.send(TryBroadcastTransaction { tx }).await? {
+                                Ok(txid) => {
+                                    tracing::info!("Commit transaction published on chain: {txid}")
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to publish commit transaction: {e:#}")
+                                }
+                            }
+                        }
+
+                        if let Some(tx) = cet {
+                            match this.send(TryBroadcastTransaction { tx }).await? {
+                                Ok(txid) => {
+                                    tracing::info!("CET published on chain: {txid}")
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to publish CET: {e:#}")
+                                }
+                            }
+                        }
+
+                        if let Some(tx) = lock_tx {
+                            match this.send(TryBroadcastTransaction { tx }).await? {
+                                Ok(txid) => {
+                                    tracing::info!("Lock transaction published on chain: {txid}")
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to publish lock transaction: {e:#}")
+                                }
+                            }
+                        }
+                    }
+
+                    anyhow::Ok(())
+                }
+            },
+            |e| async move {
+                tracing::warn!("Failed to re-broadcast transactions: {e:#}");
+            },
+        );
+
+        self.tasks.add_fallible(
+            {
+                let db = self.db.clone();
+
+                async move {
+                    let mut conn = db.acquire().await?;
+
+                    for id in db::load_all_cfd_ids(&mut conn).await? {
+                        let (_, events) = db::load_cfd(id, &mut conn).await?;
+
+                        let Cfd {
+                            params,
+                            monitor_lock_finality,
+                            monitor_commit_finality,
+                            monitor_cet_timelock,
+                            monitor_refund_timelock,
+                            monitor_refund_finality,
+                            monitor_revoked_commit_transactions,
+                            monitor_collaborative_settlement_finality,
+                            ..
+                        } = events.into_iter().fold(Cfd::default(), Cfd::apply);
+
+                        let params = match params {
+                            None => continue,
+                            Some(params) => params,
+                        };
+
+                        this.send(ReinitMonitoring {
+                            id,
+                            params,
+                            monitor_lock_finality,
+                            monitor_commit_finality,
+                            monitor_cet_timelock,
+                            monitor_refund_timelock,
+                            monitor_refund_finality,
+                            monitor_revoked_commit_transactions,
+                            monitor_collaborative_settlement_finality,
+                        })
+                        .await?;
+                    }
+
+                    anyhow::Ok(())
+                }
+            },
+            |e| async move {
+                tracing::warn!("Failed to re-initialize monitoring: {e:#}");
+            },
+        );
     }
 }
 
@@ -901,9 +881,108 @@ where
     }
 
     async fn handle_try_broadcast_transaction(&self, msg: TryBroadcastTransaction) -> Result<Txid> {
-        let txid = broadcast_transaction(&self.client, msg.tx)?;
+        let TryBroadcastTransaction { tx } = msg;
+
+        let result = self.client.transaction_broadcast(&tx);
+
+        if let Err(electrum_client::Error::Protocol(ref value)) = result {
+            let rpc_error = parse_rpc_protocol_error(value)
+                .with_context(|| format!("Failed to parse electrum error response '{value:?}'"))?;
+
+            if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
+                let txid = tx.txid();
+                tracing::trace!(
+                    %txid, "Attempted to broadcast transaction that was already on-chain",
+                );
+
+                return Ok(txid);
+            }
+
+            // We do this check because electrum sometimes returns an RpcVerifyError when it should
+            // be returning a RpcVerifyAlreadyInChain error,
+            if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyError)
+                && rpc_error.message == "bad-txns-inputs-missingorspent"
+            {
+                if let Ok(tx) = self.client.transaction_get(&tx.txid()) {
+                    let txid = tx.txid();
+                    tracing::trace!(
+                        %txid, "Attempted to broadcast transaction that was already on-chain",
+                    );
+                    return Ok(txid);
+                }
+            }
+        }
+        let txid = tx.txid();
+
+        result.with_context(|| {
+            let tx_hex = serialize_hex(&tx);
+
+            format!("Broadcasting transaction failed. Txid: {txid}. Raw transaction: {tx_hex}")
+        })?;
+
         Ok(txid)
     }
+
+    async fn handle_reinit_monitoring(&mut self, msg: ReinitMonitoring) {
+        let ReinitMonitoring {
+            id,
+            params,
+            monitor_lock_finality,
+            monitor_commit_finality,
+            monitor_cet_timelock,
+            monitor_refund_timelock,
+            monitor_refund_finality,
+            monitor_revoked_commit_transactions,
+            monitor_collaborative_settlement_finality,
+        } = msg;
+
+        self.cfds.insert(id, params.clone());
+
+        if monitor_lock_finality {
+            self.state.monitor_lock_finality(&params, id);
+        }
+
+        if monitor_commit_finality {
+            self.state.monitor_commit_finality(&params, id)
+        }
+
+        if monitor_cet_timelock {
+            self.state.monitor_commit_cet_timelock(&params, id);
+        }
+
+        if monitor_refund_timelock {
+            self.state.monitor_commit_refund_timelock(&params, id);
+        }
+
+        if monitor_refund_finality {
+            self.state.monitor_refund_finality(&params, id);
+        }
+
+        if monitor_revoked_commit_transactions {
+            self.state.monitor_revoked_commit_transactions(&params, id);
+        }
+
+        if let Some(params) = monitor_collaborative_settlement_finality {
+            self.state.monitor_close_finality(params, id);
+        }
+    }
+}
+
+// TODO: Re-model this by tearing apart `MonitorParams`.
+struct ReinitMonitoring {
+    id: OrderId,
+
+    params: MonitorParams,
+
+    monitor_lock_finality: bool,
+    monitor_commit_finality: bool,
+    monitor_cet_timelock: bool,
+    monitor_refund_timelock: bool,
+    monitor_refund_finality: bool,
+    monitor_revoked_commit_transactions: bool,
+
+    // Ideally, all of the above would be like this.
+    monitor_collaborative_settlement_finality: Option<(Txid, Script)>,
 }
 
 #[async_trait]
