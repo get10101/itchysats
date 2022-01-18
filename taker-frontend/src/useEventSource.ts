@@ -34,10 +34,16 @@ export function useEventSource(url: string): [EventSource | null, boolean] {
 
         es.addEventListener("heartbeat", heartbeatHandler);
 
+        const beforeUnloadHandler = () => {
+            es.close();
+        };
+        window.addEventListener("beforeunload", beforeUnloadHandler);
+
         return () => {
             setSource(null);
             es.removeEventListener("error", errorHandler);
             es.removeEventListener("heartbeat", heartbeatHandler);
+            window.removeEventListener("beforeunload", beforeUnloadHandler);
             clearTimeout(timer);
             es.close();
         };
