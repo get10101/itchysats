@@ -45,8 +45,8 @@ where
         #[allow(clippy::disallowed_method)]
         tokio::spawn(async {
             let e = match send_fut.await {
-                Ok(Err(e)) => format!("{:#}", e),
-                Err(e) => format!("{:#}", e),
+                Ok(Err(e)) => format!("{e:#}"),
+                Err(e) => format!("{e:#}"),
                 Ok(Ok(())) => return,
             };
 
@@ -73,12 +73,12 @@ where
         #[allow(clippy::disallowed_method)]
         tokio::spawn(async {
             let e = match send_fut.await {
-                Ok(Err(e)) => format!("{:#}", e),
-                Err(e) => format!("{:#}", e),
+                Ok(Err(e)) => format!("{e:#}"),
+                Err(e) => format!("{e:#}"),
                 Ok(Ok(())) => return,
             };
 
-            tracing::warn!("Async message invocation failed: {:#}", e)
+            tracing::warn!("Async message invocation failed: {e:#}")
         });
 
         Ok(())

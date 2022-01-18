@@ -204,9 +204,9 @@ pub async fn post_withdraw_request(
         })?;
 
     let url = match network.inner() {
-        Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
-        Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
-        Network::Signet => format!("https://mempool.space/signet/tx/{}", txid),
+        Network::Bitcoin => format!("https://mempool.space/tx/{txid}"),
+        Network::Testnet => format!("https://mempool.space/testnet/tx/{txid}"),
+        Network::Signet => format!("https://mempool.space/signet/tx/{txid}"),
         Network::Regtest => txid.to_string(),
     };
 

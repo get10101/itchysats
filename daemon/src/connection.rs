@@ -60,16 +60,16 @@ impl State {
         let write = match self {
             State::Connected { write, .. } => write,
             State::Disconnected => {
-                bail!("Cannot send {}, not connected to maker", msg_str);
+                bail!("Cannot send {msg_str}, not connected to maker");
             }
         };
 
-        tracing::trace!(target: "wire", "Sending {}", msg_str);
+        tracing::trace!(target: "wire", "Sending {msg_str}");
 
         write
             .send(msg)
             .await
-            .with_context(|| format!("Failed to send message {} to maker", msg_str))?;
+            .with_context(|| format!("Failed to send message {msg_str} to maker"))?;
 
         Ok(())
     }
@@ -333,13 +333,11 @@ impl Actor {
                 .timeout(self.connect_timeout)
                 .await
                 .with_context(|| {
-                    format!(
-                        "Connection attempt to {} timed out after {}s",
-                        maker_addr,
-                        self.connect_timeout.as_secs()
-                    )
+                    let seconds = self.connect_timeout.as_secs();
+
+                    format!("Connection attempt to {maker_addr} timed out after {seconds}s",)
                 })?
-                .with_context(|| format!("Failed to connect to {}", maker_addr))?;
+                .with_context(|| format!("Failed to connect to {maker_addr}"))?;
             let noise = noise::initiator_handshake(
                 &mut connection,
                 &self.identity_sk,
@@ -359,8 +357,7 @@ impl Actor {
             .await
             .with_context(|| {
                 format!(
-                    "Maker {} did not send Hello within 10 seconds, dropping connection",
-                    maker_identity
+                    "Maker {maker_identity} did not send Hello within 10 seconds, dropping connection"
                 )
             })? {
             Ok(Some(wire::MakerToTaker::Hello(maker_version))) => {
@@ -375,17 +372,13 @@ impl Actor {
                         .expect("receiver to outlive the actor");
 
                     bail!(
-                        "Network version mismatch, we are on version {} but taker is on version {}",
-                        our_version,
-                        maker_version,
+                        "Network version mismatch, we are on version {our_version} but taker is on version {maker_version}"
                     )
                 }
             }
             unexpected_message => {
                 bail!(
-                    "Unexpected message {:?} from maker {}",
-                    unexpected_message,
-                    maker_identity
+                    "Unexpected message {unexpected_message:?} from maker {maker_identity}"
                 )
             }
         }
@@ -427,7 +420,7 @@ impl Actor {
             }
         };
 
-        tracing::trace!(target: "wire", "Received {}", msg);
+        tracing::trace!(target: "wire", "Received {msg}");
 
         match msg {
             wire::MakerToTaker::Heartbeat => {
@@ -534,16 +527,17 @@ impl Actor {
         match self.state.update_last_pulse_time() {
             Ok(duration) => {
                 if duration >= self.maker_heartbeat_interval {
+                    let seconds = self.maker_heartbeat_interval.as_secs();
+                    let pulse_delta_seconds = duration.as_secs();
+
                     tracing::warn!(
-                        "Heartbeat pulse measurements fell behind more than heartbeat interval ({}), likely missing a heartbeat from the maker. Diff between pulses: {}",
-                        self.maker_heartbeat_interval.as_secs(),
-                        duration.as_secs()
+                        "Heartbeat pulse measurements fell behind more than heartbeat interval ({seconds}), likely missing a heartbeat from the maker. Diff between pulses: {pulse_delta_seconds}"
                     );
                     return; // Don't try to disconnect if the measurements fell behind
                 }
             }
             Err(e) => {
-                tracing::debug!("{}", e);
+                tracing::debug!("{e}");
             }
         }
 
@@ -590,10 +584,11 @@ pub async fn connect(
                     break 'connect;
                 }
 
+                let num_addresses = maker_addresses.len();
+                let seconds = CONNECT_TO_MAKER_INTERVAL.as_secs();
+
                 tracing::warn!(
-                    "Tried connecting to {} addresses without success, retrying in {} seconds",
-                    maker_addresses.len(),
-                    CONNECT_TO_MAKER_INTERVAL.as_secs()
+                    "Tried connecting to {num_addresses} addresses without success, retrying in {seconds} seconds",
                 );
 
                 tokio::time::sleep(CONNECT_TO_MAKER_INTERVAL).await;

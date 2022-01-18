@@ -334,19 +334,19 @@ impl Actor<bdk::electrum_client::Client> {
 
             if let Some(commit_tx) = commit_tx {
                 let txid = broadcast_transaction(&self.client, commit_tx)?;
-                tracing::info!("Commit transaction published on chain: {}", txid);
+                tracing::info!("Commit transaction published on chain: {txid}");
             }
 
             if let Some(cet) = cet {
                 // Double question mark OK because if we are in PendingCet we must have been
                 // Ready before
                 let txid = broadcast_transaction(&self.client, cet)?;
-                tracing::info!("CET published on chain: {}", txid);
+                tracing::info!("CET published on chain: {txid}");
             }
 
             if let Some(lock_tx) = lock_tx {
                 let txid = broadcast_transaction(&self.client, lock_tx)?;
-                tracing::info!("Lock tx transaction published on chain: {}", txid);
+                tracing::info!("Lock tx transaction published on chain: {txid}");
             }
         }
 
@@ -359,7 +359,7 @@ fn broadcast_transaction(client: &impl ElectrumApi, tx: Transaction) -> Result<T
 
     if let Err(electrum_client::Error::Protocol(ref value)) = result {
         let rpc_error = parse_rpc_protocol_error(value)
-            .with_context(|| format!("Failed to parse electrum error response '{:?}'", value))?;
+            .with_context(|| format!("Failed to parse electrum error response '{value:?}'"))?;
 
         if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
             let txid = tx.txid();
@@ -384,13 +384,12 @@ fn broadcast_transaction(client: &impl ElectrumApi, tx: Transaction) -> Result<T
             }
         }
     }
+    let txid = tx.txid();
 
-    let txid = result.with_context(|| {
-        format!(
-            "Broadcasting transaction failed. Txid: {}. Raw transaction: {}",
-            tx.txid(),
-            serialize_hex(&tx)
-        )
+    result.with_context(|| {
+        let tx_hex = serialize_hex(&tx);
+
+        format!("Broadcasting transaction failed. Txid: {txid}. Raw transaction: {tx_hex}")
     })?;
 
     Ok(txid)
@@ -462,10 +461,7 @@ impl State {
     ) -> Result<()> {
         let attestation_id = attestation.id;
         let cets = cets.get(&attestation_id).with_context(|| {
-            format!(
-                "No CET for oracle event {} and cfd with order id {}",
-                attestation_id, order_id
-            )
+            format!("No CET for oracle event {attestation_id} and cfd with order id {order_id}",)
         })?;
 
         let (txid, script_pubkey) = cets
@@ -517,10 +513,9 @@ where
             .context("Failed to subscribe to header notifications")?
             .try_into()?;
 
-        tracing::trace!(
-            "Updating status of {} transactions",
-            self.state.awaiting_status.len()
-        );
+        let num_transactions = self.state.awaiting_status.len();
+
+        tracing::trace!("Updating status of {num_transactions} transactions",);
 
         let histories = self
             .client
@@ -574,8 +569,7 @@ impl State {
                 let script = match txid_to_script.get(&txid) {
                     None => {
                         tracing::trace!(
-                            "Could not find script in own state for txid {}, ignoring",
-                            txid
+                            "Could not find script in own state for txid {txid}, ignoring"
                         );
                         continue;
                     }
@@ -644,16 +638,15 @@ impl State {
                         .into_iter()
                         .partition::<Vec<_>, _>(|(target_status, event)| {
                             tracing::trace!(
-                                "{:?} requires {} and we have {}",
-                                event,
-                                target_status,
-                                status
+                                "{event:?} requires {target_status} and we have {status}"
                             );
 
                             status >= target_status
                         });
 
-                    tracing::trace!("{} subscriptions reached their monitoring target, {} remaining for this script", reached_monitoring_target.len(), remaining.len());
+                    let num_reached = reached_monitoring_target.len();
+                    let num_remaining = remaining.len();
+                    tracing::trace!("{num_reached} subscriptions reached their monitoring target, {num_remaining} remaining for this script");
 
                     // TODO: When reaching finality of a final tx (CET, refund_tx,
                     // collaborate_close_tx) we have to remove the remaining "competing"
@@ -744,7 +737,9 @@ impl fmt::Display for ScriptStatus {
             ScriptStatus::Unseen => write!(f, "unseen"),
             ScriptStatus::InMempool => write!(f, "in mempool"),
             ScriptStatus::Confirmed(inner) => {
-                write!(f, "confirmed with {} blocks", inner.confirmations())
+                let num_blocks = inner.confirmations();
+
+                write!(f, "confirmed with {num_blocks} blocks",)
             }
         }
     }

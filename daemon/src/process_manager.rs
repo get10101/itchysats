@@ -73,7 +73,7 @@ impl Actor {
                     .send(monitor::TryBroadcastTransaction { tx: lock_tx })
                     .await??;
 
-                tracing::info!("Lock transaction published with txid {}", txid);
+                tracing::info!("Lock transaction published with txid {txid}");
 
                 self.start_monitoring
                     .send(monitor::StartMonitoring {
@@ -99,7 +99,7 @@ impl Actor {
                             .await?
                             .context("Broadcasting close transaction")?;
 
-                        tracing::info!(order_id=%event.id, "Close transaction published with txid {}", txid);
+                        tracing::info!(order_id=%event.id, "Close transaction published with txid {txid}");
 
                         txid
                     }
@@ -107,7 +107,7 @@ impl Actor {
                         // TODO: Publish the tx once the collaborative settlement is symmetric,
                         // allowing the taker to publish as well.
                         let txid = spend_tx.txid();
-                        tracing::info!(order_id=%event.id, "Collaborative settlement completed successfully {}", txid);
+                        tracing::info!(order_id=%event.id, "Collaborative settlement completed successfully {txid}");
                         txid
                     }
                 };
@@ -126,10 +126,7 @@ impl Actor {
                     .await?
                     .context("Broadcasting commit transaction")?;
 
-                tracing::info!(
-                    "Closing non-collaboratively. Commit tx published with txid {}",
-                    txid
-                )
+                tracing::info!("Closing non-collaboratively. Commit tx published with txid {txid}",)
             }
             CollaborativeSettlementFailed { commit_tx } => {
                 let txid = self
@@ -138,10 +135,7 @@ impl Actor {
                     .await?
                     .context("Broadcasting commit transaction")?;
 
-                tracing::warn!(
-                    "Closing non-collaboratively. Commit tx published with txid {}",
-                    txid
-                )
+                tracing::warn!("Closing non-collaboratively. Commit tx published with txid {txid}")
             }
             OracleAttestedPostCetTimelock { cet, .. }
             | CetTimelockConfirmedPostOracleAttestation { cet } => {
@@ -195,7 +189,7 @@ impl Actor {
                     .await?
                     .context("Failed to broadcast refund transaction")?;
 
-                tracing::info!(order_id=%event.id, "Refund transaction published: {}", txid);
+                tracing::info!(order_id=%event.id, "Refund transaction published: {txid}");
             }
             RefundConfirmed => {
                 tracing::info!(order_id=%event.id, "Refund transaction confirmed");

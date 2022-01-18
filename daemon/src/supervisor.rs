@@ -42,7 +42,8 @@ where
     }
 
     fn spawn_new(&mut self, ctx: &mut Context<Self>) {
-        tracing::info!("Spawning new instance of {}", T::name());
+        let actor = T::name();
+        tracing::info!("Spawning new instance of {actor}");
 
         let this = ctx.address().expect("we are alive");
         let actor = (self.ctor)(this);
@@ -69,15 +70,15 @@ where
     R: fmt::Display + 'static,
 {
     pub fn handle(&mut self, msg: Stopped<R>, ctx: &mut Context<Self>) {
+        let actor = T::name();
         let reason = msg.reason;
 
-        tracing::info!("{} stopped: {}", T::name(), reason);
+        tracing::info!("{actor} stopped: {reason}");
 
         let should_restart = (self.restart_policy)(reason);
 
         tracing::debug!(
-            "Restart {}? {}",
-            T::name(),
+            "Restart {actor}? {}",
             match should_restart {
                 true => "yes",
                 false => "no",

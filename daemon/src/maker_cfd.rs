@@ -187,7 +187,7 @@ where
         taker_id: Identity,
         ctx: &mut Context<Self>,
     ) -> Result<()> {
-        tracing::info!(%order_id, "Received proposal from taker {}", taker_id);
+        tracing::info!(%order_id, "Received proposal from taker {taker_id}");
         let this = ctx.address().expect("acquired own address");
 
         let (rollover_actor_addr, rollover_actor_future) = rollover_maker::Actor::new(
@@ -235,10 +235,7 @@ where
             .setup_actors
             .get_disconnected(order_id)
             .with_context(|| {
-                format!(
-                    "Contract setup for order {} is already in progress",
-                    order_id
-                )
+                format!("Contract setup for order {order_id} is already in progress")
             })?;
 
         let mut conn = self.db.acquire().await?;
@@ -251,7 +248,7 @@ where
                 // maker. notifying the taker with a specific message should be sufficient.
                 // Since this is a scenario that we should rarely see we log
                 // a warning to be sure we don't trigger this code path frequently.
-                tracing::warn!("Taker tried to take order with outdated id {}", order_id);
+                tracing::warn!("Taker tried to take order with outdated id {order_id}");
 
                 self.takers
                     .send(maker_inc_connections::TakerMessage {
@@ -330,7 +327,7 @@ impl<O, T, W> Actor<O, T, W> {
         self.setup_actors
             .send(&order_id, setup_maker::Accepted)
             .await
-            .with_context(|| format!("No active contract setup for order {}", order_id))?;
+            .with_context(|| format!("No active contract setup for order {order_id}"))?;
 
         Ok(())
     }
@@ -343,7 +340,7 @@ impl<O, T, W> Actor<O, T, W> {
         self.setup_actors
             .send(&order_id, setup_maker::Rejected)
             .await
-            .with_context(|| format!("No active contract setup for order {}", order_id))?;
+            .with_context(|| format!("No active contract setup for order {order_id}"))?;
 
         Ok(())
     }
@@ -354,7 +351,7 @@ impl<O, T, W> Actor<O, T, W> {
         self.settlement_actors
             .send(&order_id, collab_settlement_maker::Accepted)
             .await
-            .with_context(|| format!("No settlement in progress for order {}", order_id))?;
+            .with_context(|| format!("No settlement in progress for order {order_id}"))?;
 
         Ok(())
     }
@@ -365,7 +362,7 @@ impl<O, T, W> Actor<O, T, W> {
         self.settlement_actors
             .send(&order_id, collab_settlement_maker::Rejected)
             .await
-            .with_context(|| format!("No settlement in progress for order {}", order_id))?;
+            .with_context(|| format!("No settlement in progress for order {order_id}"))?;
 
         Ok(())
     }
@@ -452,15 +449,12 @@ where
         proposal: SettlementProposal,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
+        let order_id = proposal.order_id;
+
         let disconnected = self
             .settlement_actors
-            .get_disconnected(proposal.order_id)
-            .with_context(|| {
-                format!(
-                    "Settlement for order {} is already in progress",
-                    proposal.order_id
-                )
-            })?;
+            .get_disconnected(order_id)
+            .with_context(|| format!("Settlement for order {order_id} is already in progress",))?;
 
         let this = ctx.address().expect("self to be alive");
         let (addr, task) = collab_settlement_maker::Actor::new(

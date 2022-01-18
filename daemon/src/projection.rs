@@ -103,7 +103,7 @@ impl Actor {
         let mut conn = match self.db.acquire().await {
             Ok(conn) => conn,
             Err(e) => {
-                tracing::warn!("Failed to acquire DB connection: {}", e);
+                tracing::warn!("Failed to acquire DB connection: {e}");
                 return;
             }
         };
@@ -111,7 +111,7 @@ impl Actor {
             match load_and_hydrate_cfds(&mut conn, self.state.quote, self.state.network).await {
                 Ok(cfds) => cfds,
                 Err(e) => {
-                    tracing::warn!("Failed to load CFDs: {:#}", e);
+                    tracing::warn!("Failed to load CFDs: {e:#}");
                     return;
                 }
             };
@@ -832,9 +832,9 @@ mod round_to_two_dp {
 /// Construct a mempool.space URL for a given txid
 pub fn to_mempool_url(txid: Txid, network: Network) -> String {
     match network {
-        Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
-        Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
-        Network::Signet => format!("https://mempool.space/signet/tx/{}", txid),
+        Network::Bitcoin => format!("https://mempool.space/tx/{txid}"),
+        Network::Testnet => format!("https://mempool.space/testnet/tx/{txid}"),
+        Network::Signet => format!("https://mempool.space/signet/tx/{txid}"),
         Network::Regtest => txid.to_string(),
     }
 }

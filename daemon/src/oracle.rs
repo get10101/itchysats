@@ -144,14 +144,15 @@ impl Actor {
                 async move {
                     let url = event_id.to_olivia_url();
 
-                    tracing::debug!("Fetching announcement for {}", event_id);
+                    tracing::debug!("Fetching announcement for {event_id}");
 
                     let response = reqwest::get(url.clone())
                         .await
-                        .with_context(|| format!("Failed to GET {}", url))?;
+                        .with_context(|| format!("Failed to GET {url}"))?;
 
-                    if !response.status().is_success() {
-                        anyhow::bail!("GET {} responded with {}", url, response.status());
+                    let code = response.status();
+                    if !code.is_success() {
+                        anyhow::bail!("GET {url} responded with {code}");
                     }
 
                     let announcement = response
@@ -178,10 +179,7 @@ impl Actor {
     fn update_pending_attestations(&mut self, ctx: &mut xtra::Context<Self>) {
         for event_id in self.pending_attestations.iter().copied() {
             if !event_id.has_likely_occured() {
-                tracing::trace!(
-                    "Skipping {} because it likely hasn't occurred yet",
-                    event_id
-                );
+                tracing::trace!("Skipping {event_id} because it likely hasn't occurred yet");
 
                 continue;
             }
@@ -192,14 +190,15 @@ impl Actor {
                 async move {
                     let url = event_id.to_olivia_url();
 
-                    tracing::debug!("Fetching attestation for {}", event_id);
+                    tracing::debug!("Fetching attestation for {event_id}");
 
                     let response = reqwest::get(url.clone())
                         .await
-                        .with_context(|| format!("Failed to GET {}", url))?;
+                        .with_context(|| format!("Failed to GET {url}"))?;
 
-                    if !response.status().is_success() {
-                        anyhow::bail!("GET {} responded with {}", url, response.status());
+                    let code = response.status();
+                    if !code.is_success() {
+                        anyhow::bail!("GET {url} responded with {code}");
                     }
 
                     let attestation = response
@@ -228,7 +227,7 @@ impl Actor {
         id: BitMexPriceEventId,
         attestation: Attestation,
     ) -> Result<()> {
-        tracing::info!("Fetched new attestation for {}", id);
+        tracing::info!("Fetched new attestation for {id}");
 
         let _ = self.attestation_channel.send(attestation).await;
         self.pending_attestations.remove(&id);
@@ -244,8 +243,10 @@ impl Actor {
         msg: MonitorAttestation,
         _ctx: &mut xtra::Context<Self>,
     ) {
-        if !self.pending_attestations.insert(msg.event_id) {
-            tracing::trace!("Attestation {} already being monitored", msg.event_id);
+        let price_event_id = msg.event_id;
+
+        if !self.pending_attestations.insert(price_event_id) {
+            tracing::trace!("Attestation {price_event_id} already being monitored");
         }
     }
 

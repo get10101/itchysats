@@ -175,7 +175,7 @@ impl Actor {
         };
 
         if let Err(error) = fut.await {
-            tracing::warn!(%order_id, "Stopping setup_maker actor: {}", error);
+            tracing::warn!(%order_id, "Stopping setup_maker actor: {error}");
 
             self.complete(SetupCompleted::Failed { order_id, error }, ctx)
                 .await;
@@ -233,11 +233,12 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let quantity = self.quantity;
         if quantity < self.order.min_quantity || quantity > self.order.max_quantity {
-            let reason = format!(
-                "Order rejected: quantity {} not in range [{}, {}]",
-                quantity, self.order.min_quantity, self.order.max_quantity
-            );
-            tracing::info!("{}", reason.clone());
+            let min = self.order.min_quantity;
+            let max = self.order.max_quantity;
+
+            let reason =
+                format!("Order rejected: quantity {quantity} not in range [{min}, {max}]",);
+            tracing::info!("{reason}");
 
             let _ = self
                 .taker

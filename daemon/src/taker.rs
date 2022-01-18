@@ -174,9 +174,10 @@ async fn main() -> Result<()> {
 
     logger::init(opts.log_level, opts.json).context("initialize logger")?;
     tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
+    let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
+
     tracing::info!(
-        "CFDs created with this release will settle after {} hours",
-        SETTLEMENT_INTERVAL.whole_hours()
+        "CFDs created with this release will settle after {settlement_interval_hours} hours"
     );
 
     let data_dir = opts
@@ -234,11 +235,8 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    tracing::info!(
-        "Authentication details: username='{}' password='{}'",
-        auth::USERNAME,
-        web_password
-    );
+    let auth_username = auth::USERNAME;
+    tracing::info!("Authentication details: username='{auth_username}' password='{web_password}'");
 
     // TODO: Actually fetch it from Olivia
     let oracle = schnorrsig::PublicKey::from_str(

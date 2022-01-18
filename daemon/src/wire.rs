@@ -114,10 +114,10 @@ impl fmt::Display for TakerToMaker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TakerToMaker::TakeOrder { .. } => write!(f, "TakeOrder"),
-            TakerToMaker::Protocol { msg, .. } => write!(f, "Protocol::{}", msg),
+            TakerToMaker::Protocol { msg, .. } => write!(f, "Protocol::{msg}"),
             TakerToMaker::ProposeRollover { .. } => write!(f, "ProposeRollover"),
-            TakerToMaker::RolloverProtocol { msg, .. } => write!(f, "RolloverProtocol::{}", msg),
-            TakerToMaker::Settlement { msg, .. } => write!(f, "Settlement::{}", msg),
+            TakerToMaker::RolloverProtocol { msg, .. } => write!(f, "RolloverProtocol::{msg}"),
+            TakerToMaker::Settlement { msg, .. } => write!(f, "Settlement::{msg}"),
             TakerToMaker::Hello(_) => write!(f, "Hello"),
         }
     }
@@ -182,11 +182,11 @@ impl fmt::Display for MakerToTaker {
             MakerToTaker::ConfirmOrder(_) => write!(f, "ConfirmOrder"),
             MakerToTaker::RejectOrder(_) => write!(f, "RejectOrder"),
             MakerToTaker::InvalidOrderId(_) => write!(f, "InvalidOrderId"),
-            MakerToTaker::Protocol { msg, .. } => write!(f, "Protocol::{}", msg),
+            MakerToTaker::Protocol { msg, .. } => write!(f, "Protocol::{msg}"),
             MakerToTaker::ConfirmRollover { .. } => write!(f, "ConfirmRollover"),
             MakerToTaker::RejectRollover(_) => write!(f, "RejectRollover"),
-            MakerToTaker::RolloverProtocol { msg, .. } => write!(f, "RolloverProtocol::{}", msg),
-            MakerToTaker::Settlement { msg, .. } => write!(f, "Settlement::{}", msg),
+            MakerToTaker::RolloverProtocol { msg, .. } => write!(f, "RolloverProtocol::{msg}"),
+            MakerToTaker::Settlement { msg, .. } => write!(f, "Settlement::{msg}"),
         }
     }
 }

@@ -137,7 +137,7 @@ impl<O, W> Actor<O, W> {
         let disconnected = self
             .collab_settlement_actors
             .get_disconnected(order_id)
-            .with_context(|| format!("Settlement for order {} is already in progress", order_id))?;
+            .with_context(|| format!("Settlement for order {order_id} is already in progress"))?;
 
         let (addr, fut) = collab_settlement_taker::Actor::new(
             order_id,
@@ -189,10 +189,7 @@ where
             .setup_actors
             .get_disconnected(order_id)
             .with_context(|| {
-                format!(
-                    "Contract setup for order {} is already in progress",
-                    order_id
-                )
+                format!("Contract setup for order {order_id} is already in progress")
             })?;
 
         let mut conn = self.db.acquire().await?;
@@ -224,11 +221,12 @@ where
             .send(projection::Update(Option::<Order>::None))
             .await?;
 
+        let price_event_id = current_order.oracle_event_id;
         let announcement = self
             .oracle_actor
-            .send(oracle::GetAnnouncement(current_order.oracle_event_id))
+            .send(oracle::GetAnnouncement(price_event_id))
             .await?
-            .with_context(|| format!("Announcement {} not found", current_order.oracle_event_id))?;
+            .with_context(|| format!("Announcement {price_event_id} not found"))?;
 
         let (addr, fut) = setup_taker::Actor::new(
             self.db.clone(),
