@@ -753,10 +753,25 @@ impl From<Order> for CfdOrder {
                 .whole_seconds()
                 .try_into()
                 .expect("settlement_time_interval_hours is always positive number"),
-            // FIXME: Replace dummy values for opening fee, funding rates and time
+            // FIXME: Replace dummy value for opening fee
             opening_fee: Amount::from_sat(123 * 24),
-            funding_rate_annualized_percent: "18.5".to_string(),
-            funding_rate_hourly_percent: "0.002345".to_string(),
+            funding_rate_annualized_percent: order
+                .funding_rate
+                .to_decimal()
+                .checked_mul(Decimal::from(
+                    (24 / order.settlement_interval.whole_hours()) * 365,
+                ))
+                .expect("not to overflow")
+                .round_dp(2)
+                .to_string(),
+            funding_rate_hourly_percent: order
+                .funding_rate
+                .to_decimal()
+                .checked_div(Decimal::from(order.settlement_interval.whole_hours()))
+                .expect("to be able to divide")
+                .round_dp(2)
+                .to_string(),
+            // FIXME: Replace dummy value for next funding event
             next_funding_event: datetime!(2030-09-23 10:00:00).assume_utc(),
         }
     }
