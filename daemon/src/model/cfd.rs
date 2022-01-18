@@ -2034,8 +2034,8 @@ mod tests {
         assert_eq!(event, CfdEvent::OfferRejected);
     }
 
-    #[tokio::test]
-    async fn given_cfd_expires_now_then_rollover() {
+    #[test]
+    fn given_cfd_expires_now_then_rollover() {
         // --|----|-------------------------------------------------|--> time
         //   ct   1h                                                24h
         // --|----|<--------------------rollover------------------->|--
@@ -2049,8 +2049,8 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[tokio::test]
-    async fn given_cfd_expires_within_23hours_then_rollover() {
+    #[test]
+    fn given_cfd_expires_within_23hours_then_rollover() {
         // --|----|-------------------------------------------------|--> time
         //   ct   1h                                                24h
         // --|----|<--------------------rollover------------------->|--
@@ -2065,8 +2065,8 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[tokio::test]
-    async fn given_cfd_was_just_rolled_over_then_no_rollover() {
+    #[test]
+    fn given_cfd_was_just_rolled_over_then_no_rollover() {
         // --|----|-------------------------------------------------|--> time
         //   ct   1h                                                24h
         // --|----|<--------------------rollover------------------->|--
@@ -2082,8 +2082,8 @@ mod tests {
         assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
     }
 
-    #[tokio::test]
-    async fn given_cfd_out_of_bounds_expiry_then_no_rollover() {
+    #[test]
+    fn given_cfd_out_of_bounds_expiry_then_no_rollover() {
         // --|----|-------------------------------------------------|--> time
         //   ct   1h                                                24h
         // --|----|<--------------------rollover------------------->|--
@@ -2099,8 +2099,8 @@ mod tests {
         assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
     }
 
-    #[tokio::test]
-    async fn given_cfd_was_renewed_less_than_1h_ago_then_no_rollover() {
+    #[test]
+    fn given_cfd_was_renewed_less_than_1h_ago_then_no_rollover() {
         // --|----|-------------------------------------------------|--> time
         //   ct   1h                                                24h
         // --|----|<--------------------rollover------------------->|--
@@ -2116,8 +2116,8 @@ mod tests {
         assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
     }
 
-    #[tokio::test]
-    async fn given_cfd_not_locked_then_no_rollover() {
+    #[test]
+    fn given_cfd_not_locked_then_no_rollover() {
         let cfd = Cfd::dummy_not_open_yet();
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
@@ -2125,8 +2125,8 @@ mod tests {
         assert!(matches!(cannot_roll_over, RolloverError::NotLocked { .. }))
     }
 
-    #[tokio::test]
-    async fn given_cfd_has_attestation_then_no_rollover() {
+    #[test]
+    fn given_cfd_has_attestation_then_no_rollover() {
         let cfd = Cfd::dummy_with_attestation(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
@@ -2136,8 +2136,8 @@ mod tests {
         assert!(matches!(cannot_roll_over, RolloverError::Attested { .. }))
     }
 
-    #[tokio::test]
-    async fn given_cfd_final_then_no_rollover() {
+    #[test]
+    fn given_cfd_final_then_no_rollover() {
         let cfd = Cfd::dummy_final(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
