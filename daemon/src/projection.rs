@@ -367,10 +367,10 @@ impl Cfd {
             CollaborativeSettlementConfirmed => {
                 self.state = CfdState::Closed;
             }
-            CetTimelockConfirmedPriorOracleAttestation => {
+            CetTimelockExpiredPriorOracleAttestation => {
                 self.state = CfdState::OpenCommitted;
             }
-            CetTimelockConfirmedPostOracleAttestation { cet } => {
+            CetTimelockExpiredPostOracleAttestation { cet } => {
                 self.aggregated.cet = Some(cet);
 
                 self.state = CfdState::PendingCet;

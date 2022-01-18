@@ -144,7 +144,7 @@ impl Actor {
                 )
             }
             OracleAttestedPostCetTimelock { cet, .. }
-            | CetTimelockConfirmedPostOracleAttestation { cet } => {
+            | CetTimelockExpiredPostOracleAttestation { cet } => {
                 let txid = self
                     .try_broadcast_transaction
                     .send(monitor::TryBroadcastTransaction { tx: cet })
@@ -214,7 +214,7 @@ impl Actor {
             | CetConfirmed
             | RevokeConfirmed
             | CollaborativeSettlementConfirmed
-            | CetTimelockConfirmedPriorOracleAttestation => {}
+            | CetTimelockExpiredPriorOracleAttestation => {}
         }
 
         // 3. Update UI

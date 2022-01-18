@@ -352,8 +352,8 @@ pub enum CfdEvent {
     RevokeConfirmed,
     CollaborativeSettlementConfirmed,
 
-    CetTimelockConfirmedPriorOracleAttestation,
-    CetTimelockConfirmedPostOracleAttestation {
+    CetTimelockExpiredPriorOracleAttestation,
+    CetTimelockExpiredPostOracleAttestation {
         #[serde(with = "hex_transaction")]
         cet: Transaction,
     },
@@ -996,8 +996,8 @@ impl Cfd {
             .cet
             .take()
             // If we have cet, that means it has been attested
-            .map(|cet| CfdEvent::CetTimelockConfirmedPostOracleAttestation { cet })
-            .unwrap_or_else(|| CfdEvent::CetTimelockConfirmedPriorOracleAttestation);
+            .map(|cet| CfdEvent::CetTimelockExpiredPostOracleAttestation { cet })
+            .unwrap_or_else(|| CfdEvent::CetTimelockExpiredPriorOracleAttestation);
 
         Ok(self.event(cfd_event))
     }
@@ -1181,8 +1181,8 @@ impl Cfd {
             RefundTimelockExpired { .. } => self.refund_timelock_expired = true,
             LockConfirmed => self.lock_finality = true,
             CommitConfirmed => self.commit_finality = true,
-            CetTimelockConfirmedPriorOracleAttestation
-            | CetTimelockConfirmedPostOracleAttestation { .. } => {
+            CetTimelockExpiredPriorOracleAttestation
+            | CetTimelockExpiredPostOracleAttestation { .. } => {
                 self.cet_timelock_expired = true;
             }
             OfferRejected => {

@@ -207,8 +207,12 @@ impl Cfd {
             },
             // final states, don't monitor anything
             CetConfirmed | RefundConfirmed | CollaborativeSettlementConfirmed => Self::default(),
-            CetTimelockConfirmedPriorOracleAttestation
-            | CetTimelockConfirmedPostOracleAttestation { .. } => Self {
+            CetTimelockExpiredPriorOracleAttestation => Self {
+                monitor_cet_timelock: false,
+                ..self
+            },
+            CetTimelockExpiredPostOracleAttestation { cet, .. } => Self {
+                cet: Some(cet),
                 monitor_cet_timelock: false,
                 ..self
             },
@@ -220,10 +224,6 @@ impl Cfd {
                 cet: Some(cet),
                 ..self
             },
-            OracleAttestedPriorCetTimelock { timelocked_cet, .. } => Self {
-                cet: Some(timelocked_cet),
-                ..self
-            },
             CollaborativeSettlementRejected { commit_tx }
             | CollaborativeSettlementFailed { commit_tx } => Self {
                 commit_tx: Some(commit_tx),
@@ -233,6 +233,7 @@ impl Cfd {
             | RolloverAccepted
             | RolloverFailed
             | ManualCommit { .. }
+            | OracleAttestedPriorCetTimelock { .. }
             | CollaborativeSettlementStarted { .. }
             | CollaborativeSettlementProposalAccepted => self,
             RevokeConfirmed => todo!("Deal with revoked"),
@@ -338,8 +339,6 @@ impl Actor<bdk::electrum_client::Client> {
             }
 
             if let Some(cet) = cet {
-                // Double question mark OK because if we are in PendingCet we must have been
-                // Ready before
                 let txid = broadcast_transaction(&self.client, cet)?;
                 tracing::info!("CET published on chain: {}", txid);
             }
