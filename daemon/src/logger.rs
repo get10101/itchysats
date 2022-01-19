@@ -21,15 +21,17 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
-        .with_ansi(is_terminal)
-        .with_timer(UtcTime::new(format_description!(
-            "[year]-[month]-[day] [hour]:[minute]:[second]"
-        )));
+        .with_ansi(is_terminal);
 
     let result = if json_format {
-        builder.json().try_init()
+        builder.json().with_timer(UtcTime::rfc_3339()).try_init()
     } else {
-        builder.compact().try_init()
+        builder
+            .compact()
+            .with_timer(UtcTime::new(format_description!(
+                "[year]-[month]-[day] [hour]:[minute]:[second]"
+            )))
+            .try_init()
     };
 
     result.map_err(|e| anyhow!("Failed to init logger: {e}"))?;
