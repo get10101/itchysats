@@ -68,16 +68,12 @@ where
         }
     }
 
-    async fn handle(
-        &mut self,
-        Rollover(order_id): Rollover,
-        ctx: &mut xtra::Context<Self>,
-    ) -> Result<()> {
+    async fn handle(&mut self, Rollover(order_id): Rollover, ctx: &mut xtra::Context<Self>) {
         let disconnected = match self.rollover_actors.get_disconnected(order_id) {
             Ok(disconnected) => disconnected,
             Err(_) => {
                 tracing::debug!(%order_id, "Rollover already in progress");
-                return Ok(());
+                return;
             }
         };
 
@@ -99,8 +95,6 @@ where
 
         disconnected.insert(addr);
         self.tasks.add(fut);
-
-        Ok(())
     }
 }
 
@@ -121,7 +115,7 @@ where
             try_continue!(async {
                 let cfd = load_cfd(id, &mut conn).await?;
                 if let Ok(()) = cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
-                    this.send(Rollover(id)).await??;
+                    this.send(Rollover(id)).await?;
                 }
                 anyhow::Ok(())
             }
