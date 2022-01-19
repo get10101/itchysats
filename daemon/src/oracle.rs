@@ -302,7 +302,7 @@ pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<BitMexPriceE
     Ok(BitMexPriceEventId::with_20_digits(adjusted))
 }
 
-fn ceil_to_next_hour(original: OffsetDateTime) -> Result<OffsetDateTime, anyhow::Error> {
+pub fn ceil_to_next_hour(original: OffsetDateTime) -> Result<OffsetDateTime, anyhow::Error> {
     let timestamp = original.add(1.hours());
     let exact_hour = Time::from_hms(timestamp.hour(), 0, 0)
         .context("Could not adjust time for next announcement")?;

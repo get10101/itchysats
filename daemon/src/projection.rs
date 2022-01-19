@@ -19,6 +19,7 @@ use crate::model::Price;
 use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
+use crate::oracle::ceil_to_next_hour;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::Order;
 use crate::Tasks;
@@ -41,7 +42,6 @@ use serde::Serialize;
 use sqlx::pool::PoolConnection;
 use std::collections::HashSet;
 use std::time::Duration;
-use time::macros::datetime;
 use time::OffsetDateTime;
 use tokio::sync::watch;
 use xtra::prelude::MessageChannel;
@@ -191,6 +191,10 @@ pub struct Cfd {
     #[serde(with = "round_to_two_dp::opt")]
     pub pending_settlement_proposal_price: Option<Price>,
 
+    /// Timestamp when the next fee will be collected
+    #[serde(with = "::time::serde::timestamp::option")]
+    pub next_funding_event: Option<OffsetDateTime>,
+
     #[serde(skip)]
     aggregated: Aggregated,
 }
@@ -294,6 +298,7 @@ impl Cfd {
             counterparty: counterparty_network_identity,
             pending_settlement_proposal_price: None,
             aggregated: Aggregated::default(),
+            next_funding_event: None,
         }
     }
 
@@ -306,6 +311,7 @@ impl Cfd {
             }
             ContractSetupCompleted { dlc } => {
                 self.aggregated.latest_dlc = Some(dlc);
+                self.next_funding_event = ceil_to_next_hour(OffsetDateTime::now_utc()).ok();
 
                 self.state = CfdState::PendingOpen;
             }
@@ -317,6 +323,7 @@ impl Cfd {
             }
             RolloverCompleted { dlc } => {
                 self.aggregated.latest_dlc = Some(dlc);
+                self.next_funding_event = ceil_to_next_hour(OffsetDateTime::now_utc()).ok();
 
                 self.state = CfdState::Open;
             }
@@ -709,10 +716,6 @@ pub struct CfdOrder {
     /// The funding rate fluctuates with market movements.
     pub funding_rate_hourly_percent: String,
 
-    /// Timestamp when the next fee will be collected
-    #[serde(with = "::time::serde::timestamp")]
-    pub next_funding_event: OffsetDateTime,
-
     #[serde(with = "round_to_two_dp")]
     pub min_quantity: Usd,
     #[serde(with = "round_to_two_dp")]
@@ -766,8 +769,6 @@ impl From<Order> for CfdOrder {
             funding_rate_annualized_percent: AnnualisedFundingRate::from(order.funding_rate)
                 .to_string(),
             funding_rate_hourly_percent: HourlyFundingRate::from(order.funding_rate).to_string(),
-            // FIXME: Replace dummy value for next funding event
-            next_funding_event: datetime!(2030-09-23 10:00:00).assume_utc(),
         }
     }
 }
