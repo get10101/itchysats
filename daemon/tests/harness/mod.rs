@@ -196,7 +196,6 @@ impl Maker {
             config.heartbeat_interval,
             address,
         )
-        .await
         .unwrap();
 
         let (proj_actor, feeds) =
@@ -287,7 +286,6 @@ impl Taker {
             projection_actor,
             maker_identity,
         )
-        .await
         .unwrap();
 
         let (proj_actor, feeds) =

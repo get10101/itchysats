@@ -236,8 +236,7 @@ async fn main() -> Result<()> {
         identity_sk,
         HEARTBEAT_INTERVAL,
         p2p_socket,
-    )
-    .await?;
+    )?;
 
     let (supervisor, price_feed) = supervisor::Actor::new(
         bitmex_price_feed::Actor::new,

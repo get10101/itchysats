@@ -271,8 +271,7 @@ async fn main() -> Result<()> {
         Duration::from_secs(10),
         projection_actor.clone(),
         maker_identity,
-    )
-    .await?;
+    )?;
 
     let (proj_actor, projection_feeds) = projection::Actor::new(
         db.clone(),

@@ -148,7 +148,7 @@ where
         + xtra::Handler<wallet::Withdraw>,
 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new<M>(
+    pub fn new<M>(
         db: SqlitePool,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
@@ -340,7 +340,7 @@ where
     P: xtra::Handler<bitmex_price_feed::LatestQuote>,
 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new<M>(
+    pub fn new<M>(
         db: SqlitePool,
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
