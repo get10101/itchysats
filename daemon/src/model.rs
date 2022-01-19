@@ -640,6 +640,7 @@ impl Default for FundingRate {
 pub struct FundingFee(u64);
 
 impl FundingFee {
+    /// Value in satoshis
     pub fn as_u64(&self) -> u64 {
         self.0
     }
@@ -649,6 +650,12 @@ impl Default for FundingFee {
     fn default() -> Self {
         Self::new(Amount::ZERO, FundingRate(Decimal::ZERO), 1)
             .expect("hard-coded values to be valid")
+    }
+}
+
+impl From<FundingFee> for Amount {
+    fn from(funding_fee: FundingFee) -> Self {
+        Self::from_sat(funding_fee.as_u64())
     }
 }
 
