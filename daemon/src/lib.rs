@@ -186,14 +186,14 @@ where
         )));
 
         let (cfd_actor_addr, cfd_actor_fut) = maker_cfd::Actor::new(
-            db.clone(),
+            db,
             wallet_addr.clone(),
             settlement_interval,
             oracle_pk,
             projection_actor,
-            process_manager_addr.clone(),
-            inc_conn_addr.clone(),
-            oracle_addr.clone(),
+            process_manager_addr,
+            inc_conn_addr,
+            oracle_addr,
             n_payouts,
         )
         .create(None)
@@ -219,8 +219,6 @@ where
         tasks.add(fan_out_actor_fut);
 
         tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
-
-        oracle_addr.send(oracle::Sync).await?;
 
         tracing::debug!("Maker actor system ready");
 
