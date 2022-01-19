@@ -10,6 +10,7 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
+use crate::model::FundingFee;
 use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::Leverage;
@@ -691,8 +692,11 @@ pub struct CfdOrder {
     pub price: Price,
 
     /// Fee charged by the maker for opening a position
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub opening_fee: Amount,
+    ///
+    /// Note: It's the minimum possible fee, we cannot calculate the exact
+    /// amount until we know the quantity taken by the taker
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
+    pub opening_fee: Option<Amount>,
 
     /// The interest as annualized percentage
     ///
@@ -756,14 +760,27 @@ impl From<Order> for CfdOrder {
                 .whole_seconds()
                 .try_into()
                 .expect("settlement_time_interval_hours is always positive number"),
-            // FIXME: Replace dummy value for opening fee
-            opening_fee: Amount::from_sat(123 * 24),
+            // XXX: We cannot calculate full fee here, best we can do is to give
+            // minimal fee
+            opening_fee: calculate_min_opening_fee(&order),
             funding_rate_annualized_percent: AnnualisedFundingRate::from(order.funding_rate)
                 .to_string(),
             funding_rate_hourly_percent: HourlyFundingRate::from(order.funding_rate).to_string(),
             // FIXME: Replace dummy value for next funding event
             next_funding_event: datetime!(2030-09-23 10:00:00).assume_utc(),
         }
+    }
+}
+
+fn calculate_min_opening_fee(order: &Order) -> Option<Amount> {
+    if let Ok(fee) = FundingFee::new(
+        calculate_long_margin(order.price, order.min_quantity, order.leverage),
+        order.funding_rate,
+        order.settlement_interval.whole_hours(),
+    ) {
+        Some(fee.into())
+    } else {
+        None
     }
 }
 
