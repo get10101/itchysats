@@ -269,12 +269,15 @@ impl Actor {
     }
 
     async fn handle_send_heartbeat(&mut self, msg: SendHeartbeat) {
-        let result = self
+        match self
             .send_to_taker(&msg.0, wire::MakerToTaker::Heartbeat)
-            .await;
-
-        // use explicit match on `Err` to catch fn signature changes
-        debug_assert!(!matches!(result, Err(NoConnection(_))), "`send_to_taker` only fails if we don't have a HashMap entry. We clean those up together with the heartbeat task. How did we get called without a connection?");
+            .await
+        {
+            Ok(()) => {}
+            Err(NoConnection(taker_id)) => {
+                tracing::trace!(%taker_id, "Failed to send heartbeat because connection is gone");
+            }
+        }
     }
 
     async fn handle_confirm_order(&mut self, msg: ConfirmOrder) -> Result<()> {
