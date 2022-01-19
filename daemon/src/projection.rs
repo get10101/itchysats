@@ -10,6 +10,7 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
+use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::Leverage;
 use crate::model::Position;
@@ -20,6 +21,7 @@ use crate::model::Usd;
 use crate::send_async_safe::SendAsyncSafe;
 use crate::Order;
 use crate::Tasks;
+use crate::SETTLEMENT_INTERVAL;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::Amount;
@@ -29,6 +31,7 @@ use bdk::bitcoin::SignedAmount;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
 use bdk::miniscript::DescriptorTrait;
+use core::fmt;
 use maia::TransactionExt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -753,10 +756,12 @@ impl From<Order> for CfdOrder {
                 .whole_seconds()
                 .try_into()
                 .expect("settlement_time_interval_hours is always positive number"),
-            // FIXME: Replace dummy values for opening fee, funding rates and time
+            // FIXME: Replace dummy value for opening fee
             opening_fee: Amount::from_sat(123 * 24),
-            funding_rate_annualized_percent: "18.5".to_string(),
-            funding_rate_hourly_percent: "0.002345".to_string(),
+            funding_rate_annualized_percent: AnnualisedFundingRate::from(order.funding_rate)
+                .to_string(),
+            funding_rate_hourly_percent: HourlyFundingRate::from(order.funding_rate).to_string(),
+            // FIXME: Replace dummy value for next funding event
             next_funding_event: datetime!(2030-09-23 10:00:00).assume_utc(),
         }
     }
@@ -937,6 +942,46 @@ pub enum TxLabel {
     Cet,
     Refund,
     Collaborative,
+}
+
+struct AnnualisedFundingRate(Decimal);
+
+impl From<FundingRate> for AnnualisedFundingRate {
+    fn from(funding_rate: FundingRate) -> Self {
+        Self(
+            funding_rate
+                .to_decimal()
+                .checked_mul(Decimal::from(
+                    (24 / SETTLEMENT_INTERVAL.whole_hours()) * 365,
+                ))
+                .expect("not to overflow"),
+        )
+    }
+}
+
+impl fmt::Display for AnnualisedFundingRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.round_dp(2).fmt(f)
+    }
+}
+
+struct HourlyFundingRate(Decimal);
+
+impl From<FundingRate> for HourlyFundingRate {
+    fn from(funding_rate: FundingRate) -> Self {
+        Self(
+            funding_rate
+                .to_decimal()
+                .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
+                .expect("Not to fail as funding rate is sanitised"),
+        )
+    }
+}
+
+impl fmt::Display for HourlyFundingRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.round_dp(2).fmt(f)
+    }
 }
 
 #[cfg(test)]

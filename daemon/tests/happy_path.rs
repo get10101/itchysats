@@ -62,6 +62,10 @@ async fn taker_receives_order_from_maker_on_publication() {
         .unwrap();
 
     assert_eq!(published, received);
+
+    // dummy order does not have any funding fees
+    assert_eq!(received.funding_rate_annualized_percent, "0.00");
+    assert_eq!(received.funding_rate_hourly_percent, "0.00");
 }
 
 #[tokio::test]
