@@ -119,8 +119,6 @@ impl Actor {
                     .await?;
             }
             CollaborativeSettlementRejected { commit_tx } => {
-                tracing::warn!("Collaborative settlement rejected");
-
                 self.try_broadcast_transaction
                     .send(monitor::TryBroadcastTransaction {
                         tx: commit_tx,
@@ -129,8 +127,6 @@ impl Actor {
                     .await??;
             }
             CollaborativeSettlementFailed { commit_tx } => {
-                tracing::warn!("Collaborative settlement failed");
-
                 self.try_broadcast_transaction
                     .send(monitor::TryBroadcastTransaction {
                         tx: commit_tx,
