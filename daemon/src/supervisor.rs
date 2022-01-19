@@ -14,6 +14,13 @@ pub struct Actor<T, R> {
     ctor: Box<dyn Fn(Address<Self>) -> T + Send + 'static>,
     tasks: Tasks,
     restart_policy: Box<dyn FnMut(R) -> bool + Send + 'static>,
+    metrics: Metrics,
+}
+
+#[derive(Default, Clone, Copy)]
+struct Metrics {
+    /// How many times the supervisor spawned an instance of the actor.
+    pub num_spawns: u64,
 }
 
 impl<T, R> Actor<T, R>
@@ -37,6 +44,7 @@ where
             ctor: Box::new(ctor),
             tasks: Tasks::default(),
             restart_policy: Box::new(restart_policy),
+            metrics: Metrics::default(),
         };
 
         (supervisor, address)
@@ -49,6 +57,7 @@ where
         let this = ctx.address().expect("we are alive");
         let actor = (self.ctor)(this);
 
+        self.metrics.num_spawns += 1;
         self.tasks.add(self.context.attach(actor));
     }
 }
@@ -92,6 +101,17 @@ where
     }
 }
 
+#[xtra_productivity]
+impl<T, R> Actor<T, R>
+where
+    T: xtra::Actor,
+    R: fmt::Display + fmt::Debug + 'static,
+{
+    pub fn handle(&mut self, _: GetMetrics) -> Metrics {
+        self.metrics
+    }
+}
+
 /// Tell the supervisor that the actor was stopped.
 ///
 /// The given `reason` will be passed to the `restart_policy` configured in the supervisor. If it
@@ -103,4 +123,69 @@ pub struct Stopped<R> {
 
 impl<R: fmt::Debug + Send + 'static> Message for Stopped<R> {
     type Result = ();
+}
+
+/// Return the metrics tracked by this supervisor.
+///
+/// Currently private because it is a feature only used for testing. If we want to expose metrics
+/// about the supervisor, we should look into creating a [`tracing::Subscriber`] that processes the
+/// events we are emitting.
+#[derive(Debug)]
+struct GetMetrics;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xtra::Actor as _;
+
+    #[tokio::test]
+    async fn supervisor_tracks_spawn_metrics() {
+        let (supervisor, address) =
+            Actor::new(|supervisor| RemoteShutdown { supervisor }, |_| true);
+        let (supervisor, task) = supervisor.create(None).run();
+
+        #[allow(clippy::disallowed_method)]
+        tokio::spawn(task);
+
+        let metrics = supervisor.send(GetMetrics).await.unwrap();
+        assert_eq!(
+            metrics.num_spawns, 1,
+            "after initial spawn, should have 1 spawn"
+        );
+
+        address.send(Shutdown).await.unwrap();
+
+        let metrics = supervisor.send(GetMetrics).await.unwrap();
+        assert_eq!(
+            metrics.num_spawns, 2,
+            "after shutdown, should have 2 spawns"
+        );
+    }
+
+    /// An actor that can be shutdown remotely.
+    struct RemoteShutdown {
+        supervisor: Address<Actor<Self, String>>,
+    }
+
+    #[derive(Debug)]
+    struct Shutdown;
+
+    #[async_trait]
+    impl xtra::Actor for RemoteShutdown {
+        async fn stopped(self) {
+            self.supervisor
+                .send(Stopped {
+                    reason: String::new(),
+                })
+                .await
+                .unwrap();
+        }
+    }
+
+    #[xtra_productivity]
+    impl RemoteShutdown {
+        fn handle(&mut self, _: Shutdown, ctx: &mut xtra::Context<Self>) {
+            ctx.stop()
+        }
+    }
 }
