@@ -67,6 +67,45 @@ pub struct MonitorParams {
 
 pub struct TryBroadcastTransaction {
     pub tx: Transaction,
+    pub kind: TransactionKind,
+}
+
+pub enum TransactionKind {
+    Lock,
+    Commit,
+    Refund,
+    CollaborativeClose,
+    Cet,
+}
+
+/// Formats a [`TransactionKind`] for use in log messages.
+///
+/// This implementations has two main features:
+///
+/// 1. It does not duplicate the "transaction" part for CET as "t" in CET already stands for
+/// "transaction".
+/// 2. It allows the caller to use the alternate sigil (`#`), to make the first
+/// letter uppercase in case [`TransactionKind`] is used at the beginning of a log message.
+impl fmt::Display for TransactionKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            match self {
+                TransactionKind::Lock => write!(f, "Lock transaction"),
+                TransactionKind::Commit => write!(f, "Commit transaction"),
+                TransactionKind::Refund => write!(f, "Refund transaction"),
+                TransactionKind::CollaborativeClose => write!(f, "Collaborative close transaction"),
+                TransactionKind::Cet => write!(f, "CET"),
+            }
+        } else {
+            match self {
+                TransactionKind::Lock => write!(f, "lock transaction"),
+                TransactionKind::Commit => write!(f, "commit transaction"),
+                TransactionKind::Refund => write!(f, "refund transaction"),
+                TransactionKind::CollaborativeClose => write!(f, "collaborative close transaction"),
+                TransactionKind::Cet => write!(f, "CET"),
+            }
+        }
+    }
 }
 
 fn parse_rpc_protocol_error(error_value: &Value) -> Result<RpcError> {
@@ -762,35 +801,38 @@ where
                         } = events.into_iter().fold(Cfd::default(), Cfd::apply);
 
                         if let Some(tx) = commit_tx {
-                            match this.send(TryBroadcastTransaction { tx }).await? {
-                                Ok(txid) => {
-                                    tracing::info!("Commit transaction published on chain: {txid}")
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Failed to publish commit transaction: {e:#}")
-                                }
+                            if let Err(e) = this
+                                .send(TryBroadcastTransaction {
+                                    tx,
+                                    kind: TransactionKind::Commit,
+                                })
+                                .await?
+                            {
+                                tracing::warn!("{e:#}")
                             }
                         }
 
                         if let Some(tx) = cet {
-                            match this.send(TryBroadcastTransaction { tx }).await? {
-                                Ok(txid) => {
-                                    tracing::info!("CET published on chain: {txid}")
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Failed to publish CET: {e:#}")
-                                }
+                            if let Err(e) = this
+                                .send(TryBroadcastTransaction {
+                                    tx,
+                                    kind: TransactionKind::Cet,
+                                })
+                                .await?
+                            {
+                                tracing::warn!("{e:#}")
                             }
                         }
 
                         if let Some(tx) = lock_tx {
-                            match this.send(TryBroadcastTransaction { tx }).await? {
-                                Ok(txid) => {
-                                    tracing::info!("Lock transaction published on chain: {txid}")
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Failed to publish lock transaction: {e:#}")
-                                }
+                            if let Err(e) = this
+                                .send(TryBroadcastTransaction {
+                                    tx,
+                                    kind: TransactionKind::Lock,
+                                })
+                                .await?
+                            {
+                                tracing::warn!("{e:#}")
                             }
                         }
                     }
@@ -881,7 +923,7 @@ where
     }
 
     async fn handle_try_broadcast_transaction(&self, msg: TryBroadcastTransaction) -> Result<Txid> {
-        let TryBroadcastTransaction { tx } = msg;
+        let TryBroadcastTransaction { tx, kind } = msg;
 
         let result = self.client.transaction_broadcast(&tx);
 
@@ -892,7 +934,7 @@ where
             if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
                 let txid = tx.txid();
                 tracing::trace!(
-                    %txid, "Attempted to broadcast transaction that was already on-chain",
+                    %txid, "Attempted to broadcast {kind} that was already on-chain",
                 );
 
                 return Ok(txid);
@@ -906,7 +948,7 @@ where
                 if let Ok(tx) = self.client.transaction_get(&tx.txid()) {
                     let txid = tx.txid();
                     tracing::trace!(
-                        %txid, "Attempted to broadcast transaction that was already on-chain",
+                        %txid, "Attempted to broadcast {kind} that was already on-chain",
                     );
                     return Ok(txid);
                 }
@@ -917,8 +959,10 @@ where
         result.with_context(|| {
             let tx_hex = serialize_hex(&tx);
 
-            format!("Broadcasting transaction failed. Txid: {txid}. Raw transaction: {tx_hex}")
+            format!("Broadcasting {kind} failed. Txid: {txid}. Raw transaction: {tx_hex}")
         })?;
+
+        tracing::info!(%txid, "{kind:#} published on chain");
 
         Ok(txid)
     }

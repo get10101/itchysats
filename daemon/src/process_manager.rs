@@ -4,9 +4,9 @@ use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Role;
 use crate::monitor;
 use crate::monitor::MonitorParams;
+use crate::monitor::TransactionKind;
 use crate::oracle;
 use crate::projection;
-use anyhow::Context;
 use anyhow::Result;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
@@ -68,12 +68,12 @@ impl Actor {
                 tracing::info!("Setup complete, publishing on chain now");
 
                 let lock_tx = dlc.lock.0.clone();
-                let txid = self
-                    .try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction { tx: lock_tx })
+                self.try_broadcast_transaction
+                    .send(monitor::TryBroadcastTransaction {
+                        tx: lock_tx,
+                        kind: TransactionKind::Lock,
+                    })
                     .await??;
-
-                tracing::info!("Lock transaction published with txid {txid}");
 
                 self.start_monitoring
                     .send(monitor::StartMonitoring {
@@ -93,21 +93,20 @@ impl Actor {
             } => {
                 let txid = match self.role {
                     Role::Maker => {
-                        let txid = self
-                            .try_broadcast_transaction
-                            .send(monitor::TryBroadcastTransaction { tx: spend_tx })
-                            .await?
-                            .context("Broadcasting close transaction")?;
-
-                        tracing::info!(order_id=%event.id, "Close transaction published with txid {txid}");
-
-                        txid
+                        self.try_broadcast_transaction
+                            .send(monitor::TryBroadcastTransaction {
+                                tx: spend_tx,
+                                kind: TransactionKind::CollaborativeClose,
+                            })
+                            .await??
                     }
                     Role::Taker => {
                         // TODO: Publish the tx once the collaborative settlement is symmetric,
                         // allowing the taker to publish as well.
                         let txid = spend_tx.txid();
+
                         tracing::info!(order_id=%event.id, "Collaborative settlement completed successfully {txid}");
+
                         txid
                     }
                 };
@@ -120,45 +119,45 @@ impl Actor {
                     .await?;
             }
             CollaborativeSettlementRejected { commit_tx } => {
-                let txid = self
-                    .try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction { tx: commit_tx })
-                    .await?
-                    .context("Broadcasting commit transaction")?;
+                tracing::warn!("Collaborative settlement rejected");
 
-                tracing::info!("Closing non-collaboratively. Commit tx published with txid {txid}",)
+                self.try_broadcast_transaction
+                    .send(monitor::TryBroadcastTransaction {
+                        tx: commit_tx,
+                        kind: TransactionKind::Commit,
+                    })
+                    .await??;
             }
             CollaborativeSettlementFailed { commit_tx } => {
-                let txid = self
-                    .try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction { tx: commit_tx })
-                    .await?
-                    .context("Broadcasting commit transaction")?;
+                tracing::warn!("Collaborative settlement failed");
 
-                tracing::warn!("Closing non-collaboratively. Commit tx published with txid {txid}")
+                self.try_broadcast_transaction
+                    .send(monitor::TryBroadcastTransaction {
+                        tx: commit_tx,
+                        kind: TransactionKind::Commit,
+                    })
+                    .await??;
             }
             OracleAttestedPostCetTimelock { cet, .. }
             | CetTimelockExpiredPostOracleAttestation { cet } => {
-                let txid = self
-                    .try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction { tx: cet })
-                    .await?
-                    .context("Failed to broadcast CET")?;
-
-                tracing::info!(%txid, "CET published");
+                self.try_broadcast_transaction
+                    .send(monitor::TryBroadcastTransaction {
+                        tx: cet,
+                        kind: TransactionKind::Cet,
+                    })
+                    .await??;
             }
             OracleAttestedPriorCetTimelock {
                 commit_tx: Some(tx),
                 ..
             }
             | ManualCommit { tx } => {
-                let txid = self
-                    .try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction { tx })
-                    .await?
-                    .context("Failed to broadcast commit transaction")?;
-
-                tracing::info!(%txid, "Commit transaction published");
+                self.try_broadcast_transaction
+                    .send(monitor::TryBroadcastTransaction {
+                        tx,
+                        kind: TransactionKind::Commit,
+                    })
+                    .await??;
             }
             OracleAttestedPriorCetTimelock {
                 commit_tx: None, ..
@@ -183,13 +182,12 @@ impl Actor {
                     .await?;
             }
             RefundTimelockExpired { refund_tx: tx } => {
-                let txid = self
-                    .try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction { tx })
-                    .await?
-                    .context("Failed to broadcast refund transaction")?;
-
-                tracing::info!(order_id=%event.id, "Refund transaction published: {txid}");
+                self.try_broadcast_transaction
+                    .send(monitor::TryBroadcastTransaction {
+                        tx,
+                        kind: TransactionKind::Refund,
+                    })
+                    .await??;
             }
             RefundConfirmed => {
                 tracing::info!(order_id=%event.id, "Refund transaction confirmed");
