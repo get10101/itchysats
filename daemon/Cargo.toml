@@ -43,7 +43,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"]
 tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 tokio-util = { version = "0.6", features = ["codec"] }
 tracing = { version = "0.1" }
-tracing-subscriber = { version = "0.2", default-features = false, features = ["fmt", "ansi", "env-filter", "chrono", "tracing-log", "json"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
 uuid = { version = "0.8", features = ["serde", "v4"] }
 x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6" }
