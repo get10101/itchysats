@@ -28,7 +28,7 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
     if json_format {
         builder.json().init();
     } else {
-        builder.init();
+        builder.compact().init();
     }
 
     tracing::info!("Initialized logger");
