@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use anyhow::Result;
 use time::macros::format_description;
 use tracing_subscriber::filter::LevelFilter;
@@ -25,11 +26,13 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
             "[year]-[month]-[day] [hour]:[minute]:[second]"
         )));
 
-    if json_format {
-        builder.json().init();
+    let result = if json_format {
+        builder.json().try_init()
     } else {
-        builder.compact().init();
-    }
+        builder.compact().try_init()
+    };
+
+    result.map_err(|e| anyhow!("Failed to init logger: {e}"))?;
 
     tracing::info!("Initialized logger");
 
