@@ -1,7 +1,10 @@
 use crate::xtra_ext::ActorName;
 use crate::Tasks;
 use async_trait::async_trait;
+use futures::FutureExt;
+use std::any::Any;
 use std::fmt;
+use std::panic::AssertUnwindSafe;
 use xtra::Address;
 use xtra::Context;
 use xtra::Message;
@@ -21,6 +24,8 @@ pub struct Actor<T, R> {
 struct Metrics {
     /// How many times the supervisor spawned an instance of the actor.
     pub num_spawns: u64,
+    /// How many times the actor shut down due to a panic.
+    pub num_panics: u64,
 }
 
 impl<T, R> Actor<T, R>
@@ -55,10 +60,21 @@ where
         tracing::info!("Spawning new instance of {actor}");
 
         let this = ctx.address().expect("we are alive");
-        let actor = (self.ctor)(this);
+        let actor = (self.ctor)(this.clone());
 
         self.metrics.num_spawns += 1;
-        self.tasks.add(self.context.attach(actor));
+        self.tasks.add({
+            let task = self.context.attach(actor);
+
+            async move {
+                match AssertUnwindSafe(task).catch_unwind().await {
+                    Ok(()) => {}
+                    Err(error) => {
+                        let _ = this.send(Panicked { error }).await;
+                    }
+                }
+            }
+        });
     }
 }
 
@@ -112,6 +128,29 @@ where
     }
 }
 
+#[async_trait]
+impl<T, R> xtra::Handler<Panicked> for Actor<T, R>
+where
+    T: xtra::Actor,
+    R: fmt::Display + fmt::Debug + 'static,
+{
+    async fn handle(&mut self, msg: Panicked, ctx: &mut Context<Self>) {
+        let actor = T::name();
+
+        match msg.error.downcast::<&'static str>() {
+            Ok(reason) => {
+                tracing::error!("{actor} panicked: {reason}");
+            }
+            Err(_) => {
+                tracing::error!("{actor} panicked");
+            }
+        }
+
+        self.metrics.num_panics += 1;
+        self.spawn_new(ctx)
+    }
+}
+
 /// Tell the supervisor that the actor was stopped.
 ///
 /// The given `reason` will be passed to the `restart_policy` configured in the supervisor. If it
@@ -122,6 +161,16 @@ pub struct Stopped<R> {
 }
 
 impl<R: fmt::Debug + Send + 'static> Message for Stopped<R> {
+    type Result = ();
+}
+
+/// Module private message to notify ourselves that an actor panicked.
+#[derive(Debug)]
+struct Panicked {
+    pub error: Box<dyn Any + Send>,
+}
+
+impl xtra::Message for Panicked {
     type Result = ();
 }
 
@@ -136,6 +185,7 @@ struct GetMetrics;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracing_subscriber::util::SubscriberInitExt;
     use xtra::Actor as _;
 
     #[tokio::test]
@@ -162,6 +212,30 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn supervisor_tracks_panic_metrics() {
+        let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
+
+        std::panic::set_hook(Box::new(|_| ())); // Override hook to avoid panic printing to log.
+
+        let (supervisor, address) = Actor::new(
+            |supervisor| PanickingActor {
+                _supervisor: supervisor,
+            },
+            |_| true,
+        );
+        let (supervisor, task) = supervisor.create(None).run();
+
+        #[allow(clippy::disallowed_method)]
+        tokio::spawn(task);
+
+        address.send(Panic).await.unwrap_err(); // Actor will be dead by the end of the function call because it panicked.
+
+        let metrics = supervisor.send(GetMetrics).await.unwrap();
+        assert_eq!(metrics.num_spawns, 2, "after panic, should have 2 spawns");
+        assert_eq!(metrics.num_panics, 1, "after panic, should have 1 panic");
+    }
+
     /// An actor that can be shutdown remotely.
     struct RemoteShutdown {
         supervisor: Address<Actor<Self, String>>,
@@ -186,6 +260,22 @@ mod tests {
     impl RemoteShutdown {
         fn handle(&mut self, _: Shutdown, ctx: &mut xtra::Context<Self>) {
             ctx.stop()
+        }
+    }
+
+    struct PanickingActor {
+        _supervisor: Address<Actor<Self, String>>,
+    }
+
+    #[derive(Debug)]
+    struct Panic;
+
+    impl xtra::Actor for PanickingActor {}
+
+    #[xtra_productivity]
+    impl PanickingActor {
+        fn handle(&mut self, _: Panic) {
+            panic!("Help!")
         }
     }
 }
