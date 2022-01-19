@@ -12,10 +12,10 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
     let is_terminal = atty::is(atty::Stream::Stderr);
 
     let filter = EnvFilter::from_default_env()
-        .add_directive(format!("taker={}", level).parse()?)
-        .add_directive(format!("maker={}", level).parse()?)
-        .add_directive(format!("daemon={}", level).parse()?)
-        .add_directive(format!("rocket={}", level).parse()?);
+        .add_directive(format!("taker={level}").parse()?)
+        .add_directive(format!("maker={level}").parse()?)
+        .add_directive(format!("daemon={level}").parse()?)
+        .add_directive(format!("rocket={level}").parse()?);
 
     let builder = FmtSubscriber::builder()
         .with_env_filter(filter)

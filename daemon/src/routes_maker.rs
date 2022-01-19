@@ -165,7 +165,7 @@ struct Asset;
 
 #[rocket::get("/assets/<file..>")]
 pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
-    let filename = format!("assets/{}", file.display().to_string());
+    let filename = format!("assets/{}", file.display());
     Asset::get(&filename).into_response(file)
 }
 
@@ -207,9 +207,9 @@ pub async fn post_withdraw_request(
         })?;
 
     let url = match network.inner() {
-        Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
-        Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
-        Network::Signet => format!("https://mempool.space/signet/tx/{}", txid),
+        Network::Bitcoin => format!("https://mempool.space/tx/{txid}"),
+        Network::Testnet => format!("https://mempool.space/testnet/tx/{txid}"),
+        Network::Signet => format!("https://mempool.space/signet/tx/{txid}"),
         Network::Regtest => txid.to_string(),
     };
 

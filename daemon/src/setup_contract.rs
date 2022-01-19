@@ -153,11 +153,12 @@ pub async fn new(
 
     let params = AllParams::new(own_params, own_punish, other, other_punish, role);
 
-    if params.other.lock_amount != setup_params.counterparty_margin {
+    let expected_margin = setup_params.counterparty_margin;
+    let actual_margin = params.other.lock_amount;
+
+    if actual_margin != expected_margin {
         anyhow::bail!(
-            "Amounts sent by counterparty don't add up, expected margin {} but got {}",
-            setup_params.counterparty_margin,
-            params.other.lock_amount
+            "Amounts sent by counterparty don't add up, expected margin {expected_margin} but got {actual_margin}"
         )
     }
 
@@ -310,7 +311,7 @@ pub async fn new(
                 let other_cets = msg1
                     .cets
                     .get(&event_id)
-                    .with_context(|| format!("Counterparty CETs for event {} missing", event_id))?;
+                    .with_context(|| format!("Counterparty CETs for event {event_id} missing"))?;
                 let cets = grouped_cets
                     .cets
                     .into_iter()
@@ -321,9 +322,10 @@ pub async fn new(
                                 (other_range == &digits.range()).then(|| other_encsig)
                             })
                             .with_context(|| {
+                                let range = digits.range();
+
                                 format!(
-                                    "Missing counterparty adaptor signature for CET corresponding to price range {:?}",
-                                    digits.range()
+                                    "Missing counterparty adaptor signature for CET corresponding to price range {range:?}",
                                 )
                             })?;
                         Ok(Cet {
@@ -597,7 +599,7 @@ pub async fn roll_over(
             let other_cets = msg1
                 .cets
                 .get(&event_id)
-                .with_context(|| format!("Counterparty CETs for event {} missing", event_id))?;
+                .with_context(|| format!("Counterparty CETs for event {event_id} missing"))?;
             let cets = grouped_cets
                 .cets
                 .into_iter()
@@ -608,10 +610,11 @@ pub async fn roll_over(
                             (other_range == &digits.range()).then(|| other_encsig)
                         })
                         .with_context(|| {
+                            let range = digits.range();
+
                             format!(
                                 "Missing counterparty adaptor signature for CET corresponding to
-                                 price range {:?}",
-                                digits.range()
+                                 price range {range:?}"
                             )
                         })?;
                     Ok(Cet {
@@ -765,10 +768,9 @@ async fn verify_cets(
                 .iter()
                 .find_map(|(range, encsig)| (range == &digits.range()).then(|| encsig))
                 .with_context(|| {
-                    format!(
-                        "no enc sig from other party for price range {:?}",
-                        digits.range()
-                    )
+                    let range = digits.range();
+
+                    format!("no enc sig from other party for price range {range:?}",)
                 })?;
 
             verify_cet_encsig(
@@ -845,5 +847,7 @@ fn verify_cet_encsig(
 
 /// Wrapper for the msg
 fn format_expect_msg_within(msg: &str) -> String {
-    format!("Expected {} within {} seconds", msg, MSG_TIMEOUT.as_secs())
+    let seconds = MSG_TIMEOUT.as_secs();
+
+    format!("Expected {msg} within {seconds} seconds")
 }

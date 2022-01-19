@@ -40,7 +40,7 @@ impl xtra::Actor for Actor {
             async move {
                 tracing::debug!("Connecting to BitMex realtime API");
 
-                let mut connection = match tokio_tungstenite::connect_async(format!("wss://www.bitmex.com/realtime?subscribe=quoteBin{}m:XBTUSD", QUOTE_INTERVAL_MINUTES)).await {
+                let mut connection = match tokio_tungstenite::connect_async(format!("wss://www.bitmex.com/realtime?subscribe=quoteBin{QUOTE_INTERVAL_MINUTES}m:XBTUSD")).await {
                     Ok((connection, _)) => connection,
                     Err(e) => {
                         let _ = this.send(StopReason::FailedToConnect { source: e }).await;

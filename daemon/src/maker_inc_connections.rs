@@ -116,13 +116,14 @@ struct Connection {
 impl Connection {
     async fn send(&mut self, msg: wire::MakerToTaker) -> Result<()> {
         let msg_str = msg.to_string();
+        let taker_id = self.taker;
 
-        tracing::trace!(target: "wire", taker_id = %self.taker, "Sending {}", msg_str);
+        tracing::trace!(target: "wire", %taker_id, "Sending {msg_str}");
 
         self.write
             .send(msg)
             .await
-            .with_context(|| format!("Failed to send msg {} to taker {}", msg_str, self.taker))?;
+            .with_context(|| format!("Failed to send msg {msg_str} to taker {taker_id}"))?;
 
         Ok(())
     }
@@ -187,7 +188,7 @@ impl Actor {
 
         let listener = match TcpListener::bind(address)
             .await
-            .with_context(|| format!("Failed to bind to socket {}", address))
+            .with_context(|| format!("Failed to bind to socket {address}"))
         {
             Ok(listener) => listener,
             Err(error) => {
@@ -196,12 +197,11 @@ impl Actor {
             }
         };
 
-        tracing::info!(
-            "Listening on {}",
-            listener
-                .local_addr()
-                .expect("listener to have local address")
-        );
+        let local_address = listener
+            .local_addr()
+            .expect("listener to have local address");
+
+        tracing::info!("Listening on {local_address}");
 
         let noise_priv_key = self.noise_priv_key.clone();
 
@@ -338,8 +338,7 @@ impl Actor {
 
         if self.connections.contains_key(&identity) {
             tracing::warn!(
-                "Refusing to accept 2nd connection from already connected taker {}!",
-                identity
+                "Refusing to accept 2nd connection from already connected taker {identity}!"
             );
             return;
         }
@@ -397,7 +396,7 @@ impl Actor {
     async fn handle_msg_from_taker(&mut self, msg: FromTaker) {
         let msg_str = msg.msg.to_string();
 
-        tracing::trace!(target: "wire", taker_id = %msg.taker_id, "Received {}", msg_str);
+        tracing::trace!(target: "wire", taker_id = %msg.taker_id, "Received {msg_str}");
 
         use wire::TakerToMaker::*;
         match msg.msg {
@@ -490,18 +489,12 @@ async fn upgrade(
 
             if our_version != taker_version {
                 bail!(
-                    "Network version mismatch, we are on version {} but taker is on version {}",
-                    our_version,
-                    taker_version
+                    "Network version mismatch, we are on version {our_version} but taker is on version {taker_version}",
                 );
             }
         }
         unexpected_message => {
-            bail!(
-                "Unexpected message {} from taker {}",
-                unexpected_message,
-                taker_id
-            );
+            bail!("Unexpected message {unexpected_message} from taker {taker_id}");
         }
     }
 

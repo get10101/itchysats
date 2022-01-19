@@ -34,10 +34,12 @@ pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
         )
         .await?;
 
+        let path_display = path.display();
+
         // Attempt to migrate, early return if successful
         let error = match run_migrations(&pool).await {
             Ok(()) => {
-                tracing::info!("Opened database at {}", path.display());
+                tracing::info!("Opened database at {path_display}");
 
                 return Ok(pool);
             }
@@ -52,13 +54,11 @@ pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
             tracing::error!("{:#}", error);
 
             let unix_timestamp = time::OffsetDateTime::now_utc().unix_timestamp();
-            let new_path = PathBuf::from(format!("{}-{}-backup", path.display(), unix_timestamp));
 
-            tracing::info!(
-                "Backing up old database at {} to {}",
-                path.display(),
-                new_path.display()
-            );
+            let new_path = PathBuf::from(format!("{path_display}-{unix_timestamp}-backup"));
+            let new_path_display = new_path.display();
+
+            tracing::info!("Backing up old database at {path_display} to {new_path_display}");
 
             tokio::fs::rename(&path, &new_path)
                 .await

@@ -144,11 +144,12 @@ impl PayoutParameter {
 
 impl fmt::Debug for PayoutParameter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "payout({}..={}, {}, {})",
-            self.left_bound, self.right_bound, self.short_amount, self.long_amount
-        )
+        let left = self.left_bound;
+        let right = self.right_bound;
+        let short = self.short_amount;
+        let long = self.long_amount;
+
+        write!(f, "payout({left}..={right}, {short}, {long})",)
     }
 }
 

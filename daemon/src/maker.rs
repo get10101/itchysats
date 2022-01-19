@@ -145,9 +145,10 @@ async fn main() -> Result<()> {
 
     logger::init(opts.log_level, opts.json).context("initialize logger")?;
     tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
+    let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
+
     tracing::info!(
-        "CFDs created with this release will settle after {} hours",
-        SETTLEMENT_INTERVAL.whole_hours()
+        "CFDs created with this release will settle after {settlement_interval_hours} hours"
     );
 
     let data_dir = opts
@@ -190,15 +191,14 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    let auth_username = auth::USERNAME;
     let auth_password = seed.derive_auth_password::<auth::Password>();
 
     let (identity_pk, identity_sk) = seed.derive_identity();
 
+    let hex_pk = hex::encode(identity_pk.to_bytes());
     tracing::info!(
-        "Authentication details: username='{}' password='{}', noise_public_key='{}'",
-        auth::USERNAME,
-        auth_password,
-        hex::encode(identity_pk.to_bytes())
+        "Authentication details: username='{auth_username}' password='{auth_password}', noise_public_key='{hex_pk}'",
     );
 
     // TODO: Actually fetch it from Olivia
@@ -210,9 +210,8 @@ async fn main() -> Result<()> {
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()));
 
-    let p2p_socket = format!("0.0.0.0:{}", opts.p2p_port)
-        .parse::<SocketAddr>()
-        .unwrap();
+    let p2p_port = opts.p2p_port;
+    let p2p_socket = format!("0.0.0.0:{p2p_port}").parse::<SocketAddr>().unwrap();
 
     let db = db::connect(data_dir.join("maker.sqlite")).await?;
 

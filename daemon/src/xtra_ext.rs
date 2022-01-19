@@ -20,12 +20,9 @@ where
 {
     async fn log_failure(self, context: &str) -> Result<(), Disconnected> {
         if let Err(e) = self.await? {
-            tracing::warn!(
-                "{}: Message handler for message {} failed: {:#}",
-                context,
-                std::any::type_name::<M>(),
-                e
-            );
+            let type_name = std::any::type_name::<M>();
+
+            tracing::warn!("{context}: Message handler for message {type_name} failed: {e:#}");
         }
 
         Ok(())
@@ -40,12 +37,9 @@ where
 {
     async fn log_failure(self, context: &str) -> Result<(), Disconnected> {
         if let Err(e) = self.await? {
-            tracing::warn!(
-                "{}: Message handler for message {} failed: {:#}",
-                context,
-                std::any::type_name::<M>(),
-                e
-            );
+            let type_name = std::any::type_name::<M>();
+
+            tracing::warn!("{context}: Message handler for message {type_name} failed: {e:#}");
         }
 
         Ok(())
@@ -84,9 +78,10 @@ where
         while self.send(constructor()).await.is_ok() {
             tokio::time::sleep(duration).await
         }
+        let type_name = std::any::type_name::<M>();
+
         tracing::warn!(
-            "Task for periodically sending message {} stopped because actor shut down",
-            std::any::type_name::<M>()
+            "Task for periodically sending message {type_name} stopped because actor shut down"
         );
     }
 }

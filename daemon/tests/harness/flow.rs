@@ -64,10 +64,9 @@ where
         .timeout(NEXT_WAIT_TIME)
         .await
         .with_context(|| {
-            format!(
-                "Value channel did not satisfy predicate within {} seconds",
-                NEXT_WAIT_TIME.as_secs()
-            )
+            let seconds = NEXT_WAIT_TIME.as_secs();
+
+            format!("Value channel did not satisfy predicate within {seconds} seconds")
         })??;
 
     Ok(val)

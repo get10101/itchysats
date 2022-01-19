@@ -52,7 +52,7 @@ pub async fn handle_monitoring_event(
                 Ok(event) => event,
                 Err(e) => {
                     if let NoDlc | Signing(_) = e {
-                        tracing::error!("Failed to handle refund timelock expiry: {}", e);
+                        tracing::error!("Failed to handle refund timelock expiry: {e}");
                     }
 
                     return Ok(());
@@ -108,11 +108,9 @@ pub async fn handle_oracle_attestation(
     process_manager: &xtra::Address<process_manager::Actor>,
 ) -> Result<()> {
     let mut conn = db.acquire().await?;
+    let price_event_id = attestation.id;
 
-    tracing::debug!(
-        "Learnt latest oracle attestation for event: {}",
-        attestation.id
-    );
+    tracing::debug!("Learnt latest oracle attestation for event: {price_event_id}");
 
     for id in db::load_all_cfd_ids(&mut conn).await? {
         let cfd = try_continue!(load_cfd(id, &mut conn).await);

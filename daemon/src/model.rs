@@ -169,7 +169,9 @@ impl Leverage {
 
 impl fmt::Display for Leverage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "x{}", self.0)
+        let leverage = self.0;
+
+        write!(f, "x{leverage}")
     }
 }
 
@@ -458,7 +460,9 @@ impl<'de> Deserialize<'de> for Identity {
 
 impl fmt::Display for Identity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", hex::encode(self.0.as_bytes()))
+        let hex = hex::encode(self.0.as_bytes());
+
+        write!(f, "{hex}")
     }
 }
 
@@ -555,7 +559,7 @@ impl str::FromStr for BitMexPriceEventId {
 
         Ok(Self {
             timestamp: PrimitiveDateTime::parse(timestamp, &olivia::EVENT_TIME_FORMAT)
-                .with_context(|| format!("Failed to parse {} as timestamp", timestamp))?
+                .with_context(|| format!("Failed to parse {timestamp} as timestamp"))?
                 .assume_utc(),
             digits: digits.parse()?,
         })

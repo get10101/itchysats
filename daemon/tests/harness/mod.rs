@@ -356,18 +356,14 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
 pub fn init_tracing() -> DefaultGuard {
     let filter = EnvFilter::from_default_env()
         // apply warning level globally
-        .add_directive(format!("{}", LevelFilter::WARN).parse().unwrap())
+        .add_directive(LevelFilter::WARN.into())
         // log traces from test itself
-        .add_directive(
-            format!("happy_path={}", LevelFilter::DEBUG)
-                .parse()
-                .unwrap(),
-        )
-        .add_directive(format!("wire={}", LevelFilter::TRACE).parse().unwrap())
-        .add_directive(format!("taker={}", LevelFilter::DEBUG).parse().unwrap())
-        .add_directive(format!("maker={}", LevelFilter::DEBUG).parse().unwrap())
-        .add_directive(format!("daemon={}", LevelFilter::DEBUG).parse().unwrap())
-        .add_directive(format!("rocket={}", LevelFilter::WARN).parse().unwrap());
+        .add_directive("happy_path=debug".parse().unwrap())
+        .add_directive("wire=trace".parse().unwrap())
+        .add_directive("taker=debug".parse().unwrap())
+        .add_directive("maker=debug".parse().unwrap())
+        .add_directive("daemon=debug".parse().unwrap())
+        .add_directive("rocket=warn".parse().unwrap());
 
     let guard = tracing_subscriber::fmt()
         .with_env_filter(filter)

@@ -138,7 +138,7 @@ pub async fn post_cfd_action(
         | CfdAction::AcceptRollover
         | CfdAction::RejectRollover => {
             return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
-                .detail(format!("taker cannot invoke action {}", action)));
+                .detail(format!("taker cannot invoke action {action}")));
         }
         CfdAction::Commit => taker.commit(id).await,
         CfdAction::Settle => taker.propose_settlement(id).await,
@@ -176,7 +176,7 @@ struct Asset;
 
 #[rocket::get("/assets/<file..>")]
 pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
-    let filename = format!("assets/{}", file.display().to_string());
+    let filename = format!("assets/{}", file.display());
     Asset::get(&filename).into_response(file)
 }
 

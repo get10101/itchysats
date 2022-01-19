@@ -81,7 +81,8 @@ impl RandomSeed {
 
     async fn write_to(&self, path: &Path) -> Result<()> {
         if path.exists() {
-            anyhow::bail!("Refusing to overwrite file at {}", path.display())
+            let path = path.display();
+            anyhow::bail!("Refusing to overwrite file at {path}")
         }
 
         tokio::fs::write(path, &self.0).await?;

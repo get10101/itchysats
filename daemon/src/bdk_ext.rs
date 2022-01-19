@@ -18,7 +18,7 @@ pub fn new_test_wallet(
     rng.fill_bytes(&mut seed);
 
     let key = ExtendedPrivKey::new_master(Network::Regtest, &seed)?;
-    let descriptors = testutils!(@descriptors (&format!("wpkh({}/*)", key)));
+    let descriptors = testutils!(@descriptors (&format!("wpkh({key}/*)")));
 
     let mut database = bdk::database::MemoryDatabase::new();
 
