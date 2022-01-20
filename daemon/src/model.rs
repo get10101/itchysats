@@ -6,6 +6,7 @@ use anyhow::Result;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
+use bdk::bitcoin::SignedAmount;
 use chrono::DateTime;
 use derive_more::Display;
 use reqwest::Url;
@@ -29,6 +30,8 @@ use std::time::UNIX_EPOCH;
 use time::OffsetDateTime;
 use time::PrimitiveDateTime;
 use time::Time;
+
+use self::cfd::Role;
 
 pub mod cfd;
 
@@ -627,14 +630,114 @@ impl Default for FundingRate {
     }
 }
 
-/// Fee paid on every contract renewal (a fraction of it if rolling over)
-#[derive(Debug, Clone)]
-pub struct FundingFee(u64);
+impl_sqlx_type_display_from_str!(FundingRate);
+
+impl fmt::Display for FundingRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl str::FromStr for FundingRate {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let dec = Decimal::from_str(s)?;
+        Ok(FundingRate(dec))
+    }
+}
+
+/// Fee paid by the taker to the maker for opening a cfd.
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct OpeningFee {
+    amount_sat: u64,
+}
+
+impl OpeningFee {
+    pub fn new(amount: Amount) -> Self {
+        Self {
+            amount_sat: amount.as_sat(),
+        }
+    }
+
+    /// Value in satoshis for the taker
+    pub fn to_u64(&self) -> u64 {
+        self.amount_sat
+    }
+
+    pub fn amount_for(&self, role: Role) -> SignedAmount {
+        let amount_sat: i64 = self.amount_sat.try_into().expect("to convert");
+        let amount_sat = match role {
+            Role::Maker => -amount_sat,
+            Role::Taker => amount_sat,
+        };
+        SignedAmount::from_sat(amount_sat)
+    }
+}
+
+impl From<Amount> for OpeningFee {
+    fn from(amount: Amount) -> Self {
+        Self::new(amount)
+    }
+}
+
+impl fmt::Display for OpeningFee {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.amount_sat.fmt(f)
+    }
+}
+
+impl str::FromStr for OpeningFee {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let amount_sat: u64 = s.parse()?;
+        Ok(OpeningFee { amount_sat })
+    }
+}
+
+impl Default for OpeningFee {
+    fn default() -> Self {
+        Self::new(Amount::ZERO)
+    }
+}
+
+impl_sqlx_type_display_from_str!(OpeningFee);
+
+/// Fee paid contract setup / renewal(a fraction of it if rolling over)
+/// As the Cfd gets renewed, the struct keeps track of total fees as well as
+/// last fee paid along with the rate used to calculate it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FundingFee {
+    accumulated_fee: u64,
+    last_fee: u64,
+    last_rate: FundingRate,
+}
 
 impl FundingFee {
+    /// Value of total funding fee in satoshis
+    pub fn accumulated_fee(&self) -> u64 {
+        self.accumulated_fee
+    }
+
+    /// Fee paid in the last funding interval
+    pub fn last_fee(&self) -> u64 {
+        self.last_fee
+    }
+
+    /// Rate used in last fee calculation
+    pub fn last_rate(&self) -> FundingRate {
+        self.last_rate
+    }
+
     /// Value in satoshis
-    pub fn as_u64(&self) -> u64 {
-        self.0
+    pub fn amount_for(&self, role: Role) -> SignedAmount {
+        let amount_sat: i64 = self.accumulated_fee.try_into().expect("convert to i64");
+        let amount_sat = match role {
+            Role::Maker => -amount_sat,
+            Role::Taker => amount_sat,
+        };
+        SignedAmount::from_sat(amount_sat)
     }
 }
 
@@ -645,14 +748,18 @@ impl Default for FundingFee {
     }
 }
 
-impl From<FundingFee> for Amount {
+impl From<FundingFee> for SignedAmount {
     fn from(funding_fee: FundingFee) -> Self {
-        Self::from_sat(funding_fee.as_u64())
+        funding_fee.amount_for(Role::Taker)
     }
 }
 
 impl FundingFee {
-    pub fn new(margin: Amount, funding_rate: FundingRate, hours_to_charge: i64) -> Result<Self> {
+    pub fn new(
+        margin: Amount, // Margin cannot be negative, so use `Amount`
+        funding_rate: FundingRate,
+        hours_to_charge: i64,
+    ) -> Result<Self> {
         anyhow::ensure!(hours_to_charge >= 1, "Can't charge for less than one hour");
         anyhow::ensure!(
             hours_to_charge <= SETTLEMENT_INTERVAL.whole_hours(),
@@ -666,11 +773,34 @@ impl FundingFee {
                     .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
                     .context("can't establish a fraction")?
             };
-        Ok(Self(calculate_funding_fee(
-            margin,
-            funding_rate,
-            fraction_of_funding_period,
-        )?))
+
+        let last_fee = calculate_funding_fee(margin, funding_rate, fraction_of_funding_period)?;
+
+        Ok(Self {
+            accumulated_fee: last_fee,
+            last_fee,
+            last_rate: funding_rate,
+        })
+    }
+
+    pub fn with_opening_fee(self, opening_fee: OpeningFee) -> Self {
+        Self {
+            accumulated_fee: self.accumulated_fee + opening_fee.to_u64(),
+            last_fee: self.last_fee,
+            last_rate: self.last_rate,
+        }
+    }
+}
+
+impl Add<FundingFee> for FundingFee {
+    type Output = FundingFee;
+
+    fn add(self, rhs: FundingFee) -> Self::Output {
+        Self {
+            accumulated_fee: self.accumulated_fee + rhs.accumulated_fee,
+            last_fee: rhs.last_fee,
+            last_rate: rhs.last_rate,
+        }
     }
 }
 
@@ -818,14 +948,13 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(funding_fee.as_u64(), 0);
+        assert_eq!(funding_fee.accumulated_fee(), 0);
     }
 
     #[test]
     fn initial_funding_fee() {
         // Initial funding fee is taken for the whole settlement period, in this
         // case 1%
-
         let funding_fee = FundingFee::new(
             Amount::from_sat(100),
             FundingRate::new(dec!(0.01)).unwrap(),
@@ -833,7 +962,56 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(funding_fee.as_u64(), 1);
+        assert_eq!(funding_fee.accumulated_fee(), 1);
+
+        // maker can choose to charge opening fee on top of regular funding fee
+        let fees = funding_fee.with_opening_fee(Amount::from_sat(1).into());
+        assert_eq!(fees.accumulated_fee(), 2);
+
+        assert_eq!(
+            fees.amount_for(Role::Taker) + fees.amount_for(Role::Maker),
+            SignedAmount::ZERO
+        );
+    }
+
+    #[test]
+    fn adding_funding_fees() {
+        let first_rate = FundingRate::new(dec!(0.01)).unwrap();
+        let first_funding_fee = FundingFee::new(
+            Amount::from_sat(100),
+            first_rate,
+            SETTLEMENT_INTERVAL.whole_hours(),
+        )
+        .unwrap();
+
+        assert_eq!(first_funding_fee.accumulated_fee(), 1);
+        assert_eq!(first_funding_fee.last_fee(), 1);
+        assert_eq!(first_funding_fee.last_rate(), first_rate);
+
+        let second_rate = FundingRate::new(dec!(0.02)).unwrap();
+        let second_funding_fee = FundingFee::new(
+            Amount::from_sat(100),
+            second_rate,
+            SETTLEMENT_INTERVAL.whole_hours(),
+        )
+        .unwrap();
+
+        assert_eq!(second_funding_fee.accumulated_fee(), 2);
+        assert_eq!(second_funding_fee.last_fee(), 2);
+        assert_eq!(second_funding_fee.last_rate(), second_rate);
+
+        let total_funding_fee = first_funding_fee + second_funding_fee;
+
+        assert_eq!(total_funding_fee.accumulated_fee(), 3);
+        assert_eq!(total_funding_fee.last_fee(), 2);
+        assert_eq!(total_funding_fee.last_rate(), second_rate);
+    }
+
+    #[test]
+    fn opening_fee_without_funding_fee() {
+        let opening_fee = FundingFee::default().with_opening_fee(Amount::from_sat(100).into());
+
+        assert_eq!(opening_fee.accumulated_fee(), 100);
     }
 
     use proptest::prelude::*;
@@ -846,8 +1024,8 @@ mod tests {
             let funding_fee_for_one_hour =
                 FundingFee::new(Amount::from_sat(amount_sat), FundingRate::new(dec!(0.01)).unwrap(), 1).unwrap();
 
-            let total_when_collected_hourly = SETTLEMENT_INTERVAL.whole_hours() as u64 * funding_fee_for_one_hour.as_u64();
-            let total_when_collected_for_whole_interval = funding_fee_for_whole_interval.as_u64();
+            let total_when_collected_hourly = SETTLEMENT_INTERVAL.whole_hours() * funding_fee_for_one_hour.amount_for(Role::Taker).as_sat();
+            let total_when_collected_for_whole_interval = funding_fee_for_whole_interval.amount_for(Role::Taker).as_sat();
 
             prop_assert!(
                 total_when_collected_hourly >= total_when_collected_for_whole_interval,

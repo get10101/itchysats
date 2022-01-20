@@ -14,6 +14,7 @@ use daemon::model::cfd::OrderId;
 use daemon::model::cfd::Role;
 use daemon::model::FundingRate;
 use daemon::model::Identity;
+use daemon::model::OpeningFee;
 use daemon::model::Price;
 use daemon::model::Timestamp;
 use daemon::model::Usd;
@@ -347,6 +348,7 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
         max_quantity: Usd::new(dec!(100)),
         tx_fee_rate: 1,
         funding_rate: FundingRate::default(),
+        opening_fee: OpeningFee::default(),
     }
 }
 

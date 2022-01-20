@@ -3,8 +3,10 @@ use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
+use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::Leverage;
+use crate::model::OpeningFee;
 use crate::model::Position;
 use crate::model::Price;
 use crate::model::Usd;
@@ -106,8 +108,10 @@ pub async fn insert_cfd(cfd: &model::cfd::Cfd, conn: &mut PoolConnection<Sqlite>
             settlement_time_interval_hours,
             quantity_usd,
             counterparty_network_identity,
-            role
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+            role,
+            opening_fee,
+            initial_funding_rate
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
     )
     .bind(&cfd.id())
     .bind(&cfd.position())
@@ -117,6 +121,8 @@ pub async fn insert_cfd(cfd: &model::cfd::Cfd, conn: &mut PoolConnection<Sqlite>
     .bind(&cfd.quantity())
     .bind(&cfd.counterparty_network_identity())
     .bind(&cfd.role())
+    .bind(&cfd.opening_fee())
+    .bind(&cfd.initial_funding_rate())
     .execute(conn)
     .await?;
 
@@ -179,6 +185,8 @@ pub struct Cfd {
     pub quantity_usd: Usd,
     pub counterparty_network_identity: Identity,
     pub role: Role,
+    pub opening_fee: OpeningFee,
+    pub initial_funding_rate: FundingRate,
 }
 
 pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<(Cfd, Vec<Event>)> {
@@ -193,7 +201,9 @@ pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<
                 settlement_time_interval_hours,
                 quantity_usd as "quantity_usd: crate::model::Usd",
                 counterparty_network_identity as "counterparty_network_identity: crate::model::Identity",
-                role as "role: crate::model::cfd::Role"
+                role as "role: crate::model::cfd::Role",
+                opening_fee as "opening_fee: crate::model::OpeningFee",
+                initial_funding_rate as "initial_funding_rate: crate::model::FundingRate"
             from
                 cfds
             where
@@ -213,6 +223,8 @@ pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<
         quantity_usd: cfd_row.quantity_usd,
         counterparty_network_identity: cfd_row.counterparty_network_identity,
         role: cfd_row.role,
+        opening_fee: cfd_row.opening_fee,
+        initial_funding_rate: cfd_row.initial_funding_rate,
     };
 
     let events = sqlx::query!(
@@ -274,6 +286,7 @@ mod tests {
     use crate::model::Price;
     use crate::model::Timestamp;
     use crate::model::Usd;
+    use bdk::bitcoin::Amount;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;
@@ -293,6 +306,8 @@ mod tests {
                 quantity_usd,
                 counterparty_network_identity,
                 role,
+                opening_fee,
+                initial_funding_rate,
             },
             _,
         ) = load_cfd(cfd.id(), &mut conn).await.unwrap();
@@ -308,6 +323,8 @@ mod tests {
             counterparty_network_identity
         );
         assert_eq!(cfd.role(), role);
+        assert_eq!(cfd.opening_fee(), opening_fee);
+        assert_eq!(cfd.initial_funding_rate(), initial_funding_rate);
     }
 
     #[tokio::test]
@@ -373,6 +390,8 @@ mod tests {
                 "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
                     .parse()
                     .unwrap(),
+                OpeningFee::new(Amount::from_sat(2000)),
+                FundingRate::default(),
             )
         }
 

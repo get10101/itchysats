@@ -53,12 +53,9 @@ pub fn calculate(
     quantity: Usd,
     leverage: Leverage,
     n_payouts: usize,
-    funding_fee: FundingFee,
+    fee: FundingFee,
 ) -> Result<Vec<Payout>> {
-    // TODO: That's where we have to plug in the funding_fee
-    //  And then upon every rollover the recurring costs. The maker's parameters will have to be
-    // part of the offer!
-    let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts, funding_fee)?
+    let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts, fee)?
         .into_iter()
         .map(PayoutParameter::into_payouts)
         .flatten_ok()
@@ -79,7 +76,7 @@ fn calculate_payout_parameters(
     quantity: Usd,
     long_leverage: Leverage,
     n_payouts: usize,
-    funding_fee: FundingFee,
+    fee: FundingFee,
 ) -> Result<Vec<PayoutParameter>> {
     let initial_rate = price
         .try_into_f64()
@@ -97,6 +94,8 @@ fn calculate_payout_parameters(
         None,
     )?;
 
+    let fee = fee.accumulated_fee();
+
     let payout_parameters = payout_curve
         .generate_payout_scheme(n_payouts)?
         .rows()
@@ -109,7 +108,7 @@ fn calculate_payout_parameters(
             // TODO: cover the case where the maker pays funding fees
 
             let long_amount = to_sats(long_amount_btc)?;
-            let long_amount_adjusted = long_amount.saturating_sub(funding_fee.as_u64());
+            let long_amount_adjusted = long_amount.saturating_sub(fee);
             let adjustment = long_amount - long_amount_adjusted;
 
             let short_amount = to_sats(payout_curve.total_value - long_amount_btc)?;
@@ -467,8 +466,9 @@ fn create_long_payout_function(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::FundingRate;
-    use crate::SETTLEMENT_INTERVAL;
+    use crate::model::FundingFee;
+    use crate::model::OpeningFee;
+    use bdk::bitcoin::Amount;
     use rust_decimal_macros::dec;
     use std::ops::RangeInclusive;
 
@@ -751,10 +751,8 @@ mod tests {
         )
         .unwrap();
 
-        let margin = quantity / price;
-        let funding_rate = FundingRate::new(dec!(0.002)).unwrap();
         let funding_fee =
-            FundingFee::new(margin, funding_rate, SETTLEMENT_INTERVAL.whole_hours()).unwrap();
+            FundingFee::default().with_opening_fee(OpeningFee::new(Amount::from_sat(100)));
 
         let payouts_with_fee = calculate_payout_parameters(
             price,
@@ -776,7 +774,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(total_per_payout, total_per_payout_with_fee);
 
-        let funding_fee = funding_fee.as_u64();
+        let fee: u64 = funding_fee.accumulated_fee();
 
         let fees = payouts
             .iter()
@@ -785,206 +783,18 @@ mod tests {
             .collect::<Vec<_>>();
         let expected_fees = vec![
             0, // the lower tail of this curve already assigns the short side all of the coins
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
-            funding_fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
+            fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee, fee,
         ];
 
         assert_eq!(fees, expected_fees);

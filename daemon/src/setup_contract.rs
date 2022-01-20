@@ -4,7 +4,6 @@ use crate::model::cfd::RevokedCommit;
 use crate::model::cfd::Role;
 use crate::model::cfd::CET_TIMELOCK;
 use crate::model::FundingFee;
-use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::Leverage;
 use crate::model::Price;
@@ -23,7 +22,6 @@ use crate::wire::RolloverMsg1;
 use crate::wire::RolloverMsg2;
 use crate::wire::RolloverMsg3;
 use crate::wire::SetupMsg;
-use crate::SETTLEMENT_INTERVAL;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -84,7 +82,7 @@ impl SetupParams {
         leverage: Leverage,
         refund_timelock: u32,
         tx_fee_rate: u32,
-        funding_rate: FundingRate,
+        funding_fee: FundingFee,
     ) -> Result<Self> {
         Ok(Self {
             margin,
@@ -95,7 +93,7 @@ impl SetupParams {
             leverage,
             refund_timelock,
             tx_fee_rate,
-            funding_fee: FundingFee::new(margin, funding_rate, SETTLEMENT_INTERVAL.whole_hours())?,
+            funding_fee,
         })
     }
 
@@ -404,6 +402,10 @@ impl RolloverParams {
             funding_fee,
         }
     }
+
+    pub fn funding_fee(&self) -> &FundingFee {
+        &self.funding_fee
+    }
 }
 
 pub async fn roll_over(
@@ -452,7 +454,7 @@ pub async fn roll_over(
             rollover_params.quantity,
             rollover_params.leverage,
             n_payouts,
-            rollover_params.funding_fee,
+            rollover_params.funding_fee.clone(),
         )?,
     )]);
 

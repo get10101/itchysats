@@ -4,6 +4,7 @@ use daemon::auth::Authenticated;
 use daemon::model::cfd::OrderId;
 use daemon::model::FundingRate;
 use daemon::model::Identity;
+use daemon::model::OpeningFee;
 use daemon::model::Price;
 use daemon::model::Usd;
 use daemon::model::WalletInfo;
@@ -99,6 +100,7 @@ pub struct CfdNewOrderRequest {
     pub max_quantity: Usd,
     pub tx_fee_rate: Option<u32>,
     pub funding_rate: Option<FundingRate>,
+    pub opening_fee: Option<OpeningFee>,
 }
 
 #[rocket::post("/order/sell", data = "<order>")]
@@ -114,6 +116,7 @@ pub async fn post_sell_order(
             order.max_quantity,
             order.tx_fee_rate,
             order.funding_rate,
+            order.opening_fee,
         )
         .await
         .map_err(|e| {

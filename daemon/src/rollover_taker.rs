@@ -6,6 +6,7 @@ use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
 use crate::model::BitMexPriceEventId;
+use crate::model::FundingFee;
 use crate::model::Timestamp;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
@@ -117,6 +118,8 @@ impl Actor {
         // the spawned rollover task
         self.rollover_msg_sender = Some(sender);
 
+        let funding_fee = rollover_params.funding_fee().clone();
+
         let rollover_fut = setup_contract::roll_over(
             xtra::message_channel::MessageChannel::sink(&self.maker).with(move |msg| {
                 future::ok(wire::TakerToMaker::RolloverProtocol { order_id, msg })
@@ -135,7 +138,7 @@ impl Actor {
             // handler.
             let _: Result<(), Disconnected> =
                 match rollover_fut.await.context("Rollover protocol failed") {
-                    Ok(dlc) => this.send(RolloverSucceeded { dlc }).await,
+                    Ok(dlc) => this.send(RolloverSucceeded { dlc, funding_fee }).await,
                     Err(error) => this.send(RolloverFailed { error }).await,
                 };
         });
@@ -253,8 +256,11 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        self.complete(RolloverCompleted::succeeded(self.id, msg.dlc), ctx)
-            .await;
+        self.complete(
+            RolloverCompleted::succeeded(self.id, msg.dlc, msg.funding_fee),
+            ctx,
+        )
+        .await;
     }
 
     pub async fn handle_rollover_failed(
@@ -331,6 +337,7 @@ pub struct RolloverRejected;
 #[derive(Debug)]
 struct RolloverSucceeded {
     dlc: Dlc,
+    funding_fee: FundingFee,
 }
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
