@@ -148,12 +148,12 @@ where
         + xtra::Handler<wallet::Withdraw>,
 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new<FO, FM, M>(
+    pub fn new<M>(
         db: SqlitePool,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> FO,
-        monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> FM,
+        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
+        monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> Result<M>,
         settlement_interval: time::Duration,
         n_payouts: usize,
         projection_actor: Address<projection::Actor>,
@@ -167,8 +167,6 @@ where
             + xtra::Handler<monitor::CollaborativeSettlement>
             + xtra::Handler<monitor::TryBroadcastTransaction>
             + xtra::Handler<oracle::Attestation>,
-        FO: Future<Output = Result<O>>,
-        FM: Future<Output = Result<M>>,
     {
         let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
@@ -188,14 +186,14 @@ where
         )));
 
         let (cfd_actor_addr, cfd_actor_fut) = maker_cfd::Actor::new(
-            db.clone(),
+            db,
             wallet_addr.clone(),
             settlement_interval,
             oracle_pk,
             projection_actor,
-            process_manager_addr.clone(),
-            inc_conn_addr.clone(),
-            oracle_addr.clone(),
+            process_manager_addr,
+            inc_conn_addr,
+            oracle_addr,
             n_payouts,
         )
         .create(None)
@@ -212,7 +210,7 @@ where
             p2p_socket,
         )));
 
-        tasks.add(monitor_ctx.run(monitor_constructor(Box::new(cfd_actor_addr.clone())).await?));
+        tasks.add(monitor_ctx.run(monitor_constructor(Box::new(cfd_actor_addr.clone()))?));
 
         let (fan_out_actor, fan_out_actor_fut) =
             fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
@@ -220,9 +218,7 @@ where
                 .run();
         tasks.add(fan_out_actor_fut);
 
-        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor)).await?));
-
-        oracle_addr.send(oracle::Sync).await?;
+        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
 
         tracing::debug!("Maker actor system ready");
 
@@ -344,13 +340,13 @@ where
     P: xtra::Handler<bitmex_price_feed::LatestQuote>,
 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new<FM, FO, M>(
+    pub fn new<M>(
         db: SqlitePool,
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         identity_sk: x25519_dalek::StaticSecret,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> FO,
-        monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> FM,
+        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
+        monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> Result<M>,
         price_feed_constructor: impl (Fn(Address<supervisor::Actor<P, bitmex_price_feed::StopReason>>) -> P)
             + Send
             + 'static,
@@ -366,8 +362,6 @@ where
             + xtra::Handler<monitor::CollaborativeSettlement>
             + xtra::Handler<oracle::Attestation>
             + xtra::Handler<monitor::TryBroadcastTransaction>,
-        FO: Future<Output = Result<O>>,
-        FM: Future<Output = Result<M>>,
     {
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
             watch::channel(ConnectionStatus::Offline { reason: None });
@@ -393,7 +387,7 @@ where
             db.clone(),
             wallet_actor_addr.clone(),
             oracle_pk,
-            projection_actor.clone(),
+            projection_actor,
             process_manager_addr.clone(),
             connection_actor_addr.clone(),
             oracle_addr.clone(),
@@ -430,7 +424,7 @@ where
             connect_timeout,
         )));
 
-        tasks.add(monitor_ctx.run(monitor_constructor(Box::new(cfd_actor_addr.clone())).await?));
+        tasks.add(monitor_ctx.run(monitor_constructor(Box::new(cfd_actor_addr.clone()))?));
 
         let (fan_out_actor, fan_out_actor_fut) =
             fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
@@ -439,7 +433,7 @@ where
 
         tasks.add(fan_out_actor_fut);
 
-        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor)).await?));
+        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
 
         let (supervisor, price_feed_actor) = supervisor::Actor::new(
             price_feed_constructor,

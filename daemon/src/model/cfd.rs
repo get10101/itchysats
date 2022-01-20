@@ -922,7 +922,7 @@ impl Cfd {
                 price: settlement.price,
             },
             Completed::Rejected { reason, .. } => {
-                tracing::info!(order_id=%self.id(), "Collaborative close rejected: {:#}", reason);
+                tracing::info!(order_id=%self.id(), "Collaborative close rejected: {:#}, force-closing the position", reason);
 
                 let dlc = self
                     .dlc
@@ -933,7 +933,7 @@ impl Cfd {
                 CfdEvent::CollaborativeSettlementRejected { commit_tx }
             }
             Completed::Failed { error, .. } => {
-                tracing::warn!(order_id=%self.id(), "Collaborative close failed: {:#}", error);
+                tracing::warn!(order_id=%self.id(), "Collaborative close failed: {:#}, force-closing the position", error);
 
                 let dlc = self
                     .dlc

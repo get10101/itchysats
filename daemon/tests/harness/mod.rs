@@ -187,8 +187,8 @@ impl Maker {
             db.clone(),
             wallet_addr,
             config.oracle_pk,
-            |_| async { Ok(oracle) },
-            |_| async { Ok(monitor) },
+            |_| oracle,
+            |_| Ok(monitor),
             settlement_interval,
             config.n_payouts,
             projection_actor.clone(),
@@ -196,7 +196,6 @@ impl Maker {
             config.heartbeat_interval,
             address,
         )
-        .await
         .unwrap();
 
         let (proj_actor, feeds) =
@@ -278,8 +277,8 @@ impl Taker {
             wallet_addr,
             config.oracle_pk,
             identity_sk,
-            |_| async { Ok(oracle) },
-            |_| async { Ok(monitor) },
+            |_| oracle,
+            |_| Ok(monitor),
             move |_| price_feed.clone(),
             config.n_payouts,
             config.heartbeat_interval,
@@ -287,7 +286,6 @@ impl Taker {
             projection_actor,
             maker_identity,
         )
-        .await
         .unwrap();
 
         let (proj_actor, feeds) =

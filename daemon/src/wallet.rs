@@ -12,7 +12,6 @@ use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::OutPoint;
 use bdk::bitcoin::PublicKey;
-use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
 use bdk::blockchain::ElectrumBlockchain;
 use bdk::blockchain::NoopProgress;
@@ -211,10 +210,6 @@ struct Sync;
 
 pub struct Sign {
     pub psbt: PartiallySignedTransaction,
-}
-
-pub struct TryBroadcastTransaction {
-    pub tx: Transaction,
 }
 
 pub struct Withdraw {

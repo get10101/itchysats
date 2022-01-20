@@ -29,6 +29,7 @@ pub struct Actor {
     attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
     announcement_lookahead: Duration,
     tasks: Tasks,
+    db: sqlx::SqlitePool,
 }
 
 pub struct Sync;
@@ -95,33 +96,19 @@ impl Cfd {
 }
 
 impl Actor {
-    pub async fn new(
+    pub fn new(
         db: SqlitePool,
         attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
         announcement_lookahead: Duration,
-    ) -> Result<Self> {
-        let mut pending_attestations = HashSet::new();
-
-        let mut conn = db.acquire().await?;
-
-        for id in db::load_all_cfd_ids(&mut conn).await? {
-            let (_, events) = db::load_cfd(id, &mut conn).await?;
-            let cfd = events
-                .into_iter()
-                .fold(Cfd::default(), |cfd, event| cfd.apply(event));
-
-            if let Some(pending_attestation) = cfd.pending_attestation {
-                pending_attestations.insert(pending_attestation);
-            }
-        }
-
-        Ok(Self {
+    ) -> Self {
+        Self {
             announcements: HashMap::new(),
-            pending_attestations,
+            pending_attestations: HashSet::new(),
             attestation_channel,
             announcement_lookahead,
             tasks: Tasks::default(),
-        })
+            db,
+        }
     }
 
     fn ensure_having_announcements(
@@ -336,8 +323,40 @@ impl From<Announcement> for maia::Announcement {
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
-        self.tasks
-            .add(this.send_interval(std::time::Duration::from_secs(5), || Sync));
+        self.tasks.add(
+            this.clone()
+                .send_interval(std::time::Duration::from_secs(5), || Sync),
+        );
+
+        self.tasks.add_fallible(
+            {
+                let db = self.db.clone();
+
+                async move {
+                    let mut conn = db.acquire().await?;
+
+                    for id in db::load_all_cfd_ids(&mut conn).await? {
+                        let (_, events) = db::load_cfd(id, &mut conn).await?;
+                        let cfd = events
+                            .into_iter()
+                            .fold(Cfd::default(), |cfd, event| cfd.apply(event));
+
+                        if let Some(pending_attestation) = cfd.pending_attestation {
+                            let _: Result<(), xtra::Disconnected> = this
+                                .send(MonitorAttestation {
+                                    event_id: pending_attestation,
+                                })
+                                .await;
+                        }
+                    }
+
+                    anyhow::Ok(())
+                }
+            },
+            |e| async move {
+                tracing::debug!("Failed to re-initialize pending attestations from DB: {e:#}");
+            },
+        );
     }
 }
 
