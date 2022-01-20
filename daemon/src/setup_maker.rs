@@ -122,7 +122,7 @@ impl Actor {
                     this.send(SetupSucceeded {
                         order_id,
                         dlc,
-                        funding_fee,
+                        funding_fee: funding_fee.inverse(),
                     })
                     .await
                 }

@@ -328,7 +328,7 @@ impl Actor {
         ctx: &mut xtra::Context<Self>,
     ) {
         self.complete(
-            RolloverCompleted::succeeded(self.order_id, msg.dlc, msg.funding_fee),
+            RolloverCompleted::succeeded(self.order_id, msg.dlc, msg.funding_fee.inverse()),
             ctx,
         )
         .await

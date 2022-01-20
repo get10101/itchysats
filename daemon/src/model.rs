@@ -645,6 +645,12 @@ impl FundingFee {
     pub fn as_i64(&self) -> i64 {
         self.0
     }
+
+    /// The fees are typically calculated for the taker, if used on the maker
+    /// they need to be inverted
+    pub fn inverse(self) -> Self {
+        Self(-self.0)
+    }
 }
 
 impl TryFrom<FundingFee> for u64 {
