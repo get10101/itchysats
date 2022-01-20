@@ -72,13 +72,6 @@ jobs:
 
           curl --fail http://localhost:8000/api/alive
           curl --fail http://localhost:8001/api/alive
-      - name: Upload binaries
-        uses: actions/upload-artifact@v2
-        with:
-          name: maker-and-taker-binaries-${{ matrix.os }}
-          path: |
-            target/debug/maker
-            target/debug/taker
 
   test_daemons_release_mode:
     strategy:
@@ -105,10 +98,3 @@ jobs:
           sudo apt-get update
           sudo apt-get install gcc-aarch64-linux-gnu
       - run: cargo build --target=aarch64-unknown-linux-gnu --bins
-      - name: Upload binaries
-        uses: actions/upload-artifact@v2
-        with:
-          name: maker-and-taker-binaries-aarch64-unknown-linux-gnu
-          path: |
-            target/aarch64-unknown-linux-gnu/debug/maker
-            target/aarch64-unknown-linux-gnu/debug/taker
