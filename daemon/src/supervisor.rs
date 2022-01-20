@@ -57,7 +57,7 @@ where
 
     fn spawn_new(&mut self, ctx: &mut Context<Self>) {
         let actor = T::name();
-        tracing::info!("Spawning new instance of {actor}");
+        tracing::info!(actor = %&actor, "Spawning new actor instance");
 
         let this = ctx.address().expect("we are alive");
         let actor = (self.ctor)(this.clone());
@@ -97,19 +97,10 @@ where
 {
     pub fn handle(&mut self, msg: Stopped<R>, ctx: &mut Context<Self>) {
         let actor = T::name();
-        let reason = msg.reason;
+        let reason_str = msg.reason.to_string();
+        let should_restart = (self.restart_policy)(msg.reason);
 
-        tracing::info!("{actor} stopped: {reason}");
-
-        let should_restart = (self.restart_policy)(reason);
-
-        tracing::debug!(
-            "Restart {actor}? {}",
-            match should_restart {
-                true => "yes",
-                false => "no",
-            }
-        );
+        tracing::info!(actor = %&actor, reason = %reason_str, restart = %should_restart, "Actor stopped");
 
         if should_restart {
             self.spawn_new(ctx)
@@ -136,15 +127,12 @@ where
 {
     async fn handle(&mut self, msg: Panicked, ctx: &mut Context<Self>) {
         let actor = T::name();
+        let reason = match msg.error.downcast::<&'static str>() {
+            Ok(reason) => *reason,
+            Err(_) => "unknown",
+        };
 
-        match msg.error.downcast::<&'static str>() {
-            Ok(reason) => {
-                tracing::error!("{actor} panicked: {reason}");
-            }
-            Err(_) => {
-                tracing::error!("{actor} panicked");
-            }
-        }
+        tracing::info!(actor = %&actor, %reason, restart = true, "Actor panicked");
 
         self.metrics.num_panics += 1;
         self.spawn_new(ctx)
@@ -190,6 +178,8 @@ mod tests {
 
     #[tokio::test]
     async fn supervisor_tracks_spawn_metrics() {
+        let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
+
         let (supervisor, address) =
             Actor::new(|supervisor| RemoteShutdown { supervisor }, |_| true);
         let (supervisor, task) = supervisor.create(None).run();
