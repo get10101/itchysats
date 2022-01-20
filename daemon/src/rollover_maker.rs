@@ -44,7 +44,7 @@ struct RolloverSucceeded {
     funding_fee: FundingFee,
 }
 
-/// Message sent from the spawned task to `rollover_taker::Actor` to
+/// Message sent from the spawned task to `rollover_maker::Actor` to
 /// notify that rollover has failed.
 struct RolloverFailed {
     error: RolloverError,
