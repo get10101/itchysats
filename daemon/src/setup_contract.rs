@@ -116,7 +116,7 @@ pub async fn new(
     sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
     role: Role,
     n_payouts: usize,
-) -> Result<Dlc> {
+) -> Result<(Dlc, FundingFee)> {
     let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
     let (rev_sk, rev_pk) = crate::keypair::new(&mut rand::thread_rng());
     let (publish_sk, publish_pk) = crate::keypair::new(&mut rand::thread_rng());
@@ -355,25 +355,28 @@ pub async fn new(
         .try_into_msg3()
         .context("Failed to read Msg3")?;
 
-    Ok(Dlc {
-        identity: sk,
-        identity_counterparty: params.other.identity_pk,
-        revocation: rev_sk,
-        revocation_pk_counterparty: other_punish.revocation_pk,
-        publish: publish_sk,
-        publish_pk_counterparty: other_punish.publish_pk,
-        maker_address: params.maker().address.clone(),
-        taker_address: params.taker().address.clone(),
-        lock: (signed_lock_tx.extract_tx(), lock_desc),
-        commit: (commit_tx, msg1.commit, commit_desc),
-        cets,
-        refund: (refund_tx, msg1.refund),
-        maker_lock_amount: params.maker().lock_amount,
-        taker_lock_amount: params.taker().lock_amount,
-        revoked_commit: Vec::new(),
-        settlement_event_id,
-        refund_timelock: setup_params.refund_timelock,
-    })
+    Ok((
+        Dlc {
+            identity: sk,
+            identity_counterparty: params.other.identity_pk,
+            revocation: rev_sk,
+            revocation_pk_counterparty: other_punish.revocation_pk,
+            publish: publish_sk,
+            publish_pk_counterparty: other_punish.publish_pk,
+            maker_address: params.maker().address.clone(),
+            taker_address: params.taker().address.clone(),
+            lock: (signed_lock_tx.extract_tx(), lock_desc),
+            commit: (commit_tx, msg1.commit, commit_desc),
+            cets,
+            refund: (refund_tx, msg1.refund),
+            maker_lock_amount: params.maker().lock_amount,
+            taker_lock_amount: params.taker().lock_amount,
+            revoked_commit: Vec::new(),
+            settlement_event_id,
+            refund_timelock: setup_params.refund_timelock,
+        },
+        setup_params.funding_fee,
+    ))
 }
 
 #[derive(Debug, Clone)]
@@ -414,7 +417,7 @@ pub async fn roll_over(
     our_role: Role,
     dlc: Dlc,
     n_payouts: usize,
-) -> Result<Dlc> {
+) -> Result<(Dlc, FundingFee)> {
     let sk = dlc.identity;
     let pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk));
 
@@ -678,25 +681,28 @@ pub async fn roll_over(
         .try_into_msg3()
         .context("Failed to read Msg3")?;
 
-    Ok(Dlc {
-        identity: sk,
-        identity_counterparty: dlc.identity_counterparty,
-        revocation: rev_sk,
-        revocation_pk_counterparty: other_punish_params.revocation_pk,
-        publish: publish_sk,
-        publish_pk_counterparty: other_punish_params.publish_pk,
-        maker_address: dlc.maker_address,
-        taker_address: dlc.taker_address,
-        lock: dlc.lock.clone(),
-        commit: (commit_tx, msg1.commit, commit_desc),
-        cets,
-        refund: (refund_tx, msg1.refund),
-        maker_lock_amount,
-        taker_lock_amount,
-        revoked_commit,
-        settlement_event_id: announcement.id,
-        refund_timelock: rollover_params.refund_timelock,
-    })
+    Ok((
+        Dlc {
+            identity: sk,
+            identity_counterparty: dlc.identity_counterparty,
+            revocation: rev_sk,
+            revocation_pk_counterparty: other_punish_params.revocation_pk,
+            publish: publish_sk,
+            publish_pk_counterparty: other_punish_params.publish_pk,
+            maker_address: dlc.maker_address,
+            taker_address: dlc.taker_address,
+            lock: dlc.lock.clone(),
+            commit: (commit_tx, msg1.commit, commit_desc),
+            cets,
+            refund: (refund_tx, msg1.refund),
+            maker_lock_amount,
+            taker_lock_amount,
+            revoked_commit,
+            settlement_event_id: announcement.id,
+            refund_timelock: rollover_params.refund_timelock,
+        },
+        rollover_params.funding_fee,
+    ))
 }
 
 /// A convenience struct for storing PartyParams and PunishParams of both

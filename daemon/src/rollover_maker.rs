@@ -8,6 +8,7 @@ use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
 use crate::model::cfd::RolloverError;
+use crate::model::FundingFee;
 use crate::model::Identity;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
@@ -40,6 +41,7 @@ pub struct ProtocolMsg(pub wire::RolloverMsg);
 /// notify that rollover has finished successfully.
 struct RolloverSucceeded {
     dlc: Dlc,
+    funding_fee: FundingFee,
 }
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
@@ -169,7 +171,7 @@ impl Actor {
 
         self.tasks.add(async move {
             let _: Result<(), xtra::Disconnected> = match rollover_fut.await {
-                Ok(dlc) => this.send(RolloverSucceeded { dlc }).await,
+                Ok((dlc, funding_fee)) => this.send(RolloverSucceeded { dlc, funding_fee }).await,
                 Err(source) => {
                     this.send(RolloverFailed {
                         error: RolloverError::Protocol { source },
@@ -325,7 +327,10 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        self.complete(RolloverCompleted::succeeded(self.order_id, msg.dlc), ctx)
-            .await
+        self.complete(
+            RolloverCompleted::succeeded(self.order_id, msg.dlc, msg.funding_fee),
+            ctx,
+        )
+        .await
     }
 }

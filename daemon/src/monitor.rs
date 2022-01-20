@@ -165,7 +165,7 @@ impl Cfd {
                 cet: None,
                 commit_tx: None,
             },
-            RolloverCompleted { dlc } => {
+            RolloverCompleted { dlc, .. } => {
                 Self {
                     params: Some(MonitorParams::new(dlc)),
                     monitor_lock_finality: false, // Lock is already final after rollover.

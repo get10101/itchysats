@@ -64,7 +64,7 @@ impl Actor {
         // 2. Post process event
         use CfdEvent::*;
         match event.event {
-            ContractSetupCompleted { dlc } => {
+            ContractSetupCompleted { dlc, .. } => {
                 tracing::info!("Setup complete, publishing on chain now");
 
                 let lock_tx = dlc.lock.0.clone();
@@ -166,7 +166,7 @@ impl Actor {
                 // Nothing to do: The commit transaction has already been published but the timelock
                 // hasn't expired yet. We just need to wait.
             }
-            RolloverCompleted { dlc } => {
+            RolloverCompleted { dlc, .. } => {
                 tracing::info!(order_id=%event.id, "Rollover complete");
 
                 self.start_monitoring

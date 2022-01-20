@@ -304,8 +304,9 @@ impl Cfd {
             ContractSetupStarted => {
                 self.state = CfdState::ContractSetup;
             }
-            ContractSetupCompleted { dlc } => {
+            ContractSetupCompleted { dlc, funding_fee } => {
                 self.aggregated.latest_dlc = Some(dlc);
+                todo!("{funding_fee:?}");
 
                 self.state = CfdState::PendingOpen;
             }
@@ -315,8 +316,9 @@ impl Cfd {
             OfferRejected => {
                 self.state = CfdState::Rejected;
             }
-            RolloverCompleted { dlc } => {
+            RolloverCompleted { dlc, funding_fee } => {
                 self.aggregated.latest_dlc = Some(dlc);
+                todo!("{funding_fee:?}");
 
                 self.state = CfdState::Open;
             }

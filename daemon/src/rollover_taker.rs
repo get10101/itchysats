@@ -7,6 +7,7 @@ use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
 use crate::model::cfd::RolloverError;
 use crate::model::BitMexPriceEventId;
+use crate::model::FundingFee;
 use crate::model::Timestamp;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
@@ -134,7 +135,7 @@ impl Actor {
             // Use an explicit type annotation to cause a compile error if someone changes the
             // handler.
             let _: Result<(), Disconnected> = match rollover_fut.await {
-                Ok(dlc) => this.send(RolloverSucceeded { dlc }).await,
+                Ok((dlc, funding_fee)) => this.send(RolloverSucceeded { dlc, funding_fee }).await,
                 Err(error) => this.send(RolloverFailed { error }).await,
             };
         });
@@ -252,8 +253,11 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        self.complete(RolloverCompleted::succeeded(self.id, msg.dlc), ctx)
-            .await;
+        self.complete(
+            RolloverCompleted::succeeded(self.id, msg.dlc, msg.funding_fee),
+            ctx,
+        )
+        .await;
     }
 
     pub async fn handle_rollover_failed(
@@ -328,6 +332,7 @@ pub struct RolloverRejected;
 /// notify that rollover has finished successfully.
 struct RolloverSucceeded {
     dlc: Dlc,
+    funding_fee: FundingFee,
 }
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to

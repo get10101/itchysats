@@ -636,7 +636,7 @@ impl Default for FundingRate {
 }
 
 /// Fee paid on every contract renewal (a fraction of it if rolling over)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct FundingFee(u64);
 
 impl FundingFee {

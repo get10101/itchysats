@@ -310,6 +310,7 @@ pub enum CfdEvent {
     ContractSetupStarted,
     ContractSetupCompleted {
         dlc: Dlc,
+        funding_fee: FundingFee,
     },
 
     ContractSetupFailed,
@@ -320,6 +321,7 @@ pub enum CfdEvent {
     RolloverRejected,
     RolloverCompleted {
         dlc: Dlc,
+        funding_fee: FundingFee,
     },
     RolloverFailed,
 
@@ -848,8 +850,9 @@ impl Cfd {
 
         let event = match completed {
             SetupCompleted::Succeeded {
-                payload: (dlc, _), ..
-            } => CfdEvent::ContractSetupCompleted { dlc },
+                payload: (dlc, funding_fee, _),
+                ..
+            } => CfdEvent::ContractSetupCompleted { dlc, funding_fee },
             SetupCompleted::Rejected { .. } => CfdEvent::OfferRejected,
             SetupCompleted::Failed { error, .. } => {
                 tracing::error!("Contract setup failed: {:#}", error);
@@ -884,10 +887,11 @@ impl Cfd {
                 return Ok(None);
             }
             Completed::Succeeded {
-                payload: (dlc, _), ..
+                payload: (dlc, funding_fee, _),
+                ..
             } => {
                 self.can_rollover()?;
-                CfdEvent::RolloverCompleted { dlc }
+                CfdEvent::RolloverCompleted { dlc, funding_fee }
             }
             Completed::Rejected { reason, .. } => {
                 tracing::info!(order_id = %self.id, "Rollover was rejected: {:#}", reason);
@@ -1135,9 +1139,10 @@ impl Cfd {
 
         match evt.event {
             ContractSetupStarted => self.during_contract_setup = true,
-            ContractSetupCompleted { dlc } => {
+            ContractSetupCompleted { dlc, funding_fee } => {
                 self.dlc = Some(dlc);
                 self.during_contract_setup = false;
+                todo!("{funding_fee:?}");
             }
             OracleAttestedPostCetTimelock { cet, .. } => self.cet = Some(cet),
             OracleAttestedPriorCetTimelock { timelocked_cet, .. } => {
@@ -1151,9 +1156,10 @@ impl Cfd {
                 self.during_rollover = true;
             }
             RolloverAccepted => {}
-            RolloverCompleted { dlc } => {
+            RolloverCompleted { dlc, funding_fee } => {
                 self.dlc = Some(dlc);
                 self.during_rollover = false;
+                todo!("{funding_fee:?}");
             }
             RolloverFailed { .. } => {
                 self.during_rollover = false;
@@ -1668,28 +1674,28 @@ pub mod marker {
 
 /// Message sent from a setup actor to the
 /// cfd actor to notify that the contract setup has finished.
-pub type SetupCompleted = Completed<(Dlc, marker::Setup), anyhow::Error>;
+pub type SetupCompleted = Completed<(Dlc, FundingFee, marker::Setup), anyhow::Error>;
 
 /// Message sent from a rollover actor to the
 /// cfd actor to notify that the rollover has finished (contract got updated).
-pub type RolloverCompleted = Completed<(Dlc, marker::Rollover), RolloverError>;
+pub type RolloverCompleted = Completed<(Dlc, FundingFee, marker::Rollover), RolloverError>;
 
 pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;
 
-impl Completed<(Dlc, marker::Setup), anyhow::Error> {
-    pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
+impl Completed<(Dlc, FundingFee, marker::Setup), anyhow::Error> {
+    pub fn succeeded(order_id: OrderId, dlc: Dlc, funding_fee: FundingFee) -> Self {
         Self::Succeeded {
             order_id,
-            payload: (dlc, marker::Setup),
+            payload: (dlc, funding_fee, marker::Setup),
         }
     }
 }
 
-impl Completed<(Dlc, marker::Rollover), RolloverError> {
-    pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
+impl Completed<(Dlc, FundingFee, marker::Rollover), RolloverError> {
+    pub fn succeeded(order_id: OrderId, dlc: Dlc, funding_fee: FundingFee) -> Self {
         Self::Succeeded {
             order_id,
-            payload: (dlc, marker::Rollover),
+            payload: (dlc, funding_fee, marker::Rollover),
         }
     }
 }
@@ -2160,6 +2166,7 @@ mod tests {
                     id: Default::default(),
                     event: CfdEvent::ContractSetupCompleted {
                         dlc: Dlc::dummy(Some(event_id)),
+                        funding_fee: FundingFee::default(),
                     },
                 },
                 Event {

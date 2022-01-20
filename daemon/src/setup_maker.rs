@@ -7,6 +7,7 @@ use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::SetupCompleted;
+use crate::model::FundingFee;
 use crate::model::Identity;
 use crate::model::Usd;
 use crate::oracle::Announcement;
@@ -117,7 +118,14 @@ impl Actor {
 
         self.tasks.add(async move {
             let _: Result<(), xtra::Disconnected> = match contract_future.await {
-                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await,
+                Ok((dlc, funding_fee)) => {
+                    this.send(SetupSucceeded {
+                        order_id,
+                        dlc,
+                        funding_fee,
+                    })
+                    .await
+                }
                 Err(error) => this.send(SetupFailed { order_id, error }).await,
             };
         });
@@ -199,8 +207,11 @@ impl Actor {
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
-        self.complete(SetupCompleted::succeeded(msg.order_id, msg.dlc), ctx)
-            .await
+        self.complete(
+            SetupCompleted::succeeded(msg.order_id, msg.dlc, msg.funding_fee),
+            ctx,
+        )
+        .await
     }
 
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
@@ -284,6 +295,7 @@ pub struct Rejected;
 struct SetupSucceeded {
     order_id: OrderId,
     dlc: Dlc,
+    funding_fee: FundingFee,
 }
 
 /// Message sent from the spawned task to `setup_maker::Actor` to

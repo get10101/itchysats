@@ -761,7 +761,7 @@ mod tests {
             quantity,
             Leverage::new(5).unwrap(),
             200,
-            funding_fee.clone(),
+            funding_fee,
         )
         .unwrap();
         assert_eq!(payouts.len(), payouts_with_fee.len());
