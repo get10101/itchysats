@@ -1,8 +1,9 @@
+use anyhow::anyhow;
 use anyhow::Result;
+use time::macros::format_description;
 use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::fmt::time::ChronoLocal;
+use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::EnvFilter;
-use tracing_subscriber::FmtSubscriber;
 
 pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
     if level == LevelFilter::OFF {
@@ -17,17 +18,23 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
         .add_directive(format!("daemon={level}").parse()?)
         .add_directive(format!("rocket={level}").parse()?);
 
-    let builder = FmtSubscriber::builder()
+    let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
-        .with_ansi(is_terminal)
-        .with_timer(ChronoLocal::with_format("%F %T".to_owned()));
+        .with_ansi(is_terminal);
 
-    if json_format {
-        builder.json().init();
+    let result = if json_format {
+        builder.json().with_timer(UtcTime::rfc_3339()).try_init()
     } else {
-        builder.init();
-    }
+        builder
+            .compact()
+            .with_timer(UtcTime::new(format_description!(
+                "[year]-[month]-[day] [hour]:[minute]:[second]"
+            )))
+            .try_init()
+    };
+
+    result.map_err(|e| anyhow!("Failed to init logger: {e}"))?;
 
     tracing::info!("Initialized logger");
 
