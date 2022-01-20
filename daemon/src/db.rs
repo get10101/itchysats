@@ -248,9 +248,11 @@ pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<O
     let ids = sqlx::query!(
         r#"
             select
+                id as cfd_id,
                 uuid as "uuid: crate::model::cfd::OrderId"
             from
                 cfds
+            order by cfd_id desc
             "#
     )
     .fetch_all(&mut *conn)
@@ -306,6 +308,19 @@ mod tests {
             counterparty_network_identity
         );
         assert_eq!(cfd.role(), role);
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_load_cfd_ids_order_desc() {
+        let mut conn = setup_test_db().await;
+
+        let cfd_1 = Cfd::dummy().insert(&mut conn).await;
+        let cfd_2 = Cfd::dummy().insert(&mut conn).await;
+        let cfd_3 = Cfd::dummy().insert(&mut conn).await;
+
+        let ids = load_all_cfd_ids(&mut conn).await.unwrap();
+
+        assert_eq!(vec![cfd_3.id(), cfd_2.id(), cfd_1.id()], ids)
     }
 
     #[tokio::test]

@@ -21,6 +21,10 @@ export interface Order {
     liquidation_price: string;
     creation_timestamp: number;
     settlement_time_interval_in_secs: number;
+
+    opening_fee_per_parcel: number;
+    funding_rate_annualized_percent: string; // e.g. "18.5" (does not include % char)
+    funding_rate_hourly_percent: string; // e.g. "0.002345" (does not include % char)
 }
 
 export class Position {
@@ -62,6 +66,12 @@ export interface Cfd {
     expiry_timestamp?: number;
 
     counterparty: string;
+
+    accumulated_fees: number;
+}
+
+export function isClosed(cfd: Cfd): boolean {
+    return cfd.state.getGroup() === StateGroupKey.CLOSED;
 }
 
 export interface CfdDetails {
@@ -88,7 +98,7 @@ export class State {
     public getLabel(): string {
         switch (this.key) {
             case StateKey.PENDING_SETUP:
-                return "Offered";
+                return "Pending Setup";
             case StateKey.CONTRACT_SETUP:
                 return "Contract Setup";
             case StateKey.REJECTED:
@@ -98,27 +108,26 @@ export class State {
             case StateKey.OPEN:
                 return "Open";
             case StateKey.PENDING_COMMIT:
-                return "Pending Commit";
-            case StateKey.PENDING_CLOSE:
-                return "Pending Close";
+                return "Pending Force";
             case StateKey.OPEN_COMMITTED:
-                return "Open (commit-tx published)";
+                return "Force Close";
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
-                return "Settlement Proposed";
+                return "Close Proposed";
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
-                return "Settlement Proposed";
+                return "Close Proposed";
             case StateKey.INCOMING_ROLLOVER_PROPOSAL:
                 return "Rollover Proposed";
             case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
                 return "Rollover Proposed";
-            case StateKey.MUST_REFUND:
+            case StateKey.PENDING_REFUND:
                 return "Refunding";
             case StateKey.REFUNDED:
                 return "Refunded";
             case StateKey.SETUP_FAILED:
                 return "Setup Failed";
             case StateKey.PENDING_CET:
-                return "Pending CET";
+            case StateKey.PENDING_CLOSE:
+                return "Pending Payout";
             case StateKey.CLOSED:
                 return "Closed";
         }
@@ -139,7 +148,7 @@ export class State {
 
             case StateKey.PENDING_COMMIT:
             case StateKey.OPEN_COMMITTED:
-            case StateKey.MUST_REFUND:
+            case StateKey.PENDING_REFUND:
             case StateKey.PENDING_CET:
             case StateKey.PENDING_CLOSE:
                 return orange;
@@ -168,7 +177,7 @@ export class State {
             case StateKey.OPEN:
             case StateKey.PENDING_COMMIT:
             case StateKey.OPEN_COMMITTED:
-            case StateKey.MUST_REFUND:
+            case StateKey.PENDING_REFUND:
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
             case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
             case StateKey.PENDING_CET:
@@ -204,7 +213,7 @@ export const enum StateKey {
     INCOMING_SETTLEMENT_PROPOSAL = "IncomingSettlementProposal",
     OUTGOING_ROLLOVER_PROPOSAL = "OutgoingRolloverProposal",
     INCOMING_ROLLOVER_PROPOSAL = "IncomingRolloverProposal",
-    MUST_REFUND = "MustRefund",
+    PENDING_REFUND = "PendingRefund",
     REFUNDED = "Refunded",
     SETUP_FAILED = "SetupFailed",
     CLOSED = "Closed",

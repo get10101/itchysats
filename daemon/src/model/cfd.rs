@@ -2257,7 +2257,7 @@ mod tests {
                 Price::new(dec!(1000)).unwrap(),
                 Usd::new(dec!(100)),
                 Usd::new(dec!(1000)),
-                Origin::Theirs,
+                Origin::Ours,
                 dummy_event_id(),
                 time::Duration::hours(24),
                 1,

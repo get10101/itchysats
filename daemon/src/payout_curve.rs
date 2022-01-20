@@ -55,6 +55,9 @@ pub fn calculate(
     n_payouts: usize,
     funding_fee: FundingFee,
 ) -> Result<Vec<Payout>> {
+    // TODO: That's where we have to plug in the funding_fee
+    //  And then upon every rollover the recurring costs. The maker's parameters will have to be
+    // part of the offer!
     let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts, funding_fee)?
         .into_iter()
         .map(PayoutParameter::into_payouts)

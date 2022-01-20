@@ -65,7 +65,7 @@ export default function Disclaimer() {
                                 setAck(true);
                             }}
                         >
-                            Close
+                            Dismiss
                         </Button>
                     </ModalFooter>
                 </ModalContent>
