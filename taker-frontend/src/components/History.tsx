@@ -18,7 +18,7 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { Cfd, ConnectionStatus, isClosed, Tx, TxLabel } from "../types";
+import { Cfd, ConnectionStatus, isClosed, StateKey, Tx, TxLabel } from "../types";
 import usePostRequest from "../usePostRequest";
 import CloseButton from "./CloseButton";
 
@@ -170,7 +170,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                                 <Td><Text>Refund</Text></Td>
                                 <Td><TxIcon tx={txRefund} /></Td>
                             </Tr>
-                            : txCommit || !connectedToMaker.online
+                            : txCommit || (cfd.state.key === StateKey.OPEN && !connectedToMaker.online)
                             ? <>
                                 <Tr>
                                     <Td><Text>Force</Text></Td>
