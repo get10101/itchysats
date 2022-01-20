@@ -6,6 +6,7 @@ use anyhow::Result;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
+use bdk::bitcoin::SignedAmount;
 use chrono::DateTime;
 use derive_more::Display;
 use reqwest::Url;
@@ -637,12 +638,20 @@ impl Default for FundingRate {
 
 /// Fee paid on every contract renewal (a fraction of it if rolling over)
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct FundingFee(u64);
+pub struct FundingFee(i64);
 
 impl FundingFee {
     /// Value in satoshis
-    pub fn as_u64(&self) -> u64 {
+    pub fn as_i64(&self) -> i64 {
         self.0
+    }
+}
+
+impl TryFrom<FundingFee> for u64 {
+    type Error = anyhow::Error;
+
+    fn try_from(value: FundingFee) -> Result<Self, Self::Error> {
+        value.0.try_into().context("Cannot represent u64")
     }
 }
 
@@ -653,14 +662,18 @@ impl Default for FundingFee {
     }
 }
 
-impl From<FundingFee> for Amount {
+impl From<FundingFee> for SignedAmount {
     fn from(funding_fee: FundingFee) -> Self {
-        Self::from_sat(funding_fee.as_u64())
+        Self::from_sat(funding_fee.as_i64())
     }
 }
 
 impl FundingFee {
-    pub fn new(margin: Amount, funding_rate: FundingRate, hours_to_charge: i64) -> Result<Self> {
+    pub fn new(
+        margin: Amount, // Margin cannot be negative, so use `Amount`
+        funding_rate: FundingRate,
+        hours_to_charge: i64,
+    ) -> Result<Self> {
         anyhow::ensure!(hours_to_charge >= 1, "Can't charge for less than one hour");
         anyhow::ensure!(
             hours_to_charge <= SETTLEMENT_INTERVAL.whole_hours(),
@@ -686,11 +699,11 @@ fn calculate_funding_fee(
     margin: Amount,
     funding_rate: FundingRate,
     fraction_of_funding_period: Decimal,
-) -> Result<u64> {
+) -> Result<i64> {
     (Decimal::from(margin.as_sat()) * funding_rate.to_decimal() * fraction_of_funding_period)
         .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::AwayFromZero)
-        .to_u64()
-        .context("Failed to represent as u64")
+        .to_i64()
+        .context("Failed to represent as i64")
 }
 
 #[cfg(test)]
@@ -826,7 +839,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(funding_fee.as_u64(), 0);
+        assert_eq!(funding_fee.as_i64(), 0);
     }
 
     #[test]
@@ -841,7 +854,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(funding_fee.as_u64(), 1);
+        assert_eq!(funding_fee.as_i64(), 1);
     }
 
     use proptest::prelude::*;
@@ -854,8 +867,8 @@ mod tests {
             let funding_fee_for_one_hour =
                 FundingFee::new(Amount::from_sat(amount_sat), FundingRate::new(dec!(0.01)).unwrap(), 1).unwrap();
 
-            let total_when_collected_hourly = SETTLEMENT_INTERVAL.whole_hours() as u64 * funding_fee_for_one_hour.as_u64();
-            let total_when_collected_for_whole_interval = funding_fee_for_whole_interval.as_u64();
+            let total_when_collected_hourly = SETTLEMENT_INTERVAL.whole_hours() * funding_fee_for_one_hour.as_i64();
+            let total_when_collected_for_whole_interval = funding_fee_for_whole_interval.as_i64();
 
             prop_assert!(
                 total_when_collected_hourly >= total_when_collected_for_whole_interval,

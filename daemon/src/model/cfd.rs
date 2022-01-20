@@ -444,6 +444,8 @@ pub struct Cfd {
     role: Role,
 
     // dynamic (based on events)
+    total_funding_fees: SignedAmount,
+
     dlc: Option<Dlc>,
 
     /// Holds the decrypted CET transaction if we have previously emitted it as part of an event.
@@ -517,6 +519,7 @@ impl Cfd {
             during_rollover: false,
             settlement_proposal: None,
             funding_rate: FundingRate::new(Decimal::ZERO).expect("be valid"),
+            total_funding_fees: SignedAmount::ZERO,
         }
     }
 
@@ -1142,7 +1145,9 @@ impl Cfd {
             ContractSetupCompleted { dlc, funding_fee } => {
                 self.dlc = Some(dlc);
                 self.during_contract_setup = false;
-                todo!("{funding_fee:?}");
+                self.total_funding_fees
+                    .checked_add(funding_fee.into())
+                    .expect("addition not to overflow");
             }
             OracleAttestedPostCetTimelock { cet, .. } => self.cet = Some(cet),
             OracleAttestedPriorCetTimelock { timelocked_cet, .. } => {

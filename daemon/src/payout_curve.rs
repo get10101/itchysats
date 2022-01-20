@@ -109,7 +109,7 @@ fn calculate_payout_parameters(
             // TODO: cover the case where the maker pays funding fees
 
             let long_amount = to_sats(long_amount_btc)?;
-            let long_amount_adjusted = long_amount.saturating_sub(funding_fee.as_u64());
+            let long_amount_adjusted = long_amount.saturating_sub(funding_fee.try_into()?);
             let adjustment = long_amount - long_amount_adjusted;
 
             let short_amount = to_sats(payout_curve.total_value - long_amount_btc)?;
@@ -776,7 +776,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(total_per_payout, total_per_payout_with_fee);
 
-        let funding_fee = funding_fee.as_u64();
+        let funding_fee: u64 = funding_fee.try_into().unwrap();
 
         let fees = payouts
             .iter()

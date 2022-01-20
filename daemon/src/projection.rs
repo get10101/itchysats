@@ -159,7 +159,7 @@ pub struct Cfd {
     ///
     /// Includes the opening fee and all fees that were already charged.
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub accumulated_fees: Amount,
+    pub accumulated_fees: SignedAmount,
 
     pub leverage: Leverage,
     pub trading_pair: TradingPair,
@@ -271,7 +271,7 @@ impl Cfd {
         Self {
             order_id: id,
             initial_price,
-            accumulated_fees: Amount::from_sat(123456), // FIXME: calculate
+            accumulated_fees: SignedAmount::ZERO,
             leverage,
             trading_pair: TradingPair::BtcUsd,
             position,
@@ -306,7 +306,9 @@ impl Cfd {
             }
             ContractSetupCompleted { dlc, funding_fee } => {
                 self.aggregated.latest_dlc = Some(dlc);
-                todo!("{funding_fee:?}");
+                self.accumulated_fees
+                    .checked_add(funding_fee.into())
+                    .expect("addition to work");
 
                 self.state = CfdState::PendingOpen;
             }
@@ -318,7 +320,9 @@ impl Cfd {
             }
             RolloverCompleted { dlc, funding_fee } => {
                 self.aggregated.latest_dlc = Some(dlc);
-                todo!("{funding_fee:?}");
+                self.accumulated_fees
+                    .checked_add(funding_fee.into())
+                    .expect("addition to work");
 
                 self.state = CfdState::Open;
             }
@@ -698,7 +702,7 @@ pub struct CfdOrder {
     /// Note: It's the minimum possible fee, we cannot calculate the exact
     /// amount until we know the quantity taken by the taker
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
-    pub opening_fee_per_parcel: Option<Amount>,
+    pub opening_fee_per_parcel: Option<SignedAmount>,
 
     /// The interest as annualized percentage
     ///
@@ -772,7 +776,7 @@ impl From<Order> for CfdOrder {
     }
 }
 
-fn calculate_min_opening_fee(order: &Order) -> Option<Amount> {
+fn calculate_min_opening_fee(order: &Order) -> Option<SignedAmount> {
     if let Ok(fee) = FundingFee::new(
         calculate_long_margin(order.price, order.min_quantity, order.leverage),
         order.funding_rate,
