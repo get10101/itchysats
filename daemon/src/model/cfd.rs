@@ -1164,7 +1164,9 @@ impl Cfd {
             RolloverCompleted { dlc, funding_fee } => {
                 self.dlc = Some(dlc);
                 self.during_rollover = false;
-                todo!("{funding_fee:?}");
+                self.total_funding_fees
+                    .checked_add(funding_fee.into())
+                    .expect("addition not to overflow");
             }
             RolloverFailed { .. } => {
                 self.during_rollover = false;
