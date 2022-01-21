@@ -68,10 +68,14 @@ With (1) and (2) in mind, there is really no point in an external approval step 
 As long as the CFD's is not committed on-chain, rollover will occur.
 To opt out of rollover, either party can commit the CFD on-chain which will result in a payout at the end of the funding period.
 
-### 6. Connection dialer sends initial trigger message
+### 6. Connection listener sends initial trigger message
 
-- Need unambiguous way to trigger protocol
-- Scales to peer to peer setting
+To make the system more predictable, we should have an dedicated trigger for the protocol.
+One way of ensuring this is deterministic, is to check whether a peer is the dialer or the listener in a connection.
+
+In our current setup, the maker is the listener.
+If the have the maker send out the initial trigger message, we have _some_ control over how many rollovers we want to do in parallel.
+If the taker would send the intial trigger message and we don't build in some kind of randomness in when to send it, rollover might end up being a DoS attack against the maker.
 
 ## Considerations
 
