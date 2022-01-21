@@ -1266,6 +1266,7 @@ pub fn calculate_profit_at_price(
     quantity: Usd,
     leverage: Leverage,
     position: Position,
+    all_fees: SignedAmount,
 ) -> Result<(SignedAmount, Percent, SignedAmount)> {
     let inv_initial_price =
         InversePrice::new(opening_price).context("cannot invert invalid price")?;
@@ -1285,7 +1286,8 @@ pub fn calculate_profit_at_price(
         .context("Unable to convert to SignedAmount")?
         - (quantity * inv_closing_price)
             .to_signed()
-            .context("Unable to convert to SignedAmount")?;
+            .context("Unable to convert to SignedAmount")?
+        - all_fees; //TODO: Think through if the fee should be added or subtracted here.
 
     // calculate profit/loss (P and L) in BTC
     let (margin, payout) = match position {
@@ -1869,7 +1871,20 @@ mod tests {
             Leverage::new(2).unwrap(),
             Position::Long,
             SignedAmount::ZERO,
+            SignedAmount::ZERO,
             Decimal::ZERO.into(),
+            "No price increase means no profit",
+        );
+
+        assert_profit_loss_values(
+            Price::new(dec!(10_000)).unwrap(),
+            Price::new(dec!(10_000)).unwrap(),
+            Usd::new(dec!(10_000)),
+            Leverage::new(2).unwrap(),
+            Position::Long,
+            SignedAmount::from_btc(0.25).unwrap(),
+            SignedAmount::from_btc(-0.25).unwrap(),
+            dec!(-50).into(),
             "No price increase means no profit",
         );
 
@@ -1879,6 +1894,7 @@ mod tests {
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
             Position::Long,
+            SignedAmount::ZERO,
             SignedAmount::from_sat(50_000_000),
             dec!(100).into(),
             "A price increase of 2x should result in a profit of 100% (long)",
@@ -1890,6 +1906,7 @@ mod tests {
             Usd::new(dec!(9_000)),
             Leverage::new(2).unwrap(),
             Position::Long,
+            SignedAmount::ZERO,
             SignedAmount::from_sat(-50_000_000),
             dec!(-100).into(),
             "A price drop of 1/(Leverage + 1) x should result in 100% loss (long)",
@@ -1901,6 +1918,7 @@ mod tests {
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
             Position::Long,
+            SignedAmount::ZERO,
             SignedAmount::from_sat(-50_000_000),
             dec!(-100).into(),
             "A loss should be capped at 100% (long)",
@@ -1912,6 +1930,7 @@ mod tests {
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
             Position::Long,
+            SignedAmount::ZERO,
             SignedAmount::from_sat(3_174_603),
             dec!(31.999997984000016127999870976).into(),
             "long position should make a profit when price goes up",
@@ -1923,6 +1942,7 @@ mod tests {
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
             Position::Short,
+            SignedAmount::ZERO,
             SignedAmount::from_sat(-3_174_603),
             dec!(-15.999998992000008063999935488).into(),
             "short position should make a loss when price goes up",
@@ -1936,15 +1956,22 @@ mod tests {
         quantity: Usd,
         leverage: Leverage,
         position: Position,
+        accumulated_fees: SignedAmount,
         should_profit: SignedAmount,
         should_profit_in_percent: Percent,
         msg: &str,
     ) {
         // TODO: Assert on payout as well
 
-        let (profit, in_percent, _) =
-            calculate_profit_at_price(initial_price, closing_price, quantity, leverage, position)
-                .unwrap();
+        let (profit, in_percent, _) = calculate_profit_at_price(
+            initial_price,
+            closing_price,
+            quantity,
+            leverage,
+            position,
+            accumulated_fees,
+        )
+        .unwrap();
 
         assert_eq!(profit, should_profit, "{}", msg);
         assert_eq!(in_percent, should_profit_in_percent, "{}", msg);
@@ -1956,12 +1983,14 @@ mod tests {
         let closing_price = Price::new(dec!(16_000)).unwrap();
         let quantity = Usd::new(dec!(10_000));
         let leverage = Leverage::new(1).unwrap();
+        let fees = SignedAmount::from_sat(50);
         let (profit, profit_in_percent, _) = calculate_profit_at_price(
             initial_price,
             closing_price,
             quantity,
             leverage,
             Position::Long,
+            fees,
         )
         .unwrap();
         let (loss, loss_in_percent, _) = calculate_profit_at_price(
@@ -1970,6 +1999,7 @@ mod tests {
             quantity,
             leverage,
             Position::Short,
+            fees,
         )
         .unwrap();
 
@@ -2006,16 +2036,25 @@ mod tests {
             Price::new(dec!(15_000_000)).unwrap(),
         ];
 
+        let fees = SignedAmount::from_sat(50);
+
         for price in closing_prices {
-            let (long_profit, _, _) =
-                calculate_profit_at_price(initial_price, price, quantity, leverage, Position::Long)
-                    .unwrap();
+            let (long_profit, _, _) = calculate_profit_at_price(
+                initial_price,
+                price,
+                quantity,
+                leverage,
+                Position::Long,
+                fees,
+            )
+            .unwrap();
             let (short_profit, _, _) = calculate_profit_at_price(
                 initial_price,
                 price,
                 quantity,
                 leverage,
                 Position::Short,
+                fees,
             )
             .unwrap();
 

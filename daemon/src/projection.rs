@@ -294,7 +294,7 @@ impl Cfd {
         };
 
         let (profit_btc_latest_price, profit_percent_latest_price, payout) = latest_price.and_then(|latest_price| {
-            match calculate_profit_at_price(initial_price, latest_price, quantity_usd, leverage, position) {
+            match calculate_profit_at_price(initial_price, latest_price, quantity_usd, leverage, position, todo!("accumulated fee")) {
                 Ok(profit) => Some(profit),
                 Err(e) => {
                     tracing::warn!("Failed to calculate profit/loss {:#}", e);
