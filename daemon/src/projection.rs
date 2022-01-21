@@ -928,7 +928,7 @@ impl TxUrl {
 
     /// Highlight particular transaction output in the TxUrl
     fn with_output_index(mut self, index: u32) -> Self {
-        self.url.push_str(&("#".to_string() + &index.to_string()));
+        self.url.push_str(&format!(":{index}"));
         self
     }
 
