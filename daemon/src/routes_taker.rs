@@ -117,7 +117,7 @@ pub async fn post_order_request(
         .map_err(|e| {
             HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .title("Order request failed")
-                .detail(e.to_string())
+                .detail(format!("{e:#}"))
         })?;
 
     Ok(())
@@ -147,7 +147,7 @@ pub async fn post_cfd_action(
     result.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title(action.to_string() + " failed")
-            .detail(e.to_string())
+            .detail(format!("{e:#}"))
     })?;
 
     Ok(())
@@ -221,7 +221,7 @@ pub async fn post_withdraw_request(
         .map_err(|e| {
             HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .title("Could not proceed with withdraw request")
-                .detail(e.to_string())
+                .detail(format!("{e:#}"))
         })?;
 
     Ok(projection::to_mempool_url(txid, *network.inner()))
