@@ -83,7 +83,7 @@ export default function CloseButton({ cfd, request, status, buttonTitle, isForce
                             }}
                             isLoading={status}
                         >
-                            {buttonTitle}
+                            {buttonTitle} Position
                         </Button>
                     </PopoverFooter>
                 </PopoverContent>
