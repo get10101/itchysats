@@ -38,8 +38,8 @@ use maia::secp256k1_zkp::SECP256K1;
 use maia::spending_tx_sighash;
 use maia::TransactionExt;
 use rocket::request::FromParam;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::de::Error as _;
 use serde::Deserialize;
 use serde::Serialize;
@@ -1234,25 +1234,38 @@ pub fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Pri
     price * leverage / (leverage + 1)
 }
 
-/// Returns the Profit/Loss (P/L) as Bitcoin. Losses are capped by the provided margin
-pub fn calculate_profit(
-    initial_price: Price,
+pub fn calculate_profit(payout: SignedAmount, margin: SignedAmount) -> (SignedAmount, Percent) {
+    let profit = payout - margin;
+
+    let profit_sats = Decimal::from(profit.as_sat());
+    let margin_sats = Decimal::from(margin.as_sat());
+    let percent = dec!(100) * profit_sats / margin_sats;
+
+    (profit, Percent(percent))
+}
+
+/// Returns the profit/loss and payout capped by the provided margin
+///
+/// All values are calculated without using the payout curve.
+/// Profit/loss is returned as signed bitcoin amount and percent.
+pub fn calculate_profit_at_price(
+    opening_price: Price,
     closing_price: Price,
     quantity: Usd,
     leverage: Leverage,
     position: Position,
-) -> Result<(SignedAmount, Percent)> {
+) -> Result<(SignedAmount, Percent, SignedAmount)> {
     let inv_initial_price =
-        InversePrice::new(initial_price).context("cannot invert invalid price")?;
+        InversePrice::new(opening_price).context("cannot invert invalid price")?;
     let inv_closing_price =
         InversePrice::new(closing_price).context("cannot invert invalid price")?;
-    let long_liquidation_price = calculate_long_liquidation_price(leverage, initial_price);
+    let long_liquidation_price = calculate_long_liquidation_price(leverage, opening_price);
     let long_is_liquidated = closing_price <= long_liquidation_price;
 
-    let long_margin = calculate_long_margin(initial_price, quantity, leverage)
+    let long_margin = calculate_long_margin(opening_price, quantity, leverage)
         .to_signed()
         .context("Unable to compute long margin")?;
-    let short_margin = calculate_short_margin(initial_price, quantity)
+    let short_margin = calculate_short_margin(opening_price, quantity)
         .to_signed()
         .context("Unable to compute short margin")?;
     let amount_changed = (quantity * inv_initial_price)
@@ -1308,11 +1321,8 @@ pub fn calculate_profit(
         }
     };
 
-    let profit = payout - margin;
-    let percent = Decimal::from_f64(100. * profit.as_sat() as f64 / margin.as_sat() as f64)
-        .context("Unable to compute percent")?;
-
-    Ok((profit, Percent(percent)))
+    let (profit_btc, profit_percent) = calculate_profit(payout, margin);
+    Ok((profit_btc, profit_percent, payout))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1891,7 +1901,7 @@ mod tests {
             Leverage::new(2).unwrap(),
             Position::Long,
             SignedAmount::from_sat(3_174_603),
-            dec!(31.99999798400001).into(),
+            dec!(31.999997984000016127999870976).into(),
             "long position should make a profit when price goes up",
         );
 
@@ -1902,7 +1912,7 @@ mod tests {
             Leverage::new(2).unwrap(),
             Position::Short,
             SignedAmount::from_sat(-3_174_603),
-            dec!(-15.99999899200001).into(),
+            dec!(-15.999998992000008063999935488).into(),
             "short position should make a loss when price goes up",
         );
     }
@@ -1910,7 +1920,7 @@ mod tests {
     #[allow(clippy::too_many_arguments)]
     fn assert_profit_loss_values(
         initial_price: Price,
-        current_price: Price,
+        closing_price: Price,
         quantity: Usd,
         leverage: Leverage,
         position: Position,
@@ -1918,8 +1928,11 @@ mod tests {
         should_profit_in_percent: Percent,
         msg: &str,
     ) {
-        let (profit, in_percent) =
-            calculate_profit(initial_price, current_price, quantity, leverage, position).unwrap();
+        // TODO: Assert on payout as well
+
+        let (profit, in_percent, _) =
+            calculate_profit_at_price(initial_price, closing_price, quantity, leverage, position)
+                .unwrap();
 
         assert_eq!(profit, should_profit, "{}", msg);
         assert_eq!(in_percent, should_profit_in_percent, "{}", msg);
@@ -1931,7 +1944,7 @@ mod tests {
         let closing_price = Price::new(dec!(16_000)).unwrap();
         let quantity = Usd::new(dec!(10_000));
         let leverage = Leverage::new(1).unwrap();
-        let (profit, profit_in_percent) = calculate_profit(
+        let (profit, profit_in_percent, _) = calculate_profit_at_price(
             initial_price,
             closing_price,
             quantity,
@@ -1939,7 +1952,7 @@ mod tests {
             Position::Long,
         )
         .unwrap();
-        let (loss, loss_in_percent) = calculate_profit(
+        let (loss, loss_in_percent, _) = calculate_profit_at_price(
             initial_price,
             closing_price,
             quantity,
@@ -1982,11 +1995,17 @@ mod tests {
         ];
 
         for price in closing_prices {
-            let (long_profit, _) =
-                calculate_profit(initial_price, price, quantity, leverage, Position::Long).unwrap();
-            let (short_profit, _) =
-                calculate_profit(initial_price, price, quantity, leverage, Position::Short)
+            let (long_profit, _, _) =
+                calculate_profit_at_price(initial_price, price, quantity, leverage, Position::Long)
                     .unwrap();
+            let (short_profit, _, _) = calculate_profit_at_price(
+                initial_price,
+                price,
+                quantity,
+                leverage,
+                Position::Short,
+            )
+            .unwrap();
 
             assert_eq!(
                 long_profit + long_margin + short_profit + short_margin,

@@ -4,6 +4,7 @@ use crate::model;
 use crate::model::cfd::calculate_long_liquidation_price;
 use crate::model::cfd::calculate_long_margin;
 use crate::model::cfd::calculate_profit;
+use crate::model::cfd::calculate_profit_at_price;
 use crate::model::cfd::calculate_short_margin;
 use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Dlc;
@@ -175,12 +176,28 @@ pub struct Cfd {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub margin_counterparty: Amount,
 
+    /// Projected or final profit amount
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
     pub profit_btc: Option<SignedAmount>,
+    /// Projected or final profit percent
     pub profit_percent: Option<String>,
+
+    // TODO: Payout should not be a signed amount but should be converted to a `bitcoin::Amount`
+    // when calculating
+    /// Projected or final payout
+    ///
+    /// If we don't know the final payout yet then we calculate this based on the projected profit.
+    /// If we don't have a current price in this scenario we don't know the payout, hence it is
+    /// represented as option. If we already know the final payout (based on CET or
+    /// collborative close) then this is the final payout.
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
+    pub payout: Option<SignedAmount>,
 
     pub state: CfdState,
     pub actions: HashSet<CfdAction>,
+
+    // TODO: This `CfdDetails` wrapper is useless and could be removed, but that would be a
+    // breaking API change
     pub details: CfdDetails,
 
     #[serde(with = "::time::serde::timestamp::option")]
@@ -211,10 +228,40 @@ struct Aggregated {
     collab_settlement_tx: Option<(Transaction, Script)>,
     /// If this is present, it should have been published.
     cet: Option<Transaction>,
-    closing_price: Option<Price>,
+
+    /// If this is present the cet has not been published
+    timelocked_cet: Option<Transaction>,
 
     commit_published: bool,
     refund_published: bool,
+}
+
+impl Aggregated {
+    fn payout(self, role: Role) -> Option<Amount> {
+        if let Some((tx, script)) = self.collab_settlement_tx {
+            return Some(extract_payout_amount(tx, script));
+        }
+
+        let tx = self.cet.or(self.timelocked_cet)?;
+        let dlc = self
+            .latest_dlc
+            .as_ref()
+            .expect("dlc to be present when we have a cet");
+        let script = dlc.script_pubkey_for(role);
+
+        Some(extract_payout_amount(tx, script))
+    }
+}
+
+/// Returns output if it can be found or zero amount
+///
+/// If we cannot find an output for our script we assume that we were liquidated.
+fn extract_payout_amount(tx: Transaction, script: Script) -> Amount {
+    tx.output
+        .into_iter()
+        .find(|tx_out| tx_out.script_pubkey == script)
+        .map(|tx_out| Amount::from_sat(tx_out.value))
+        .unwrap_or(Amount::ZERO)
 }
 
 impl Cfd {
@@ -246,8 +293,8 @@ impl Cfd {
             (Some(quote), Role::Taker) => Some(quote.for_taker()),
         };
 
-        let (profit_btc_latest_price, profit_percent_latest_price) = latest_price.and_then(|latest_price| {
-            match calculate_profit(initial_price, latest_price, quantity_usd, leverage, position) {
+        let (profit_btc_latest_price, profit_percent_latest_price, payout) = latest_price.and_then(|latest_price| {
+            match calculate_profit_at_price(initial_price, latest_price, quantity_usd, leverage, position) {
                 Ok(profit) => Some(profit),
                 Err(e) => {
                     tracing::warn!("Failed to calculate profit/loss {:#}", e);
@@ -255,11 +302,11 @@ impl Cfd {
                     None
                 }
             }
-        }).map(|(in_btc, in_percent)| (Some(in_btc), Some(in_percent.round_dp(1).to_string())))
+        }).map(|(in_btc, in_percent, payout)| (Some(in_btc), Some(in_percent.round_dp(1).to_string()), Some(payout)))
             .unwrap_or_else(|| {
                 tracing::debug!(order_id = %id, "Unable to calculate profit/loss without current price");
 
-                (None, None)
+                (None, None, None)
             });
 
         let initial_actions = if role == Role::Maker {
@@ -283,12 +330,12 @@ impl Cfd {
             // By default, we assume profit should be based on the latest price!
             profit_btc: profit_btc_latest_price,
             profit_percent: profit_percent_latest_price,
+            payout,
 
             state: CfdState::PendingSetup,
             actions: initial_actions,
             details: CfdDetails {
                 tx_url_list: HashSet::new(),
-                payout: None,
             },
             expiry_timestamp: None,
             counterparty: counterparty_network_identity,
@@ -342,13 +389,9 @@ impl Cfd {
                 self.state = CfdState::PendingClose;
             }
             CollaborativeSettlementCompleted {
-                spend_tx,
-                price,
-                script,
+                spend_tx, script, ..
             } => {
                 self.aggregated.collab_settlement_tx = Some((spend_tx, script));
-                self.aggregated.closing_price = Some(price);
-
                 self.state = CfdState::PendingClose;
             }
             CollaborativeSettlementRejected { .. } => {
@@ -394,15 +437,13 @@ impl Cfd {
 
                 self.state = CfdState::PendingRefund;
             }
-            OracleAttestedPriorCetTimelock { price, .. } => {
-                self.aggregated.closing_price = Some(price);
+            OracleAttestedPriorCetTimelock { timelocked_cet, .. } => {
+                self.aggregated.timelocked_cet = Some(timelocked_cet);
 
                 self.state = CfdState::PendingCommit;
             }
-            OracleAttestedPostCetTimelock { cet, price } => {
+            OracleAttestedPostCetTimelock { cet, .. } => {
                 self.aggregated.cet = Some(cet);
-                self.aggregated.closing_price = Some(price);
-
                 self.state = CfdState::PendingCet;
             }
             ManualCommit { .. } => {
@@ -428,11 +469,21 @@ impl Cfd {
 
         // If we don't have a dedicated closing price, keep the one that is set (which is
         // based on current price).
-        if let Some(closing_price) = self.aggregated.closing_price {
-            let (profit_btc, profit_percent) = self.compute_profit(closing_price);
+        if let Some(payout) = self.aggregated.clone().payout(role) {
+            let payout = payout
+                .to_signed()
+                .expect("Amount to fit into signed amount");
 
-            self.profit_btc = profit_btc;
-            self.profit_percent = profit_percent;
+            let (profit_btc, profit_percent) = calculate_profit(
+                payout,
+                self.margin
+                    .to_signed()
+                    .expect("Amount to fit into signed amount"),
+            );
+
+            self.payout = Some(payout);
+            self.profit_btc = Some(profit_btc);
+            self.profit_percent = Some(profit_percent.to_string());
         }
 
         if let Some(lock_tx_url) = self.lock_tx_url(network) {
@@ -482,43 +533,6 @@ impl Cfd {
             (CfdState::PendingRefund, _) => HashSet::new(),
             (CfdState::Refunded, _) => HashSet::new(),
             (CfdState::SetupFailed, _) => HashSet::new(),
-        }
-    }
-
-    fn compute_profit(&self, closing_price: Price) -> (Option<SignedAmount>, Option<String>) {
-        use CfdState::*;
-
-        match self.state {
-            SetupFailed | PendingSetup | ContractSetup | Rejected | PendingRefund | Refunded => {
-                (None, None) // For failed states, we don't want to display profit.
-            }
-            PendingOpen
-            | Open
-            | PendingCommit
-            | PendingCet
-            | PendingClose
-            | OpenCommitted
-            | IncomingSettlementProposal
-            | OutgoingSettlementProposal
-            | IncomingRolloverProposal
-            | OutgoingRolloverProposal
-            | Closed => {
-                match calculate_profit(
-                    self.initial_price,
-                    closing_price,
-                    self.quantity_usd,
-                    self.leverage,
-                    self.position,
-                ) {
-                    Ok((profit_btc, profit_percent)) => {
-                        (Some(profit_btc), Some(profit_percent.to_string()))
-                    }
-                    Err(err) => {
-                        tracing::error!(initial_price=%self.initial_price, closing_price=%closing_price, quantity=%self.quantity_usd, leverage=%self.leverage, position=%self.position, "Profit calculation failed: {:#}", err);
-                        (None, None)
-                    }
-                }
-            }
         }
     }
 
@@ -806,8 +820,6 @@ pub enum CfdState {
 #[derive(Debug, Clone, Serialize)]
 pub struct CfdDetails {
     tx_url_list: HashSet<TxUrl>,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
-    payout: Option<Amount>,
 }
 
 #[derive(Debug, derive_more::Display, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]

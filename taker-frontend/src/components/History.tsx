@@ -62,6 +62,7 @@ interface CfdDetailsProps {
 const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsProps) => {
     const initialPrice = `$${cfd.initial_price.toLocaleString()}`;
     const margin = `₿${Math.round((cfd.margin) * 1_000_000) / 1_000_000}`;
+    const payout = `₿${Math.round((cfd.payout ? cfd.payout : 0) * 1_000_000) / 1_000_000}`;
     const liquidationPrice = `$${cfd.liquidation_price}`;
     const contracts = `${cfd.quantity_usd}`;
 
@@ -123,8 +124,8 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                         <Tr textColor={useColorModeValue(profitColors[0], profitColors[1])}>
                             <Td><Text as={"b"}>Payout</Text></Td>
                             <Td textAlign="right">
-                                <Skeleton isLoaded={cfd.profit_btc != null}>
-                                    <Payout profitBtc={cfd.profit_btc!} margin={cfd.margin} />
+                                <Skeleton isLoaded={cfd.payout != null}>
+                                    {payout}
                                 </Skeleton>
                             </Td>
                         </Tr>
@@ -196,19 +197,6 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
         </HStack>
     );
 };
-
-interface PayoutProps {
-    profitBtc: number;
-    margin: number;
-}
-
-function Payout({ profitBtc, margin }: PayoutProps) {
-    let payoutBtc = Math.round((margin + profitBtc) * 1_000_000) / 1_000_000;
-
-    return <Text>
-        ₿{payoutBtc}
-    </Text>;
-}
 
 interface TxIconProps {
     tx?: Tx;

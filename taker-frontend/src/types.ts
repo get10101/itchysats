@@ -60,6 +60,7 @@ export interface Cfd {
 
     profit_btc?: number;
     profit_percent?: number;
+    payout?: number;
 
     state: State;
     details: CfdDetails;
@@ -76,7 +77,6 @@ export function isClosed(cfd: Cfd): boolean {
 
 export interface CfdDetails {
     tx_url_list: Tx[];
-    payout?: number;
 }
 
 export interface Tx {

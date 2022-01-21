@@ -42,8 +42,9 @@ export interface Cfd {
 
     margin: number;
 
-    profit_btc: number;
-    profit_in_percent: number;
+    profit_btc?: number;
+    profit_in_percent?: number;
+    payout?: number;
 
     state: State;
     actions: Action[];
@@ -55,7 +56,6 @@ export interface Cfd {
 
 export interface CfdDetails {
     tx_url_list: Tx[];
-    payout?: number;
 }
 
 export interface Tx {
