@@ -1,4 +1,3 @@
-use crate::maker_inc_connections::NoConnection;
 use crate::model::BitMexPriceEventId;
 use crate::model::FundingFee;
 use crate::model::FundingRate;
@@ -12,7 +11,6 @@ use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
 use crate::oracle;
-use crate::oracle::NoAnnouncement;
 use crate::payout_curve;
 use crate::setup_contract::RolloverParams;
 use crate::setup_contract::SetupParams;
@@ -251,16 +249,6 @@ pub enum RolloverError {
     WrongRole,
     #[error("Maker did not respond within {timeout} seconds")]
     MakerDidNotRespond { timeout: u64 },
-    #[error(transparent)]
-    NoAnnouncement {
-        #[from]
-        source: NoAnnouncement,
-    },
-    #[error(transparent)]
-    TakerDisconnected {
-        #[from]
-        source: NoConnection,
-    },
     #[error("Rollover protocol failed")]
     Protocol { source: anyhow::Error },
     #[error(transparent)]
