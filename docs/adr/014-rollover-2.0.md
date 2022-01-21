@@ -64,3 +64,9 @@ To opt out of rollover, either party can commit the CFD on-chain which will resu
 1. The new protocol requires being online at a very specific point in time.
    
    This requirement is already implied by the fact that we have an off-chain channel construct and we need to be constantly online to monitor for the broadcast of old commit transactions.
+
+## Open questions
+
+1. Should we avoid the in-efficiency in doing a rollover when both parties don't align on the funding rate?
+2. When should peers trigger rollover? 5min before the funding period ends? 10min? What is enough time?
+3. With fixed funding periods, we get a lot of load on very specific points in time. Is that an issue? 
