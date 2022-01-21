@@ -217,20 +217,13 @@ pub enum SettlementKind {
     Outgoing,
 }
 
+/// Reasons why we cannot rollover a CFD.
 #[derive(thiserror::Error, Debug, PartialEq)]
-pub enum CannotAutoRollover {
+pub enum NoRolloverReason {
     #[error("Is too recent to auto-rollover")]
     TooRecent,
     #[error("CFD does not have a DLC")]
     NoDlc,
-}
-
-/// Various error cases that can happen during rollover.
-///
-/// This enum is expected to go away once we handle the entire protocol within the actor and not
-/// report back the result to the `{taker,maker}_cfd::Actor`.
-#[derive(thiserror::Error, Debug)]
-pub enum RolloverError {
     #[error("Cannot roll over when CFD not locked yet")]
     NotLocked,
     #[error("Cannot roll over when CFD is committed")]
@@ -559,31 +552,33 @@ impl Cfd {
         self.settlement_proposal.is_some()
     }
 
-    pub fn can_auto_rollover_taker(&self, now: OffsetDateTime) -> Result<(), CannotAutoRollover> {
-        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotAutoRollover::NoDlc)?;
+    pub fn can_auto_rollover_taker(&self, now: OffsetDateTime) -> Result<(), NoRolloverReason> {
+        let expiry_timestamp = self.expiry_timestamp().ok_or(NoRolloverReason::NoDlc)?;
         let time_until_expiry = expiry_timestamp - now;
         if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
-            return Err(CannotAutoRollover::TooRecent);
+            return Err(NoRolloverReason::TooRecent);
         }
+
+        self.can_rollover()?;
 
         Ok(())
     }
 
-    fn can_rollover(&self) -> Result<(), RolloverError> {
+    fn can_rollover(&self) -> Result<(), NoRolloverReason> {
         if self.is_final() {
-            return Err(RolloverError::Final);
+            return Err(NoRolloverReason::Final);
         }
 
         if self.is_attested() {
-            return Err(RolloverError::Attested);
+            return Err(NoRolloverReason::Attested);
         }
 
         if self.commit_finality {
-            return Err(RolloverError::Committed);
+            return Err(NoRolloverReason::Committed);
         }
 
         if !self.lock_finality {
-            return Err(RolloverError::NotLocked);
+            return Err(NoRolloverReason::NotLocked);
         }
 
         Ok(())
@@ -824,7 +819,10 @@ impl Cfd {
         Ok(self.event(event))
     }
 
-    pub fn roll_over(self, completed: RolloverCompleted) -> Result<Option<Event>, RolloverError> {
+    pub fn roll_over(
+        self,
+        completed: RolloverCompleted,
+    ) -> Result<Option<Event>, NoRolloverReason> {
         let event = match completed {
             Completed::Succeeded {
                 payload: (dlc, _), ..
@@ -2022,7 +2020,7 @@ mod tests {
             .can_auto_rollover_taker(datetime!(2021-11-18 10:00:01).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
+        assert_eq!(cannot_roll_over, NoRolloverReason::TooRecent)
     }
 
     #[test]
@@ -2039,7 +2037,7 @@ mod tests {
             .can_auto_rollover_taker(datetime!(2021-11-18 09:59:59).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
+        assert_eq!(cannot_roll_over, NoRolloverReason::TooRecent)
     }
 
     #[test]
@@ -2056,7 +2054,7 @@ mod tests {
             .can_auto_rollover_taker(datetime!(2021-11-18 10:59:59).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
+        assert_eq!(cannot_roll_over, NoRolloverReason::TooRecent)
     }
 
     #[test]
@@ -2065,7 +2063,10 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(cannot_roll_over, RolloverError::NotLocked { .. }))
+        assert!(matches!(
+            cannot_roll_over,
+            NoRolloverReason::NotLocked { .. }
+        ))
     }
 
     #[test]
@@ -2076,7 +2077,10 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(cannot_roll_over, RolloverError::Attested { .. }))
+        assert!(matches!(
+            cannot_roll_over,
+            NoRolloverReason::Attested { .. }
+        ))
     }
 
     #[test]
@@ -2087,7 +2091,7 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(cannot_roll_over, RolloverError::Final))
+        assert!(matches!(cannot_roll_over, NoRolloverReason::Final))
     }
 
     impl Event {
