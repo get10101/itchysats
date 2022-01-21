@@ -679,15 +679,17 @@ impl Cfd {
             return Err(RolloverError::WrongRole);
         }
 
-        // TODO: Adjust for total paid fees
-        let margin_minus_total_fees = self.margin();
-
         // TODO: Calculate the time from the last rollover, don't just assume
         // it's up-to-date
         let hours_to_charge = 1;
 
+        // TODO: At the moment we use the own margin (for the maker, because we calculate payout
+        // always for long) to determine the funding fee, we might want to change that to:
+        // nr_of_contracts / current_spot_price
+        let current_funding_fee =
+            FundingFee::new(self.margin(), self.funding_rate, hours_to_charge)?;
         let funding_fee =
-            FundingFee::new(margin_minus_total_fees, self.funding_rate, hours_to_charge)?;
+            todo!("current_funding_fee + self.accumulated_funding_fees + self.opening_fee");
 
         Ok((
             Event::new(self.id, CfdEvent::RolloverAccepted),
@@ -697,6 +699,8 @@ impl Cfd {
                 self.leverage,
                 self.refund_timelock_in_blocks(),
                 1, // TODO: Where should I get the fee rate from?
+                // TODO: The value we pass in here has to be the same as the taker's passed in
+                // value, so if it is inversed we have to uninverse it :P
                 funding_fee,
             ),
             self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
@@ -721,7 +725,15 @@ impl Cfd {
         // whether they match
         let hours_to_charge = 1;
 
-        let funding_fee = FundingFee::new(self.margin(), self.funding_rate, hours_to_charge)?;
+        // TODO: At the moment we use the counterparty margin (for the taker) to determine the
+        // funding fee, we might want to change that to: nr_of_contracts / current_spot_price
+        let current_funding_fee = FundingFee::new(
+            self.counterparty_margin(),
+            self.funding_rate,
+            hours_to_charge,
+        )?;
+        let funding_fee =
+            todo!("current_funding_fee + self.accumulated_funding_fees + self.opening_fee");
 
         Ok((
             self.event(CfdEvent::RolloverAccepted),
