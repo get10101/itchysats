@@ -22,8 +22,8 @@ Because the oracle attests on the price exactly every hour, we can rollover to a
 Rollover is coupled to paying fees.
 In particular, the time window until the attestation can be considered as the current funding period.
 For every new funding period, fees are charged depending on the current market.
-In a bull market, shorts pay longs.
-In a bear market, longs pay shorts.
+In a bull market, longs pay shorts.
+In a bear market, shorts pay longs.
 
 To harmonize, how these fees are paid and where they are coming from, we want to revise the rollover protocol as per the design below.
 
