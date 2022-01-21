@@ -43,6 +43,8 @@ Running rollover at exactly these points makes implementations easier because th
 
 It makes UI design easier because we can clearly state, when the next funding event happens, and it does not depend on the maker that we are connected to.
 
+Another benefit of fixed funding periods is that our oracle actor only needs to fetch attestations for specific points in time and not every hour.
+
 ### 2. Each party should start the protocol with an expectation of the funding rate
 
 In the future, the funding rate will be determined by the market.
