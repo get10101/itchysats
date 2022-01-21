@@ -19,6 +19,7 @@ pub struct Actor {
     connections: Box<dyn MessageChannel<maker_inc_connections::settlement::Response>>,
     process_manager: xtra::Address<process_manager::Actor>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
+    has_accepted: bool,
     db: sqlx::SqlitePool,
 }
 
@@ -124,6 +125,7 @@ impl Actor {
             connections: connections.clone_channel(),
             process_manager,
             on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
+            has_accepted: false,
             db,
         }
     }
@@ -171,8 +173,14 @@ impl Actor {
 
     async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let order_id = self.proposal.order_id;
-        tracing::info!(%order_id,
-                       "Settlement proposal accepted");
+
+        if self.has_accepted {
+            tracing::warn!(%order_id, "Settlement already accepted");
+            return Ok(());
+        }
+        self.has_accepted = true;
+
+        tracing::info!(%order_id, "Settlement proposal accepted");
 
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd(order_id, &mut conn).await?;
