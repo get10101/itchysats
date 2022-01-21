@@ -235,8 +235,6 @@ pub enum CannotAutoRollover {
 pub enum RolloverError {
     #[error("CFD does not have a DLC")]
     NoDlc,
-    #[error("The CFD is already expired")]
-    AlreadyExpired,
     #[error("Cannot roll over when CFD not locked yet")]
     NotLocked,
     #[error("Cannot roll over when CFD is committed")]
@@ -245,8 +243,6 @@ pub enum RolloverError {
     Attested,
     #[error("Cannot roll over when CFD is final")]
     Final,
-    #[error("The CFD was just rolled over")]
-    WasJustRolledOver,
     #[error("The CFD is not rolling over")]
     NotRollingOver,
     #[error("The CFD is already being rolled over")]
@@ -863,26 +859,6 @@ impl Cfd {
 
     pub fn roll_over(self, completed: RolloverCompleted) -> Result<Option<Event>, RolloverError> {
         let event = match completed {
-            // These are a bit weird but should go away with
-            // https://github.com/itchysats/itchysats/issues/958
-            // because we should never get here.
-            Completed::Failed {
-                error:
-                    error
-                    @
-                    (RolloverError::NoDlc
-                    | RolloverError::WasJustRolledOver
-                    | RolloverError::AlreadyRollingOver
-                    | RolloverError::NotRollingOver
-                    | RolloverError::Committed
-                    | RolloverError::Attested
-                    | RolloverError::Final
-                    | RolloverError::AlreadyExpired),
-                ..
-            } => {
-                tracing::debug!(order_id = %self.id, "Rollover was not started: {:#}", error);
-                return Ok(None);
-            }
             Completed::Succeeded {
                 payload: (dlc, _), ..
             } => {
