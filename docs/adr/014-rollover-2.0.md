@@ -31,7 +31,7 @@ To harmonize, how these fees are paid and where they are coming from, we want to
 
 ### 1. We define fixed UTC timestamps for the funding periods
    
-The exact timestamps are not decided yet but it will be something along the lines of:
+The exact timestamps are not decided yet, but they will be something along the lines of:
    - Every day at 0400 UTC.
    - Every day at 0800 UTC.
    - Every day at 1200 UTC.
@@ -52,7 +52,6 @@ As such, no party should be specifying the funding rate as part of the protocol.
 
 To simulate a market whilst we don't yet have one, introduce a stream of funding rates from the maker to the taker.
 Once we have a market, this component will be removed.
-Up until this, this stream we 
 
 ### 4. Enforce agreement of the funding rate through the blockchain protocol
 
