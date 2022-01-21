@@ -81,12 +81,24 @@ export default function Nav({ walletInfo, connectedToMaker, fundingRate, nextFun
                         <Heading size={"sm"}>{connectionMessage}</Heading>
                         <Divider orientation={"vertical"} borderColor={"black"} height={"20px"} />
                         <Text>{"Next funding event: "}</Text>
-                        <Skeleton isLoaded={nextFundingEvent != null} height={"20px"} minWidth={"50px"}>
+                        <Skeleton
+                            isLoaded={nextFundingEvent != null}
+                            height={"20px"}
+                            minWidth={"50px"}
+                            display={"flex"}
+                            alignItems={"center"}
+                        >
                             <Heading size={"sm"}>{nextFundingEvent}</Heading>
                         </Skeleton>
                         <Divider orientation={"vertical"} borderColor={"black"} height={"20px"} />
                         <Text>{"Current funding rate: "}</Text>
-                        <Skeleton isLoaded={fundingRate != null} height={"20px"} minWidth={"50px"}>
+                        <Skeleton
+                            isLoaded={fundingRate != null}
+                            height={"20px"}
+                            minWidth={"50px"}
+                            display={"flex"}
+                            alignItems={"center"}
+                        >
                             <Heading size={"sm"}>{fundingRate}%</Heading>
                         </Skeleton>
                     </HStack>
