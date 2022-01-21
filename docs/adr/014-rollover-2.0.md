@@ -41,7 +41,7 @@ The exact timestamps are not decided yet, but they will be something along the l
 
 Running rollover at exactly these points makes implementations easier because they can assume that well-behaved peer will execute the protocol at these points in time.
 
-It makes UI design easier because we can clearly state, when the next funding event happens and it does not depend on the maker that we are connected to.
+It makes UI design easier because we can clearly state, when the next funding event happens, and it does not depend on the maker that we are connected to.
 
 ### 2. Each party should start the protocol with an expectation of the funding rate
 
@@ -51,12 +51,14 @@ As such, no party should be specifying the funding rate as part of the protocol.
 ### 3. Maker streams current funding rate to taker
 
 To simulate a market whilst we don't yet have one, introduce a stream of funding rates from the maker to the taker.
+This stream can be used to display the current funding rate in the UI.
 Once we have a market, this component will be removed.
 
 ### 4. Enforce agreement of the funding rate through the blockchain protocol
 
-Maker to stream current funding rate to taker -> required for display in UI.
-Taker use this funding rate to start rollover -> if they use the same, sig-verification succeeds.
+With both parties entering the next funding period with a specific funding rate, the protocol will simply fail due to signature verification errors if the funding rates don't match.
+This should be sufficient for an MVP of this new protocol.
+More elaborate detection of what the cause of the failure was can easily be added on top.
 
 ### 5. Remove approval (accept / decline) from the protocol
    
