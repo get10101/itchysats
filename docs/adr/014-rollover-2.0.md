@@ -29,7 +29,7 @@ To harmonize, how these fees are paid and where they are coming from, we want to
 
 ## The new protocol
 
-### 1. We define fixed UTC timestamps for the funding periods.
+### 1. We define fixed UTC timestamps for the funding periods
    
 The exact timestamps are not decided yet but it will be something along the lines of:
    - Every day at 0400 UTC.
@@ -43,7 +43,7 @@ Running rollover at exactly these points makes implementations easier because th
 
 It makes UI design easier because we can clearly state, when the next funding event happens and it does not depend on the maker that we are connected to.
 
-### 2. Each party should start the protocol with an expectation of the funding rate.
+### 2. Each party should start the protocol with an expectation of the funding rate
 
 In the future, the funding rate will be determined by the market.
 As such, no party should be specifying the funding rate as part of the protocol.
@@ -59,7 +59,7 @@ Up until this, this stream we
 Maker to stream current funding rate to taker -> required for display in UI.
 Taker use this funding rate to start rollover -> if they use the same, sig-verification succeeds.
 
-### 5. Remove approval (accept / decline) from the protocol.
+### 5. Remove approval (accept / decline) from the protocol
    
 With (1) and (2) in mind, there is really no point in an external approval step for rollover.
 As long as the CFD's is not committed on-chain, rollover will occur.
