@@ -43,18 +43,29 @@ Running rollover at exactly these points makes implementations easier because th
 
 It makes UI design easier because we can clearly state, when the next funding event happens and it does not depend on the maker that we are connected to.
 
-### 2. Enforce agreement of the funding rate through the blockchain protocol
+### 2. Each party should start the protocol with an expectation of the funding rate.
+
+In the future, the funding rate will be determined by the market.
+As such, no party should be specifying the funding rate as part of the protocol.
+
+### 3. Maker streams current funding rate to taker
+
+To simulate a market whilst we don't yet have one, introduce a stream of funding rates from the maker to the taker.
+Once we have a market, this component will be removed.
+Up until this, this stream we 
+
+### 4. Enforce agreement of the funding rate through the blockchain protocol
 
 Maker to stream current funding rate to taker -> required for display in UI.
 Taker use this funding rate to start rollover -> if they use the same, sig-verification succeeds.
 
-### 3. Remove approval (accept / decline) from the protocol.
+### 5. Remove approval (accept / decline) from the protocol.
    
 With (1) and (2) in mind, there is really no point in an external approval step for rollover.
 As long as the CFD's is not committed on-chain, rollover will occur.
 To opt out of rollover, either party can commit the CFD on-chain which will result in a payout at the end of the funding period.
 
-### 4. Connection dialer sends initial trigger message
+### 6. Connection dialer sends initial trigger message
 
 - Need unambiguous way to trigger protocol
 - Scales to peer to peer setting
@@ -70,3 +81,4 @@ To opt out of rollover, either party can commit the CFD on-chain which will resu
 1. Should we avoid the in-efficiency in doing a rollover when both parties don't align on the funding rate?
 2. When should peers trigger rollover? 5min before the funding period ends? 10min? What is enough time?
 3. With fixed funding periods, we get a lot of load on very specific points in time. Is that an issue? 
+4. Should the stream of funding rates be incorporated into the current offer?
