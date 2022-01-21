@@ -81,14 +81,14 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
             request={settle}
             status={isSettling}
             cfd={cfd}
-            buttonTitle="Close Position"
+            buttonTitle="Close"
             isForceCloseButton={false}
         />
         : <CloseButton
             request={commit}
             status={isCommiting}
             cfd={cfd}
-            buttonTitle="Force Close Position"
+            buttonTitle="Force-close"
             isForceCloseButton={true}
         />;
 
