@@ -5,7 +5,6 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
-use crate::model::cfd::RolloverError;
 use crate::model::BitMexPriceEventId;
 use crate::model::Timestamp;
 use crate::oracle;
@@ -15,6 +14,7 @@ use crate::setup_contract;
 use crate::wire;
 use crate::wire::RolloverMsg;
 use crate::Tasks;
+use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -71,9 +71,9 @@ impl Actor {
         }
     }
 
-    async fn propose(&mut self, this: xtra::Address<Self>) -> Result<(), RolloverError> {
+    async fn propose(&mut self, this: xtra::Address<Self>) -> Result<()> {
         self.executor
-            .execute(self.id, |cfd| Ok(cfd.start_rollover()?))
+            .execute(self.id, |cfd| cfd.start_rollover())
             .await?;
 
         tracing::trace!(order_id=%self.id, "Proposing rollover");
@@ -94,13 +94,13 @@ impl Actor {
         &mut self,
         msg: RolloverAccepted,
         ctx: &mut xtra::Context<Self>,
-    ) -> Result<(), RolloverError> {
+    ) -> Result<()> {
         let RolloverAccepted { oracle_event_id } = msg;
         let order_id = self.id;
 
         let (rollover_params, dlc) = self
             .executor
-            .execute(self.id, |cfd| Ok(cfd.handle_rollover_accepted_taker()?))
+            .execute(self.id, |cfd| cfd.handle_rollover_accepted_taker())
             .await?;
 
         let announcement = self
@@ -133,16 +133,17 @@ impl Actor {
         self.tasks.add(async move {
             // Use an explicit type annotation to cause a compile error if someone changes the
             // handler.
-            let _: Result<(), Disconnected> = match rollover_fut.await {
-                Ok(dlc) => this.send(RolloverSucceeded { dlc }).await,
-                Err(error) => this.send(RolloverFailed { error }).await,
-            };
+            let _: Result<(), Disconnected> =
+                match rollover_fut.await.context("Rollover protocol failed") {
+                    Ok(dlc) => this.send(RolloverSucceeded { dlc }).await,
+                    Err(error) => this.send(RolloverFailed { error }).await,
+                };
         });
 
         Ok(())
     }
 
-    async fn forward_protocol_msg(&mut self, msg: wire::RolloverMsg) -> Result<(), RolloverError> {
+    async fn forward_protocol_msg(&mut self, msg: wire::RolloverMsg) -> Result<()> {
         self.rollover_msg_sender
             .as_mut()
             .context("Rollover task is not active")? // Sender is set once `Accepted` is received.
@@ -264,7 +265,7 @@ impl Actor {
         self.complete(
             RolloverCompleted::Failed {
                 order_id: self.id,
-                error: RolloverError::Protocol { source: msg.error },
+                error: msg.error,
             },
             ctx,
         )
@@ -284,11 +285,10 @@ impl Actor {
         // Otherwise, fail because we did not receive a response.
         // If the proposal is rejected, our entire actor would already be shut down and we hence
         // never get this message.
+        let timeout = msg.timeout.as_secs();
         let completed = RolloverCompleted::Failed {
             order_id: self.id,
-            error: RolloverError::MakerDidNotRespond {
-                timeout: msg.timeout.as_secs(),
-            },
+            error: anyhow!("Maker did not respond within {timeout} seconds"),
         };
 
         self.complete(completed, ctx).await;

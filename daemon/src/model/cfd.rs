@@ -231,8 +231,6 @@ pub enum CannotAutoRollover {
 /// report back the result to the `{taker,maker}_cfd::Actor`.
 #[derive(thiserror::Error, Debug)]
 pub enum RolloverError {
-    #[error("CFD does not have a DLC")]
-    NoDlc,
     #[error("Cannot roll over when CFD not locked yet")]
     NotLocked,
     #[error("Cannot roll over when CFD is committed")]
@@ -241,21 +239,6 @@ pub enum RolloverError {
     Attested,
     #[error("Cannot roll over when CFD is final")]
     Final,
-    #[error("The CFD is not rolling over")]
-    NotRollingOver,
-    #[error("The CFD is already being rolled over")]
-    AlreadyRollingOver,
-    #[error("Wrong role")]
-    WrongRole,
-    #[error("Maker did not respond within {timeout} seconds")]
-    MakerDidNotRespond { timeout: u64 },
-    #[error("Rollover protocol failed")]
-    Protocol { source: anyhow::Error },
-    #[error(transparent)]
-    Other {
-        #[from]
-        source: anyhow::Error,
-    },
 }
 
 /// Errors that can happen when handling the expiry of the refund
@@ -642,9 +625,9 @@ impl Cfd {
         ))
     }
 
-    pub fn start_rollover(&self) -> Result<Event, RolloverError> {
+    pub fn start_rollover(&self) -> Result<Event> {
         if self.during_rollover {
-            return Err(RolloverError::AlreadyRollingOver);
+            bail!("The CFD is already being rolled over")
         };
 
         self.can_rollover()?;
@@ -652,15 +635,13 @@ impl Cfd {
         Ok(Event::new(self.id, CfdEvent::RolloverStarted))
     }
 
-    pub fn accept_rollover_proposal(
-        self,
-    ) -> Result<(Event, RolloverParams, Dlc, Duration), RolloverError> {
+    pub fn accept_rollover_proposal(self) -> Result<(Event, RolloverParams, Dlc, Duration)> {
         if !self.during_rollover {
-            return Err(RolloverError::NotRollingOver);
+            bail!("The CFD is not rolling over");
         }
 
         if self.role != Role::Maker {
-            return Err(RolloverError::WrongRole);
+            bail!("Can only accept proposal as a maker");
         }
 
         // TODO: Adjust for total paid fees
@@ -683,20 +664,18 @@ impl Cfd {
                 1, // TODO: Where should I get the fee rate from?
                 funding_fee,
             ),
-            self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
+            self.dlc.clone().context("No DLC present")?,
             self.settlement_interval,
         ))
     }
 
-    pub fn handle_rollover_accepted_taker(
-        &self,
-    ) -> Result<(Event, RolloverParams, Dlc), RolloverError> {
+    pub fn handle_rollover_accepted_taker(&self) -> Result<(Event, RolloverParams, Dlc)> {
         if !self.during_rollover {
-            return Err(RolloverError::NotRollingOver);
+            bail!("The CFD is not rolling over");
         }
 
         if self.role != Role::Taker {
-            return Err(RolloverError::WrongRole);
+            bail!("Can only handle accepted proposal as a taker");
         }
 
         self.can_rollover()?;
@@ -717,7 +696,7 @@ impl Cfd {
                 1, // TODO: Where should I get the fee rate from?
                 funding_fee,
             ),
-            self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
+            self.dlc.clone().context("No DLC present")?,
         ))
     }
 
@@ -1636,7 +1615,7 @@ pub type SetupCompleted = Completed<(Dlc, marker::Setup), anyhow::Error>;
 
 /// Message sent from a rollover actor to the
 /// cfd actor to notify that the rollover has finished (contract got updated).
-pub type RolloverCompleted = Completed<(Dlc, marker::Rollover), RolloverError>;
+pub type RolloverCompleted = Completed<(Dlc, marker::Rollover), anyhow::Error>;
 
 pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;
 
@@ -1649,7 +1628,7 @@ impl Completed<(Dlc, marker::Setup), anyhow::Error> {
     }
 }
 
-impl Completed<(Dlc, marker::Rollover), RolloverError> {
+impl Completed<(Dlc, marker::Rollover), anyhow::Error> {
     pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
         Self::Succeeded {
             order_id,
