@@ -32,8 +32,10 @@ pub struct Actor {
     db: sqlx::SqlitePool,
 }
 
+#[derive(Debug)]
 pub struct Sync;
 
+#[derive(Debug)]
 pub struct MonitorAttestation {
     pub event_id: BitMexPriceEventId,
 }

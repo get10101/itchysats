@@ -27,18 +27,22 @@ use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 
+#[derive(Debug)]
 pub struct CurrentOrder(pub Option<Order>);
 
+#[derive(Debug)]
 pub struct TakeOffer {
     pub order_id: OrderId,
     pub quantity: Usd,
 }
 
+#[derive(Debug)]
 pub struct ProposeSettlement {
     pub order_id: OrderId,
     pub current_price: Price,
 }
 
+#[derive(Debug)]
 pub struct Commit {
     pub order_id: OrderId,
 }

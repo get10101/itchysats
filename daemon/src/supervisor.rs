@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use std::fmt;
 use xtra::Address;
 use xtra::Context;
+use xtra::Message;
 use xtra_productivity::xtra_productivity;
 
 /// A supervising actor reacts to messages from the actor it is supervising and restarts it based on
@@ -18,7 +19,7 @@ pub struct Actor<T, R> {
 impl<T, R> Actor<T, R>
 where
     T: xtra::Actor,
-    R: fmt::Display + 'static,
+    R: fmt::Display + fmt::Debug + 'static,
 {
     /// Construct a new supervisor.
     ///
@@ -56,18 +57,18 @@ where
 impl<T, R> xtra::Actor for Actor<T, R>
 where
     T: xtra::Actor,
-    R: fmt::Display + 'static,
+    R: fmt::Display + fmt::Debug + 'static,
 {
     async fn started(&mut self, ctx: &mut Context<Self>) {
         self.spawn_new(ctx);
     }
 }
 
-#[xtra_productivity]
+#[xtra_productivity(message_impl = false)]
 impl<T, R> Actor<T, R>
 where
     T: xtra::Actor,
-    R: fmt::Display + 'static,
+    R: fmt::Display + fmt::Debug + 'static,
 {
     pub fn handle(&mut self, msg: Stopped<R>, ctx: &mut Context<Self>) {
         let actor = T::name();
@@ -95,6 +96,11 @@ where
 ///
 /// The given `reason` will be passed to the `restart_policy` configured in the supervisor. If it
 /// yields `true`, a new instance of the actor will be spawned.
+#[derive(Debug)]
 pub struct Stopped<R> {
     pub reason: R,
+}
+
+impl<R: fmt::Debug + Send + 'static> Message for Stopped<R> {
+    type Result = ();
 }

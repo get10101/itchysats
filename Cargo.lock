@@ -615,6 +615,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "derivative",
  "derive_more",
  "futures",
  "hex",
@@ -691,6 +692,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ade7bff147130fe5e6d39f089c6bd49ec0250f35d70b2eebf72afdfc919f15cc"
 dependencies = [
  "darling_core",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "derivative"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
  "quote",
  "syn",
 ]
@@ -3887,16 +3899,18 @@ dependencies = [
 [[package]]
 name = "xtra"
 version = "0.6.0"
-source = "git+https://github.com/Restioson/xtra#413dc807bd70d70cfe4a02cb3fd7d49d10d827e9"
+source = "git+https://github.com/comit-network/xtra#15fdd524f2ed3ac94acfc92e21d5f285a485c23d"
 dependencies = [
  "async-trait",
  "barrage",
  "catty",
+ "event-listener",
  "flume",
  "futures-core",
  "futures-sink",
  "futures-timer",
  "futures-util",
+ "log",
  "pollster",
 ]
 

@@ -50,10 +50,12 @@ use xtra_productivity::xtra_productivity;
 
 /// Store the latest state of `T` for display purposes
 /// (replaces previously stored values)
+#[derive(Debug)]
 pub struct Update<T>(pub T);
 
 /// Message indicating that the Cfds in the projection need to be reloaded, as at
 /// least one of the Cfds has changed.
+#[derive(Debug)]
 pub struct CfdsChanged;
 
 pub struct Actor {

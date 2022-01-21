@@ -22,8 +22,13 @@ pub struct Actor {
     db: sqlx::SqlitePool,
 }
 
+#[derive(Debug)]
 pub struct Accepted;
+
+#[derive(Debug)]
 pub struct Rejected;
+
+#[derive(Debug)]
 pub struct Initiated {
     pub sig_taker: Signature,
 }
