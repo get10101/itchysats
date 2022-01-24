@@ -3,24 +3,13 @@ use crate::model;
 use crate::model::Identity;
 use crate::model::Timestamp;
 use crate::projection::Cfd;
-use crate::projection::CfdAction;
 use crate::projection::CfdOrder;
 use crate::projection::Quote;
 use crate::to_sse_event::ConnectionCloseReason::MakerVersionOutdated;
 use crate::to_sse_event::ConnectionCloseReason::TakerVersionOutdated;
 use bdk::bitcoin::Amount;
-use rocket::request::FromParam;
 use rocket::response::stream::Event;
 use serde::Serialize;
-
-impl<'v> FromParam<'v> for CfdAction {
-    type Error = serde_plain::Error;
-
-    fn from_param(param: &'v str) -> Result<Self, Self::Error> {
-        let action = serde_plain::from_str(param)?;
-        Ok(action)
-    }
-}
 
 pub trait ToSseEvent {
     fn to_sse_event(&self) -> Event;
