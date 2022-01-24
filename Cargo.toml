@@ -1,5 +1,5 @@
 [workspace]
-members = ["daemon"]
+members = ["daemon", "rocket-basicauth"]
 resolver = "2"
 
 [patch.crates-io]

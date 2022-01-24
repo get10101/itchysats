@@ -634,7 +634,7 @@ dependencies = [
  "rand 0.6.5",
  "reqwest",
  "rocket",
- "rocket-basicauth",
+ "rocket-basicauth 0.1.0",
  "rust-embed",
  "rust_decimal",
  "rust_decimal_macros",
@@ -2421,6 +2421,15 @@ dependencies = [
  "ubyte",
  "version_check",
  "yansi",
+]
+
+[[package]]
+name = "rocket-basicauth"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "rocket",
+ "rocket-basicauth 2.1.1",
 ]
 
 [[package]]

@@ -7,7 +7,6 @@ use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use clap::Parser;
 use clap::Subcommand;
-use daemon::auth;
 use daemon::bitmex_price_feed;
 use daemon::connection::connect;
 use daemon::db;
@@ -67,7 +66,7 @@ struct Opts {
     ///
     /// If not provided, will be derived from the seed.
     #[clap(long)]
-    password: Option<auth::Password>,
+    password: Option<rocket_basicauth::Password>,
 
     #[clap(subcommand)]
     network: Network,
@@ -235,7 +234,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let auth_username = auth::USERNAME;
+    let auth_username = rocket_basicauth::Username("itchysats");
     tracing::info!("Authentication details: username='{auth_username}' password='{web_password}'");
 
     // TODO: Actually fetch it from Olivia
@@ -296,6 +295,7 @@ async fn main() -> Result<()> {
         .manage(bitcoin_network)
         .manage(taker.maker_online_status_feed_receiver.clone())
         .manage(taker)
+        .manage(auth_username)
         .manage(web_password)
         .mount(
             "/api",
@@ -307,12 +307,12 @@ async fn main() -> Result<()> {
                 routes_taker::post_withdraw_request,
             ],
         )
-        .register("/api", rocket::catchers![auth::unauthorized])
+        .register("/api", rocket::catchers![rocket_basicauth::unauthorized])
         .mount(
             "/",
             rocket::routes![routes_taker::dist, routes_taker::index],
         )
-        .register("/", rocket::catchers![auth::unauthorized]);
+        .register("/", rocket::catchers![rocket_basicauth::unauthorized]);
 
     let rocket = rocket.ignite().await?;
     rocket.launch().await?;

@@ -33,7 +33,6 @@ use xtra::Address;
 pub mod sqlx_ext; // Must come first because it is a macro.
 
 pub mod address_map;
-pub mod auth;
 pub mod auto_rollover;
 pub mod bdk_ext;
 pub mod bitmex_price_feed;

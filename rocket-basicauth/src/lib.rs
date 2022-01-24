@@ -15,8 +15,6 @@ use std::str::FromStr;
 /// A request guard that can be included in handler definitions to enforce authentication.
 pub struct Authenticated {}
 
-pub const USERNAME: &str = "itchysats";
-
 #[derive(Debug)]
 pub enum Error {
     UnknownUser(String),
@@ -25,7 +23,18 @@ pub enum Error {
     BadBasicAuthHeader(BasicAuthError),
     /// The auth password was not configured in Rocket's state.
     MissingPassword,
+    /// The auth username was not configured in Rocket's state.
+    MissingUsername,
     NoAuthHeader,
+}
+
+#[derive(PartialEq)]
+pub struct Username(pub &'static str);
+
+impl fmt::Display for Username {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 #[derive(PartialEq)]
@@ -61,12 +70,16 @@ impl<'r> FromRequest<'r> for Authenticated {
             .await
             .map_failure(|(status, error)| (status, Error::BadBasicAuthHeader(error)))
             .forward_then(|()| Outcome::Failure((Status::Unauthorized, Error::NoAuthHeader))));
+        let username = try_outcome!(req
+            .guard::<&'r State<Username>>()
+            .await
+            .map_failure(|(status, _)| (status, Error::MissingUsername)));
         let password = try_outcome!(req
             .guard::<&'r State<Password>>()
             .await
             .map_failure(|(status, _)| (status, Error::MissingPassword)));
 
-        if basic_auth.username != USERNAME {
+        if basic_auth.username != username.0 {
             return Outcome::Failure((
                 Status::Unauthorized,
                 Error::UnknownUser(basic_auth.username),
@@ -140,6 +153,7 @@ mod tests {
     /// Constructs a Rocket instance for testing.
     fn rocket() -> Rocket<Build> {
         rocket::build()
+            .manage(Username("itchysats"))
             .manage(Password::from(*b"Now I'm feelin' so fly like a G6"))
             .mount("/", rocket::routes![protected])
             .register("/", rocket::catchers![unauthorized])
