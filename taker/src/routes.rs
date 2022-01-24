@@ -6,6 +6,7 @@ use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
 use daemon::model::Leverage;
 use daemon::model::Price;
+use daemon::model::Timestamp;
 use daemon::model::Usd;
 use daemon::model::WalletInfo;
 use daemon::oracle;
@@ -14,12 +15,12 @@ use daemon::projection::CfdAction;
 use daemon::projection::Feeds;
 use daemon::wallet;
 use daemon::TakerActorSystem;
-use daemon_shared::Heartbeat;
 use daemon_shared::ToSseEvent;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
 use rocket::http::ContentType;
 use rocket::http::Status;
+use rocket::response::stream::Event;
 use rocket::response::stream::EventStream;
 use rocket::response::Responder;
 use rocket::serde::json::Json;
@@ -37,6 +38,8 @@ use uuid::Uuid;
 
 type Taker = TakerActorSystem<oracle::Actor, wallet::Actor, bitmex_price_feed::Actor>;
 
+const HEARTBEAT_INTERVAL_SECS: u64 = 5;
+
 #[rocket::get("/feed")]
 pub async fn feed(
     rx: &State<Feeds>,
@@ -44,8 +47,6 @@ pub async fn feed(
     rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
     _auth: Authenticated,
 ) -> EventStream![] {
-    const HEARTBEAT_INTERVAL_SECS: u64 = 5;
-
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
     let mut rx_order = rx.order.clone();
@@ -94,9 +95,24 @@ pub async fn feed(
                     yield quote.to_sse_event();
                 }
                 _ = heartbeat.tick() => {
-                    yield Heartbeat::new(HEARTBEAT_INTERVAL_SECS).to_sse_event();
+                    yield Event::json(&Heartbeat::new()).event("heartbeat")
                 }
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Heartbeat {
+    timestamp: Timestamp,
+    interval: u64,
+}
+
+impl Heartbeat {
+    pub fn new() -> Self {
+        Self {
+            timestamp: Timestamp::now(),
+            interval: HEARTBEAT_INTERVAL_SECS,
         }
     }
 }
@@ -232,4 +248,34 @@ pub async fn post_withdraw_request(
         })?;
 
     Ok(projection::to_mempool_url(txid, *network.inner()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_test::Token;
+
+    #[test]
+    fn heartbeat_serialization() {
+        let heartbeat = Heartbeat {
+            timestamp: Timestamp::new(0),
+            interval: 1,
+        };
+
+        serde_test::assert_ser_tokens(
+            &heartbeat,
+            &[
+                Token::Struct {
+                    name: "Heartbeat",
+                    len: 2,
+                },
+                Token::Str("timestamp"),
+                Token::NewtypeStruct { name: "Timestamp" },
+                Token::I64(0),
+                Token::Str("interval"),
+                Token::U64(1),
+                Token::StructEnd,
+            ],
+        );
+    }
 }

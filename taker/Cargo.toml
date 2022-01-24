@@ -25,6 +25,9 @@ uuid = "0.8"
 x25519-dalek = "1.1"
 xtra = { version = "0.6" }
 
+[dev-dependencies]
+serde_test = "1"
+
 [build-dependencies]
 vergen = "6"
 anyhow = "1"

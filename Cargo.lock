@@ -3295,6 +3295,7 @@ dependencies = [
  "rust-embed",
  "rust-embed-rocket",
  "serde",
+ "serde_test",
  "time 0.3.5",
  "tokio",
  "tracing",
