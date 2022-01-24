@@ -92,23 +92,22 @@ impl Actor {
             CollaborativeSettlementCompleted {
                 spend_tx, script, ..
             } => {
-                let txid = match self.role {
+                let txid = spend_tx.txid();
+
+                match self.role {
                     Role::Maker => {
                         self.try_broadcast_transaction
                             .send(monitor::TryBroadcastTransaction {
                                 tx: spend_tx,
                                 kind: TransactionKind::CollaborativeClose,
                             })
-                            .await??
+                            .await??;
                     }
                     Role::Taker => {
                         // TODO: Publish the tx once the collaborative settlement is symmetric,
                         // allowing the taker to publish as well.
-                        let txid = spend_tx.txid();
 
                         tracing::info!(order_id=%event.id, "Collaborative settlement completed successfully {txid}");
-
-                        txid
                     }
                 };
 
