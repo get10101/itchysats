@@ -7,6 +7,7 @@ use crate::monitor::MonitorParams;
 use crate::monitor::TransactionKind;
 use crate::oracle;
 use crate::projection;
+use crate::xtra_ext::SendAsyncSafe;
 use anyhow::Result;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
@@ -70,21 +71,21 @@ impl Actor {
 
                 let lock_tx = dlc.lock.0.clone();
                 self.try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction {
+                    .send_async_safe(monitor::TryBroadcastTransaction {
                         tx: lock_tx,
                         kind: TransactionKind::Lock,
                     })
-                    .await??;
+                    .await?;
 
                 self.start_monitoring
-                    .send(monitor::StartMonitoring {
+                    .send_async_safe(monitor::StartMonitoring {
                         id: event.id,
                         params: MonitorParams::new(dlc.clone()),
                     })
                     .await?;
 
                 self.monitor_attestation
-                    .send(oracle::MonitorAttestation {
+                    .send_async_safe(oracle::MonitorAttestation {
                         event_id: dlc.settlement_event_id,
                     })
                     .await?;
@@ -112,7 +113,7 @@ impl Actor {
                 };
 
                 self.monitor_collaborative_settlement
-                    .send(monitor::CollaborativeSettlement {
+                    .send_async_safe(monitor::CollaborativeSettlement {
                         order_id: event.id,
                         tx: (txid, script),
                     })
@@ -120,28 +121,28 @@ impl Actor {
             }
             CollaborativeSettlementRejected { commit_tx } => {
                 self.try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction {
+                    .send_async_safe(monitor::TryBroadcastTransaction {
                         tx: commit_tx,
                         kind: TransactionKind::Commit,
                     })
-                    .await??;
+                    .await?;
             }
             CollaborativeSettlementFailed { commit_tx } => {
                 self.try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction {
+                    .send_async_safe(monitor::TryBroadcastTransaction {
                         tx: commit_tx,
                         kind: TransactionKind::Commit,
                     })
-                    .await??;
+                    .await?;
             }
             OracleAttestedPostCetTimelock { cet, .. }
             | CetTimelockExpiredPostOracleAttestation { cet } => {
                 self.try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction {
+                    .send_async_safe(monitor::TryBroadcastTransaction {
                         tx: cet,
                         kind: TransactionKind::Cet,
                     })
-                    .await??;
+                    .await?;
             }
             OracleAttestedPriorCetTimelock {
                 commit_tx: Some(tx),
@@ -149,11 +150,11 @@ impl Actor {
             }
             | ManualCommit { tx } => {
                 self.try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction {
+                    .send_async_safe(monitor::TryBroadcastTransaction {
                         tx,
                         kind: TransactionKind::Commit,
                     })
-                    .await??;
+                    .await?;
             }
             OracleAttestedPriorCetTimelock {
                 commit_tx: None, ..
@@ -165,25 +166,25 @@ impl Actor {
                 tracing::info!(order_id=%event.id, "Rollover complete");
 
                 self.start_monitoring
-                    .send(monitor::StartMonitoring {
+                    .send_async_safe(monitor::StartMonitoring {
                         id: event.id,
                         params: MonitorParams::new(dlc.clone()),
                     })
                     .await?;
 
                 self.monitor_attestation
-                    .send(oracle::MonitorAttestation {
+                    .send_async_safe(oracle::MonitorAttestation {
                         event_id: dlc.settlement_event_id,
                     })
                     .await?;
             }
             RefundTimelockExpired { refund_tx: tx } => {
                 self.try_broadcast_transaction
-                    .send(monitor::TryBroadcastTransaction {
+                    .send_async_safe(monitor::TryBroadcastTransaction {
                         tx,
                         kind: TransactionKind::Refund,
                     })
-                    .await??;
+                    .await?;
             }
             RefundConfirmed => {
                 tracing::info!(order_id=%event.id, "Refund transaction confirmed");
@@ -206,7 +207,9 @@ impl Actor {
         }
 
         // 3. Update UI
-        self.cfds_changed.send(projection::CfdsChanged).await?;
+        self.cfds_changed
+            .send_async_safe(projection::CfdsChanged)
+            .await?;
 
         Ok(())
     }
