@@ -15,6 +15,8 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    ignore:
+      - dependency-name: 13rac1/block-fixup-merge-action
     open-pull-requests-limit: 10
 
   - package-ecosystem: "npm"
