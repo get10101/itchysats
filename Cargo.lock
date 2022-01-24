@@ -3462,6 +3462,7 @@ dependencies = [
  "rust-embed",
  "rust-embed-rocket",
  "serde",
+ "serde_test",
  "shared-bin",
  "time 0.3.7",
  "tokio",
