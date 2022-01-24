@@ -1,6 +1,5 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
-#![warn(clippy::disallowed_method)]
-#![warn(clippy::dbg_macro)] // should be used only as a temporary debugging tool
+
 use crate::bitcoin::Txid;
 use crate::bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use crate::model::cfd::Order;
