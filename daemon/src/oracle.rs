@@ -11,8 +11,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use maia::secp256k1_zkp::schnorrsig;
 use maia::secp256k1_zkp::SecretKey;
-use rocket::time::OffsetDateTime;
-use rocket::time::Time;
 use serde::Deserialize;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -20,6 +18,8 @@ use std::collections::HashSet;
 use std::ops::Add;
 use time::ext::NumericalDuration;
 use time::Duration;
+use time::OffsetDateTime;
+use time::Time;
 use xtra::prelude::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
 
