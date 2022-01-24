@@ -1,7 +1,13 @@
 use async_trait::async_trait;
 use std::fmt;
+use std::future::Future;
+use std::marker::PhantomData;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
-use xtra::address;
+use futures::future::BoxFuture;
+use futures::FutureExt;
+use xtra::{address, Address, Handler};
 use xtra::message_channel;
 use xtra::Actor;
 use xtra::Disconnected;
@@ -183,6 +189,86 @@ where
         });
 
         Ok(())
+    }
+}
+
+pub trait AddressExt<M>
+where
+    M: Message,
+{
+    fn send(&self, message: M) -> SendFutureBuilder<M, Sync, M::Result>;
+}
+
+impl<A> AddressExt<M> for Address<A> where A: Actor, A: Handler<M>, M: Message {
+    fn send(&self, message: M) -> SendFutureBuilder<M, Sync, xtra::Result> {
+        SendFutureBuilder {
+            inner: self.send(message).boxed(),
+            phantom: Default::default()
+        }
+    }
+}
+
+pub struct Sync;
+pub struct Async;
+
+pub struct SendFutureBuilder<TMessage, TAsyncness, TReturn> {
+    channel: Box
+    inner: BoxFuture<'static, TReturn>,
+    phantom: PhantomData<(TMessage, TAsyncness)>
+}
+
+impl<TMessage> SendFutureBuilder<TMessage, Sync, ()> {
+    fn make_async(self) -> SendFutureBuilder<TMessage, Async, ()> {
+        SendFutureBuilder {
+            inner: Box::pin(async move {
+                tokio::spawn(self.inner);
+            }),
+            phantom: Default::default()
+        }
+    }
+}
+
+impl<TMessage, TErr> SendFutureBuilder<TMessage, Sync, Result<(), TErr>> where TErr: fmt::Display {
+    fn log_failure(self, context: &'static str) -> SendFutureBuilder<TMessage, Sync, ()> {
+        SendFutureBuilder {
+            inner: Box::pin(async move {
+                match self.inner.await {
+                    Ok(()) => {}
+                    Err(e) => {
+                        let type_name = std::any::type_name::<TMessage>();
+
+                        tracing::warn!("{context}: Message handler for message {type_name} failed: {e:#}");
+                    }
+                };
+            }),
+            phantom: Default::default()
+        }
+    }
+}
+
+impl<TMessage: Clone, TAsyncness> SendFutureBuilder<TMessage, TAsyncness, ()> where TErr: fmt::Display {
+    fn every(self, interval: Duration) -> SendFutureBuilder<TMessage, TAsyncness, ()> {
+        SendFutureBuilder {
+            inner: Box::pin(async move {
+                while self.send(constructor()).await.is_ok() {
+                    tokio::time::sleep(duration).await
+                }
+                let type_name = std::any::type_name::<M>();
+
+                tracing::warn!(
+                    "Task for periodically sending message {type_name} stopped because actor shut down"
+                );
+            }),
+            phantom: Default::default()
+        }
+    }
+}
+
+impl<TMessage, TAsyncness, TReturn> Future for SendFutureBuilder<TMessage, TAsyncness, TReturn> {
+    type Output = TReturn;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.inner.poll(cx)
     }
 }
 
