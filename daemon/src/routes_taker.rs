@@ -1,6 +1,5 @@
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Network;
-use daemon::auth::Authenticated;
 use daemon::bitmex_price_feed;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
@@ -25,6 +24,7 @@ use rocket::response::stream::EventStream;
 use rocket::response::Responder;
 use rocket::serde::json::Json;
 use rocket::State;
+use rocket_basicauth::Authenticated;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use serde::Serialize;

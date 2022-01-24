@@ -6,7 +6,6 @@ use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use clap::Parser;
 use clap::Subcommand;
-use daemon::auth;
 use daemon::bitmex_price_feed;
 use daemon::db;
 use daemon::logger;
@@ -192,8 +191,8 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let auth_username = auth::USERNAME;
-    let auth_password = seed.derive_auth_password::<auth::Password>();
+    let auth_username = rocket_basicauth::Username("itchysats");
+    let auth_password = seed.derive_auth_password::<rocket_basicauth::Password>();
 
     let (identity_pk, identity_sk) = seed.derive_identity();
 
@@ -256,6 +255,7 @@ async fn main() -> Result<()> {
         .manage(projection_feeds)
         .manage(wallet_feed_receiver)
         .manage(maker)
+        .manage(auth_username)
         .manage(auth_password)
         .manage(bitcoin_network)
         .mount(
@@ -270,12 +270,12 @@ async fn main() -> Result<()> {
                 routes_maker::get_takers,
             ],
         )
-        .register("/api", rocket::catchers![auth::unauthorized])
+        .register("/api", rocket::catchers![rocket_basicauth::unauthorized])
         .mount(
             "/",
             rocket::routes![routes_maker::dist, routes_maker::index],
         )
-        .register("/", rocket::catchers![auth::unauthorized])
+        .register("/", rocket::catchers![rocket_basicauth::unauthorized])
         .attach(AdHoc::on_liftoff("Log launch", |rocket| {
             Box::pin(async move {
                 let http_endpoint = format!(

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use bdk::bitcoin::Network;
-use daemon::auth::Authenticated;
 use daemon::model::cfd::OrderId;
 use daemon::model::FundingRate;
 use daemon::model::Identity;
@@ -25,6 +24,7 @@ use rocket::response::stream::EventStream;
 use rocket::response::Responder;
 use rocket::serde::json::Json;
 use rocket::State;
+use rocket_basicauth::Authenticated;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use std::borrow::Cow;

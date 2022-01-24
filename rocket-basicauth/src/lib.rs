@@ -1,31 +1,49 @@
-use hex::FromHexError;
 use rocket::http::Header;
 use rocket::http::Status;
 use rocket::outcome::try_outcome;
-use rocket::outcome::IntoOutcome;
 use rocket::request::FromRequest;
 use rocket::request::Outcome;
 use rocket::Request;
 use rocket::State;
-use rocket_basicauth::BasicAuth;
-use rocket_basicauth::BasicAuthError;
 use std::fmt;
-use std::str::FromStr;
+use std::str;
+use std::string::FromUtf8Error;
+use void::Void;
 
 /// A request guard that can be included in handler definitions to enforce authentication.
 pub struct Authenticated {}
-
-pub const USERNAME: &str = "itchysats";
 
 #[derive(Debug)]
 pub enum Error {
     UnknownUser(String),
     BadPassword,
-    InvalidEncoding(FromHexError),
-    BadBasicAuthHeader(BasicAuthError),
+    /// The contents of the header are not valid base64.
+    NotBase64(base64::DecodeError),
+    /// The base64-encoded bytes cannot be represented as a UTF8 string.
+    NotUtf8(FromUtf8Error),
+    /// Auth header did not follow the `username:password` format.
+    InvalidBasicAuthFormat,
     /// The auth password was not configured in Rocket's state.
     MissingPassword,
+    /// The auth username was not configured in Rocket's state.
+    MissingUsername,
     NoAuthHeader,
+    TooManyAuthHeaders,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Username(pub &'static str);
+
+impl fmt::Display for Username {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl PartialEq<String> for Username {
+    fn eq(&self, other: &String) -> bool {
+        self.0.eq(other)
+    }
 }
 
 #[derive(PartialEq)]
@@ -43,11 +61,17 @@ impl fmt::Display for Password {
     }
 }
 
-impl FromStr for Password {
-    type Err = FromHexError;
+impl PartialEq<String> for Password {
+    fn eq(&self, other: &String) -> bool {
+        self.0.eq(other)
+    }
+}
+
+impl str::FromStr for Password {
+    type Err = Void;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(s.to_string()))
+        Ok(Self(s.to_owned()))
     }
 }
 
@@ -56,35 +80,51 @@ impl<'r> FromRequest<'r> for Authenticated {
     type Error = Error;
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let basic_auth = try_outcome!(req
-            .guard::<BasicAuth>()
+        let auth_headers = req.headers().get("Authorization").collect::<Vec<_>>();
+
+        let (username, password) = match auth_headers.as_slice() {
+            [] => return Outcome::Failure((Status::Unauthorized, Error::NoAuthHeader)),
+            [header] => match decode_header(header) {
+                Ok((username, password)) => (username, password),
+                Err(e) => return Outcome::Failure((Status::Unauthorized, e)),
+            },
+            _too_many => return Outcome::Failure((Status::BadRequest, Error::TooManyAuthHeaders)),
+        };
+
+        let expected_username = try_outcome!(req
+            .guard::<&'r State<Username>>()
             .await
-            .map_failure(|(status, error)| (status, Error::BadBasicAuthHeader(error)))
-            .forward_then(|()| Outcome::Failure((Status::Unauthorized, Error::NoAuthHeader))));
-        let password = try_outcome!(req
+            .map_failure(|(status, _)| (status, Error::MissingUsername)));
+        let expected_password = try_outcome!(req
             .guard::<&'r State<Password>>()
             .await
             .map_failure(|(status, _)| (status, Error::MissingPassword)));
 
-        if basic_auth.username != USERNAME {
+        if expected_username.inner() != &username {
             return Outcome::Failure((
                 Status::Unauthorized,
-                Error::UnknownUser(basic_auth.username),
+                Error::UnknownUser(username.to_owned()),
             ));
         }
 
-        if &try_outcome!(basic_auth
-            .password
-            .parse::<Password>()
-            .map_err(Error::InvalidEncoding)
-            .into_outcome(Status::BadRequest))
-            != password.inner()
-        {
+        if expected_password.inner() != &password {
             return Outcome::Failure((Status::Unauthorized, Error::BadPassword));
         }
 
         Outcome::Success(Authenticated {})
     }
+}
+
+fn decode_header(header_value: &str) -> Result<(String, String), Error> {
+    let base64 = header_value.trim_start_matches("Basic ");
+
+    let decoded = base64::decode(base64).map_err(Error::NotBase64)?;
+    let decoded = String::from_utf8(decoded).map_err(Error::NotUtf8)?;
+    let (username, password) = decoded
+        .split_once(":")
+        .ok_or(Error::InvalidBasicAuthFormat)?;
+
+    Ok((username.to_owned(), password.to_owned()))
 }
 
 /// A "catcher" for all 401 responses, triggers the browser's basic auth implementation.
@@ -140,6 +180,7 @@ mod tests {
     /// Constructs a Rocket instance for testing.
     fn rocket() -> Rocket<Build> {
         rocket::build()
+            .manage(Username("itchysats"))
             .manage(Password::from(*b"Now I'm feelin' so fly like a G6"))
             .mount("/", rocket::routes![protected])
             .register("/", rocket::catchers![unauthorized])
