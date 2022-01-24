@@ -272,15 +272,18 @@ impl xtra::Actor for Actor {
 /// Message sent from the `maker_cfd::Actor` to the
 /// `setup_maker::Actor` to inform that the maker user has accepted
 /// the taker order request from the taker.
+#[derive(Debug)]
 pub struct Accepted;
 
 /// Message sent from the `maker_cfd::Actor` to the
 /// `setup_maker::Actor` to inform that the maker user has rejected
 /// the taker order request from the taker.
+#[derive(Debug)]
 pub struct Rejected;
 
 /// Message sent from the spawned task to `setup_maker::Actor` to
 /// notify that the contract setup has finished successfully.
+#[derive(Debug)]
 struct SetupSucceeded {
     order_id: OrderId,
     dlc: Dlc,
@@ -288,6 +291,7 @@ struct SetupSucceeded {
 
 /// Message sent from the spawned task to `setup_maker::Actor` to
 /// notify that the contract setup has failed.
+#[derive(Debug)]
 struct SetupFailed {
     order_id: OrderId,
     error: anyhow::Error,

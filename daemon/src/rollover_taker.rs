@@ -315,6 +315,7 @@ impl Actor {
 /// Message sent from the `connection::Actor` to the
 /// `rollover_taker::Actor` to notify that the maker has accepted the
 /// rollover proposal.
+#[derive(Debug)]
 pub struct RolloverAccepted {
     pub oracle_event_id: BitMexPriceEventId,
 }
@@ -322,16 +323,19 @@ pub struct RolloverAccepted {
 /// Message sent from the `connection::Actor` to the
 /// `rollover_taker::Actor` to notify that the maker has rejected the
 /// rollover proposal.
+#[derive(Debug)]
 pub struct RolloverRejected;
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has finished successfully.
+#[derive(Debug)]
 struct RolloverSucceeded {
     dlc: Dlc,
 }
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has failed.
+#[derive(Debug)]
 struct RolloverFailed {
     error: anyhow::Error,
 }
@@ -340,6 +344,7 @@ struct RolloverFailed {
 /// notify that the timeout has been reached.
 ///
 /// It is up to the actor to reason whether or not the protocol has progressed since then.
+#[derive(Debug)]
 struct MakerResponseTimeoutReached {
     timeout: Duration,
 }

@@ -27,6 +27,7 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use derivative::Derivative;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
@@ -39,6 +40,7 @@ use tokio_util::codec::Framed;
 use xtra::prelude::*;
 use xtra_productivity::xtra_productivity;
 
+#[derive(Debug)]
 pub struct BroadcastOrder(pub Option<Order>);
 
 /// Message sent from the `setup_maker::Actor` to the
@@ -49,9 +51,12 @@ pub struct BroadcastOrder(pub Option<Order>);
 /// `setup_maker::Actor` is included so that the
 /// `maker_inc_connections::Actor` knows where to forward the contract
 /// setup messages from the taker about this particular order.
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct ConfirmOrder {
     pub taker_id: Identity,
     pub order_id: OrderId,
+    #[derivative(Debug = "ignore")]
     pub address: xtra::Address<setup_maker::Actor>,
 }
 
@@ -67,14 +72,18 @@ pub mod settlement {
     /// `maker_inc_connections::Actor` knows where to forward the
     /// collaborative settlement messages from the taker about this
     /// particular order.
+    #[derive(Debug)]
     pub struct Response {
         pub taker_id: Identity,
         pub order_id: OrderId,
         pub decision: Decision,
     }
 
+    #[derive(Derivative)]
+    #[derivative(Debug)]
     pub enum Decision {
         Accept {
+            #[derivative(Debug = "ignore")]
             address: xtra::Address<collab_settlement_maker::Actor>,
         },
         Reject,
@@ -87,8 +96,11 @@ pub struct TakerMessage {
     pub msg: wire::MakerToTaker,
 }
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct RegisterRollover {
     pub order_id: OrderId,
+    #[derivative(Debug = "ignore")]
     pub address: xtra::Address<rollover_maker::Actor>,
 }
 
@@ -236,6 +248,7 @@ impl Actor {
     }
 }
 
+#[derive(Debug)]
 struct SendHeartbeat(Identity);
 
 #[derive(Debug, thiserror::Error)]
@@ -514,14 +527,20 @@ async fn upgrade(
     Ok(())
 }
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 struct ConnectionReady {
+    #[derivative(Debug = "ignore")]
     read: wire::Read<wire::TakerToMaker, wire::MakerToTaker>,
+    #[derivative(Debug = "ignore")]
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
     identity: Identity,
 }
 
+#[derive(Debug)]
 struct ReadFail(Identity);
 
+#[derive(Debug)]
 struct ListenerFailed {
     error: anyhow::Error,
 }

@@ -39,27 +39,42 @@ use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 
+#[derive(Debug)]
 pub struct AcceptOrder {
     pub order_id: OrderId,
 }
+
+#[derive(Debug)]
 pub struct RejectOrder {
     pub order_id: OrderId,
 }
+
+#[derive(Debug)]
 pub struct AcceptSettlement {
     pub order_id: OrderId,
 }
+
+#[derive(Debug)]
 pub struct RejectSettlement {
     pub order_id: OrderId,
 }
+
+#[derive(Debug)]
 pub struct AcceptRollover {
     pub order_id: OrderId,
 }
+
+#[derive(Debug)]
 pub struct RejectRollover {
     pub order_id: OrderId,
 }
+
+#[derive(Debug)]
 pub struct Commit {
     pub order_id: OrderId,
 }
+
+#[derive(Debug)]
 pub struct NewOrder {
     pub price: Price,
     pub min_quantity: Usd,
@@ -68,14 +83,17 @@ pub struct NewOrder {
     pub funding_rate: FundingRate,
 }
 
+#[derive(Debug)]
 pub struct TakerConnected {
     pub id: Identity,
 }
 
+#[derive(Debug)]
 pub struct TakerDisconnected {
     pub id: Identity,
 }
 
+#[derive(Debug)]
 pub struct FromTaker {
     pub taker_id: Identity,
     pub msg: wire::TakerToMaker,

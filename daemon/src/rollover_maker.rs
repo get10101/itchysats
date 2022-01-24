@@ -30,20 +30,25 @@ use xtra::Context;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 
+#[derive(Debug)]
 pub struct AcceptRollover;
 
+#[derive(Debug)]
 pub struct RejectRollover;
 
+#[derive(Debug)]
 pub struct ProtocolMsg(pub wire::RolloverMsg);
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has finished successfully.
+#[derive(Debug)]
 struct RolloverSucceeded {
     dlc: Dlc,
 }
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has failed.
+#[derive(Debug)]
 struct RolloverFailed {
     error: RolloverError,
 }
