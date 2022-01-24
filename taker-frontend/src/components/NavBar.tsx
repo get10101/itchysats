@@ -48,10 +48,11 @@ export default function Nav({ walletInfo, connectedToMaker, fundingRate, nextFun
     if (connectedToMaker.connection_close_reason) {
         switch (connectedToMaker.connection_close_reason) {
             case ConnectionCloseReason.MAKER_VERSION_OUTDATED:
-                connectionMessage = connectionMessage + ": the maker is running an outdated version";
+                connectionMessage = connectionMessage
+                    + ": the maker is running an outdated version, please reach out to ItchySats!";
                 break;
             case ConnectionCloseReason.TAKER_VERSION_OUTDATED:
-                connectionMessage = connectionMessage + " - you are running an incompatible version, please upgrade!";
+                connectionMessage = connectionMessage + ": you are running an incompatible version, please upgrade!";
                 break;
         }
     }
