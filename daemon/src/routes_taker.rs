@@ -32,6 +32,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
+use uuid::Uuid;
 
 type Taker = TakerActorSystem<oracle::Actor, wallet::Actor, bitmex_price_feed::Actor>;
 
@@ -125,11 +126,13 @@ pub async fn post_order_request(
 
 #[rocket::post("/cfd/<id>/<action>")]
 pub async fn post_cfd_action(
-    id: OrderId,
+    id: Uuid,
     action: CfdAction,
     taker: &State<Taker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
+    let id = OrderId::from(id);
+
     let result = match action {
         CfdAction::AcceptOrder
         | CfdAction::RejectOrder
