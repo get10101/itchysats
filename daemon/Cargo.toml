@@ -6,17 +6,14 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1.52"
-atty = "0.2"
 bdk = { version = "0.16", default-features = false, features = ["electrum"] }
 bytes = "1"
 cached = { version = "0.30.0", default-features = false, features = ["proc_macro"] }
 chrono = { version = "0.4", features = ["serde"] }
-clap = { version = "3.0.14", features = ["derive"] }
 derivative = "2"
-futures = { version = "0.3", default-features = false }
+futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 hkdf = "0.12"
-http-api-problem = { version = "0.51.0", features = ["rocket"] }
 itertools = "0.10"
 maia = "0.1.0"
 nalgebra = { version = "0.30", default-features = false, features = ["std"] }
@@ -26,10 +23,6 @@ num = "0.4.0"
 parse-display = "0.5.3"
 rand = "0.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
-rocket = { version = "0.5.0-rc.1", features = ["json", "uuid"] }
-rocket-basicauth = { path = "../rocket-basicauth" }
-rust-embed = "6.3"
-rust-embed-rocket = { path = "../rust-embed-rocket" }
 rust_decimal = "1.21"
 rust_decimal_macros = "1.20"
 semver = { version = "1.0.4", features = ["serde"] }
@@ -41,24 +34,15 @@ sha2 = "0.10"
 snow = "0.8"
 sqlx = { version = "0.5", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
 thiserror = "1"
-time = { version = "0.3", features = ["serde", "macros", "parsing"] }
+time = { version = "0.3", features = ["serde", "macros", "parsing", "formatting"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 tokio-util = { version = "0.6", features = ["codec"] }
 tracing = { version = "0.1" }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
 uuid = { version = "0.8", features = ["serde", "v4"] }
 x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6" }
 xtra_productivity = { version = "0.1.0" }
-
-[[bin]]
-name = "taker"
-path = "src/taker.rs"
-
-[[bin]]
-name = "maker"
-path = "src/maker.rs"
 
 [dev-dependencies]
 mockall = "0.11.0"
@@ -67,7 +51,4 @@ pretty_assertions = "1"
 proptest = { version = "1", default-features = false, features = ["std"] }
 serde_test = "1"
 time = { version = "0.3", features = ["std"] }
-
-[build-dependencies]
-vergen = "6"
-anyhow = "1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "tracing-log"] }

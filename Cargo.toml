@@ -1,5 +1,5 @@
 [workspace]
-members = ["daemon", "rocket-basicauth", "rust-embed-rocket"]
+members = ["daemon", "rocket-basicauth", "rust-embed-rocket", "taker", "maker", "shared-bin"]
 resolver = "2"
 
 [patch.crates-io]

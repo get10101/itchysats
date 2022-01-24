@@ -1,13 +1,13 @@
-use crate::connection;
-use crate::model;
-use crate::model::Identity;
-use crate::model::Timestamp;
-use crate::projection::Cfd;
-use crate::projection::CfdOrder;
-use crate::projection::Quote;
-use crate::to_sse_event::ConnectionCloseReason::MakerVersionOutdated;
-use crate::to_sse_event::ConnectionCloseReason::TakerVersionOutdated;
-use bdk::bitcoin::Amount;
+use crate::ConnectionCloseReason::MakerVersionOutdated;
+use crate::ConnectionCloseReason::TakerVersionOutdated;
+use daemon::bdk::bitcoin::Amount;
+use daemon::connection;
+use daemon::model;
+use daemon::model::Identity;
+use daemon::model::Timestamp;
+use daemon::projection::Cfd;
+use daemon::projection::CfdOrder;
+use daemon::projection::Quote;
 use rocket::response::stream::Event;
 use serde::Serialize;
 
@@ -35,7 +35,7 @@ impl ToSseEvent for Option<CfdOrder> {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WalletInfo {
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    #[serde(with = "daemon::bdk::bitcoin::util::amount::serde::as_btc")]
     balance: Amount,
     address: String,
     last_updated_at: Timestamp,

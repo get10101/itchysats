@@ -1,44 +1,54 @@
 use anyhow::Context;
 use anyhow::Result;
-use bdk::bitcoin;
-use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::Amount;
-use bdk::FeeRate;
 use clap::Parser;
 use clap::Subcommand;
+use daemon::bdk::bitcoin;
+use daemon::bdk::bitcoin::secp256k1::schnorrsig;
+use daemon::bdk::bitcoin::Address;
+use daemon::bdk::bitcoin::Amount;
+use daemon::bdk::FeeRate;
 use daemon::bitmex_price_feed;
+use daemon::connection::connect;
 use daemon::db;
-use daemon::logger;
 use daemon::model::cfd::Role;
+use daemon::model::Identity;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
-use daemon::supervisor;
+use daemon::seed::UmbrelSeed;
 use daemon::wallet;
-use daemon::MakerActorSystem;
+use daemon::TakerActorSystem;
 use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
 use rocket::fairing::AdHoc;
+use shared_bin::logger;
+use shared_bin::logger::LevelFilter;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-use tracing_subscriber::filter::LevelFilter;
+use std::time::Duration;
 use xtra::Actor;
 
-mod routes_maker;
+mod routes;
+
+pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 
 #[derive(Parser)]
 struct Opts {
-    /// The port to listen on for p2p connections.
-    #[clap(long, default_value = "9999")]
-    p2p_port: u16,
+    /// The IP address or hostname of the other party (i.e. the maker).
+    #[clap(long)]
+    maker: String,
+
+    /// The public key of the maker as a 32 byte hex string.
+    #[clap(long, parse(try_from_str = parse_x25519_pubkey))]
+    maker_id: x25519_dalek::PublicKey,
 
     /// The IP address to listen on for the HTTP API.
-    #[clap(long, default_value = "127.0.0.1:8001")]
+    #[clap(long, default_value = "127.0.0.1:8000")]
     http_address: SocketAddr,
 
     /// Where to permanently store data, defaults to the current working directory.
@@ -53,13 +63,33 @@ struct Opts {
     #[clap(short, long, default_value = "Debug")]
     log_level: LevelFilter,
 
+    /// Password for the web interface.
+    ///
+    /// If not provided, will be derived from the seed.
+    #[clap(long)]
+    password: Option<rocket_basicauth::Password>,
+
     #[clap(subcommand)]
     network: Network,
+
+    #[clap(short, long, parse(try_from_str = parse_umbrel_seed))]
+    umbrel_seed: Option<[u8; 32]>,
+}
+
+fn parse_x25519_pubkey(s: &str) -> Result<x25519_dalek::PublicKey> {
+    let mut bytes = [0u8; 32];
+    hex::decode_to_slice(s, &mut bytes)?;
+    Ok(x25519_dalek::PublicKey::from(bytes))
+}
+
+fn parse_umbrel_seed(s: &str) -> Result<[u8; 32]> {
+    let mut bytes = [0u8; 32];
+    hex::decode_to_slice(s, &mut bytes)?;
+    Ok(bytes)
 }
 
 #[derive(Parser)]
 enum Network {
-    /// Run on mainnet.
     Mainnet {
         /// URL to the electrum backend to use for the wallet.
         #[clap(long, default_value = "ssl://blockstream.info:700")]
@@ -68,7 +98,6 @@ enum Network {
         #[clap(subcommand)]
         withdraw: Option<Withdraw>,
     },
-    /// Run on testnet.
     Testnet {
         /// URL to the electrum backend to use for the wallet.
         #[clap(long, default_value = "ssl://blockstream.info:993")]
@@ -101,7 +130,7 @@ enum Withdraw {
         fee: Option<f32>,
         /// The address to receive the Bitcoin.
         #[clap(long)]
-        address: bdk::bitcoin::Address,
+        address: Address,
     },
 }
 
@@ -162,10 +191,25 @@ async fn main() -> Result<()> {
         tokio::fs::create_dir_all(&data_dir).await?;
     }
 
-    let seed = RandomSeed::initialize(&data_dir.join("maker_seed")).await?;
+    let maker_identity = Identity::new(opts.maker_id);
 
     let bitcoin_network = opts.network.bitcoin_network();
-    let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
+    let (ext_priv_key, identity_sk, web_password) = match opts.umbrel_seed {
+        Some(seed_bytes) => {
+            let seed = UmbrelSeed::from(seed_bytes);
+            let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
+            let (_, identity_sk) = seed.derive_identity();
+            let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
+            (ext_priv_key, identity_sk, web_password)
+        }
+        None => {
+            let seed = RandomSeed::initialize(&data_dir.join("taker_seed")).await?;
+            let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
+            let (_, identity_sk) = seed.derive_identity();
+            let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
+            (ext_priv_key, identity_sk, web_password)
+        }
+    };
 
     let mut tasks = Tasks::default();
 
@@ -192,14 +236,7 @@ async fn main() -> Result<()> {
     }
 
     let auth_username = rocket_basicauth::Username("itchysats");
-    let auth_password = seed.derive_auth_password::<rocket_basicauth::Password>();
-
-    let (identity_pk, identity_sk) = seed.derive_identity();
-
-    let hex_pk = hex::encode(identity_pk.to_bytes());
-    tracing::info!(
-        "Authentication details: username='{auth_username}' password='{auth_password}', noise_public_key='{hex_pk}'",
-    );
+    tracing::info!("Authentication details: username='{auth_username}' password='{web_password}'");
 
     // TODO: Actually fetch it from Olivia
     let oracle = schnorrsig::PublicKey::from_str(
@@ -211,19 +248,17 @@ async fn main() -> Result<()> {
         .merge(("port", opts.http_address.port()))
         .merge(("cli_colors", false));
 
-    let p2p_port = opts.p2p_port;
-    let p2p_socket = format!("0.0.0.0:{p2p_port}").parse::<SocketAddr>().unwrap();
-
-    let db = db::connect(data_dir.join("maker.sqlite")).await?;
+    let db = db::connect(data_dir.join("taker.sqlite")).await?;
 
     // Create actors
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
-    let maker = MakerActorSystem::new(
+    let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
         oracle,
+        identity_sk,
         |channel| oracle::Actor::new(db.clone(), channel, SETTLEMENT_INTERVAL),
         {
             |channel| {
@@ -231,50 +266,51 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(db.clone(), electrum, channel)
             }
         },
-        SETTLEMENT_INTERVAL,
+        bitmex_price_feed::Actor::new,
         N_PAYOUTS,
-        projection_actor.clone(),
-        identity_sk,
         HEARTBEAT_INTERVAL,
-        p2p_socket,
+        Duration::from_secs(10),
+        projection_actor.clone(),
+        maker_identity,
     )?;
 
-    let (supervisor, price_feed) = supervisor::Actor::new(
-        bitmex_price_feed::Actor::new,
-        |_| true, // always restart price feed actor
+    let (proj_actor, projection_feeds) = projection::Actor::new(
+        db.clone(),
+        Role::Taker,
+        bitcoin_network,
+        &taker.price_feed_actor,
     );
-
-    let (_supervisor_address, task) = supervisor.create(None).run();
-    tasks.add(task);
-
-    let (proj_actor, projection_feeds) =
-        projection::Actor::new(db.clone(), Role::Maker, bitcoin_network, &price_feed);
     tasks.add(projection_context.run(proj_actor));
+
+    let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
+
+    tasks.add(connect(
+        taker.maker_online_status_feed_receiver.clone(),
+        taker.connection_actor.clone(),
+        maker_identity,
+        possible_addresses,
+    ));
 
     rocket::custom(figment)
         .manage(projection_feeds)
         .manage(wallet_feed_receiver)
-        .manage(maker)
-        .manage(auth_username)
-        .manage(auth_password)
         .manage(bitcoin_network)
+        .manage(taker.maker_online_status_feed_receiver.clone())
+        .manage(taker)
+        .manage(auth_username)
+        .manage(web_password)
         .mount(
             "/api",
             rocket::routes![
-                routes_maker::maker_feed,
-                routes_maker::post_sell_order,
-                routes_maker::post_cfd_action,
-                routes_maker::get_health_check,
-                routes_maker::post_withdraw_request,
-                routes_maker::get_cfds,
-                routes_maker::get_takers,
+                routes::feed,
+                routes::post_order_request,
+                routes::get_health_check,
+                routes::post_cfd_action,
+                routes::post_withdraw_request,
             ],
         )
         .register("/api", rocket::catchers![rocket_basicauth::unauthorized])
-        .mount(
-            "/",
-            rocket::routes![routes_maker::dist, routes_maker::index],
-        )
+        .mount("/", rocket::routes![routes::dist, routes::index])
         .register("/", rocket::catchers![rocket_basicauth::unauthorized])
         .attach(AdHoc::on_liftoff("Log launch", |rocket| {
             Box::pin(async move {
@@ -293,4 +329,17 @@ async fn main() -> Result<()> {
     db.close().await;
 
     Ok(())
+}
+
+async fn resolve_maker_addresses(maker_addr: &str) -> Result<Vec<SocketAddr>> {
+    let possible_addresses = tokio::net::lookup_host(maker_addr)
+        .await?
+        .collect::<Vec<_>>();
+
+    tracing::debug!(
+        "Resolved {} to [{}]",
+        maker_addr,
+        itertools::join(possible_addresses.iter(), ",")
+    );
+    Ok(possible_addresses)
 }

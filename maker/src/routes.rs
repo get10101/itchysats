@@ -1,5 +1,6 @@
 use anyhow::Result;
-use bdk::bitcoin::Network;
+use daemon::bdk;
+use daemon::bdk::bitcoin::Network;
 use daemon::model::cfd::OrderId;
 use daemon::model::FundingRate;
 use daemon::model::Identity;
@@ -12,7 +13,6 @@ use daemon::oracle;
 use daemon::projection::Cfd;
 use daemon::projection::CfdAction;
 use daemon::projection::Feeds;
-use daemon::to_sse_event::ToSseEvent;
 use daemon::wallet;
 use daemon::MakerActorSystem;
 use http_api_problem::HttpApiProblem;
@@ -27,6 +27,7 @@ use rocket_basicauth::Authenticated;
 use rust_embed::RustEmbed;
 use rust_embed_rocket::EmbeddedFileExt;
 use serde::Deserialize;
+use shared_bin::ToSseEvent;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
@@ -192,7 +193,7 @@ pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 's
 #[derive(Debug, Clone, Deserialize)]
 pub struct WithdrawRequest {
     address: bdk::bitcoin::Address,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    #[serde(with = "bdk::bitcoin::util::amount::serde::as_btc")]
     amount: bdk::bitcoin::Amount,
     fee: f32,
 }

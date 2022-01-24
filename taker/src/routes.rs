@@ -1,5 +1,6 @@
-use bdk::bitcoin::Amount;
-use bdk::bitcoin::Network;
+use daemon::bdk;
+use daemon::bdk::bitcoin::Amount;
+use daemon::bdk::bitcoin::Network;
 use daemon::bitmex_price_feed;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
@@ -11,8 +12,6 @@ use daemon::oracle;
 use daemon::projection;
 use daemon::projection::CfdAction;
 use daemon::projection::Feeds;
-use daemon::to_sse_event::Heartbeat;
-use daemon::to_sse_event::ToSseEvent;
 use daemon::wallet;
 use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
@@ -28,6 +27,8 @@ use rust_embed::RustEmbed;
 use rust_embed_rocket::EmbeddedFileExt;
 use serde::Deserialize;
 use serde::Serialize;
+use shared_bin::Heartbeat;
+use shared_bin::ToSseEvent;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
@@ -168,18 +169,18 @@ pub struct MarginRequest {
     pub quantity: Usd,
     pub leverage: Leverage,
 
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    #[serde(with = "bdk::bitcoin::util::amount::serde::as_btc")]
     pub opening_fee: Amount,
 }
 
 /// Represents the collateral that has to be put up
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct MarginResponse {
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    #[serde(with = "bdk::bitcoin::util::amount::serde::as_btc")]
     pub margin: Amount,
 
     /// Margin + fees
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    #[serde(with = "bdk::bitcoin::util::amount::serde::as_btc")]
     pub complete_initial_costs: Amount,
 }
 
@@ -202,7 +203,7 @@ pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 's
 #[derive(Debug, Clone, Deserialize)]
 pub struct WithdrawRequest {
     address: bdk::bitcoin::Address,
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    #[serde(with = "bdk::bitcoin::util::amount::serde::as_btc")]
     amount: Amount,
     fee: f32,
 }
