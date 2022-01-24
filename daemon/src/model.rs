@@ -7,7 +7,7 @@ use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
 use chrono::DateTime;
-use derive_more::Display;
+use parse_display::Display;
 use reqwest::Url;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;

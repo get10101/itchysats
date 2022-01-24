@@ -12,7 +12,6 @@ bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "3.0.10", features = ["derive"] }
 derivative = "2"
-derive_more = { version = "0.99.17", default-features = false, features = ["display"] }
 futures = { version = "0.3", default-features = false }
 hex = "0.4"
 hkdf = "0.12"
@@ -23,12 +22,13 @@ nalgebra = { version = "0.30", default-features = false, features = ["std"] }
 ndarray = "0.15.4"
 ndarray_einsum_beta = "0.7.0"
 num = "0.4.0"
+parse-display = "0.5.3"
 rand = "0.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 rocket = { version = "0.5.0-rc.1", features = ["json", "uuid"] }
 rocket-basicauth = { path = "../rocket-basicauth" }
-rust-embed-rocket = { path = "../rust-embed-rocket" }
 rust-embed = "6.3"
+rust-embed-rocket = { path = "../rust-embed-rocket" }
 rust_decimal = "1.20"
 rust_decimal_macros = "1.20"
 semver = { version = "1.0.4", features = ["serde"] }

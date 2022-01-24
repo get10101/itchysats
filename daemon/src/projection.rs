@@ -35,6 +35,8 @@ use bdk::bitcoin::Txid;
 use bdk::miniscript::DescriptorTrait;
 use core::fmt;
 use maia::TransactionExt;
+use parse_display::Display;
+use parse_display::FromStr;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
@@ -812,8 +814,9 @@ pub struct CfdDetails {
     payout: Option<Amount>,
 }
 
-#[derive(Debug, derive_more::Display, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Display, FromStr, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
+#[display(style = "camelCase")]
 pub enum CfdAction {
     AcceptOrder,
     RejectOrder,
