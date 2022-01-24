@@ -7,6 +7,7 @@ import {
     Heading,
     HStack,
     Image,
+    Link,
     Menu,
     MenuButton,
     MenuItem,
@@ -14,6 +15,7 @@ import {
     Skeleton,
     Stack,
     Text,
+    Tooltip,
     useColorMode,
     useColorModeValue,
 } from "@chakra-ui/react";
@@ -28,9 +30,16 @@ interface NavProps {
     connectedToMaker: ConnectionStatus;
     fundingRate: string | null;
     nextFundingEvent: string | null;
+    referencePrice: number | undefined;
 }
 
-export default function Nav({ walletInfo, connectedToMaker, fundingRate, nextFundingEvent }: NavProps) {
+function TextDivider() {
+    return (
+        <Divider orientation={"vertical"} borderColor={useColorModeValue("black", "white")} height={"20px"} />
+    );
+}
+
+export default function Nav({ walletInfo, connectedToMaker, fundingRate, nextFundingEvent, referencePrice }: NavProps) {
     const navigate = useNavigate();
 
     const { toggleColorMode } = useColorMode();
@@ -44,15 +53,19 @@ export default function Nav({ walletInfo, connectedToMaker, fundingRate, nextFun
         <SunIcon />,
     );
 
-    let connectionMessage = connectedToMaker.online ? "Online" : "Offline";
+    let connectionMessage = connectedToMaker.online
+        ? { label: "Online", color: { light: "green.600", dark: "green.500" } }
+        : { label: "Offline", color: { light: "red.600", dark: "red.500" } };
+
     if (connectedToMaker.connection_close_reason) {
         switch (connectedToMaker.connection_close_reason) {
             case ConnectionCloseReason.MAKER_VERSION_OUTDATED:
-                connectionMessage = connectionMessage
-                    + ": the maker is running an outdated version, please reach out to ItchySats!";
+                connectionMessage.label = connectionMessage
+                    .label + ": the maker is running an outdated version, please reach out to ItchySats!";
                 break;
             case ConnectionCloseReason.TAKER_VERSION_OUTDATED:
-                connectionMessage = connectionMessage + ": you are running an incompatible version, please upgrade!";
+                connectionMessage.label = connectionMessage.label
+                    + ": you are running an incompatible version, please upgrade!";
                 break;
         }
     }
@@ -78,29 +91,48 @@ export default function Nav({ walletInfo, connectedToMaker, fundingRate, nextFun
                         </Menu>
                     </Flex>
                     <HStack>
-                        <Text>{"Maker status: "}</Text>
-                        <Heading size={"sm"}>{connectionMessage}</Heading>
-                        <Divider orientation={"vertical"} borderColor={"black"} height={"20px"} />
+                        <Text>{"Maker: "}</Text>
+                        <Heading
+                            size={"sm"}
+                            color={useColorModeValue(connectionMessage.color.light, connectionMessage.color.dark)}
+                        >
+                            {connectionMessage.label}
+                        </Heading>
+                        <TextDivider />
                         <Text>{"Next funding event: "}</Text>
                         <Skeleton
                             isLoaded={nextFundingEvent != null}
                             height={"20px"}
-                            minWidth={"50px"}
                             display={"flex"}
                             alignItems={"center"}
                         >
-                            <Heading size={"sm"}>{nextFundingEvent}</Heading>
+                            <Tooltip
+                                label={"The next time your CFDs will be extended and the funding fee will be collected based on the hourly rate."}
+                                hasArrow
+                            >
+                                <HStack minWidth={"200px"}>
+                                    <Heading size={"sm"}>{nextFundingEvent}</Heading>
+                                    <Text>{"@"}</Text>
+                                    <Heading size={"sm"}>{fundingRate}%</Heading>
+                                </HStack>
+                            </Tooltip>
                         </Skeleton>
-                        <Divider orientation={"vertical"} borderColor={"black"} height={"20px"} />
-                        <Text>{"Current funding rate: "}</Text>
+                        <TextDivider />
+                        <Text>{"Reference price: "}</Text>
                         <Skeleton
-                            isLoaded={fundingRate != null}
+                            isLoaded={referencePrice !== undefined}
                             height={"20px"}
-                            minWidth={"50px"}
                             display={"flex"}
                             alignItems={"center"}
                         >
-                            <Heading size={"sm"}>{fundingRate}%</Heading>
+                            <Tooltip label={"The price the Oracle attests to, the BitMEX BXBT index price"} hasArrow>
+                                <Link href={"https://outcome.observer/h00.ooo/x/BitMEX/BXBT"} target={"_blank"}>
+                                    {/* The minWidth helps with not letting the elements in Nav jump because the width changes*/}
+                                    <Heading size={"sm"} minWidth={"90px"}>
+                                        {(referencePrice || 0).toLocaleString()}
+                                    </Heading>
+                                </Link>
+                            </Tooltip>
                         </Skeleton>
                     </HStack>
                     <Flex alignItems={"center"}>

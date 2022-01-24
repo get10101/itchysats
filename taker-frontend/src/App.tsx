@@ -90,6 +90,7 @@ export const App = () => {
                 connectedToMaker={connectedToMaker}
                 fundingRate={fundingRateHourly}
                 nextFundingEvent={nextFundingEvent}
+                referencePrice={referencePrice}
             />
             <Box textAlign="center" padding={3} bg={useColorModeValue("gray.50", "gray.800")}>
                 <Routes>
