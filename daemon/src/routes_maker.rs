@@ -29,6 +29,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
+use uuid::Uuid;
 
 pub type Maker = MakerActorSystem<oracle::Actor, wallet::Actor>;
 
@@ -127,11 +128,13 @@ pub async fn post_sell_order(
 
 #[rocket::post("/cfd/<id>/<action>")]
 pub async fn post_cfd_action(
-    id: OrderId,
+    id: Uuid,
     action: CfdAction,
     maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
+    let id = OrderId::from(id);
+
     let result = match action {
         CfdAction::AcceptOrder => maker.accept_order(id).await,
         CfdAction::RejectOrder => maker.reject_order(id).await,

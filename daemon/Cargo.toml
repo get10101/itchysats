@@ -25,7 +25,7 @@ ndarray_einsum_beta = "0.7.0"
 num = "0.4.0"
 rand = "0.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
-rocket = { version = "0.5.0-rc.1", features = ["json"] }
+rocket = { version = "0.5.0-rc.1", features = ["json", "uuid"] }
 rocket-basicauth = { path = "../rocket-basicauth" }
 rust-embed = "6.3"
 rust_decimal = "1.20"

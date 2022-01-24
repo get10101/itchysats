@@ -37,7 +37,6 @@ use maia::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia::secp256k1_zkp::SECP256K1;
 use maia::spending_tx_sighash;
 use maia::TransactionExt;
-use rocket::request::FromParam;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use serde::de::Error as _;
@@ -91,12 +90,9 @@ impl fmt::Display for OrderId {
     }
 }
 
-impl<'v> FromParam<'v> for OrderId {
-    type Error = uuid::Error;
-
-    fn from_param(param: &'v str) -> Result<Self, Self::Error> {
-        let uuid = param.parse::<Uuid>()?;
-        Ok(OrderId(uuid.to_hyphenated()))
+impl From<Uuid> for OrderId {
+    fn from(id: Uuid) -> Self {
+        OrderId(id.to_hyphenated())
     }
 }
 
