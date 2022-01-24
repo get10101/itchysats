@@ -21,6 +21,7 @@ pub struct Actor {
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     has_accepted: bool,
     db: sqlx::SqlitePool,
+    n_payouts: usize,
 }
 
 pub struct Accepted;
@@ -118,6 +119,7 @@ impl Actor {
             &(impl MessageChannel<Stopping<Self>> + 'static),
         ),
         db: sqlx::SqlitePool,
+        n_payouts: usize,
     ) -> Self {
         Self {
             proposal,
@@ -127,6 +129,7 @@ impl Actor {
             on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
             has_accepted: false,
             db,
+            n_payouts,
         }
     }
 
@@ -134,7 +137,8 @@ impl Actor {
         let mut conn = self.db.acquire().await?;
         let cfd = load_cfd(self.proposal.order_id, &mut conn).await?;
 
-        let event = cfd.receive_collaborative_settlement_proposal(self.proposal.clone())?;
+        let event =
+            cfd.receive_collaborative_settlement_proposal(self.proposal.clone(), self.n_payouts)?;
         self.process_manager
             .send(process_manager::Event::new(event))
             .await??;
