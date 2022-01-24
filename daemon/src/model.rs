@@ -10,7 +10,7 @@ use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
 use bdk::bitcoin::SignedAmount;
 use chrono::DateTime;
-use derive_more::Display;
+use parse_display::Display;
 use reqwest::Url;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
