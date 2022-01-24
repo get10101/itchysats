@@ -26,6 +26,14 @@ jobs:
       - uses: Swatinem/rust-cache@v1.3.0
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
+  block-fixup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2.0.0
+      - name: Block Fixup Commit Merge
+        uses: 13rac1/block-fixup-merge-action@v1.1.2
+
   frontend:
     strategy:
       matrix:

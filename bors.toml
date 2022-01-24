@@ -1,6 +1,7 @@
 status = [
   "formatting",
   "clippy",
+  "block-fixup",
   "frontend (maker)",
   "frontend (taker)",
   "test_daemons (ubuntu-latest)",
