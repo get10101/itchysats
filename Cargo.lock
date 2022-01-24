@@ -636,6 +636,7 @@ dependencies = [
  "rocket",
  "rocket-basicauth 0.1.0",
  "rust-embed",
+ "rust-embed-rocket",
  "rust_decimal",
  "rust_decimal_macros",
  "semver 1.0.4",
@@ -2506,6 +2507,14 @@ dependencies = [
  "rust-embed-utils",
  "syn",
  "walkdir",
+]
+
+[[package]]
+name = "rust-embed-rocket"
+version = "0.1.0"
+dependencies = [
+ "rocket",
+ "rust-embed",
 ]
 
 [[package]]
