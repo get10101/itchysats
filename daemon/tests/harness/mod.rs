@@ -367,12 +367,8 @@ pub fn init_tracing() -> DefaultGuard {
         .add_directive("daemon=debug".parse().unwrap())
         .add_directive("rocket=warn".parse().unwrap());
 
-    let guard = tracing_subscriber::fmt()
+    tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_test_writer()
-        .set_default();
-
-    tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
-
-    guard
+        .set_default()
 }
