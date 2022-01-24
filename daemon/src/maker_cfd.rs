@@ -484,6 +484,7 @@ where
             self.process_manager.clone(),
             (&self.takers, &this),
             self.db.clone(),
+            self.n_payouts,
         )
         .create(None)
         .run();

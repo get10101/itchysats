@@ -769,7 +769,6 @@ impl Cfd {
         );
 
         let payout_curve = payout_curve::calculate(
-            // TODO: Is this correct? Does rollover change the price? (I think currently not)
             self.initial_price,
             self.quantity,
             self.leverage,
@@ -806,6 +805,7 @@ impl Cfd {
     pub fn receive_collaborative_settlement_proposal(
         self,
         proposal: SettlementProposal,
+        n_payouts: usize,
     ) -> Result<Event> {
         anyhow::ensure!(
             !self.is_in_collaborative_settlement()
@@ -814,6 +814,32 @@ impl Cfd {
                 && proposal.order_id == self.id,
             "Failed to start collaborative settlement"
         );
+
+        // Validate that the amounts sent by the taker are sane according to the payout curve
+
+        let payout_curve_long = payout_curve::calculate(
+            self.initial_price,
+            self.quantity,
+            self.leverage,
+            n_payouts,
+            FundingFee::new(
+                self.counterparty_margin(),
+                self.funding_rate,
+                SETTLEMENT_INTERVAL.whole_hours(),
+            )?,
+        )?;
+
+        let payout = {
+            let proposal_price = proposal.price.try_into_u64()?;
+            payout_curve_long
+                .iter()
+                .find(|&x| x.digits().range().contains(&proposal_price))
+                .context("find current price on the payout curve")?
+        };
+
+        if proposal.maker != *payout.maker_amount() || proposal.taker != *payout.taker_amount() {
+            bail!("The settlement amounts sent by the taker are not according to the agreed payout curve. Expected taker {} and maker {} but received taker {} and maker {}", payout.taker_amount(), payout.maker_amount(), proposal.taker, proposal.maker);
+        }
 
         Ok(Event::new(
             self.id,
