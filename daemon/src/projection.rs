@@ -714,10 +714,9 @@ pub struct CfdOrder {
 
     /// Fee charged by the maker for opening a position
     ///
-    /// Note: It's the minimum possible fee, we cannot calculate the exact
-    /// amount until we know the quantity taken by the taker
+    /// Note: It's a flat fee on top of the fee calculated based on funding rate
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
-    pub opening_fee_per_parcel: Option<Amount>,
+    pub opening_fee: Option<Amount>,
 
     /// The interest as annualized percentage
     ///
@@ -781,8 +780,7 @@ impl From<Order> for CfdOrder {
                 .whole_seconds()
                 .try_into()
                 .expect("settlement_time_interval_hours is always positive number"),
-            // TODO: replace this dummy value
-            opening_fee_per_parcel: Some(Amount::ZERO),
+            opening_fee: Some(Amount::from_sat(order.opening_fee.to_u64())),
             funding_rate_annualized_percent: AnnualisedFundingRate::from(order.funding_rate)
                 .to_string(),
             funding_rate_hourly_percent: HourlyFundingRate::from(order.funding_rate).to_string(),
