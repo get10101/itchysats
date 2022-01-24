@@ -372,7 +372,7 @@ impl Actor {
                         .expect("receiver to outlive the actor");
 
                     bail!(
-                        "Network version mismatch, we are on version {our_version} but taker is on version {maker_version}"
+                        "Network version mismatch, we are on version {our_version} but maker is on version {maker_version}"
                     )
                 }
             }
