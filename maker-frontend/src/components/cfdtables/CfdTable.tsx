@@ -103,7 +103,6 @@ export function CfdTable(
                         <Box>
                             <VStack>
                                 {txs}
-                                {details.payout && <Box>Payout: {details.payout}</Box>}
                                 {expiry_timestamp && <HStack>
                                     <Text>Expires on:</Text>
                                     <Timestamp timestamp={expiry_timestamp} />
@@ -162,6 +161,11 @@ export function CfdTable(
             {
                 Header: "Unrealized P/L %",
                 accessor: "profit_in_percent",
+                isNumeric: true,
+            },
+            {
+                Header: "Payout",
+                accessor: "payout",
                 isNumeric: true,
             },
             {

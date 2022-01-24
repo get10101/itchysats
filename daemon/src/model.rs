@@ -53,10 +53,6 @@ impl Usd {
         self.0.to_u64().context("could not fit decimal into u64")
     }
 
-    pub fn try_into_f64(&self) -> Result<f64> {
-        self.0.to_f64().context("Could not fit decimal into f64")
-    }
-
     #[must_use]
     pub fn into_decimal(self) -> Decimal {
         self.0
@@ -145,10 +141,6 @@ impl InversePrice {
 
     pub fn try_into_u64(&self) -> Result<u64> {
         self.0.to_u64().context("Could not fit decimal into u64")
-    }
-
-    pub fn try_into_f64(&self) -> Result<f64> {
-        self.0.to_f64().context("Could not fit decimal into f64")
     }
 }
 
