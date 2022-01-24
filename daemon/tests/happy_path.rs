@@ -13,6 +13,7 @@ use crate::harness::Maker;
 use crate::harness::MakerConfig;
 use crate::harness::Taker;
 use crate::harness::TakerConfig;
+use bdk::bitcoin::Amount;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::calculate_long_margin;
 use daemon::model::cfd::OrderId;
@@ -74,9 +75,9 @@ fn assert_eq_order(mut published: CfdOrder, received: CfdOrder) {
 
     assert_eq!(published, received);
 
-    // dummy order does not have any funding fees
-    assert_eq!(received.funding_rate_annualized_percent, "0.00");
-    assert_eq!(received.funding_rate_hourly_percent, "0.00");
+    // Hard-coded to match the dummy_new_order()
+    assert_eq!(received.opening_fee.unwrap(), Amount::from_sat(2));
+    assert_eq!(received.funding_rate_hourly_percent, "0.001");
 }
 
 #[tokio::test]

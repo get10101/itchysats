@@ -3,6 +3,7 @@ use crate::harness::mocks::price_feed::PriceFeedActor;
 use crate::harness::mocks::wallet::WalletActor;
 use crate::schnorrsig;
 use ::bdk::bitcoin::Network;
+use bdk::bitcoin::Amount;
 use daemon::auto_rollover;
 use daemon::bitmex_price_feed::Quote;
 use daemon::connection::connect;
@@ -347,8 +348,8 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
         min_quantity: Usd::new(dec!(5)),
         max_quantity: Usd::new(dec!(100)),
         tx_fee_rate: 1,
-        funding_rate: FundingRate::default(),
-        opening_fee: OpeningFee::default(),
+        funding_rate: FundingRate::new(dec!(0.024)).unwrap(),
+        opening_fee: OpeningFee::new(Amount::from_sat(2)),
     }
 }
 

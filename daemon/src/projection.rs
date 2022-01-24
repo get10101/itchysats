@@ -999,7 +999,7 @@ impl From<FundingRate> for HourlyFundingRate {
 
 impl fmt::Display for HourlyFundingRate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.round_dp(2).fmt(f)
+        self.0.round_dp(4).fmt(f)
     }
 }
 
