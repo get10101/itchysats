@@ -94,10 +94,11 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
         />;
 
     let profitColors = !cfd || !cfd.profit_btc || cfd.profit_btc === 0
-        ? ["gray.500", "gray.400"]
+            || [StateKey.REJECTED, StateKey.SETUP_FAILED].includes(cfd.state.key)
+        ? { light: "gray.500", dark: "gray.400" }
         : cfd.profit_btc > 0
-        ? ["green.600", "green.300"]
-        : ["red.600", "red.300"];
+        ? { light: "green.600", dark: "green.300" }
+        : { light: "red.600", dark: "red.300" };
 
     return (
         <HStack
@@ -110,7 +111,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
             <VStack>
                 <Table size="sm" variant={"unstyled"}>
                     <Tbody>
-                        <Tr textColor={useColorModeValue(profitColors[0], profitColors[1])}>
+                        <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
                             <Td><Text as={"b"}>Unrealized P/L</Text></Td>
                             <Td textAlign="right">
                                 <Tooltip label={`${cfd.profit_btc}`} placement={"right"}>
@@ -121,7 +122,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                                 </Tooltip>
                             </Td>
                         </Tr>
-                        <Tr textColor={useColorModeValue(profitColors[0], profitColors[1])}>
+                        <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
                             <Td><Text as={"b"}>Payout</Text></Td>
                             <Td textAlign="right">
                                 <Skeleton isLoaded={cfd.payout != null}>
@@ -204,12 +205,12 @@ interface TxIconProps {
 
 const TxIcon = ({ tx }: TxIconProps) => {
     const colors = !tx
-        ? ["gray.200", "gray.600"]
+        ? { light: "gray.200", dark: "gray.600" }
         : tx && !tx.url
-        ? ["gray.200", "gray.600"]
-        : ["white.200", "white.600"];
+        ? { light: "gray.200", dark: "gray.600" }
+        : { light: "white.200", dark: "white.600" };
 
-    const color = useColorModeValue(colors[0], colors[1]);
+    const color = useColorModeValue(colors.light, colors.dark);
 
     if (!tx) {
         return (<ExternalLinkIcon boxSize={5} color={color} />);

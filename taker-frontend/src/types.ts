@@ -144,6 +144,7 @@ export class State {
                 return green;
 
             case StateKey.REJECTED:
+            case StateKey.SETUP_FAILED:
                 return red;
 
             case StateKey.PENDING_COMMIT:
@@ -161,7 +162,6 @@ export class State {
             case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
             case StateKey.PENDING_OPEN:
             case StateKey.REFUNDED:
-            case StateKey.SETUP_FAILED:
             case StateKey.CLOSED:
                 return default_color;
         }
