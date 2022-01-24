@@ -2,7 +2,6 @@ use crate::address_map::AddressMap;
 use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_taker;
-use crate::command;
 use crate::connection;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Order;
@@ -42,11 +41,6 @@ pub struct ProposeSettlement {
     pub current_price: Price,
 }
 
-#[derive(Debug)]
-pub struct Commit {
-    pub order_id: OrderId,
-}
-
 pub struct Actor<O, W> {
     db: sqlx::SqlitePool,
     wallet: Address<W>,
@@ -57,7 +51,6 @@ pub struct Actor<O, W> {
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
     oracle_actor: Address<O>,
-    executor: command::Executor,
     n_payouts: usize,
     tasks: Tasks,
     current_order: Option<Order>,
@@ -81,7 +74,6 @@ where
         maker_identity: Identity,
     ) -> Self {
         Self {
-            executor: command::Executor::new(db.clone(), process_manager_actor.clone()),
             db,
             wallet,
             oracle_pk,
@@ -121,14 +113,6 @@ impl<O, W> Actor<O, W> {
                     .await?;
             }
         }
-        Ok(())
-    }
-
-    async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
-        self.executor
-            .execute(msg.order_id, |cfd| cfd.manual_commit_to_blockchain())
-            .await?;
-
         Ok(())
     }
 

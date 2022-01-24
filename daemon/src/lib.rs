@@ -134,6 +134,7 @@ impl Tasks {
 pub struct MakerActorSystem<O, W> {
     pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
     wallet_actor: Address<W>,
+    executor: command::Executor,
 
     _tasks: Tasks,
 }
@@ -172,6 +173,8 @@ where
         let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
         let (inc_conn_addr, inc_conn_ctx) = xtra::Context::new(None);
         let (process_manager_addr, process_manager_ctx) = xtra::Context::new(None);
+
+        let executor = command::Executor::new(db.clone(), process_manager_addr.clone());
 
         let mut tasks = Tasks::default();
 
@@ -225,6 +228,7 @@ where
         Ok(Self {
             cfd_actor: cfd_actor_addr,
             wallet_actor: wallet_addr,
+            executor,
             _tasks: tasks,
         })
     }
@@ -291,10 +295,12 @@ where
             .await??;
         Ok(())
     }
+
     pub async fn commit(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor
-            .send(maker_cfd::Commit { order_id })
-            .await??;
+        self.executor
+            .execute(order_id, |cfd| cfd.manual_commit_to_blockchain())
+            .await?;
+
         Ok(())
     }
 
@@ -320,6 +326,7 @@ pub struct TakerActorSystem<O, W, P> {
     wallet_actor: Address<W>,
     pub auto_rollover_actor: Address<auto_rollover::Actor<O>>,
     pub price_feed_actor: Address<P>,
+    executor: command::Executor,
     /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
     /// address.
     _price_feed_supervisor: Address<supervisor::Actor<P, bitmex_price_feed::StopReason>>,
@@ -369,6 +376,8 @@ where
         let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
         let (process_manager_addr, process_manager_ctx) = xtra::Context::new(None);
+
+        let executor = command::Executor::new(db.clone(), process_manager_addr.clone());
 
         let mut tasks = Tasks::default();
 
@@ -451,6 +460,7 @@ where
             wallet_actor: wallet_actor_addr,
             auto_rollover_actor: auto_rollover_addr,
             price_feed_actor,
+            executor,
             _price_feed_supervisor: price_feed_supervisor,
             _tasks: tasks,
             maker_online_status_feed_receiver,
@@ -465,7 +475,11 @@ where
     }
 
     pub async fn commit(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor.send(taker_cfd::Commit { order_id }).await?
+        self.executor
+            .execute(order_id, |cfd| cfd.manual_commit_to_blockchain())
+            .await?;
+
+        Ok(())
     }
 
     pub async fn propose_settlement(&self, order_id: OrderId) -> Result<()> {
