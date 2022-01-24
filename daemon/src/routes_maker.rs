@@ -129,11 +129,14 @@ pub async fn post_sell_order(
 #[rocket::post("/cfd/<id>/<action>")]
 pub async fn post_cfd_action(
     id: Uuid,
-    action: CfdAction,
+    action: String,
     maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
     let id = OrderId::from(id);
+    let action = action.parse().map_err(|_| {
+        HttpApiProblem::new(StatusCode::BAD_REQUEST).detail(format!("Invalid action: {}", action))
+    })?;
 
     let result = match action {
         CfdAction::AcceptOrder => maker.accept_order(id).await,
