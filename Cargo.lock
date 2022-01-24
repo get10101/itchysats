@@ -479,7 +479,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "188a7c2ae2a1026b9831889fd6461db5d33c4f6d54d6f862bd8b81a2fcefbdba"
 dependencies = [
  "percent-encoding",
- "time 0.3.5",
+ "time 0.3.6",
  "version_check",
 ]
 
@@ -648,7 +648,7 @@ dependencies = [
  "snow",
  "sqlx",
  "thiserror",
- "time 0.3.5",
+ "time 0.3.6",
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
@@ -1760,6 +1760,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_threads"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71a1eb3a36534514077c1e079ada2fb170ef30c47d203aa6916138cf882ecd52"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2414,7 +2423,7 @@ dependencies = [
  "serde_json",
  "state",
  "tempfile",
- "time 0.3.5",
+ "time 0.3.6",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -2468,7 +2477,7 @@ dependencies = [
  "smallvec",
  "stable-pattern",
  "state",
- "time 0.3.5",
+ "time 0.3.6",
  "tokio",
  "uncased",
 ]
@@ -3262,12 +3271,13 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.5"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41effe7cfa8af36f439fac33861b66b049edc6f9a32331e2312660529c1c24ad"
+checksum = "c8d54b9298e05179c335de2b9645d061255bcd5155f843b3e328d2cfe0a5b413"
 dependencies = [
- "itoa 0.4.8",
+ "itoa 1.0.1",
  "libc",
+ "num_threads",
  "serde",
  "time-macros",
 ]
@@ -3468,7 +3478,7 @@ dependencies = [
  "serde_json",
  "sharded-slab",
  "thread_local",
- "time 0.3.5",
+ "time 0.3.6",
  "tracing",
  "tracing-core",
  "tracing-log",
