@@ -443,11 +443,11 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "3.0.0"
+version = "3.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1b9752c030a14235a0bd5ef3ad60a1dcac8468c30921327fc8af36b20c790b9"
+checksum = "517358c28fcef6607bf6f76108e02afad7e82297d132a6b846dcc1fc3efcd153"
 dependencies = [
- "heck",
+ "heck 0.4.0",
  "proc-macro-error",
  "proc-macro2",
  "quote",
@@ -610,16 +610,13 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "atty",
  "bdk",
  "bytes",
  "chrono",
- "clap",
  "derivative",
  "futures",
  "hex",
  "hkdf",
- "http-api-problem",
  "itertools",
  "maia",
  "mockall",
@@ -633,10 +630,6 @@ dependencies = [
  "proptest",
  "rand 0.6.5",
  "reqwest",
- "rocket",
- "rocket-basicauth 0.1.0",
- "rust-embed",
- "rust-embed-rocket",
  "rust_decimal",
  "rust_decimal_macros",
  "semver 1.0.4",
@@ -656,10 +649,24 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
- "vergen",
  "x25519-dalek",
  "xtra",
  "xtra_productivity",
+]
+
+[[package]]
+name = "daemon-shared"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atty",
+ "daemon",
+ "rocket",
+ "serde",
+ "serde_test",
+ "time 0.3.5",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1168,6 +1175,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "heck"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2540771e65fc8cb83cd6e8a237f70c319bd5c29f78ed1084ba5d50eeac86f7f9"
+
+[[package]]
 name = "hermit-abi"
 version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1473,6 +1486,28 @@ dependencies = [
  "rand 0.6.5",
  "secp256k1-zkp",
  "thiserror",
+]
+
+[[package]]
+name = "maker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "daemon",
+ "daemon-shared",
+ "hex",
+ "http-api-problem",
+ "rocket",
+ "rocket-basicauth 0.1.0",
+ "rust-embed",
+ "rust-embed-rocket",
+ "serde",
+ "tokio",
+ "tracing",
+ "uuid",
+ "vergen",
+ "xtra",
 ]
 
 [[package]]
@@ -3118,7 +3153,7 @@ checksum = "38e45140529cf1f90a5e1c2e561500ca345821a1c513652c8f486bbf07407cc8"
 dependencies = [
  "dotenv",
  "either",
- "heck",
+ "heck 0.3.3",
  "hex",
  "once_cell",
  "proc-macro2",
@@ -3242,6 +3277,31 @@ dependencies = [
  "ntapi",
  "once_cell",
  "winapi 0.3.9",
+]
+
+[[package]]
+name = "taker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "daemon",
+ "daemon-shared",
+ "hex",
+ "http-api-problem",
+ "itertools",
+ "rocket",
+ "rocket-basicauth 0.1.0",
+ "rust-embed",
+ "rust-embed-rocket",
+ "serde",
+ "time 0.3.5",
+ "tokio",
+ "tracing",
+ "uuid",
+ "vergen",
+ "x25519-dalek",
+ "xtra",
 ]
 
 [[package]]

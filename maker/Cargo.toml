@@ -1,0 +1,27 @@
+[package]
+name = "maker"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1"
+clap = { version = "3", features = ["derive"] }
+daemon = { path = "../daemon" }
+daemon-shared = { path = "../daemon-shared" }
+hex = "0.4"
+http-api-problem = { version = "0.51.0", features = ["rocket"] }
+rocket = { version = "0.5.0-rc.1", features = ["json", "uuid"] }
+rocket-basicauth = { path = "../rocket-basicauth" }
+rust-embed = "6.3"
+rust-embed-rocket = { path = "../rust-embed-rocket" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
+tracing = { version = "0.1" }
+uuid = "0.8"
+xtra = { version = "0.6" }
+
+[build-dependencies]
+vergen = "6"
+anyhow = "1"

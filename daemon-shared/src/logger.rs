@@ -1,9 +1,10 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use time::macros::format_description;
-use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::EnvFilter;
+
+pub use tracing_subscriber::filter::LevelFilter;
 
 pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
     if level == LevelFilter::OFF {

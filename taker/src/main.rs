@@ -1,16 +1,15 @@
 use anyhow::Context;
 use anyhow::Result;
-use bdk::bitcoin;
-use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::Address;
-use bdk::bitcoin::Amount;
-use bdk::FeeRate;
 use clap::Parser;
 use clap::Subcommand;
+use daemon::bdk::bitcoin;
+use daemon::bdk::bitcoin::secp256k1::schnorrsig;
+use daemon::bdk::bitcoin::Address;
+use daemon::bdk::bitcoin::Amount;
+use daemon::bdk::FeeRate;
 use daemon::bitmex_price_feed;
 use daemon::connection::connect;
 use daemon::db;
-use daemon::logger;
 use daemon::model::cfd::Role;
 use daemon::model::Identity;
 use daemon::monitor;
@@ -25,14 +24,15 @@ use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
+use daemon_shared::logger;
+use daemon_shared::logger::LevelFilter;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
-use tracing_subscriber::filter::LevelFilter;
 use xtra::Actor;
 
-mod routes_taker;
+mod routes;
 
 pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 
@@ -300,18 +300,15 @@ async fn main() -> Result<()> {
         .mount(
             "/api",
             rocket::routes![
-                routes_taker::feed,
-                routes_taker::post_order_request,
-                routes_taker::get_health_check,
-                routes_taker::post_cfd_action,
-                routes_taker::post_withdraw_request,
+                routes::feed,
+                routes::post_order_request,
+                routes::get_health_check,
+                routes::post_cfd_action,
+                routes::post_withdraw_request,
             ],
         )
         .register("/api", rocket::catchers![rocket_basicauth::unauthorized])
-        .mount(
-            "/",
-            rocket::routes![routes_taker::dist, routes_taker::index],
-        )
+        .mount("/", rocket::routes![routes::dist, routes::index])
         .register("/", rocket::catchers![rocket_basicauth::unauthorized]);
 
     let rocket = rocket.ignite().await?;

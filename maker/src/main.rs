@@ -1,14 +1,14 @@
 use anyhow::Context;
 use anyhow::Result;
-use bdk::bitcoin;
-use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::Amount;
-use bdk::FeeRate;
 use clap::Parser;
 use clap::Subcommand;
+use daemon::bdk;
+use daemon::bdk::bitcoin;
+use daemon::bdk::bitcoin::secp256k1::schnorrsig;
+use daemon::bdk::bitcoin::Amount;
+use daemon::bdk::FeeRate;
 use daemon::bitmex_price_feed;
 use daemon::db;
-use daemon::logger;
 use daemon::model::cfd::Role;
 use daemon::monitor;
 use daemon::oracle;
@@ -22,13 +22,14 @@ use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
+use daemon_shared::logger;
+use daemon_shared::logger::LevelFilter;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-use tracing_subscriber::filter::LevelFilter;
 use xtra::Actor;
 
-mod routes_maker;
+mod routes;
 
 #[derive(Parser)]
 struct Opts {
@@ -259,20 +260,17 @@ async fn main() -> Result<()> {
         .mount(
             "/api",
             rocket::routes![
-                routes_maker::maker_feed,
-                routes_maker::post_sell_order,
-                routes_maker::post_cfd_action,
-                routes_maker::get_health_check,
-                routes_maker::post_withdraw_request,
-                routes_maker::get_cfds,
-                routes_maker::get_takers,
+                routes::maker_feed,
+                routes::post_sell_order,
+                routes::post_cfd_action,
+                routes::get_health_check,
+                routes::post_withdraw_request,
+                routes::get_cfds,
+                routes::get_takers,
             ],
         )
         .register("/api", rocket::catchers![rocket_basicauth::unauthorized])
-        .mount(
-            "/",
-            rocket::routes![routes_maker::dist, routes_maker::index],
-        )
+        .mount("/", rocket::routes![routes::dist, routes::index])
         .register("/", rocket::catchers![rocket_basicauth::unauthorized])
         .launch()
         .await?;

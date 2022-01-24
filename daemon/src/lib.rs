@@ -30,6 +30,8 @@ use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
 use xtra::Address;
 
+pub use bdk;
+
 pub mod sqlx_ext; // Must come first because it is a macro.
 
 pub mod address_map;
@@ -44,7 +46,6 @@ pub mod connection;
 pub mod db;
 pub mod fan_out;
 pub mod keypair;
-pub mod logger;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
 pub mod model;
@@ -65,7 +66,6 @@ pub mod setup_maker;
 pub mod setup_taker;
 pub mod supervisor;
 pub mod taker_cfd;
-pub mod to_sse_event;
 pub mod tokio_ext;
 pub mod try_continue;
 pub mod wallet;
