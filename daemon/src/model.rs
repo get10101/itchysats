@@ -704,6 +704,49 @@ impl Default for OpeningFee {
 
 impl_sqlx_type_display_from_str!(OpeningFee);
 
+/// Transaction fee in satoshis per vbyte
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TxFeeRate(u32);
+
+impl TxFeeRate {
+    pub fn new(fee_rate: u32) -> Self {
+        Self(fee_rate)
+    }
+
+    pub fn to_u32(self) -> u32 {
+        self.0
+    }
+}
+
+impl From<TxFeeRate> for bdk::FeeRate {
+    fn from(fee_rate: TxFeeRate) -> Self {
+        Self::from_sat_per_vb(fee_rate.to_u32() as f32)
+    }
+}
+
+impl Default for TxFeeRate {
+    fn default() -> Self {
+        Self(1u32)
+    }
+}
+
+impl fmt::Display for TxFeeRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl str::FromStr for TxFeeRate {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let fee_sat = s.parse()?;
+        Ok(TxFeeRate(fee_sat))
+    }
+}
+
+impl_sqlx_type_display_from_str!(TxFeeRate);
+
 /// Fee paid contract setup / renewal(a fraction of it if rolling over)
 /// As the Cfd gets renewed, the struct keeps track of total fees as well as
 /// last fee paid along with the rate used to calculate it.

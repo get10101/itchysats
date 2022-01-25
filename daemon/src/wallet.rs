@@ -1,4 +1,5 @@
 use crate::model::Timestamp;
+use crate::model::TxFeeRate;
 use crate::model::WalletInfo;
 use crate::xtra_ext::SendInterval;
 use crate::Tasks;
@@ -126,11 +127,9 @@ impl Actor {
             fee_rate,
         }: BuildPartyParams,
     ) -> Result<PartyParams> {
-        let psbt = self.wallet.build_lock_tx(
-            amount,
-            &mut self.used_utxos,
-            FeeRate::from_sat_per_vb(fee_rate as f32),
-        )?;
+        let psbt = self
+            .wallet
+            .build_lock_tx(amount, &mut self.used_utxos, fee_rate.into())?;
 
         Ok(PartyParams {
             lock_psbt: psbt,
@@ -203,7 +202,7 @@ impl xtra::Actor for Actor {
 pub struct BuildPartyParams {
     pub amount: Amount,
     pub identity_pk: PublicKey,
-    pub fee_rate: u32,
+    pub fee_rate: TxFeeRate,
 }
 
 /// Private message to trigger a sync.

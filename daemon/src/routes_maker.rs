@@ -6,6 +6,7 @@ use daemon::model::FundingRate;
 use daemon::model::Identity;
 use daemon::model::OpeningFee;
 use daemon::model::Price;
+use daemon::model::TxFeeRate;
 use daemon::model::Usd;
 use daemon::model::WalletInfo;
 use daemon::oracle;
@@ -98,7 +99,7 @@ pub struct CfdNewOrderRequest {
     // always 1 USD
     pub min_quantity: Usd,
     pub max_quantity: Usd,
-    pub tx_fee_rate: Option<u32>,
+    pub tx_fee_rate: Option<TxFeeRate>,
     pub funding_rate: Option<FundingRate>,
     pub opening_fee: Option<OpeningFee>,
 }

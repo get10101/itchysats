@@ -492,12 +492,18 @@ impl Actor {
             wire::MakerToTaker::ConfirmRollover {
                 order_id,
                 oracle_event_id,
+                tx_fee_rate,
+                funding_rate,
             } => {
                 if self
                     .rollover_actors
                     .send(
                         &order_id,
-                        rollover_taker::RolloverAccepted { oracle_event_id },
+                        rollover_taker::RolloverAccepted {
+                            oracle_event_id,
+                            tx_fee_rate,
+                            funding_rate,
+                        },
                     )
                     .await
                     .is_err()

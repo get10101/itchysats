@@ -87,6 +87,7 @@ pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> R
             quantity_usd,
             opening_fee,
             initial_funding_rate,
+            initial_tx_fee_rate,
         },
         events,
     ) = db::load_cfd(order_id, conn).await?;
@@ -101,6 +102,7 @@ pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> R
         role,
         opening_fee,
         initial_funding_rate,
+        initial_tx_fee_rate,
         events,
     );
     Ok(cfd)

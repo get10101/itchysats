@@ -231,6 +231,9 @@ async fn rollover_an_open_cfd() {
     let (mut maker, mut taker, order_id) =
         start_from_open_cfd_state(oracle_data.announcement()).await;
 
+    // Maker needs to have an active offer in order to accept rollover
+    maker.publish_order(dummy_new_order()).await;
+
     taker.trigger_rollover(order_id).await;
 
     wait_next_state!(

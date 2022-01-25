@@ -16,6 +16,7 @@ use crate::model::Identity;
 use crate::model::OpeningFee;
 use crate::model::Position;
 use crate::model::Price;
+use crate::model::TxFeeRate;
 use crate::model::Usd;
 use crate::monitor;
 use crate::oracle;
@@ -74,7 +75,7 @@ pub struct NewOrder {
     pub price: Price,
     pub min_quantity: Usd,
     pub max_quantity: Usd,
-    pub tx_fee_rate: u32,
+    pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
     pub opening_fee: OpeningFee,
 }
@@ -382,9 +383,20 @@ impl<O, T, W> Actor<O, T, W> {
     }
 
     async fn handle_accept_rollover(&mut self, msg: AcceptRollover) -> Result<()> {
+        let order = self
+            .current_order
+            .as_ref()
+            .context("Cannot accept rollover without current offer, as we need up-to-date fees")?;
+
         if self
             .rollover_actors
-            .send(&msg.order_id, rollover_maker::AcceptRollover)
+            .send(
+                &msg.order_id,
+                rollover_maker::AcceptRollover {
+                    tx_fee_rate: order.tx_fee_rate,
+                    funding_rate: order.funding_rate,
+                },
+            )
             .await
             .is_err()
         {

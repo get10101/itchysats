@@ -51,6 +51,7 @@ use uuid::adapter::Hyphenated;
 use uuid::Uuid;
 
 use super::OpeningFee;
+use super::TxFeeRate;
 
 pub const CET_TIMELOCK: u32 = 12;
 
@@ -156,7 +157,7 @@ pub struct Order {
     /// The maker includes this into the Order based on the Oracle announcement to be used.
     pub oracle_event_id: BitMexPriceEventId,
 
-    pub tx_fee_rate: u32,
+    pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
     pub opening_fee: OpeningFee,
 }
@@ -170,7 +171,7 @@ impl Order {
         origin: Origin,
         oracle_event_id: BitMexPriceEventId,
         settlement_interval: Duration,
-        tx_fee_rate: u32,
+        tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
         opening_fee: OpeningFee,
     ) -> Result<Self> {
@@ -209,7 +210,7 @@ pub struct SettlementProposal {
     pub price: Price,
 }
 
-/// Proposed collaborative settlement
+/// Proposed rollover
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RolloverProposal {
     pub order_id: OrderId,
@@ -407,6 +408,7 @@ pub struct Cfd {
     counterparty_network_identity: Identity,
     role: Role,
     opening_fee: OpeningFee,
+    initial_tx_fee_rate: TxFeeRate,
     // dynamic (based on events)
     total_funding_fees: FundingFee,
 
@@ -458,6 +460,7 @@ impl Cfd {
         counterparty_network_identity: Identity,
         opening_fee: OpeningFee,
         initial_funding_rate: FundingRate,
+        initial_tx_fee_rate: TxFeeRate,
     ) -> Self {
         let long_initial_margin = calculate_long_margin(initial_price, quantity, leverage);
         // TODO: Use FundingFee::default() if we don't want to charge funding fees
@@ -481,6 +484,7 @@ impl Cfd {
             role,
             initial_funding_rate,
             opening_fee,
+            initial_tx_fee_rate,
             dlc: None,
             cet: None,
             commit_tx: None,
@@ -519,6 +523,7 @@ impl Cfd {
             counterparty_network_identity,
             order.opening_fee,
             order.funding_rate,
+            order.tx_fee_rate,
         )
     }
 
@@ -535,6 +540,7 @@ impl Cfd {
         role: Role,
         opening_fee: OpeningFee,
         initial_funding_rate: FundingRate,
+        initial_tx_fee_rate: TxFeeRate,
         events: Vec<Event>,
     ) -> Self {
         let cfd = Self::new(
@@ -548,6 +554,7 @@ impl Cfd {
             counterparty_network_identity,
             opening_fee,
             initial_funding_rate,
+            initial_tx_fee_rate,
         );
         events.into_iter().fold(cfd, Cfd::apply)
     }
@@ -642,7 +649,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+                self.initial_tx_fee_rate(),
                 self.total_funding_fees.clone(),
             )?,
         ))
@@ -658,7 +665,11 @@ impl Cfd {
         Ok(Event::new(self.id, CfdEvent::RolloverStarted))
     }
 
-    pub fn accept_rollover_proposal(self) -> Result<(Event, RolloverParams, Dlc, Duration)> {
+    pub fn accept_rollover_proposal(
+        self,
+        tx_fee_rate: TxFeeRate,
+        funding_rate: FundingRate,
+    ) -> Result<(Event, RolloverParams, Dlc, Duration)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -675,11 +686,7 @@ impl Cfd {
         // it's up-to-date
         let hours_to_charge = 1;
 
-        let funding_fee = FundingFee::new(
-            margin_minus_total_fees,
-            self.initial_funding_rate,
-            hours_to_charge,
-        )?;
+        let funding_fee = FundingFee::new(margin_minus_total_fees, funding_rate, hours_to_charge)?;
 
         Ok((
             Event::new(self.id, CfdEvent::RolloverAccepted),
@@ -688,7 +695,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+                tx_fee_rate,
                 self.total_funding_fees + funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
@@ -696,7 +703,11 @@ impl Cfd {
         ))
     }
 
-    pub fn handle_rollover_accepted_taker(&self) -> Result<(Event, RolloverParams, Dlc)> {
+    pub fn handle_rollover_accepted_taker(
+        &self,
+        tx_fee_rate: TxFeeRate,
+        funding_rate: FundingRate,
+    ) -> Result<(Event, RolloverParams, Dlc)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -711,8 +722,7 @@ impl Cfd {
         // whether they match
         let hours_to_charge = 1;
 
-        let funding_fee =
-            FundingFee::new(self.margin(), self.initial_funding_rate, hours_to_charge)?;
+        let funding_fee = FundingFee::new(self.margin(), funding_rate, hours_to_charge)?;
 
         Ok((
             self.event(CfdEvent::RolloverAccepted),
@@ -721,7 +731,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+                tx_fee_rate,
                 funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
@@ -1104,6 +1114,10 @@ impl Cfd {
 
     pub fn initial_funding_rate(&self) -> FundingRate {
         self.initial_funding_rate
+    }
+
+    pub fn initial_tx_fee_rate(&self) -> TxFeeRate {
+        self.initial_tx_fee_rate
     }
 
     pub fn opening_fee(&self) -> OpeningFee {
@@ -2287,7 +2301,7 @@ mod tests {
                 Origin::Ours,
                 dummy_event_id(),
                 time::Duration::hours(24),
-                1,
+                TxFeeRate::default(),
                 FundingRate::default(),
                 OpeningFee::default(),
             )

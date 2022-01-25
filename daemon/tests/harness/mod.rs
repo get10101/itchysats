@@ -18,6 +18,7 @@ use daemon::model::Identity;
 use daemon::model::OpeningFee;
 use daemon::model::Price;
 use daemon::model::Timestamp;
+use daemon::model::TxFeeRate;
 use daemon::model::Usd;
 use daemon::projection;
 use daemon::projection::Cfd;
@@ -347,7 +348,7 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
         price: dummy_price(),
         min_quantity: Usd::new(dec!(5)),
         max_quantity: Usd::new(dec!(100)),
-        tx_fee_rate: 1,
+        tx_fee_rate: TxFeeRate::new(1),
         funding_rate: FundingRate::new(dec!(0.024)).unwrap(),
         opening_fee: OpeningFee::new(Amount::from_sat(2)),
     }

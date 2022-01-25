@@ -9,6 +9,7 @@ use crate::model::Leverage;
 use crate::model::OpeningFee;
 use crate::model::Position;
 use crate::model::Price;
+use crate::model::TxFeeRate;
 use crate::model::Usd;
 use anyhow::Context;
 use anyhow::Result;
@@ -16,6 +17,7 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use sqlx::migrate::MigrateError;
 use sqlx::pool::PoolConnection;
+use sqlx::pool::PoolOptions;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;
@@ -29,12 +31,14 @@ use time::Duration;
 /// new one is created.
 pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
     async move {
-        let pool = SqlitePool::connect_with(
-            SqliteConnectOptions::new()
-                .create_if_missing(true)
-                .filename(&path),
-        )
-        .await?;
+        let pool = PoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .create_if_missing(true)
+                    .filename(&path),
+            )
+            .await?;
 
         let path_display = path.display();
 
@@ -110,8 +114,9 @@ pub async fn insert_cfd(cfd: &model::cfd::Cfd, conn: &mut PoolConnection<Sqlite>
             counterparty_network_identity,
             role,
             opening_fee,
-            initial_funding_rate
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
+            initial_funding_rate,
+            initial_tx_fee_rate
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
     )
     .bind(&cfd.id())
     .bind(&cfd.position())
@@ -123,6 +128,7 @@ pub async fn insert_cfd(cfd: &model::cfd::Cfd, conn: &mut PoolConnection<Sqlite>
     .bind(&cfd.role())
     .bind(&cfd.opening_fee())
     .bind(&cfd.initial_funding_rate())
+    .bind(&cfd.initial_tx_fee_rate())
     .execute(conn)
     .await?;
 
@@ -187,6 +193,7 @@ pub struct Cfd {
     pub role: Role,
     pub opening_fee: OpeningFee,
     pub initial_funding_rate: FundingRate,
+    pub initial_tx_fee_rate: TxFeeRate,
 }
 
 pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<(Cfd, Vec<Event>)> {
@@ -203,7 +210,8 @@ pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<
                 counterparty_network_identity as "counterparty_network_identity: crate::model::Identity",
                 role as "role: crate::model::cfd::Role",
                 opening_fee as "opening_fee: crate::model::OpeningFee",
-                initial_funding_rate as "initial_funding_rate: crate::model::FundingRate"
+                initial_funding_rate as "initial_funding_rate: crate::model::FundingRate",
+                initial_tx_fee_rate as "initial_tx_fee_rate: crate::model::TxFeeRate"
             from
                 cfds
             where
@@ -225,6 +233,7 @@ pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<
         role: cfd_row.role,
         opening_fee: cfd_row.opening_fee,
         initial_funding_rate: cfd_row.initial_funding_rate,
+        initial_tx_fee_rate: cfd_row.initial_tx_fee_rate,
     };
 
     let events = sqlx::query!(
@@ -285,6 +294,7 @@ mod tests {
     use crate::model::Position;
     use crate::model::Price;
     use crate::model::Timestamp;
+    use crate::model::TxFeeRate;
     use crate::model::Usd;
     use bdk::bitcoin::Amount;
     use pretty_assertions::assert_eq;
@@ -308,6 +318,7 @@ mod tests {
                 role,
                 opening_fee,
                 initial_funding_rate,
+                initial_tx_fee_rate,
             },
             _,
         ) = load_cfd(cfd.id(), &mut conn).await.unwrap();
@@ -325,6 +336,7 @@ mod tests {
         assert_eq!(cfd.role(), role);
         assert_eq!(cfd.opening_fee(), opening_fee);
         assert_eq!(cfd.initial_funding_rate(), initial_funding_rate);
+        assert_eq!(cfd.initial_tx_fee_rate(), initial_tx_fee_rate);
     }
 
     #[tokio::test]
@@ -392,6 +404,7 @@ mod tests {
                     .unwrap(),
                 OpeningFee::new(Amount::from_sat(2000)),
                 FundingRate::default(),
+                TxFeeRate::default(),
             )
         }
 

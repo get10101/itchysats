@@ -22,6 +22,7 @@ use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use model::FundingRate;
 use model::OpeningFee;
+use model::TxFeeRate;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -239,7 +240,7 @@ where
         price: Price,
         min_quantity: Usd,
         max_quantity: Usd,
-        fee_rate: Option<u32>,
+        fee_rate: Option<TxFeeRate>,
         funding_rate: Option<FundingRate>,
         opening_fee: Option<OpeningFee>,
     ) -> Result<()> {
@@ -248,7 +249,7 @@ where
                 price,
                 min_quantity,
                 max_quantity,
-                tx_fee_rate: fee_rate.unwrap_or(1),
+                tx_fee_rate: fee_rate.unwrap_or_default(),
                 funding_rate: funding_rate.unwrap_or_default(),
                 opening_fee: opening_fee.unwrap_or_default(),
             })

@@ -8,7 +8,9 @@ use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
 use crate::model::FundingFee;
+use crate::model::FundingRate;
 use crate::model::Identity;
+use crate::model::TxFeeRate;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
 use crate::process_manager;
@@ -30,8 +32,13 @@ use xtra::Context;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 
+/// Upon accepting Rollover maker sends the current estimated transaction fee and
+/// funding rate
 #[derive(Debug)]
-pub struct AcceptRollover;
+pub struct AcceptRollover {
+    pub tx_fee_rate: TxFeeRate,
+    pub funding_rate: FundingRate,
+}
 
 #[derive(Debug)]
 pub struct RejectRollover;
@@ -112,8 +119,12 @@ impl Actor {
         ctx.stop();
     }
 
-    async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    async fn accept(&mut self, msg: AcceptRollover, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let order_id = self.order_id;
+        let AcceptRollover {
+            tx_fee_rate,
+            funding_rate,
+        } = msg;
 
         if self.sent_from_taker.is_some() {
             tracing::warn!(%order_id, "Rollover already active");
@@ -124,11 +135,13 @@ impl Actor {
 
         self.sent_from_taker = Some(sender);
 
-        tracing::debug!(%order_id, "Maker accepts a rollover proposal" );
+        tracing::debug!(%order_id, "Maker accepts a rollover proposal");
 
         let (rollover_params, dlc, interval) = self
             .executor
-            .execute(self.order_id, |cfd| cfd.accept_rollover_proposal())
+            .execute(self.order_id, |cfd| {
+                cfd.accept_rollover_proposal(tx_fee_rate, funding_rate)
+            })
             .await?;
 
         let oracle_event_id =
@@ -143,6 +156,8 @@ impl Actor {
                 msg: wire::MakerToTaker::ConfirmRollover {
                     order_id,
                     oracle_event_id,
+                    tx_fee_rate,
+                    funding_rate,
                 },
             })
             .await
@@ -272,12 +287,8 @@ impl xtra::Actor for Actor {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle_accept_rollover(
-        &mut self,
-        _msg: AcceptRollover,
-        ctx: &mut xtra::Context<Self>,
-    ) {
-        if let Err(error) = self.accept(ctx).await {
+    async fn handle_accept_rollover(&mut self, msg: AcceptRollover, ctx: &mut xtra::Context<Self>) {
+        if let Err(error) = self.accept(msg, ctx).await {
             self.complete(
                 RolloverCompleted::Failed {
                     order_id: self.order_id,
