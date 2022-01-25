@@ -20,6 +20,7 @@ use daemon_tests::init_tracing;
 use daemon_tests::maia::OliviaData;
 use daemon_tests::mocks::oracle::dummy_wrong_attestation;
 use daemon_tests::start_both;
+use daemon_tests::wait_next_state;
 use daemon_tests::Maker;
 use daemon_tests::MakerConfig;
 use daemon_tests::Taker;
@@ -27,28 +28,6 @@ use daemon_tests::TakerConfig;
 use rust_decimal_macros::dec;
 use std::time::Duration;
 use tokio::time::sleep;
-
-/// Waits until the CFDs for both maker and taker are in the given state.
-macro_rules! wait_next_state {
-    ($id:expr, $maker:expr, $taker:expr, $maker_state:expr, $taker_state:expr) => {
-        let wait_until_taker = next_with($taker.cfd_feed(), one_cfd_with_state($taker_state));
-        let wait_until_maker = next_with($maker.cfd_feed(), one_cfd_with_state($maker_state));
-
-        let (taker_cfd, maker_cfd) = tokio::join!(wait_until_taker, wait_until_maker);
-        let taker_cfd = taker_cfd.unwrap();
-        let maker_cfd = maker_cfd.unwrap();
-
-        assert_eq!(
-            taker_cfd.order_id, maker_cfd.order_id,
-            "order id mismatch between maker and taker"
-        );
-        assert_eq!(taker_cfd.order_id, $id, "unexpected order id in the taker");
-        assert_eq!(maker_cfd.order_id, $id, "unexpected order id in the maker");
-    };
-    ($id:expr, $maker:expr, $taker:expr, $state:expr) => {
-        wait_next_state!($id, $maker, $taker, $state, $state)
-    };
-}
 
 #[tokio::test]
 async fn taker_receives_order_from_maker_on_publication() {
