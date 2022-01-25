@@ -7,6 +7,7 @@ use crate::model::FundingFee;
 use crate::model::Identity;
 use crate::model::Leverage;
 use crate::model::Price;
+use crate::model::TxFeeRate;
 use crate::model::Usd;
 use crate::oracle;
 use crate::payout_curve;
@@ -67,7 +68,7 @@ pub struct SetupParams {
     quantity: Usd,
     leverage: Leverage,
     refund_timelock: u32,
-    tx_fee_rate: u32,
+    tx_fee_rate: TxFeeRate,
     funding_fee: FundingFee,
 }
 
@@ -81,7 +82,7 @@ impl SetupParams {
         quantity: Usd,
         leverage: Leverage,
         refund_timelock: u32,
-        tx_fee_rate: u32,
+        tx_fee_rate: TxFeeRate,
         funding_fee: FundingFee,
     ) -> Result<Self> {
         Ok(Self {
@@ -186,7 +187,7 @@ pub async fn new(
                 (CET_TIMELOCK, setup_params.refund_timelock),
                 payouts,
                 sk,
-                setup_params.tx_fee_rate,
+                setup_params.tx_fee_rate.to_u32(),
             )
         }
     })
@@ -380,7 +381,7 @@ pub struct RolloverParams {
     quantity: Usd,
     leverage: Leverage,
     refund_timelock: u32,
-    fee_rate: u32,
+    fee_rate: TxFeeRate,
     funding_fee: FundingFee,
 }
 
@@ -390,7 +391,7 @@ impl RolloverParams {
         quantity: Usd,
         leverage: Leverage,
         refund_timelock: u32,
-        fee_rate: u32,
+        fee_rate: TxFeeRate,
         funding_fee: FundingFee,
     ) -> Self {
         Self {
@@ -505,7 +506,7 @@ pub async fn roll_over(
                 (CET_TIMELOCK, rollover_params.refund_timelock),
                 payouts,
                 sk,
-                rollover_params.fee_rate,
+                rollover_params.fee_rate.to_u32(),
             )
         }
     })

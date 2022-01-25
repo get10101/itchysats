@@ -16,6 +16,7 @@ use crate::model::Identity;
 use crate::model::OpeningFee;
 use crate::model::Position;
 use crate::model::Price;
+use crate::model::TxFeeRate;
 use crate::model::Usd;
 use crate::monitor;
 use crate::oracle;
@@ -74,7 +75,7 @@ pub struct NewOrder {
     pub price: Price,
     pub min_quantity: Usd,
     pub max_quantity: Usd,
-    pub tx_fee_rate: u32,
+    pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
     pub opening_fee: OpeningFee,
 }

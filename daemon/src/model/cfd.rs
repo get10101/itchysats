@@ -51,6 +51,7 @@ use uuid::adapter::Hyphenated;
 use uuid::Uuid;
 
 use super::OpeningFee;
+use super::TxFeeRate;
 
 pub const CET_TIMELOCK: u32 = 12;
 
@@ -156,7 +157,7 @@ pub struct Order {
     /// The maker includes this into the Order based on the Oracle announcement to be used.
     pub oracle_event_id: BitMexPriceEventId,
 
-    pub tx_fee_rate: u32,
+    pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
     pub opening_fee: OpeningFee,
 }
@@ -170,7 +171,7 @@ impl Order {
         origin: Origin,
         oracle_event_id: BitMexPriceEventId,
         settlement_interval: Duration,
-        tx_fee_rate: u32,
+        tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
         opening_fee: OpeningFee,
     ) -> Result<Self> {
@@ -642,7 +643,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+                TxFeeRate::default(), // TODO: Where should I get the fee rate from?
                 self.total_funding_fees.clone(),
             )?,
         ))
@@ -688,7 +689,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+                TxFeeRate::default(), // TODO: Where should I get the fee rate from?
                 self.total_funding_fees + funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
@@ -721,7 +722,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                1, // TODO: Where should I get the fee rate from?
+                TxFeeRate::default(), // TODO: Where should I get the fee rate from?
                 funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
@@ -2287,7 +2288,7 @@ mod tests {
                 Origin::Ours,
                 dummy_event_id(),
                 time::Duration::hours(24),
-                1,
+                TxFeeRate::default(),
                 FundingRate::default(),
                 OpeningFee::default(),
             )
