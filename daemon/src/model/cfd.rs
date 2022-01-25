@@ -764,11 +764,7 @@ impl Cfd {
             self.quantity,
             self.leverage,
             n_payouts,
-            FundingFee::new(
-                self.margin(),
-                self.initial_funding_rate,
-                SETTLEMENT_INTERVAL.whole_hours(),
-            )?,
+            self.total_funding_fees.clone(),
         )?;
 
         let payout = {
@@ -813,11 +809,7 @@ impl Cfd {
             self.quantity,
             self.leverage,
             n_payouts,
-            FundingFee::new(
-                self.counterparty_margin(),
-                self.funding_rate,
-                SETTLEMENT_INTERVAL.whole_hours(),
-            )?,
+            self.total_funding_fees,
         )?;
 
         let payout = {
