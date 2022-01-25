@@ -332,7 +332,7 @@ pub struct TakerActorSystem<O, W, P> {
     executor: command::Executor,
     /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
     /// address.
-    _price_feed_supervisor: Address<supervisor::Actor<P, bitmex_price_feed::StopReason>>,
+    _price_feed_supervisor: Address<supervisor::Actor<P, bitmex_price_feed::Error>>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
@@ -357,7 +357,7 @@ where
         identity_sk: x25519_dalek::StaticSecret,
         oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> Result<M>,
-        price_feed_constructor: impl (Fn(Address<supervisor::Actor<P, bitmex_price_feed::StopReason>>) -> P)
+        price_feed_constructor: impl (Fn(Address<supervisor::Actor<P, bitmex_price_feed::Error>>) -> P)
             + Send
             + 'static,
         n_payouts: usize,
