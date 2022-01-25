@@ -12,7 +12,6 @@ use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
-use crate::model::FundingFee;
 use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::Leverage;
@@ -162,7 +161,7 @@ pub struct Cfd {
     ///
     /// Includes the opening fee and all fees that were already charged.
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub accumulated_fees: Amount,
+    pub accumulated_fees: SignedAmount,
 
     pub leverage: Leverage,
     pub trading_pair: TradingPair,
@@ -177,6 +176,7 @@ pub struct Cfd {
     pub margin: Amount,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub margin_counterparty: Amount,
+    pub role: Role,
 
     /// Projected or final profit amount
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
@@ -276,6 +276,7 @@ impl Cfd {
             quantity_usd,
             counterparty_network_identity,
             role,
+            opening_fee,
             ..
         }: db::Cfd,
         latest_quote: Option<bitmex_price_feed::Quote>,
@@ -320,7 +321,7 @@ impl Cfd {
         Self {
             order_id: id,
             initial_price,
-            accumulated_fees: Amount::from_sat(123456), // FIXME: calculate
+            accumulated_fees: opening_fee.amount_for(role),
             leverage,
             trading_pair: TradingPair::BtcUsd,
             position,
@@ -328,6 +329,7 @@ impl Cfd {
             quantity_usd,
             margin,
             margin_counterparty,
+            role,
 
             // By default, we assume profit should be based on the latest price!
             profit_btc: profit_btc_latest_price,
@@ -364,8 +366,11 @@ impl Cfd {
             OfferRejected => {
                 self.state = CfdState::Rejected;
             }
-            RolloverCompleted { dlc } => {
+            RolloverCompleted { dlc, funding_fee } => {
                 self.aggregated.latest_dlc = Some(dlc);
+                self.accumulated_fees
+                    .checked_add(funding_fee.amount_for(self.role))
+                    .expect("addition to work");
 
                 self.state = CfdState::Open;
             }
@@ -709,10 +714,9 @@ pub struct CfdOrder {
 
     /// Fee charged by the maker for opening a position
     ///
-    /// Note: It's the minimum possible fee, we cannot calculate the exact
-    /// amount until we know the quantity taken by the taker
+    /// Note: It's a flat fee on top of the fee calculated based on funding rate
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
-    pub opening_fee_per_parcel: Option<Amount>,
+    pub opening_fee: Option<Amount>,
 
     /// The interest as annualized percentage
     ///
@@ -776,25 +780,11 @@ impl From<Order> for CfdOrder {
                 .whole_seconds()
                 .try_into()
                 .expect("settlement_time_interval_hours is always positive number"),
-            // XXX: We cannot calculate full fee here, best we can do is to give
-            // minimal fee
-            opening_fee_per_parcel: calculate_min_opening_fee(&order),
+            opening_fee: Some(Amount::from_sat(order.opening_fee.to_u64())),
             funding_rate_annualized_percent: AnnualisedFundingRate::from(order.funding_rate)
                 .to_string(),
             funding_rate_hourly_percent: HourlyFundingRate::from(order.funding_rate).to_string(),
         }
-    }
-}
-
-fn calculate_min_opening_fee(order: &Order) -> Option<Amount> {
-    if let Ok(fee) = FundingFee::new(
-        calculate_long_margin(order.price, order.min_quantity, order.leverage),
-        order.funding_rate,
-        order.settlement_interval.whole_hours(),
-    ) {
-        Some(fee.into())
-    } else {
-        None
     }
 }
 
@@ -1009,7 +999,7 @@ impl From<FundingRate> for HourlyFundingRate {
 
 impl fmt::Display for HourlyFundingRate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.round_dp(2).fmt(f)
+        self.0.round_dp(4).fmt(f)
     }
 }
 

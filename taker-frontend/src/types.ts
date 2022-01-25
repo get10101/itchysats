@@ -22,7 +22,7 @@ export interface Order {
     creation_timestamp: number;
     settlement_time_interval_in_secs: number;
 
-    opening_fee_per_parcel: number;
+    opening_fee: number;
     funding_rate_annualized_percent: string; // e.g. "18.5" (does not include % char)
     funding_rate_hourly_percent: string; // e.g. "0.002345" (does not include % char)
 }

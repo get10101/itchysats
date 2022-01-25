@@ -13,6 +13,7 @@ use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementProposal;
 use crate::model::FundingRate;
 use crate::model::Identity;
+use crate::model::OpeningFee;
 use crate::model::Position;
 use crate::model::Price;
 use crate::model::Usd;
@@ -75,6 +76,7 @@ pub struct NewOrder {
     pub max_quantity: Usd,
     pub tx_fee_rate: u32,
     pub funding_rate: FundingRate,
+    pub opening_fee: OpeningFee,
 }
 
 #[derive(Debug)]
@@ -492,6 +494,7 @@ where
             max_quantity,
             tx_fee_rate,
             funding_rate,
+            opening_fee,
         } = msg;
 
         let oracle_event_id = oracle::next_announcement_after(
@@ -507,6 +510,7 @@ where
             self.settlement_interval,
             tx_fee_rate,
             funding_rate,
+            opening_fee,
         )?;
 
         // 1. Update actor state to current order

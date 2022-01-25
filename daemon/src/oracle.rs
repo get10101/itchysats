@@ -80,8 +80,8 @@ struct Cfd {
 impl Cfd {
     fn apply(self, event: Event) -> Self {
         let settlement_event_id = match event.event {
-            CfdEvent::ContractSetupCompleted { dlc } => dlc.settlement_event_id,
-            CfdEvent::RolloverCompleted { dlc } => dlc.settlement_event_id,
+            CfdEvent::ContractSetupCompleted { dlc, .. } => dlc.settlement_event_id,
+            CfdEvent::RolloverCompleted { dlc, .. } => dlc.settlement_event_id,
             // TODO: There might be a few cases where we do not need to monitor the attestation,
             // e.g. when we already agreed to collab. settle. Ignoring it for now
             // because I don't want to think about it and it doesn't cause much harm to do the

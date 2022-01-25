@@ -7,6 +7,7 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
+use crate::model::FundingFee;
 use crate::model::Identity;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
@@ -43,9 +44,10 @@ pub struct ProtocolMsg(pub wire::RolloverMsg);
 #[derive(Debug)]
 struct RolloverSucceeded {
     dlc: Dlc,
+    funding_fee: FundingFee,
 }
 
-/// Message sent from the spawned task to `rollover_taker::Actor` to
+/// Message sent from the spawned task to `rollover_maker::Actor` to
 /// notify that rollover has failed.
 #[derive(Debug)]
 struct RolloverFailed {
@@ -154,6 +156,8 @@ impl Actor {
             .context("Oracle actor disconnected")?
             .context("Failed to get announcement")?;
 
+        let funding_fee = rollover_params.funding_fee().clone();
+
         let rollover_fut = setup_contract::roll_over(
             self.send_to_taker_actor.sink().with(move |msg| {
                 future::ok(maker_inc_connections::TakerMessage {
@@ -174,7 +178,7 @@ impl Actor {
         self.tasks.add(async move {
             let _: Result<(), xtra::Disconnected> =
                 match rollover_fut.await.context("Rollover protocol failed") {
-                    Ok(dlc) => this.send(RolloverSucceeded { dlc }).await,
+                    Ok(dlc) => this.send(RolloverSucceeded { dlc, funding_fee }).await,
                     Err(source) => this.send(RolloverFailed { error: source }).await,
                 };
         });
@@ -325,7 +329,10 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        self.complete(RolloverCompleted::succeeded(self.order_id, msg.dlc), ctx)
-            .await
+        self.complete(
+            RolloverCompleted::succeeded(self.order_id, msg.dlc, msg.funding_fee),
+            ctx,
+        )
+        .await
     }
 }

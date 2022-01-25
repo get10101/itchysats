@@ -24,8 +24,8 @@
       ]
     }
   },
-  "e8a672355cd8c799b6291ccb629837dcd3a3fa9d3954bb78d22ba98e99674341": {
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: crate::model::cfd::OrderId\",\n                position as \"position: crate::model::Position\",\n                initial_price as \"initial_price: crate::model::Price\",\n                leverage as \"leverage: crate::model::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: crate::model::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: crate::model::Identity\",\n                role as \"role: crate::model::cfd::Role\"\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            ",
+  "adb69ad1009b9096072f0357b6db27d89b6a6e47b8a820f2e1ce6a0966d5fca1": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: crate::model::cfd::OrderId\",\n                position as \"position: crate::model::Position\",\n                initial_price as \"initial_price: crate::model::Price\",\n                leverage as \"leverage: crate::model::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: crate::model::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: crate::model::Identity\",\n                role as \"role: crate::model::cfd::Role\",\n                opening_fee as \"opening_fee: crate::model::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: crate::model::FundingRate\"\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            ",
     "describe": {
       "columns": [
         {
@@ -72,6 +72,16 @@
           "name": "role: crate::model::cfd::Role",
           "ordinal": 8,
           "type_info": "Text"
+        },
+        {
+          "name": "opening_fee: crate::model::OpeningFee",
+          "ordinal": 9,
+          "type_info": "Null"
+        },
+        {
+          "name": "initial_funding_rate: crate::model::FundingRate",
+          "ordinal": 10,
+          "type_info": "Null"
         }
       ],
       "parameters": {
@@ -79,6 +89,8 @@
       },
       "nullable": [
         true,
+        false,
+        false,
         false,
         false,
         false,

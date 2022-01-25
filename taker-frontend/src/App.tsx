@@ -53,7 +53,7 @@ export const App = () => {
     const parcelSize = parseOptionalNumber(order?.parcel_size) || 0;
     const liquidationPrice = parseOptionalNumber(order?.liquidation_price);
     const marginPerParcel = order?.margin_per_parcel || 0;
-    const openingFeePerParcel = order?.opening_fee_per_parcel || 0;
+    const openingFee = order?.opening_fee || 0;
     const fundingRateAnnualized = order?.funding_rate_annualized_percent || "0";
 
     const fundingRateHourly = order
@@ -127,7 +127,7 @@ export const App = () => {
                                     leverage={order?.leverage}
                                     liquidationPrice={liquidationPrice}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
-                                    openingFeePerParcel={openingFeePerParcel}
+                                    openingFeePerParcel={openingFee}
                                     fundingRateAnnualized={fundingRateAnnualized}
                                     fundingRateHourly={fundingRateHourly || "0"}
                                 />

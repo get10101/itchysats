@@ -50,6 +50,8 @@ use time::OffsetDateTime;
 use uuid::adapter::Hyphenated;
 use uuid::Uuid;
 
+use super::OpeningFee;
+
 pub const CET_TIMELOCK: u32 = 12;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
@@ -107,7 +109,7 @@ pub enum Origin {
 }
 
 /// Role in the Cfd
-#[derive(Debug, Copy, Clone, PartialEq, sqlx::Type)]
+#[derive(Debug, Copy, Clone, PartialEq, sqlx::Type, Serialize, Deserialize)]
 pub enum Role {
     Maker,
     Taker,
@@ -156,6 +158,7 @@ pub struct Order {
 
     pub tx_fee_rate: u32,
     pub funding_rate: FundingRate,
+    pub opening_fee: OpeningFee,
 }
 
 impl Order {
@@ -169,6 +172,7 @@ impl Order {
         settlement_interval: Duration,
         tx_fee_rate: u32,
         funding_rate: FundingRate,
+        opening_fee: OpeningFee,
     ) -> Result<Self> {
         let leverage = Leverage::new(2)?;
         let liquidation_price = calculate_long_liquidation_price(leverage, price);
@@ -188,6 +192,7 @@ impl Order {
             oracle_event_id,
             tx_fee_rate,
             funding_rate,
+            opening_fee,
         })
     }
 }
@@ -280,6 +285,7 @@ pub enum CfdEvent {
     RolloverRejected,
     RolloverCompleted {
         dlc: Dlc,
+        funding_fee: FundingFee,
     },
     RolloverFailed,
 
@@ -394,14 +400,16 @@ pub struct Cfd {
     id: OrderId,
     position: Position,
     initial_price: Price,
-    funding_rate: FundingRate,
+    initial_funding_rate: FundingRate,
     leverage: Leverage,
     settlement_interval: Duration,
     quantity: Usd,
     counterparty_network_identity: Identity,
     role: Role,
-
+    opening_fee: OpeningFee,
     // dynamic (based on events)
+    total_funding_fees: FundingFee,
+
     dlc: Option<Dlc>,
 
     /// Holds the decrypted CET transaction if we have previously emitted it as part of an event.
@@ -448,7 +456,19 @@ impl Cfd {
         role: Role,
         quantity: Usd,
         counterparty_network_identity: Identity,
+        opening_fee: OpeningFee,
+        initial_funding_rate: FundingRate,
     ) -> Self {
+        let long_initial_margin = calculate_long_margin(initial_price, quantity, leverage);
+        // TODO: Use FundingFee::default() if we don't want to charge funding fees
+        // based on quantity for the first settlement interval.
+        let funding_fees = FundingFee::new(
+            long_initial_margin,
+            initial_funding_rate,
+            SETTLEMENT_INTERVAL.whole_hours(),
+        )
+        .expect("values stored in db to be sane");
+
         Cfd {
             version: 0,
             id,
@@ -459,6 +479,8 @@ impl Cfd {
             quantity,
             counterparty_network_identity,
             role,
+            initial_funding_rate,
+            opening_fee,
             dlc: None,
             cet: None,
             commit_tx: None,
@@ -474,7 +496,7 @@ impl Cfd {
             during_contract_setup: false,
             during_rollover: false,
             settlement_proposal: None,
-            funding_rate: FundingRate::new(Decimal::ZERO).expect("be valid"),
+            total_funding_fees: funding_fees.with_opening_fee(opening_fee),
         }
     }
 
@@ -495,6 +517,8 @@ impl Cfd {
             role,
             quantity,
             counterparty_network_identity,
+            order.opening_fee,
+            order.funding_rate,
         )
     }
 
@@ -509,6 +533,8 @@ impl Cfd {
         quantity: Usd,
         counterparty_network_identity: Identity,
         role: Role,
+        opening_fee: OpeningFee,
+        initial_funding_rate: FundingRate,
         events: Vec<Event>,
     ) -> Self {
         let cfd = Self::new(
@@ -520,6 +546,8 @@ impl Cfd {
             role,
             quantity,
             counterparty_network_identity,
+            opening_fee,
+            initial_funding_rate,
         );
         events.into_iter().fold(cfd, Cfd::apply)
     }
@@ -615,7 +643,7 @@ impl Cfd {
                 self.leverage,
                 self.refund_timelock_in_blocks(),
                 1, // TODO: Where should I get the fee rate from?
-                self.funding_rate,
+                self.total_funding_fees.clone(),
             )?,
         ))
     }
@@ -639,15 +667,19 @@ impl Cfd {
             bail!("Can only accept proposal as a maker");
         }
 
-        // TODO: Adjust for total paid fees
+        // TODO: Adjust for total paid fees - do we still need to do that if we
+        // tally up the fees???
         let margin_minus_total_fees = self.margin();
 
         // TODO: Calculate the time from the last rollover, don't just assume
         // it's up-to-date
         let hours_to_charge = 1;
 
-        let funding_fee =
-            FundingFee::new(margin_minus_total_fees, self.funding_rate, hours_to_charge)?;
+        let funding_fee = FundingFee::new(
+            margin_minus_total_fees,
+            self.initial_funding_rate,
+            hours_to_charge,
+        )?;
 
         Ok((
             Event::new(self.id, CfdEvent::RolloverAccepted),
@@ -657,7 +689,7 @@ impl Cfd {
                 self.leverage,
                 self.refund_timelock_in_blocks(),
                 1, // TODO: Where should I get the fee rate from?
-                funding_fee,
+                self.total_funding_fees + funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
             self.settlement_interval,
@@ -679,7 +711,8 @@ impl Cfd {
         // whether they match
         let hours_to_charge = 1;
 
-        let funding_fee = FundingFee::new(self.margin(), self.funding_rate, hours_to_charge)?;
+        let funding_fee =
+            FundingFee::new(self.margin(), self.initial_funding_rate, hours_to_charge)?;
 
         Ok((
             self.event(CfdEvent::RolloverAccepted),
@@ -731,11 +764,7 @@ impl Cfd {
             self.quantity,
             self.leverage,
             n_payouts,
-            FundingFee::new(
-                self.margin(),
-                self.funding_rate,
-                SETTLEMENT_INTERVAL.whole_hours(),
-            )?,
+            self.total_funding_fees.clone(),
         )?;
 
         let payout = {
@@ -780,11 +809,7 @@ impl Cfd {
             self.quantity,
             self.leverage,
             n_payouts,
-            FundingFee::new(
-                self.counterparty_margin(),
-                self.funding_rate,
-                SETTLEMENT_INTERVAL.whole_hours(),
-            )?,
+            self.total_funding_fees,
         )?;
 
         let payout = {
@@ -851,10 +876,11 @@ impl Cfd {
     ) -> Result<Option<Event>, NoRolloverReason> {
         let event = match completed {
             Completed::Succeeded {
-                payload: (dlc, _), ..
+                payload: (dlc, funding_fee, _),
+                ..
             } => {
                 self.can_rollover()?;
-                CfdEvent::RolloverCompleted { dlc }
+                CfdEvent::RolloverCompleted { dlc, funding_fee }
             }
             Completed::Rejected { reason, .. } => {
                 tracing::info!(order_id = %self.id, "Rollover was rejected: {:#}", reason);
@@ -1076,6 +1102,14 @@ impl Cfd {
         self.role
     }
 
+    pub fn initial_funding_rate(&self) -> FundingRate {
+        self.initial_funding_rate
+    }
+
+    pub fn opening_fee(&self) -> OpeningFee {
+        self.opening_fee
+    }
+
     pub fn sign_collaborative_settlement_taker(
         &self,
         proposal: &SettlementProposal,
@@ -1118,9 +1152,10 @@ impl Cfd {
                 self.during_rollover = true;
             }
             RolloverAccepted => {}
-            RolloverCompleted { dlc } => {
+            RolloverCompleted { dlc, funding_fee } => {
                 self.dlc = Some(dlc);
                 self.during_rollover = false;
+                self.total_funding_fees = self.total_funding_fees + funding_fee;
             }
             RolloverFailed { .. } => {
                 self.during_rollover = false;
@@ -1649,7 +1684,7 @@ pub type SetupCompleted = Completed<(Dlc, marker::Setup), anyhow::Error>;
 
 /// Message sent from a rollover actor to the
 /// cfd actor to notify that the rollover has finished (contract got updated).
-pub type RolloverCompleted = Completed<(Dlc, marker::Rollover), anyhow::Error>;
+pub type RolloverCompleted = Completed<(Dlc, FundingFee, marker::Rollover), anyhow::Error>;
 
 pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;
 
@@ -1662,11 +1697,11 @@ impl Completed<(Dlc, marker::Setup), anyhow::Error> {
     }
 }
 
-impl Completed<(Dlc, marker::Rollover), anyhow::Error> {
-    pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
+impl Completed<(Dlc, FundingFee, marker::Rollover), anyhow::Error> {
+    pub fn succeeded(order_id: OrderId, dlc: Dlc, funding_fee: FundingFee) -> Self {
         Self::Succeeded {
             order_id,
-            payload: (dlc, marker::Rollover),
+            payload: (dlc, funding_fee, marker::Rollover),
         }
     }
 }
@@ -2254,6 +2289,7 @@ mod tests {
                 time::Duration::hours(24),
                 1,
                 FundingRate::default(),
+                OpeningFee::default(),
             )
             .unwrap()
         }
