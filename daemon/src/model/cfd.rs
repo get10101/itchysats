@@ -408,6 +408,7 @@ pub struct Cfd {
     counterparty_network_identity: Identity,
     role: Role,
     opening_fee: OpeningFee,
+    initial_tx_fee_rate: TxFeeRate,
     // dynamic (based on events)
     total_funding_fees: FundingFee,
 
@@ -459,6 +460,7 @@ impl Cfd {
         counterparty_network_identity: Identity,
         opening_fee: OpeningFee,
         initial_funding_rate: FundingRate,
+        initial_tx_fee_rate: TxFeeRate,
     ) -> Self {
         let long_initial_margin = calculate_long_margin(initial_price, quantity, leverage);
         // TODO: Use FundingFee::default() if we don't want to charge funding fees
@@ -482,6 +484,7 @@ impl Cfd {
             role,
             initial_funding_rate,
             opening_fee,
+            initial_tx_fee_rate,
             dlc: None,
             cet: None,
             commit_tx: None,
@@ -520,6 +523,7 @@ impl Cfd {
             counterparty_network_identity,
             order.opening_fee,
             order.funding_rate,
+            order.tx_fee_rate,
         )
     }
 
@@ -536,6 +540,7 @@ impl Cfd {
         role: Role,
         opening_fee: OpeningFee,
         initial_funding_rate: FundingRate,
+        initial_tx_fee_rate: TxFeeRate,
         events: Vec<Event>,
     ) -> Self {
         let cfd = Self::new(
@@ -549,6 +554,7 @@ impl Cfd {
             counterparty_network_identity,
             opening_fee,
             initial_funding_rate,
+            initial_tx_fee_rate,
         );
         events.into_iter().fold(cfd, Cfd::apply)
     }
@@ -643,7 +649,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                TxFeeRate::default(), // TODO: Where should I get the fee rate from?
+                self.initial_tx_fee_rate(),
                 self.total_funding_fees.clone(),
             )?,
         ))
@@ -1105,6 +1111,10 @@ impl Cfd {
 
     pub fn initial_funding_rate(&self) -> FundingRate {
         self.initial_funding_rate
+    }
+
+    pub fn initial_tx_fee_rate(&self) -> TxFeeRate {
+        self.initial_tx_fee_rate
     }
 
     pub fn opening_fee(&self) -> OpeningFee {
