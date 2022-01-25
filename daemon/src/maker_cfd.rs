@@ -3,7 +3,6 @@ use crate::address_map::Stopping;
 use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_maker;
-use crate::command;
 use crate::maker_inc_connections;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Order;
@@ -70,11 +69,6 @@ pub struct RejectRollover {
 }
 
 #[derive(Debug)]
-pub struct Commit {
-    pub order_id: OrderId,
-}
-
-#[derive(Debug)]
 pub struct NewOrder {
     pub price: Price,
     pub min_quantity: Usd,
@@ -113,7 +107,6 @@ pub struct Actor<O, T, W> {
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
     oracle: Address<O>,
     connected_takers: HashSet<Identity>,
-    executor: command::Executor,
     n_payouts: usize,
     tasks: Tasks,
 }
@@ -132,12 +125,12 @@ impl<O, T, W> Actor<O, T, W> {
         n_payouts: usize,
     ) -> Self {
         Self {
-            db: db.clone(),
+            db,
             wallet,
             settlement_interval,
             oracle_pk,
             projection,
-            process_manager: process_manager.clone(),
+            process_manager,
             rollover_actors: AddressMap::default(),
             takers,
             current_order: None,
@@ -147,7 +140,6 @@ impl<O, T, W> Actor<O, T, W> {
             connected_takers: HashSet::new(),
             settlement_actors: AddressMap::default(),
             tasks: Tasks::default(),
-            executor: command::Executor::new(db, process_manager),
         }
     }
 
@@ -409,14 +401,6 @@ impl<O, T, W> Actor<O, T, W> {
         {
             tracing::warn!(%msg.order_id, "No active rollover");
         }
-
-        Ok(())
-    }
-
-    async fn handle_commit(&mut self, msg: Commit) -> Result<()> {
-        self.executor
-            .execute(msg.order_id, |cfd| cfd.manual_commit_to_blockchain())
-            .await?;
 
         Ok(())
     }
