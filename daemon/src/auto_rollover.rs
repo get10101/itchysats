@@ -7,6 +7,7 @@ use crate::model::cfd::OrderId;
 use crate::oracle;
 use crate::process_manager;
 use crate::rollover_taker;
+use crate::send_async_safe::SendAsyncSafe;
 use crate::try_continue;
 use crate::xtra_ext::SendInterval;
 use crate::Tasks;
@@ -115,7 +116,7 @@ where
             try_continue!(async {
                 let cfd = load_cfd(id, &mut conn).await?;
                 if let Ok(()) = cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
-                    this.send(Rollover(id)).await?;
+                    this.send_async_safe(Rollover(id)).await?;
                 }
                 anyhow::Ok(())
             }

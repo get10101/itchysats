@@ -7,7 +7,6 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
-use crate::model::cfd::RolloverError;
 use crate::model::Identity;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
@@ -50,7 +49,7 @@ struct RolloverSucceeded {
 /// notify that rollover has failed.
 #[derive(Debug)]
 struct RolloverFailed {
-    error: RolloverError,
+    error: anyhow::Error,
 }
 
 pub struct Actor {
@@ -111,7 +110,7 @@ impl Actor {
         ctx.stop();
     }
 
-    async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<(), RolloverError> {
+    async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let order_id = self.order_id;
 
         if self.sent_from_taker.is_some() {
@@ -127,7 +126,7 @@ impl Actor {
 
         let (rollover_params, dlc, interval) = self
             .executor
-            .execute(self.order_id, |cfd| Ok(cfd.accept_rollover_proposal()?))
+            .execute(self.order_id, |cfd| cfd.accept_rollover_proposal())
             .await?;
 
         let oracle_event_id =
@@ -173,21 +172,17 @@ impl Actor {
         let this = ctx.address().expect("self to be alive");
 
         self.tasks.add(async move {
-            let _: Result<(), xtra::Disconnected> = match rollover_fut.await {
-                Ok(dlc) => this.send(RolloverSucceeded { dlc }).await,
-                Err(source) => {
-                    this.send(RolloverFailed {
-                        error: RolloverError::Protocol { source },
-                    })
-                    .await
-                }
-            };
+            let _: Result<(), xtra::Disconnected> =
+                match rollover_fut.await.context("Rollover protocol failed") {
+                    Ok(dlc) => this.send(RolloverSucceeded { dlc }).await,
+                    Err(source) => this.send(RolloverFailed { error: source }).await,
+                };
         });
 
         Ok(())
     }
 
-    async fn reject(&mut self, ctx: &mut xtra::Context<Self>) -> Result<(), RolloverError> {
+    async fn reject(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
         tracing::info!(id = %self.order_id, "Rejecting rollover proposal" );
 
         self.send_to_taker_actor
@@ -207,7 +202,7 @@ impl Actor {
         Ok(())
     }
 
-    pub async fn forward_protocol_msg(&mut self, msg: ProtocolMsg) -> Result<(), RolloverError> {
+    pub async fn forward_protocol_msg(&mut self, msg: ProtocolMsg) -> Result<()> {
         self.sent_from_taker
             .as_mut()
             .context("Rollover task is not active")? // Sender is set once `Accepted` is sent.
@@ -242,7 +237,7 @@ impl xtra::Actor for Actor {
                 .await?;
 
             self.executor
-                .execute(self.order_id, |cfd| Ok(cfd.start_rollover()?))
+                .execute(self.order_id, |cfd| cfd.start_rollover())
                 .await?;
 
             anyhow::Ok(())
@@ -252,7 +247,7 @@ impl xtra::Actor for Actor {
             self.complete(
                 Completed::Failed {
                     order_id,
-                    error: RolloverError::Other { source },
+                    error: source,
                 },
                 ctx,
             )

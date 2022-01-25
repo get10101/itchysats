@@ -1,4 +1,3 @@
-use crate::maker_inc_connections::NoConnection;
 use crate::model::BitMexPriceEventId;
 use crate::model::FundingFee;
 use crate::model::FundingRate;
@@ -12,7 +11,6 @@ use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
 use crate::oracle;
-use crate::oracle::NoAnnouncement;
 use crate::payout_curve;
 use crate::setup_contract::RolloverParams;
 use crate::setup_contract::SetupParams;
@@ -219,24 +217,13 @@ pub enum SettlementKind {
     Outgoing,
 }
 
+/// Reasons why we cannot rollover a CFD.
 #[derive(thiserror::Error, Debug, PartialEq)]
-pub enum CannotAutoRollover {
+pub enum NoRolloverReason {
     #[error("Is too recent to auto-rollover")]
     TooRecent,
     #[error("CFD does not have a DLC")]
     NoDlc,
-}
-
-/// Various error cases that can happen during rollover.
-///
-/// This enum is expected to go away once we handle the entire protocol within the actor and not
-/// report back the result to the `{taker,maker}_cfd::Actor`.
-#[derive(thiserror::Error, Debug)]
-pub enum RolloverError {
-    #[error("CFD does not have a DLC")]
-    NoDlc,
-    #[error("The CFD is already expired")]
-    AlreadyExpired,
     #[error("Cannot roll over when CFD not locked yet")]
     NotLocked,
     #[error("Cannot roll over when CFD is committed")]
@@ -245,33 +232,6 @@ pub enum RolloverError {
     Attested,
     #[error("Cannot roll over when CFD is final")]
     Final,
-    #[error("The CFD was just rolled over")]
-    WasJustRolledOver,
-    #[error("The CFD is not rolling over")]
-    NotRollingOver,
-    #[error("The CFD is already being rolled over")]
-    AlreadyRollingOver,
-    #[error("Wrong role")]
-    WrongRole,
-    #[error("Maker did not respond within {timeout} seconds")]
-    MakerDidNotRespond { timeout: u64 },
-    #[error(transparent)]
-    NoAnnouncement {
-        #[from]
-        source: NoAnnouncement,
-    },
-    #[error(transparent)]
-    TakerDisconnected {
-        #[from]
-        source: NoConnection,
-    },
-    #[error("Rollover protocol failed")]
-    Protocol { source: anyhow::Error },
-    #[error(transparent)]
-    Other {
-        #[from]
-        source: anyhow::Error,
-    },
 }
 
 /// Errors that can happen when handling the expiry of the refund
@@ -592,31 +552,33 @@ impl Cfd {
         self.settlement_proposal.is_some()
     }
 
-    pub fn can_auto_rollover_taker(&self, now: OffsetDateTime) -> Result<(), CannotAutoRollover> {
-        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotAutoRollover::NoDlc)?;
+    pub fn can_auto_rollover_taker(&self, now: OffsetDateTime) -> Result<(), NoRolloverReason> {
+        let expiry_timestamp = self.expiry_timestamp().ok_or(NoRolloverReason::NoDlc)?;
         let time_until_expiry = expiry_timestamp - now;
         if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
-            return Err(CannotAutoRollover::TooRecent);
+            return Err(NoRolloverReason::TooRecent);
         }
+
+        self.can_rollover()?;
 
         Ok(())
     }
 
-    fn can_rollover(&self) -> Result<(), RolloverError> {
+    fn can_rollover(&self) -> Result<(), NoRolloverReason> {
         if self.is_final() {
-            return Err(RolloverError::Final);
+            return Err(NoRolloverReason::Final);
         }
 
         if self.is_attested() {
-            return Err(RolloverError::Attested);
+            return Err(NoRolloverReason::Attested);
         }
 
         if self.commit_finality {
-            return Err(RolloverError::Committed);
+            return Err(NoRolloverReason::Committed);
         }
 
         if !self.lock_finality {
-            return Err(RolloverError::NotLocked);
+            return Err(NoRolloverReason::NotLocked);
         }
 
         Ok(())
@@ -658,9 +620,9 @@ impl Cfd {
         ))
     }
 
-    pub fn start_rollover(&self) -> Result<Event, RolloverError> {
+    pub fn start_rollover(&self) -> Result<Event> {
         if self.during_rollover {
-            return Err(RolloverError::AlreadyRollingOver);
+            bail!("The CFD is already being rolled over")
         };
 
         self.can_rollover()?;
@@ -668,15 +630,13 @@ impl Cfd {
         Ok(Event::new(self.id, CfdEvent::RolloverStarted))
     }
 
-    pub fn accept_rollover_proposal(
-        self,
-    ) -> Result<(Event, RolloverParams, Dlc, Duration), RolloverError> {
+    pub fn accept_rollover_proposal(self) -> Result<(Event, RolloverParams, Dlc, Duration)> {
         if !self.during_rollover {
-            return Err(RolloverError::NotRollingOver);
+            bail!("The CFD is not rolling over");
         }
 
         if self.role != Role::Maker {
-            return Err(RolloverError::WrongRole);
+            bail!("Can only accept proposal as a maker");
         }
 
         // TODO: Adjust for total paid fees
@@ -699,20 +659,18 @@ impl Cfd {
                 1, // TODO: Where should I get the fee rate from?
                 funding_fee,
             ),
-            self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
+            self.dlc.clone().context("No DLC present")?,
             self.settlement_interval,
         ))
     }
 
-    pub fn handle_rollover_accepted_taker(
-        &self,
-    ) -> Result<(Event, RolloverParams, Dlc), RolloverError> {
+    pub fn handle_rollover_accepted_taker(&self) -> Result<(Event, RolloverParams, Dlc)> {
         if !self.during_rollover {
-            return Err(RolloverError::NotRollingOver);
+            bail!("The CFD is not rolling over");
         }
 
         if self.role != Role::Taker {
-            return Err(RolloverError::WrongRole);
+            bail!("Can only handle accepted proposal as a taker");
         }
 
         self.can_rollover()?;
@@ -733,7 +691,7 @@ impl Cfd {
                 1, // TODO: Where should I get the fee rate from?
                 funding_fee,
             ),
-            self.dlc.as_ref().ok_or(RolloverError::NoDlc)?.clone(),
+            self.dlc.clone().context("No DLC present")?,
         ))
     }
 
@@ -887,28 +845,11 @@ impl Cfd {
         Ok(self.event(event))
     }
 
-    pub fn roll_over(self, completed: RolloverCompleted) -> Result<Option<Event>, RolloverError> {
+    pub fn roll_over(
+        self,
+        completed: RolloverCompleted,
+    ) -> Result<Option<Event>, NoRolloverReason> {
         let event = match completed {
-            // These are a bit weird but should go away with
-            // https://github.com/itchysats/itchysats/issues/958
-            // because we should never get here.
-            Completed::Failed {
-                error:
-                    error
-                    @
-                    (RolloverError::NoDlc
-                    | RolloverError::WasJustRolledOver
-                    | RolloverError::AlreadyRollingOver
-                    | RolloverError::NotRollingOver
-                    | RolloverError::Committed
-                    | RolloverError::Attested
-                    | RolloverError::Final
-                    | RolloverError::AlreadyExpired),
-                ..
-            } => {
-                tracing::debug!(order_id = %self.id, "Rollover was not started: {:#}", error);
-                return Ok(None);
-            }
             Completed::Succeeded {
                 payload: (dlc, _), ..
             } => {
@@ -1708,7 +1649,7 @@ pub type SetupCompleted = Completed<(Dlc, marker::Setup), anyhow::Error>;
 
 /// Message sent from a rollover actor to the
 /// cfd actor to notify that the rollover has finished (contract got updated).
-pub type RolloverCompleted = Completed<(Dlc, marker::Rollover), RolloverError>;
+pub type RolloverCompleted = Completed<(Dlc, marker::Rollover), anyhow::Error>;
 
 pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;
 
@@ -1721,7 +1662,7 @@ impl Completed<(Dlc, marker::Setup), anyhow::Error> {
     }
 }
 
-impl Completed<(Dlc, marker::Rollover), RolloverError> {
+impl Completed<(Dlc, marker::Rollover), anyhow::Error> {
     pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
         Self::Succeeded {
             order_id,
@@ -2124,7 +2065,7 @@ mod tests {
             .can_auto_rollover_taker(datetime!(2021-11-18 10:00:01).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
+        assert_eq!(cannot_roll_over, NoRolloverReason::TooRecent)
     }
 
     #[test]
@@ -2141,7 +2082,7 @@ mod tests {
             .can_auto_rollover_taker(datetime!(2021-11-18 09:59:59).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
+        assert_eq!(cannot_roll_over, NoRolloverReason::TooRecent)
     }
 
     #[test]
@@ -2158,7 +2099,7 @@ mod tests {
             .can_auto_rollover_taker(datetime!(2021-11-18 10:59:59).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, CannotAutoRollover::TooRecent)
+        assert_eq!(cannot_roll_over, NoRolloverReason::TooRecent)
     }
 
     #[test]
@@ -2167,7 +2108,10 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(cannot_roll_over, RolloverError::NotLocked { .. }))
+        assert!(matches!(
+            cannot_roll_over,
+            NoRolloverReason::NotLocked { .. }
+        ))
     }
 
     #[test]
@@ -2178,7 +2122,10 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(cannot_roll_over, RolloverError::Attested { .. }))
+        assert!(matches!(
+            cannot_roll_over,
+            NoRolloverReason::Attested { .. }
+        ))
     }
 
     #[test]
@@ -2189,7 +2136,7 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(cannot_roll_over, RolloverError::Final))
+        assert!(matches!(cannot_roll_over, NoRolloverReason::Final))
     }
 
     impl Event {
