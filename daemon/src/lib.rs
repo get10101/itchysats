@@ -33,6 +33,7 @@ use xtra::Actor;
 use xtra::Address;
 
 pub use bdk;
+pub use maia;
 
 pub mod sqlx_ext; // Must come first because it is a macro.
 

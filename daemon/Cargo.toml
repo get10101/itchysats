@@ -45,8 +45,6 @@ xtra = { version = "0.6" }
 xtra_productivity = { version = "0.1.0" }
 
 [dev-dependencies]
-mockall = "0.11.0"
-mockall_derive = "0.11.0"
 pretty_assertions = "1"
 proptest = { version = "1", default-features = false, features = ["std"] }
 serde_test = "1"

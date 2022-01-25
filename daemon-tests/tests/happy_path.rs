@@ -1,19 +1,4 @@
-use crate::harness::dummy_new_order;
-use crate::harness::dummy_quote;
-use crate::harness::flow::is_next_none;
-use crate::harness::flow::next;
-use crate::harness::flow::next_order;
-use crate::harness::flow::next_with;
-use crate::harness::flow::one_cfd_with_state;
-use crate::harness::init_tracing;
-use crate::harness::maia::OliviaData;
-use crate::harness::mocks::oracle::dummy_wrong_attestation;
-use crate::harness::start_both;
-use crate::harness::Maker;
-use crate::harness::MakerConfig;
-use crate::harness::Taker;
-use crate::harness::TakerConfig;
-use bdk::bitcoin::Amount;
+use daemon::bdk::bitcoin::Amount;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::calculate_long_margin;
 use daemon::model::cfd::OrderId;
@@ -23,11 +8,25 @@ use daemon::monitor::Event;
 use daemon::oracle;
 use daemon::projection::CfdOrder;
 use daemon::projection::CfdState;
-use maia::secp256k1_zkp::schnorrsig;
+use daemon_tests::deliver_event;
+use daemon_tests::dummy_new_order;
+use daemon_tests::dummy_quote;
+use daemon_tests::flow::is_next_none;
+use daemon_tests::flow::next;
+use daemon_tests::flow::next_order;
+use daemon_tests::flow::next_with;
+use daemon_tests::flow::one_cfd_with_state;
+use daemon_tests::init_tracing;
+use daemon_tests::maia::OliviaData;
+use daemon_tests::mocks::oracle::dummy_wrong_attestation;
+use daemon_tests::start_both;
+use daemon_tests::Maker;
+use daemon_tests::MakerConfig;
+use daemon_tests::Taker;
+use daemon_tests::TakerConfig;
 use rust_decimal_macros::dec;
 use std::time::Duration;
 use tokio::time::sleep;
-mod harness;
 
 /// Waits until the CFDs for both maker and taker are in the given state.
 macro_rules! wait_next_state {

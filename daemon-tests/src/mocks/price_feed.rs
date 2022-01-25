@@ -20,15 +20,12 @@ impl PriceFeedActor {
     }
 }
 
+#[derive(Default)]
 pub struct MockPriceFeed {
     latest_quote: Option<bitmex_price_feed::Quote>,
 }
 
 impl MockPriceFeed {
-    pub fn new() -> Self {
-        MockPriceFeed { latest_quote: None }
-    }
-
     pub fn latest_quote(&self) -> Option<bitmex_price_feed::Quote> {
         self.latest_quote
     }

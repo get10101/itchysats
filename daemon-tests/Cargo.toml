@@ -1,0 +1,22 @@
+[package]
+name = "daemon-tests"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+daemon = { path = "../daemon" }
+mockall = "0.11"
+mockall_derive = "0.11"
+rand = "0.6"
+rust_decimal = "1.20"
+rust_decimal_macros = "1.20"
+time = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
+xtra = { version = "0.6" }
+xtra_productivity = { version = "0.1" }

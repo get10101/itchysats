@@ -1,10 +1,10 @@
-use crate::harness::mocks::oracle::OracleActor;
-use crate::harness::mocks::price_feed::PriceFeedActor;
-use crate::harness::mocks::wallet::WalletActor;
-use crate::schnorrsig;
-use ::bdk::bitcoin::Network;
-use bdk::bitcoin::Amount;
+use crate::mocks::oracle::OracleActor;
+use crate::mocks::price_feed::PriceFeedActor;
+use crate::mocks::wallet::WalletActor;
 use daemon::auto_rollover;
+use daemon::bdk::bitcoin::secp256k1::schnorrsig;
+use daemon::bdk::bitcoin::Amount;
+use daemon::bdk::bitcoin::Network;
 use daemon::bitmex_price_feed::Quote;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;

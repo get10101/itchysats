@@ -1,8 +1,8 @@
+use daemon::maia::secp256k1_zkp::schnorrsig;
+use daemon::maia::secp256k1_zkp::SecretKey;
 use daemon::model::BitMexPriceEventId;
 use daemon::oracle;
 use daemon::oracle::Attestation;
-use maia::secp256k1_zkp::schnorrsig;
-use maia::secp256k1_zkp::SecretKey;
 use std::str::FromStr;
 
 #[allow(dead_code)]

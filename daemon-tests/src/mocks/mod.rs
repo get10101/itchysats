@@ -2,7 +2,7 @@ use self::monitor::MonitorActor;
 use self::oracle::OracleActor;
 use self::wallet::WalletActor;
 use super::maia::OliviaData;
-use crate::harness::mocks::price_feed::PriceFeedActor;
+use crate::mocks::price_feed::PriceFeedActor;
 use daemon::bitmex_price_feed;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -117,7 +117,7 @@ impl Default for Mocks {
             oracle: Arc::new(Mutex::new(oracle::MockOracle::new())),
             monitor: Arc::new(Mutex::new(monitor::MockMonitor::new())),
             wallet: Arc::new(Mutex::new(wallet::MockWallet::new())),
-            price_feed: Arc::new(Mutex::new(price_feed::MockPriceFeed::new())),
+            price_feed: Arc::new(Mutex::new(price_feed::MockPriceFeed::default())),
         }
     }
 }

@@ -683,8 +683,6 @@ dependencies = [
  "hkdf",
  "itertools",
  "maia",
- "mockall",
- "mockall_derive",
  "nalgebra",
  "ndarray",
  "ndarray_einsum_beta",
@@ -714,6 +712,26 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "x25519-dalek",
+ "xtra",
+ "xtra_productivity",
+]
+
+[[package]]
+name = "daemon-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "daemon",
+ "mockall",
+ "mockall_derive",
+ "rand 0.6.5",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "time 0.3.7",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "xtra",
  "xtra_productivity",
 ]

@@ -1,3 +1,4 @@
+use crate::maia::OliviaData;
 use daemon::model::BitMexPriceEventId;
 use daemon::oracle;
 use mockall::*;
@@ -5,8 +6,6 @@ use std::sync::Arc;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;
-
-use crate::harness::maia::OliviaData;
 
 /// Test Stub simulating the Oracle actor.
 /// Serves as an entrypoint for injected mock handlers.
