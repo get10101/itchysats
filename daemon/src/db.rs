@@ -14,6 +14,7 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use sqlx::migrate::MigrateError;
 use sqlx::pool::PoolConnection;
+use sqlx::pool::PoolOptions;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;
@@ -27,12 +28,14 @@ use time::Duration;
 /// new one is created.
 pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
     async move {
-        let pool = SqlitePool::connect_with(
-            SqliteConnectOptions::new()
-                .create_if_missing(true)
-                .filename(&path),
-        )
-        .await?;
+        let pool = PoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .create_if_missing(true)
+                    .filename(&path),
+            )
+            .await?;
 
         let path_display = path.display();
 
