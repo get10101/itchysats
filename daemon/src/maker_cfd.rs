@@ -383,9 +383,20 @@ impl<O, T, W> Actor<O, T, W> {
     }
 
     async fn handle_accept_rollover(&mut self, msg: AcceptRollover) -> Result<()> {
+        let order = self
+            .current_order
+            .as_ref()
+            .context("Cannot accept rollover without current offer, as we need up-to-date fees")?;
+
         if self
             .rollover_actors
-            .send(&msg.order_id, rollover_maker::AcceptRollover)
+            .send(
+                &msg.order_id,
+                rollover_maker::AcceptRollover {
+                    tx_fee_rate: order.tx_fee_rate,
+                    funding_rate: order.funding_rate,
+                },
+            )
             .await
             .is_err()
         {

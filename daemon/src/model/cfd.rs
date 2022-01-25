@@ -210,7 +210,7 @@ pub struct SettlementProposal {
     pub price: Price,
 }
 
-/// Proposed collaborative settlement
+/// Proposed rollover
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RolloverProposal {
     pub order_id: OrderId,
@@ -665,7 +665,11 @@ impl Cfd {
         Ok(Event::new(self.id, CfdEvent::RolloverStarted))
     }
 
-    pub fn accept_rollover_proposal(self) -> Result<(Event, RolloverParams, Dlc, Duration)> {
+    pub fn accept_rollover_proposal(
+        self,
+        tx_fee_rate: TxFeeRate,
+        funding_rate: FundingRate,
+    ) -> Result<(Event, RolloverParams, Dlc, Duration)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -682,11 +686,7 @@ impl Cfd {
         // it's up-to-date
         let hours_to_charge = 1;
 
-        let funding_fee = FundingFee::new(
-            margin_minus_total_fees,
-            self.initial_funding_rate,
-            hours_to_charge,
-        )?;
+        let funding_fee = FundingFee::new(margin_minus_total_fees, funding_rate, hours_to_charge)?;
 
         Ok((
             Event::new(self.id, CfdEvent::RolloverAccepted),
@@ -695,7 +695,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                TxFeeRate::default(), // TODO: Where should I get the fee rate from?
+                tx_fee_rate,
                 self.total_funding_fees + funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
@@ -703,7 +703,11 @@ impl Cfd {
         ))
     }
 
-    pub fn handle_rollover_accepted_taker(&self) -> Result<(Event, RolloverParams, Dlc)> {
+    pub fn handle_rollover_accepted_taker(
+        &self,
+        tx_fee_rate: TxFeeRate,
+        funding_rate: FundingRate,
+    ) -> Result<(Event, RolloverParams, Dlc)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -718,8 +722,7 @@ impl Cfd {
         // whether they match
         let hours_to_charge = 1;
 
-        let funding_fee =
-            FundingFee::new(self.margin(), self.initial_funding_rate, hours_to_charge)?;
+        let funding_fee = FundingFee::new(self.margin(), funding_rate, hours_to_charge)?;
 
         Ok((
             self.event(CfdEvent::RolloverAccepted),
@@ -728,7 +731,7 @@ impl Cfd {
                 self.quantity,
                 self.leverage,
                 self.refund_timelock_in_blocks(),
-                TxFeeRate::default(), // TODO: Where should I get the fee rate from?
+                tx_fee_rate,
                 funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,

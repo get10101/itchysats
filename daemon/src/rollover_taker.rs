@@ -7,7 +7,9 @@ use crate::model::cfd::Role;
 use crate::model::cfd::RolloverCompleted;
 use crate::model::BitMexPriceEventId;
 use crate::model::FundingFee;
+use crate::model::FundingRate;
 use crate::model::Timestamp;
+use crate::model::TxFeeRate;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
 use crate::process_manager;
@@ -96,12 +98,18 @@ impl Actor {
         msg: RolloverAccepted,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
-        let RolloverAccepted { oracle_event_id } = msg;
+        let RolloverAccepted {
+            oracle_event_id,
+            tx_fee_rate,
+            funding_rate,
+        }: RolloverAccepted = msg;
         let order_id = self.id;
 
         let (rollover_params, dlc) = self
             .executor
-            .execute(self.id, |cfd| cfd.handle_rollover_accepted_taker())
+            .execute(self.id, |cfd| {
+                cfd.handle_rollover_accepted_taker(tx_fee_rate, funding_rate)
+            })
             .await?;
 
         let announcement = self
@@ -324,6 +332,8 @@ impl Actor {
 #[derive(Debug)]
 pub struct RolloverAccepted {
     pub oracle_event_id: BitMexPriceEventId,
+    pub tx_fee_rate: TxFeeRate,
+    pub funding_rate: FundingRate,
 }
 
 /// Message sent from the `connection::Actor` to the
