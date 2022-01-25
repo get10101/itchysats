@@ -6,12 +6,14 @@ use crate::model::cfd::calculate_long_margin;
 use crate::model::cfd::calculate_profit;
 use crate::model::cfd::calculate_profit_at_price;
 use crate::model::cfd::calculate_short_margin;
+use crate::model::cfd::initial_funding_fee;
 use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::Event;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
+use crate::model::FeeAccount;
 use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::Leverage;
@@ -222,8 +224,10 @@ pub struct Cfd {
 /// - It serves as an aggregate that is hydrated from events.
 ///
 /// This dual-role motivates the existence of this struct.
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct Aggregated {
+    fee_account: FeeAccount,
+
     /// If this is present, we have an active DLC.
     latest_dlc: Option<Dlc>,
     /// If this is present, it should have been published.
@@ -239,6 +243,19 @@ struct Aggregated {
 }
 
 impl Aggregated {
+    fn new(fee_account: FeeAccount) -> Self {
+        Self {
+            fee_account,
+
+            latest_dlc: None,
+            collab_settlement_tx: None,
+            cet: None,
+            timelocked_cet: None,
+            commit_published: false,
+            refund_published: false,
+        }
+    }
+
     fn payout(self, role: Role) -> Option<Amount> {
         if let Some((tx, script)) = self.collab_settlement_tx {
             return Some(extract_payout_amount(tx, script));
@@ -277,6 +294,7 @@ impl Cfd {
             counterparty_network_identity,
             role,
             opening_fee,
+            initial_funding_rate,
             ..
         }: db::Cfd,
         latest_quote: Option<bitmex_price_feed::Quote>,
@@ -296,8 +314,15 @@ impl Cfd {
             (Some(quote), Role::Taker) => Some(quote.for_taker()),
         };
 
+        let initial_funding_fee =
+            initial_funding_fee(initial_price, quantity_usd, leverage, initial_funding_rate);
+
+        let fee_account = FeeAccount::new(position, role)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(initial_funding_fee);
+
         let (profit_btc_latest_price, profit_percent_latest_price, payout) = latest_price.and_then(|latest_price| {
-            match calculate_profit_at_price(initial_price, latest_price, quantity_usd, leverage, position) {
+            match calculate_profit_at_price(initial_price, latest_price, quantity_usd, leverage, fee_account) {
                 Ok(profit) => Some(profit),
                 Err(e) => {
                     tracing::warn!("Failed to calculate profit/loss {:#}", e);
@@ -321,7 +346,7 @@ impl Cfd {
         Self {
             order_id: id,
             initial_price,
-            accumulated_fees: opening_fee.amount_for(role),
+            accumulated_fees: fee_account.balance(),
             leverage,
             trading_pair: TradingPair::BtcUsd,
             position,
@@ -344,7 +369,7 @@ impl Cfd {
             expiry_timestamp: None,
             counterparty: counterparty_network_identity,
             pending_settlement_proposal_price: None,
-            aggregated: Aggregated::default(),
+            aggregated: Aggregated::new(fee_account),
         }
     }
 
@@ -368,9 +393,9 @@ impl Cfd {
             }
             RolloverCompleted { dlc, funding_fee } => {
                 self.aggregated.latest_dlc = Some(dlc);
-                self.accumulated_fees
-                    .checked_add(funding_fee.amount_for(self.role))
-                    .expect("addition to work");
+                self.aggregated.fee_account =
+                    self.aggregated.fee_account.add_funding_fee(funding_fee);
+                self.accumulated_fees = self.aggregated.fee_account.balance();
 
                 self.state = CfdState::Open;
             }
@@ -780,7 +805,7 @@ impl From<Order> for CfdOrder {
                 .whole_seconds()
                 .try_into()
                 .expect("settlement_time_interval_hours is always positive number"),
-            opening_fee: Some(Amount::from_sat(order.opening_fee.to_u64())),
+            opening_fee: Some(order.opening_fee.to_inner()),
             funding_rate_annualized_percent: AnnualisedFundingRate::from(order.funding_rate)
                 .to_string(),
             funding_rate_hourly_percent: HourlyFundingRate::from(order.funding_rate).to_string(),

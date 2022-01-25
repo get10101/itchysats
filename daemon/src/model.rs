@@ -608,11 +608,7 @@ pub struct FundingRate(Decimal);
 impl FundingRate {
     pub fn new(rate: Decimal) -> Result<Self> {
         anyhow::ensure!(
-            rate.is_sign_positive(),
-            "Negative funding rates (ie. paid by the maker) are not supported yet"
-        );
-        anyhow::ensure!(
-            rate <= Decimal::ONE,
+            rate.abs() <= Decimal::ONE,
             "Funding rate can't be higher than 100%"
         );
 
@@ -647,43 +643,35 @@ impl str::FromStr for FundingRate {
     }
 }
 
-/// Fee paid by the taker to the maker for opening a cfd.
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(thiserror::Error, Debug)]
+pub enum ConversionError {
+    #[error("Underflow")]
+    Underflow,
+    #[error("Overflow")]
+    Overflow,
+}
+
+/// Opening fee is always payed from taker to maker
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(transparent)]
 pub struct OpeningFee {
-    amount_sat: u64,
+    #[serde(with = "bdk::bitcoin::util::amount::serde::as_sat")]
+    fee: Amount,
 }
 
 impl OpeningFee {
-    pub fn new(amount: Amount) -> Self {
-        Self {
-            amount_sat: amount.as_sat(),
-        }
+    pub fn new(fee: Amount) -> Self {
+        Self { fee }
     }
 
-    /// Value in satoshis for the taker
-    pub fn to_u64(&self) -> u64 {
-        self.amount_sat
-    }
-
-    pub fn amount_for(&self, role: Role) -> SignedAmount {
-        let amount_sat: i64 = self.amount_sat.try_into().expect("to convert");
-        let amount_sat = match role {
-            Role::Maker => -amount_sat,
-            Role::Taker => amount_sat,
-        };
-        SignedAmount::from_sat(amount_sat)
-    }
-}
-
-impl From<Amount> for OpeningFee {
-    fn from(amount: Amount) -> Self {
-        Self::new(amount)
+    pub fn to_inner(self) -> Amount {
+        self.fee
     }
 }
 
 impl fmt::Display for OpeningFee {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.amount_sat.fmt(f)
+        self.fee.as_sat().fmt(f)
     }
 }
 
@@ -692,17 +680,155 @@ impl str::FromStr for OpeningFee {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let amount_sat: u64 = s.parse()?;
-        Ok(OpeningFee { amount_sat })
-    }
-}
-
-impl Default for OpeningFee {
-    fn default() -> Self {
-        Self::new(Amount::ZERO)
+        Ok(OpeningFee {
+            fee: Amount::from_sat(amount_sat),
+        })
     }
 }
 
 impl_sqlx_type_display_from_str!(OpeningFee);
+
+impl Default for OpeningFee {
+    fn default() -> Self {
+        Self { fee: Amount::ZERO }
+    }
+}
+
+/// Funding fee as defined by position and rate
+///
+/// Position and rate define if the funding rate is to be added or subtracted when summing up the
+/// fees.
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct FundingFee {
+    #[serde(with = "bdk::bitcoin::util::amount::serde::as_sat")]
+    fee: Amount,
+    rate: FundingRate,
+}
+
+impl FundingFee {
+    pub fn new(fee: Amount, rate: FundingRate) -> Self {
+        Self { fee, rate }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum FeeFlow {
+    LongPaysShort(Amount),
+    ShortPaysLong(Amount),
+    Nein,
+}
+
+/// Our own accumulated fees
+///
+/// The balance being positive means we owe this amount to the other party.
+/// The balance being negative means that the other party owes this amount to us.
+/// The counterparty fee-account balance is always the inverse of the balance.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct FeeAccount {
+    balance: SignedAmount,
+    position: Position,
+    role: Role,
+}
+
+impl FeeAccount {
+    pub fn new(position: Position, role: Role) -> Self {
+        Self {
+            position,
+            role,
+            balance: SignedAmount::ZERO,
+        }
+    }
+
+    pub fn settle(&self) -> FeeFlow {
+        let absolute = self.balance.as_sat().unsigned_abs();
+        let absolute = Amount::from_sat(absolute);
+
+        if self.balance == SignedAmount::ZERO {
+            FeeFlow::Nein
+        } else if (self.position == Position::Long && self.balance.is_positive())
+            || (self.position == Position::Short && self.balance.is_negative())
+        {
+            FeeFlow::LongPaysShort(absolute)
+        } else {
+            FeeFlow::ShortPaysLong(absolute)
+        }
+    }
+
+    pub fn balance(&self) -> SignedAmount {
+        self.balance
+    }
+
+    pub fn add_opening_fee(self, opening_fee: OpeningFee) -> Self {
+        let fee: i64 = opening_fee
+            .fee
+            .as_sat()
+            .try_into()
+            .expect("not to overflow");
+
+        let signed_fee = match self.role {
+            Role::Maker => -fee,
+            Role::Taker => fee,
+        };
+
+        let signed_fee = SignedAmount::from_sat(signed_fee);
+        let sum = self.balance + signed_fee;
+
+        Self {
+            balance: sum,
+            position: self.position,
+            role: self.role,
+        }
+    }
+
+    pub fn add_funding_fee(self, funding_fee: FundingFee) -> Self {
+        let fee: i64 = funding_fee
+            .fee
+            .as_sat()
+            .try_into()
+            .expect("not to overflow");
+
+        let signed_fee = if (self.position == Position::Long
+            && funding_fee.rate.0.is_sign_positive())
+            || (self.position == Position::Short && funding_fee.rate.0.is_sign_negative())
+        {
+            fee
+        } else {
+            -fee
+        };
+
+        let signed_fee = SignedAmount::from_sat(signed_fee);
+        let sum = self.balance + signed_fee;
+
+        Self {
+            balance: sum,
+            position: self.position,
+            role: self.role,
+        }
+    }
+}
+
+pub fn calculate_funding_fee(
+    margin: Amount,
+    funding_rate: FundingRate,
+    hours_to_charge: i64,
+) -> Result<FundingFee> {
+    let fraction_of_funding_period = if hours_to_charge as i64 == SETTLEMENT_INTERVAL.whole_hours()
+    {
+        Decimal::ONE
+    } else {
+        Decimal::from(hours_to_charge)
+            .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
+            .context("can't establish a fraction")?
+    };
+
+    let funding_fee =
+        (Decimal::from(margin.as_sat()) * funding_rate.to_decimal() * fraction_of_funding_period)
+            .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::AwayFromZero)
+            .to_u64()
+            .context("Failed to represent as u64")?;
+
+    Ok(FundingFee::new(Amount::from_sat(funding_fee), funding_rate))
+}
 
 /// Transaction fee in satoshis per vbyte
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -747,123 +873,11 @@ impl str::FromStr for TxFeeRate {
 
 impl_sqlx_type_display_from_str!(TxFeeRate);
 
-/// Fee paid contract setup / renewal(a fraction of it if rolling over)
-/// As the Cfd gets renewed, the struct keeps track of total fees as well as
-/// last fee paid along with the rate used to calculate it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FundingFee {
-    accumulated_fee: u64,
-    last_fee: u64,
-    last_rate: FundingRate,
-}
-
-impl FundingFee {
-    /// Value of total funding fee in satoshis
-    pub fn accumulated_fee(&self) -> u64 {
-        self.accumulated_fee
-    }
-
-    /// Fee paid in the last funding interval
-    pub fn last_fee(&self) -> u64 {
-        self.last_fee
-    }
-
-    /// Rate used in last fee calculation
-    pub fn last_rate(&self) -> FundingRate {
-        self.last_rate
-    }
-
-    /// Value in satoshis
-    pub fn amount_for(&self, role: Role) -> SignedAmount {
-        let amount_sat: i64 = self.accumulated_fee.try_into().expect("convert to i64");
-        let amount_sat = match role {
-            Role::Maker => -amount_sat,
-            Role::Taker => amount_sat,
-        };
-        SignedAmount::from_sat(amount_sat)
-    }
-}
-
-impl Default for FundingFee {
-    fn default() -> Self {
-        Self::new(Amount::ZERO, FundingRate(Decimal::ZERO), 1)
-            .expect("hard-coded values to be valid")
-    }
-}
-
-impl From<FundingFee> for SignedAmount {
-    fn from(funding_fee: FundingFee) -> Self {
-        funding_fee.amount_for(Role::Taker)
-    }
-}
-
-impl FundingFee {
-    pub fn new(
-        margin: Amount, // Margin cannot be negative, so use `Amount`
-        funding_rate: FundingRate,
-        hours_to_charge: i64,
-    ) -> Result<Self> {
-        anyhow::ensure!(hours_to_charge >= 1, "Can't charge for less than one hour");
-        anyhow::ensure!(
-            hours_to_charge <= SETTLEMENT_INTERVAL.whole_hours(),
-            "Can't change for more than a full settlement interval"
-        );
-        let fraction_of_funding_period =
-            if hours_to_charge as i64 == SETTLEMENT_INTERVAL.whole_hours() {
-                Decimal::ONE
-            } else {
-                Decimal::from(hours_to_charge)
-                    .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
-                    .context("can't establish a fraction")?
-            };
-
-        let last_fee = calculate_funding_fee(margin, funding_rate, fraction_of_funding_period)?;
-
-        Ok(Self {
-            accumulated_fee: last_fee,
-            last_fee,
-            last_rate: funding_rate,
-        })
-    }
-
-    pub fn with_opening_fee(self, opening_fee: OpeningFee) -> Self {
-        Self {
-            accumulated_fee: self.accumulated_fee + opening_fee.to_u64(),
-            last_fee: self.last_fee,
-            last_rate: self.last_rate,
-        }
-    }
-}
-
-impl Add<FundingFee> for FundingFee {
-    type Output = FundingFee;
-
-    fn add(self, rhs: FundingFee) -> Self::Output {
-        Self {
-            accumulated_fee: self.accumulated_fee + rhs.accumulated_fee,
-            last_fee: rhs.last_fee,
-            last_rate: rhs.last_rate,
-        }
-    }
-}
-
-fn calculate_funding_fee(
-    margin: Amount,
-    funding_rate: FundingRate,
-    fraction_of_funding_period: Decimal,
-) -> Result<u64> {
-    (Decimal::from(margin.as_sat()) * funding_rate.to_decimal() * fraction_of_funding_period)
-        .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::AwayFromZero)
-        .to_u64()
-        .context("Failed to represent as u64")
-}
-
 #[cfg(test)]
 mod tests {
+    use super::*;
     use rust_decimal_macros::dec;
     use time::macros::datetime;
-
-    use super::*;
 
     #[test]
     fn to_olivia_url() {
@@ -983,97 +997,262 @@ mod tests {
     }
 
     #[test]
-    fn no_funding_fees() {
-        let funding_fee = FundingFee::new(
-            Amount::from_sat(100),
-            FundingRate::new(Decimal::ZERO).unwrap(),
-            SETTLEMENT_INTERVAL.whole_hours(),
-        )
-        .unwrap();
+    fn long_taker_pays_opening_fee_to_maker() {
+        let opening_fee = OpeningFee::new(Amount::from_sat(500));
 
-        assert_eq!(funding_fee.accumulated_fee(), 0);
+        let long_taker = FeeAccount::new(Position::Long, Role::Taker)
+            .add_opening_fee(opening_fee)
+            .settle();
+        let short_maker = FeeAccount::new(Position::Short, Role::Maker)
+            .add_opening_fee(opening_fee)
+            .settle();
+
+        assert_eq!(long_taker, FeeFlow::LongPaysShort(Amount::from_sat(500)));
+        assert_eq!(short_maker, FeeFlow::LongPaysShort(Amount::from_sat(500)));
     }
 
     #[test]
-    fn initial_funding_fee() {
-        // Initial funding fee is taken for the whole settlement period, in this
-        // case 1%
+    fn short_taker_pays_opening_fee_to_maker() {
+        let opening_fee = OpeningFee::new(Amount::from_sat(500));
+
+        let short_taker = FeeAccount::new(Position::Short, Role::Taker)
+            .add_opening_fee(opening_fee)
+            .settle();
+        let long_maker = FeeAccount::new(Position::Long, Role::Maker)
+            .add_opening_fee(opening_fee)
+            .settle();
+
+        assert_eq!(short_taker, FeeFlow::ShortPaysLong(Amount::from_sat(500)));
+        assert_eq!(long_maker, FeeFlow::ShortPaysLong(Amount::from_sat(500)));
+    }
+
+    #[test]
+    fn long_pays_short_with_positive_funding_rate() {
         let funding_fee = FundingFee::new(
-            Amount::from_sat(100),
-            FundingRate::new(dec!(0.01)).unwrap(),
-            SETTLEMENT_INTERVAL.whole_hours(),
-        )
-        .unwrap();
+            Amount::from_sat(500),
+            FundingRate::new(dec!(0.001)).unwrap(),
+        );
 
-        assert_eq!(funding_fee.accumulated_fee(), 1);
+        let long_taker = FeeAccount::new(Position::Long, Role::Taker)
+            .add_funding_fee(funding_fee)
+            .add_funding_fee(funding_fee)
+            .settle();
+        let short_maker = FeeAccount::new(Position::Short, Role::Maker)
+            .add_funding_fee(funding_fee)
+            .add_funding_fee(funding_fee)
+            .settle();
 
-        // maker can choose to charge opening fee on top of regular funding fee
-        let fees = funding_fee.with_opening_fee(Amount::from_sat(1).into());
-        assert_eq!(fees.accumulated_fee(), 2);
+        assert_eq!(long_taker, FeeFlow::LongPaysShort(Amount::from_sat(1000)));
+        assert_eq!(short_maker, FeeFlow::LongPaysShort(Amount::from_sat(1000)));
+    }
+
+    #[test]
+    fn fee_account_handles_balance_of_zero() {
+        let funding_fee_with_positive_rate = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(0.001)).unwrap(),
+        );
+        let funding_fee_with_negative_rate = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(-0.001)).unwrap(),
+        );
+
+        let long_taker = FeeAccount::new(Position::Long, Role::Taker)
+            .add_funding_fee(funding_fee_with_positive_rate)
+            .add_funding_fee(funding_fee_with_negative_rate)
+            .settle();
+        let short_maker = FeeAccount::new(Position::Short, Role::Maker)
+            .add_funding_fee(funding_fee_with_positive_rate)
+            .add_funding_fee(funding_fee_with_negative_rate)
+            .settle();
+
+        assert_eq!(long_taker, FeeFlow::Nein);
+        assert_eq!(short_maker, FeeFlow::Nein);
+    }
+
+    #[test]
+    fn fee_account_handles_negative_funding_rate() {
+        let funding_fee = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(-0.001)).unwrap(),
+        );
+
+        let long_taker = FeeAccount::new(Position::Long, Role::Taker)
+            .add_funding_fee(funding_fee)
+            .add_funding_fee(funding_fee)
+            .settle();
+        let short_maker = FeeAccount::new(Position::Short, Role::Maker)
+            .add_funding_fee(funding_fee)
+            .add_funding_fee(funding_fee)
+            .settle();
+
+        assert_eq!(long_taker, FeeFlow::ShortPaysLong(Amount::from_sat(1000)));
+        assert_eq!(short_maker, FeeFlow::ShortPaysLong(Amount::from_sat(1000)));
+    }
+
+    #[test]
+    fn long_taker_short_maker_roundtrip() {
+        let opening_fee = OpeningFee::new(Amount::from_sat(100));
+        let funding_fee_with_positive_rate = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(0.001)).unwrap(),
+        );
+        let funding_fee_with_negative_rate = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(-0.001)).unwrap(),
+        );
+
+        let long_taker = FeeAccount::new(Position::Long, Role::Taker)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(funding_fee_with_positive_rate);
+        let short_maker = FeeAccount::new(Position::Short, Role::Maker)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(funding_fee_with_positive_rate);
 
         assert_eq!(
-            fees.amount_for(Role::Taker) + fees.amount_for(Role::Maker),
-            SignedAmount::ZERO
+            long_taker.settle(),
+            FeeFlow::LongPaysShort(Amount::from_sat(600))
+        );
+        assert_eq!(
+            short_maker.settle(),
+            FeeFlow::LongPaysShort(Amount::from_sat(600))
+        );
+
+        let long_taker = long_taker.add_funding_fee(funding_fee_with_negative_rate);
+        let short_maker = short_maker.add_funding_fee(funding_fee_with_negative_rate);
+
+        assert_eq!(
+            long_taker.settle(),
+            FeeFlow::LongPaysShort(Amount::from_sat(100))
+        );
+        assert_eq!(
+            short_maker.settle(),
+            FeeFlow::LongPaysShort(Amount::from_sat(100))
+        );
+
+        let long_taker = long_taker.add_funding_fee(funding_fee_with_negative_rate);
+        let short_maker = short_maker.add_funding_fee(funding_fee_with_negative_rate);
+
+        assert_eq!(
+            long_taker.settle(),
+            FeeFlow::ShortPaysLong(Amount::from_sat(400))
+        );
+        assert_eq!(
+            short_maker.settle(),
+            FeeFlow::ShortPaysLong(Amount::from_sat(400))
         );
     }
 
     #[test]
-    fn adding_funding_fees() {
-        let first_rate = FundingRate::new(dec!(0.01)).unwrap();
-        let first_funding_fee = FundingFee::new(
-            Amount::from_sat(100),
-            first_rate,
-            SETTLEMENT_INTERVAL.whole_hours(),
-        )
-        .unwrap();
+    fn long_maker_short_taker_roundtrip() {
+        let opening_fee = OpeningFee::new(Amount::from_sat(100));
+        let funding_fee_with_positive_rate = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(0.001)).unwrap(),
+        );
+        let funding_fee_with_negative_rate = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(-0.001)).unwrap(),
+        );
 
-        assert_eq!(first_funding_fee.accumulated_fee(), 1);
-        assert_eq!(first_funding_fee.last_fee(), 1);
-        assert_eq!(first_funding_fee.last_rate(), first_rate);
+        let long_maker = FeeAccount::new(Position::Long, Role::Maker)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(funding_fee_with_positive_rate);
+        let short_taker = FeeAccount::new(Position::Short, Role::Taker)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(funding_fee_with_positive_rate);
 
-        let second_rate = FundingRate::new(dec!(0.02)).unwrap();
-        let second_funding_fee = FundingFee::new(
-            Amount::from_sat(100),
-            second_rate,
-            SETTLEMENT_INTERVAL.whole_hours(),
-        )
-        .unwrap();
+        assert_eq!(
+            long_maker.settle(),
+            FeeFlow::LongPaysShort(Amount::from_sat(400))
+        );
+        assert_eq!(
+            short_taker.settle(),
+            FeeFlow::LongPaysShort(Amount::from_sat(400))
+        );
 
-        assert_eq!(second_funding_fee.accumulated_fee(), 2);
-        assert_eq!(second_funding_fee.last_fee(), 2);
-        assert_eq!(second_funding_fee.last_rate(), second_rate);
+        let long_maker = long_maker.add_funding_fee(funding_fee_with_negative_rate);
+        let short_taker = short_taker.add_funding_fee(funding_fee_with_negative_rate);
 
-        let total_funding_fee = first_funding_fee + second_funding_fee;
+        assert_eq!(
+            long_maker.settle(),
+            FeeFlow::ShortPaysLong(Amount::from_sat(100))
+        );
+        assert_eq!(
+            short_taker.settle(),
+            FeeFlow::ShortPaysLong(Amount::from_sat(100))
+        );
 
-        assert_eq!(total_funding_fee.accumulated_fee(), 3);
-        assert_eq!(total_funding_fee.last_fee(), 2);
-        assert_eq!(total_funding_fee.last_rate(), second_rate);
+        let long_maker = long_maker.add_funding_fee(funding_fee_with_negative_rate);
+        let short_taker = short_taker.add_funding_fee(funding_fee_with_negative_rate);
+
+        assert_eq!(
+            long_maker.settle(),
+            FeeFlow::ShortPaysLong(Amount::from_sat(600))
+        );
+        assert_eq!(
+            short_taker.settle(),
+            FeeFlow::ShortPaysLong(Amount::from_sat(600))
+        );
     }
 
     #[test]
-    fn opening_fee_without_funding_fee() {
-        let opening_fee = FundingFee::default().with_opening_fee(Amount::from_sat(100).into());
+    fn given_positive_rate_then_positive_taker_long_balance() {
+        let funding_fee = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(0.001)).unwrap(),
+        );
 
-        assert_eq!(opening_fee.accumulated_fee(), 100);
+        let balance = FeeAccount::new(Position::Long, Role::Taker)
+            .add_funding_fee(funding_fee)
+            .add_funding_fee(funding_fee)
+            .balance();
+
+        assert_eq!(balance, SignedAmount::from_sat(1000))
     }
 
-    use proptest::prelude::*;
+    #[test]
+    fn given_positive_rate_then_negative_maker_short_balance() {
+        let funding_fee = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(0.001)).unwrap(),
+        );
 
-    proptest! {
-        #[test]
-        fn rollover_funding_fee_collected_incrementally_should_not_be_smaller_than_collected_once_per_settlement_interval(amount_sat in 1_000u64..1_000_000u64) {
-            let funding_fee_for_whole_interval =
-                FundingFee::new(Amount::from_sat(amount_sat), FundingRate::new(dec!(0.01)).unwrap(), SETTLEMENT_INTERVAL.whole_hours()).unwrap();
-            let funding_fee_for_one_hour =
-                FundingFee::new(Amount::from_sat(amount_sat), FundingRate::new(dec!(0.01)).unwrap(), 1).unwrap();
+        let balance = FeeAccount::new(Position::Short, Role::Maker)
+            .add_funding_fee(funding_fee)
+            .add_funding_fee(funding_fee)
+            .balance();
 
-            let total_when_collected_hourly = SETTLEMENT_INTERVAL.whole_hours() * funding_fee_for_one_hour.amount_for(Role::Taker).as_sat();
-            let total_when_collected_for_whole_interval = funding_fee_for_whole_interval.amount_for(Role::Taker).as_sat();
+        assert_eq!(balance, SignedAmount::from_sat(-1000))
+    }
 
-            prop_assert!(
-                total_when_collected_hourly >= total_when_collected_for_whole_interval,
-                "when charged per hour we should not be at loss as compared to charging once per settlement interval"
-            );
-        }
+    #[test]
+    fn given_negative_rate_then_negative_taker_long_balance() {
+        let funding_fee = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(-0.001)).unwrap(),
+        );
+
+        let balance = FeeAccount::new(Position::Long, Role::Taker)
+            .add_funding_fee(funding_fee)
+            .add_funding_fee(funding_fee)
+            .balance();
+
+        assert_eq!(balance, SignedAmount::from_sat(-1000))
+    }
+
+    #[test]
+    fn given_negative_rate_then_positive_maker_short_balance() {
+        let funding_fee = FundingFee::new(
+            Amount::from_sat(500),
+            FundingRate::new(dec!(-0.001)).unwrap(),
+        );
+
+        let balance = FeeAccount::new(Position::Short, Role::Maker)
+            .add_funding_fee(funding_fee)
+            .add_funding_fee(funding_fee)
+            .balance();
+
+        assert_eq!(balance, SignedAmount::from_sat(1000))
     }
 }

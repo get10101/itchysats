@@ -1,14 +1,18 @@
+use crate::model::calculate_funding_fee;
 use crate::model::BitMexPriceEventId;
+use crate::model::FeeAccount;
 use crate::model::FundingFee;
 use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::InversePrice;
 use crate::model::Leverage;
+use crate::model::OpeningFee;
 use crate::model::Percent;
 use crate::model::Position;
 use crate::model::Price;
 use crate::model::Timestamp;
 use crate::model::TradingPair;
+use crate::model::TxFeeRate;
 use crate::model::Usd;
 use crate::oracle;
 use crate::payout_curve;
@@ -49,9 +53,6 @@ use time::Duration;
 use time::OffsetDateTime;
 use uuid::adapter::Hyphenated;
 use uuid::Uuid;
-
-use super::OpeningFee;
-use super::TxFeeRate;
 
 pub const CET_TIMELOCK: u32 = 12;
 
@@ -410,7 +411,7 @@ pub struct Cfd {
     opening_fee: OpeningFee,
     initial_tx_fee_rate: TxFeeRate,
     // dynamic (based on events)
-    total_funding_fees: FundingFee,
+    fee_account: FeeAccount,
 
     dlc: Option<Dlc>,
 
@@ -462,15 +463,8 @@ impl Cfd {
         initial_funding_rate: FundingRate,
         initial_tx_fee_rate: TxFeeRate,
     ) -> Self {
-        let long_initial_margin = calculate_long_margin(initial_price, quantity, leverage);
-        // TODO: Use FundingFee::default() if we don't want to charge funding fees
-        // based on quantity for the first settlement interval.
-        let funding_fees = FundingFee::new(
-            long_initial_margin,
-            initial_funding_rate,
-            SETTLEMENT_INTERVAL.whole_hours(),
-        )
-        .expect("values stored in db to be sane");
+        let initial_funding_fee =
+            initial_funding_fee(initial_price, quantity, leverage, initial_funding_rate);
 
         Cfd {
             version: 0,
@@ -500,7 +494,9 @@ impl Cfd {
             during_contract_setup: false,
             during_rollover: false,
             settlement_proposal: None,
-            total_funding_fees: funding_fees.with_opening_fee(opening_fee),
+            fee_account: FeeAccount::new(position, role)
+                .add_opening_fee(opening_fee)
+                .add_funding_fee(initial_funding_fee),
         }
     }
 
@@ -583,6 +579,13 @@ impl Cfd {
         }
     }
 
+    fn short_margin(&self) -> Amount {
+        match self.position {
+            Position::Long => self.counterparty_margin(),
+            Position::Short => self.margin(),
+        }
+    }
+
     fn is_in_collaborative_settlement(&self) -> bool {
         self.settlement_proposal.is_some()
     }
@@ -650,7 +653,7 @@ impl Cfd {
                 self.leverage,
                 self.refund_timelock_in_blocks(),
                 self.initial_tx_fee_rate(),
-                self.total_funding_fees.clone(),
+                self.fee_account,
             )?,
         ))
     }
@@ -678,15 +681,9 @@ impl Cfd {
             bail!("Can only accept proposal as a maker");
         }
 
-        // TODO: Adjust for total paid fees - do we still need to do that if we
-        // tally up the fees???
-        let margin_minus_total_fees = self.margin();
-
-        // TODO: Calculate the time from the last rollover, don't just assume
-        // it's up-to-date
         let hours_to_charge = 1;
-
-        let funding_fee = FundingFee::new(margin_minus_total_fees, funding_rate, hours_to_charge)?;
+        let funding_fee =
+            calculate_funding_fee(self.short_margin(), funding_rate, hours_to_charge)?;
 
         Ok((
             Event::new(self.id, CfdEvent::RolloverAccepted),
@@ -696,7 +693,8 @@ impl Cfd {
                 self.leverage,
                 self.refund_timelock_in_blocks(),
                 tx_fee_rate,
-                self.total_funding_fees + funding_fee,
+                self.fee_account,
+                funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
             self.settlement_interval,
@@ -721,8 +719,8 @@ impl Cfd {
         // TODO: Taker should take this from the maker, optionally calculate and verify
         // whether they match
         let hours_to_charge = 1;
-
-        let funding_fee = FundingFee::new(self.margin(), funding_rate, hours_to_charge)?;
+        let funding_fee =
+            calculate_funding_fee(self.short_margin(), funding_rate, hours_to_charge)?;
 
         Ok((
             self.event(CfdEvent::RolloverAccepted),
@@ -732,6 +730,7 @@ impl Cfd {
                 self.leverage,
                 self.refund_timelock_in_blocks(),
                 tx_fee_rate,
+                self.fee_account,
                 funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
@@ -774,7 +773,7 @@ impl Cfd {
             self.quantity,
             self.leverage,
             n_payouts,
-            self.total_funding_fees.clone(),
+            self.fee_account.settle(),
         )?;
 
         let payout = {
@@ -819,7 +818,7 @@ impl Cfd {
             self.quantity,
             self.leverage,
             n_payouts,
-            self.total_funding_fees,
+            self.fee_account.settle(),
         )?;
 
         let payout = {
@@ -1169,7 +1168,7 @@ impl Cfd {
             RolloverCompleted { dlc, funding_fee } => {
                 self.dlc = Some(dlc);
                 self.during_rollover = false;
-                self.total_funding_fees = self.total_funding_fees + funding_fee;
+                self.fee_account = self.fee_account.add_funding_fee(funding_fee);
             }
             RolloverFailed { .. } => {
                 self.during_rollover = false;
@@ -1269,7 +1268,7 @@ pub fn calculate_profit_at_price(
     closing_price: Price,
     quantity: Usd,
     leverage: Leverage,
-    position: Position,
+    fee_account: FeeAccount,
 ) -> Result<(SignedAmount, Percent, SignedAmount)> {
     let inv_initial_price =
         InversePrice::new(opening_price).context("cannot invert invalid price")?;
@@ -1292,7 +1291,7 @@ pub fn calculate_profit_at_price(
             .context("Unable to convert to SignedAmount")?;
 
     // calculate profit/loss (P and L) in BTC
-    let (margin, payout) = match position {
+    let (margin, payout) = match fee_account.position {
         // TODO:
         // At this point, long_leverage == leverage, short_leverage == 1
         // which has the effect that the right boundary `b` below is
@@ -1324,14 +1323,14 @@ pub fn calculate_profit_at_price(
         Position::Long => {
             let payout = match long_is_liquidated {
                 true => SignedAmount::ZERO,
-                false => long_margin + amount_changed,
+                false => long_margin + amount_changed - fee_account.balance(),
             };
             (long_margin, payout)
         }
         Position::Short => {
             let payout = match long_is_liquidated {
                 true => long_margin + short_margin,
-                false => short_margin - amount_changed,
+                false => short_margin - amount_changed - fee_account.balance(),
             };
             (short_margin, payout)
         }
@@ -1339,6 +1338,22 @@ pub fn calculate_profit_at_price(
 
     let (profit_btc, profit_percent) = calculate_profit(payout, margin);
     Ok((profit_btc, profit_percent, payout))
+}
+
+/// Helper function for the initial funding fee until we have a more elaborate model
+pub fn initial_funding_fee(
+    initial_price: Price,
+    quantity: Usd,
+    leverage: Leverage,
+    initial_funding_rate: FundingRate,
+) -> FundingFee {
+    let long_initial_margin = calculate_long_margin(initial_price, quantity, leverage);
+    calculate_funding_fee(
+        long_initial_margin,
+        initial_funding_rate,
+        SETTLEMENT_INTERVAL.whole_hours(),
+    )
+    .expect("values from db to be sane")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1866,12 +1881,15 @@ mod tests {
 
     #[test]
     fn calculate_profit_and_loss() {
+        let empty_fee_long = FeeAccount::new(Position::Long, Role::Taker);
+        let empty_fee_short = FeeAccount::new(Position::Short, Role::Maker);
+
         assert_profit_loss_values(
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(10_000)).unwrap(),
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
-            Position::Long,
+            empty_fee_long,
             SignedAmount::ZERO,
             Decimal::ZERO.into(),
             "No price increase means no profit",
@@ -1879,10 +1897,38 @@ mod tests {
 
         assert_profit_loss_values(
             Price::new(dec!(10_000)).unwrap(),
+            Price::new(dec!(10_000)).unwrap(),
+            Usd::new(dec!(10_000)),
+            Leverage::new(2).unwrap(),
+            empty_fee_long.add_funding_fee(FundingFee::new(
+                Amount::from_sat(500),
+                FundingRate::new(dec!(0.001)).unwrap(),
+            )),
+            SignedAmount::from_sat(-500),
+            dec!(-0.001).into(),
+            "No price increase but fee means fee",
+        );
+
+        assert_profit_loss_values(
+            Price::new(dec!(10_000)).unwrap(),
+            Price::new(dec!(10_000)).unwrap(),
+            Usd::new(dec!(10_000)),
+            Leverage::new(2).unwrap(),
+            empty_fee_short.add_funding_fee(FundingFee::new(
+                Amount::from_sat(500),
+                FundingRate::new(dec!(0.001)).unwrap(),
+            )),
+            SignedAmount::from_sat(500),
+            dec!(0.0005).into(),
+            "No price increase but fee means fee",
+        );
+
+        assert_profit_loss_values(
+            Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(20_000)).unwrap(),
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
-            Position::Long,
+            empty_fee_long,
             SignedAmount::from_sat(50_000_000),
             dec!(100).into(),
             "A price increase of 2x should result in a profit of 100% (long)",
@@ -1893,7 +1939,7 @@ mod tests {
             Price::new(dec!(6_000)).unwrap(),
             Usd::new(dec!(9_000)),
             Leverage::new(2).unwrap(),
-            Position::Long,
+            empty_fee_long,
             SignedAmount::from_sat(-50_000_000),
             dec!(-100).into(),
             "A price drop of 1/(Leverage + 1) x should result in 100% loss (long)",
@@ -1904,7 +1950,7 @@ mod tests {
             Price::new(dec!(5_000)).unwrap(),
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
-            Position::Long,
+            empty_fee_long,
             SignedAmount::from_sat(-50_000_000),
             dec!(-100).into(),
             "A loss should be capped at 100% (long)",
@@ -1915,7 +1961,7 @@ mod tests {
             Price::new(dec!(60_000)).unwrap(),
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
-            Position::Long,
+            empty_fee_long,
             SignedAmount::from_sat(3_174_603),
             dec!(31.999997984000016127999870976).into(),
             "long position should make a profit when price goes up",
@@ -1926,7 +1972,7 @@ mod tests {
             Price::new(dec!(60_000)).unwrap(),
             Usd::new(dec!(10_000)),
             Leverage::new(2).unwrap(),
-            Position::Short,
+            empty_fee_short,
             SignedAmount::from_sat(-3_174_603),
             dec!(-15.999998992000008063999935488).into(),
             "short position should make a loss when price goes up",
@@ -1939,16 +1985,21 @@ mod tests {
         closing_price: Price,
         quantity: Usd,
         leverage: Leverage,
-        position: Position,
+        fee_account: FeeAccount,
         should_profit: SignedAmount,
         should_profit_in_percent: Percent,
         msg: &str,
     ) {
         // TODO: Assert on payout as well
 
-        let (profit, in_percent, _) =
-            calculate_profit_at_price(initial_price, closing_price, quantity, leverage, position)
-                .unwrap();
+        let (profit, in_percent, _) = calculate_profit_at_price(
+            initial_price,
+            closing_price,
+            quantity,
+            leverage,
+            fee_account,
+        )
+        .unwrap();
 
         assert_eq!(profit, should_profit, "{}", msg);
         assert_eq!(in_percent, should_profit_in_percent, "{}", msg);
@@ -1960,20 +2011,30 @@ mod tests {
         let closing_price = Price::new(dec!(16_000)).unwrap();
         let quantity = Usd::new(dec!(10_000));
         let leverage = Leverage::new(1).unwrap();
-        let (profit, profit_in_percent, _) = calculate_profit_at_price(
-            initial_price,
-            closing_price,
-            quantity,
-            leverage,
-            Position::Long,
-        )
-        .unwrap();
+
+        let opening_fee = OpeningFee::new(Amount::from_sat(500));
+        let funding_fee = FundingFee::new(
+            Amount::from_sat(100),
+            FundingRate::new(dec!(0.001)).unwrap(),
+        );
+
+        let taker_long = FeeAccount::new(Position::Long, Role::Taker)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(funding_fee);
+
+        let maker_short = FeeAccount::new(Position::Short, Role::Maker)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(funding_fee);
+
+        let (profit, profit_in_percent, _) =
+            calculate_profit_at_price(initial_price, closing_price, quantity, leverage, taker_long)
+                .unwrap();
         let (loss, loss_in_percent, _) = calculate_profit_at_price(
             initial_price,
             closing_price,
             quantity,
             leverage,
-            Position::Short,
+            maker_short,
         )
         .unwrap();
 
@@ -2010,18 +2071,27 @@ mod tests {
             Price::new(dec!(15_000_000)).unwrap(),
         ];
 
+        let opening_fee = OpeningFee::new(Amount::from_sat(500));
+        let funding_fee = FundingFee::new(
+            Amount::from_sat(100),
+            FundingRate::new(dec!(0.001)).unwrap(),
+        );
+
+        let taker_long = FeeAccount::new(Position::Long, Role::Taker)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(funding_fee);
+
+        let maker_short = FeeAccount::new(Position::Short, Role::Maker)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(funding_fee);
+
         for price in closing_prices {
             let (long_profit, _, _) =
-                calculate_profit_at_price(initial_price, price, quantity, leverage, Position::Long)
+                calculate_profit_at_price(initial_price, price, quantity, leverage, taker_long)
                     .unwrap();
-            let (short_profit, _, _) = calculate_profit_at_price(
-                initial_price,
-                price,
-                quantity,
-                leverage,
-                Position::Short,
-            )
-            .unwrap();
+            let (short_profit, _, _) =
+                calculate_profit_at_price(initial_price, price, quantity, leverage, maker_short)
+                    .unwrap();
 
             assert_eq!(
                 long_profit + long_margin + short_profit + short_margin,
