@@ -45,7 +45,7 @@ pub struct Version(semver::Version);
 
 impl Version {
     pub fn current() -> Self {
-        Self(semver::Version::new(1, 0, 0))
+        Self(semver::Version::new(2, 0, 0))
     }
 }
 
