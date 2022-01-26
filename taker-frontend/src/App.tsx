@@ -22,7 +22,7 @@ import Footer from "./components/Footer";
 import History from "./components/History";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
-import { Wallet, WalletInfoBar } from "./components/Wallet";
+import { Wallet } from "./components/Wallet";
 import { BXBTData, Cfd, ConnectionStatus, intoCfd, intoOrder, isClosed, Order, WalletInfo } from "./types";
 import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
@@ -111,7 +111,6 @@ export const App = () => {
                             <Center marginTop={20}>
                                 <VStack>
                                     {connectionStatus}
-                                    <WalletInfoBar walletInfo={walletInfo} />
                                 </VStack>
                             </Center>
                             <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>

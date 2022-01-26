@@ -1,4 +1,4 @@
-import { CheckIcon, CopyIcon, ExternalLinkIcon } from "@chakra-ui/icons";
+import { CheckIcon, CopyIcon } from "@chakra-ui/icons";
 import {
     Box,
     Button,
@@ -26,7 +26,6 @@ import {
 } from "@chakra-ui/react";
 import * as React from "react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { WalletInfo, WithdrawRequest } from "../types";
 import usePostRequest from "../usePostRequest";
 import Timestamp from "./Timestamp";
@@ -173,28 +172,4 @@ export default function Wallet(
     );
 }
 
-const WalletInfoBar = ({
-    walletInfo,
-}: WalletProps) => {
-    const { balance } = walletInfo || {};
-    const navigate = useNavigate();
-
-    return (
-        <HStack>
-            <Text align={"left"} as="b">Wallet Balance:</Text>
-            <Skeleton isLoaded={balance != null}>
-                <HStack>
-                    <Text>{balance} BTC</Text>
-                    <IconButton
-                        variant={"unstyled"}
-                        aria-label="Go to wallet"
-                        icon={<ExternalLinkIcon />}
-                        onClick={() => navigate("/wallet")}
-                    />
-                </HStack>
-            </Skeleton>
-        </HStack>
-    );
-};
-
-export { Wallet, WalletInfoBar };
+export { Wallet };
