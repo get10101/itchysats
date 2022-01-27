@@ -7,6 +7,7 @@ use anyhow::Context;
 use anyhow::Result;
 use xtra::Address;
 
+#[derive(Clone)]
 pub struct Executor {
     db: sqlx::SqlitePool,
     process_manager: Address<process_manager::Actor>,

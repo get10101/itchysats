@@ -4,6 +4,7 @@ use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
 use crate::mocks::wallet::WalletActor;
 use daemon::bitmex_price_feed;
+use daemon::command;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
@@ -16,7 +17,7 @@ pub mod wallet;
 #[derive(Clone)]
 pub struct Mocks {
     wallet: Arc<Mutex<wallet::MockWallet>>,
-    _monitor: Arc<Mutex<monitor::MockMonitor>>,
+    monitor: Arc<Mutex<monitor::MockMonitor>>,
     oracle: Arc<Mutex<oracle::MockOracle>>,
     price_feed: Arc<Mutex<price_feed::MockPriceFeed>>,
 }
@@ -36,12 +37,21 @@ impl Mocks {
 
         let mocks = Self {
             wallet: wallet_mock,
-            _monitor: monitor_mock,
+            monitor: monitor_mock,
             oracle: oracle_mock,
             price_feed: price_feed_mock,
         };
 
         (mocks, oracle, monitor, wallet, price_feed)
+    }
+
+    /// Makes the mocks aware of the [`command::Executor`] of an actor system.
+    ///
+    /// We cannot do this in the constructor because it would create a circular dependency:
+    /// The actor system needs the mocked actors to be present but we only have the
+    /// [`command::Executor`] after we constructed the actor system.
+    pub async fn set_executor(&mut self, executor: command::Executor) {
+        self.monitor().await.set_executor(executor);
     }
 
     pub async fn wallet(&mut self) -> MutexGuard<'_, wallet::MockWallet> {
@@ -54,6 +64,10 @@ impl Mocks {
 
     pub async fn price_feed(&mut self) -> MutexGuard<'_, price_feed::MockPriceFeed> {
         self.price_feed.lock().await
+    }
+
+    pub async fn monitor(&mut self) -> MutexGuard<'_, monitor::MockMonitor> {
+        self.monitor.lock().await
     }
 
     pub async fn mock_sync_handlers(&mut self) {

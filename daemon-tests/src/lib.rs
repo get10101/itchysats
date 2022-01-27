@@ -200,6 +200,8 @@ impl Maker {
         )
         .unwrap();
 
+        mocks.set_executor(maker.executor().clone()).await;
+
         let (proj_actor, feeds) =
             projection::Actor::new(db, Role::Maker, Network::Testnet, &price_feed_addr);
         tasks.add(projection_context.run(proj_actor));
@@ -286,6 +288,8 @@ impl Taker {
             maker_identity,
         )
         .unwrap();
+
+        mocks.set_executor(taker.executor().clone()).await;
 
         let (proj_actor, feeds) =
             projection::Actor::new(db, Role::Taker, Network::Testnet, &taker.price_feed_actor);

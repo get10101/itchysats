@@ -191,6 +191,10 @@ where
         })
     }
 
+    pub fn executor(&self) -> &command::Executor {
+        &self.executor
+    }
+
     pub async fn new_order(
         &self,
         price: Price,
@@ -425,6 +429,10 @@ where
             _tasks: tasks,
             maker_online_status_feed_receiver,
         })
+    }
+
+    pub fn executor(&self) -> &command::Executor {
+        &self.executor
     }
 
     pub async fn take_offer(&self, order_id: OrderId, quantity: Usd) -> Result<()> {

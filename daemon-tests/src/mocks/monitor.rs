@@ -1,4 +1,6 @@
 use anyhow::Result;
+use daemon::command;
+use daemon::model::cfd::OrderId;
 use daemon::monitor;
 use daemon::oracle;
 use std::sync::Arc;
@@ -40,6 +42,78 @@ impl MonitorActor {
 }
 
 #[derive(Default)]
-pub struct MockMonitor {}
+pub struct MockMonitor {
+    executor: Option<command::Executor>,
+}
 
-impl MockMonitor {}
+impl MockMonitor {
+    pub fn set_executor(&mut self, executor: command::Executor) {
+        self.executor = Some(executor);
+    }
+
+    pub async fn confirm_lock_transaction(&mut self, id: OrderId) {
+        self.executor
+            .as_ref()
+            .expect("executor to be set during test setup")
+            .execute(id, |cfd| Ok(cfd.handle_lock_confirmed()))
+            .await
+            .unwrap();
+    }
+
+    pub async fn confirm_commit_transaction(&mut self, id: OrderId) {
+        self.executor
+            .as_ref()
+            .expect("executor to be set during test setup")
+            .execute(id, |cfd| Ok(cfd.handle_commit_confirmed()))
+            .await
+            .unwrap();
+    }
+
+    pub async fn expire_refund_timelock(&mut self, id: OrderId) {
+        self.executor
+            .as_ref()
+            .expect("executor to be set during test setup")
+            .execute(id, |cfd| cfd.handle_refund_timelock_expired())
+            .await
+            .unwrap();
+    }
+
+    pub async fn confirm_refund_transaction(&mut self, id: OrderId) {
+        self.executor
+            .as_ref()
+            .expect("executor to be set during test setup")
+            .execute(id, |cfd| Ok(cfd.handle_refund_confirmed()))
+            .await
+            .unwrap();
+    }
+
+    pub async fn expire_cet_timelock(&mut self, id: OrderId) {
+        self.executor
+            .as_ref()
+            .expect("executor to be set during test setup")
+            .execute(id, |cfd| cfd.handle_cet_timelock_expired())
+            .await
+            .unwrap();
+    }
+
+    pub async fn confirm_cet(&mut self, id: OrderId) {
+        self.executor
+            .as_ref()
+            .expect("executor to be set during test setup")
+            .execute(id, |cfd| Ok(cfd.handle_cet_confirmed()))
+            .await
+            .unwrap();
+    }
+
+    pub async fn confirm_close_transaction(&mut self, id: OrderId) {
+        self.executor
+            .as_ref()
+            .expect("executor to be set during test setup")
+            .execute(
+                id,
+                |cfd| Ok(cfd.handle_collaborative_settlement_confirmed()),
+            )
+            .await
+            .unwrap();
+    }
+}
