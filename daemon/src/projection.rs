@@ -1,12 +1,12 @@
 use crate::bitmex_price_feed;
 use crate::db;
 use crate::model;
+use crate::model::calculate_funding_fee;
 use crate::model::cfd::calculate_long_liquidation_price;
 use crate::model::cfd::calculate_long_margin;
 use crate::model::cfd::calculate_profit;
 use crate::model::cfd::calculate_profit_at_price;
 use crate::model::cfd::calculate_short_margin;
-use crate::model::cfd::initial_funding_fee;
 use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::Event;
@@ -314,8 +314,14 @@ impl Cfd {
             (Some(quote), Role::Taker) => Some(quote.for_taker()),
         };
 
-        let initial_funding_fee =
-            initial_funding_fee(initial_price, quantity_usd, leverage, initial_funding_rate);
+        let initial_funding_fee = calculate_funding_fee(
+            initial_price,
+            quantity_usd,
+            leverage,
+            initial_funding_rate,
+            SETTLEMENT_INTERVAL.whole_hours(),
+        )
+        .expect("values from db to be sane");
 
         let fee_account = FeeAccount::new(position, role)
             .add_opening_fee(opening_fee)

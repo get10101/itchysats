@@ -463,8 +463,14 @@ impl Cfd {
         initial_funding_rate: FundingRate,
         initial_tx_fee_rate: TxFeeRate,
     ) -> Self {
-        let initial_funding_fee =
-            initial_funding_fee(initial_price, quantity, leverage, initial_funding_rate);
+        let initial_funding_fee = calculate_funding_fee(
+            initial_price,
+            quantity,
+            leverage,
+            initial_funding_rate,
+            SETTLEMENT_INTERVAL.whole_hours(),
+        )
+        .expect("values from db to be sane");
 
         Cfd {
             version: 0,
@@ -579,13 +585,6 @@ impl Cfd {
         }
     }
 
-    fn short_margin(&self) -> Amount {
-        match self.position {
-            Position::Long => self.counterparty_margin(),
-            Position::Short => self.margin(),
-        }
-    }
-
     fn is_in_collaborative_settlement(&self) -> bool {
         self.settlement_proposal.is_some()
     }
@@ -682,8 +681,14 @@ impl Cfd {
         }
 
         let hours_to_charge = 1;
-        let funding_fee =
-            calculate_funding_fee(self.short_margin(), funding_rate, hours_to_charge)?;
+
+        let funding_fee = calculate_funding_fee(
+            self.initial_price,
+            self.quantity,
+            self.leverage,
+            funding_rate,
+            hours_to_charge,
+        )?;
 
         Ok((
             Event::new(self.id, CfdEvent::RolloverAccepted),
@@ -719,8 +724,13 @@ impl Cfd {
         // TODO: Taker should take this from the maker, optionally calculate and verify
         // whether they match
         let hours_to_charge = 1;
-        let funding_fee =
-            calculate_funding_fee(self.short_margin(), funding_rate, hours_to_charge)?;
+        let funding_fee = calculate_funding_fee(
+            self.initial_price,
+            self.quantity,
+            self.leverage,
+            funding_rate,
+            hours_to_charge,
+        )?;
 
         Ok((
             self.event(CfdEvent::RolloverAccepted),
@@ -1338,22 +1348,6 @@ pub fn calculate_profit_at_price(
 
     let (profit_btc, profit_percent) = calculate_profit(payout, margin);
     Ok((profit_btc, profit_percent, payout))
-}
-
-/// Helper function for the initial funding fee until we have a more elaborate model
-pub fn initial_funding_fee(
-    initial_price: Price,
-    quantity: Usd,
-    leverage: Leverage,
-    initial_funding_rate: FundingRate,
-) -> FundingFee {
-    let long_initial_margin = calculate_long_margin(initial_price, quantity, leverage);
-    calculate_funding_fee(
-        long_initial_margin,
-        initial_funding_rate,
-        SETTLEMENT_INTERVAL.whole_hours(),
-    )
-    .expect("values from db to be sane")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2262,7 +2256,9 @@ mod tests {
     fn can_calculate_funding_fee_with_negative_funding_rate() {
         let funding_rate = FundingRate::new(Decimal::NEGATIVE_ONE).unwrap();
         let funding_fee = calculate_funding_fee(
-            Amount::ONE_BTC,
+            Price::new(dec!(1)).unwrap(),
+            Usd::new(dec!(1)),
+            Leverage::new(1).unwrap(),
             funding_rate,
             SETTLEMENT_INTERVAL.whole_hours(),
         )
