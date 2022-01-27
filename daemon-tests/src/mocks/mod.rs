@@ -1,10 +1,8 @@
 use super::maia::OliviaData;
-use crate::mocks::monitor::MonitorActor;
 use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
 use crate::mocks::wallet::WalletActor;
 use daemon::bitmex_price_feed;
-use daemon::command;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
@@ -17,41 +15,29 @@ pub mod wallet;
 #[derive(Clone)]
 pub struct Mocks {
     wallet: Arc<Mutex<wallet::MockWallet>>,
-    monitor: Arc<Mutex<monitor::MockMonitor>>,
+    monitor: Option<Arc<Mutex<monitor::MockMonitor>>>,
     oracle: Arc<Mutex<oracle::MockOracle>>,
     price_feed: Arc<Mutex<price_feed::MockPriceFeed>>,
 }
 
 impl Mocks {
-    pub fn new() -> (
-        Mocks,
-        OracleActor,
-        MonitorActor,
-        WalletActor,
-        PriceFeedActor,
-    ) {
+    pub fn new() -> (Mocks, OracleActor, WalletActor, PriceFeedActor) {
         let (oracle, oracle_mock) = OracleActor::new();
         let (wallet, wallet_mock) = WalletActor::new();
-        let (monitor, monitor_mock) = MonitorActor::new();
         let (price_feed, price_feed_mock) = PriceFeedActor::new();
 
         let mocks = Self {
             wallet: wallet_mock,
-            monitor: monitor_mock,
+            monitor: None,
             oracle: oracle_mock,
             price_feed: price_feed_mock,
         };
 
-        (mocks, oracle, monitor, wallet, price_feed)
+        (mocks, oracle, wallet, price_feed)
     }
 
-    /// Makes the mocks aware of the [`command::Executor`] of an actor system.
-    ///
-    /// We cannot do this in the constructor because it would create a circular dependency:
-    /// The actor system needs the mocked actors to be present but we only have the
-    /// [`command::Executor`] after we constructed the actor system.
-    pub async fn set_executor(&mut self, executor: command::Executor) {
-        self.monitor().await.set_executor(executor);
+    pub fn set_monitor_mock(&mut self, monitor: Arc<Mutex<monitor::MockMonitor>>) {
+        self.monitor = Some(monitor);
     }
 
     pub async fn wallet(&mut self) -> MutexGuard<'_, wallet::MockWallet> {
@@ -67,7 +53,11 @@ impl Mocks {
     }
 
     pub async fn monitor(&mut self) -> MutexGuard<'_, monitor::MockMonitor> {
-        self.monitor.lock().await
+        self.monitor
+            .as_ref()
+            .expect("monitor mock to be initialized")
+            .lock()
+            .await
     }
 
     pub async fn mock_sync_handlers(&mut self) {

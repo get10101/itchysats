@@ -1,3 +1,4 @@
+use crate::mocks::monitor::MonitorActor;
 use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
 use crate::mocks::wallet::WalletActor;
@@ -166,7 +167,7 @@ impl Maker {
 
         let db = db::memory().await.unwrap();
 
-        let (mut mocks, oracle, monitor, wallet, price_feed) = mocks::Mocks::new();
+        let (mut mocks, oracle, wallet, price_feed) = mocks::Mocks::new();
 
         let mut tasks = Tasks::default();
 
@@ -190,7 +191,12 @@ impl Maker {
             wallet_addr,
             config.oracle_pk,
             |_| oracle,
-            |_| Ok(monitor),
+            |executor| {
+                let (monitor, monitor_mock) = MonitorActor::new(executor);
+                mocks.set_monitor_mock(monitor_mock);
+
+                Ok(monitor)
+            },
             settlement_interval,
             config.n_payouts,
             projection_actor.clone(),
@@ -199,8 +205,6 @@ impl Maker {
             address,
         )
         .unwrap();
-
-        mocks.set_executor(maker.executor().clone()).await;
 
         let (proj_actor, feeds) =
             projection::Actor::new(db, Role::Maker, Network::Testnet, &price_feed_addr);
@@ -261,7 +265,7 @@ impl Taker {
 
         let db = db::memory().await.unwrap();
 
-        let (mut mocks, oracle, monitor, wallet, price_feed) = mocks::Mocks::new();
+        let (mut mocks, oracle, wallet, price_feed) = mocks::Mocks::new();
 
         let mut tasks = Tasks::default();
 
@@ -279,7 +283,12 @@ impl Taker {
             config.oracle_pk,
             identity_sk,
             |_| oracle,
-            |_| Ok(monitor),
+            |executor| {
+                let (monitor, monitor_mock) = MonitorActor::new(executor);
+                mocks.set_monitor_mock(monitor_mock);
+
+                Ok(monitor)
+            },
             move |_| price_feed.clone(),
             config.n_payouts,
             config.heartbeat_interval,
@@ -288,8 +297,6 @@ impl Taker {
             maker_identity,
         )
         .unwrap();
-
-        mocks.set_executor(taker.executor().clone()).await;
 
         let (proj_actor, feeds) =
             projection::Actor::new(db, Role::Taker, Network::Testnet, &taker.price_feed_actor);

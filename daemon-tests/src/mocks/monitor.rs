@@ -14,8 +14,8 @@ pub struct MonitorActor {
 }
 
 impl MonitorActor {
-    pub fn new() -> (Self, Arc<Mutex<MockMonitor>>) {
-        let mock = Arc::new(Mutex::new(MockMonitor::default()));
+    pub fn new(executor: command::Executor) -> (Self, Arc<Mutex<MockMonitor>>) {
+        let mock = Arc::new(Mutex::new(MockMonitor::new(executor)));
         let actor = Self {
             _mock: mock.clone(),
         };
@@ -41,20 +41,17 @@ impl MonitorActor {
     }
 }
 
-#[derive(Default)]
 pub struct MockMonitor {
-    executor: Option<command::Executor>,
+    executor: command::Executor,
 }
 
 impl MockMonitor {
-    pub fn set_executor(&mut self, executor: command::Executor) {
-        self.executor = Some(executor);
+    pub fn new(executor: command::Executor) -> Self {
+        MockMonitor { executor }
     }
 
     pub async fn confirm_lock_transaction(&mut self, id: OrderId) {
         self.executor
-            .as_ref()
-            .expect("executor to be set during test setup")
             .execute(id, |cfd| Ok(cfd.handle_lock_confirmed()))
             .await
             .unwrap();
@@ -62,8 +59,6 @@ impl MockMonitor {
 
     pub async fn confirm_commit_transaction(&mut self, id: OrderId) {
         self.executor
-            .as_ref()
-            .expect("executor to be set during test setup")
             .execute(id, |cfd| Ok(cfd.handle_commit_confirmed()))
             .await
             .unwrap();
@@ -71,8 +66,6 @@ impl MockMonitor {
 
     pub async fn expire_refund_timelock(&mut self, id: OrderId) {
         self.executor
-            .as_ref()
-            .expect("executor to be set during test setup")
             .execute(id, |cfd| cfd.handle_refund_timelock_expired())
             .await
             .unwrap();
@@ -80,8 +73,6 @@ impl MockMonitor {
 
     pub async fn confirm_refund_transaction(&mut self, id: OrderId) {
         self.executor
-            .as_ref()
-            .expect("executor to be set during test setup")
             .execute(id, |cfd| Ok(cfd.handle_refund_confirmed()))
             .await
             .unwrap();
@@ -89,8 +80,6 @@ impl MockMonitor {
 
     pub async fn expire_cet_timelock(&mut self, id: OrderId) {
         self.executor
-            .as_ref()
-            .expect("executor to be set during test setup")
             .execute(id, |cfd| cfd.handle_cet_timelock_expired())
             .await
             .unwrap();
@@ -98,8 +87,6 @@ impl MockMonitor {
 
     pub async fn confirm_cet(&mut self, id: OrderId) {
         self.executor
-            .as_ref()
-            .expect("executor to be set during test setup")
             .execute(id, |cfd| Ok(cfd.handle_cet_confirmed()))
             .await
             .unwrap();
@@ -107,8 +94,6 @@ impl MockMonitor {
 
     pub async fn confirm_close_transaction(&mut self, id: OrderId) {
         self.executor
-            .as_ref()
-            .expect("executor to be set during test setup")
             .execute(
                 id,
                 |cfd| Ok(cfd.handle_collaborative_settlement_confirmed()),
