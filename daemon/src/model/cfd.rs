@@ -2258,6 +2258,20 @@ mod tests {
         assert!(matches!(cannot_roll_over, NoRolloverReason::Final))
     }
 
+    #[test]
+    fn can_calculate_funding_fee_with_negative_funding_rate() {
+        let funding_rate = FundingRate::new(Decimal::NEGATIVE_ONE).unwrap();
+        let funding_fee = calculate_funding_fee(
+            Amount::ONE_BTC,
+            funding_rate,
+            SETTLEMENT_INTERVAL.whole_hours(),
+        )
+        .unwrap();
+
+        assert_eq!(funding_fee.fee, Amount::ONE_BTC);
+        assert_eq!(funding_fee.rate, funding_rate);
+    }
+
     impl Event {
         fn dummy_open(event_id: BitMexPriceEventId) -> Vec<Self> {
             vec![

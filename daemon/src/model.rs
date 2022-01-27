@@ -821,11 +821,13 @@ pub fn calculate_funding_fee(
             .context("can't establish a fraction")?
     };
 
-    let funding_fee =
-        (Decimal::from(margin.as_sat()) * funding_rate.to_decimal() * fraction_of_funding_period)
-            .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::AwayFromZero)
-            .to_u64()
-            .context("Failed to represent as u64")?;
+    let funding_fee = Decimal::from(margin.as_sat())
+        * funding_rate.to_decimal().abs()
+        * fraction_of_funding_period;
+    let funding_fee = funding_fee
+        .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::AwayFromZero)
+        .to_u64()
+        .context("Failed to represent as u64")?;
 
     Ok(FundingFee::new(Amount::from_sat(funding_fee), funding_rate))
 }
