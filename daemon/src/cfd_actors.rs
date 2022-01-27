@@ -1,7 +1,6 @@
 use crate::db;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::OrderId;
-use crate::model::cfd::RefundTimelockExpiryError;
 use crate::monitor;
 use crate::oracle;
 use crate::process_manager;
@@ -48,19 +47,15 @@ pub async fn handle_monitoring_event(
             }
         }
         monitor::Event::CetFinality(_) => cfd.handle_cet_confirmed(),
-        monitor::Event::RefundTimelockExpired(_) => {
-            use RefundTimelockExpiryError::*;
-            match cfd.handle_refund_timelock_expired() {
-                Ok(event) => event,
-                Err(e) => {
-                    if let NoDlc | Signing(_) = e {
-                        tracing::error!("Failed to handle refund timelock expiry: {e}");
-                    }
+        monitor::Event::RefundTimelockExpired(_) => match cfd.handle_refund_timelock_expired() {
+            Ok(Some(event)) => event,
+            Ok(None) => return Ok(()),
+            Err(e) => {
+                tracing::error!("Failed to handle refund timelock expiry: {e}");
 
-                    return Ok(());
-                }
+                return Ok(());
             }
-        }
+        },
         monitor::Event::RefundFinality(_) => cfd.handle_refund_confirmed(),
         monitor::Event::RevokedTransactionFound(_) => cfd.handle_revoke_confirmed(),
     };

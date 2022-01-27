@@ -243,18 +243,6 @@ pub enum NoRolloverReason {
     Closed,
 }
 
-/// Errors that can happen when handling the expiry of the refund
-/// timelock on the commit transaciton.
-#[derive(thiserror::Error, Debug)]
-pub enum RefundTimelockExpiryError {
-    #[error("CFD is already final")]
-    AlreadyFinal,
-    #[error("CFD does not have a DLC")]
-    NoDlc,
-    #[error("Failed to sign refund transaction")]
-    Signing(#[from] anyhow::Error),
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
     pub timestamp: Timestamp,
@@ -1062,19 +1050,19 @@ impl Cfd {
         Ok(self.event(cfd_event))
     }
 
-    pub fn handle_refund_timelock_expired(self) -> Result<Event, RefundTimelockExpiryError> {
-        use RefundTimelockExpiryError::*;
-
+    pub fn handle_refund_timelock_expired(self) -> Result<Option<Event>> {
         if self.is_closed() {
-            return Err(AlreadyFinal);
+            return Ok(None);
         }
 
-        let dlc = self.dlc.as_ref().ok_or(NoDlc)?;
-        let refund_tx = dlc.signed_refund_tx()?;
+        let dlc = self.dlc.as_ref().context("CFD does not have a DLC")?;
+        let refund_tx = dlc
+            .signed_refund_tx()
+            .context("Failed to sign refund transaction")?;
 
         let event = self.event(CfdEvent::RefundTimelockExpired { refund_tx });
 
-        Ok(event)
+        Ok(Some(event))
     }
 
     pub fn handle_lock_confirmed(self) -> Event {
