@@ -76,12 +76,6 @@ impl Mocks {
             .returning(|msg| wallet::build_party_params(msg));
     }
 
-    pub async fn mock_monitor_oracle_attestation(&mut self) {}
-
-    pub async fn mock_monitor_start_monitoring(&mut self) {}
-
-    pub async fn mock_monitor_collaborative_settlement(&mut self) {}
-
     pub async fn mock_latest_quote(&mut self, latest_quote: Option<bitmex_price_feed::Quote>) {
         self.price_feed().await.set_latest_quote(latest_quote);
     }

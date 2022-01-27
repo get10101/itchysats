@@ -216,8 +216,6 @@ impl Maker {
     }
 
     pub async fn publish_order(&mut self, new_order_params: maker_cfd::NewOrder) {
-        self.mocks.mock_monitor_oracle_attestation().await;
-
         self.system
             .cfd_actor
             .send(new_order_params)

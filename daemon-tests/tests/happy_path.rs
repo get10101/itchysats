@@ -113,14 +113,8 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
 
-    maker.mocks.mock_monitor_oracle_attestation().await;
-    taker.mocks.mock_monitor_oracle_attestation().await;
-
     maker.mocks.mock_oracle_monitor_attestation().await;
     taker.mocks.mock_oracle_monitor_attestation().await;
-
-    maker.mocks.mock_monitor_start_monitoring().await;
-    taker.mocks.mock_monitor_start_monitoring().await;
 
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
@@ -154,9 +148,6 @@ async fn collaboratively_close_an_open_cfd() {
         CfdState::IncomingSettlementProposal,
         CfdState::OutgoingSettlementProposal
     );
-
-    maker.mocks.mock_monitor_collaborative_settlement().await;
-    taker.mocks.mock_monitor_collaborative_settlement().await;
 
     maker.system.accept_settlement(order_id).await.unwrap();
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
@@ -361,14 +352,8 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
 
-    maker.mocks.mock_monitor_oracle_attestation().await;
-    taker.mocks.mock_monitor_oracle_attestation().await;
-
     maker.mocks.mock_oracle_monitor_attestation().await;
     taker.mocks.mock_oracle_monitor_attestation().await;
-
-    maker.mocks.mock_monitor_start_monitoring().await;
-    taker.mocks.mock_monitor_start_monitoring().await;
 
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
