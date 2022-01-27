@@ -15,10 +15,10 @@ pub mod wallet;
 
 #[derive(Clone)]
 pub struct Mocks {
-    pub wallet: Arc<Mutex<wallet::MockWallet>>,
-    pub monitor: Arc<Mutex<monitor::MockMonitor>>,
-    pub oracle: Arc<Mutex<oracle::MockOracle>>,
-    pub price_feed: Arc<Mutex<price_feed::MockPriceFeed>>,
+    wallet: Arc<Mutex<wallet::MockWallet>>,
+    monitor: Arc<Mutex<monitor::MockMonitor>>,
+    oracle: Arc<Mutex<oracle::MockOracle>>,
+    price_feed: Arc<Mutex<price_feed::MockPriceFeed>>,
 }
 
 impl Mocks {
