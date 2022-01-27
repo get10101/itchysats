@@ -4,7 +4,8 @@ export interface CfdSellOrderPayload {
     price: number;
     min_quantity: number;
     max_quantity: number;
-    funding_rate: number;
+    funding_rate?: number;
+    opening_fee?: number;
 }
 
 export async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {

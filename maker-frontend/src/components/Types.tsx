@@ -9,6 +9,8 @@ export interface Order {
     liquidation_price: number;
     creation_timestamp: number;
     settlement_time_interval_in_secs: number;
+    opening_fee?: number;
+    funding_rate_hourly_percent?: number;
 }
 
 export class Position {
