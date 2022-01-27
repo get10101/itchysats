@@ -10,11 +10,11 @@ use xtra_productivity::xtra_productivity;
 /// Test Stub simulating the Oracle actor.
 /// Serves as an entrypoint for injected mock handlers.
 pub struct OracleActor {
-    mock: Arc<Mutex<dyn Oracle + Send>>,
+    mock: Arc<Mutex<MockOracle>>,
 }
 
 impl OracleActor {
-    pub fn new(mock: Arc<Mutex<dyn Oracle + Send>>) -> Self {
+    pub fn new(mock: Arc<Mutex<MockOracle>>) -> Self {
         Self { mock }
     }
 }
