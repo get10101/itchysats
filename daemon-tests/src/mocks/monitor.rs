@@ -15,40 +15,20 @@ impl xtra::Actor for MonitorActor {}
 
 #[xtra_productivity(message_impl = false)]
 impl MonitorActor {
-    async fn handle(&mut self, msg: monitor::Sync) {
-        self.mock.lock().await.sync(msg)
-    }
+    async fn handle(&mut self, _: monitor::Sync) {}
 
-    async fn handle(&mut self, msg: monitor::StartMonitoring) {
-        self.mock.lock().await.start_monitoring(msg)
-    }
+    async fn handle(&mut self, _: monitor::StartMonitoring) {}
 
-    async fn handle(&mut self, msg: monitor::CollaborativeSettlement) {
-        self.mock.lock().await.collaborative_settlement(msg)
-    }
+    async fn handle(&mut self, _: monitor::CollaborativeSettlement) {}
 
-    async fn handle(&mut self, msg: oracle::Attestation) {
-        self.mock.lock().await.oracle_attestation(msg);
-    }
+    async fn handle(&mut self, _: oracle::Attestation) {}
 
-    async fn handle(&mut self, msg: monitor::TryBroadcastTransaction) -> Result<()> {
-        self.mock.lock().await.broadcast(msg)
+    async fn handle(&mut self, _: monitor::TryBroadcastTransaction) -> Result<()> {
+        Ok(())
     }
 }
 
 #[derive(Default)]
 pub struct MockMonitor {}
 
-impl MockMonitor {
-    fn sync(&mut self, _msg: monitor::Sync) {}
-
-    fn start_monitoring(&mut self, _msg: monitor::StartMonitoring) {}
-
-    fn collaborative_settlement(&mut self, _msg: monitor::CollaborativeSettlement) {}
-
-    fn oracle_attestation(&mut self, _msg: oracle::Attestation) {}
-
-    fn broadcast(&mut self, _msg: monitor::TryBroadcastTransaction) -> Result<()> {
-        Ok(())
-    }
-}
+impl MockMonitor {}
