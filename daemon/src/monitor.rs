@@ -34,7 +34,6 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt;
-use std::marker::Send;
 use std::ops::Add;
 use std::ops::RangeInclusive;
 use std::time::Duration;
@@ -132,10 +131,10 @@ pub struct Sync;
 
 // TODO: Send messages to the projection actor upon finality events so we send out updates.
 //  -> Might as well just send out all events independent of sending to the cfd actor.
-pub struct Actor<C = bdk::electrum_client::Client> {
+pub struct Actor {
     cfds: HashMap<OrderId, MonitorParams>,
     event_channel: Box<dyn StrongMessageChannel<Event>>,
-    client: C,
+    client: bdk::electrum_client::Client,
     tasks: Tasks,
     state: State,
     db: sqlx::SqlitePool,
@@ -283,7 +282,7 @@ impl Cfd {
     }
 }
 
-impl Actor<bdk::electrum_client::Client> {
+impl Actor {
     pub fn new(
         db: SqlitePool,
         electrum_rpc_url: String,
@@ -411,10 +410,7 @@ impl State {
     }
 }
 
-impl<C> Actor<C>
-where
-    C: bdk::electrum_client::ElectrumApi,
-{
+impl Actor {
     async fn sync(&mut self) -> Result<()> {
         // Fetch the latest block for storing the height.
         // We do not act on this subscription after this call, as we cannot rely on
@@ -774,10 +770,7 @@ impl xtra::Message for Sync {
 }
 
 #[async_trait]
-impl<C> xtra::Actor for Actor<C>
-where
-    C: bdk::electrum_client::ElectrumApi + Send + 'static,
-{
+impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
         self.tasks
@@ -898,10 +891,7 @@ where
 }
 
 #[xtra_productivity]
-impl<C> Actor<C>
-where
-    C: bdk::electrum_client::ElectrumApi + Send + 'static,
-{
+impl Actor {
     async fn handle_start_monitoring(
         &mut self,
         msg: StartMonitoring,
@@ -1031,10 +1021,7 @@ struct ReinitMonitoring {
 }
 
 #[async_trait]
-impl<C> xtra::Handler<Sync> for Actor<C>
-where
-    C: bdk::electrum_client::ElectrumApi + Send + 'static,
-{
+impl xtra::Handler<Sync> for Actor {
     async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self.sync().await {
             tracing::warn!("Sync failed: {:#}", e);
