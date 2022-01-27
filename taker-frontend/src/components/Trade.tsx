@@ -1,3 +1,4 @@
+import { ExternalLinkIcon } from "@chakra-ui/icons";
 import { BoxProps } from "@chakra-ui/layout";
 import {
     Box,
@@ -11,6 +12,7 @@ import {
     Grid,
     GridItem,
     HStack,
+    IconButton,
     InputGroup,
     InputLeftAddon,
     Modal,
@@ -35,8 +37,6 @@ import {
     Tbody,
     Td,
     Text,
-    Tfoot,
-    Th,
     Tooltip,
     Tr,
     useColorModeValue,
@@ -46,6 +46,7 @@ import {
 import { motion } from "framer-motion";
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
@@ -215,8 +216,7 @@ export default function Trade({
                     <GridItem colSpan={1}>
                         <OpeningDetails
                             margin={margin}
-                            openingFee={openingFee}
-                            marginAndOpeningFee={btcToOpenPosition}
+                            walletBalance={walletBalance}
                         />
                     </GridItem>
                     <GridItem colSpan={1}>
@@ -251,17 +251,19 @@ export default function Trade({
                                         <ModalBody>
                                             <Table variant="striped" colorScheme="gray" size="sm">
                                                 <TableCaption>
-                                                    {`By submitting, ₿${btcToOpenPosition} will be locked on-chain in a contract.`}
+                                                    <HStack>
+                                                        <Text>
+                                                            By submitting
+                                                        </Text>
+                                                        <Text as={"b"}>
+                                                            ₿${btcToOpenPosition}
+                                                        </Text>
+                                                        <Text>
+                                                            will be locked on-chain in a contract.
+                                                        </Text>
+                                                    </HStack>
                                                 </TableCaption>
                                                 <Tbody>
-                                                    <Tr>
-                                                        <Td><Text as={"b"}>Your Margin</Text></Td>
-                                                        <Td><BitcoinAmount btc={margin} /></Td>
-                                                    </Tr>
-                                                    <Tr>
-                                                        <Td><Text as={"b"}>Opening Fee</Text></Td>
-                                                        <Td><BitcoinAmount btc={openingFee} /></Td>
-                                                    </Tr>
                                                     <Tr>
                                                         <Td><Text as={"b"}>Leverage</Text></Td>
                                                         <Td>{leverage}</Td>
@@ -280,6 +282,14 @@ export default function Trade({
                                                             <Td>Hourly @ {fundingRateHourly}%</Td>
                                                         </Tr>
                                                     </Tooltip>
+                                                    <Tr>
+                                                        <Td><Text as={"b"}>Margin</Text></Td>
+                                                        <Td><BitcoinAmount btc={margin} /></Td>
+                                                    </Tr>
+                                                    <Tr>
+                                                        <Td><Text as={"b"}>Opening Fee</Text></Td>
+                                                        <Td><BitcoinAmount btc={openingFee} /></Td>
+                                                    </Tr>
                                                 </Tbody>
                                             </Table>
                                         </ModalBody>
@@ -380,31 +390,35 @@ function Leverage({ leverage }: LeverageProps) {
 
 interface OpeningDetailsProps {
     margin: number;
-    openingFee: number;
-    marginAndOpeningFee: number;
+    walletBalance: number;
 }
 
-function OpeningDetails({ margin, marginAndOpeningFee, openingFee }: OpeningDetailsProps) {
+function OpeningDetails({ margin, walletBalance }: OpeningDetailsProps) {
+    const navigate = useNavigate();
     return (
         <Table variant="simple">
             <Tbody>
                 <Tr>
-                    <Td>Your Margin</Td>
+                    <Td>Required Margin</Td>
                     <Td isNumeric><BitcoinAmount btc={margin} /></Td>
                 </Tr>
                 <Tr>
-                    <Td>Opening Fee</Td>
-                    <Td isNumeric><BitcoinAmount btc={openingFee} /></Td>
+                    <Td>
+                        <HStack>
+                            <Text>Available Balance</Text>
+                            <IconButton
+                                variant={"unstyled"}
+                                aria-label="Go to wallet"
+                                icon={<ExternalLinkIcon />}
+                                onClick={() => navigate("/wallet")}
+                            />
+                        </HStack>
+                    </Td>
+                    <Td isNumeric>
+                        <BitcoinAmount btc={walletBalance} />
+                    </Td>
                 </Tr>
             </Tbody>
-            <Tfoot>
-                <Tr>
-                    <Th fontSize={"md"} textTransform={"none"}>
-                        Required to open position
-                    </Th>
-                    <Th fontSize={"md"} isNumeric><BitcoinAmount btc={marginAndOpeningFee} /></Th>
-                </Tr>
-            </Tfoot>
         </Table>
     );
 }
