@@ -271,7 +271,7 @@ export default function Trade({
                                                         <Td>{liquidationPrice}</Td>
                                                     </Tr>
                                                     <Tooltip
-                                                        label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}%, annualized that is ${fundingRateAnnualized}. The funding rate can fluctuate depending on the market movements.`}
+                                                        label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}%, annualized that is ${fundingRateAnnualized}%. The funding rate can fluctuate depending on the market movements.`}
                                                         hasArrow
                                                         placement={"right"}
                                                     >
