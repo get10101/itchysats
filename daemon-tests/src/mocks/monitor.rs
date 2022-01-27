@@ -12,8 +12,13 @@ pub struct MonitorActor {
 }
 
 impl MonitorActor {
-    pub fn new(mock: Arc<Mutex<MockMonitor>>) -> Self {
-        Self { _mock: mock }
+    pub fn new() -> (Self, Arc<Mutex<MockMonitor>>) {
+        let mock = Arc::new(Mutex::new(MockMonitor::default()));
+        let actor = Self {
+            _mock: mock.clone(),
+        };
+
+        (actor, mock)
     }
 }
 

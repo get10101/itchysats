@@ -1,8 +1,8 @@
-use self::monitor::MonitorActor;
-use self::oracle::OracleActor;
-use self::wallet::WalletActor;
 use super::maia::OliviaData;
+use crate::mocks::monitor::MonitorActor;
+use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
+use crate::mocks::wallet::WalletActor;
 use daemon::bitmex_price_feed;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -16,19 +16,32 @@ pub mod wallet;
 #[derive(Clone)]
 pub struct Mocks {
     wallet: Arc<Mutex<wallet::MockWallet>>,
-    monitor: Arc<Mutex<monitor::MockMonitor>>,
+    _monitor: Arc<Mutex<monitor::MockMonitor>>,
     oracle: Arc<Mutex<oracle::MockOracle>>,
     price_feed: Arc<Mutex<price_feed::MockPriceFeed>>,
 }
 
 impl Mocks {
-    pub fn new() -> Self {
-        Self {
-            oracle: Arc::new(Mutex::new(oracle::MockOracle::new())),
-            monitor: Arc::new(Mutex::new(monitor::MockMonitor::default())),
-            wallet: Arc::new(Mutex::new(wallet::MockWallet::new())),
-            price_feed: Arc::new(Mutex::new(price_feed::MockPriceFeed::default())),
-        }
+    pub fn new() -> (
+        Mocks,
+        OracleActor,
+        MonitorActor,
+        WalletActor,
+        PriceFeedActor,
+    ) {
+        let (oracle, oracle_mock) = OracleActor::new();
+        let (wallet, wallet_mock) = WalletActor::new();
+        let (monitor, monitor_mock) = MonitorActor::new();
+        let (price_feed, price_feed_mock) = PriceFeedActor::new();
+
+        let mocks = Self {
+            wallet: wallet_mock,
+            _monitor: monitor_mock,
+            oracle: oracle_mock,
+            price_feed: price_feed_mock,
+        };
+
+        (mocks, oracle, monitor, wallet, price_feed)
     }
 
     pub async fn wallet(&mut self) -> MutexGuard<'_, wallet::MockWallet> {
@@ -88,14 +101,4 @@ impl Mocks {
     pub async fn mock_latest_quote(&mut self, latest_quote: Option<bitmex_price_feed::Quote>) {
         self.price_feed().await.set_latest_quote(latest_quote);
     }
-}
-
-/// Creates actors with embedded mock handlers
-pub fn create_actors(mocks: &Mocks) -> (OracleActor, MonitorActor, WalletActor, PriceFeedActor) {
-    let oracle = OracleActor::new(mocks.oracle.clone());
-    let monitor = MonitorActor::new(mocks.monitor.clone());
-    let wallet = WalletActor::new(mocks.wallet.clone());
-    let price_feed = PriceFeedActor::new(mocks.price_feed.clone());
-
-    (oracle, monitor, wallet, price_feed)
 }

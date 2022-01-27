@@ -14,8 +14,11 @@ pub struct OracleActor {
 }
 
 impl OracleActor {
-    pub fn new(mock: Arc<Mutex<MockOracle>>) -> Self {
-        Self { mock }
+    pub fn new() -> (Self, Arc<Mutex<MockOracle>>) {
+        let mock = Arc::new(Mutex::new(MockOracle::new()));
+        let actor = Self { mock: mock.clone() };
+
+        (actor, mock)
     }
 }
 

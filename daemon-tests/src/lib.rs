@@ -166,8 +166,7 @@ impl Maker {
 
         let db = db::memory().await.unwrap();
 
-        let mut mocks = mocks::Mocks::new();
-        let (oracle, monitor, wallet, price_feed) = mocks::create_actors(&mocks);
+        let (mut mocks, oracle, monitor, wallet, price_feed) = mocks::Mocks::new();
 
         let mut tasks = Tasks::default();
 
@@ -260,8 +259,7 @@ impl Taker {
 
         let db = db::memory().await.unwrap();
 
-        let mut mocks = mocks::Mocks::new();
-        let (oracle, monitor, wallet, price_feed) = mocks::create_actors(&mocks);
+        let (mut mocks, oracle, monitor, wallet, price_feed) = mocks::Mocks::new();
 
         let mut tasks = Tasks::default();
 

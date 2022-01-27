@@ -9,8 +9,11 @@ pub struct PriceFeedActor {
 }
 
 impl PriceFeedActor {
-    pub fn new(mock: Arc<Mutex<MockPriceFeed>>) -> Self {
-        Self { mock }
+    pub fn new() -> (PriceFeedActor, Arc<Mutex<MockPriceFeed>>) {
+        let mock = Arc::new(Mutex::new(MockPriceFeed::default()));
+        let actor = Self { mock: mock.clone() };
+
+        (actor, mock)
     }
 }
 

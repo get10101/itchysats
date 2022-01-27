@@ -27,8 +27,11 @@ pub struct WalletActor {
 }
 
 impl WalletActor {
-    pub fn new(mock: Arc<Mutex<MockWallet>>) -> Self {
-        Self { mock }
+    pub fn new() -> (WalletActor, Arc<Mutex<MockWallet>>) {
+        let mock = Arc::new(Mutex::new(MockWallet::new()));
+        let actor = Self { mock: mock.clone() };
+
+        (actor, mock)
     }
 }
 
