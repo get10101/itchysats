@@ -251,17 +251,19 @@ export default function Trade({
                                         <ModalBody>
                                             <Table variant="striped" colorScheme="gray" size="sm">
                                                 <TableCaption>
-                                                    {`By submitting, ₿${btcToOpenPosition} will be locked on-chain in a contract.`}
+                                                    <HStack>
+                                                        <Text>
+                                                            By submitting
+                                                        </Text>
+                                                        <Text as={"b"}>
+                                                            ₿${btcToOpenPosition}
+                                                        </Text>
+                                                        <Text>
+                                                            will be locked on-chain in a contract.
+                                                        </Text>
+                                                    </HStack>
                                                 </TableCaption>
                                                 <Tbody>
-                                                    <Tr>
-                                                        <Td><Text as={"b"}>Your Margin</Text></Td>
-                                                        <Td><BitcoinAmount btc={margin} /></Td>
-                                                    </Tr>
-                                                    <Tr>
-                                                        <Td><Text as={"b"}>Opening Fee</Text></Td>
-                                                        <Td><BitcoinAmount btc={openingFee} /></Td>
-                                                    </Tr>
                                                     <Tr>
                                                         <Td><Text as={"b"}>Leverage</Text></Td>
                                                         <Td>{leverage}</Td>
@@ -280,6 +282,14 @@ export default function Trade({
                                                             <Td>Hourly @ {fundingRateHourly}%</Td>
                                                         </Tr>
                                                     </Tooltip>
+                                                    <Tr>
+                                                        <Td><Text as={"b"}>Margin</Text></Td>
+                                                        <Td><BitcoinAmount btc={margin} /></Td>
+                                                    </Tr>
+                                                    <Tr>
+                                                        <Td><Text as={"b"}>Opening Fee</Text></Td>
+                                                        <Td><BitcoinAmount btc={openingFee} /></Td>
+                                                    </Tr>
                                                 </Tbody>
                                             </Table>
                                         </ModalBody>
