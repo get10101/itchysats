@@ -92,17 +92,10 @@ impl Mocks {
 
 /// Creates actors with embedded mock handlers
 pub fn create_actors(mocks: &Mocks) -> (OracleActor, MonitorActor, WalletActor, PriceFeedActor) {
-    let oracle = OracleActor {
-        mock: mocks.oracle.clone(),
-    };
-    let monitor = MonitorActor {
-        mock: mocks.monitor.clone(),
-    };
-    let wallet = WalletActor {
-        mock: mocks.wallet.clone(),
-    };
-    let price_feed = PriceFeedActor {
-        mock: mocks.price_feed.clone(),
-    };
+    let oracle = OracleActor::new(mocks.oracle.clone());
+    let monitor = MonitorActor::new(mocks.monitor.clone());
+    let wallet = WalletActor::new(mocks.wallet.clone());
+    let price_feed = PriceFeedActor::new(mocks.price_feed.clone());
+
     (oracle, monitor, wallet, price_feed)
 }

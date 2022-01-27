@@ -8,7 +8,13 @@ use xtra_productivity::xtra_productivity;
 /// Test Stub simulating the Monitor actor.
 /// Serves as an entrypoint for injected mock handlers.
 pub struct MonitorActor {
-    pub mock: Arc<Mutex<MockMonitor>>,
+    _mock: Arc<Mutex<MockMonitor>>,
+}
+
+impl MonitorActor {
+    pub fn new(mock: Arc<Mutex<MockMonitor>>) -> Self {
+        Self { _mock: mock }
+    }
 }
 
 impl xtra::Actor for MonitorActor {}

@@ -5,7 +5,13 @@ use xtra_productivity::xtra_productivity;
 
 #[derive(Clone)]
 pub struct PriceFeedActor {
-    pub mock: Arc<Mutex<MockPriceFeed>>,
+    mock: Arc<Mutex<MockPriceFeed>>,
+}
+
+impl PriceFeedActor {
+    pub fn new(mock: Arc<Mutex<MockPriceFeed>>) -> Self {
+        Self { mock }
+    }
 }
 
 impl xtra::Actor for PriceFeedActor {}
