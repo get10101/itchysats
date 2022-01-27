@@ -52,7 +52,7 @@ impl Mocks {
         self.monitor()
             .await
             .expect_broadcast()
-            .returning(|broadcast_msg| Ok(broadcast_msg.tx.txid()));
+            .returning(|_| Ok(()));
     }
 
     pub async fn mock_oracle_announcement(&mut self) {

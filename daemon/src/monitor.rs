@@ -927,7 +927,7 @@ where
         );
     }
 
-    async fn handle_try_broadcast_transaction(&self, msg: TryBroadcastTransaction) -> Result<Txid> {
+    async fn handle_try_broadcast_transaction(&self, msg: TryBroadcastTransaction) -> Result<()> {
         let TryBroadcastTransaction { tx, kind } = msg;
 
         let result = self.client.transaction_broadcast(&tx);
@@ -942,7 +942,7 @@ where
                     %txid, "Attempted to broadcast {kind} that was already on-chain",
                 );
 
-                return Ok(txid);
+                return Ok(());
             }
 
             // We do this check because electrum sometimes returns an RpcVerifyError when it should
@@ -955,7 +955,7 @@ where
                     tracing::trace!(
                         %txid, "Attempted to broadcast {kind} that was already on-chain",
                     );
-                    return Ok(txid);
+                    return Ok(());
                 }
             }
         }
@@ -969,7 +969,7 @@ where
 
         tracing::info!(%txid, "{kind:#} published on chain");
 
-        Ok(txid)
+        Ok(())
     }
 
     async fn handle_reinit_monitoring(&mut self, msg: ReinitMonitoring) {

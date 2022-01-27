@@ -20,7 +20,7 @@ use crate::model::Price;
 use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
-use crate::send_async_safe::SendAsyncSafe;
+use crate::xtra_ext::SendAsyncSafe;
 use crate::Order;
 use crate::Tasks;
 use crate::SETTLEMENT_INTERVAL;
