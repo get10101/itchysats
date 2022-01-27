@@ -11,7 +11,6 @@ use crate::model::Identity;
 use crate::model::Position;
 use crate::model::Price;
 use crate::model::Usd;
-use crate::monitor;
 use crate::oracle;
 use crate::process_manager;
 use crate::projection;
@@ -144,14 +143,6 @@ impl<O, W> Actor<O, W> {
 
 #[xtra_productivity(message_impl = false)]
 impl<O, W> Actor<O, W> {
-    async fn handle_monitor(&mut self, msg: monitor::Event) {
-        if let Err(e) =
-            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager_actor).await
-        {
-            tracing::error!("Unable to handle monotoring event: {:#}", e)
-        }
-    }
-
     async fn handle_attestation(&mut self, msg: oracle::Attestation) {
         if let Err(e) =
             cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager_actor).await

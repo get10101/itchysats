@@ -1,7 +1,6 @@
 use crate::db;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::OrderId;
-use crate::monitor;
 use crate::oracle;
 use crate::process_manager;
 use crate::projection;
@@ -21,52 +20,6 @@ pub async fn insert_cfd_and_update_feed(
     projection_address
         .send(projection::CfdChanged(cfd.id()))
         .await?;
-    Ok(())
-}
-
-pub async fn handle_monitoring_event(
-    event: monitor::Event,
-    db: &SqlitePool,
-    process_manager: &xtra::Address<process_manager::Actor>,
-) -> Result<()> {
-    let mut conn = db.acquire().await?;
-
-    let order_id = event.order_id();
-
-    let cfd = load_cfd(order_id, &mut conn).await?;
-
-    let event = match event {
-        monitor::Event::LockFinality(_) => cfd.handle_lock_confirmed(),
-        monitor::Event::CommitFinality(_) => cfd.handle_commit_confirmed(),
-        monitor::Event::CloseFinality(_) => cfd.handle_collaborative_settlement_confirmed(),
-        monitor::Event::CetTimelockExpired(_) => {
-            if let Ok(event) = cfd.handle_cet_timelock_expired() {
-                event
-            } else {
-                return Ok(()); // Early return from a no-op
-            }
-        }
-        monitor::Event::CetFinality(_) => cfd.handle_cet_confirmed(),
-        monitor::Event::RefundTimelockExpired(_) => match cfd.handle_refund_timelock_expired() {
-            Ok(Some(event)) => event,
-            Ok(None) => return Ok(()),
-            Err(e) => {
-                tracing::error!("Failed to handle refund timelock expiry: {e}");
-
-                return Ok(());
-            }
-        },
-        monitor::Event::RefundFinality(_) => cfd.handle_refund_confirmed(),
-        monitor::Event::RevokedTransactionFound(_) => cfd.handle_revoke_confirmed(),
-    };
-
-    if let Err(e) = process_manager
-        .send(process_manager::Event::new(event.clone()))
-        .await?
-    {
-        tracing::error!("Sending event to process manager failed: {:#}", e);
-    }
-
     Ok(())
 }
 

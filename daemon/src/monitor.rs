@@ -1,5 +1,6 @@
 use crate::bitcoin::consensus::encode::serialize_hex;
 use crate::bitcoin::Transaction;
+use crate::command;
 use crate::db;
 use crate::model;
 use crate::model::cfd;
@@ -37,7 +38,6 @@ use std::fmt;
 use std::ops::Add;
 use std::ops::RangeInclusive;
 use std::time::Duration;
-use xtra::prelude::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -133,7 +133,7 @@ pub struct Sync;
 //  -> Might as well just send out all events independent of sending to the cfd actor.
 pub struct Actor {
     cfds: HashMap<OrderId, MonitorParams>,
-    event_channel: Box<dyn StrongMessageChannel<Event>>,
+    executor: command::Executor,
     client: bdk::electrum_client::Client,
     tasks: Tasks,
     state: State,
@@ -286,7 +286,7 @@ impl Actor {
     pub fn new(
         db: SqlitePool,
         electrum_rpc_url: String,
-        event_channel: Box<dyn StrongMessageChannel<Event>>,
+        executor: command::Executor,
     ) -> Result<Self> {
         let client = bdk::electrum_client::Client::new(&electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
@@ -299,8 +299,8 @@ impl Actor {
 
         Ok(Self {
             cfds: HashMap::new(),
-            event_channel,
             client,
+            executor,
             state: State::new(BlockHeight::try_from(latest_block)?),
             tasks: Tasks::default(),
             db,
@@ -435,15 +435,58 @@ impl Actor {
         let mut ready_events = self.state.update(latest_block_height, histories);
 
         while let Some(event) = ready_events.pop() {
-            match self.event_channel.send(event).await {
-                Ok(()) => {}
-                Err(_) => {
-                    tracing::warn!("Address is disconnected, cannot deliver monitoring event");
+            match event {
+                Event::LockFinality(id) => {
+                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_lock_confirmed())))
+                        .await
+                }
+                Event::CommitFinality(id) => {
+                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_commit_confirmed())))
+                        .await
+                }
+                Event::CloseFinality(id) => {
+                    self.invoke_cfd_command(id, |cfd| {
+                        Ok(Some(cfd.handle_collaborative_settlement_confirmed()))
+                    })
+                    .await
+                }
+                Event::CetTimelockExpired(id) => {
+                    self.invoke_cfd_command(id, |cfd| cfd.handle_cet_timelock_expired().map(Some))
+                        .await
+                }
+                Event::CetFinality(id) => {
+                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_cet_confirmed())))
+                        .await
+                }
+                Event::RefundFinality(id) => {
+                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_refund_confirmed())))
+                        .await
+                }
+                Event::RevokedTransactionFound(id) => {
+                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_revoke_confirmed())))
+                        .await
+                }
+                Event::RefundTimelockExpired(id) => {
+                    self.invoke_cfd_command(id, |cfd| cfd.handle_refund_timelock_expired())
+                        .await
                 }
             }
         }
 
         Ok(())
+    }
+
+    async fn invoke_cfd_command(
+        &self,
+        id: OrderId,
+        handler: impl FnOnce(model::cfd::Cfd) -> Result<Option<model::cfd::Event>>,
+    ) {
+        match self.executor.execute(id, handler).await {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::warn!(order_id = %id, "Failed to update state of CFD: {e:#}");
+            }
+        }
     }
 
     async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) {
@@ -688,7 +731,7 @@ impl Add<u32> for BlockHeight {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Event {
+enum Event {
     LockFinality(OrderId),
     CommitFinality(OrderId),
     CloseFinality(OrderId),
@@ -697,23 +740,6 @@ pub enum Event {
     RefundTimelockExpired(OrderId),
     RefundFinality(OrderId),
     RevokedTransactionFound(OrderId),
-}
-
-impl Event {
-    pub fn order_id(&self) -> OrderId {
-        let order_id = match self {
-            Event::LockFinality(order_id) => order_id,
-            Event::CommitFinality(order_id) => order_id,
-            Event::CloseFinality(order_id) => order_id,
-            Event::CetTimelockExpired(order_id) => order_id,
-            Event::RefundTimelockExpired(order_id) => order_id,
-            Event::RefundFinality(order_id) => order_id,
-            Event::CetFinality(order_id) => order_id,
-            Event::RevokedTransactionFound(order_id) => order_id,
-        };
-
-        *order_id
-    }
 }
 
 impl MonitorParams {
@@ -759,10 +785,6 @@ fn map_cets(
             )
         })
         .collect()
-}
-
-impl xtra::Message for Event {
-    type Result = ();
 }
 
 impl xtra::Message for Sync {

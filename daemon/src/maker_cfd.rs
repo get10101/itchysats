@@ -20,7 +20,6 @@ use crate::model::Position;
 use crate::model::Price;
 use crate::model::TxFeeRate;
 use crate::model::Usd;
-use crate::monitor;
 use crate::oracle;
 use crate::process_manager;
 use crate::projection;
@@ -491,14 +490,6 @@ impl<O, T, W> Actor<O, T, W> {
         message: Stopping<collab_settlement_maker::Actor>,
     ) {
         self.settlement_actors.gc(message);
-    }
-
-    async fn handle_monitor(&mut self, msg: monitor::Event) {
-        if let Err(e) =
-            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager).await
-        {
-            tracing::error!("Unable to handle monotoring event: {:#}", e)
-        }
     }
 
     async fn handle_attestation(&mut self, msg: oracle::Attestation) {
