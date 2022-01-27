@@ -93,12 +93,18 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
             isForceCloseButton={true}
         />;
 
+    let failedCfd = [StateKey.REJECTED, StateKey.SETUP_FAILED].includes(cfd.state.key);
+
     let profitColors = !cfd || !cfd.profit_btc || cfd.profit_btc === 0
-            || [StateKey.REJECTED, StateKey.SETUP_FAILED].includes(cfd.state.key)
+            || failedCfd
         ? { light: "gray.500", dark: "gray.400" }
         : cfd.profit_btc > 0
         ? { light: "green.600", dark: "green.300" }
         : { light: "red.600", dark: "red.300" };
+
+    let profitLabel = isClosed(cfd)
+        ? failedCfd ? "Missed P/L 😭" : "Realized P/L"
+        : "Unrealized P/L";
 
     return (
         <HStack
@@ -112,7 +118,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                 <Table size="sm" variant={"unstyled"}>
                     <Tbody>
                         <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
-                            <Td><Text as={"b"}>Unrealized P/L</Text></Td>
+                            <Td><Text as={"b"}>{profitLabel}</Text></Td>
                             <Td textAlign="right">
                                 <Tooltip label={`${cfd.profit_btc}`} placement={"right"}>
                                     <Skeleton isLoaded={cfd.profit_btc != null}>
