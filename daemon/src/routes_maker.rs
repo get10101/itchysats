@@ -1,3 +1,4 @@
+use crate::Amount;
 use anyhow::Result;
 use bdk::bitcoin::Network;
 use daemon::auth::Authenticated;
@@ -25,6 +26,7 @@ use rocket::response::stream::EventStream;
 use rocket::response::Responder;
 use rocket::serde::json::Json;
 use rocket::State;
+use rust_decimal::Decimal;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use std::borrow::Cow;
@@ -94,16 +96,13 @@ pub async fn maker_feed(
 /// The maker POSTs this to create a new CfdOrder
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfdNewOrderRequest {
-    pub price: Price,
-    // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
-    // always 1 USD
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
-    pub tx_fee_rate: Option<TxFeeRate>,
-    pub funding_rate: Option<FundingRate>,
-    // TODO: This is not inline with other parts of the API! We should not expose internal types
-    // here. We have to specify sats for here because of that.
-    pub opening_fee: Option<OpeningFee>,
+    pub price: Decimal,
+    pub min_quantity: Decimal,
+    pub max_quantity: Decimal,
+    pub tx_fee_rate: Option<u32>,
+    pub funding_rate: Option<Decimal>,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
+    pub opening_fee: Option<Amount>,
 }
 
 #[rocket::post("/order/sell", data = "<order>")]
@@ -112,14 +111,32 @@ pub async fn post_sell_order(
     maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
+    let funding_rate = match order.funding_rate {
+        None => None,
+        Some(funding_rate) => {
+            let funding_rate = FundingRate::new(funding_rate).map_err(|e| {
+                HttpApiProblem::new(StatusCode::BAD_REQUEST)
+                    .title("Invalid funding rate")
+                    .detail(format!("{e:#}"))
+            })?;
+            Some(funding_rate)
+        }
+    };
+
+    let price = Price::new(order.price).map_err(|e| {
+        HttpApiProblem::new(StatusCode::BAD_REQUEST)
+            .title("Invalid price")
+            .detail(format!("{e:#}"))
+    })?;
+
     maker
         .new_order(
-            order.price,
-            order.min_quantity,
-            order.max_quantity,
-            order.tx_fee_rate,
-            order.funding_rate,
-            order.opening_fee,
+            price,
+            Usd::new(order.min_quantity),
+            Usd::new(order.max_quantity),
+            order.tx_fee_rate.map(TxFeeRate::new),
+            funding_rate,
+            order.opening_fee.map(OpeningFee::new),
         )
         .await
         .map_err(|e| {
