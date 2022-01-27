@@ -3,6 +3,7 @@ use crate::model::cfd::Dlc;
 use crate::model::cfd::RevokedCommit;
 use crate::model::cfd::Role;
 use crate::model::cfd::CET_TIMELOCK;
+use crate::model::FeeAccount;
 use crate::model::FundingFee;
 use crate::model::Identity;
 use crate::model::Leverage;
@@ -69,7 +70,7 @@ pub struct SetupParams {
     leverage: Leverage,
     refund_timelock: u32,
     tx_fee_rate: TxFeeRate,
-    funding_fee: FundingFee,
+    fee_account: FeeAccount,
 }
 
 impl SetupParams {
@@ -83,7 +84,7 @@ impl SetupParams {
         leverage: Leverage,
         refund_timelock: u32,
         tx_fee_rate: TxFeeRate,
-        funding_fee: FundingFee,
+        fee_account: FeeAccount,
     ) -> Result<Self> {
         Ok(Self {
             margin,
@@ -94,7 +95,7 @@ impl SetupParams {
             leverage,
             refund_timelock,
             tx_fee_rate,
-            funding_fee,
+            fee_account,
         })
     }
 
@@ -169,7 +170,7 @@ pub async fn new(
             setup_params.quantity,
             setup_params.leverage,
             n_payouts,
-            setup_params.funding_fee,
+            setup_params.fee_account.settle(),
         )?,
     )]);
 
@@ -382,7 +383,8 @@ pub struct RolloverParams {
     leverage: Leverage,
     refund_timelock: u32,
     fee_rate: TxFeeRate,
-    funding_fee: FundingFee,
+    fee_account: FeeAccount,
+    current_fee: FundingFee,
 }
 
 impl RolloverParams {
@@ -392,7 +394,8 @@ impl RolloverParams {
         leverage: Leverage,
         refund_timelock: u32,
         fee_rate: TxFeeRate,
-        funding_fee: FundingFee,
+        fee_account: FeeAccount,
+        current_fee: FundingFee,
     ) -> Self {
         Self {
             price,
@@ -400,12 +403,13 @@ impl RolloverParams {
             leverage,
             refund_timelock,
             fee_rate,
-            funding_fee,
+            fee_account,
+            current_fee,
         }
     }
 
     pub fn funding_fee(&self) -> &FundingFee {
-        &self.funding_fee
+        &self.current_fee
     }
 }
 
@@ -455,7 +459,7 @@ pub async fn roll_over(
             rollover_params.quantity,
             rollover_params.leverage,
             n_payouts,
-            rollover_params.funding_fee.clone(),
+            rollover_params.fee_account.settle(),
         )?,
     )]);
 

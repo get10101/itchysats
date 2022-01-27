@@ -288,6 +288,7 @@ mod tests {
     use crate::model::cfd::Cfd;
     use crate::model::cfd::Role;
     use crate::model::Leverage;
+    use crate::model::OpeningFee;
     use crate::model::Position;
     use crate::model::Price;
     use crate::model::Timestamp;

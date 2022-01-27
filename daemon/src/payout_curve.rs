@@ -1,4 +1,4 @@
-use crate::model::FundingFee;
+use crate::model::FeeFlow;
 use crate::model::Leverage;
 use crate::model::Price;
 use crate::model::Usd;
@@ -14,6 +14,7 @@ use num::FromPrimitive;
 use num::ToPrimitive;
 use rust_decimal::Decimal;
 use std::fmt;
+use std::ops::Add;
 
 mod basis;
 mod basis_eval;
@@ -53,7 +54,7 @@ pub fn calculate(
     quantity: Usd,
     leverage: Leverage,
     n_payouts: usize,
-    fee: FundingFee,
+    fee: FeeFlow,
 ) -> Result<Vec<Payout>> {
     let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts, fee)?
         .into_iter()
@@ -76,7 +77,7 @@ fn calculate_payout_parameters(
     quantity: Usd,
     long_leverage: Leverage,
     n_payouts: usize,
-    fee: FundingFee,
+    fee: FeeFlow,
 ) -> Result<Vec<PayoutParameter>> {
     let initial_rate = price
         .try_into_f64()
@@ -94,8 +95,6 @@ fn calculate_payout_parameters(
         None,
     )?;
 
-    let fee = fee.accumulated_fee();
-
     let payout_parameters = payout_curve
         .generate_payout_scheme(n_payouts)?
         .rows()
@@ -105,10 +104,14 @@ fn calculate_payout_parameters(
             let right_bound = row[1] as u64;
             let long_amount_btc = row[2];
 
-            // TODO: cover the case where the maker pays funding fees
-
             let long_amount = to_sats(long_amount_btc)?;
-            let long_amount_adjusted = long_amount.saturating_sub(fee);
+
+            let long_amount_adjusted = match fee {
+                FeeFlow::LongPaysShort(fee) => long_amount.saturating_sub(fee.as_sat()),
+                FeeFlow::ShortPaysLong(fee) => long_amount.add(fee.as_sat()),
+                FeeFlow::Nein => long_amount,
+            };
+
             let adjustment = long_amount - long_amount_adjusted;
 
             let short_amount = to_sats(payout_curve.total_value - long_amount_btc)?;
@@ -466,8 +469,6 @@ fn create_long_payout_function(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::FundingFee;
-    use crate::model::OpeningFee;
     use bdk::bitcoin::Amount;
     use rust_decimal_macros::dec;
     use std::ops::RangeInclusive;
@@ -526,7 +527,7 @@ mod tests {
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
             200,
-            FundingFee::default(),
+            FeeFlow::Nein,
         )
         .unwrap();
 
@@ -747,21 +748,15 @@ mod tests {
             quantity,
             Leverage::new(5).unwrap(),
             200,
-            FundingFee::default(),
+            FeeFlow::Nein,
         )
         .unwrap();
 
-        let funding_fee =
-            FundingFee::default().with_opening_fee(OpeningFee::new(Amount::from_sat(100)));
+        let fee = FeeFlow::LongPaysShort(Amount::from_sat(100));
 
-        let payouts_with_fee = calculate_payout_parameters(
-            price,
-            quantity,
-            Leverage::new(5).unwrap(),
-            200,
-            funding_fee.clone(),
-        )
-        .unwrap();
+        let payouts_with_fee =
+            calculate_payout_parameters(price, quantity, Leverage::new(5).unwrap(), 200, fee)
+                .unwrap();
         assert_eq!(payouts.len(), payouts_with_fee.len());
 
         let total_per_payout = payouts
@@ -774,7 +769,10 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(total_per_payout, total_per_payout_with_fee);
 
-        let fee: u64 = funding_fee.accumulated_fee();
+        let fee: u64 = match fee {
+            FeeFlow::LongPaysShort(fee) => fee.as_sat(),
+            _ => unreachable!("unreachable in this test"),
+        };
 
         let fees = payouts
             .iter()
@@ -807,7 +805,7 @@ mod tests {
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
             200,
-            FundingFee::default(),
+            FeeFlow::Nein,
         )
         .unwrap();
 

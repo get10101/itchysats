@@ -126,7 +126,7 @@ impl Actor {
         // the spawned rollover task
         self.rollover_msg_sender = Some(sender);
 
-        let funding_fee = rollover_params.funding_fee().clone();
+        let funding_fee = *rollover_params.funding_fee();
 
         let rollover_fut = setup_contract::roll_over(
             xtra::message_channel::MessageChannel::sink(&self.maker).with(move |msg| {

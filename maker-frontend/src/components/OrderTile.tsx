@@ -38,6 +38,12 @@ function OrderTile(
                     <Text width={labelWidth}>Leverage</Text>
                     <Text>{order.leverage}</Text>
 
+                    <Text width={labelWidth}>Opening Fee</Text>
+                    <Text>{order.opening_fee}</Text>
+
+                    <Text width={labelWidth}>Funding Rate</Text>
+                    <Text>{order.funding_rate_hourly_percent}</Text>
+
                     <Text width={labelWidth}>Liquidation Price</Text>
                     <Text whiteSpace="nowrap">{order.liquidation_price}</Text>
                 </Grid>

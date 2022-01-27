@@ -171,7 +171,7 @@ impl Actor {
             .context("Oracle actor disconnected")?
             .context("Failed to get announcement")?;
 
-        let funding_fee = rollover_params.funding_fee().clone();
+        let funding_fee = *rollover_params.funding_fee();
 
         let rollover_fut = setup_contract::roll_over(
             self.send_to_taker_actor.sink().with(move |msg| {

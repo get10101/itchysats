@@ -101,6 +101,8 @@ pub struct CfdNewOrderRequest {
     pub max_quantity: Usd,
     pub tx_fee_rate: Option<TxFeeRate>,
     pub funding_rate: Option<FundingRate>,
+    // TODO: This is not inline with other parts of the API! We should not expose internal types
+    // here. We have to specify sats for here because of that.
     pub opening_fee: Option<OpeningFee>,
 }
 
