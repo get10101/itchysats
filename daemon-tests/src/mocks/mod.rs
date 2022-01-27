@@ -26,10 +26,6 @@ impl Mocks {
         self.wallet.lock().await
     }
 
-    pub async fn monitor(&mut self) -> MutexGuard<'_, monitor::MockMonitor> {
-        self.monitor.lock().await
-    }
-
     pub async fn oracle(&mut self) -> MutexGuard<'_, oracle::MockOracle> {
         self.oracle.lock().await
     }
@@ -40,7 +36,6 @@ impl Mocks {
 
     pub async fn mock_sync_handlers(&mut self) {
         self.oracle().await.expect_sync().return_const(());
-        self.monitor().await.expect_sync().return_const(());
     }
 
     // Helper function setting up a "happy path" wallet mock
@@ -49,10 +44,6 @@ impl Mocks {
             .await
             .expect_sign()
             .returning(|sign_msg| Ok(sign_msg.psbt));
-        self.monitor()
-            .await
-            .expect_broadcast()
-            .returning(|_| Ok(()));
     }
 
     pub async fn mock_oracle_announcement(&mut self) {
@@ -85,26 +76,11 @@ impl Mocks {
             .returning(|msg| wallet::build_party_params(msg));
     }
 
-    pub async fn mock_monitor_oracle_attestation(&mut self) {
-        self.monitor()
-            .await
-            .expect_oracle_attestation()
-            .return_const(());
-    }
+    pub async fn mock_monitor_oracle_attestation(&mut self) {}
 
-    pub async fn mock_monitor_start_monitoring(&mut self) {
-        self.monitor()
-            .await
-            .expect_start_monitoring()
-            .return_const(());
-    }
+    pub async fn mock_monitor_start_monitoring(&mut self) {}
 
-    pub async fn mock_monitor_collaborative_settlement(&mut self) {
-        self.monitor()
-            .await
-            .expect_collaborative_settlement()
-            .return_const(());
-    }
+    pub async fn mock_monitor_collaborative_settlement(&mut self) {}
 
     pub async fn mock_latest_quote(&mut self, latest_quote: Option<bitmex_price_feed::Quote>) {
         self.price_feed().await.set_latest_quote(latest_quote);
@@ -115,7 +91,7 @@ impl Default for Mocks {
     fn default() -> Self {
         Self {
             oracle: Arc::new(Mutex::new(oracle::MockOracle::new())),
-            monitor: Arc::new(Mutex::new(monitor::MockMonitor::new())),
+            monitor: Arc::new(Mutex::new(monitor::MockMonitor::default())),
             wallet: Arc::new(Mutex::new(wallet::MockWallet::new())),
             price_feed: Arc::new(Mutex::new(price_feed::MockPriceFeed::default())),
         }
