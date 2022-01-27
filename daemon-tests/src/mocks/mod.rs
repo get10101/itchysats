@@ -22,6 +22,15 @@ pub struct Mocks {
 }
 
 impl Mocks {
+    pub fn new() -> Self {
+        Self {
+            oracle: Arc::new(Mutex::new(oracle::MockOracle::new())),
+            monitor: Arc::new(Mutex::new(monitor::MockMonitor::default())),
+            wallet: Arc::new(Mutex::new(wallet::MockWallet::new())),
+            price_feed: Arc::new(Mutex::new(price_feed::MockPriceFeed::default())),
+        }
+    }
+
     pub async fn wallet(&mut self) -> MutexGuard<'_, wallet::MockWallet> {
         self.wallet.lock().await
     }
@@ -78,17 +87,6 @@ impl Mocks {
 
     pub async fn mock_latest_quote(&mut self, latest_quote: Option<bitmex_price_feed::Quote>) {
         self.price_feed().await.set_latest_quote(latest_quote);
-    }
-}
-
-impl Default for Mocks {
-    fn default() -> Self {
-        Self {
-            oracle: Arc::new(Mutex::new(oracle::MockOracle::new())),
-            monitor: Arc::new(Mutex::new(monitor::MockMonitor::default())),
-            wallet: Arc::new(Mutex::new(wallet::MockWallet::new())),
-            price_feed: Arc::new(Mutex::new(price_feed::MockPriceFeed::default())),
-        }
     }
 }
 
