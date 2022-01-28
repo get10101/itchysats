@@ -53,8 +53,11 @@ export const App = () => {
     const parcelSize = parseOptionalNumber(order?.parcel_size) || 0;
     const liquidationPrice = parseOptionalNumber(order?.liquidation_price);
     const marginPerParcel = order?.margin_per_parcel || 0;
+    const leverage = order?.leverage || 0;
     const openingFee = order?.opening_fee || 0;
+
     const fundingRateAnnualized = order?.funding_rate_annualized_percent || "0";
+    const fundingFeePerParcel = order?.initial_funding_fee_per_parcel || 0;
 
     const fundingRateHourly = order
         ? Number.parseFloat(order.funding_rate_hourly_percent).toFixed(5)
@@ -123,12 +126,13 @@ export const App = () => {
                                     askPrice={askPrice}
                                     parcelSize={parcelSize}
                                     marginPerParcel={marginPerParcel}
-                                    leverage={order?.leverage}
+                                    leverage={leverage}
                                     liquidationPrice={liquidationPrice}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
-                                    openingFeePerParcel={openingFee}
+                                    openingFee={openingFee}
                                     fundingRateAnnualized={fundingRateAnnualized}
                                     fundingRateHourly={fundingRateHourly || "0"}
+                                    fundingFeePerParcel={fundingFeePerParcel}
                                 />
                                 <History
                                     connectedToMaker={connectedToMaker}

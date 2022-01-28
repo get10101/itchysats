@@ -349,7 +349,8 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
         min_quantity: Usd::new(dec!(5)),
         max_quantity: Usd::new(dec!(100)),
         tx_fee_rate: TxFeeRate::new(1),
-        funding_rate: FundingRate::new(dec!(0.024)).unwrap(),
+        // 8.76% annualized = rate of 0.0876 annualized = rate of 0.00024 daily
+        funding_rate: FundingRate::new(dec!(0.00024)).unwrap(),
         opening_fee: OpeningFee::new(Amount::from_sat(2)),
     }
 }
