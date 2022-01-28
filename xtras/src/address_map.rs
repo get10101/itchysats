@@ -66,7 +66,7 @@ where
     /// Sends a message to the actor stored with the given key.
     pub async fn send_fallible<M>(&self, key: &K, msg: M) -> Result<Result<()>, NotConnected>
     where
-        M: Message<Result = anyhow::Result<()>>,
+        M: Message<Result = Result<()>>,
         A: Handler<M> + ActorName,
     {
         let result = self
