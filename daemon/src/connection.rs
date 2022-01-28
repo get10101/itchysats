@@ -6,7 +6,6 @@ use crate::setup_taker;
 use crate::taker_cfd::CurrentOrder;
 use crate::wire;
 use crate::wire::EncryptedJsonCodec;
-use crate::wire::TakerToMaker;
 use crate::wire::Version;
 use anyhow::bail;
 use anyhow::Context;
@@ -42,7 +41,7 @@ use xtras::SendInterval;
 /// Time between reconnection attempts
 pub const MAX_RECONNECT_INTERVAL_SECONDS: u64 = 60;
 
-const TCP_TIMEOUT: std::time::Duration = Duration::from_secs(10);
+const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Upper bound on the time it should take for an ephemeral actor to
 /// process a forwarded message.
@@ -366,7 +365,7 @@ impl Actor {
 
         let our_version = Version::current();
         write
-            .send(TakerToMaker::Hello(our_version.clone()))
+            .send(wire::TakerToMaker::Hello(our_version.clone()))
             .timeout(TCP_TIMEOUT)
             .await??;
 

@@ -1,4 +1,6 @@
 use super::maia::OliviaData;
+use crate::mocks::monitor::MockMonitor;
+use crate::mocks::oracle::MockOracle;
 use crate::mocks::price_feed::MockPriceFeed;
 use crate::mocks::wallet::MockWallet;
 use model::olivia;
@@ -13,18 +15,18 @@ pub mod wallet;
 
 #[derive(Clone)]
 pub struct Mocks {
-    wallet: Arc<Mutex<wallet::MockWallet>>,
-    monitor: Arc<Mutex<monitor::MockMonitor>>,
-    oracle: Arc<Mutex<oracle::MockOracle>>,
-    price_feed: Arc<Mutex<price_feed::MockPriceFeed>>,
+    wallet: Arc<Mutex<MockWallet>>,
+    monitor: Arc<Mutex<MockMonitor>>,
+    oracle: Arc<Mutex<MockOracle>>,
+    price_feed: Arc<Mutex<MockPriceFeed>>,
 }
 
 impl Mocks {
     pub fn new(
         wallet: Arc<Mutex<MockWallet>>,
         price_feed: Arc<Mutex<MockPriceFeed>>,
-        monitor: Arc<Mutex<monitor::MockMonitor>>,
-        oracle: Arc<Mutex<oracle::MockOracle>>,
+        monitor: Arc<Mutex<MockMonitor>>,
+        oracle: Arc<Mutex<MockOracle>>,
     ) -> Mocks {
         Self {
             wallet,
@@ -34,19 +36,19 @@ impl Mocks {
         }
     }
 
-    pub async fn wallet(&mut self) -> MutexGuard<'_, wallet::MockWallet> {
+    pub async fn wallet(&mut self) -> MutexGuard<'_, MockWallet> {
         self.wallet.lock().await
     }
 
-    pub async fn oracle(&mut self) -> MutexGuard<'_, oracle::MockOracle> {
+    pub async fn oracle(&mut self) -> MutexGuard<'_, MockOracle> {
         self.oracle.lock().await
     }
 
-    pub async fn price_feed(&mut self) -> MutexGuard<'_, price_feed::MockPriceFeed> {
+    pub async fn price_feed(&mut self) -> MutexGuard<'_, MockPriceFeed> {
         self.price_feed.lock().await
     }
 
-    pub async fn monitor(&mut self) -> MutexGuard<'_, monitor::MockMonitor> {
+    pub async fn monitor(&mut self) -> MutexGuard<'_, MockMonitor> {
         self.monitor.lock().await
     }
 

@@ -4,7 +4,6 @@ use crate::process_manager;
 use crate::setup_contract;
 use crate::wallet;
 use crate::wire;
-use crate::wire::SetupMsg;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -21,7 +20,7 @@ use model::Role;
 use model::Usd;
 use std::time::Duration;
 use tokio_tasks::Tasks;
-use xtra::prelude::*;
+use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
 /// The maximum amount of time we give the maker to send us a response.
@@ -36,7 +35,7 @@ pub struct Actor {
     build_party_params: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign: Box<dyn MessageChannel<wallet::Sign>>,
     maker: xtra::Address<connection::Actor>,
-    setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
+    setup_msg_sender: Option<UnboundedSender<wire::SetupMsg>>,
     tasks: Tasks,
     executor: command::Executor,
 }
@@ -45,7 +44,7 @@ impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        process_manager: Address<process_manager::Actor>,
+        process_manager: xtra::Address<process_manager::Actor>,
         (order_id, quantity, n_payouts): (OrderId, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
@@ -84,7 +83,7 @@ impl Actor {
             .execute(order_id, |cfd| cfd.start_contract_setup())
             .await?;
 
-        let (sender, receiver) = mpsc::unbounded::<SetupMsg>();
+        let (sender, receiver) = mpsc::unbounded();
         // store the writing end to forward messages from the maker to
         // the spawned contract setup task
         self.setup_msg_sender = Some(sender);

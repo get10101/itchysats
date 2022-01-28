@@ -5,12 +5,10 @@ use crate::maker_inc_connections;
 use crate::oracle;
 use crate::process_manager;
 use crate::projection;
-use crate::projection::Update;
 use crate::rollover_maker;
 use crate::setup_maker;
 use crate::wallet;
 use crate::wire;
-use crate::wire::TakerToMaker;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
@@ -34,7 +32,6 @@ use model::Usd;
 use std::collections::HashSet;
 use time::Duration;
 use tokio_tasks::Tasks;
-use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::Stopping;
@@ -106,18 +103,18 @@ struct RolloverProposal {
 
 pub struct Actor<O, T, W> {
     db: sqlx::SqlitePool,
-    wallet: Address<W>,
+    wallet: xtra::Address<W>,
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
-    projection: Address<projection::Actor>,
-    process_manager: Address<process_manager::Actor>,
+    projection: xtra::Address<projection::Actor>,
+    process_manager: xtra::Address<process_manager::Actor>,
     executor: command::Executor,
     rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
-    takers: Address<T>,
+    takers: xtra::Address<T>,
     current_order: Option<Order>,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
-    oracle: Address<O>,
+    oracle: xtra::Address<O>,
     connected_takers: HashSet<Identity>,
     n_payouts: usize,
     tasks: Tasks,
@@ -127,13 +124,13 @@ impl<O, T, W> Actor<O, T, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        wallet: Address<W>,
+        wallet: xtra::Address<W>,
         settlement_interval: Duration,
         oracle_pk: schnorrsig::PublicKey,
-        projection: Address<projection::Actor>,
-        process_manager: Address<process_manager::Actor>,
-        takers: Address<T>,
-        oracle: Address<O>,
+        projection: xtra::Address<projection::Actor>,
+        process_manager: xtra::Address<process_manager::Actor>,
+        takers: xtra::Address<T>,
+        oracle: xtra::Address<O>,
         n_payouts: usize,
     ) -> Self {
         Self {
@@ -158,7 +155,7 @@ impl<O, T, W> Actor<O, T, W> {
 
     async fn update_connected_takers(&mut self) -> Result<()> {
         self.projection
-            .send(Update(
+            .send(projection::Update(
                 self.connected_takers
                     .clone()
                     .into_iter()
@@ -296,6 +293,9 @@ where
             .send_async_safe(maker_inc_connections::BroadcastOrder(self.current_order))
             .await?;
 
+        #[allow(unused_qualifications)]
+        // Need to fully qualify `Option` because we have more than one `Update` message that
+        // contains an `Option<T>`.
         self.projection
             .send(projection::Update(self.current_order))
             .await?;
@@ -659,7 +659,7 @@ where
             wire::TakerToMaker::Protocol { .. } => {
                 unreachable!("This kind of message should be sent to the `setup_maker::Actor`")
             }
-            TakerToMaker::Hello(_) => {
+            wire::TakerToMaker::Hello(_) => {
                 unreachable!("The Hello message is not sent to the cfd actor")
             }
         }

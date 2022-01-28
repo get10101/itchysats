@@ -212,7 +212,7 @@ struct Panicked {
     pub error: Box<dyn Any + Send>,
 }
 
-impl xtra::Message for Panicked {
+impl Message for Panicked {
     type Result = ();
 }
 
@@ -321,7 +321,7 @@ mod tests {
 
     #[xtra_productivity]
     impl RemoteShutdown {
-        fn handle(&mut self, _: Shutdown, ctx: &mut xtra::Context<Self>) {
+        fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
             ctx.stop()
         }
 

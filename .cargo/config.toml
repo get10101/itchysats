@@ -15,4 +15,5 @@ rustflags = [
   "-Wunused-import-braces",
   "-Wmissing-copy-implementations",
   "-Wunused-import-braces",
+  "-Wunused-qualifications",
 ]

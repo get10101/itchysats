@@ -80,7 +80,7 @@ impl SplineObject {
                 let p_max = &params.iter().copied().fold(f64::NEG_INFINITY, f64::max);
                 let p_min = &params.iter().copied().fold(f64::INFINITY, f64::min);
                 if *p_min < basis.start() || basis.end() < *p_max {
-                    return Result::Err(Error::InvalidDomain);
+                    return Err(Error::InvalidDomain);
                 }
             }
         }
@@ -129,7 +129,7 @@ impl SplineObject {
             let mut key = self.bases.len() + 1;
             let mut val = match init_map.get(&key) {
                 Some(val) => Ok(val),
-                _ => Result::Err(Error::NoEinsumOperatorString),
+                _ => Err(Error::NoEinsumOperatorString),
             }?;
 
             out = einsum(val, &[&eval_bases[pos].todense(), &self.controlpoints])
@@ -139,7 +139,7 @@ impl SplineObject {
                 pos += 1;
                 val = match iter_map.get(&key) {
                     Some(val) => Ok(val),
-                    _ => Result::Err(Error::NoEinsumOperatorString),
+                    _ => Err(Error::NoEinsumOperatorString),
                 }?;
                 let temp = out.clone().to_owned();
 
@@ -183,7 +183,7 @@ impl SplineObject {
             .iter()
             .all(|e| *e == testlen);
         if !tensor && !ops {
-            return Result::Err(Error::InvalidDerivative);
+            return Err(Error::InvalidDerivative);
         }
 
         self.validate_domain(t)?;
@@ -208,7 +208,7 @@ impl SplineObject {
         //   W'(i) = result[..., -1]
         if self.rational {
             if d.iter().sum::<usize>() > 1 {
-                return Result::Err(Error::DerivativeNotImplemented);
+                return Err(Error::DerivativeNotImplemented);
             }
 
             let mut ns = self

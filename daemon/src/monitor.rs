@@ -135,7 +135,7 @@ pub struct Actor {
     client: bdk::electrum_client::Client,
     tasks: Tasks,
     state: State,
-    db: sqlx::SqlitePool,
+    db: SqlitePool,
 }
 
 /// Internal data structure encapsulating the monitoring state without performing any IO.
@@ -446,7 +446,7 @@ impl Actor {
     async fn invoke_cfd_command(
         &self,
         id: OrderId,
-        handler: impl FnOnce(model::Cfd) -> Result<Option<model::CfdEvent>>,
+        handler: impl FnOnce(model::Cfd) -> Result<Option<CfdEvent>>,
     ) {
         match self.executor.execute(id, handler).await {
             Ok(()) => {}

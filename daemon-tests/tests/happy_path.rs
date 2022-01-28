@@ -466,7 +466,7 @@ async fn taker_notices_lack_of_maker() {
         next(taker.maker_status_feed()).await.unwrap()
     );
 
-    std::mem::drop(maker);
+    drop(maker);
 
     sleep(taker_config.heartbeat_interval).await;
 
@@ -496,7 +496,7 @@ async fn maker_notices_lack_of_taker() {
         next(maker.connected_takers_feed()).await.unwrap()
     );
 
-    std::mem::drop(taker);
+    drop(taker);
 
     assert_eq!(
         Vec::<Identity>::new(),

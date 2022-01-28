@@ -106,7 +106,7 @@ impl Curve {
     /// ### returns
     pub fn append(&mut self, othercurve: Curve) -> Result<(), Error> {
         if self.spline.bases[0].periodic > -1 || othercurve.spline.bases[0].periodic > -1 {
-            return Result::Err(Error::CannotConnectPeriodicCurves);
+            return Err(Error::CannotConnectPeriodicCurves);
         };
 
         let mut extending_curve = othercurve;

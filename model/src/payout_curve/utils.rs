@@ -61,7 +61,7 @@ pub struct GaussLegendreQuadrature {
 impl GaussLegendreQuadrature {
     pub fn new(order: usize) -> Result<Self, Error> {
         if order < 1 {
-            return Result::Err(Error::DegreeMustBePositive);
+            return Err(Error::DegreeMustBePositive);
         }
 
         let data = legendre_wrapper(&order);

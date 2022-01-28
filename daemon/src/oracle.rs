@@ -27,7 +27,7 @@ pub struct Actor {
     executor: command::Executor,
     announcement_lookahead: Duration,
     tasks: Tasks,
-    db: sqlx::SqlitePool,
+    db: SqlitePool,
 }
 
 #[derive(Clone, Copy)]

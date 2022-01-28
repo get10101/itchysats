@@ -1565,7 +1565,7 @@ impl Dlc {
     /// Create a close transaction based on the current contract and a settlement proposals
     pub fn close_transaction(
         &self,
-        proposal: &crate::cfd::SettlementProposal,
+        proposal: &SettlementProposal,
     ) -> Result<(Transaction, Signature)> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {
@@ -1602,7 +1602,7 @@ impl Dlc {
         ));
 
         let (_, lock_desc) = &self.lock;
-        let spend_tx = maia::finalize_spend_transaction(
+        let spend_tx = finalize_spend_transaction(
             close_tx,
             lock_desc,
             (own_pk, own_sig),
@@ -1814,7 +1814,6 @@ impl CollaborativeSettlement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::olivia::Attestation;
     use bdk::bitcoin;
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -2381,8 +2380,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = keypair::new(&mut rand::thread_rng());
-        let maker_keys = keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut thread_rng());
+        let maker_keys = keypair::new(&mut thread_rng());
 
         let (cfd, _, _, _) = Cfd::dummy_taker_long()
             .with_quantity(quantity)
@@ -2408,8 +2407,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = keypair::new(&mut rand::thread_rng());
-        let maker_keys = keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut thread_rng());
+        let maker_keys = keypair::new(&mut thread_rng());
 
         let (cfd, _, _, _) = Cfd::dummy_taker_long()
             .with_quantity(quantity)
@@ -2478,8 +2477,8 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
-        let taker_keys = keypair::new(&mut rand::thread_rng());
-        let maker_keys = keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut thread_rng());
+        let maker_keys = keypair::new(&mut thread_rng());
 
         let taker_long = Cfd::dummy_taker_long()
             .with_id(order_id)
@@ -2517,8 +2516,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = keypair::new(&mut rand::thread_rng());
-        let maker_keys = keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut thread_rng());
+        let maker_keys = keypair::new(&mut thread_rng());
 
         let cfd = Cfd::dummy_taker_long()
             .with_quantity(quantity)
@@ -2534,7 +2533,9 @@ mod tests {
             "Manual commit to blockchain did not error"
         );
         assert!(
-            cfd.decrypt_cet(&Attestation::dummy()).unwrap().is_none(),
+            cfd.decrypt_cet(&olivia::Attestation::dummy())
+                .unwrap()
+                .is_none(),
             "The decrypted CET is not expected to be Some"
         );
     }
@@ -2579,8 +2580,8 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
-        let taker_keys = keypair::new(&mut rand::thread_rng());
-        let maker_keys = keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut thread_rng());
+        let maker_keys = keypair::new(&mut thread_rng());
 
         let taker_long = Cfd::dummy_taker_long()
             .with_id(order_id)
@@ -2806,8 +2807,8 @@ mod tests {
         )
         .with_id(order_id);
 
-        let taker_keys = keypair::new(&mut rand::thread_rng());
-        let maker_keys = keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut thread_rng());
+        let maker_keys = keypair::new(&mut thread_rng());
 
         let (taker_long, proposal, taker_sig, taker_script) = taker_long
             .dummy_open(dummy_event_id())
@@ -2828,6 +2829,7 @@ mod tests {
     }
 
     use proptest::prelude::*;
+    use rand::thread_rng;
     proptest! {
         #[test]
         fn rollover_funding_fee_collected_incrementally_should_not_be_smaller_than_collected_once_per_settlement_interval(quantity in 1u64..100_000u64) {
@@ -3396,9 +3398,9 @@ mod tests {
             .unwrap_or(Amount::ZERO)
     }
 
-    impl Attestation {
+    impl olivia::Attestation {
         fn dummy() -> Self {
-            Attestation {
+            Self {
                 id: dummy_event_id(),
                 price: 0,
                 scalars: vec![],

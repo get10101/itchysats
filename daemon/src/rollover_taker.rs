@@ -1,11 +1,9 @@
 use crate::command;
 use crate::connection;
 use crate::oracle;
-use crate::oracle::GetAnnouncement;
 use crate::process_manager;
 use crate::setup_contract;
 use crate::wire;
-use crate::wire::RolloverMsg;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -38,9 +36,9 @@ pub struct Actor {
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
     maker: xtra::Address<connection::Actor>,
-    get_announcement: Box<dyn MessageChannel<GetAnnouncement>>,
+    get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
-    rollover_msg_sender: Option<UnboundedSender<RolloverMsg>>,
+    rollover_msg_sender: Option<UnboundedSender<wire::RolloverMsg>>,
     executor: command::Executor,
     tasks: Tasks,
 }
@@ -52,7 +50,7 @@ impl Actor {
         n_payouts: usize,
         oracle_pk: schnorrsig::PublicKey,
         maker: xtra::Address<connection::Actor>,
-        get_announcement: &(impl MessageChannel<GetAnnouncement> + 'static),
+        get_announcement: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
         (on_stopping0, on_stopping1): (
             &(impl MessageChannel<Stopping<Self>> + 'static),
@@ -120,7 +118,7 @@ impl Actor {
 
         tracing::info!(%order_id, "Rollover proposal got accepted");
 
-        let (sender, receiver) = mpsc::unbounded::<RolloverMsg>();
+        let (sender, receiver) = mpsc::unbounded::<wire::RolloverMsg>();
         // store the writing end to forward messages from the maker to
         // the spawned rollover task
         self.rollover_msg_sender = Some(sender);

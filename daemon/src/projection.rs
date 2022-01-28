@@ -24,7 +24,6 @@ use model::Dlc;
 use model::EventKind;
 use model::FeeAccount;
 use model::FundingRate;
-use model::Identity;
 use model::Leverage;
 use model::OrderId;
 use model::Origin;
@@ -69,7 +68,7 @@ pub struct Actor {
 pub struct Feeds {
     pub quote: watch::Receiver<Option<Quote>>,
     pub order: watch::Receiver<Option<CfdOrder>>,
-    pub connected_takers: watch::Receiver<Vec<Identity>>,
+    pub connected_takers: watch::Receiver<Vec<model::Identity>>,
     pub cfds: watch::Receiver<Vec<Cfd>>,
 }
 
@@ -165,7 +164,7 @@ pub struct Cfd {
     #[serde(with = "::time::serde::timestamp::option")]
     pub expiry_timestamp: Option<OffsetDateTime>,
 
-    pub counterparty: Identity,
+    pub counterparty: model::Identity,
 
     #[serde(with = "round_to_two_dp::opt")]
     pub pending_settlement_proposal_price: Option<Price>,
@@ -713,7 +712,7 @@ struct Tx {
     pub quote: watch::Sender<Option<Quote>>,
     // TODO: Use this channel to communicate maker status as well with generic
     // ID of connected counterparties
-    pub connected_takers: watch::Sender<Vec<Identity>>,
+    pub connected_takers: watch::Sender<Vec<model::Identity>>,
 }
 
 impl Tx {

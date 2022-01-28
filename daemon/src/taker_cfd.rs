@@ -19,7 +19,6 @@ use model::Price;
 use model::Role;
 use model::Usd;
 use tokio_tasks::Tasks;
-use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;
@@ -41,14 +40,14 @@ pub struct ProposeSettlement {
 
 pub struct Actor<O, W> {
     db: sqlx::SqlitePool,
-    wallet: Address<W>,
+    wallet: xtra::Address<W>,
     oracle_pk: schnorrsig::PublicKey,
-    projection_actor: Address<projection::Actor>,
-    process_manager_actor: Address<process_manager::Actor>,
-    conn_actor: Address<connection::Actor>,
+    projection_actor: xtra::Address<projection::Actor>,
+    process_manager_actor: xtra::Address<process_manager::Actor>,
+    conn_actor: xtra::Address<connection::Actor>,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
-    oracle_actor: Address<O>,
+    oracle_actor: xtra::Address<O>,
     n_payouts: usize,
     tasks: Tasks,
     current_order: Option<Order>,
@@ -62,12 +61,12 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        wallet: Address<W>,
+        wallet: xtra::Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        projection_actor: Address<projection::Actor>,
-        process_manager_actor: Address<process_manager::Actor>,
-        conn_actor: Address<connection::Actor>,
-        oracle_actor: Address<O>,
+        projection_actor: xtra::Address<projection::Actor>,
+        process_manager_actor: xtra::Address<process_manager::Actor>,
+        conn_actor: xtra::Address<connection::Actor>,
+        oracle_actor: xtra::Address<O>,
         n_payouts: usize,
         maker_identity: Identity,
     ) -> Self {
@@ -106,6 +105,9 @@ impl<O, W> Actor<O, W> {
                     .await?;
             }
             None => {
+                #[allow(unused_qualifications)]
+                // Need to fully qualify `Option` because we have more than one `Update` message
+                // that contains an `Option<T>`.
                 self.projection_actor
                     .send(projection::Update(Option::<Order>::None))
                     .await?;
@@ -175,6 +177,9 @@ where
         // Cleanup own order feed, after inserting the cfd.
         // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
         // same order id.
+        #[allow(unused_qualifications)]
+        // Need to fully qualify `Option` because we have more than one `Update` message that
+        // contains an `Option<T>`.
         self.projection_actor
             .send(projection::Update(Option::<Order>::None))
             .await?;
