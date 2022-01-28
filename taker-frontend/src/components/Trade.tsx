@@ -168,6 +168,7 @@ export default function Trade({
                     templateRows="repeat(1, 1fr)"
                     templateColumns="repeat(1, 1fr)"
                     gap={4}
+                    maxWidth={"500px"}
                 >
                     <GridItem colSpan={1}>
                         <Center>
@@ -198,7 +199,7 @@ export default function Trade({
                             </MotionBox>
                         </Center>
                     </GridItem>
-                    <GridItem colSpan={1}>
+                    <GridItem colSpan={1} paddingLeft={5} paddingRight={5}>
                         <Quantity
                             min={minQuantity}
                             max={maxQuantity}
@@ -210,7 +211,7 @@ export default function Trade({
                             parcelSize={parcelSize}
                         />
                     </GridItem>
-                    <GridItem colSpan={1}>
+                    <GridItem colSpan={1} paddingLeft={5} paddingRight={5}>
                         <Leverage leverage={leverage} />
                     </GridItem>
                     <GridItem colSpan={1}>
