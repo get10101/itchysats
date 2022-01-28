@@ -20,6 +20,7 @@ import {
 import * as React from "react";
 import { Cfd, ConnectionStatus, isClosed, StateKey, Tx, TxLabel } from "../types";
 import usePostRequest from "../usePostRequest";
+import BitcoinAmount from "./BitcoinAmount";
 import CloseButton from "./CloseButton";
 
 interface HistoryProps {
@@ -61,8 +62,6 @@ interface CfdDetailsProps {
 
 const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsProps) => {
     const initialPrice = `$${cfd.initial_price.toLocaleString()}`;
-    const margin = `₿${Math.round((cfd.margin) * 1_000_000) / 1_000_000}`;
-    const payout = `₿${Math.round((cfd.payout ? cfd.payout : 0) * 1_000_000) / 1_000_000}`;
     const liquidationPrice = `$${cfd.liquidation_price}`;
     const contracts = `${cfd.quantity_usd}`;
 
@@ -71,8 +70,6 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
     const txRefund = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Refund);
     const txCet = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Cet);
     const txSettled = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Collaborative);
-
-    const accumulatedCosts = `₿${cfd.accumulated_fees}`;
 
     let [settle, isSettling] = usePostRequest(`/api/cfd/${cfd.order_id}/settle`);
     let [commit, isCommiting] = usePostRequest(`/api/cfd/${cfd.order_id}/commit`);
@@ -132,13 +129,13 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                             <Td><Text as={"b"}>Payout</Text></Td>
                             <Td textAlign="right">
                                 <Skeleton isLoaded={cfd.payout != null}>
-                                    {payout}
+                                    <BitcoinAmount btc={cfd.payout ? cfd.payout : 0} />
                                 </Skeleton>
                             </Td>
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Margin</Text></Td>
-                            <Td textAlign="right">{margin}</Td>
+                            <Td textAlign="right"><BitcoinAmount btc={cfd.margin} /></Td>
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Contracts</Text></Td>
@@ -158,7 +155,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                     <Tbody>
                         <Tr>
                             <Td><Text as={"b"}>Total fees</Text></Td>
-                            <Td textAlign="right">{accumulatedCosts}</Td>
+                            <Td textAlign="right"><BitcoinAmount btc={cfd.accumulated_fees} /></Td>
                         </Tr>
                     </Tbody>
                 </Table>

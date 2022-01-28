@@ -256,7 +256,7 @@ export default function Trade({
                                                             By submitting
                                                         </Text>
                                                         <Text as={"b"}>
-                                                            ₿${btcToOpenPosition}
+                                                            <BitcoinAmount btc={btcToOpenPosition} />
                                                         </Text>
                                                         <Text>
                                                             will be locked on-chain in a contract.
