@@ -8,7 +8,7 @@ use xtra::Handler;
 use xtra::Message;
 
 pub struct AddressMap<K, A> {
-    inner: HashMap<K, xtra::Address<A>>,
+    inner: HashMap<K, Address<A>>,
 }
 
 impl<K, A> Default for AddressMap<K, A> {
@@ -33,7 +33,7 @@ where
         Ok(Disconnected { entry })
     }
 
-    pub fn get_connected(&self, key: &K) -> Option<&xtra::Address<A>> {
+    pub fn get_connected(&self, key: &K) -> Option<&Address<A>> {
         match self.inner.get(key) {
             Some(addr) if addr.is_connected() => Some(addr),
             _ => None,
@@ -116,11 +116,11 @@ where
 pub struct StillConnected;
 
 pub struct Disconnected<'a, K, A> {
-    entry: Entry<'a, K, xtra::Address<A>>,
+    entry: Entry<'a, K, Address<A>>,
 }
 
 impl<'a, K, A> Disconnected<'a, K, A> {
-    pub fn insert(self, address: xtra::Address<A>) {
+    pub fn insert(self, address: Address<A>) {
         match self.entry {
             Entry::Occupied(mut occ) => {
                 occ.insert(address);
