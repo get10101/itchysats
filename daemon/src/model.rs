@@ -1,4 +1,6 @@
 use crate::impl_sqlx_type_display_from_str;
+use crate::model::cfd::calculate_long_margin;
+use crate::model::cfd::calculate_short_margin;
 use crate::olivia;
 use crate::SETTLEMENT_INTERVAL;
 use anyhow::Context;
@@ -618,6 +620,10 @@ impl FundingRate {
     pub fn to_decimal(&self) -> Decimal {
         self.0
     }
+
+    pub fn short_pays_long(&self) -> bool {
+        self.0.is_sign_negative()
+    }
 }
 
 impl Default for FundingRate {
@@ -808,10 +814,22 @@ impl FeeAccount {
 }
 
 pub fn calculate_funding_fee(
-    margin: Amount,
+    price: Price,
+    quantity: Usd,
+    leverage: Leverage,
     funding_rate: FundingRate,
     hours_to_charge: i64,
 ) -> Result<FundingFee> {
+    if funding_rate.0.is_zero() {
+        return Ok(FundingFee::new(Amount::ZERO, funding_rate));
+    }
+
+    let margin = if funding_rate.short_pays_long() {
+        calculate_long_margin(price, quantity, leverage)
+    } else {
+        calculate_short_margin(price, quantity)
+    };
+
     let fraction_of_funding_period = if hours_to_charge as i64 == SETTLEMENT_INTERVAL.whole_hours()
     {
         Decimal::ONE
