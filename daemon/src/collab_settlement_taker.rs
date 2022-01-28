@@ -61,7 +61,7 @@ impl Actor {
             })
             .await?;
 
-        self.proposal = Some(proposal.clone());
+        self.proposal = Some(proposal);
 
         self.connection
             .send(connection::ProposeSettlement {

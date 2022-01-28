@@ -111,7 +111,7 @@ where
     type Result = ();
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone, Copy)]
 #[error("The address is still connected")]
 pub struct StillConnected;
 

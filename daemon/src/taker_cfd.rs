@@ -24,13 +24,16 @@ use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;
 
+#[derive(Clone, Copy)]
 pub struct CurrentOrder(pub Option<Order>);
 
+#[derive(Clone, Copy)]
 pub struct TakeOffer {
     pub order_id: OrderId,
     pub quantity: Usd,
 }
 
+#[derive(Clone, Copy)]
 pub struct ProposeSettlement {
     pub order_id: OrderId,
     pub current_price: Price,
@@ -96,7 +99,7 @@ impl<O, W> Actor<O, W> {
             Some(mut order) => {
                 order.origin = Origin::Theirs;
 
-                self.current_order = Some(order.clone());
+                self.current_order = Some(order);
 
                 self.projection_actor
                     .send(projection::Update(Some(order)))
@@ -158,22 +161,14 @@ where
 
         let mut conn = self.db.acquire().await?;
 
-        let current_order = self
-            .current_order
-            .clone()
-            .context("No current order from maker")?;
+        let current_order = self.current_order.context("No current order from maker")?;
 
         tracing::info!("Taking current order: {:?}", &current_order);
 
         // We create the cfd here without any events yet, only static data
         // Once the contract setup completes (rejected / accepted / failed) the first event will be
         // recorded
-        let cfd = Cfd::from_order(
-            current_order.clone(),
-            quantity,
-            self.maker_identity,
-            Role::Taker,
-        );
+        let cfd = Cfd::from_order(current_order, quantity, self.maker_identity, Role::Taker);
 
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
 

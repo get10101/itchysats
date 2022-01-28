@@ -52,13 +52,13 @@ impl ToSseEvent for Option<model::WalletInfo> {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct ConnectionStatus {
     online: bool,
     connection_close_reason: Option<ConnectionCloseReason>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum ConnectionCloseReason {
     MakerVersionOutdated,
     TakerVersionOutdated,

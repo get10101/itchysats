@@ -24,8 +24,13 @@ pub struct Actor {
     db: sqlx::SqlitePool,
 }
 
+#[derive(Clone, Copy)]
 pub struct Accepted;
+
+#[derive(Clone, Copy)]
 pub struct Rejected;
+
+#[derive(Clone, Copy)]
 pub struct Initiated {
     pub sig_taker: Signature,
 }
@@ -54,7 +59,7 @@ impl Actor {
             let cfd = load_cfd(self.proposal.order_id, &mut conn).await?;
 
             let settlement =
-                cfd.sign_collaborative_settlement_maker(self.proposal.clone(), msg.sig_taker)?;
+                cfd.sign_collaborative_settlement_maker(self.proposal, msg.sig_taker)?;
 
             anyhow::Ok(settlement)
         }
@@ -127,7 +132,7 @@ impl Actor {
     async fn handle_proposal(&mut self) -> Result<()> {
         self.executor
             .execute(self.proposal.order_id, |cfd| {
-                cfd.receive_collaborative_settlement_proposal(self.proposal.clone(), self.n_payouts)
+                cfd.receive_collaborative_settlement_proposal(self.proposal, self.n_payouts)
             })
             .await?;
 

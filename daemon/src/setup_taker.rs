@@ -241,11 +241,13 @@ impl xtra::Actor for Actor {
 /// Message sent from the `connection::Actor` to the
 /// `setup_taker::Actor` to notify that the order taken was accepted
 /// by the maker.
+#[derive(Clone, Copy)]
 pub struct Accepted;
 
 /// Message sent from the `connection::Actor` to the
 /// `setup_taker::Actor` to notify that the order taken was rejected
 /// by the maker.
+#[derive(Clone, Copy)]
 pub struct Rejected {
     /// Used to indicate whether the rejection stems from the order ID
     /// not being recognised by the maker.

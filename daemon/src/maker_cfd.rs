@@ -41,24 +41,37 @@ use xtras::address_map::Stopping;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 
+#[derive(Clone, Copy)]
 pub struct AcceptOrder {
     pub order_id: OrderId,
 }
+
+#[derive(Clone, Copy)]
 pub struct RejectOrder {
     pub order_id: OrderId,
 }
+
+#[derive(Clone, Copy)]
 pub struct AcceptSettlement {
     pub order_id: OrderId,
 }
+
+#[derive(Clone, Copy)]
 pub struct RejectSettlement {
     pub order_id: OrderId,
 }
+
+#[derive(Clone, Copy)]
 pub struct AcceptRollover {
     pub order_id: OrderId,
 }
+
+#[derive(Clone, Copy)]
 pub struct RejectRollover {
     pub order_id: OrderId,
 }
+
+#[derive(Clone, Copy)]
 pub struct OfferParams {
     pub price: Price,
     pub min_quantity: Usd,
@@ -69,10 +82,12 @@ pub struct OfferParams {
     pub position: Position,
 }
 
+#[derive(Clone, Copy)]
 pub struct TakerConnected {
     pub id: Identity,
 }
 
+#[derive(Clone, Copy)]
 pub struct TakerDisconnected {
     pub id: Identity,
 }
@@ -162,7 +177,7 @@ where
         self.takers
             .send_async_safe(maker_inc_connections::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::CurrentOrder(self.current_order.clone()),
+                msg: wire::MakerToTaker::CurrentOrder(self.current_order),
             })
             .await?;
 
@@ -252,7 +267,7 @@ where
 
         // 1. Validate if order is still valid
         let current_order = match &self.current_order {
-            Some(current_order) if current_order.id == order_id => current_order.clone(),
+            Some(current_order) if current_order.id == order_id => *current_order,
             _ => {
                 // An outdated order on the taker side does not require any state change on the
                 // maker. notifying the taker with a specific message should be sufficient.
@@ -271,20 +286,18 @@ where
             }
         };
 
-        let cfd = Cfd::from_order(current_order.clone(), quantity, taker_id, Role::Maker);
+        let cfd = Cfd::from_order(current_order, quantity, taker_id, Role::Maker);
 
         // 2. Replicate the order with a new one to allow other takers to use
         // the same offer
         self.current_order = Some(current_order.replicate());
 
         self.takers
-            .send_async_safe(maker_inc_connections::BroadcastOrder(
-                self.current_order.clone(),
-            ))
+            .send_async_safe(maker_inc_connections::BroadcastOrder(self.current_order))
             .await?;
 
         self.projection
-            .send(projection::Update(self.current_order.clone()))
+            .send(projection::Update(self.current_order))
             .await?;
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection).await?;
 
@@ -552,11 +565,11 @@ where
         );
 
         // 1. Update actor state to current order
-        self.current_order.replace(order.clone());
+        self.current_order.replace(order);
 
         // 2. Notify UI via feed
         self.projection
-            .send(projection::Update(Some(order.clone())))
+            .send(projection::Update(Some(order)))
             .await?;
 
         // 3. Inform connected takers

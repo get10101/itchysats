@@ -32,11 +32,13 @@ use xtra_productivity::xtra_productivity;
 
 /// Upon accepting Rollover maker sends the current estimated transaction fee and
 /// funding rate
+#[derive(Clone, Copy)]
 pub struct AcceptRollover {
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
 }
 
+#[derive(Clone, Copy)]
 pub struct RejectRollover;
 
 pub struct ProtocolMsg(pub wire::RolloverMsg);

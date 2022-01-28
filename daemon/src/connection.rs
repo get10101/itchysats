@@ -166,6 +166,7 @@ pub struct Actor {
     rollover_actors: AddressMap<OrderId, rollover_taker::Actor>,
 }
 
+#[derive(Clone, Copy)]
 pub struct Connect {
     pub maker_identity: Identity,
     pub maker_addr: SocketAddr,

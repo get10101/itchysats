@@ -280,11 +280,13 @@ impl xtra::Actor for Actor {
 /// Message sent from the `maker_cfd::Actor` to the
 /// `setup_maker::Actor` to inform that the maker user has accepted
 /// the taker order request from the taker.
+#[derive(Clone, Copy)]
 pub struct Accepted;
 
 /// Message sent from the `maker_cfd::Actor` to the
 /// `setup_maker::Actor` to inform that the maker user has rejected
 /// the taker order request from the taker.
+#[derive(Clone, Copy)]
 pub struct Rejected;
 
 /// Message sent from the spawned task to `setup_maker::Actor` to

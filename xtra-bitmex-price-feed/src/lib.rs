@@ -126,7 +126,7 @@ pub enum Error {
 struct NewQuoteReceived(Quote);
 
 /// Request the latest quote from the price feed.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct LatestQuote;
 
 #[derive(Clone, Copy, Debug)]

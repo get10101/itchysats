@@ -64,6 +64,7 @@ pub async fn start_both() -> (Maker, Taker) {
     (maker, taker)
 }
 
+#[derive(Clone, Copy)]
 pub struct MakerConfig {
     oracle_pk: schnorrsig::PublicKey,
     seed: RandomSeed,
@@ -100,7 +101,7 @@ impl Default for MakerConfig {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct TakerConfig {
     oracle_pk: schnorrsig::PublicKey,
     seed: RandomSeed,

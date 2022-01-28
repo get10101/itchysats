@@ -201,6 +201,7 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
+#[derive(Clone, Copy)]
 pub struct BuildPartyParams {
     pub amount: Amount,
     pub identity_pk: PublicKey,
@@ -221,6 +222,7 @@ pub struct Withdraw {
 }
 
 /// Bitcoin error codes: <https://github.com/bitcoin/bitcoin/blob/97d3500601c1d28642347d014a6de1e38f53ae4e/src/rpc/protocol.h#L23>
+#[derive(Clone, Copy)]
 pub enum RpcErrorCode {
     /// General error during transaction or block submission Error code -25.
     RpcVerifyError,

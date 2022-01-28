@@ -326,6 +326,7 @@ impl Actor {
 /// Message sent from the `connection::Actor` to the
 /// `rollover_taker::Actor` to notify that the maker has accepted the
 /// rollover proposal.
+#[derive(Clone, Copy)]
 pub struct RolloverAccepted {
     pub oracle_event_id: BitMexPriceEventId,
     pub tx_fee_rate: TxFeeRate,
@@ -335,6 +336,7 @@ pub struct RolloverAccepted {
 /// Message sent from the `connection::Actor` to the
 /// `rollover_taker::Actor` to notify that the maker has rejected the
 /// rollover proposal.
+#[derive(Clone, Copy)]
 pub struct RolloverRejected;
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to

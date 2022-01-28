@@ -55,6 +55,7 @@ use xtra_productivity::xtra_productivity;
 pub struct Update<T>(pub T);
 
 /// Indicates that the CFD with the given order ID changed.
+#[derive(Clone, Copy)]
 pub struct CfdChanged(pub OrderId);
 
 pub struct Actor {
@@ -869,7 +870,7 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct Quote {
     #[serde(with = "round_to_two_dp")]
     bid: Decimal,
@@ -1027,7 +1028,7 @@ pub struct CfdDetails {
     tx_url_list: HashSet<TxUrl>,
 }
 
-#[derive(Debug, Clone, Display, FromStr, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Display, FromStr, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 #[display(style = "camelCase")]
 pub enum CfdAction {
@@ -1174,7 +1175,7 @@ impl TxUrl {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Eq, Hash)]
 pub enum TxLabel {
     Lock,
     Commit,

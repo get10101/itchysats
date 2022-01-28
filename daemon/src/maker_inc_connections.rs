@@ -38,6 +38,7 @@ use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
+#[derive(Clone, Copy)]
 pub struct BroadcastOrder(pub Option<Order>);
 
 /// Message sent from the `setup_maker::Actor` to the
@@ -242,7 +243,7 @@ impl Actor {
 
 struct SendHeartbeat(Identity);
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone, Copy)]
 #[error("No connection to taker {0}")]
 pub struct NoConnection(Identity);
 
@@ -254,10 +255,7 @@ impl Actor {
         let mut broken_connections = Vec::with_capacity(self.connections.len());
 
         for (id, conn) in &mut self.connections {
-            if let Err(e) = conn
-                .send(wire::MakerToTaker::CurrentOrder(order.clone()))
-                .await
-            {
+            if let Err(e) = conn.send(wire::MakerToTaker::CurrentOrder(order)).await {
                 tracing::warn!("{:#}", e);
                 broken_connections.push(*id);
 

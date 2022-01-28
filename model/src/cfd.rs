@@ -127,7 +127,7 @@ impl From<Origin> for Role {
 }
 
 /// A concrete order created by a maker for a taker
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct Order {
     pub id: OrderId,
 
@@ -234,7 +234,7 @@ impl Order {
 }
 
 /// Proposed collaborative settlement
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct SettlementProposal {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
@@ -246,7 +246,7 @@ pub struct SettlementProposal {
 }
 
 /// Reasons why we cannot rollover a CFD.
-#[derive(thiserror::Error, Debug, PartialEq)]
+#[derive(thiserror::Error, Debug, PartialEq, Clone, Copy)]
 pub enum NoRolloverReason {
     #[error("Is too recent to auto-rollover")]
     TooRecent,
@@ -889,9 +889,7 @@ impl Cfd {
         Ok((
             CfdEvent::new(
                 self.id,
-                EventKind::CollaborativeSettlementStarted {
-                    proposal: proposal.clone(),
-                },
+                EventKind::CollaborativeSettlementStarted { proposal },
             ),
             proposal,
         ))
@@ -1742,7 +1740,7 @@ impl Dlc {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone, Copy)]
 #[error("Attestation {id} is irrelevant for DLC {tx_id}")]
 pub struct IrrelevantAttestation {
     id: BitMexPriceEventId,
@@ -3114,7 +3112,7 @@ mod tests {
             let mut events = Vec::new();
             let incoming_settlement = self
                 .clone()
-                .receive_collaborative_settlement_proposal(proposal.clone(), N_PAYOUTS)
+                .receive_collaborative_settlement_proposal(proposal, N_PAYOUTS)
                 .unwrap();
             events.push(incoming_settlement);
 
