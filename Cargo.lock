@@ -525,9 +525,9 @@ checksum = "ccaeedb56da03b09f598226e25e80088cb4cd25f316e6e4df7d695f0feeb1403"
 
 [[package]]
 name = "crossbeam-channel"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06ed27e177f16d65f0f0c22a213e17c696ace5dd64b14258b52f9417ccb52db4"
+checksum = "e54ea8bc3fb1ee042f5aace6e3c6e025d3874866da222930f70ce62aceba0bfa"
 dependencies = [
  "cfg-if 1.0.0",
  "crossbeam-utils",
@@ -3023,8 +3023,7 @@ dependencies = [
 [[package]]
 name = "sqlx"
 version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "692749de69603d81e016212199d73a2e14ee20e2def7d7914919e8db5d4d48b9"
+source = "git+https://github.com/comit-network/sqlx?branch=sqlite-unlock-notify#20d43d1517ad3e5343ed273d27851bb841a6092c"
 dependencies = [
  "sqlx-core",
  "sqlx-macros",
@@ -3033,8 +3032,7 @@ dependencies = [
 [[package]]
 name = "sqlx-core"
 version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "518be6f6fff5ca76f985d434f9c37f3662af279642acf730388f271dff7b9016"
+source = "git+https://github.com/comit-network/sqlx?branch=sqlite-unlock-notify#20d43d1517ad3e5343ed273d27851bb841a6092c"
 dependencies = [
  "ahash",
  "atoi",
@@ -3081,8 +3079,7 @@ dependencies = [
 [[package]]
 name = "sqlx-macros"
 version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38e45140529cf1f90a5e1c2e561500ca345821a1c513652c8f486bbf07407cc8"
+source = "git+https://github.com/comit-network/sqlx?branch=sqlite-unlock-notify#20d43d1517ad3e5343ed273d27851bb841a6092c"
 dependencies = [
  "dotenv",
  "either",
@@ -3103,8 +3100,7 @@ dependencies = [
 [[package]]
 name = "sqlx-rt"
 version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8061cbaa91ee75041514f67a09398c65a64efed72c90151ecd47593bad53da99"
+source = "git+https://github.com/comit-network/sqlx?branch=sqlite-unlock-notify#20d43d1517ad3e5343ed273d27851bb841a6092c"
 dependencies = [
  "once_cell",
  "tokio",
