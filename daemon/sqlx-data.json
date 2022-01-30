@@ -1,5 +1,23 @@
 {
   "db": "SQLite",
+  "26fceb7af264109b0d1c07f4b081e44ac6494e9143c283047630c601b5e17044": {
+    "query": "\n            select\n                price as \"price: model::Price\"\n            from\n                limit_close\n            where\n                limit_close.cfd_id = $1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "price: model::Price",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false
+      ]
+    }
+  },
   "2880579fa9b77623761bbbd2151a50ab4f5cc2e5837424a6dfb03bb36a4080ce": {
     "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::cfd::OrderId\"\n            from\n                cfds\n            order by cfd_id desc\n            ",
     "describe": {
@@ -21,6 +39,24 @@
       "nullable": [
         false,
         false
+      ]
+    }
+  },
+  "4708aaaf97953bf47370b151b09fd6e10e9b1bc164bfbdd38268e14b090e8cc3": {
+    "query": "\n            select\n                id as cfd_id\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        true
       ]
     }
   },

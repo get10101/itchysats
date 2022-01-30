@@ -326,6 +326,104 @@ pub async fn load_non_final_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result
     Ok(ids)
 }
 
+pub async fn insert_or_update_limit_close_price(
+    id: OrderId,
+    price: Price,
+    conn: &mut PoolConnection<Sqlite>,
+) -> Result<()> {
+    let query_result = if load_limit_close_price(id, conn).await?.is_none() {
+        sqlx::query(
+            r##"
+        insert into limit_close (
+            cfd_id,
+            price
+        ) values (
+            (select id from cfds where cfds.uuid = $1),
+            $2
+        )"##,
+        )
+        .bind(&id)
+        .bind(&price)
+        .execute(conn)
+        .await?
+    } else {
+        sqlx::query(
+            r##"
+        update limit_close
+        set price=$2
+        where cfd_id=(select id from cfds where cfds.uuid = $1)
+        "##,
+        )
+        .bind(&id)
+        .bind(&price)
+        .execute(conn)
+        .await?
+    };
+
+    if query_result.rows_affected() != 1 {
+        anyhow::bail!("failed to insert limit_close");
+    }
+
+    Ok(())
+}
+
+pub async fn delete_limit_close_price(
+    id: OrderId,
+    conn: &mut PoolConnection<Sqlite>,
+) -> Result<()> {
+    let query_result = sqlx::query(
+        r##"
+        delete from limit_close
+        where cfd_id=(select id from cfds where cfds.uuid = $1)
+        "##,
+    )
+    .bind(&id)
+    .execute(conn)
+    .await?;
+
+    if query_result.rows_affected() != 1 {
+        anyhow::bail!("failed to delete limit_close");
+    }
+
+    Ok(())
+}
+
+pub async fn load_limit_close_price(
+    id: OrderId,
+    conn: &mut PoolConnection<Sqlite>,
+) -> Result<Option<Price>> {
+    let cfd_row = sqlx::query!(
+        r#"
+            select
+                id as cfd_id
+            from
+                cfds
+            where
+                cfds.uuid = $1
+            "#,
+        id
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+
+    let price = sqlx::query!(
+        r#"
+            select
+                price as "price: model::Price"
+            from
+                limit_close
+            where
+                limit_close.cfd_id = $1
+            "#,
+        cfd_row.cfd_id
+    )
+    .fetch_optional(&mut *conn)
+    .await?
+    .map(|r| r.price);
+
+    Ok(price)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,6 +623,67 @@ mod tests {
 
         assert_eq!(cfd_ids.len(), 1);
         assert_eq!(*cfd_ids.first().unwrap(), cfd_not_final.id())
+    }
+
+    #[tokio::test]
+    async fn when_insert_limit_close_price_then_some() {
+        let mut conn = setup_test_db().await;
+        let cfd = insert(dummy_cfd(), &mut conn).await;
+
+        let inserted = Price::new(dec!(10000)).unwrap();
+
+        insert_or_update_limit_close_price(cfd.id(), inserted, &mut conn)
+            .await
+            .unwrap();
+
+        let loaded = load_limit_close_price(cfd.id(), &mut conn).await.unwrap();
+
+        assert_eq!(loaded, Some(inserted));
+    }
+
+    #[tokio::test]
+    async fn when_no_limit_close_price_then_none() {
+        let mut conn = setup_test_db().await;
+        let cfd = insert(dummy_cfd(), &mut conn).await;
+
+        let loaded = load_limit_close_price(cfd.id(), &mut conn).await.unwrap();
+        assert_eq!(loaded, None);
+    }
+
+    #[tokio::test]
+    async fn when_update_limit_close_price_then_updated_some() {
+        let mut conn = setup_test_db().await;
+        let cfd = insert(dummy_cfd(), &mut conn).await;
+
+        let inserted = Price::new(dec!(10000)).unwrap();
+        insert_or_update_limit_close_price(cfd.id(), inserted, &mut conn)
+            .await
+            .unwrap();
+
+        let updated = Price::new(dec!(20000)).unwrap();
+        insert_or_update_limit_close_price(cfd.id(), updated, &mut conn)
+            .await
+            .unwrap();
+
+        let loaded = load_limit_close_price(cfd.id(), &mut conn).await.unwrap();
+
+        assert_eq!(loaded, Some(updated));
+    }
+
+    #[tokio::test]
+    async fn when_delete_limit_close_price_then_none() {
+        let mut conn = setup_test_db().await;
+        let cfd = insert(dummy_cfd(), &mut conn).await;
+
+        let inserted = Price::new(dec!(10000)).unwrap();
+        insert_or_update_limit_close_price(cfd.id(), inserted, &mut conn)
+            .await
+            .unwrap();
+
+        delete_limit_close_price(cfd.id(), &mut conn).await.unwrap();
+
+        let loaded = load_limit_close_price(cfd.id(), &mut conn).await.unwrap();
+        assert_eq!(loaded, None);
     }
 
     async fn setup_test_db() -> PoolConnection<Sqlite> {

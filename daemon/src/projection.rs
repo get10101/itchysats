@@ -1,4 +1,5 @@
 use crate::db;
+use crate::db::load_limit_close_price;
 use crate::Order;
 use anyhow::Context;
 use anyhow::Result;
@@ -166,6 +167,8 @@ pub struct Cfd {
     #[serde(with = "round_to_two_dp::opt")]
     pub pending_settlement_proposal_price: Option<Price>,
 
+    pub limit_close_price: Option<Price>,
+
     #[serde(skip)]
     aggregated: Aggregated,
 }
@@ -296,6 +299,7 @@ impl Cfd {
             initial_funding_rate,
             ..
         }: db::Cfd,
+        limit_close_price: Option<Price>,
     ) -> Self {
         let long_margin = calculate_long_margin(initial_price, quantity_usd, leverage);
         let short_margin = calculate_short_margin(initial_price, quantity_usd);
@@ -352,6 +356,7 @@ impl Cfd {
             counterparty: counterparty_network_identity,
             pending_settlement_proposal_price: None,
             aggregated: Aggregated::new(fee_account),
+            limit_close_price,
         }
     }
 
@@ -753,10 +758,13 @@ impl State {
             .context("Failed to acquire DB connection")?;
 
         let (cfd, events) = db::load_cfd(id, &mut conn).await?;
+        let limit_close_price = load_limit_close_price(cfd.id, &mut conn).await?;
 
         let cfd = events
             .into_iter()
-            .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, self.network));
+            .fold(Cfd::new(cfd, limit_close_price), |cfd, event| {
+                cfd.apply(event, self.network)
+            });
 
         self.cfds.insert(id, cfd);
 

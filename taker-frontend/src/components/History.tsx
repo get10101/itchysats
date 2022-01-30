@@ -1,10 +1,20 @@
 import { ExternalLinkIcon } from "@chakra-ui/icons";
 import {
     Badge,
+    Button,
+    Checkbox,
     GridItem,
     Heading,
     HStack,
+    InputGroup,
+    InputLeftAddon,
+    InputRightElement,
     Link,
+    NumberDecrementStepper,
+    NumberIncrementStepper,
+    NumberInput,
+    NumberInputField,
+    NumberInputStepper,
     SimpleGrid,
     Skeleton,
     Spinner,
@@ -18,6 +28,7 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
+import { useState } from "react";
 import { Cfd, ConnectionStatus, isClosed, StateKey, Tx, TxLabel } from "../types";
 import usePostRequest from "../usePostRequest";
 import BitcoinAmount from "./BitcoinAmount";
@@ -105,109 +116,161 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
         ? failedCfd ? "Missed P/L 😭" : "Realized P/L"
         : "Unrealized P/L";
 
+    const [autoClosePrice, setAutoClosePrice] = useState(0);
+    const [autoClosePriceConfirmed, setAutoClosePriceConfirmed] = useState(0);
+    const [autoClose, setAutoClose] = useState(false);
+
     return (
-        <HStack
+        <VStack
             bg={useColorModeValue("white", "gray.700")}
             rounded={"md"}
             padding={5}
             alignItems={"stretch"}
             boxShadow={"lg"}
         >
-            <VStack>
-                <Table size="sm" variant={"unstyled"}>
-                    <Tbody>
-                        <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
-                            <Td><Text as={"b"}>{profitLabel}</Text></Td>
-                            <Td textAlign="right">
-                                <Tooltip label={`${cfd.profit_btc}`} placement={"right"}>
-                                    <Skeleton isLoaded={cfd.profit_btc != null}>
-                                        {(cfd.profit_percent && cfd.profit_percent > 0) ? "+" : ""}
-                                        {cfd.profit_percent}%
+            <HStack>
+                <VStack>
+                    <Table size="sm" variant={"unstyled"}>
+                        <Tbody>
+                            <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
+                                <Td><Text as={"b"}>{profitLabel}</Text></Td>
+                                <Td textAlign="right">
+                                    <Tooltip label={`${cfd.profit_btc}`} placement={"right"}>
+                                        <Skeleton isLoaded={cfd.profit_btc != null}>
+                                            {(cfd.profit_percent && cfd.profit_percent > 0) ? "+" : ""}
+                                            {cfd.profit_percent}%
+                                        </Skeleton>
+                                    </Tooltip>
+                                </Td>
+                            </Tr>
+                            <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
+                                <Td><Text as={"b"}>Payout</Text></Td>
+                                <Td textAlign="right">
+                                    <Skeleton isLoaded={cfd.payout != null}>
+                                        <BitcoinAmount btc={cfd.payout ? cfd.payout : 0} />
                                     </Skeleton>
-                                </Tooltip>
-                            </Td>
-                        </Tr>
-                        <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
-                            <Td><Text as={"b"}>Payout</Text></Td>
-                            <Td textAlign="right">
-                                <Skeleton isLoaded={cfd.payout != null}>
-                                    <BitcoinAmount btc={cfd.payout ? cfd.payout : 0} />
-                                </Skeleton>
-                            </Td>
-                        </Tr>
-                        <Tr>
-                            <Td><Text as={"b"}>Margin</Text></Td>
-                            <Td textAlign="right"><BitcoinAmount btc={cfd.margin} /></Td>
-                        </Tr>
-                        <Tr>
-                            <Td><Text as={"b"}>Contracts</Text></Td>
-                            <Td textAlign="right">{contracts}</Td>
-                        </Tr>
-                        <Tr>
-                            <Td><Text as={"b"}>Opening price</Text></Td>
-                            <Td textAlign="right"><DollarAmount amount={initialPrice} /></Td>
-                        </Tr>
-                        {cfd.closing_price
-                            ? <Tr>
-                                <Td><Text as={"b"}>Closing Price</Text></Td>
-                                <Td textAlign="right"><DollarAmount amount={closing_price} /></Td>
+                                </Td>
                             </Tr>
-                            : <Tr>
-                                <Td><Text as={"b"}>Liquidation</Text></Td>
-                                <Td textAlign="right"><DollarAmount amount={liquidationPrice} /></Td>
-                            </Tr>}
-                    </Tbody>
-                </Table>
-                <Table size="sm" variant={"unstyled"}>
-                    <Tbody>
-                        <Tr>
-                            <Td><Text as={"b"}>Estimated fees</Text></Td>
-                            <Td textAlign="right">
-                                <BitcoinAmount btc={cfd.accumulated_fees} />
-                            </Td>
-                        </Tr>
-                    </Tbody>
-                </Table>
-            </VStack>
-            <VStack justifyContent={"space-between"}>
-                <Badge marginTop={5} variant={"outline"} ml={1} fontSize="sm" colorScheme={cfd.state.getColorScheme()}>
-                    {cfd.state.getLabel()}
-                </Badge>
-                <Table size="sm" variant={"unstyled"}>
-                    <Tbody>
-                        <Tr>
-                            <Td><Text>Lock</Text></Td>
-                            <Td><TxIcon tx={txLock} /></Td>
-                        </Tr>
-                        {txRefund
-                            ? <Tr>
-                                <Td><Text>Refund</Text></Td>
-                                <Td><TxIcon tx={txRefund} /></Td>
+                            <Tr>
+                                <Td><Text as={"b"}>Margin</Text></Td>
+                                <Td textAlign="right"><BitcoinAmount btc={cfd.margin} /></Td>
                             </Tr>
-                            : txCommit || (cfd.state.key === StateKey.OPEN && !connectedToMaker.online)
-                            ? <>
-                                <Tr>
-                                    <Td><Text>Force</Text></Td>
-                                    <Td><TxIcon tx={txCommit} /></Td>
+                            <Tr>
+                                <Td><Text as={"b"}>Contracts</Text></Td>
+                                <Td textAlign="right">{contracts}</Td>
+                            </Tr>
+                            <Tr>
+                                <Td><Text as={"b"}>Opening price</Text></Td>
+                                <Td textAlign="right"><DollarAmount amount={initialPrice} /></Td>
+                            </Tr>
+                            {cfd.closing_price
+                                ? <Tr>
+                                    <Td><Text as={"b"}>Closing Price</Text></Td>
+                                    <Td textAlign="right"><DollarAmount amount={closing_price} /></Td>
                                 </Tr>
-                                <Tr>
+                                : <Tr>
+                                    <Td><Text as={"b"}>Liquidation</Text></Td>
+                                    <Td textAlign="right"><DollarAmount amount={liquidationPrice} /></Td>
+                                </Tr>}
+                        </Tbody>
+                    </Table>
+                    <Table size="sm" variant={"unstyled"}>
+                        <Tbody>
+                            <Tr>
+                                <Td><Text as={"b"}>Estimated fees</Text></Td>
+                                <Td textAlign="right"><BitcoinAmount btc={cfd.accumulated_fees} /></Td>
+                            </Tr>
+                        </Tbody>
+                    </Table>
+                </VStack>
+                <VStack justifyContent={"space-between"}>
+                    <Badge
+                        marginTop={5}
+                        variant={"outline"}
+                        ml={1}
+                        fontSize="sm"
+                        colorScheme={cfd.state.getColorScheme()}
+                    >
+                        {cfd.state.getLabel()}
+                    </Badge>
+                    <Table size="sm" variant={"unstyled"}>
+                        <Tbody>
+                            <Tr>
+                                <Td><Text>Lock</Text></Td>
+                                <Td><TxIcon tx={txLock} /></Td>
+                            </Tr>
+                            {txRefund
+                                ? <Tr>
+                                    <Td><Text>Refund</Text></Td>
+                                    <Td><TxIcon tx={txRefund} /></Td>
+                                </Tr>
+                                : txCommit || (cfd.state.key === StateKey.OPEN && !connectedToMaker.online)
+                                ? <>
+                                    <Tr>
+                                        <Td><Text>Force</Text></Td>
+                                        <Td><TxIcon tx={txCommit} /></Td>
+                                    </Tr>
+                                    <Tr>
+                                        <Td><Text>Payout</Text></Td>
+                                        <Td><TxIcon tx={txCet} /></Td>
+                                    </Tr>
+                                </>
+                                : <Tr>
                                     <Td><Text>Payout</Text></Td>
-                                    <Td><TxIcon tx={txCet} /></Td>
-                                </Tr>
-                            </>
-                            : <Tr>
-                                <Td><Text>Payout</Text></Td>
-                                <Td><TxIcon tx={txSettled} /></Td>
-                            </Tr>}
-                    </Tbody>
-                </Table>
-                {displayCloseButton
-                    ? <HStack width={"100%"} paddingBottom={2} justifyContent={"flex-end"}>
-                        {closeButton}
-                    </HStack>
-                    : <></>}
-            </VStack>
-        </HStack>
+                                    <Td><TxIcon tx={txSettled} /></Td>
+                                </Tr>}
+                        </Tbody>
+                    </Table>
+                    {displayCloseButton
+                        ? <HStack width={"100%"} paddingBottom={2} justifyContent={"flex-end"}>
+                            {closeButton}
+                        </HStack>
+                        : <></>}
+                </VStack>
+            </HStack>
+            <HStack>
+                <Checkbox
+                    minWidth={"125px"}
+                    isChecked={autoClose}
+                    onChange={() => {
+                        setAutoClose(!autoClose);
+                    }}
+                >
+                    Limit Close @
+                </Checkbox>
+                <InputGroup size="md">
+                    <InputLeftAddon>$</InputLeftAddon>
+                    <NumberInput
+                        default={40000}
+                        onChange={(_valueAsString: string, valueAsNumber: number) => {
+                            setAutoClosePrice(valueAsNumber);
+                        }}
+                        value={autoClosePrice}
+                        w={"100%"}
+                    >
+                        <NumberInputField disabled={!autoClose} />
+                        {/*<NumberInputStepper>*/}
+                        {/*    <NumberIncrementStepper />*/}
+                        {/*    <NumberDecrementStepper />*/}
+                        {/*</NumberInputStepper>*/}
+                    </NumberInput>
+                    <InputRightElement width="4.5rem" paddingRight={2}>
+                        <Button
+                            h="1.75rem"
+                            size="sm"
+                            disabled={autoClosePriceConfirmed === autoClosePrice}
+                            colorScheme={"blue"}
+                            onClick={() => {
+                                console.log(autoClosePrice);
+                                setAutoClosePriceConfirmed(autoClosePrice);
+                            }}
+                        >
+                            {"Confirm"}
+                        </Button>
+                    </InputRightElement>
+                </InputGroup>
+            </HStack>
+        </VStack>
     );
 };
 
