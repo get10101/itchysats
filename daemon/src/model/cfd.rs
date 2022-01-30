@@ -2268,6 +2268,40 @@ mod tests {
         assert_eq!(funding_fee.rate, funding_rate);
     }
 
+    use proptest::prelude::*;
+    proptest! {
+        #[test]
+        fn rollover_funding_fee_collected_incrementally_should_not_be_smaller_than_collected_once_per_settlement_interval(quantity in 1u64..100_000u64) {
+            let funding_rate = FundingRate::new(dec!(0.01)).unwrap();
+            let price = Price::new(dec!(10_000)).unwrap();
+            let quantity = Usd::new(Decimal::from(quantity));
+            let leverage = Leverage::new(1).unwrap();
+
+            let funding_fee_for_whole_interval =
+                calculate_funding_fee(
+                    price,
+                    quantity, leverage , funding_rate, SETTLEMENT_INTERVAL.whole_hours()).unwrap();
+            let funding_fee_for_one_hour =
+                calculate_funding_fee(price, quantity, leverage, funding_rate, 1).unwrap();
+            let fee_account = FeeAccount::new(Position::Long, Role::Taker);
+
+            let fee_account_whole_interval = fee_account.add_funding_fee(funding_fee_for_whole_interval);
+            let fee_account_one_hour = fee_account.add_funding_fee(funding_fee_for_one_hour);
+
+            let total_balance_when_collected_hourly = fee_account_one_hour.balance().checked_mul(SETTLEMENT_INTERVAL.whole_hours()).unwrap();
+            let total_balance_when_collected_for_whole_interval = fee_account_whole_interval.balance();
+
+            prop_assert!(
+                total_balance_when_collected_hourly >= total_balance_when_collected_for_whole_interval,
+                "when charged per hour we should not be at loss as compared to charging once per settlement interval"
+            );
+
+            prop_assert!(
+            total_balance_when_collected_hourly - total_balance_when_collected_for_whole_interval < SignedAmount::from_sat(30), "we should not overcharge"
+       );
+    }
+    }
+
     impl Event {
         fn dummy_open(event_id: BitMexPriceEventId) -> Vec<Self> {
             vec![
