@@ -104,7 +104,7 @@ export class State {
             case StateKey.REJECTED:
                 return "Rejected";
             case StateKey.PENDING_OPEN:
-                return "Pending Open";
+                return "Open";
             case StateKey.OPEN:
                 return "Open";
             case StateKey.PENDING_COMMIT:
@@ -114,11 +114,11 @@ export class State {
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
                 return "Close Proposed";
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
-                return "Close Proposed";
+                return "Closing";
             case StateKey.INCOMING_ROLLOVER_PROPOSAL:
-                return "Rollover Proposed";
+                return "Open";
             case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
-                return "Rollover Proposed";
+                return "Open";
             case StateKey.PENDING_REFUND:
                 return "Refunding";
             case StateKey.REFUNDED:
@@ -141,6 +141,9 @@ export class State {
 
         switch (this.key) {
             case StateKey.OPEN:
+            case StateKey.PENDING_OPEN:
+            case StateKey.INCOMING_ROLLOVER_PROPOSAL:
+            case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
                 return green;
 
             case StateKey.REJECTED:
@@ -158,9 +161,6 @@ export class State {
             case StateKey.CONTRACT_SETUP:
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
-            case StateKey.INCOMING_ROLLOVER_PROPOSAL:
-            case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
-            case StateKey.PENDING_OPEN:
             case StateKey.REFUNDED:
             case StateKey.CLOSED:
                 return default_color;
