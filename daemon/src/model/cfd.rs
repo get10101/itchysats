@@ -54,7 +54,14 @@ use time::OffsetDateTime;
 use uuid::adapter::Hyphenated;
 use uuid::Uuid;
 
-pub const CET_TIMELOCK: u32 = 12;
+/// This timelock is a relative timelock in regards to the commit transaction expressed in blocks.
+/// It is applied to CETs and prevents users from immediately publishing a CET transaction after the
+/// commit transaction. This is needed for stopping users from publishing an outdated commit
+/// transaction and "cheating" the other user. The longer this timelock is the more time the other
+/// user has time to detect this malicious attempt and punish him.
+/// The downside of a longer timelock is that users won't get their money fast. They have to wait
+/// for this timelock to expire.
+pub const CET_TIMELOCK: u32 = 6;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
