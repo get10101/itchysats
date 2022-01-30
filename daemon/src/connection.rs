@@ -116,9 +116,14 @@ impl State {
             return false;
         }
 
-        tracing::warn!(
-            "Disconnecting due to lack of heartbeat. Last heartbeat: {:?}",
-            self.last_heartbeat()
+        let heartbeat_timestamp = self
+            .last_heartbeat()
+            .map(|heartbeat| heartbeat.to_string())
+            .unwrap_or_else(|| "None".to_owned());
+        let seconds_since_heartbeat = duration_since_last_heartbeat.as_secs();
+        tracing::warn!(%seconds_since_heartbeat,
+            %heartbeat_timestamp,
+            "Disconnecting due to lack of heartbeat",
         );
 
         *self = State::Disconnected;
