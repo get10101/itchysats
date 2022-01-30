@@ -22,6 +22,7 @@ import { Cfd, ConnectionStatus, isClosed, StateKey, Tx, TxLabel } from "../types
 import usePostRequest from "../usePostRequest";
 import BitcoinAmount from "./BitcoinAmount";
 import CloseButton from "./CloseButton";
+import DollarAmount from "./DollarAmount";
 
 interface HistoryProps {
     cfds: Cfd[];
@@ -61,8 +62,8 @@ interface CfdDetailsProps {
 }
 
 const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsProps) => {
-    const initialPrice = `$${cfd.initial_price.toLocaleString()}`;
-    const liquidationPrice = `$${cfd.liquidation_price}`;
+    const initialPrice = cfd.initial_price;
+    const liquidationPrice = cfd.liquidation_price;
     const contracts = `${cfd.quantity_usd}`;
 
     const txLock = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Lock);
@@ -143,11 +144,11 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Opening price</Text></Td>
-                            <Td textAlign="right">{initialPrice}</Td>
+                            <Td textAlign="right"><DollarAmount amount={initialPrice} /></Td>
                         </Tr>
                         <Tr>
                             <Td><Text as={"b"}>Liquidation</Text></Td>
-                            <Td textAlign="right">{liquidationPrice}</Td>
+                            <Td textAlign="right"><DollarAmount amount={liquidationPrice} /></Td>
                         </Tr>
                     </Tbody>
                 </Table>

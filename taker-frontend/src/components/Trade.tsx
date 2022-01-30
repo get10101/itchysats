@@ -51,6 +51,7 @@ import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
 import BitcoinAmount from "./BitcoinAmount";
+import DollarAmount from "./DollarAmount";
 
 const MotionBox = motion<BoxProps>(Box);
 
@@ -100,10 +101,6 @@ export default function Trade({
 
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
-
-    // Use `Number` wrapper here to ensure the "," separator is printed.
-    const askPrice = `$${Number(askPriceAsNumber)?.toLocaleString() || "0.0"}`;
-    const liquidationPrice = `$${Number(liquidationPriceAsNumber)?.toLocaleString() || "0.0"}`;
 
     const { isOpen, onOpen, onClose } = useDisclosure();
 
@@ -190,7 +187,9 @@ export default function Trade({
                                     <Circle size="180px" bg={innerCircleBg}>
                                         <MotionBox>
                                             <Skeleton isLoaded={!!askPriceAsNumber && askPriceAsNumber > 0}>
-                                                <Text fontSize={"4xl"} as="b">{askPrice}</Text>
+                                                <Text fontSize={"4xl"} as="b">
+                                                    <DollarAmount amount={askPriceAsNumber || 0} />
+                                                </Text>
                                             </Skeleton>
                                         </MotionBox>
                                     </Circle>
@@ -245,7 +244,12 @@ export default function Trade({
                                     <ModalOverlay />
                                     <ModalContent>
                                         <ModalHeader>
-                                            Market buy <b>{quantity}</b> of BTC/USD @ <b>{askPrice}</b>
+                                            <HStack>
+                                                <Text>
+                                                    Market buy <b>{quantity}</b> of BTC/USD @
+                                                </Text>
+                                                <DollarAmount amount={askPriceAsNumber || 0} />
+                                            </HStack>
                                         </ModalHeader>
                                         <ModalCloseButton />
                                         <ModalBody>
@@ -270,7 +274,7 @@ export default function Trade({
                                                     </Tr>
                                                     <Tr>
                                                         <Td><Text as={"b"}>Liquidation Price</Text></Td>
-                                                        <Td>{liquidationPrice}</Td>
+                                                        <Td><DollarAmount amount={liquidationPriceAsNumber || 0} /></Td>
                                                     </Tr>
                                                     <Tooltip
                                                         label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}%, annualized that is ${fundingRateAnnualized}%. The funding rate can fluctuate depending on the market movements.`}

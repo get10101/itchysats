@@ -24,6 +24,7 @@ import { useNavigate } from "react-router-dom";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
 import { ConnectionCloseReason, ConnectionStatus, WalletInfo } from "../types";
+import DollarAmount from "./DollarAmount";
 
 interface NavProps {
     walletInfo: WalletInfo | null;
@@ -129,7 +130,7 @@ export default function Nav({ walletInfo, connectedToMaker, fundingRate, nextFun
                                 <Link href={"https://outcome.observer/h00.ooo/x/BitMEX/BXBT"} target={"_blank"}>
                                     {/* The minWidth helps with not letting the elements in Nav jump because the width changes*/}
                                     <Heading size={"sm"} minWidth={"90px"}>
-                                        {(referencePrice || 0).toLocaleString()}
+                                        <DollarAmount amount={referencePrice || 0} />
                                     </Heading>
                                 </Link>
                             </Tooltip>
