@@ -12,6 +12,7 @@ import {
 } from "@chakra-ui/react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
+import utc from "dayjs/plugin/utc";
 import * as React from "react";
 import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
@@ -64,9 +65,10 @@ export const App = () => {
         : null;
 
     dayjs.extend(relativeTime);
+    dayjs.extend(utc);
 
     // TODO: Eventually this should be calculated with what the maker defines in the offer, for now we assume full hour
-    const nextFullHour = dayjs().minute(0).add(1, "hour");
+    const nextFullHour = dayjs().utc().minute(0).add(1, "hour");
     const nextFundingEvent = order ? dayjs().to(nextFullHour) : null;
 
     function parseOptionalNumber(val: string | undefined): number | undefined {
