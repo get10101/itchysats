@@ -1275,4 +1275,62 @@ mod tests {
 
         assert_eq!(balance, SignedAmount::from_sat(1000))
     }
+
+    #[test]
+    fn proportional_funding_fees_if_sign_of_funding_rate_changes() {
+        let long_leverage = Leverage::new(2).unwrap();
+
+        let funding_rate_pos = FundingRate::new(dec!(0.01)).unwrap();
+        let long_pays_short_fee = calculate_funding_fee(
+            dummy_price(),
+            dummy_n_contracts(),
+            long_leverage,
+            funding_rate_pos,
+            dummy_settlement_interval(),
+        )
+        .unwrap();
+
+        let funding_rate_neg = FundingRate::new(dec!(-0.01)).unwrap();
+        let short_pays_long_fee = calculate_funding_fee(
+            dummy_price(),
+            dummy_n_contracts(),
+            long_leverage,
+            funding_rate_neg,
+            dummy_settlement_interval(),
+        )
+        .unwrap();
+
+        let epsilon = (long_pays_short_fee.fee.as_sat() as i64)
+            - (short_pays_long_fee.fee.as_sat() as i64) * (long_leverage.get() as i64);
+        assert!(epsilon.abs() < 5)
+    }
+
+    #[test]
+    fn zero_funding_fee_if_zero_funding_rate() {
+        let zero_funding_rate = FundingRate::new(Decimal::ZERO).unwrap();
+
+        let dummy_leverage = Leverage::new(1).unwrap();
+        let fee = calculate_funding_fee(
+            dummy_price(),
+            dummy_n_contracts(),
+            dummy_leverage,
+            zero_funding_rate,
+            dummy_settlement_interval(),
+        )
+        .unwrap();
+
+        assert_eq!(fee.fee, Amount::ZERO)
+    }
+
+    fn dummy_price() -> Price {
+        Price::new(dec!(35_000)).expect("to not fail")
+    }
+
+    fn dummy_n_contracts() -> Usd {
+        Usd::new(dec!(100))
+    }
+
+    fn dummy_settlement_interval() -> i64 {
+        8
+    }
 }
