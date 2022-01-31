@@ -1,4 +1,3 @@
-use crate::address_map::Stopping;
 use crate::cfd_actors::load_cfd;
 use crate::maker_inc_connections;
 use crate::model::cfd::CollaborativeSettlementCompleted;
@@ -12,6 +11,7 @@ use async_trait::async_trait;
 use maia::secp256k1_zkp::Signature;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::Stopping;
 
 pub struct Actor {
     proposal: SettlementProposal,

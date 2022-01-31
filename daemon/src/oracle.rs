@@ -3,8 +3,6 @@ use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Event;
 use crate::model::BitMexPriceEventId;
 use crate::try_continue;
-use crate::xtra_ext::SendAsyncSafe;
-use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
@@ -22,6 +20,8 @@ use time::OffsetDateTime;
 use time::Time;
 use xtra::prelude::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
+use xtras::SendAsyncSafe;
+use xtras::SendInterval;
 
 pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,

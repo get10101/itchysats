@@ -1,7 +1,6 @@
 use crate::model::Timestamp;
 use crate::model::TxFeeRate;
 use crate::model::WalletInfo;
-use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
@@ -28,6 +27,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::watch;
 use xtra_productivity::xtra_productivity;
+use xtras::SendInterval;
 
 pub struct Actor {
     wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::MemoryDatabase>,

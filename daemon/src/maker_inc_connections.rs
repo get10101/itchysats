@@ -1,5 +1,3 @@
-use crate::address_map::AddressMap;
-use crate::address_map::Stopping;
 use crate::collab_settlement_maker;
 use crate::future_ext::FutureExt;
 use crate::maker_cfd;
@@ -19,8 +17,6 @@ use crate::wire::EncryptedJsonCodec;
 use crate::wire::MakerToTaker;
 use crate::wire::TakerToMaker;
 use crate::wire::Version;
-use crate::xtra_ext::SendAsyncSafe;
-use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
@@ -37,6 +33,10 @@ use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 use xtra::prelude::*;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::Stopping;
+use xtras::AddressMap;
+use xtras::SendAsyncSafe;
+use xtras::SendInterval;
 
 pub struct BroadcastOrder(pub Option<Order>);
 

@@ -715,6 +715,7 @@ dependencies = [
  "x25519-dalek",
  "xtra",
  "xtra_productivity",
+ "xtras",
 ]
 
 [[package]]
@@ -4283,6 +4284,19 @@ source = "git+https://github.com/comit-network/xtra-productivity#52492681bb260a5
 dependencies = [
  "quote",
  "syn",
+]
+
+[[package]]
+name = "xtras"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "regex",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "xtra",
 ]
 
 [[package]]

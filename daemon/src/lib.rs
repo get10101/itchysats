@@ -10,7 +10,6 @@ use crate::model::OpeningFee;
 use crate::model::Price;
 use crate::model::Usd;
 use crate::oracle::Attestation;
-use address_map::Stopping;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -29,13 +28,13 @@ use tokio_tasks::Tasks;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
 use xtra::Address;
+use xtras::address_map::Stopping;
 
 pub use bdk;
 pub use maia;
 
 pub mod sqlx_ext; // Must come first because it is a macro.
 
-pub mod address_map;
 pub mod auto_rollover;
 pub mod bdk_ext;
 pub mod bitmex_price_feed;
@@ -71,7 +70,6 @@ mod transaction_ext;
 pub mod try_continue;
 pub mod wallet;
 pub mod wire;
-pub mod xtra_ext;
 
 /// Duration between the heartbeats sent by the maker, used by the taker to
 /// determine whether the maker is online.

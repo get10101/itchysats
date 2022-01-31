@@ -1,5 +1,3 @@
-use crate::address_map::AddressMap;
-use crate::address_map::Stopping;
 use crate::cfd_actors::load_cfd;
 use crate::connection;
 use crate::db;
@@ -8,8 +6,6 @@ use crate::oracle;
 use crate::process_manager;
 use crate::rollover_taker;
 use crate::try_continue;
-use crate::xtra_ext::SendAsyncSafe;
-use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
@@ -20,6 +16,10 @@ use time::OffsetDateTime;
 use xtra::Actor as _;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::Stopping;
+use xtras::AddressMap;
+use xtras::SendAsyncSafe;
+use xtras::SendInterval;
 
 pub struct Actor<O> {
     db: sqlx::SqlitePool,

@@ -1,4 +1,3 @@
-use crate::address_map::Stopping;
 use crate::command;
 use crate::maker_inc_connections;
 use crate::maker_inc_connections::TakerMessage;
@@ -16,7 +15,6 @@ use crate::wallet;
 use crate::wire;
 use crate::wire::MakerToTaker;
 use crate::wire::SetupMsg;
-use crate::xtra_ext::LogFailure;
 use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
@@ -29,6 +27,8 @@ use maia::secp256k1_zkp::schnorrsig;
 use xtra::prelude::MessageChannel;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::Stopping;
+use xtras::LogFailure;
 
 pub struct Actor {
     order: Order,

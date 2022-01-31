@@ -44,6 +44,7 @@ uuid = { version = "0.8", features = ["serde", "v4"] }
 x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6" }
 xtra_productivity = { version = "0.1.0" }
+xtras = { path = "../xtras" }
 
 [dev-dependencies]
 pretty_assertions = "1"

@@ -1,4 +1,3 @@
-use crate::xtra_ext::ActorName;
 use crate::Tasks;
 use async_trait::async_trait;
 use futures::FutureExt;
@@ -8,6 +7,7 @@ use std::panic::AssertUnwindSafe;
 use xtra::Address;
 use xtra::Context;
 use xtra_productivity::xtra_productivity;
+use xtras::ActorName;
 
 /// A supervising actor reacts to messages from the actor it is supervising and restarts it based on
 /// a given policy.

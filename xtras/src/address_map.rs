@@ -1,4 +1,4 @@
-use crate::xtra_ext::ActorName;
+use crate::ActorName;
 use anyhow::Result;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;

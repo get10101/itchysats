@@ -8,6 +8,7 @@ members = [
   "shared-bin",
   "daemon-tests",
   "tokio-tasks",
+  "xtras",
 ]
 resolver = "2"
 

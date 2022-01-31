@@ -1,4 +1,3 @@
-use crate::address_map::Stopping;
 use crate::command;
 use crate::connection;
 use crate::model::cfd::Dlc;
@@ -30,6 +29,7 @@ use std::time::Duration;
 use xtra::prelude::MessageChannel;
 use xtra::Disconnected;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::Stopping;
 
 /// The maximum amount of time we give the maker to send us a response.
 const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);

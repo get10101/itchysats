@@ -1,4 +1,3 @@
-use crate::address_map::AddressMap;
 use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_taker;
@@ -25,6 +24,7 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
+use xtras::AddressMap;
 
 pub struct CurrentOrder(pub Option<Order>);
 
