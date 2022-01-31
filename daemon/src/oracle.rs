@@ -258,7 +258,7 @@ impl Actor {
 
         tracing::info!("Fetched new attestation for {id}");
 
-        let _ = self.attestation_channel.send(attestation).await;
+        let _: Result<(), xtra::Disconnected> = self.attestation_channel.send(attestation).await;
         self.pending_attestations.remove(&id);
     }
 }
