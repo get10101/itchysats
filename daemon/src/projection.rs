@@ -69,7 +69,6 @@ pub struct Actor {
 pub struct Feeds {
     pub quote: watch::Receiver<Option<Quote>>,
     pub offers: watch::Receiver<MakerOffers>,
-    pub connected_takers: watch::Receiver<Vec<model::Identity>>,
     pub cfds: watch::Receiver<Vec<Cfd>>,
 }
 
@@ -85,7 +84,6 @@ impl Actor {
             short: None,
         });
         let (tx_quote, rx_quote) = watch::channel(None);
-        let (tx_connected_takers, rx_connected_takers) = watch::channel(Vec::new());
 
         let actor = Self {
             db,
@@ -93,7 +91,6 @@ impl Actor {
                 cfds: tx_cfds,
                 order: tx_order,
                 quote: tx_quote,
-                connected_takers: tx_connected_takers,
             },
             state: State::new(network),
             price_feed: price_feed.clone_channel(),
@@ -103,7 +100,6 @@ impl Actor {
             cfds: rx_cfds,
             offers: rx_order,
             quote: rx_quote,
-            connected_takers: rx_connected_takers,
         };
 
         (actor, feeds)
@@ -719,9 +715,6 @@ struct Tx {
     cfds: watch::Sender<Vec<Cfd>>,
     pub order: watch::Sender<MakerOffers>,
     pub quote: watch::Sender<Option<Quote>>,
-    // TODO: Use this channel to communicate maker status as well with generic
-    // ID of connected counterparties
-    pub connected_takers: watch::Sender<Vec<model::Identity>>,
 }
 
 impl Tx {
@@ -846,10 +839,6 @@ impl Actor {
 
         self.tx.send_quote_update(msg.0);
         self.tx.send_cfds_update(hydrated_cfds, msg.0);
-    }
-
-    fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
-        let _ = self.tx.connected_takers.send(msg.0);
     }
 }
 
@@ -1166,7 +1155,7 @@ mod round_to_two_dp {
         #[test]
         fn usd_serializes_with_only_cents() {
             let usd = WithOnlyTwoDecimalPlaces {
-                inner: model::Usd::new(dec!(1000.12345)),
+                inner: Usd::new(dec!(1000.12345)),
             };
 
             assert_ser_tokens(&usd, &[Token::Str("1000.12")]);
@@ -1175,7 +1164,7 @@ mod round_to_two_dp {
         #[test]
         fn price_serializes_with_only_cents() {
             let price = WithOnlyTwoDecimalPlaces {
-                inner: model::Price::new(dec!(1000.12345)).unwrap(),
+                inner: Price::new(dec!(1000.12345)).unwrap(),
             };
 
             assert_ser_tokens(&price, &[Token::Str("1000.12")]);

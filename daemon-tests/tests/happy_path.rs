@@ -24,7 +24,6 @@ use daemon_tests::Taker;
 use daemon_tests::TakerConfig;
 use model::calculate_margin;
 use model::olivia;
-use model::Identity;
 use model::OrderId;
 use model::Position;
 use model::Usd;
@@ -625,24 +624,6 @@ async fn taker_notices_lack_of_maker() {
     assert_eq!(
         ConnectionStatus::Online,
         next(taker.maker_status_feed()).await.unwrap(),
-    );
-}
-
-#[tokio::test]
-async fn maker_notices_lack_of_taker() {
-    let _guard = init_tracing();
-
-    let (mut maker, taker) = start_both().await;
-    assert_eq!(
-        vec![taker.id],
-        next(maker.connected_takers_feed()).await.unwrap()
-    );
-
-    drop(taker);
-
-    assert_eq!(
-        Vec::<Identity>::new(),
-        next(maker.connected_takers_feed()).await.unwrap()
     );
 }
 

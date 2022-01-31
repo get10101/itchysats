@@ -32,7 +32,6 @@ use model::SettlementProposal;
 use model::Timestamp;
 use model::TxFeeRate;
 use model::Usd;
-use std::collections::HashSet;
 use time::Duration;
 use tokio_tasks::Tasks;
 use xtra::Actor as _;
@@ -77,16 +76,6 @@ pub struct AcceptRollover {
 #[derive(Clone, Copy)]
 pub struct RejectRollover {
     pub order_id: OrderId,
-}
-
-#[derive(Clone, Copy)]
-pub struct TakerConnected {
-    pub id: Identity,
-}
-
-#[derive(Clone, Copy)]
-pub struct TakerDisconnected {
-    pub id: Identity,
 }
 
 #[derive(Clone, Copy)]
@@ -177,7 +166,6 @@ pub struct Actor<O, T, W> {
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
     oracle: xtra::Address<O>,
-    connected_takers: HashSet<Identity>,
     n_payouts: usize,
     tasks: Tasks,
 }
@@ -209,50 +197,9 @@ impl<O, T, W> Actor<O, T, W> {
             setup_actors: AddressMap::default(),
             oracle,
             n_payouts,
-            connected_takers: HashSet::new(),
             settlement_actors: AddressMap::default(),
             tasks: Tasks::default(),
         }
-    }
-
-    async fn update_connected_takers(&mut self) -> Result<()> {
-        self.projection
-            .send(projection::Update(
-                self.connected_takers
-                    .clone()
-                    .into_iter()
-                    .collect::<Vec<Identity>>(),
-            ))
-            .await?;
-        Ok(())
-    }
-}
-
-impl<O, T, W> Actor<O, T, W>
-where
-    T: xtra::Handler<maker_inc_connections::TakerMessage>,
-{
-    async fn handle_taker_connected(&mut self, taker_id: Identity) -> Result<()> {
-        self.takers
-            .send_async_safe(maker_inc_connections::TakerMessage {
-                taker_id,
-                msg: wire::MakerToTaker::CurrentOffers(self.current_offers),
-            })
-            .await?;
-
-        if !self.connected_takers.insert(taker_id) {
-            tracing::warn!("Taker already connected: {:?}", &taker_id);
-        }
-        self.update_connected_takers().await?;
-        Ok(())
-    }
-
-    async fn handle_taker_disconnected(&mut self, taker_id: Identity) -> Result<()> {
-        if !self.connected_takers.remove(&taker_id) {
-            tracing::warn!("Removed unknown taker: {:?}", &taker_id);
-        }
-        self.update_connected_takers().await?;
-        Ok(())
     }
 }
 
@@ -607,14 +554,6 @@ where
             .await?;
 
         Ok(())
-    }
-
-    async fn handle(&mut self, msg: TakerConnected) -> Result<()> {
-        self.handle_taker_connected(msg.id).await
-    }
-
-    async fn handle(&mut self, msg: TakerDisconnected) -> Result<()> {
-        self.handle_taker_disconnected(msg.id).await
     }
 
     async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker) {

@@ -20,7 +20,6 @@ import React, { useEffect, useState } from "react";
 import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
-import ConnectedTakers, { TakerId } from "./components/ConnectedTakers";
 import CurrencyInputField from "./components/CurrencyInputField";
 import CurrentPrice from "./components/CurrentPrice";
 import createErrorToast from "./components/ErrorToast";
@@ -44,8 +43,6 @@ export default function App() {
     const makerShortOrder = useLatestEvent<MakerOffer>(source, "short_offer");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
-    const takersOrUndefined = useLatestEvent<TakerId[]>(source, "takers");
-    let takers = takersOrUndefined || [];
 
     const toast = useToast();
 
@@ -191,7 +188,6 @@ export default function App() {
                     </Grid>
                 </VStack>
                 <VStack>
-                    <ConnectedTakers takers={takers} />
                     <HStack>
                         {makerShortOrder && <OrderTile maker_offer={makerShortOrder} />}
                         {makerLongOrder && <OrderTile maker_offer={makerLongOrder} />}

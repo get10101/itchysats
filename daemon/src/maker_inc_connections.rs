@@ -91,8 +91,6 @@ pub struct RegisterRollover {
 
 pub struct Actor {
     connections: HashMap<Identity, Connection>,
-    taker_connected_channel: Box<dyn MessageChannel<maker_cfd::TakerConnected>>,
-    taker_disconnected_channel: Box<dyn MessageChannel<maker_cfd::TakerDisconnected>>,
     taker_msg_channel: Box<dyn MessageChannel<maker_cfd::FromTaker>>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
@@ -101,6 +99,11 @@ pub struct Actor {
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
     rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
     tasks: Tasks,
+
+    /// Tracks the last offers that were sent out to our connected takers.
+    ///
+    /// Storing this here allows us to send it to newly connected takers.
+    last_offers: Option<MakerOffers>,
 }
 
 /// A connection to a taker.
@@ -140,8 +143,6 @@ impl Drop for Connection {
 
 impl Actor {
     pub fn new(
-        taker_connected_channel: Box<dyn MessageChannel<maker_cfd::TakerConnected>>,
-        taker_disconnected_channel: Box<dyn MessageChannel<maker_cfd::TakerDisconnected>>,
         taker_msg_channel: Box<dyn MessageChannel<maker_cfd::FromTaker>>,
         noise_priv_key: x25519_dalek::StaticSecret,
         heartbeat_interval: Duration,
@@ -151,8 +152,6 @@ impl Actor {
 
         Self {
             connections: HashMap::new(),
-            taker_connected_channel: taker_connected_channel.clone_channel(),
-            taker_disconnected_channel: taker_disconnected_channel.clone_channel(),
             taker_msg_channel: taker_msg_channel.clone_channel(),
             noise_priv_key,
             heartbeat_interval,
@@ -161,16 +160,12 @@ impl Actor {
             settlement_actors: AddressMap::default(),
             rollover_actors: AddressMap::default(),
             tasks: Tasks::default(),
+            last_offers: None,
         }
     }
 
     async fn drop_taker_connection(&mut self, taker_id: &Identity) {
-        if self.connections.remove(taker_id).is_some() {
-            let _: Result<(), xtra::Disconnected> = self
-                .taker_disconnected_channel
-                .send_async_safe(maker_cfd::TakerDisconnected { id: *taker_id })
-                .await;
-        }
+        self.connections.remove(taker_id);
 
         NUM_CONNECTIONS_GAUGE.set(self.connections.len() as i64);
     }
@@ -274,6 +269,8 @@ impl Actor {
         for id in broken_connections {
             self.drop_taker_connection(&id).await;
         }
+
+        self.last_offers = offers;
     }
 
     async fn handle_send_heartbeat(&mut self, msg: SendHeartbeat) {
@@ -355,11 +352,6 @@ impl Actor {
             return;
         }
 
-        let _: Result<(), xtra::Disconnected> = self
-            .taker_connected_channel
-            .send_async_safe(maker_cfd::TakerConnected { id: identity })
-            .await;
-
         let mut tasks = Tasks::default();
         tasks.add({
             let this = this.clone();
@@ -395,6 +387,13 @@ impl Actor {
         NUM_CONNECTIONS_GAUGE.set(self.connections.len() as i64);
 
         tracing::info!(taker_id = %identity, "Connection is ready");
+
+        self.send_to_taker(
+            &identity,
+            wire::MakerToTaker::CurrentOffers(self.last_offers),
+        )
+        .await
+        .expect("we just inserted into the hashmap");
     }
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {

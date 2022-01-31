@@ -140,8 +140,6 @@ where
 
         tasks.add(inc_conn_ctx.run(maker_inc_connections::Actor::new(
             Box::new(cfd_actor_addr.clone()),
-            Box::new(cfd_actor_addr.clone()),
-            Box::new(cfd_actor_addr.clone()),
             identity,
             heartbeat_interval,
             p2p_socket,
