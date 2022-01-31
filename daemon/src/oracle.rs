@@ -3,7 +3,6 @@ use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Event;
 use crate::model::BitMexPriceEventId;
 use crate::try_continue;
-use crate::xtra_ext::LogFailure;
 use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::Context;
@@ -199,7 +198,6 @@ impl Actor {
                         id: event_id,
                         attestation,
                     })
-                    .log_failure("Failed to send attestation to oracle::Actor")
                     .await?;
 
                     Ok(())
@@ -215,13 +213,11 @@ impl Actor {
         &mut self,
         id: BitMexPriceEventId,
         attestation: Attestation,
-    ) -> Result<()> {
+    ) {
         tracing::info!("Fetched new attestation for {id}");
 
         let _ = self.attestation_channel.send(attestation).await;
         self.pending_attestations.remove(&id);
-
-        Ok(())
     }
 }
 
@@ -279,7 +275,7 @@ impl xtra::Handler<NewAttestationFetched> for Actor {
         &mut self,
         msg: NewAttestationFetched,
         _ctx: &mut xtra::Context<Self>,
-    ) -> Result<()> {
+    ) {
         self.handle_new_attestation_fetched(msg.id, msg.attestation)
             .await
     }
@@ -367,7 +363,7 @@ impl xtra::Message for Attestation {
 }
 
 impl xtra::Message for NewAttestationFetched {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 mod olivia_api {
