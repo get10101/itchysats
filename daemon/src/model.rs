@@ -715,6 +715,10 @@ impl FundingFee {
     pub fn new(fee: Amount, rate: FundingRate) -> Self {
         Self { fee, rate }
     }
+
+    pub fn to_inner(self) -> Amount {
+        self.fee
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

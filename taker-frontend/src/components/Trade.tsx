@@ -14,7 +14,6 @@ import {
     HStack,
     IconButton,
     InputGroup,
-    InputLeftAddon,
     Modal,
     ModalBody,
     ModalCloseButton,
@@ -64,12 +63,13 @@ interface TradeProps {
     askPrice?: number;
     parcelSize: number;
     marginPerParcel: number;
-    leverage?: number;
+    leverage: number;
     liquidationPrice?: number;
     walletBalance: number;
-    openingFeePerParcel: number;
+    openingFee: number;
     fundingRateAnnualized: string;
     fundingRateHourly: string;
+    fundingFeePerParcel: number;
 }
 
 export default function Trade({
@@ -83,9 +83,10 @@ export default function Trade({
     liquidationPrice: liquidationPriceAsNumber,
     orderId,
     walletBalance,
-    openingFeePerParcel,
+    openingFee,
     fundingRateAnnualized,
     fundingRateHourly,
+    fundingFeePerParcel,
 }: TradeProps) {
     let [quantity, setQuantity] = useState(0);
     let [userHasEdited, setUserHasEdited] = useState(false);
@@ -106,11 +107,9 @@ export default function Trade({
 
     const margin = (quantity / parcelSize) * marginPerParcel;
 
-    const openingFee = (quantity / parcelSize) * openingFeePerParcel;
+    const feeForFirstSettlementInterval = (quantity / parcelSize) * fundingFeePerParcel;
 
-    let btcToOpenPosition = margin + openingFee;
-
-    const balanceTooLow = walletBalance < btcToOpenPosition;
+    const balanceTooLow = walletBalance < margin;
     const quantityTooHigh = maxQuantity < quantity;
     const quantityTooLow = minQuantity > quantity;
     const quantityGreaterZero = quantity > 0;
@@ -165,6 +164,7 @@ export default function Trade({
                     templateRows="repeat(1, 1fr)"
                     templateColumns="repeat(1, 1fr)"
                     gap={4}
+                    maxWidth={"500px"}
                 >
                     <GridItem colSpan={1}>
                         <Center>
@@ -197,7 +197,7 @@ export default function Trade({
                             </MotionBox>
                         </Center>
                     </GridItem>
-                    <GridItem colSpan={1}>
+                    <GridItem colSpan={1} paddingLeft={5} paddingRight={5}>
                         <Quantity
                             min={minQuantity}
                             max={maxQuantity}
@@ -209,7 +209,7 @@ export default function Trade({
                             parcelSize={parcelSize}
                         />
                     </GridItem>
-                    <GridItem colSpan={1}>
+                    <GridItem colSpan={1} paddingLeft={5} paddingRight={5}>
                         <Leverage leverage={leverage} />
                     </GridItem>
                     <GridItem colSpan={1}>
@@ -260,7 +260,7 @@ export default function Trade({
                                                             By submitting
                                                         </Text>
                                                         <Text as={"b"}>
-                                                            <BitcoinAmount btc={btcToOpenPosition} />
+                                                            <BitcoinAmount btc={margin} />
                                                         </Text>
                                                         <Text>
                                                             will be locked on-chain in a contract.
@@ -276,6 +276,14 @@ export default function Trade({
                                                         <Td><Text as={"b"}>Liquidation Price</Text></Td>
                                                         <Td><DollarAmount amount={liquidationPriceAsNumber || 0} /></Td>
                                                     </Tr>
+                                                    <Tr>
+                                                        <Td><Text as={"b"}>Margin</Text></Td>
+                                                        <Td><BitcoinAmount btc={margin} /></Td>
+                                                    </Tr>
+                                                    <Tr>
+                                                        <Td><Text as={"b"}>Funding for first 24h</Text></Td>
+                                                        <Td><BitcoinAmount btc={feeForFirstSettlementInterval} /></Td>
+                                                    </Tr>
                                                     <Tooltip
                                                         label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}%, annualized that is ${fundingRateAnnualized}%. The funding rate can fluctuate depending on the market movements.`}
                                                         hasArrow
@@ -286,14 +294,6 @@ export default function Trade({
                                                             <Td>Hourly @ {fundingRateHourly}%</Td>
                                                         </Tr>
                                                     </Tooltip>
-                                                    <Tr>
-                                                        <Td><Text as={"b"}>Margin</Text></Td>
-                                                        <Td><BitcoinAmount btc={margin} /></Td>
-                                                    </Tr>
-                                                    <Tr>
-                                                        <Td><Text as={"b"}>Opening Fee</Text></Td>
-                                                        <Td><BitcoinAmount btc={openingFee} /></Td>
-                                                    </Tr>
                                                 </Tbody>
                                             </Table>
                                         </ModalBody>
@@ -344,9 +344,10 @@ interface QuantityProps {
 function Quantity({ min, max, onChange, quantity, parcelSize }: QuantityProps) {
     return (
         <FormControl id="quantity">
-            <FormLabel>Quantity</FormLabel>
+            <Center>
+                <FormLabel>BTC/USD Contracts</FormLabel>
+            </Center>
             <InputGroup>
-                <InputLeftAddon>$</InputLeftAddon>
                 <NumberInput
                     min={min}
                     max={max}
@@ -369,13 +370,15 @@ function Quantity({ min, max, onChange, quantity, parcelSize }: QuantityProps) {
 }
 
 interface LeverageProps {
-    leverage?: number;
+    leverage: number;
 }
 
 function Leverage({ leverage }: LeverageProps) {
     return (
         <FormControl id="leverage">
-            <FormLabel>Leverage</FormLabel>
+            <Center>
+                <FormLabel>Leverage</FormLabel>
+            </Center>
             <Slider disabled value={leverage} min={1} max={5} step={1}>
                 <SliderTrack>
                     <Box position="relative" right={10} />

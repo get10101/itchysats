@@ -25,6 +25,7 @@ export interface Order {
     opening_fee: number;
     funding_rate_annualized_percent: string; // e.g. "18.5" (does not include % char)
     funding_rate_hourly_percent: string; // e.g. "0.002345" (does not include % char)
+    initial_funding_fee_per_parcel: number;
 }
 
 export class Position {

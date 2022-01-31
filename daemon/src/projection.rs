@@ -26,6 +26,7 @@ use crate::xtra_ext::SendAsyncSafe;
 use crate::Order;
 use crate::Tasks;
 use crate::SETTLEMENT_INTERVAL;
+use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::Amount;
@@ -47,7 +48,6 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
 use xtra::prelude::MessageChannel;
-use xtra::Context;
 use xtra_productivity::xtra_productivity;
 
 /// Store the latest state of `T` for display purposes
@@ -670,7 +670,18 @@ impl Actor {
     }
 
     fn handle(&mut self, msg: Update<Option<Order>>) {
-        let _ = self.tx.order.send(msg.0.map(|x| x.into()));
+        let order = match msg.0 {
+            None => None,
+            Some(order) => match TryInto::<CfdOrder>::try_into(order) {
+                Ok(order) => Some(order),
+                Err(e) => {
+                    tracing::warn!("Unable to convert order: {e:#}");
+                    None
+                }
+            },
+        };
+
+        let _ = self.tx.order.send(order);
     }
 
     fn handle(&mut self, msg: Update<Option<bitmex_price_feed::Quote>>) {
@@ -686,7 +697,7 @@ impl Actor {
 
 #[async_trait]
 impl xtra::Actor for Actor {
-    async fn started(&mut self, ctx: &mut Context<Self>) {
+    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we just started");
 
         // this will make us load all cfds from the DB
@@ -775,6 +786,9 @@ pub struct CfdOrder {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub margin_per_parcel: Amount,
 
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub initial_funding_fee_per_parcel: Amount,
+
     pub leverage: Leverage,
     #[serde(with = "round_to_two_dp")]
     pub liquidation_price: Price,
@@ -783,11 +797,13 @@ pub struct CfdOrder {
     pub settlement_time_interval_in_secs: u64,
 }
 
-impl From<Order> for CfdOrder {
-    fn from(order: Order) -> Self {
+impl TryFrom<Order> for CfdOrder {
+    type Error = anyhow::Error;
+
+    fn try_from(order: Order) -> std::result::Result<Self, Self::Error> {
         let parcel_size = Usd::new(dec!(100)); // TODO: Have the maker tell us this.
 
-        Self {
+        Ok(Self {
             id: order.id,
             trading_pair: order.trading_pair,
             position: order.position,
@@ -810,12 +826,21 @@ impl From<Order> for CfdOrder {
                 .settlement_interval
                 .whole_seconds()
                 .try_into()
-                .expect("settlement_time_interval_hours is always positive number"),
+                .context("unable to convert settlement interval")?,
             opening_fee: Some(order.opening_fee.to_inner()),
-            funding_rate_annualized_percent: AnnualisedFundingRate::from(order.funding_rate)
+            funding_rate_annualized_percent: AnnualisedFundingPercent::from(order.funding_rate)
                 .to_string(),
-            funding_rate_hourly_percent: HourlyFundingRate::from(order.funding_rate).to_string(),
-        }
+            funding_rate_hourly_percent: HourlyFundingPercent::from(order.funding_rate).to_string(),
+            initial_funding_fee_per_parcel: calculate_funding_fee(
+                order.price,
+                parcel_size,
+                order.leverage,
+                order.funding_rate,
+                SETTLEMENT_INTERVAL.whole_hours(),
+            )
+            .context("unable to calcualte initial funding fee")?
+            .to_inner(),
+        })
     }
 }
 
@@ -994,13 +1019,15 @@ pub enum TxLabel {
     Collaborative,
 }
 
-struct AnnualisedFundingRate(Decimal);
+struct AnnualisedFundingPercent(Decimal);
 
-impl From<FundingRate> for AnnualisedFundingRate {
+impl From<FundingRate> for AnnualisedFundingPercent {
     fn from(funding_rate: FundingRate) -> Self {
         Self(
             funding_rate
                 .to_decimal()
+                .checked_mul(dec!(100))
+                .expect("Not to overflow for funding rate")
                 .checked_mul(Decimal::from(
                     (24 / SETTLEMENT_INTERVAL.whole_hours()) * 365,
                 ))
@@ -1009,26 +1036,28 @@ impl From<FundingRate> for AnnualisedFundingRate {
     }
 }
 
-impl fmt::Display for AnnualisedFundingRate {
+impl fmt::Display for AnnualisedFundingPercent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.round_dp(2).fmt(f)
     }
 }
 
-struct HourlyFundingRate(Decimal);
+struct HourlyFundingPercent(Decimal);
 
-impl From<FundingRate> for HourlyFundingRate {
+impl From<FundingRate> for HourlyFundingPercent {
     fn from(funding_rate: FundingRate) -> Self {
         Self(
             funding_rate
                 .to_decimal()
+                .checked_mul(dec!(100))
+                .expect("Not to overflow for funding rate")
                 .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
                 .expect("Not to fail as funding rate is sanitised"),
         )
     }
 }
 
-impl fmt::Display for HourlyFundingRate {
+impl fmt::Display for HourlyFundingPercent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
