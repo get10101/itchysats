@@ -149,8 +149,8 @@ export default function Trade({
         }
         if (!orderId) {
             alertBox = <AlertBox
-                title={"No liquidity!"}
-                description={"The maker you are connected has not create any offers"}
+                title={"No liquidity in maker!"}
+                description={"The maker you are connected has no active offers"}
             />;
         }
     }
