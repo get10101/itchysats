@@ -3,7 +3,6 @@ use anyhow::Result;
 use daemon::projection::Cfd;
 use daemon::projection::CfdOrder;
 use daemon::projection::CfdState;
-use daemon::tokio_ext::FutureExt;
 use std::time::Duration;
 use tokio::sync::watch;
 
@@ -60,8 +59,7 @@ where
         }
     };
 
-    let val = wait_until_predicate
-        .timeout(NEXT_WAIT_TIME)
+    let val = tokio::time::timeout(NEXT_WAIT_TIME, wait_until_predicate)
         .await
         .with_context(|| {
             let seconds = NEXT_WAIT_TIME.as_secs();

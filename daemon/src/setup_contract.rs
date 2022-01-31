@@ -1,3 +1,4 @@
+use crate::future_ext::FutureExt;
 use crate::model::cfd::Cet;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::RevokedCommit;
@@ -12,7 +13,6 @@ use crate::model::TxFeeRate;
 use crate::model::Usd;
 use crate::oracle;
 use crate::payout_curve;
-use crate::tokio_ext::FutureExt;
 use crate::transaction_ext::TransactionExt;
 use crate::wallet;
 use crate::wire::Msg0;

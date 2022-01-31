@@ -3,13 +3,8 @@ use futures::FutureExt as _;
 use std::any::Any;
 use std::any::TypeId;
 use std::future::Future;
-use std::time::Duration;
-use tokio::time::timeout;
-use tokio::time::Timeout;
 
 pub trait FutureExt: Future + Sized {
-    fn timeout(self, duration: Duration) -> Timeout<Self>;
-
     /// Spawn the future on a task in the runtime and return a RemoteHandle to it.
     /// The task will be stopped when the handle gets dropped.
     fn spawn_with_handle(self) -> RemoteHandle<Self::Output>
@@ -22,10 +17,6 @@ impl<F> FutureExt for F
 where
     F: Future,
 {
-    fn timeout(self, duration: Duration) -> Timeout<F> {
-        timeout(duration, self)
-    }
-
     fn spawn_with_handle(self) -> RemoteHandle<F::Output>
     where
         Self: Send + Any + 'static,
@@ -46,11 +37,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::panic;
-
-    use tokio::time::sleep;
-
     use super::*;
+    use std::panic;
+    use std::time::Duration;
+    use tokio::time::sleep;
 
     #[tokio::test]
     async fn spawning_a_regular_future_does_not_panic() {

@@ -1,6 +1,7 @@
 use crate::address_map::AddressMap;
 use crate::address_map::Stopping;
 use crate::collab_settlement_taker;
+use crate::future_ext::FutureExt;
 use crate::model::cfd::OrderId;
 use crate::model::Identity;
 use crate::model::Price;
@@ -10,7 +11,6 @@ use crate::noise;
 use crate::rollover_taker;
 use crate::setup_taker;
 use crate::taker_cfd::CurrentOrder;
-use crate::tokio_ext::FutureExt;
 use crate::wire;
 use crate::wire::EncryptedJsonCodec;
 use crate::wire::TakerToMaker;

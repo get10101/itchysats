@@ -1,6 +1,7 @@
 use crate::address_map::AddressMap;
 use crate::address_map::Stopping;
 use crate::collab_settlement_maker;
+use crate::future_ext::FutureExt;
 use crate::maker_cfd;
 use crate::maker_cfd::FromTaker;
 use crate::maker_cfd::TakerConnected;
@@ -12,7 +13,6 @@ use crate::noise;
 use crate::noise::TransportStateExt;
 use crate::rollover_maker;
 use crate::setup_maker;
-use crate::tokio_ext::FutureExt;
 use crate::wire;
 use crate::wire::taker_to_maker;
 use crate::wire::EncryptedJsonCodec;
