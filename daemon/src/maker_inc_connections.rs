@@ -19,7 +19,6 @@ use crate::wire::EncryptedJsonCodec;
 use crate::wire::MakerToTaker;
 use crate::wire::TakerToMaker;
 use crate::wire::Version;
-use crate::xtra_ext::LogFailure;
 use crate::xtra_ext::SendAsyncSafe;
 use crate::xtra_ext::SendInterval;
 use crate::Tasks;
@@ -168,10 +167,9 @@ impl Actor {
     async fn drop_taker_connection(&mut self, taker_id: &Identity) {
         if self.connections.remove(taker_id).is_some() {
             tracing::info!(%taker_id, "Dropping connection");
-            let _ = self
+            let _: Result<(), xtra::Disconnected> = self
                 .taker_disconnected_channel
-                .send(maker_cfd::TakerDisconnected { id: *taker_id })
-                .log_failure("Failed to inform about taker disconnect")
+                .send_async_safe(maker_cfd::TakerDisconnected { id: *taker_id })
                 .await;
         }
     }
@@ -359,9 +357,9 @@ impl Actor {
             return;
         }
 
-        let _ = self
+        let _: Result<(), xtra::Disconnected> = self
             .taker_connected_channel
-            .send(maker_cfd::TakerConnected { id: identity })
+            .send_async_safe(maker_cfd::TakerConnected { id: identity })
             .await;
 
         let mut tasks = Tasks::default();

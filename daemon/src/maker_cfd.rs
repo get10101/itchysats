@@ -535,7 +535,7 @@ where
 
         // 3. Inform connected takers
         self.takers
-            .send(maker_inc_connections::BroadcastOrder(Some(order)))
+            .send_async_safe(maker_inc_connections::BroadcastOrder(Some(order)))
             .await?;
 
         Ok(())
