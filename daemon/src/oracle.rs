@@ -252,15 +252,8 @@ impl Actor {
         self.ensure_having_announcements(self.announcement_lookahead, ctx);
         self.update_pending_attestations(ctx);
     }
-}
 
-#[derive(Debug, Clone, thiserror::Error)]
-#[error("Announcement {0} not found")]
-pub struct NoAnnouncement(pub BitMexPriceEventId);
-
-#[async_trait]
-impl xtra::Handler<NewAttestationFetched> for Actor {
-    async fn handle(&mut self, msg: NewAttestationFetched, _ctx: &mut xtra::Context<Self>) {
+    async fn handle_new_attestation_fetched(&mut self, msg: NewAttestationFetched) {
         let NewAttestationFetched { id, attestation } = msg;
 
         tracing::info!("Fetched new attestation for {id}");
@@ -269,6 +262,10 @@ impl xtra::Handler<NewAttestationFetched> for Actor {
         self.pending_attestations.remove(&id);
     }
 }
+
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("Announcement {0} not found")]
+pub struct NoAnnouncement(pub BitMexPriceEventId);
 
 pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<BitMexPriceEventId> {
     let adjusted = ceil_to_next_hour(timestamp)?;
@@ -348,10 +345,6 @@ impl xtra::Actor for Actor {
 }
 
 impl xtra::Message for Attestation {
-    type Result = ();
-}
-
-impl xtra::Message for NewAttestationFetched {
     type Result = ();
 }
 
