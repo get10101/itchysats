@@ -58,7 +58,7 @@ impl fmt::Display for Version {
 pub mod taker_to_maker {
     use super::*;
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize)]
     #[serde(tag = "type", content = "payload")]
     #[allow(clippy::large_enum_variant)]
     pub enum Settlement {
@@ -85,7 +85,7 @@ pub mod taker_to_maker {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum TakerToMaker {
@@ -112,6 +112,12 @@ pub enum TakerToMaker {
     },
 }
 
+impl fmt::Debug for TakerToMaker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
 impl fmt::Display for TakerToMaker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -125,7 +131,7 @@ impl fmt::Display for TakerToMaker {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum MakerToTaker {
@@ -155,6 +161,12 @@ pub enum MakerToTaker {
         order_id: OrderId,
         msg: maker_to_taker::Settlement,
     },
+}
+
+impl fmt::Debug for MakerToTaker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
 }
 
 pub mod maker_to_taker {
@@ -270,7 +282,7 @@ where
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum SetupMsg {
     /// Message enabling setting up lock and based on that commit, refund and cets
@@ -310,6 +322,12 @@ impl fmt::Display for SetupMsg {
     }
 }
 
+impl fmt::Debug for SetupMsg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
 impl SetupMsg {
     pub fn try_into_msg0(self) -> Result<Msg0> {
         if let Self::Msg0(v) = self {
@@ -344,7 +362,7 @@ impl SetupMsg {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Msg0 {
     pub lock_psbt: PartiallySignedTransaction, // TODO: Use binary representation
     pub identity_pk: PublicKey,
@@ -405,7 +423,7 @@ impl From<Msg0> for (PartyParams, PunishParams) {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Msg1 {
     pub commit: EcdsaAdaptorSignature,
     pub cets: HashMap<String, Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>>,
@@ -436,15 +454,15 @@ impl From<CfdTransactions> for Msg1 {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Msg2 {
     pub signed_lock: PartiallySignedTransaction, // TODO: Use binary representation
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Msg3;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum RolloverMsg {
     Msg0(RolloverMsg0),
@@ -464,7 +482,13 @@ impl fmt::Display for RolloverMsg {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+impl fmt::Debug for RolloverMsg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct RolloverMsg0 {
     pub revocation_pk: PublicKey,
     pub publish_pk: PublicKey,
@@ -504,19 +528,19 @@ impl RolloverMsg {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct RolloverMsg1 {
     pub commit: EcdsaAdaptorSignature,
     pub cets: HashMap<String, Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>>,
     pub refund: Signature,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct RolloverMsg2 {
     pub revocation_sk: SecretKey,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct RolloverMsg3;
 
 impl From<CfdTransactions> for RolloverMsg1 {
