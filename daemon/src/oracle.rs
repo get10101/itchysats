@@ -3,6 +3,7 @@ use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Event;
 use crate::model::BitMexPriceEventId;
 use crate::try_continue;
+use crate::xtra_ext::SendAsyncSafe;
 use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::Context;
@@ -258,7 +259,8 @@ impl Actor {
 
         tracing::info!("Fetched new attestation for {id}");
 
-        let _: Result<(), xtra::Disconnected> = self.attestation_channel.send(attestation).await;
+        let _: Result<(), xtra::Disconnected> =
+            self.attestation_channel.send_async_safe(attestation).await;
         self.pending_attestations.remove(&id);
     }
 }
