@@ -397,7 +397,7 @@ impl Actor {
             }
             Some(unexpected_message) => {
                 bail!(
-                    "Unexpected message {unexpected_message:?} from maker {maker_identity}"
+                    "Unexpected message {unexpected_message} from maker {maker_identity}"
                 )
             }
             None => {
