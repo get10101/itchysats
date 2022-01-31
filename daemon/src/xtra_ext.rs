@@ -170,6 +170,17 @@ where
 }
 
 #[async_trait]
+impl<M> SendAsyncSafe<M, ()> for Box<dyn xtra::prelude::StrongMessageChannel<M>>
+where
+    M: xtra::Message<Result = ()>,
+{
+    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
+        #[allow(clippy::disallowed_method)]
+        self.do_send(msg)
+    }
+}
+
+#[async_trait]
 impl<M, E> SendAsyncSafe<M, Result<(), E>> for Box<dyn xtra::prelude::MessageChannel<M>>
 where
     M: xtra::Message<Result = Result<(), E>>,

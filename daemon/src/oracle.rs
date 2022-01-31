@@ -3,7 +3,7 @@ use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Event;
 use crate::model::BitMexPriceEventId;
 use crate::try_continue;
-use crate::xtra_ext::LogFailure;
+use crate::xtra_ext::SendAsyncSafe;
 use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::Context;
@@ -199,7 +199,6 @@ impl Actor {
                         id: event_id,
                         attestation,
                     })
-                    .log_failure("Failed to send attestation to oracle::Actor")
                     .await?;
 
                     Ok(())
@@ -209,19 +208,6 @@ impl Actor {
                 },
             )
         }
-    }
-
-    async fn handle_new_attestation_fetched(
-        &mut self,
-        id: BitMexPriceEventId,
-        attestation: Attestation,
-    ) -> Result<()> {
-        tracing::info!("Fetched new attestation for {id}");
-
-        let _ = self.attestation_channel.send(attestation).await;
-        self.pending_attestations.remove(&id);
-
-        Ok(())
     }
 }
 
@@ -267,23 +253,21 @@ impl Actor {
         self.ensure_having_announcements(self.announcement_lookahead, ctx);
         self.update_pending_attestations(ctx);
     }
+
+    async fn handle_new_attestation_fetched(&mut self, msg: NewAttestationFetched) {
+        let NewAttestationFetched { id, attestation } = msg;
+
+        tracing::info!("Fetched new attestation for {id}");
+
+        let _: Result<(), xtra::Disconnected> =
+            self.attestation_channel.send_async_safe(attestation).await;
+        self.pending_attestations.remove(&id);
+    }
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("Announcement {0} not found")]
 pub struct NoAnnouncement(pub BitMexPriceEventId);
-
-#[async_trait]
-impl xtra::Handler<NewAttestationFetched> for Actor {
-    async fn handle(
-        &mut self,
-        msg: NewAttestationFetched,
-        _ctx: &mut xtra::Context<Self>,
-    ) -> Result<()> {
-        self.handle_new_attestation_fetched(msg.id, msg.attestation)
-            .await
-    }
-}
 
 pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<BitMexPriceEventId> {
     let adjusted = ceil_to_next_hour(timestamp)?;
@@ -364,10 +348,6 @@ impl xtra::Actor for Actor {
 
 impl xtra::Message for Attestation {
     type Result = ();
-}
-
-impl xtra::Message for NewAttestationFetched {
-    type Result = Result<()>;
 }
 
 mod olivia_api {
