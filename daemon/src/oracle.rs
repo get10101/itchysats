@@ -208,17 +208,6 @@ impl Actor {
             )
         }
     }
-
-    async fn handle_new_attestation_fetched(
-        &mut self,
-        id: BitMexPriceEventId,
-        attestation: Attestation,
-    ) {
-        tracing::info!("Fetched new attestation for {id}");
-
-        let _ = self.attestation_channel.send(attestation).await;
-        self.pending_attestations.remove(&id);
-    }
 }
 
 #[xtra_productivity]
@@ -271,13 +260,13 @@ pub struct NoAnnouncement(pub BitMexPriceEventId);
 
 #[async_trait]
 impl xtra::Handler<NewAttestationFetched> for Actor {
-    async fn handle(
-        &mut self,
-        msg: NewAttestationFetched,
-        _ctx: &mut xtra::Context<Self>,
-    ) {
-        self.handle_new_attestation_fetched(msg.id, msg.attestation)
-            .await
+    async fn handle(&mut self, msg: NewAttestationFetched, _ctx: &mut xtra::Context<Self>) {
+        let NewAttestationFetched { id, attestation } = msg;
+
+        tracing::info!("Fetched new attestation for {id}");
+
+        let _ = self.attestation_channel.send(attestation).await;
+        self.pending_attestations.remove(&id);
     }
 }
 
