@@ -377,8 +377,9 @@ impl Actor {
                 format!(
                     "Maker {maker_identity} did not send Hello within 10 seconds, dropping connection"
                 )
-            })? {
-            Ok(Some(wire::MakerToTaker::Hello(maker_version))) => {
+            })?
+            .with_context(|| format!("Failed to read first message from maker {maker_identity}"))? {
+            Some(wire::MakerToTaker::Hello(maker_version)) => {
                 if our_version != maker_version {
                     self.status_sender
                         .send(ConnectionStatus::Offline {
@@ -394,9 +395,14 @@ impl Actor {
                     )
                 }
             }
-            unexpected_message => {
+            Some(unexpected_message) => {
                 bail!(
                     "Unexpected message {unexpected_message:?} from maker {maker_identity}"
+                )
+            }
+            None => {
+                bail!(
+                    "Connection to maker {maker_identity} closed before receiving first message"
                 )
             }
         }
