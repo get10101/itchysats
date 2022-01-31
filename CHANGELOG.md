@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2022-01-31
+
 ### Added
 
 - Off-chain perpetual CFD rollover.
@@ -60,7 +62,8 @@ Backport https://github.com/itchysats/itchysats/pull/924 in an attempt to fix ht
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.3.6...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.0...HEAD
+[0.4.0]: https://github.com/itchysats/itchysats/compare/0.3.6...0.4.0
 [0.3.6]: https://github.com/itchysats/itchysats/compare/0.3.5...0.3.6
 [0.3.5]: https://github.com/itchysats/itchysats/compare/0.3.4...0.3.5
 [0.3.4]: https://github.com/itchysats/itchysats/compare/0.3.3...0.3.4
