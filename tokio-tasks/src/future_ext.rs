@@ -1,12 +1,13 @@
 use futures::future::RemoteHandle;
+use futures::Future;
 use futures::FutureExt as _;
 use std::any::Any;
 use std::any::TypeId;
-use std::future::Future;
 
 pub trait FutureExt: Future + Sized {
-    /// Spawn the future on a task in the runtime and return a RemoteHandle to it.
-    /// The task will be stopped when the handle gets dropped.
+    /// Spawn the `Future` of a task in the runtime and return a
+    /// `RemoteHandle` to it. The task will be stopped when the handle
+    /// is dropped.
     fn spawn_with_handle(self) -> RemoteHandle<Self::Output>
     where
         Self: Send + Any + 'static,

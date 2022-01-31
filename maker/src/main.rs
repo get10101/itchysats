@@ -18,7 +18,6 @@ use daemon::seed::Seed;
 use daemon::supervisor;
 use daemon::wallet;
 use daemon::MakerActorSystem;
-use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
@@ -28,6 +27,7 @@ use shared_bin::logger::LevelFilter;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
+use tokio_tasks::Tasks;
 use xtra::Actor;
 
 mod routes;

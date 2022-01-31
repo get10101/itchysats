@@ -17,17 +17,15 @@ use bdk::bitcoin;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use connection::ConnectionStatus;
-use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use model::FundingRate;
 use model::TxFeeRate;
 use sqlx::SqlitePool;
-use std::future::Future;
 use std::net::SocketAddr;
 use std::time::Duration;
 use time::ext::NumericalDuration;
 use tokio::sync::watch;
-use tokio_ext::FutureExt;
+use tokio_tasks::Tasks;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
 use xtra::Address;
@@ -69,7 +67,6 @@ pub mod setup_maker;
 pub mod setup_taker;
 pub mod supervisor;
 pub mod taker_cfd;
-pub mod tokio_ext;
 mod transaction_ext;
 pub mod try_continue;
 pub mod wallet;
@@ -93,45 +90,6 @@ pub const N_PAYOUTS: usize = 200;
 /// - The sliding window of cached oracle announcements (maker, taker)
 /// - The auto-rollover time-window (taker)
 pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
-
-/// Struct controlling the lifetime of the async tasks,
-/// such as running actors and periodic notifications.
-/// If it gets dropped, all tasks are cancelled.
-#[derive(Default)]
-pub struct Tasks(Vec<RemoteHandle<()>>);
-
-impl Tasks {
-    /// Spawn the task on the runtime and remembers the handle
-    /// NOTE: Do *not* call spawn_with_handle() before calling `add`,
-    /// such calls  will trigger panic in debug mode.
-    pub fn add(&mut self, f: impl Future<Output = ()> + Send + 'static) {
-        let handle = f.spawn_with_handle();
-        self.0.push(handle);
-    }
-
-    /// Spawn a fallible task on the runtime and remembers the handle.
-    ///
-    /// The task will be stopped if this instance of [`Tasks`] goes out of scope.
-    /// If the task fails, the `err_handler` will be invoked.
-    pub fn add_fallible<E, EF>(
-        &mut self,
-        f: impl Future<Output = Result<(), E>> + Send + 'static,
-        err_handler: impl FnOnce(E) -> EF + Send + 'static,
-    ) where
-        E: Send + 'static,
-        EF: Future<Output = ()> + Send + 'static,
-    {
-        let fut = async move {
-            match f.await {
-                Ok(()) => {}
-                Err(err) => err_handler(err).await,
-            }
-        };
-
-        let handle = fut.spawn_with_handle();
-        self.0.push(handle);
-    }
-}
 
 pub struct MakerActorSystem<O, W> {
     pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,

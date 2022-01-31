@@ -20,7 +20,6 @@ use daemon::seed::Seed;
 use daemon::seed::UmbrelSeed;
 use daemon::wallet;
 use daemon::TakerActorSystem;
-use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
@@ -31,6 +30,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
+use tokio_tasks::Tasks;
 use xtra::Actor;
 
 mod routes;
