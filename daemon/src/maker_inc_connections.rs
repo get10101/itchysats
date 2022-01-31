@@ -127,6 +127,14 @@ impl Connection {
     }
 }
 
+impl Drop for Connection {
+    fn drop(&mut self) {
+        let taker_id = self.taker;
+
+        tracing::info!(%taker_id, "Connection got dropped");
+    }
+}
+
 impl Actor {
     pub fn new(
         taker_connected_channel: Box<dyn MessageChannel<TakerConnected>>,
@@ -153,7 +161,6 @@ impl Actor {
 
     async fn drop_taker_connection(&mut self, taker_id: &Identity) {
         if self.connections.remove(taker_id).is_some() {
-            tracing::info!(%taker_id, "Dropping connection");
             let _: Result<(), xtra::Disconnected> = self
                 .taker_disconnected_channel
                 .send_async_safe(maker_cfd::TakerDisconnected { id: *taker_id })
@@ -379,6 +386,8 @@ impl Actor {
                 _tasks: tasks,
             },
         );
+
+        tracing::info!(taker_id = %identity, "Connection is ready");
     }
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
