@@ -1660,7 +1660,7 @@ pub enum Completed<P, E> {
     },
 }
 
-impl<P: fmt::Debug, E: fmt::Debug> xtra::Message for Completed<P, E>
+impl<P, E> xtra::Message for Completed<P, E>
 where
     P: Send + 'static,
     E: Send + 'static,

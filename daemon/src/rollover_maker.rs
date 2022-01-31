@@ -34,21 +34,17 @@ use xtra_productivity::xtra_productivity;
 
 /// Upon accepting Rollover maker sends the current estimated transaction fee and
 /// funding rate
-#[derive(Debug)]
 pub struct AcceptRollover {
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
 }
 
-#[derive(Debug)]
 pub struct RejectRollover;
 
-#[derive(Debug)]
 pub struct ProtocolMsg(pub wire::RolloverMsg);
 
 /// Message sent from the spawned task to `rollover_taker::Actor` to
 /// notify that rollover has finished successfully.
-#[derive(Debug)]
 struct RolloverSucceeded {
     dlc: Dlc,
     funding_fee: FundingFee,
@@ -56,7 +52,6 @@ struct RolloverSucceeded {
 
 /// Message sent from the spawned task to `rollover_maker::Actor` to
 /// notify that rollover has failed.
-#[derive(Debug)]
 struct RolloverFailed {
     error: anyhow::Error,
 }

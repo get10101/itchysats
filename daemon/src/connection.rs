@@ -22,7 +22,6 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::Amount;
-use derivative::Derivative;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
@@ -158,19 +157,16 @@ pub struct Actor {
     rollover_actors: AddressMap<OrderId, rollover_taker::Actor>,
 }
 
-#[derive(Debug)]
 pub struct Connect {
     pub maker_identity: Identity,
     pub maker_addr: SocketAddr,
 }
 
-#[derive(Debug)]
 pub struct MakerStreamMessage {
     pub item: Result<wire::MakerToTaker>,
 }
 
 /// Private message to measure the current pulse (i.e. check when we received the last heartbeat).
-#[derive(Debug)]
 struct MeasurePulse;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -196,33 +192,24 @@ pub enum ConnectionCloseReason {
 /// `setup_taker::Actor` is included so that the `connection::Actor`
 /// knows where to forward the contract setup messages from the maker
 /// about this particular order.
-#[derive(Derivative)]
-#[derivative(Debug)]
 pub struct TakeOrder {
     pub order_id: OrderId,
     pub quantity: Usd,
-    #[derivative(Debug = "ignore")]
     pub address: xtra::Address<setup_taker::Actor>,
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
 pub struct ProposeSettlement {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
     pub taker: Amount,
     pub maker: Amount,
     pub price: Price,
-    #[derivative(Debug = "ignore")]
     pub address: xtra::Address<collab_settlement_taker::Actor>,
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
 pub struct ProposeRollover {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
-    #[derivative(Debug = "ignore")]
     pub address: xtra::Address<rollover_taker::Actor>,
 }
 

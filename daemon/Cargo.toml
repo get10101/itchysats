@@ -11,7 +11,6 @@ bdk = { version = "0.16", default-features = false, features = ["electrum"] }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "3.0.13", features = ["derive"] }
-derivative = "2"
 derive_more = { version = "0.99.17", default-features = false, features = ["display"] }
 futures = { version = "0.3", default-features = false }
 hex = "0.4"

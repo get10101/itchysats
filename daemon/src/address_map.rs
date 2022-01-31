@@ -2,7 +2,6 @@ use crate::xtra_ext::ActorName;
 use anyhow::Result;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::fmt;
 use std::hash::Hash;
 use xtra::Address;
 use xtra::Handler;
@@ -110,12 +109,6 @@ where
     A: 'static,
 {
     type Result = ();
-}
-
-impl<A> fmt::Debug for Stopping<A> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Stopping").finish()
-    }
 }
 
 #[derive(thiserror::Error, Debug)]

@@ -195,13 +195,11 @@ impl xtra::Actor for Actor {
 /// Message sent from the `connection::Actor` to the
 /// `setup_taker::Actor` to notify that the order taken was accepted
 /// by the maker.
-#[derive(Debug)]
 pub struct Accepted;
 
 /// Message sent from the `connection::Actor` to the
 /// `setup_taker::Actor` to notify that the order taken was rejected
 /// by the maker.
-#[derive(Debug)]
 pub struct Rejected {
     /// Used to indicate whether the rejection stems from the order ID
     /// not being recognised by the maker.
@@ -210,7 +208,6 @@ pub struct Rejected {
 
 /// Message sent from the spawned task to `setup_taker::Actor` to
 /// notify that the contract setup has finished successfully.
-#[derive(Debug)]
 struct SetupSucceeded {
     order_id: OrderId,
     dlc: Dlc,
@@ -218,7 +215,6 @@ struct SetupSucceeded {
 
 /// Message sent from the spawned task to `setup_taker::Actor` to
 /// notify that the contract setup has failed.
-#[derive(Debug)]
 struct SetupFailed {
     order_id: OrderId,
     error: anyhow::Error,

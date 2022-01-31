@@ -7,7 +7,6 @@ use std::fmt;
 use std::panic::AssertUnwindSafe;
 use xtra::Address;
 use xtra::Context;
-use xtra::Message;
 use xtra_productivity::xtra_productivity;
 
 /// A supervising actor reacts to messages from the actor it is supervising and restarts it based on
@@ -31,7 +30,7 @@ struct Metrics {
 impl<T, R> Actor<T, R>
 where
     T: xtra::Actor,
-    R: fmt::Display + fmt::Debug + 'static,
+    R: fmt::Display + 'static,
 {
     /// Construct a new supervisor.
     ///
@@ -82,18 +81,18 @@ where
 impl<T, R> xtra::Actor for Actor<T, R>
 where
     T: xtra::Actor,
-    R: fmt::Display + fmt::Debug + 'static,
+    R: fmt::Display + 'static,
 {
     async fn started(&mut self, ctx: &mut Context<Self>) {
         self.spawn_new(ctx);
     }
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl<T, R> Actor<T, R>
 where
     T: xtra::Actor,
-    R: fmt::Display + fmt::Debug + 'static,
+    R: fmt::Display + 'static,
 {
     pub fn handle(&mut self, msg: Stopped<R>, ctx: &mut Context<Self>) {
         let actor = T::name();
@@ -112,7 +111,7 @@ where
 impl<T, R> Actor<T, R>
 where
     T: xtra::Actor,
-    R: fmt::Display + fmt::Debug + 'static,
+    R: fmt::Display + 'static,
 {
     pub fn handle(&mut self, _: GetMetrics) -> Metrics {
         self.metrics
@@ -123,7 +122,7 @@ where
 impl<T, R> xtra::Handler<Panicked> for Actor<T, R>
 where
     T: xtra::Actor,
-    R: fmt::Display + fmt::Debug + 'static,
+    R: fmt::Display + 'static,
 {
     async fn handle(&mut self, msg: Panicked, ctx: &mut Context<Self>) {
         let actor = T::name();
@@ -143,17 +142,11 @@ where
 ///
 /// The given `reason` will be passed to the `restart_policy` configured in the supervisor. If it
 /// yields `true`, a new instance of the actor will be spawned.
-#[derive(Debug)]
 pub struct Stopped<R> {
     pub reason: R,
 }
 
-impl<R: fmt::Debug + Send + 'static> Message for Stopped<R> {
-    type Result = ();
-}
-
 /// Module private message to notify ourselves that an actor panicked.
-#[derive(Debug)]
 struct Panicked {
     pub error: Box<dyn Any + Send>,
 }
@@ -167,7 +160,6 @@ impl xtra::Message for Panicked {
 /// Currently private because it is a feature only used for testing. If we want to expose metrics
 /// about the supervisor, we should look into creating a [`tracing::Subscriber`] that processes the
 /// events we are emitting.
-#[derive(Debug)]
 struct GetMetrics;
 
 #[cfg(test)]
@@ -231,7 +223,6 @@ mod tests {
         supervisor: Address<Actor<Self, String>>,
     }
 
-    #[derive(Debug)]
     struct Shutdown;
 
     #[async_trait]
@@ -257,7 +248,6 @@ mod tests {
         _supervisor: Address<Actor<Self, String>>,
     }
 
-    #[derive(Debug)]
     struct Panic;
 
     impl xtra::Actor for PanickingActor {}
