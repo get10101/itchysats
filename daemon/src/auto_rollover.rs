@@ -115,8 +115,11 @@ where
         for id in cfd_ids {
             try_continue!(async {
                 let cfd = load_cfd(id, &mut conn).await?;
-                if let Ok(()) = cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
-                    this.send_async_safe(Rollover(id)).await?;
+                match cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
+                    Ok(()) => this.send_async_safe(Rollover(id)).await?,
+                    Err(reason) => {
+                        tracing::trace!(order_id = %id, %reason, "CFD is not eligible for auto-rollover");
+                    }
                 }
                 anyhow::Ok(())
             }
