@@ -112,12 +112,6 @@ pub enum TakerToMaker {
     },
 }
 
-impl fmt::Debug for TakerToMaker {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self}")
-    }
-}
-
 impl fmt::Display for TakerToMaker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -161,12 +155,6 @@ pub enum MakerToTaker {
         order_id: OrderId,
         msg: maker_to_taker::Settlement,
     },
-}
-
-impl fmt::Debug for MakerToTaker {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self}")
-    }
 }
 
 pub mod maker_to_taker {
@@ -322,12 +310,6 @@ impl fmt::Display for SetupMsg {
     }
 }
 
-impl fmt::Debug for SetupMsg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self}")
-    }
-}
-
 impl SetupMsg {
     pub fn try_into_msg0(self) -> Result<Msg0> {
         if let Self::Msg0(v) = self {
@@ -479,12 +461,6 @@ impl fmt::Display for RolloverMsg {
             RolloverMsg::Msg2(_) => write!(f, "Msg2"),
             RolloverMsg::Msg3(_) => write!(f, "Msg3"),
         }
-    }
-}
-
-impl fmt::Debug for RolloverMsg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self}")
     }
 }
 

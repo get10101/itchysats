@@ -22,7 +22,6 @@ pub struct Actor {
     monitor_attestation: Box<dyn MessageChannel<oracle::MonitorAttestation>>,
 }
 
-#[derive(Debug)]
 pub struct Event(cfd::Event);
 
 impl Event {

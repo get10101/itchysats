@@ -198,7 +198,6 @@ impl xtra::Actor for Actor {
     }
 }
 
-#[derive(Debug)]
 pub struct BuildPartyParams {
     pub amount: Amount,
     pub identity_pk: PublicKey,
@@ -206,15 +205,12 @@ pub struct BuildPartyParams {
 }
 
 /// Private message to trigger a sync.
-#[derive(Debug)]
 struct Sync;
 
-#[derive(Debug)]
 pub struct Sign {
     pub psbt: PartiallySignedTransaction,
 }
 
-#[derive(Debug)]
 pub struct Withdraw {
     pub amount: Option<Amount>,
     pub fee: Option<FeeRate>,

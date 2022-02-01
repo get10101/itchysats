@@ -43,13 +43,11 @@ use xtra_productivity::xtra_productivity;
 
 const FINALITY_CONFIRMATIONS: u32 = 1;
 
-#[derive(Debug)]
 pub struct StartMonitoring {
     pub id: OrderId,
     pub params: MonitorParams,
 }
 
-#[derive(Debug)]
 pub struct CollaborativeSettlement {
     pub order_id: OrderId,
     pub tx: (Txid, Script),
@@ -57,7 +55,7 @@ pub struct CollaborativeSettlement {
 
 // TODO: The design of this struct causes a lot of marshalling und unmarshelling that is quite
 // unnecessary. Should be taken apart so we can handle all cases individually!
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MonitorParams {
     lock: (Txid, Descriptor<PublicKey>),
     commit: (Txid, Descriptor<PublicKey>),
@@ -67,13 +65,11 @@ pub struct MonitorParams {
     event_id: BitMexPriceEventId,
 }
 
-#[derive(Debug)]
 pub struct TryBroadcastTransaction {
     pub tx: Transaction,
     pub kind: TransactionKind,
 }
 
-#[derive(Debug)]
 pub enum TransactionKind {
     Lock,
     Commit,
@@ -131,7 +127,6 @@ struct RpcError {
     message: String,
 }
 
-#[derive(Debug)]
 pub struct Sync;
 
 // TODO: Send messages to the projection actor upon finality events so we send out updates.
@@ -739,7 +734,7 @@ impl MonitorParams {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct Cet {
     txid: Txid,
     script: Script,
@@ -1018,7 +1013,6 @@ where
 }
 
 // TODO: Re-model this by tearing apart `MonitorParams`.
-#[derive(Debug)]
 struct ReinitMonitoring {
     id: OrderId,
 
