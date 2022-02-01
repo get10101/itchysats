@@ -23,6 +23,7 @@ use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
+use rocket::fairing::AdHoc;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -208,7 +209,8 @@ async fn main() -> Result<()> {
 
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
-        .merge(("port", opts.http_address.port()));
+        .merge(("port", opts.http_address.port()))
+        .merge(("cli_colors", false));
 
     let p2p_port = opts.p2p_port;
     let p2p_socket = format!("0.0.0.0:{p2p_port}").parse::<SocketAddr>().unwrap();
@@ -274,6 +276,17 @@ async fn main() -> Result<()> {
             rocket::routes![routes_maker::dist, routes_maker::index],
         )
         .register("/", rocket::catchers![auth::unauthorized])
+        .attach(AdHoc::on_liftoff("Log launch", |rocket| {
+            Box::pin(async move {
+                let http_endpoint = format!(
+                    "http://{}:{}",
+                    rocket.config().address,
+                    rocket.config().port
+                );
+
+                tracing::info!(endpoint = %http_endpoint, "HTTP interface is ready");
+            })
+        }))
         .launch()
         .await?;
 
