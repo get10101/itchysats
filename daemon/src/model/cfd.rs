@@ -33,6 +33,7 @@ use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
+use cached::proc_macro::cached;
 use maia::finalize_spend_transaction;
 use maia::secp256k1_zkp;
 use maia::secp256k1_zkp::EcdsaAdaptorSignature;
@@ -55,6 +56,9 @@ use uuid::adapter::Hyphenated;
 use uuid::Uuid;
 
 pub const CET_TIMELOCK: u32 = 12;
+
+const CONTRACT_SETUP_COMPLETED_EVENT: &str = "ContractSetupCompleted";
+const ROLLOVER_COMPLETED_EVENT: &str = "RolloverCompleted";
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
@@ -374,17 +378,33 @@ impl CfdEvent {
     }
 
     pub fn from_json(name: String, data: String) -> Result<Self> {
-        use serde_json::json;
-
-        let data = serde_json::from_str::<serde_json::Value>(&data)?;
-
-        let event = serde_json::from_value::<Self>(json!({
-            "name": name,
-            "data": data
-        }))?;
-
-        Ok(event)
+        match name.as_str() {
+            CONTRACT_SETUP_COMPLETED_EVENT | ROLLOVER_COMPLETED_EVENT => {
+                from_json_inner_cached(name, data)
+            }
+            _ => from_json_inner(name, data),
+        }
     }
+}
+
+// Deserialisation of events has been proved to use substantial amount of the CPU.
+// Cache the events.
+#[cached(size = 500, result = true)]
+fn from_json_inner_cached(name: String, data: String) -> Result<CfdEvent> {
+    from_json_inner(name, data)
+}
+
+fn from_json_inner(name: String, data: String) -> Result<CfdEvent> {
+    use serde_json::json;
+
+    let data = serde_json::from_str::<serde_json::Value>(&data)?;
+
+    let event = serde_json::from_value::<CfdEvent>(json!({
+        "name": name,
+        "data": data
+    }))?;
+
+    Ok(event)
 }
 
 /// Models the cfd state of the taker
@@ -2121,6 +2141,23 @@ mod tests {
         let event = CfdEvent::from_json(name, data).unwrap();
 
         assert_eq!(event, CfdEvent::ContractSetupFailed);
+    }
+
+    #[test]
+    fn cfd_ensure_stable_names_for_expensive_events() {
+        let (rollover_event_name, _) = CfdEvent::RolloverCompleted {
+            dlc: Dlc::dummy(None),
+            funding_fee: FundingFee::new(Amount::ZERO, FundingRate::default()),
+        }
+        .to_json();
+
+        let (setup_event_name, _) = CfdEvent::ContractSetupCompleted {
+            dlc: Dlc::dummy(None),
+        }
+        .to_json();
+
+        assert_eq!(setup_event_name, CONTRACT_SETUP_COMPLETED_EVENT.to_owned());
+        assert_eq!(rollover_event_name, ROLLOVER_COMPLETED_EVENT.to_owned());
     }
 
     #[test]
