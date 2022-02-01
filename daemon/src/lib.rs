@@ -319,7 +319,7 @@ where
             + 'static,
         n_payouts: usize,
         maker_heartbeat_interval: Duration,
-        connect_timeout: Duration,
+        socket_timeout: Duration,
         projection_actor: Address<projection::Actor>,
         maker_identity: Identity,
     ) -> Result<Self>
@@ -390,7 +390,7 @@ where
             &cfd_actor_addr,
             identity_sk,
             taker_heartbeat_timeout,
-            connect_timeout,
+            socket_timeout,
         )));
 
         tasks.add(monitor_ctx.run(monitor_constructor(Box::new(cfd_actor_addr.clone()))?));

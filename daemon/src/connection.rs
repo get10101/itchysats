@@ -150,7 +150,7 @@ pub struct Actor {
     /// Max duration since the last heartbeat until we die.
     heartbeat_timeout: Duration,
     /// TCP connection timeout
-    connect_timeout: Duration,
+    socket_timeout: Duration,
     state: State,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
@@ -219,7 +219,7 @@ impl Actor {
         current_order: &(impl MessageChannel<CurrentOrder> + 'static),
         identity_sk: x25519_dalek::StaticSecret,
         maker_heartbeat_interval: Duration,
-        connect_timeout: Duration,
+        socket_timeout: Duration,
     ) -> Self {
         Self {
             status_sender,
@@ -232,7 +232,7 @@ impl Actor {
                 .expect("to not overflow"),
             state: State::Disconnected,
             setup_actors: AddressMap::default(),
-            connect_timeout,
+            socket_timeout,
             collab_settlement_actors: AddressMap::default(),
             rollover_actors: AddressMap::default(),
         }
@@ -335,10 +335,10 @@ impl Actor {
 
         let (mut write, mut read) = {
             let mut connection = TcpStream::connect(&maker_addr)
-                .timeout(self.connect_timeout)
+                .timeout(self.socket_timeout)
                 .await
                 .with_context(|| {
-                    let seconds = self.connect_timeout.as_secs();
+                    let seconds = self.socket_timeout.as_secs();
 
                     format!("Connection attempt to {maker_addr} timed out after {seconds}s",)
                 })?
@@ -358,7 +358,7 @@ impl Actor {
 
         match read
             .try_next()
-            .timeout(Duration::from_secs(10))
+            .timeout(self.socket_timeout)
             .await
             .with_context(|| {
                 format!(
