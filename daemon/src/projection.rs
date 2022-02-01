@@ -142,7 +142,8 @@ async fn load_and_hydrate_cfds(
 
         let cfd = events
             .into_iter()
-            .fold(Cfd::new(cfd, quote), |cfd, event| cfd.apply(event, network));
+            .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, network))
+            .with_current_quote(quote);
 
         cfds.push(cfd);
     }
@@ -294,7 +295,6 @@ impl Cfd {
             initial_funding_rate,
             ..
         }: db::Cfd,
-        latest_quote: Option<bitmex_price_feed::Quote>,
     ) -> Self {
         let long_margin = calculate_long_margin(initial_price, quantity_usd, leverage);
         let short_margin = calculate_short_margin(initial_price, quantity_usd);
@@ -304,12 +304,6 @@ impl Cfd {
             Position::Short => (short_margin, long_margin),
         };
         let liquidation_price = calculate_long_liquidation_price(leverage, initial_price);
-
-        let latest_price = match (latest_quote, role) {
-            (None, _) => None,
-            (Some(quote), Role::Maker) => Some(quote.for_maker()),
-            (Some(quote), Role::Taker) => Some(quote.for_taker()),
-        };
 
         let initial_funding_fee = calculate_funding_fee(
             initial_price,
@@ -323,22 +317,6 @@ impl Cfd {
         let fee_account = FeeAccount::new(position, role)
             .add_opening_fee(opening_fee)
             .add_funding_fee(initial_funding_fee);
-
-        let (profit_btc_latest_price, profit_percent_latest_price, payout) = latest_price.and_then(|latest_price| {
-            match calculate_profit_at_price(initial_price, latest_price, quantity_usd, leverage, fee_account) {
-                Ok(profit) => Some(profit),
-                Err(e) => {
-                    tracing::warn!("Failed to calculate profit/loss {:#}", e);
-
-                    None
-                }
-            }
-        }).map(|(in_btc, in_percent, payout)| (Some(in_btc), Some(in_percent.round_dp(1).to_string()), Some(payout)))
-            .unwrap_or_else(|| {
-                tracing::debug!(order_id = %id, "Unable to calculate profit/loss without current price");
-
-                (None, None, None)
-            });
 
         let initial_actions = if role == Role::Maker {
             HashSet::from([CfdAction::AcceptOrder, CfdAction::RejectOrder])
@@ -359,10 +337,9 @@ impl Cfd {
             margin_counterparty,
             role,
 
-            // By default, we assume profit should be based on the latest price!
-            profit_btc: profit_btc_latest_price,
-            profit_percent: profit_percent_latest_price,
-            payout,
+            profit_btc: None,
+            profit_percent: None,
+            payout: None,
 
             state: CfdState::PendingSetup,
             actions: initial_actions,
@@ -505,25 +482,6 @@ impl Cfd {
 
         self.actions = self.derive_actions();
 
-        // If we don't have a dedicated closing price, keep the one that is set (which is
-        // based on current price).
-        if let Some(payout) = self.aggregated.clone().payout(self.role) {
-            let payout = payout
-                .to_signed()
-                .expect("Amount to fit into signed amount");
-
-            let (profit_btc, profit_percent) = calculate_profit(
-                payout,
-                self.margin
-                    .to_signed()
-                    .expect("Amount to fit into signed amount"),
-            );
-
-            self.payout = Some(payout);
-            self.profit_btc = Some(profit_btc);
-            self.profit_percent = Some(profit_percent.to_string());
-        }
-
         if let Some(lock_tx_url) = self.lock_tx_url(network) {
             self.details.tx_url_list.insert(lock_tx_url);
         }
@@ -541,6 +499,59 @@ impl Cfd {
         }
 
         self
+    }
+
+    fn with_current_quote(self, latest_quote: Option<bitmex_price_feed::Quote>) -> Self {
+        // If we have a dedicated closing price, use that one.
+        if let Some(payout) = self.aggregated.clone().payout(self.role) {
+            let payout = payout
+                .to_signed()
+                .expect("Amount to fit into signed amount");
+
+            let (profit_btc, profit_percent) = calculate_profit(
+                payout,
+                self.margin
+                    .to_signed()
+                    .expect("Amount to fit into signed amount"),
+            );
+
+            return Self {
+                payout: Some(payout),
+                profit_btc: Some(profit_btc),
+                profit_percent: Some(profit_percent.to_string()),
+                ..self
+            };
+        }
+
+        // Otherwise, compute based on current quote.
+        let latest_price = match (latest_quote, self.role) {
+            (None, _) => None,
+            (Some(quote), Role::Maker) => Some(quote.for_maker()),
+            (Some(quote), Role::Taker) => Some(quote.for_taker()),
+        };
+
+        let (profit_btc_latest_price, profit_percent_latest_price, payout) = latest_price.and_then(|latest_price| {
+            match calculate_profit_at_price(self.initial_price, latest_price, self.quantity_usd, self.leverage, self.aggregated.fee_account) {
+                Ok(profit) => Some(profit),
+                Err(e) => {
+                    tracing::warn!("Failed to calculate profit/loss {:#}", e);
+
+                    None
+                }
+            }
+        }).map(|(in_btc, in_percent, payout)| (Some(in_btc), Some(in_percent.round_dp(1).to_string()), Some(payout)))
+            .unwrap_or_else(|| {
+                tracing::debug!(order_id = %self.order_id, "Unable to calculate profit/loss without current price");
+
+                (None, None, None)
+            });
+
+        Self {
+            payout,
+            profit_btc: profit_btc_latest_price,
+            profit_percent: profit_percent_latest_price,
+            ..self
+        }
     }
 
     fn derive_actions(&self) -> HashSet<CfdAction> {
