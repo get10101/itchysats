@@ -70,6 +70,7 @@ pub mod supervisor;
 pub mod taker_cfd;
 pub mod to_sse_event;
 pub mod tokio_ext;
+mod transaction_ext;
 pub mod try_continue;
 pub mod wallet;
 pub mod wire;

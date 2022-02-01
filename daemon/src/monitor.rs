@@ -17,6 +17,7 @@ use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use bdk::bitcoin::Address;
 use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Script;
 use bdk::bitcoin::Txid;
@@ -722,7 +723,7 @@ impl MonitorParams {
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
             commit: (dlc.commit.0.txid(), dlc.commit.2),
-            cets: map_cets(dlc.cets),
+            cets: map_cets(dlc.cets, &dlc.maker_address),
             refund: (dlc.refund.0.txid(), script_pubkey, dlc.refund_timelock),
             revoked_commits: dlc
                 .revoked_commit
@@ -741,24 +742,21 @@ struct Cet {
     range: RangeInclusive<u64>,
 }
 
-impl From<model::cfd::Cet> for Cet {
-    fn from(cet: model::cfd::Cet) -> Self {
-        Cet {
-            txid: cet.tx.txid(),
-            script: cet.tx.output[0].script_pubkey.clone(),
-            range: cet.range.clone(),
-        }
-    }
-}
-
 fn map_cets(
     cets: HashMap<BitMexPriceEventId, Vec<model::cfd::Cet>>,
+    maker_address: &Address,
 ) -> HashMap<BitMexPriceEventId, Vec<Cet>> {
     cets.into_iter()
         .map(|(event_id, cets)| {
             (
                 event_id,
-                cets.into_iter().map(Cet::from).collect::<Vec<_>>(),
+                cets.into_iter()
+                    .map(|cet| Cet {
+                        txid: cet.txid,
+                        script: maker_address.script_pubkey(),
+                        range: cet.range,
+                    })
+                    .collect::<Vec<_>>(),
             )
         })
         .collect()
