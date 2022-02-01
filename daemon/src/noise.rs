@@ -4,16 +4,18 @@ use anyhow::Result;
 use snow::Builder;
 use snow::TransportState;
 use std::io;
+use std::pin::Pin;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+use tokio_io_timeout::TimeoutStream;
 
 pub static NOISE_MAX_MSG_LEN: u32 = 65535;
 pub static NOISE_TAG_LEN: u32 = 16;
 static NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
 pub async fn initiator_handshake(
-    connection: &mut TcpStream,
+    connection: &mut Pin<Box<TimeoutStream<TcpStream>>>,
     local_priv_key: &x25519_dalek::StaticSecret,
     remote_pub_key: &x25519_dalek::PublicKey,
 ) -> Result<TransportState> {
@@ -39,7 +41,7 @@ pub async fn initiator_handshake(
 }
 
 pub async fn responder_handshake(
-    connection: &mut TcpStream,
+    connection: &mut Pin<Box<TimeoutStream<TcpStream>>>,
     local_priv_key: &x25519_dalek::StaticSecret,
 ) -> Result<TransportState> {
     let builder: Builder<'_> = Builder::new(NOISE_PARAMS.parse()?);
@@ -63,7 +65,7 @@ pub async fn responder_handshake(
 }
 
 /// Hyper-basic stream transport receiver. 16-bit BE size followed by payload.
-async fn recv(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
+async fn recv(stream: &mut Pin<Box<TimeoutStream<TcpStream>>>) -> io::Result<Vec<u8>> {
     let mut msg_len_buf = [0u8; 2];
     stream.read_exact(&mut msg_len_buf).await?;
     let msg_len = ((msg_len_buf[0] as usize) << 8) + (msg_len_buf[1] as usize);
@@ -73,7 +75,7 @@ async fn recv(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
 }
 
 /// Hyper-basic stream transport sender. 16-bit BE size followed by payload.
-async fn send(stream: &mut TcpStream, buf: &[u8]) -> Result<()> {
+async fn send(stream: &mut Pin<Box<TimeoutStream<TcpStream>>>, buf: &[u8]) -> Result<()> {
     let msg_len_buf = [(buf.len() >> 8) as u8, (buf.len() & 0xff) as u8];
     stream.write_all(&msg_len_buf).await?;
     stream.write_all(buf).await?;

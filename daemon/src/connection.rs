@@ -27,6 +27,7 @@ use std::time::SystemTime;
 use time::OffsetDateTime;
 use tokio::net::TcpStream;
 use tokio::sync::watch;
+use tokio_io_timeout::TimeoutStream;
 use tokio_util::codec::Framed;
 use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
@@ -334,7 +335,7 @@ impl Actor {
         tracing::debug!(address = %maker_addr, "Connecting to maker");
 
         let (mut write, mut read) = {
-            let mut connection = TcpStream::connect(&maker_addr)
+            let connection = TcpStream::connect(&maker_addr)
                 .timeout(self.socket_timeout)
                 .await
                 .with_context(|| {
@@ -343,6 +344,13 @@ impl Actor {
                     format!("Connection attempt to {maker_addr} timed out after {seconds}s",)
                 })?
                 .with_context(|| format!("Failed to connect to {maker_addr}"))?;
+
+            let mut connection = TimeoutStream::new(connection);
+            connection.set_read_timeout(Some(self.socket_timeout));
+            connection.set_write_timeout(Some(self.socket_timeout));
+
+            let mut connection = Box::pin(connection);
+
             let noise = noise::initiator_handshake(
                 &mut connection,
                 &self.identity_sk,
@@ -358,14 +366,9 @@ impl Actor {
 
         match read
             .try_next()
-            .timeout(self.socket_timeout)
             .await
-            .with_context(|| {
-                format!(
-                    "Maker {maker_identity} did not send Hello within 10 seconds, dropping connection"
-                )
-            })?
-            .with_context(|| format!("Failed to read first message from maker {maker_identity}"))? {
+            .with_context(|| format!("Failed to read first message from maker {maker_identity}"))?
+        {
             Some(wire::MakerToTaker::Hello(maker_version)) => {
                 if our_version != maker_version {
                     self.status_sender
@@ -383,14 +386,10 @@ impl Actor {
                 }
             }
             Some(unexpected_message) => {
-                bail!(
-                    "Unexpected message {unexpected_message} from maker {maker_identity}"
-                )
+                bail!("Unexpected message {unexpected_message} from maker {maker_identity}")
             }
             None => {
-                bail!(
-                    "Connection to maker {maker_identity} closed before receiving first message"
-                )
+                bail!("Connection to maker {maker_identity} closed before receiving first message")
             }
         }
 

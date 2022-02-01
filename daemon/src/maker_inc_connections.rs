@@ -1,5 +1,4 @@
 use crate::collab_settlement_maker;
-use crate::future_ext::FutureExt;
 use crate::maker_cfd;
 use crate::maker_cfd::FromTaker;
 use crate::maker_cfd::TakerConnected;
@@ -30,6 +29,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio_io_timeout::TimeoutStream;
 use tokio_util::codec::Framed;
 use xtra::prelude::*;
 use xtra_productivity::xtra_productivity;
@@ -466,18 +466,22 @@ impl Actor {
 ///
 /// Both IO operations, upgrading to noise and checking the version are gated by a timeout.
 async fn upgrade(
-    mut stream: TcpStream,
+    stream: TcpStream,
     noise_priv_key: x25519_dalek::StaticSecret,
     this: xtra::Address<Actor>,
 ) -> Result<()> {
+    let socket_timeout = Duration::from_secs(10);
     let taker_address = stream.peer_addr().context("Failed to get peer address")?;
+
+    let mut stream = TimeoutStream::new(stream);
+    stream.set_read_timeout(Some(socket_timeout));
+    stream.set_write_timeout(Some(socket_timeout));
+
+    let mut stream = Box::pin(stream);
 
     tracing::info!(%taker_address, "Upgrade new connection");
 
-    let transport_state = noise::responder_handshake(&mut stream, &noise_priv_key)
-        .timeout(Duration::from_secs(20))
-        .await
-        .context("Failed to complete noise handshake within 20 seconds")??;
+    let transport_state = noise::responder_handshake(&mut stream, &noise_priv_key).await?;
     let taker_id = Identity::new(transport_state.get_remote_public_key()?);
 
     let (mut write, mut read) =
@@ -485,9 +489,7 @@ async fn upgrade(
 
     let first_message = read
         .try_next()
-        .timeout(Duration::from_secs(10))
         .await
-        .context("No message from taker within 10 seconds")?
         .context("Failed to read first message on stream")?
         .context("Stream closed before first message")?;
 

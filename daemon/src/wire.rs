@@ -31,14 +31,18 @@ use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
+use std::pin::Pin;
 use tokio::net::TcpStream;
+use tokio_io_timeout::TimeoutStream;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 use tokio_util::codec::Framed;
 use tokio_util::codec::LengthDelimitedCodec;
 
-pub type Read<D, E> = SplitStream<Framed<TcpStream, EncryptedJsonCodec<D, E>>>;
-pub type Write<D, E> = SplitSink<Framed<TcpStream, EncryptedJsonCodec<D, E>>, E>;
+pub type Read<D, E> =
+    SplitStream<Framed<Pin<Box<TimeoutStream<TcpStream>>>, EncryptedJsonCodec<D, E>>>;
+pub type Write<D, E> =
+    SplitSink<Framed<Pin<Box<TimeoutStream<TcpStream>>>, EncryptedJsonCodec<D, E>>, E>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, PartialOrd)]
 pub struct Version(semver::Version);
