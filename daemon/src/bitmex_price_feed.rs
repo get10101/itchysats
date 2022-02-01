@@ -1,6 +1,5 @@
 use crate::model::Price;
 use crate::model::Timestamp;
-use crate::supervisor;
 use crate::Tasks;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -13,6 +12,7 @@ use time::OffsetDateTime;
 use tokio_tungstenite::tungstenite;
 use xtra::Disconnected;
 use xtra_productivity::xtra_productivity;
+use xtras::supervisor;
 
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
 

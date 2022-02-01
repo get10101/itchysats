@@ -29,6 +29,7 @@ use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
 use xtra::Address;
 use xtras::address_map::Stopping;
+use xtras::supervisor;
 
 pub use bdk;
 pub use maia;
@@ -64,7 +65,6 @@ pub mod seed;
 pub mod setup_contract;
 pub mod setup_maker;
 pub mod setup_taker;
-pub mod supervisor;
 pub mod taker_cfd;
 mod transaction_ext;
 pub mod try_continue;

@@ -1580,6 +1580,7 @@ dependencies = [
  "uuid",
  "vergen",
  "xtra",
+ "xtras",
 ]
 
 [[package]]
@@ -4292,11 +4293,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "futures",
  "regex",
  "thiserror",
  "tokio",
+ "tokio-tasks",
  "tracing",
+ "tracing-subscriber",
  "xtra",
+ "xtra_productivity",
 ]
 
 [[package]]

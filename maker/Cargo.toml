@@ -22,6 +22,7 @@ tokio-tasks = { path = "../tokio-tasks" }
 tracing = { version = "0.1" }
 uuid = "0.8"
 xtra = { version = "0.6" }
+xtras = { path = "../xtras" }
 
 [build-dependencies]
 vergen = "6"

@@ -3,6 +3,7 @@ pub mod address_map;
 mod log_failure;
 mod send_async_safe;
 mod send_interval;
+pub mod supervisor;
 
 pub use actor_name::ActorName;
 pub use address_map::AddressMap;

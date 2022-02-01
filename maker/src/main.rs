@@ -15,7 +15,6 @@ use daemon::oracle;
 use daemon::projection;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
-use daemon::supervisor;
 use daemon::wallet;
 use daemon::MakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
@@ -29,6 +28,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use tokio_tasks::Tasks;
 use xtra::Actor;
+use xtras::supervisor;
 
 mod routes;
 
