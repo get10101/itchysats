@@ -9,6 +9,7 @@ async-trait = "0.1.52"
 atty = "0.2"
 bdk = { version = "0.16", default-features = false, features = ["electrum"] }
 bytes = "1"
+cached = { version = "0.30.0", default-features = false, features = ["proc_macro"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "3.0.13", features = ["derive"] }
 derivative = "2"
