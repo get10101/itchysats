@@ -156,11 +156,9 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                     <Tbody>
                         <Tr>
                             <Td><Text as={"b"}>Estimated fees</Text></Td>
-                            <Tooltip label={"includes funding and transaction fees"} placement={"right"}>
-                                <Td textAlign="right">
-                                    <BitcoinAmount btc={cfd.accumulated_fees} />
-                                </Td>
-                            </Tooltip>
+                            <Td textAlign="right">
+                                <BitcoinAmount btc={cfd.accumulated_fees} />
+                            </Td>
                         </Tr>
                     </Tbody>
                 </Table>
