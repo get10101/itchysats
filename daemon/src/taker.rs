@@ -290,7 +290,7 @@ async fn main() -> Result<()> {
         possible_addresses,
     ));
 
-    let rocket = rocket::custom(figment)
+    rocket::custom(figment)
         .manage(projection_feeds)
         .manage(wallet_feed_receiver)
         .manage(bitcoin_network)
@@ -312,10 +312,9 @@ async fn main() -> Result<()> {
             "/",
             rocket::routes![routes_taker::dist, routes_taker::index],
         )
-        .register("/", rocket::catchers![auth::unauthorized]);
-
-    let rocket = rocket.ignite().await?;
-    rocket.launch().await?;
+        .register("/", rocket::catchers![auth::unauthorized])
+        .launch()
+        .await?;
 
     db.close().await;
 
