@@ -26,6 +26,7 @@ use daemon::Tasks;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
+use rocket::fairing::AdHoc;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -245,7 +246,8 @@ async fn main() -> Result<()> {
 
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
-        .merge(("port", opts.http_address.port()));
+        .merge(("port", opts.http_address.port()))
+        .merge(("cli_colors", false));
 
     let db = db::connect(data_dir.join("taker.sqlite")).await?;
 
@@ -290,7 +292,7 @@ async fn main() -> Result<()> {
         possible_addresses,
     ));
 
-    let rocket = rocket::custom(figment)
+    rocket::custom(figment)
         .manage(projection_feeds)
         .manage(wallet_feed_receiver)
         .manage(bitcoin_network)
@@ -312,10 +314,20 @@ async fn main() -> Result<()> {
             "/",
             rocket::routes![routes_taker::dist, routes_taker::index],
         )
-        .register("/", rocket::catchers![auth::unauthorized]);
+        .register("/", rocket::catchers![auth::unauthorized])
+        .attach(AdHoc::on_liftoff("Log launch", |rocket| {
+            Box::pin(async move {
+                let http_endpoint = format!(
+                    "http://{}:{}",
+                    rocket.config().address,
+                    rocket.config().port
+                );
 
-    let rocket = rocket.ignite().await?;
-    rocket.launch().await?;
+                tracing::info!(endpoint = %http_endpoint, "HTTP interface is ready");
+            })
+        }))
+        .launch()
+        .await?;
 
     db.close().await;
 
