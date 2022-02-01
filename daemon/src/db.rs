@@ -151,6 +151,8 @@ pub async fn append_event(
 
     let (event_name, event_data) = event.event.to_json();
 
+    tracing::trace!(event = %event_name, order_id = %event.id, "Appending event to database");
+
     let query_result = sqlx::query(
         r##"
         insert into events (
