@@ -139,11 +139,10 @@ async fn load_and_hydrate_cfds(
 
     for id in ids {
         let (cfd, events) = db::load_cfd(id, conn).await?;
-        let role = cfd.role;
 
-        let cfd = events.into_iter().fold(Cfd::new(cfd, quote), |cfd, event| {
-            cfd.apply(event, network, role)
-        });
+        let cfd = events
+            .into_iter()
+            .fold(Cfd::new(cfd, quote), |cfd, event| cfd.apply(event, network));
 
         cfds.push(cfd);
     }
@@ -377,7 +376,7 @@ impl Cfd {
         }
     }
 
-    fn apply(mut self, event: Event, network: Network, role: Role) -> Self {
+    fn apply(mut self, event: Event, network: Network) -> Self {
         // First, try to set state based on event.
         use CfdEvent::*;
         match event.event {
@@ -409,7 +408,7 @@ impl Cfd {
             RolloverFailed => {
                 self.state = CfdState::Open;
             }
-            CollaborativeSettlementStarted { proposal } => match role {
+            CollaborativeSettlementStarted { proposal } => match self.role {
                 Role::Maker => {
                     self.pending_settlement_proposal_price = Some(proposal.price);
 
@@ -491,7 +490,7 @@ impl Cfd {
                 tracing::error!(order_id = %self.order_id, "Revoked logic not implemented");
                 self.state = CfdState::OpenCommitted;
             }
-            RolloverStarted { .. } => match role {
+            RolloverStarted { .. } => match self.role {
                 Role::Maker => {
                     self.state = CfdState::IncomingRolloverProposal;
                 }
@@ -504,11 +503,11 @@ impl Cfd {
             }
         };
 
-        self.actions = self.derive_actions(role);
+        self.actions = self.derive_actions();
 
         // If we don't have a dedicated closing price, keep the one that is set (which is
         // based on current price).
-        if let Some(payout) = self.aggregated.clone().payout(role) {
+        if let Some(payout) = self.aggregated.clone().payout(self.role) {
             let payout = payout
                 .to_signed()
                 .expect("Amount to fit into signed amount");
@@ -534,18 +533,18 @@ impl Cfd {
         if let Some(collab_settlement_tx_url) = self.collab_settlement_tx_url(network) {
             self.details.tx_url_list.insert(collab_settlement_tx_url);
         }
-        if let Some(refund_tx_url) = self.refund_tx_url(network, role) {
+        if let Some(refund_tx_url) = self.refund_tx_url(network) {
             self.details.tx_url_list.insert(refund_tx_url);
         }
-        if let Some(cet_url) = self.cet_url(network, role) {
+        if let Some(cet_url) = self.cet_url(network) {
             self.details.tx_url_list.insert(cet_url);
         }
 
         self
     }
 
-    fn derive_actions(&self, role: Role) -> HashSet<CfdAction> {
-        match (self.state, role) {
+    fn derive_actions(&self) -> HashSet<CfdAction> {
+        match (self.state, self.role) {
             (CfdState::PendingSetup, Role::Maker) => {
                 HashSet::from([CfdAction::AcceptOrder, CfdAction::RejectOrder])
             }
@@ -608,7 +607,7 @@ impl Cfd {
         Some(url)
     }
 
-    fn refund_tx_url(&self, network: Network, role: Role) -> Option<TxUrl> {
+    fn refund_tx_url(&self, network: Network) -> Option<TxUrl> {
         if !self.aggregated.refund_published {
             return None;
         }
@@ -617,7 +616,7 @@ impl Cfd {
 
         let url = TxUrl::from_transaction(
             &dlc.refund.0,
-            &dlc.script_pubkey_for(role),
+            &dlc.script_pubkey_for(self.role),
             network,
             TxLabel::Refund,
         );
@@ -625,11 +624,12 @@ impl Cfd {
         Some(url)
     }
 
-    fn cet_url(&self, network: Network, role: Role) -> Option<TxUrl> {
+    fn cet_url(&self, network: Network) -> Option<TxUrl> {
         let tx = self.aggregated.cet.as_ref()?;
         let dlc = self.aggregated.latest_dlc.as_ref()?;
 
-        let url = TxUrl::from_transaction(tx, &dlc.script_pubkey_for(role), network, TxLabel::Cet);
+        let url =
+            TxUrl::from_transaction(tx, &dlc.script_pubkey_for(self.role), network, TxLabel::Cet);
 
         Some(url)
     }
