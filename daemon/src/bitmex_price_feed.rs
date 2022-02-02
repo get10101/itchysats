@@ -67,6 +67,7 @@ impl xtra::Actor for Actor {
 
                                     match quote {
                                         Some(quote) => {
+                                            tracing::debug!("Received new quote: {:?}", quote);
                                             let is_our_address_disconnected = this.send(NewQuoteReceived(quote)).await.is_err();
 
                                             // Our task should already be dead and the actor restarted if this happens.
