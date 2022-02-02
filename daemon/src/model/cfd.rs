@@ -1237,7 +1237,12 @@ impl Cfd {
                 // commands
             }
             ManualCommit { tx } => self.commit_tx = Some(tx),
-            RevokeConfirmed => todo!("Deal with revoke"),
+            RevokeConfirmed => {
+                tracing::error!(order_id = %self.id, "Revoked logic not implemented");
+                // TODO: we should punish the other party instead. For now, we pretend we are in
+                // commit finalized and will receive our money based on an old CET.
+                self.commit_finality = true;
+            }
         }
 
         self
