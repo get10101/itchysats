@@ -635,6 +635,21 @@ impl Tx {
     fn update_quote(&self, quote: Option<bitmex_price_feed::Quote>) {
         let _ = self.quote.send(quote.map(|q| q.into()));
     }
+
+    fn update_order(&self, quote: Option<Order>) {
+        let order = match quote {
+            None => None,
+            Some(order) => match TryInto::<CfdOrder>::try_into(order) {
+                Ok(order) => Some(order),
+                Err(e) => {
+                    tracing::warn!("Unable to convert order: {e:#}");
+                    None
+                }
+            },
+        };
+
+        let _ = self.order.send(order);
+    }
 }
 
 /// Internal struct to keep state in one place
@@ -691,18 +706,7 @@ impl Actor {
     }
 
     fn handle(&mut self, msg: Update<Option<Order>>) {
-        let order = match msg.0 {
-            None => None,
-            Some(order) => match TryInto::<CfdOrder>::try_into(order) {
-                Ok(order) => Some(order),
-                Err(e) => {
-                    tracing::warn!("Unable to convert order: {e:#}");
-                    None
-                }
-            },
-        };
-
-        let _ = self.tx.order.send(order);
+        self.tx.update_order(msg.0);
     }
 
     fn handle(&mut self, msg: Update<Option<bitmex_price_feed::Quote>>) {
