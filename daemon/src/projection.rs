@@ -112,15 +112,8 @@ impl Actor {
             return;
         };
 
-        let cfds_with_quote = self
-            .state
-            .cfds
-            .iter()
-            .cloned()
-            .map(|cfd| cfd.with_current_quote(self.state.quote))
-            .collect();
-
-        let _ = self.tx.cfds.send(cfds_with_quote);
+        self.tx
+            .update_cfds(self.state.cfds.clone(), self.state.quote);
     }
 }
 
@@ -621,12 +614,23 @@ impl Cfd {
 
 /// Internal struct to keep all the senders around in one place
 struct Tx {
-    pub cfds: watch::Sender<Vec<Cfd>>,
+    cfds: watch::Sender<Vec<Cfd>>,
     pub order: watch::Sender<Option<CfdOrder>>,
     pub quote: watch::Sender<Option<Quote>>,
     // TODO: Use this channel to communicate maker status as well with generic
     // ID of connected counterparties
     pub connected_takers: watch::Sender<Vec<Identity>>,
+}
+
+impl Tx {
+    fn update_cfds(&self, cfds: Vec<Cfd>, quote: Option<bitmex_price_feed::Quote>) {
+        let cfds_with_quote = cfds
+            .into_iter()
+            .map(|cfd| cfd.with_current_quote(quote))
+            .collect();
+
+        let _ = self.cfds.send(cfds_with_quote);
+    }
 }
 
 /// Internal struct to keep state in one place
