@@ -42,7 +42,6 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
 use serde::Serialize;
-use sqlx::pool::PoolConnection;
 use std::collections::HashSet;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -108,47 +107,48 @@ impl Actor {
     }
 
     async fn refresh_cfds(&mut self) {
-        let mut conn = match self.db.acquire().await {
-            Ok(conn) => conn,
+        let cfds = match self
+            .load_and_hydrate_cfds(self.state.quote, self.state.network)
+            .await
+        {
+            Ok(cfds) => cfds,
             Err(e) => {
-                tracing::warn!("Failed to acquire DB connection: {e}");
+                tracing::warn!("Failed to load CFDs: {e:#}");
                 return;
             }
         };
-        let cfds =
-            match load_and_hydrate_cfds(&mut conn, self.state.quote, self.state.network).await {
-                Ok(cfds) => cfds,
-                Err(e) => {
-                    tracing::warn!("Failed to load CFDs: {e:#}");
-                    return;
-                }
-            };
 
         let _ = self.tx.cfds.send(cfds);
     }
-}
 
-async fn load_and_hydrate_cfds(
-    conn: &mut PoolConnection<sqlx::Sqlite>,
-    quote: Option<bitmex_price_feed::Quote>,
-    network: Network,
-) -> Result<Vec<Cfd>> {
-    let ids = db::load_all_cfd_ids(conn).await?;
+    async fn load_and_hydrate_cfds(
+        &self,
+        quote: Option<bitmex_price_feed::Quote>,
+        network: Network,
+    ) -> Result<Vec<Cfd>> {
+        let mut conn = self
+            .db
+            .acquire()
+            .await
+            .context("Failed to acquire DB connection")?;
 
-    let mut cfds = Vec::with_capacity(ids.len());
+        let ids = db::load_all_cfd_ids(&mut conn).await?;
 
-    for id in ids {
-        let (cfd, events) = db::load_cfd(id, conn).await?;
+        let mut cfds = Vec::with_capacity(ids.len());
 
-        let cfd = events
-            .into_iter()
-            .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, network))
-            .with_current_quote(quote);
+        for id in ids {
+            let (cfd, events) = db::load_cfd(id, &mut conn).await?;
 
-        cfds.push(cfd);
+            let cfd = events
+                .into_iter()
+                .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, network))
+                .with_current_quote(quote);
+
+            cfds.push(cfd);
+        }
+
+        Ok(cfds)
     }
-
-    Ok(cfds)
 }
 
 #[derive(Clone, Debug, Serialize)]
