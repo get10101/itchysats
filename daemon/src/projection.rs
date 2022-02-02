@@ -115,7 +115,11 @@ impl Actor {
             }
         };
 
-        let _ = self.tx.cfds.send(cfds);
+        let _ = self.tx.cfds.send(
+            cfds.into_iter()
+                .map(|cfd| cfd.with_current_quote(self.state.quote))
+                .collect(),
+        );
     }
 
     async fn load_and_hydrate_cfds(&self) -> Result<Vec<Cfd>> {
@@ -132,12 +136,9 @@ impl Actor {
         for id in ids {
             let (cfd, events) = db::load_cfd(id, &mut conn).await?;
 
-            let cfd = events
-                .into_iter()
-                .fold(Cfd::new(cfd), |cfd, event| {
-                    cfd.apply(event, self.state.network)
-                })
-                .with_current_quote(self.state.quote);
+            let cfd = events.into_iter().fold(Cfd::new(cfd), |cfd, event| {
+                cfd.apply(event, self.state.network)
+            });
 
             cfds.push(cfd);
         }
