@@ -325,29 +325,13 @@ impl Cfd {
             .add_opening_fee(opening_fee)
             .add_funding_fee(initial_funding_fee);
 
-        let (profit_btc_latest_price, profit_percent_latest_price, payout) = latest_price.and_then(|latest_price| {
-            match calculate_profit_at_price(initial_price, latest_price, quantity_usd, leverage, fee_account) {
-                Ok(profit) => Some(profit),
-                Err(e) => {
-                    tracing::warn!("Failed to calculate profit/loss {:#}", e);
-
-                    None
-                }
-            }
-        }).map(|(in_btc, in_percent, payout)| (Some(in_btc), Some(in_percent.round_dp(1).to_string()), Some(payout)))
-            .unwrap_or_else(|| {
-                tracing::debug!(order_id = %id, "Unable to calculate profit/loss without current price");
-
-                (None, None, None)
-            });
-
         let initial_actions = if role == Role::Maker {
             HashSet::from([CfdAction::AcceptOrder, CfdAction::RejectOrder])
         } else {
             HashSet::new()
         };
 
-        Self {
+        let cfd_without_pl = Self {
             order_id: id,
             initial_price,
             accumulated_fees: fee_account.balance(),
@@ -360,10 +344,9 @@ impl Cfd {
             margin_counterparty,
             role,
 
-            // By default, we assume profit should be based on the latest price!
-            profit_btc: profit_btc_latest_price,
-            profit_percent: profit_percent_latest_price,
-            payout,
+            profit_btc: None,
+            profit_percent: None,
+            payout: None,
 
             state: CfdState::PendingSetup,
             actions: initial_actions,
@@ -374,6 +357,36 @@ impl Cfd {
             counterparty: counterparty_network_identity,
             pending_settlement_proposal_price: None,
             aggregated: Aggregated::new(fee_account),
+        };
+
+        let latest_price = match latest_price {
+            None => {
+                tracing::debug!(order_id = %id, "Unable to calculate profit/loss without current price");
+                return cfd_without_pl;
+            }
+            Some(latest_price) => latest_price,
+        };
+
+        // By default, we assume profit should be based on the latest price!
+        let (profit_btc, profit_percent, payout) = match calculate_profit_at_price(
+            initial_price,
+            latest_price,
+            quantity_usd,
+            leverage,
+            fee_account,
+        ) {
+            Err(e) => {
+                tracing::warn!(order_id = %id, "Failed to calculate profit/loss {:#}", e);
+                return cfd_without_pl;
+            }
+            Ok((profit_btc, profit_percent, payout)) => (profit_btc, profit_percent, payout),
+        };
+
+        Self {
+            profit_btc: Some(profit_btc),
+            profit_percent: Some(profit_percent.round_dp(1).to_string()),
+            payout: Some(payout),
+            ..cfd_without_pl
         }
     }
 
@@ -713,7 +726,7 @@ impl xtra::Actor for Actor {
                             let _ = this.send(Update(quote)).await;
                         }
                         Err(_) => {
-                            tracing::trace!("Price feed actor currently unreachable");
+                            tracing::error!("Price feed actor currently unreachable");
                         }
                     }
 
