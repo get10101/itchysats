@@ -105,16 +105,6 @@ impl Actor {
 
         (actor, feeds)
     }
-
-    async fn refresh_cfds(&mut self) {
-        if let Err(e) = self.state.update_cfds(self.db.clone()).await {
-            tracing::warn!("Failed to rehydrate CFDs: {e:#}");
-            return;
-        };
-
-        self.tx
-            .update_cfds(self.state.cfds.clone(), self.state.quote);
-    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -682,9 +672,9 @@ impl State {
         for id in ids {
             let (cfd, events) = db::load_cfd(id, &mut conn).await?;
 
-            let cfd = events.into_iter().fold(Cfd::new(cfd), |cfd, event| {
-                cfd.apply(event, self.network)
-            });
+            let cfd = events
+                .into_iter()
+                .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, self.network));
 
             cfds.push(cfd);
         }
@@ -702,7 +692,13 @@ impl State {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, _: CfdsChanged) {
-        self.refresh_cfds().await
+        if let Err(e) = self.state.update_cfds(self.db.clone()).await {
+            tracing::warn!("Failed to rehydrate CFDs: {e:#}");
+            return;
+        };
+
+        self.tx
+            .update_cfds(self.state.cfds.clone(), self.state.quote);
     }
 
     fn handle(&mut self, msg: Update<Option<Order>>) {
