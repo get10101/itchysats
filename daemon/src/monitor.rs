@@ -263,17 +263,14 @@ impl Cfd {
                 cet: Some(cet),
                 ..self
             },
-            CollaborativeSettlementRejected { commit_tx }
-            | CollaborativeSettlementFailed { commit_tx } => Self {
-                commit_tx: Some(commit_tx),
-                ..self
-            },
             RolloverStarted { .. }
             | RolloverAccepted
             | RolloverFailed
             | ManualCommit { .. }
             | OracleAttestedPriorCetTimelock { .. }
             | CollaborativeSettlementStarted { .. }
+            | CollaborativeSettlementRejected
+            | CollaborativeSettlementFailed
             | CollaborativeSettlementProposalAccepted => self,
             RevokeConfirmed => {
                 tracing::error!("Revoked logic not implemented");
