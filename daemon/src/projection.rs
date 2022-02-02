@@ -316,6 +316,7 @@ impl Cfd {
                 self.state = CfdState::ContractSetup;
             }
             ContractSetupCompleted { dlc } => {
+                self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
                 self.aggregated.latest_dlc = Some(dlc);
 
                 self.state = CfdState::PendingOpen;
@@ -327,6 +328,7 @@ impl Cfd {
                 self.state = CfdState::Rejected;
             }
             RolloverCompleted { dlc, funding_fee } => {
+                self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
                 self.aggregated.latest_dlc = Some(dlc);
                 self.aggregated.fee_account =
                     self.aggregated.fee_account.add_funding_fee(funding_fee);
