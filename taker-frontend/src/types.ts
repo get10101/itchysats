@@ -117,9 +117,9 @@ export class State {
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
                 return "Closing";
             case StateKey.INCOMING_ROLLOVER_PROPOSAL:
-                return "Open";
+                return "Funding";
             case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
-                return "Open";
+                return "Funding";
             case StateKey.PENDING_REFUND:
                 return "Refunding";
             case StateKey.REFUNDED:
