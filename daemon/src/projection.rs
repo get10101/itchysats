@@ -107,10 +107,7 @@ impl Actor {
     }
 
     async fn refresh_cfds(&mut self) {
-        let cfds = match self
-            .load_and_hydrate_cfds(self.state.quote, self.state.network)
-            .await
-        {
+        let cfds = match self.load_and_hydrate_cfds().await {
             Ok(cfds) => cfds,
             Err(e) => {
                 tracing::warn!("Failed to load CFDs: {e:#}");
@@ -121,11 +118,7 @@ impl Actor {
         let _ = self.tx.cfds.send(cfds);
     }
 
-    async fn load_and_hydrate_cfds(
-        &self,
-        quote: Option<bitmex_price_feed::Quote>,
-        network: Network,
-    ) -> Result<Vec<Cfd>> {
+    async fn load_and_hydrate_cfds(&self) -> Result<Vec<Cfd>> {
         let mut conn = self
             .db
             .acquire()
@@ -141,8 +134,10 @@ impl Actor {
 
             let cfd = events
                 .into_iter()
-                .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, network))
-                .with_current_quote(quote);
+                .fold(Cfd::new(cfd), |cfd, event| {
+                    cfd.apply(event, self.state.network)
+                })
+                .with_current_quote(self.state.quote);
 
             cfds.push(cfd);
         }
