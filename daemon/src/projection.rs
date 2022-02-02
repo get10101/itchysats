@@ -22,7 +22,6 @@ use crate::model::Price;
 use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
-use crate::xtra_ext::SendAsyncSafe;
 use crate::Order;
 use crate::Tasks;
 use crate::SETTLEMENT_INTERVAL;
@@ -42,7 +41,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
 use serde::Serialize;
-use sqlx::pool::PoolConnection;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -54,9 +53,8 @@ use xtra_productivity::xtra_productivity;
 /// (replaces previously stored values)
 pub struct Update<T>(pub T);
 
-/// Message indicating that the Cfds in the projection need to be reloaded, as at
-/// least one of the Cfds has changed.
-pub struct CfdsChanged;
+/// Indicates that the CFD with the given order ID changed.
+pub struct CfdChanged(pub OrderId);
 
 pub struct Actor {
     db: sqlx::SqlitePool,
@@ -106,49 +104,6 @@ impl Actor {
 
         (actor, feeds)
     }
-
-    async fn refresh_cfds(&mut self) {
-        let mut conn = match self.db.acquire().await {
-            Ok(conn) => conn,
-            Err(e) => {
-                tracing::warn!("Failed to acquire DB connection: {e}");
-                return;
-            }
-        };
-        let cfds =
-            match load_and_hydrate_cfds(&mut conn, self.state.quote, self.state.network).await {
-                Ok(cfds) => cfds,
-                Err(e) => {
-                    tracing::warn!("Failed to load CFDs: {e:#}");
-                    return;
-                }
-            };
-
-        let _ = self.tx.cfds.send(cfds);
-    }
-}
-
-async fn load_and_hydrate_cfds(
-    conn: &mut PoolConnection<sqlx::Sqlite>,
-    quote: Option<bitmex_price_feed::Quote>,
-    network: Network,
-) -> Result<Vec<Cfd>> {
-    let ids = db::load_all_cfd_ids(conn).await?;
-
-    let mut cfds = Vec::with_capacity(ids.len());
-
-    for id in ids {
-        let (cfd, events) = db::load_cfd(id, conn).await?;
-        let role = cfd.role;
-
-        let cfd = events.into_iter().fold(Cfd::new(cfd, quote), |cfd, event| {
-            cfd.apply(event, network, role)
-        });
-
-        cfds.push(cfd);
-    }
-
-    Ok(cfds)
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -295,7 +250,6 @@ impl Cfd {
             initial_funding_rate,
             ..
         }: db::Cfd,
-        latest_quote: Option<bitmex_price_feed::Quote>,
     ) -> Self {
         let long_margin = calculate_long_margin(initial_price, quantity_usd, leverage);
         let short_margin = calculate_short_margin(initial_price, quantity_usd);
@@ -305,12 +259,6 @@ impl Cfd {
             Position::Short => (short_margin, long_margin),
         };
         let liquidation_price = calculate_long_liquidation_price(leverage, initial_price);
-
-        let latest_price = match (latest_quote, role) {
-            (None, _) => None,
-            (Some(quote), Role::Maker) => Some(quote.for_maker()),
-            (Some(quote), Role::Taker) => Some(quote.for_taker()),
-        };
 
         let initial_funding_fee = calculate_funding_fee(
             initial_price,
@@ -324,22 +272,6 @@ impl Cfd {
         let fee_account = FeeAccount::new(position, role)
             .add_opening_fee(opening_fee)
             .add_funding_fee(initial_funding_fee);
-
-        let (profit_btc_latest_price, profit_percent_latest_price, payout) = latest_price.and_then(|latest_price| {
-            match calculate_profit_at_price(initial_price, latest_price, quantity_usd, leverage, fee_account) {
-                Ok(profit) => Some(profit),
-                Err(e) => {
-                    tracing::warn!("Failed to calculate profit/loss {:#}", e);
-
-                    None
-                }
-            }
-        }).map(|(in_btc, in_percent, payout)| (Some(in_btc), Some(in_percent.round_dp(1).to_string()), Some(payout)))
-            .unwrap_or_else(|| {
-                tracing::debug!(order_id = %id, "Unable to calculate profit/loss without current price");
-
-                (None, None, None)
-            });
 
         let initial_actions = if role == Role::Maker {
             HashSet::from([CfdAction::AcceptOrder, CfdAction::RejectOrder])
@@ -360,10 +292,9 @@ impl Cfd {
             margin_counterparty,
             role,
 
-            // By default, we assume profit should be based on the latest price!
-            profit_btc: profit_btc_latest_price,
-            profit_percent: profit_percent_latest_price,
-            payout,
+            profit_btc: None,
+            profit_percent: None,
+            payout: None,
 
             state: CfdState::PendingSetup,
             actions: initial_actions,
@@ -377,7 +308,7 @@ impl Cfd {
         }
     }
 
-    fn apply(mut self, event: Event, network: Network, role: Role) -> Self {
+    fn apply(mut self, event: Event, network: Network) -> Self {
         // First, try to set state based on event.
         use CfdEvent::*;
         match event.event {
@@ -409,7 +340,7 @@ impl Cfd {
             RolloverFailed => {
                 self.state = CfdState::Open;
             }
-            CollaborativeSettlementStarted { proposal } => match role {
+            CollaborativeSettlementStarted { proposal } => match self.role {
                 Role::Maker => {
                     self.pending_settlement_proposal_price = Some(proposal.price);
 
@@ -491,7 +422,7 @@ impl Cfd {
                 tracing::error!(order_id = %self.order_id, "Revoked logic not implemented");
                 self.state = CfdState::OpenCommitted;
             }
-            RolloverStarted { .. } => match role {
+            RolloverStarted { .. } => match self.role {
                 Role::Maker => {
                     self.state = CfdState::IncomingRolloverProposal;
                 }
@@ -504,11 +435,30 @@ impl Cfd {
             }
         };
 
-        self.actions = self.derive_actions(role);
+        self.actions = self.derive_actions();
 
-        // If we don't have a dedicated closing price, keep the one that is set (which is
-        // based on current price).
-        if let Some(payout) = self.aggregated.clone().payout(role) {
+        if let Some(lock_tx_url) = self.lock_tx_url(network) {
+            self.details.tx_url_list.insert(lock_tx_url);
+        }
+        if let Some(commit_tx_url) = self.commit_tx_url(network) {
+            self.details.tx_url_list.insert(commit_tx_url);
+        }
+        if let Some(collab_settlement_tx_url) = self.collab_settlement_tx_url(network) {
+            self.details.tx_url_list.insert(collab_settlement_tx_url);
+        }
+        if let Some(refund_tx_url) = self.refund_tx_url(network) {
+            self.details.tx_url_list.insert(refund_tx_url);
+        }
+        if let Some(cet_url) = self.cet_url(network) {
+            self.details.tx_url_list.insert(cet_url);
+        }
+
+        self
+    }
+
+    fn with_current_quote(self, latest_quote: Option<bitmex_price_feed::Quote>) -> Self {
+        // If we have a dedicated closing price, use that one.
+        if let Some(payout) = self.aggregated.clone().payout(self.role) {
             let payout = payout
                 .to_signed()
                 .expect("Amount to fit into signed amount");
@@ -520,32 +470,47 @@ impl Cfd {
                     .expect("Amount to fit into signed amount"),
             );
 
-            self.payout = Some(payout);
-            self.profit_btc = Some(profit_btc);
-            self.profit_percent = Some(profit_percent.to_string());
+            return Self {
+                payout: Some(payout),
+                profit_btc: Some(profit_btc),
+                profit_percent: Some(profit_percent.to_string()),
+                ..self
+            };
         }
 
-        if let Some(lock_tx_url) = self.lock_tx_url(network) {
-            self.details.tx_url_list.insert(lock_tx_url);
-        }
-        if let Some(commit_tx_url) = self.commit_tx_url(network) {
-            self.details.tx_url_list.insert(commit_tx_url);
-        }
-        if let Some(collab_settlement_tx_url) = self.collab_settlement_tx_url(network) {
-            self.details.tx_url_list.insert(collab_settlement_tx_url);
-        }
-        if let Some(refund_tx_url) = self.refund_tx_url(network, role) {
-            self.details.tx_url_list.insert(refund_tx_url);
-        }
-        if let Some(cet_url) = self.cet_url(network, role) {
-            self.details.tx_url_list.insert(cet_url);
-        }
+        // Otherwise, compute based on current quote.
+        let latest_price = match (latest_quote, self.role) {
+            (None, _) => None,
+            (Some(quote), Role::Maker) => Some(quote.for_maker()),
+            (Some(quote), Role::Taker) => Some(quote.for_taker()),
+        };
 
-        self
+        let (profit_btc_latest_price, profit_percent_latest_price, payout) = latest_price.and_then(|latest_price| {
+            match calculate_profit_at_price(self.initial_price, latest_price, self.quantity_usd, self.leverage, self.aggregated.fee_account) {
+                Ok(profit) => Some(profit),
+                Err(e) => {
+                    tracing::warn!("Failed to calculate profit/loss {:#}", e);
+
+                    None
+                }
+            }
+        }).map(|(in_btc, in_percent, payout)| (Some(in_btc), Some(in_percent.round_dp(1).to_string()), Some(payout)))
+            .unwrap_or_else(|| {
+                tracing::debug!(order_id = %self.order_id, "Unable to calculate profit/loss without current price");
+
+                (None, None, None)
+            });
+
+        Self {
+            payout,
+            profit_btc: profit_btc_latest_price,
+            profit_percent: profit_percent_latest_price,
+            ..self
+        }
     }
 
-    fn derive_actions(&self, role: Role) -> HashSet<CfdAction> {
-        match (self.state, role) {
+    fn derive_actions(&self) -> HashSet<CfdAction> {
+        match (self.state, self.role) {
             (CfdState::PendingSetup, Role::Maker) => {
                 HashSet::from([CfdAction::AcceptOrder, CfdAction::RejectOrder])
             }
@@ -608,7 +573,7 @@ impl Cfd {
         Some(url)
     }
 
-    fn refund_tx_url(&self, network: Network, role: Role) -> Option<TxUrl> {
+    fn refund_tx_url(&self, network: Network) -> Option<TxUrl> {
         if !self.aggregated.refund_published {
             return None;
         }
@@ -617,7 +582,7 @@ impl Cfd {
 
         let url = TxUrl::from_transaction(
             &dlc.refund.0,
-            &dlc.script_pubkey_for(role),
+            &dlc.script_pubkey_for(self.role),
             network,
             TxLabel::Refund,
         );
@@ -625,11 +590,12 @@ impl Cfd {
         Some(url)
     }
 
-    fn cet_url(&self, network: Network, role: Role) -> Option<TxUrl> {
+    fn cet_url(&self, network: Network) -> Option<TxUrl> {
         let tx = self.aggregated.cet.as_ref()?;
         let dlc = self.aggregated.latest_dlc.as_ref()?;
 
-        let url = TxUrl::from_transaction(tx, &dlc.script_pubkey_for(role), network, TxLabel::Cet);
+        let url =
+            TxUrl::from_transaction(tx, &dlc.script_pubkey_for(self.role), network, TxLabel::Cet);
 
         Some(url)
     }
@@ -637,7 +603,7 @@ impl Cfd {
 
 /// Internal struct to keep all the senders around in one place
 struct Tx {
-    pub cfds: watch::Sender<Vec<Cfd>>,
+    cfds: watch::Sender<Vec<Cfd>>,
     pub order: watch::Sender<Option<CfdOrder>>,
     pub quote: watch::Sender<Option<Quote>>,
     // TODO: Use this channel to communicate maker status as well with generic
@@ -645,33 +611,26 @@ struct Tx {
     pub connected_takers: watch::Sender<Vec<Identity>>,
 }
 
-/// Internal struct to keep state in one place
-struct State {
-    network: Network,
-    quote: Option<bitmex_price_feed::Quote>,
-}
+impl Tx {
+    fn send_cfds_update(
+        &self,
+        cfds: HashMap<OrderId, Cfd>,
+        quote: Option<bitmex_price_feed::Quote>,
+    ) {
+        let cfds_with_quote = cfds
+            .into_iter()
+            .map(|(_, cfd)| cfd.with_current_quote(quote))
+            .collect();
 
-impl State {
-    fn new(network: Network) -> Self {
-        Self {
-            network,
-            quote: None,
-        }
+        let _ = self.cfds.send(cfds_with_quote);
     }
 
-    fn update_quote(&mut self, quote: Option<bitmex_price_feed::Quote>) {
-        self.quote = quote;
-    }
-}
-
-#[xtra_productivity]
-impl Actor {
-    async fn handle(&mut self, _: CfdsChanged) {
-        self.refresh_cfds().await
+    fn send_quote_update(&self, quote: Option<bitmex_price_feed::Quote>) {
+        let _ = self.quote.send(quote.map(|q| q.into()));
     }
 
-    fn handle(&mut self, msg: Update<Option<Order>>) {
-        let order = match msg.0 {
+    fn send_order_update(&self, quote: Option<Order>) {
+        let order = match quote {
             None => None,
             Some(order) => match TryInto::<CfdOrder>::try_into(order) {
                 Ok(order) => Some(order),
@@ -682,13 +641,72 @@ impl Actor {
             },
         };
 
-        let _ = self.tx.order.send(order);
+        let _ = self.order.send(order);
+    }
+}
+
+/// Internal struct to keep state in one place
+struct State {
+    network: Network,
+    quote: Option<bitmex_price_feed::Quote>,
+    /// All hydrated CFDs.
+    cfds: HashMap<OrderId, Cfd>,
+}
+
+impl State {
+    fn new(network: Network) -> Self {
+        Self {
+            network,
+            quote: None,
+            cfds: HashMap::new(),
+        }
+    }
+
+    async fn update_cfd(&mut self, db: sqlx::SqlitePool, id: OrderId) -> Result<()> {
+        let mut conn = db
+            .acquire()
+            .await
+            .context("Failed to acquire DB connection")?;
+
+        let (cfd, events) = db::load_cfd(id, &mut conn).await?;
+
+        let cfd = events
+            .into_iter()
+            .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, self.network));
+
+        self.cfds.insert(id, cfd);
+
+        Ok(())
+    }
+
+    fn update_quote(&mut self, quote: Option<bitmex_price_feed::Quote>) {
+        self.quote = quote;
+    }
+}
+
+#[xtra_productivity]
+impl Actor {
+    async fn handle(&mut self, msg: CfdChanged) {
+        if let Err(e) = self.state.update_cfd(self.db.clone(), msg.0).await {
+            tracing::warn!("Failed to rehydrate CFD: {e:#}");
+            return;
+        };
+
+        self.tx
+            .send_cfds_update(self.state.cfds.clone(), self.state.quote);
+    }
+
+    fn handle(&mut self, msg: Update<Option<Order>>) {
+        self.tx.send_order_update(msg.0);
     }
 
     fn handle(&mut self, msg: Update<Option<bitmex_price_feed::Quote>>) {
         self.state.update_quote(msg.0);
-        let _ = self.tx.quote.send(msg.0.map(|q| q.into()));
-        self.refresh_cfds().await;
+
+        let hydrated_cfds = self.state.cfds.clone();
+
+        self.tx.send_quote_update(msg.0);
+        self.tx.send_cfds_update(hydrated_cfds, msg.0);
     }
 
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
@@ -700,11 +718,27 @@ impl Actor {
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we just started");
+        let pool = self.db.clone();
 
-        // this will make us load all cfds from the DB
-        this.send_async_safe(CfdsChanged)
-            .await
-            .expect("we just started");
+        self.tasks.add_fallible(
+            {
+                let this = this.clone();
+
+                async move {
+                    let mut conn = pool.acquire().await?;
+                    let vec = db::load_all_cfd_ids(&mut conn).await?;
+
+                    for id in vec {
+                        let _: Result<(), xtra::Disconnected> = this.send(CfdChanged(id)).await;
+                    }
+
+                    anyhow::Ok(())
+                }
+            },
+            |e| async move {
+                tracing::warn!("Failed to do initial rehydratation of CFDs: {e:#}");
+            },
+        );
 
         self.tasks.add({
             let price_feed = self.price_feed.clone_channel();

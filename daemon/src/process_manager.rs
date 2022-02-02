@@ -15,7 +15,7 @@ use xtra_productivity::xtra_productivity;
 pub struct Actor {
     db: sqlx::SqlitePool,
     role: Role,
-    cfds_changed: Box<dyn MessageChannel<projection::CfdsChanged>>,
+    cfds_changed: Box<dyn MessageChannel<projection::CfdChanged>>,
     try_broadcast_transaction: Box<dyn MessageChannel<monitor::TryBroadcastTransaction>>,
     start_monitoring: Box<dyn MessageChannel<monitor::StartMonitoring>>,
     monitor_collaborative_settlement: Box<dyn MessageChannel<monitor::CollaborativeSettlement>>,
@@ -34,7 +34,7 @@ impl Actor {
     pub fn new(
         db: sqlx::SqlitePool,
         role: Role,
-        cfds_changed: &(impl MessageChannel<projection::CfdsChanged> + 'static),
+        cfds_changed: &(impl MessageChannel<projection::CfdChanged> + 'static),
         try_broadcast_transaction: &(impl MessageChannel<monitor::TryBroadcastTransaction> + 'static),
         start_monitoring: &(impl MessageChannel<monitor::StartMonitoring> + 'static),
         monitor_collaborative_settlement: &(impl MessageChannel<monitor::CollaborativeSettlement>
@@ -119,20 +119,27 @@ impl Actor {
                     .await?;
             }
             CollaborativeSettlementRejected { commit_tx } => {
-                self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
-                        tx: commit_tx,
-                        kind: TransactionKind::Commit,
-                    })
-                    .await?;
+                // The maker does not have an incentive to publish commit if collab settlement is
+                // rejected
+                if self.role == Role::Taker {
+                    self.try_broadcast_transaction
+                        .send_async_safe(monitor::TryBroadcastTransaction {
+                            tx: commit_tx,
+                            kind: TransactionKind::Commit,
+                        })
+                        .await?;
+                }
             }
             CollaborativeSettlementFailed { commit_tx } => {
-                self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
-                        tx: commit_tx,
-                        kind: TransactionKind::Commit,
-                    })
-                    .await?;
+                // The maker does not have an incentive to publish commit if collab settlement fails
+                if self.role == Role::Taker {
+                    self.try_broadcast_transaction
+                        .send_async_safe(monitor::TryBroadcastTransaction {
+                            tx: commit_tx,
+                            kind: TransactionKind::Commit,
+                        })
+                        .await?;
+                }
             }
             OracleAttestedPostCetTimelock { cet, .. }
             | CetTimelockExpiredPostOracleAttestation { cet } => {
@@ -207,7 +214,7 @@ impl Actor {
 
         // 3. Update UI
         self.cfds_changed
-            .send_async_safe(projection::CfdsChanged)
+            .send_async_safe(projection::CfdChanged(event.id))
             .await?;
 
         Ok(())

@@ -12,9 +12,15 @@ use crate::model::Price;
 use crate::process_manager;
 use crate::wire;
 use crate::xtra_ext::SendAsyncSafe;
+use crate::Tasks;
+use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
+use std::time::Duration;
 use xtra_productivity::xtra_productivity;
+
+/// The maximum amount of time we give the maker to send us a response.
+const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct Actor {
     proposal: Option<SettlementProposal>,
@@ -24,6 +30,8 @@ pub struct Actor {
     connection: xtra::Address<connection::Actor>,
     process_manager: xtra::Address<process_manager::Actor>,
     db: sqlx::SqlitePool,
+    tasks: Tasks,
+    maker_replied: bool,
 }
 
 impl Actor {
@@ -43,6 +51,8 @@ impl Actor {
             connection,
             process_manager,
             db,
+            tasks: Tasks::default(),
+            maker_replied: false,
         }
     }
 
@@ -136,6 +146,11 @@ impl Actor {
 
         ctx.stop();
     }
+
+    /// Returns whether the maker has accepted our collab settlement proposal.
+    fn is_accepted(&self) -> bool {
+        self.maker_replied
+    }
 }
 
 #[async_trait]
@@ -153,6 +168,21 @@ impl xtra::Actor for Actor {
             )
             .await;
         }
+
+        let maker_response_timeout = {
+            let this = ctx.address().expect("self to be alive");
+            async move {
+                tokio::time::sleep(MAKER_RESPONSE_TIMEOUT).await;
+
+                this.send(MakerResponseTimeoutReached {
+                    timeout: MAKER_RESPONSE_TIMEOUT,
+                })
+                .await
+                .expect("can send to ourselves");
+            }
+        };
+
+        self.tasks.add(maker_response_timeout);
     }
 
     async fn stopping(&mut self, ctx: &mut xtra::Context<Self>) -> xtra::KeepRunning {
@@ -172,6 +202,7 @@ impl Actor {
         ctx: &mut xtra::Context<Self>,
     ) {
         let order_id = self.order_id;
+        self.maker_replied = true;
 
         let completed = match msg {
             wire::maker_to_taker::Settlement::Confirm => match self.handle_confirmed().await {
@@ -189,4 +220,34 @@ impl Actor {
 
         self.complete(completed, ctx).await;
     }
+
+    pub async fn handle_collab_settlement_timeout_reached(
+        &mut self,
+        msg: MakerResponseTimeoutReached,
+        ctx: &mut xtra::Context<Self>,
+    ) {
+        // If we are accepted, discard the timeout because the maker DID respond.
+        if self.is_accepted() {
+            return;
+        }
+
+        // Otherwise, fail because we did not receive a response.
+        // If the proposal is rejected, our entire actor would already be shut down and we hence
+        // never get this message.
+        let timeout = msg.timeout.as_secs();
+        let completed = CollaborativeSettlementCompleted::Failed {
+            order_id: self.order_id,
+            error: anyhow!("Maker did not respond within {timeout} seconds"),
+        };
+
+        self.complete(completed, ctx).await;
+    }
+}
+
+/// Message sent from the spawned task to `collab_settlement_taker::Actor` to
+/// notify that the timeout has been reached.
+///
+/// It is up to the actor to reason whether or not the protocol has progressed since then.
+struct MakerResponseTimeoutReached {
+    timeout: Duration,
 }

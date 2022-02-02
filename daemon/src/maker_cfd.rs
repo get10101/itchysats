@@ -3,14 +3,18 @@ use crate::address_map::Stopping;
 use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_maker;
+use crate::command;
 use crate::maker_inc_connections;
 use crate::model::cfd::Cfd;
+use crate::model::cfd::CollaborativeSettlementCompleted;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Origin;
 use crate::model::cfd::Role;
+use crate::model::cfd::RolloverCompleted;
 use crate::model::cfd::RolloverProposal;
 use crate::model::cfd::SettlementProposal;
+use crate::model::cfd::SetupCompleted;
 use crate::model::FundingRate;
 use crate::model::Identity;
 use crate::model::OpeningFee;
@@ -30,7 +34,9 @@ use crate::wire;
 use crate::wire::TakerToMaker;
 use crate::xtra_ext::SendAsyncSafe;
 use crate::Tasks;
-use anyhow::Context as _;
+use anyhow::anyhow;
+use anyhow::bail;
+use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -87,6 +93,7 @@ pub struct Actor<O, T, W> {
     oracle_pk: schnorrsig::PublicKey,
     projection: Address<projection::Actor>,
     process_manager: Address<process_manager::Actor>,
+    executor: command::Executor,
     rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
     takers: Address<T>,
     current_order: Option<Order>,
@@ -112,12 +119,13 @@ impl<O, T, W> Actor<O, T, W> {
         n_payouts: usize,
     ) -> Self {
         Self {
-            db,
+            db: db.clone(),
             wallet,
             settlement_interval,
             oracle_pk,
             projection,
-            process_manager,
+            process_manager: process_manager.clone(),
+            executor: command::Executor::new(db, process_manager),
             rollover_actors: AddressMap::default(),
             takers,
             current_order: None,
@@ -184,7 +192,7 @@ where
         &mut self,
         RolloverProposal { order_id, .. }: RolloverProposal,
         taker_id: Identity,
-        ctx: &mut Context<Self>,
+        ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
         tracing::info!(%order_id, "Received proposal from taker {taker_id}");
         let this = ctx.address().expect("acquired own address");
@@ -226,7 +234,7 @@ where
         taker_id: Identity,
         order_id: OrderId,
         quantity: Usd,
-        ctx: &mut Context<Self>,
+        ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
         tracing::debug!(%taker_id, %quantity, %order_id, "Taker wants to take an order");
 
@@ -323,10 +331,22 @@ impl<O, T, W> Actor<O, T, W> {
 
         tracing::debug!(%order_id, "Maker accepts order");
 
-        self.setup_actors
+        if let Err(error) = self
+            .setup_actors
             .send(&order_id, setup_maker::Accepted)
             .await
-            .with_context(|| format!("No active contract setup for order {order_id}"))?;
+        {
+            self.executor
+                .execute(order_id, |cfd| {
+                    cfd.setup_contract(SetupCompleted::Failed {
+                        order_id,
+                        error: anyhow!(error),
+                    })
+                })
+                .await?;
+
+            bail!("Accept failed: No active contract setup for order {order_id}")
+        }
 
         Ok(())
     }
@@ -336,10 +356,22 @@ impl<O, T, W> Actor<O, T, W> {
 
         tracing::debug!(%order_id, "Maker rejects order");
 
-        self.setup_actors
+        if let Err(error) = self
+            .setup_actors
             .send(&order_id, setup_maker::Rejected)
             .await
-            .with_context(|| format!("No active contract setup for order {order_id}"))?;
+        {
+            self.executor
+                .execute(order_id, |cfd| {
+                    cfd.setup_contract(SetupCompleted::Failed {
+                        order_id,
+                        error: anyhow!(error),
+                    })
+                })
+                .await?;
+
+            bail!("Reject failed: No active contract setup for order {order_id}")
+        }
 
         Ok(())
     }
@@ -347,10 +379,22 @@ impl<O, T, W> Actor<O, T, W> {
     async fn handle_accept_settlement(&mut self, msg: AcceptSettlement) -> Result<()> {
         let AcceptSettlement { order_id } = msg;
 
-        self.settlement_actors
+        if let Err(error) = self
+            .settlement_actors
             .send(&order_id, collab_settlement_maker::Accepted)
             .await
-            .with_context(|| format!("No settlement in progress for order {order_id}"))?;
+        {
+            self.executor
+                .execute(order_id, |cfd| {
+                    cfd.settle_collaboratively(CollaborativeSettlementCompleted::Failed {
+                        order_id,
+                        error: anyhow!(error),
+                    })
+                })
+                .await?;
+
+            bail!("Accept failed: No settlement in progress for order {order_id}")
+        }
 
         Ok(())
     }
@@ -358,10 +402,22 @@ impl<O, T, W> Actor<O, T, W> {
     async fn handle_reject_settlement(&mut self, msg: RejectSettlement) -> Result<()> {
         let RejectSettlement { order_id } = msg;
 
-        self.settlement_actors
+        if let Err(error) = self
+            .settlement_actors
             .send(&order_id, collab_settlement_maker::Rejected)
             .await
-            .with_context(|| format!("No settlement in progress for order {order_id}"))?;
+        {
+            self.executor
+                .execute(order_id, |cfd| {
+                    cfd.settle_collaboratively(CollaborativeSettlementCompleted::Failed {
+                        order_id,
+                        error: anyhow!(error),
+                    })
+                })
+                .await?;
+
+            bail!("Reject failed: No settlement in progress for order {order_id}")
+        }
 
         Ok(())
     }
@@ -372,32 +428,52 @@ impl<O, T, W> Actor<O, T, W> {
             .as_ref()
             .context("Cannot accept rollover without current offer, as we need up-to-date fees")?;
 
-        if self
+        let order_id = msg.order_id;
+
+        if let Err(error) = self
             .rollover_actors
             .send(
-                &msg.order_id,
+                &order_id,
                 rollover_maker::AcceptRollover {
                     tx_fee_rate: order.tx_fee_rate,
                     funding_rate: order.funding_rate,
                 },
             )
             .await
-            .is_err()
         {
-            tracing::warn!(%msg.order_id, "No active rollover");
+            self.executor
+                .execute(order_id, |cfd| {
+                    Ok(cfd.roll_over(RolloverCompleted::Failed {
+                        order_id,
+                        error: anyhow!(error),
+                    })?)
+                })
+                .await?;
+
+            bail!("Accept failed: No active rollover for order {order_id}")
         }
 
         Ok(())
     }
 
     async fn handle_reject_rollover(&mut self, msg: RejectRollover) -> Result<()> {
-        if self
+        let order_id = msg.order_id;
+
+        if let Err(error) = self
             .rollover_actors
-            .send(&msg.order_id, rollover_maker::RejectRollover)
+            .send(&order_id, rollover_maker::RejectRollover)
             .await
-            .is_err()
         {
-            tracing::warn!(%msg.order_id, "No active rollover");
+            self.executor
+                .execute(order_id, |cfd| {
+                    Ok(cfd.roll_over(RolloverCompleted::Failed {
+                        order_id,
+                        error: anyhow!(error),
+                    })?)
+                })
+                .await?;
+
+            bail!("Reject failed: No active rollover for order {order_id}")
         }
 
         Ok(())
@@ -531,7 +607,7 @@ impl<O: 'static, T: 'static, W: 'static> Handler<TakerConnected> for Actor<O, T,
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
-    async fn handle(&mut self, msg: TakerConnected, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle(&mut self, msg: TakerConnected, _ctx: &mut xtra::Context<Self>) -> Result<()> {
         self.handle_taker_connected(msg.id).await
     }
 }
@@ -541,7 +617,11 @@ impl<O: 'static, T: 'static, W: 'static> Handler<TakerDisconnected> for Actor<O,
 where
     T: xtra::Handler<maker_inc_connections::TakerMessage>,
 {
-    async fn handle(&mut self, msg: TakerDisconnected, _ctx: &mut Context<Self>) -> Result<()> {
+    async fn handle(
+        &mut self,
+        msg: TakerDisconnected,
+        _ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
         self.handle_taker_disconnected(msg.id).await
     }
 }
@@ -560,7 +640,11 @@ where
         + xtra::Handler<maker_inc_connections::RegisterRollover>,
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
-    async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker, ctx: &mut Context<Self>) {
+    async fn handle(
+        &mut self,
+        FromTaker { taker_id, msg }: FromTaker,
+        ctx: &mut xtra::Context<Self>,
+    ) {
         match msg {
             wire::TakerToMaker::TakeOrder { order_id, quantity } => {
                 if let Err(e) = self
