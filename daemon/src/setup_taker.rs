@@ -12,6 +12,7 @@ use crate::wallet;
 use crate::wire;
 use crate::wire::SetupMsg;
 use crate::Tasks;
+use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -20,8 +21,12 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia::secp256k1_zkp::schnorrsig;
+use std::time::Duration;
 use xtra::prelude::*;
 use xtra_productivity::xtra_productivity;
+
+/// The maximum amount of time we give the maker to send us a response.
+const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct Actor {
     order_id: OrderId,
@@ -61,6 +66,11 @@ impl Actor {
             tasks: Tasks::default(),
             executor: command::Executor::new(db, process_manager),
         }
+    }
+
+    /// Returns whether the maker has accepted our setup proposal.
+    fn is_accepted(&self) -> bool {
+        self.setup_msg_sender.is_some()
     }
 }
 
@@ -168,6 +178,36 @@ impl Actor {
 
         ctx.stop();
     }
+
+    pub async fn handle_setup_timeout_reached(
+        &mut self,
+        msg: MakerResponseTimeoutReached,
+        ctx: &mut xtra::Context<Self>,
+    ) {
+        // If we are accepted, discard the timeout because the maker DID respond.
+        if self.is_accepted() {
+            return;
+        }
+
+        // Otherwise, fail because we did not receive a response.
+        // If the proposal is rejected, our entire actor would already be shut down and we hence
+        // never get this message.
+        let timeout = msg.timeout.as_secs();
+        let failed = SetupCompleted::Failed {
+            order_id: self.order_id,
+            error: anyhow!("Maker did not respond within {timeout} seconds"),
+        };
+
+        if let Err(e) = self
+            .executor
+            .execute(self.order_id, |cfd| cfd.setup_contract(failed))
+            .await
+        {
+            tracing::warn!("{:#}", e);
+        }
+
+        ctx.stop();
+    }
 }
 
 #[async_trait]
@@ -176,6 +216,7 @@ impl xtra::Actor for Actor {
         let address = ctx
             .address()
             .expect("actor to be able to give address to itself");
+
         let res = self
             .maker
             .send(connection::TakeOrder {
@@ -189,6 +230,21 @@ impl xtra::Actor for Actor {
             tracing::warn!(id = %self.order_id, "Stopping setup_taker actor: {e}");
             ctx.stop()
         }
+
+        let maker_response_timeout = {
+            let this = ctx.address().expect("self to be alive");
+            async move {
+                tokio::time::sleep(MAKER_RESPONSE_TIMEOUT).await;
+
+                this.send(MakerResponseTimeoutReached {
+                    timeout: MAKER_RESPONSE_TIMEOUT,
+                })
+                .await
+                .expect("can send to ourselves");
+            }
+        };
+
+        self.tasks.add(maker_response_timeout);
     }
 }
 
@@ -235,4 +291,12 @@ impl Rejected {
             is_invalid_order: true,
         }
     }
+}
+
+/// Message sent from the spawned task to `setup_taker::Actor` to
+/// notify that the timeout has been reached.
+///
+/// It is up to the actor to reason whether or not the protocol has progressed since then.
+struct MakerResponseTimeoutReached {
+    timeout: Duration,
 }
