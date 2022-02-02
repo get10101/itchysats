@@ -42,6 +42,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -613,10 +614,14 @@ struct Tx {
 }
 
 impl Tx {
-    fn send_cfds_update(&self, cfds: Vec<Cfd>, quote: Option<bitmex_price_feed::Quote>) {
+    fn send_cfds_update(
+        &self,
+        cfds: HashMap<OrderId, Cfd>,
+        quote: Option<bitmex_price_feed::Quote>,
+    ) {
         let cfds_with_quote = cfds
             .into_iter()
-            .map(|cfd| cfd.with_current_quote(quote))
+            .map(|(_, cfd)| cfd.with_current_quote(quote))
             .collect();
 
         let _ = self.cfds.send(cfds_with_quote);
@@ -647,7 +652,7 @@ struct State {
     network: Network,
     quote: Option<bitmex_price_feed::Quote>,
     /// All hydrated CFDs.
-    cfds: Vec<Cfd>,
+    cfds: HashMap<OrderId, Cfd>,
 }
 
 impl State {
@@ -655,7 +660,7 @@ impl State {
         Self {
             network,
             quote: None,
-            cfds: vec![],
+            cfds: HashMap::new(),
         }
     }
 
@@ -667,7 +672,7 @@ impl State {
 
         let ids = db::load_all_cfd_ids(&mut conn).await?;
 
-        let mut cfds = Vec::with_capacity(ids.len());
+        let mut cfds = HashMap::with_capacity(ids.len());
 
         for id in ids {
             let (cfd, events) = db::load_cfd(id, &mut conn).await?;
@@ -676,7 +681,7 @@ impl State {
                 .into_iter()
                 .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, self.network));
 
-            cfds.push(cfd);
+            cfds.insert(id, cfd);
         }
 
         self.cfds = cfds;
