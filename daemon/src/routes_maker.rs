@@ -154,6 +154,8 @@ pub async fn post_cfd_action(
     };
 
     result.map_err(|e| {
+        tracing::warn!(order_id=%id, %action, "Processing action failed: {e:#}");
+
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title(action.to_string() + " failed")
             .detail(format!("{e:#}"))
