@@ -431,7 +431,7 @@ impl Cfd {
                 }
             },
             RolloverAccepted => {
-                self.state = CfdState::ContractSetup;
+                self.state = CfdState::Open;
             }
         };
 
