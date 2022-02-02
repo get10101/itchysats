@@ -107,22 +107,23 @@ impl Actor {
     }
 
     async fn refresh_cfds(&mut self) {
-        let cfds = match self.load_and_hydrate_cfds().await {
-            Ok(cfds) => cfds,
-            Err(e) => {
-                tracing::warn!("Failed to load CFDs: {e:#}");
-                return;
-            }
+        if let Err(e) = self.rehydrate_cfds().await {
+            tracing::warn!("Failed to rehydrate CFDs: {e:#}");
+            return;
         };
 
-        let _ = self.tx.cfds.send(
-            cfds.into_iter()
-                .map(|cfd| cfd.with_current_quote(self.state.quote))
-                .collect(),
-        );
+        let cfds_with_quote = self
+            .state
+            .cfds
+            .iter()
+            .cloned()
+            .map(|cfd| cfd.with_current_quote(self.state.quote))
+            .collect();
+
+        let _ = self.tx.cfds.send(cfds_with_quote);
     }
 
-    async fn load_and_hydrate_cfds(&self) -> Result<Vec<Cfd>> {
+    async fn rehydrate_cfds(&mut self) -> Result<()> {
         let mut conn = self
             .db
             .acquire()
@@ -143,7 +144,9 @@ impl Actor {
             cfds.push(cfd);
         }
 
-        Ok(cfds)
+        self.state.cfds = cfds;
+
+        Ok(())
     }
 }
 
@@ -656,6 +659,8 @@ struct Tx {
 struct State {
     network: Network,
     quote: Option<bitmex_price_feed::Quote>,
+    /// All hydrated CFDs.
+    cfds: Vec<Cfd>,
 }
 
 impl State {
@@ -663,6 +668,7 @@ impl State {
         Self {
             network,
             quote: None,
+            cfds: vec![],
         }
     }
 
