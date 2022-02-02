@@ -107,7 +107,7 @@ impl Actor {
     }
 
     async fn refresh_cfds(&mut self) {
-        if let Err(e) = self.rehydrate_cfds().await {
+        if let Err(e) = self.state.update_cfds(self.db.clone()).await {
             tracing::warn!("Failed to rehydrate CFDs: {e:#}");
             return;
         };
@@ -121,32 +121,6 @@ impl Actor {
             .collect();
 
         let _ = self.tx.cfds.send(cfds_with_quote);
-    }
-
-    async fn rehydrate_cfds(&mut self) -> Result<()> {
-        let mut conn = self
-            .db
-            .acquire()
-            .await
-            .context("Failed to acquire DB connection")?;
-
-        let ids = db::load_all_cfd_ids(&mut conn).await?;
-
-        let mut cfds = Vec::with_capacity(ids.len());
-
-        for id in ids {
-            let (cfd, events) = db::load_cfd(id, &mut conn).await?;
-
-            let cfd = events.into_iter().fold(Cfd::new(cfd), |cfd, event| {
-                cfd.apply(event, self.state.network)
-            });
-
-            cfds.push(cfd);
-        }
-
-        self.state.cfds = cfds;
-
-        Ok(())
     }
 }
 
@@ -670,6 +644,31 @@ impl State {
             quote: None,
             cfds: vec![],
         }
+    }
+
+    async fn update_cfds(&mut self, db: sqlx::SqlitePool) -> Result<()> {
+        let mut conn = db
+            .acquire()
+            .await
+            .context("Failed to acquire DB connection")?;
+
+        let ids = db::load_all_cfd_ids(&mut conn).await?;
+
+        let mut cfds = Vec::with_capacity(ids.len());
+
+        for id in ids {
+            let (cfd, events) = db::load_cfd(id, &mut conn).await?;
+
+            let cfd = events.into_iter().fold(Cfd::new(cfd), |cfd, event| {
+                cfd.apply(event, self.network)
+            });
+
+            cfds.push(cfd);
+        }
+
+        self.cfds = cfds;
+
+        Ok(())
     }
 
     fn update_quote(&mut self, quote: Option<bitmex_price_feed::Quote>) {
