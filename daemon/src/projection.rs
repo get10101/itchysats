@@ -613,7 +613,7 @@ struct Tx {
 }
 
 impl Tx {
-    fn update_cfds(&self, cfds: Vec<Cfd>, quote: Option<bitmex_price_feed::Quote>) {
+    fn send_cfds_update(&self, cfds: Vec<Cfd>, quote: Option<bitmex_price_feed::Quote>) {
         let cfds_with_quote = cfds
             .into_iter()
             .map(|cfd| cfd.with_current_quote(quote))
@@ -622,11 +622,11 @@ impl Tx {
         let _ = self.cfds.send(cfds_with_quote);
     }
 
-    fn update_quote(&self, quote: Option<bitmex_price_feed::Quote>) {
+    fn send_quote_update(&self, quote: Option<bitmex_price_feed::Quote>) {
         let _ = self.quote.send(quote.map(|q| q.into()));
     }
 
-    fn update_order(&self, quote: Option<Order>) {
+    fn send_order_update(&self, quote: Option<Order>) {
         let order = match quote {
             None => None,
             Some(order) => match TryInto::<CfdOrder>::try_into(order) {
@@ -698,11 +698,11 @@ impl Actor {
         };
 
         self.tx
-            .update_cfds(self.state.cfds.clone(), self.state.quote);
+            .send_cfds_update(self.state.cfds.clone(), self.state.quote);
     }
 
     fn handle(&mut self, msg: Update<Option<Order>>) {
-        self.tx.update_order(msg.0);
+        self.tx.send_order_update(msg.0);
     }
 
     fn handle(&mut self, msg: Update<Option<bitmex_price_feed::Quote>>) {
@@ -710,8 +710,8 @@ impl Actor {
 
         let hydrated_cfds = self.state.cfds.clone();
 
-        self.tx.update_quote(msg.0);
-        self.tx.update_cfds(hydrated_cfds, msg.0);
+        self.tx.send_quote_update(msg.0);
+        self.tx.send_cfds_update(hydrated_cfds, msg.0);
     }
 
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
