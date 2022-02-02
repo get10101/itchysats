@@ -631,6 +631,10 @@ impl Tx {
 
         let _ = self.cfds.send(cfds_with_quote);
     }
+
+    fn update_quote(&self, quote: Option<bitmex_price_feed::Quote>) {
+        let _ = self.quote.send(quote.map(|q| q.into()));
+    }
 }
 
 /// Internal struct to keep state in one place
@@ -703,7 +707,8 @@ impl Actor {
 
     fn handle(&mut self, msg: Update<Option<bitmex_price_feed::Quote>>) {
         self.state.update_quote(msg.0);
-        let _ = self.tx.quote.send(msg.0.map(|q| q.into()));
+        self.tx.update_quote(msg.0);
+
         self.refresh_cfds().await;
     }
 
