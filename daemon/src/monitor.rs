@@ -275,7 +275,10 @@ impl Cfd {
             | OracleAttestedPriorCetTimelock { .. }
             | CollaborativeSettlementStarted { .. }
             | CollaborativeSettlementProposalAccepted => self,
-            RevokeConfirmed => todo!("Deal with revoked"),
+            RevokeConfirmed => {
+                tracing::error!("Revoked logic not implemented");
+                self
+            }
         }
     }
 }

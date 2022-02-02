@@ -487,7 +487,10 @@ impl Cfd {
 
                 self.state = CfdState::PendingCommit;
             }
-            RevokeConfirmed => todo!("Deal with revoked"),
+            RevokeConfirmed => {
+                tracing::error!(order_id = %self.order_id, "Revoked logic not implemented");
+                self.state = CfdState::OpenCommitted;
+            }
             RolloverStarted { .. } => match role {
                 Role::Maker => {
                     self.state = CfdState::IncomingRolloverProposal;
