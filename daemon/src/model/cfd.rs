@@ -309,10 +309,7 @@ pub enum CfdEvent {
         script: Script,
         price: Price,
     },
-    CollaborativeSettlementRejected {
-        #[serde(with = "hex_transaction")]
-        commit_tx: Transaction,
-    },
+    CollaborativeSettlementRejected,
     // TODO: We can distinguish different "failed" scenarios and potentially decide to publish the
     // commit transaction for some
     CollaborativeSettlementFailed,
@@ -947,7 +944,7 @@ impl Cfd {
     }
 
     pub fn settle_collaboratively(
-        mut self,
+        self,
         settlement: CollaborativeSettlementCompleted,
     ) -> Result<Event> {
         if !self.can_settle_collaboratively() {
@@ -964,15 +961,8 @@ impl Cfd {
                 price: settlement.price,
             },
             Completed::Rejected { reason, .. } => {
-                tracing::info!(order_id=%self.id(), "Collaborative close rejected: {:#}, force-closing the position", reason);
-
-                let dlc = self
-                    .dlc
-                    .take()
-                    .context("No dlc after collaborative settlement rejected")?;
-                let commit_tx = dlc.signed_commit_tx()?;
-
-                CfdEvent::CollaborativeSettlementRejected { commit_tx }
+                tracing::info!(order_id=%self.id(), "Collaborative close rejected: {:#}", reason);
+                CfdEvent::CollaborativeSettlementRejected
             }
             Completed::Failed { error, .. } => {
                 tracing::warn!(order_id=%self.id(), "Collaborative close failed: {:#}", error);
@@ -1218,11 +1208,7 @@ impl Cfd {
                 self.settlement_proposal = None;
                 self.collaborative_settlement_spend_tx = Some(spend_tx);
             }
-            CollaborativeSettlementRejected { commit_tx } => {
-                self.settlement_proposal = None;
-                self.commit_tx = Some(commit_tx);
-            }
-            CollaborativeSettlementFailed => {
+            CollaborativeSettlementRejected | CollaborativeSettlementFailed => {
                 self.settlement_proposal = None;
             }
             CetConfirmed => self.cet_finality = true,
