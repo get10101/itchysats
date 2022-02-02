@@ -644,7 +644,8 @@ impl Cfd {
 
         // Rollover and collaborative settlement are mutually exclusive, if we are currently
         // collaboratively settling we cannot roll over
-        if self.is_in_collaborative_settlement() {
+        if self.is_in_collaborative_settlement() || self.collaborative_settlement_spend_tx.is_some()
+        {
             return Err(NoRolloverReason::InCollaborativeSettlement);
         }
 
