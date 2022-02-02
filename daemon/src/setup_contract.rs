@@ -13,6 +13,7 @@ use crate::model::Usd;
 use crate::oracle;
 use crate::payout_curve;
 use crate::tokio_ext::FutureExt;
+use crate::transaction_ext::TransactionExt;
 use crate::wallet;
 use crate::wire::Msg0;
 use crate::wire::Msg1;
@@ -303,6 +304,8 @@ pub async fn new(
     // need some fallback handling (after x time) to spend the outputs in a different way so the
     // other party cannot hold us hostage
 
+    let maker_script_pubkey = params.maker().address.script_pubkey();
+    let taker_script_pubkey = params.taker().address.script_pubkey();
     let cets = tokio::task::spawn_blocking(move || {
         own_cets
             .into_iter()
@@ -328,11 +331,17 @@ pub async fn new(
                                     "Missing counterparty adaptor signature for CET corresponding to price range {range:?}",
                                 )
                             })?;
+
+                        let maker_amount = tx.find_output_amount(&maker_script_pubkey).unwrap_or_default();
+                        let taker_amount = tx.find_output_amount(&taker_script_pubkey).unwrap_or_default();
+
                         Ok(Cet {
-                            tx,
+                            maker_amount,
+                            taker_amount,
                             adaptor_sig: *other_encsig,
                             range: digits.range(),
                             n_bits: digits.len(),
+                            txid: tx.txid(),
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
@@ -599,6 +608,8 @@ pub async fn roll_over(
     )
     .context("Refund signature does not verify")?;
 
+    let maker_script_pubkey = dlc.maker_address.script_pubkey();
+    let taker_script_pubkey = dlc.taker_address.script_pubkey();
     let cets = own_cets
         .into_iter()
         .map(|grouped_cets| {
@@ -624,11 +635,21 @@ pub async fn roll_over(
                                  price range {range:?}"
                             )
                         })?;
+
+                    let maker_amount = tx
+                        .find_output_amount(&maker_script_pubkey)
+                        .unwrap_or_default();
+                    let taker_amount = tx
+                        .find_output_amount(&taker_script_pubkey)
+                        .unwrap_or_default();
+
                     Ok(Cet {
-                        tx,
+                        maker_amount,
+                        taker_amount,
                         adaptor_sig: *other_encsig,
                         range: digits.range(),
                         n_bits: digits.len(),
+                        txid: tx.txid(),
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;

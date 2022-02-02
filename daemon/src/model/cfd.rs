@@ -30,6 +30,8 @@ use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Script;
 use bdk::bitcoin::SignedAmount;
 use bdk::bitcoin::Transaction;
+use bdk::bitcoin::TxIn;
+use bdk::bitcoin::TxOut;
 use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
@@ -1372,13 +1374,61 @@ pub fn calculate_profit_at_price(
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Cet {
-    pub tx: Transaction,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
+    pub maker_amount: Amount,
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
+    pub taker_amount: Amount,
     pub adaptor_sig: EcdsaAdaptorSignature,
 
     // TODO: Range + number of digits (usize) could be represented as Digits similar to what we do
     // in the protocol lib
     pub range: RangeInclusive<u64>,
     pub n_bits: usize,
+
+    pub txid: Txid,
+}
+
+impl Cet {
+    /// Build an actual `Transaction` out of the payout information
+    /// stored in `Self`, together with the input and the output
+    /// addresses.
+    ///
+    /// The order of the outputs matters.
+    ///
+    /// We verify that the TXID of the resulting transaction matches
+    /// the TXID with which `Self` was constructed.
+    pub fn to_tx(
+        &self,
+        (commit_tx, commit_descriptor): (&Transaction, &Descriptor<PublicKey>),
+        maker_address: &Address,
+        taker_address: &Address,
+    ) -> Result<Transaction> {
+        let tx = Transaction {
+            version: 2,
+            input: vec![TxIn {
+                previous_output: commit_tx.outpoint(&commit_descriptor.script_pubkey())?,
+                sequence: CET_TIMELOCK,
+                ..Default::default()
+            }],
+            lock_time: 0,
+            output: vec![
+                TxOut {
+                    value: self.maker_amount.as_sat(),
+                    script_pubkey: maker_address.script_pubkey(),
+                },
+                TxOut {
+                    value: self.taker_amount.as_sat(),
+                    script_pubkey: taker_address.script_pubkey(),
+                },
+            ],
+        };
+
+        if tx.txid() != self.txid {
+            bail!("Reconstructed wrong CET");
+        }
+
+        Ok(tx)
+    }
 }
 
 /// Contains all data we've assembled about the CFD through the setup protocol.
@@ -1552,23 +1602,27 @@ impl Dlc {
             }
         };
 
-        let Cet {
-            tx: cet,
-            adaptor_sig: encsig,
-            n_bits,
-            ..
-        } = cets
+        let cet = cets
             .iter()
             .find(|Cet { range, .. }| range.contains(&attestation.price))
             .context("Price out of range of cets")?;
+        let encsig = cet.adaptor_sig;
 
         let mut decryption_sk = attestation.scalars[0];
-        for oracle_attestation in attestation.scalars[1..*n_bits].iter() {
+        for oracle_attestation in attestation.scalars[1..cet.n_bits].iter() {
             decryption_sk.add_assign(oracle_attestation.as_ref())?;
         }
 
+        let cet = cet
+            .to_tx(
+                (&self.commit.0, &self.commit.2),
+                &self.maker_address,
+                &self.taker_address,
+            )
+            .context("Failed to reconstruct CET")?;
+
         let sig_hash = spending_tx_sighash(
-            cet,
+            &cet,
             &self.commit.2,
             Amount::from_sat(self.commit.0.output[0].value),
         );
@@ -1582,7 +1636,7 @@ impl Dlc {
         let counterparty_pubkey = self.identity_counterparty;
 
         let signed_cet = finalize_spend_transaction(
-            cet.clone(),
+            cet,
             &self.commit.2,
             (our_pubkey, our_sig),
             (counterparty_pubkey, counterparty_sig),
@@ -2482,10 +2536,12 @@ mod tests {
             dummy_cet_with_zero_price_range.insert(
                 BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
                 vec![Cet {
-                    tx: dummy_tx.clone(),
+                    maker_amount: Amount::from_sat(0),
+                    taker_amount: Amount::from_sat(0),
                     adaptor_sig: dummy_adapter_sig,
                     range: RangeInclusive::new(0, 1),
                     n_bits: 0,
+                    txid: dummy_tx.txid(),
                 }],
             );
 
