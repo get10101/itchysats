@@ -182,6 +182,7 @@ impl Actor {
             | RolloverFailed
             | CollaborativeSettlementProposalAccepted
             | LockConfirmed
+            | LockConfirmedAfterFinality
             | CommitConfirmed
             | CetConfirmed
             | RevokeConfirmed
