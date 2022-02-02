@@ -243,6 +243,8 @@ pub enum NoRolloverReason {
     Committed,
     #[error("Cannot roll over when CFD is attested by oracle")]
     Attested,
+    #[error("Cannot roll over while CFD is in collaborative settlement")]
+    InCollaborativeSettlement,
     #[error("Cannot roll over when CFD is final")]
     Final,
 }
@@ -640,11 +642,19 @@ impl Cfd {
             return Err(NoRolloverReason::NotLocked);
         }
 
+        // Rollover and collaborative settlement are mutually exclusive, if we are currently
+        // collaboratively settling we cannot roll over
+        if self.is_in_collaborative_settlement() {
+            return Err(NoRolloverReason::InCollaborativeSettlement);
+        }
+
         Ok(())
     }
 
     fn can_settle_collaboratively(&self) -> bool {
         !self.commit_finality && !self.is_final() && !self.is_attested()
+            // Rollover and collaborative settlement are mutually exclusive, if we are currently rolling over we cannot settle
+            && !self.during_rollover
     }
 
     fn is_attested(&self) -> bool {
