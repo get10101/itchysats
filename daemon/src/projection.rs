@@ -711,9 +711,11 @@ impl Actor {
 
     fn handle(&mut self, msg: Update<Option<bitmex_price_feed::Quote>>) {
         self.state.update_quote(msg.0);
-        self.tx.update_quote(msg.0);
 
-        self.refresh_cfds().await;
+        let hydrated_cfds = self.state.cfds.clone();
+
+        self.tx.update_quote(msg.0);
+        self.tx.update_cfds(hydrated_cfds, msg.0);
     }
 
     fn handle(&mut self, msg: Update<Vec<model::Identity>>) {
