@@ -119,20 +119,27 @@ impl Actor {
                     .await?;
             }
             CollaborativeSettlementRejected { commit_tx } => {
-                self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
-                        tx: commit_tx,
-                        kind: TransactionKind::Commit,
-                    })
-                    .await?;
+                // The maker does not have an incentive to publish commit if collab settlement is
+                // rejected
+                if self.role == Role::Taker {
+                    self.try_broadcast_transaction
+                        .send_async_safe(monitor::TryBroadcastTransaction {
+                            tx: commit_tx,
+                            kind: TransactionKind::Commit,
+                        })
+                        .await?;
+                }
             }
             CollaborativeSettlementFailed { commit_tx } => {
-                self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
-                        tx: commit_tx,
-                        kind: TransactionKind::Commit,
-                    })
-                    .await?;
+                // The maker does not have an incentive to publish commit if collab settlement fails
+                if self.role == Role::Taker {
+                    self.try_broadcast_transaction
+                        .send_async_safe(monitor::TryBroadcastTransaction {
+                            tx: commit_tx,
+                            kind: TransactionKind::Commit,
+                        })
+                        .await?;
+                }
             }
             OracleAttestedPostCetTimelock { cet, .. }
             | CetTimelockExpiredPostOracleAttestation { cet } => {
