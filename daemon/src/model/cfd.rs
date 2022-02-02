@@ -644,7 +644,7 @@ impl Cfd {
     }
 
     fn can_settle_collaboratively(&self) -> bool {
-        self.lock_finality && !self.commit_finality && !self.is_final() && !self.is_attested()
+        !self.commit_finality && !self.is_final() && !self.is_attested()
     }
 
     fn is_attested(&self) -> bool {
@@ -943,7 +943,7 @@ impl Cfd {
         settlement: CollaborativeSettlementCompleted,
     ) -> Result<Event> {
         if !self.can_settle_collaboratively() {
-            bail!("Cannot collaboratively settle anymore")
+            bail!("Cannot collaboratively settle")
         }
 
         let event = match settlement {

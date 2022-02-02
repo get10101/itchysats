@@ -27,7 +27,7 @@ interface Props {
 /// maker is online.
 export default function CloseButton({ cfd, request, status, buttonTitle, isForceCloseButton }: Props) {
     const disableCloseButton = cfd.state.getGroup() === StateGroupKey.CLOSED
-        || !(cfd.state.key === StateKey.OPEN);
+        || ![StateKey.OPEN, StateKey.PENDING_OPEN].includes(cfd.state.key);
 
     let popoverBody = <>
         <Text>
