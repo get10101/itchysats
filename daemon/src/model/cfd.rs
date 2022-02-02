@@ -317,6 +317,11 @@ pub enum CfdEvent {
     // TODO: The monitoring events should move into the monitor once we use multiple
     // aggregates in different actors
     LockConfirmed,
+    /// The lock transaction is confirmed after CFD is already final
+    ///
+    /// This can happen in cases where we publish a settlement transaction while the lock
+    /// transaction is still pending and they end up in the same block.
+    LockConfirmedAfterFinality,
     CommitConfirmed,
     CetConfirmed,
     RefundConfirmed,
@@ -1043,6 +1048,11 @@ impl Cfd {
     }
 
     pub fn handle_lock_confirmed(self) -> Event {
+        // For the special case where we close when lock is still pending
+        if self.is_final() {
+            return self.event(CfdEvent::LockConfirmedAfterFinality);
+        }
+
         self.event(CfdEvent::LockConfirmed)
     }
 
@@ -1216,6 +1226,7 @@ impl Cfd {
             CollaborativeSettlementConfirmed => self.collaborative_settlement_finality = true,
             RefundTimelockExpired { .. } => self.refund_timelock_expired = true,
             LockConfirmed => self.lock_finality = true,
+            LockConfirmedAfterFinality => self.lock_finality = true,
             CommitConfirmed => self.commit_finality = true,
             CetTimelockExpiredPriorOracleAttestation
             | CetTimelockExpiredPostOracleAttestation { .. } => {

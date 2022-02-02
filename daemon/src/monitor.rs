@@ -245,7 +245,10 @@ impl Cfd {
                 ..self
             },
             // final states, don't monitor anything
-            CetConfirmed | RefundConfirmed | CollaborativeSettlementConfirmed => Self::default(),
+            CetConfirmed
+            | RefundConfirmed
+            | CollaborativeSettlementConfirmed
+            | LockConfirmedAfterFinality => Self::default(),
             CetTimelockExpiredPriorOracleAttestation => Self {
                 monitor_cet_timelock: false,
                 ..self

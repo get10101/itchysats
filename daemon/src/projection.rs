@@ -388,7 +388,7 @@ impl Cfd {
             RefundConfirmed => {
                 self.state = CfdState::Refunded;
             }
-            CollaborativeSettlementConfirmed => {
+            LockConfirmedAfterFinality | CollaborativeSettlementConfirmed => {
                 self.state = CfdState::Closed;
             }
             CetTimelockExpiredPriorOracleAttestation => {
