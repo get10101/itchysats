@@ -313,11 +313,9 @@ pub enum CfdEvent {
         #[serde(with = "hex_transaction")]
         commit_tx: Transaction,
     },
-    // TODO: What does "failed" mean here? Do we have to record this as event? what would it mean?
-    CollaborativeSettlementFailed {
-        #[serde(with = "hex_transaction")]
-        commit_tx: Transaction,
-    },
+    // TODO: We can distinguish different "failed" scenarios and potentially decide to publish the
+    // commit transaction for some
+    CollaborativeSettlementFailed,
 
     // TODO: The monitoring events should move into the monitor once we use multiple
     // aggregates in different actors
@@ -977,15 +975,8 @@ impl Cfd {
                 CfdEvent::CollaborativeSettlementRejected { commit_tx }
             }
             Completed::Failed { error, .. } => {
-                tracing::warn!(order_id=%self.id(), "Collaborative close failed: {:#}, force-closing the position", error);
-
-                let dlc = self
-                    .dlc
-                    .take()
-                    .context("No dlc after collaborative settlement rejected")?;
-                let commit_tx = dlc.signed_commit_tx()?;
-
-                CfdEvent::CollaborativeSettlementFailed { commit_tx }
+                tracing::warn!(order_id=%self.id(), "Collaborative close failed: {:#}", error);
+                CfdEvent::CollaborativeSettlementFailed
             }
         };
 
@@ -1227,10 +1218,12 @@ impl Cfd {
                 self.settlement_proposal = None;
                 self.collaborative_settlement_spend_tx = Some(spend_tx);
             }
-            CollaborativeSettlementRejected { commit_tx }
-            | CollaborativeSettlementFailed { commit_tx } => {
+            CollaborativeSettlementRejected { commit_tx } => {
                 self.settlement_proposal = None;
                 self.commit_tx = Some(commit_tx);
+            }
+            CollaborativeSettlementFailed => {
+                self.settlement_proposal = None;
             }
             CetConfirmed => self.cet_finality = true,
             RefundConfirmed => self.refund_finality = true,
