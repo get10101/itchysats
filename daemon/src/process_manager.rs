@@ -15,7 +15,7 @@ use xtra_productivity::xtra_productivity;
 pub struct Actor {
     db: sqlx::SqlitePool,
     role: Role,
-    cfds_changed: Box<dyn MessageChannel<projection::CfdsChanged>>,
+    cfds_changed: Box<dyn MessageChannel<projection::CfdChanged>>,
     try_broadcast_transaction: Box<dyn MessageChannel<monitor::TryBroadcastTransaction>>,
     start_monitoring: Box<dyn MessageChannel<monitor::StartMonitoring>>,
     monitor_collaborative_settlement: Box<dyn MessageChannel<monitor::CollaborativeSettlement>>,
@@ -34,7 +34,7 @@ impl Actor {
     pub fn new(
         db: sqlx::SqlitePool,
         role: Role,
-        cfds_changed: &(impl MessageChannel<projection::CfdsChanged> + 'static),
+        cfds_changed: &(impl MessageChannel<projection::CfdChanged> + 'static),
         try_broadcast_transaction: &(impl MessageChannel<monitor::TryBroadcastTransaction> + 'static),
         start_monitoring: &(impl MessageChannel<monitor::StartMonitoring> + 'static),
         monitor_collaborative_settlement: &(impl MessageChannel<monitor::CollaborativeSettlement>
@@ -207,7 +207,7 @@ impl Actor {
 
         // 3. Update UI
         self.cfds_changed
-            .send_async_safe(projection::CfdsChanged)
+            .send_async_safe(projection::CfdChanged(event.id))
             .await?;
 
         Ok(())

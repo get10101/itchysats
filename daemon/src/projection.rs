@@ -22,7 +22,6 @@ use crate::model::Price;
 use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
-use crate::xtra_ext::SendAsyncSafe;
 use crate::Order;
 use crate::Tasks;
 use crate::SETTLEMENT_INTERVAL;
@@ -54,9 +53,8 @@ use xtra_productivity::xtra_productivity;
 /// (replaces previously stored values)
 pub struct Update<T>(pub T);
 
-/// Message indicating that the Cfds in the projection need to be reloaded, as at
-/// least one of the Cfds has changed.
-pub struct CfdsChanged;
+/// Indicates that the CFD with the given order ID changed.
+pub struct CfdChanged(pub OrderId);
 
 pub struct Actor {
     db: sqlx::SqlitePool,
@@ -664,27 +662,19 @@ impl State {
         }
     }
 
-    async fn update_cfds(&mut self, db: sqlx::SqlitePool) -> Result<()> {
+    async fn update_cfd(&mut self, db: sqlx::SqlitePool, id: OrderId) -> Result<()> {
         let mut conn = db
             .acquire()
             .await
             .context("Failed to acquire DB connection")?;
 
-        let ids = db::load_all_cfd_ids(&mut conn).await?;
+        let (cfd, events) = db::load_cfd(id, &mut conn).await?;
 
-        let mut cfds = HashMap::with_capacity(ids.len());
+        let cfd = events
+            .into_iter()
+            .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, self.network));
 
-        for id in ids {
-            let (cfd, events) = db::load_cfd(id, &mut conn).await?;
-
-            let cfd = events
-                .into_iter()
-                .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, self.network));
-
-            cfds.insert(id, cfd);
-        }
-
-        self.cfds = cfds;
+        self.cfds.insert(id, cfd);
 
         Ok(())
     }
@@ -696,9 +686,9 @@ impl State {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle(&mut self, _: CfdsChanged) {
-        if let Err(e) = self.state.update_cfds(self.db.clone()).await {
-            tracing::warn!("Failed to rehydrate CFDs: {e:#}");
+    async fn handle(&mut self, msg: CfdChanged) {
+        if let Err(e) = self.state.update_cfd(self.db.clone(), msg.0).await {
+            tracing::warn!("Failed to rehydrate CFD: {e:#}");
             return;
         };
 
@@ -728,11 +718,27 @@ impl Actor {
 impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we just started");
+        let pool = self.db.clone();
 
-        // this will make us load all cfds from the DB
-        this.send_async_safe(CfdsChanged)
-            .await
-            .expect("we just started");
+        self.tasks.add_fallible(
+            {
+                let this = this.clone();
+
+                async move {
+                    let mut conn = pool.acquire().await?;
+                    let vec = db::load_all_cfd_ids(&mut conn).await?;
+
+                    for id in vec {
+                        let _: Result<(), xtra::Disconnected> = this.send(CfdChanged(id)).await;
+                    }
+
+                    anyhow::Ok(())
+                }
+            },
+            |e| async move {
+                tracing::warn!("Failed to do initial rehydratation of CFDs: {e:#}");
+            },
+        );
 
         self.tasks.add({
             let price_feed = self.price_feed.clone_channel();

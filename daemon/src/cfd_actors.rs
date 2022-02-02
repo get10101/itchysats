@@ -19,7 +19,9 @@ pub async fn insert_cfd_and_update_feed(
     projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()> {
     db::insert_cfd(cfd, conn).await?;
-    projection_address.send(projection::CfdsChanged).await?;
+    projection_address
+        .send(projection::CfdChanged(cfd.id()))
+        .await?;
     Ok(())
 }
 
