@@ -363,16 +363,14 @@ impl Cfd {
                 self.aggregated.collab_settlement_tx = Some((spend_tx, script));
                 self.state = CfdState::PendingClose;
             }
-            CollaborativeSettlementRejected { .. } => {
-                self.aggregated.commit_published = true;
+            CollaborativeSettlementRejected => {
                 self.pending_settlement_proposal_price = None;
 
-                self.state = CfdState::PendingCommit;
+                self.state = CfdState::Open;
             }
-            CollaborativeSettlementFailed { .. } => {
-                self.aggregated.commit_published = true;
-
-                self.state = CfdState::PendingCommit;
+            CollaborativeSettlementFailed => {
+                self.pending_settlement_proposal_price = None;
+                self.state = CfdState::Open;
             }
             LockConfirmed => {
                 self.state = CfdState::Open;
