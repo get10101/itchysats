@@ -18,7 +18,6 @@ use daemon::model::FundingRate;
 use daemon::model::Identity;
 use daemon::model::OpeningFee;
 use daemon::model::Price;
-use daemon::model::Timestamp;
 use daemon::model::TxFeeRate;
 use daemon::model::Usd;
 use daemon::projection;
@@ -37,6 +36,7 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
+use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
@@ -369,7 +369,7 @@ pub fn dummy_price() -> Price {
 
 pub fn dummy_quote() -> Quote {
     Quote {
-        timestamp: Timestamp::now(),
+        timestamp: OffsetDateTime::now_utc(),
         bid: dummy_price(),
         ask: dummy_price(),
     }

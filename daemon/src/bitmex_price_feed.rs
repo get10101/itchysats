@@ -1,5 +1,4 @@
 use crate::model::Price;
-use crate::model::Timestamp;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::SinkExt;
@@ -133,7 +132,7 @@ pub struct LatestQuote;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Quote {
-    pub timestamp: Timestamp,
+    pub timestamp: OffsetDateTime,
     pub bid: Price,
     pub ask: Price,
 }
@@ -151,7 +150,7 @@ impl Quote {
         let [quote] = table_message.data;
 
         Ok(Some(Self {
-            timestamp: Timestamp::parse_from_rfc3339(&quote.timestamp)?,
+            timestamp: quote.timestamp,
             bid: Price::new(Decimal::try_from(quote.bid_price)?)?,
             ask: Price::new(Decimal::try_from(quote.ask_price)?)?,
         }))
@@ -172,11 +171,12 @@ impl Quote {
     pub fn is_older_than(&self, duration: time::Duration) -> bool {
         let required_quote_timestamp = (OffsetDateTime::now_utc() - duration).unix_timestamp();
 
-        self.timestamp.seconds() < required_quote_timestamp
+        self.timestamp.unix_timestamp() < required_quote_timestamp
     }
 }
 
 mod wire {
+    use super::*;
     use serde::Deserialize;
 
     #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -194,7 +194,8 @@ mod wire {
         pub bid_price: f64,
         pub ask_price: f64,
         pub symbol: String,
-        pub timestamp: String,
+        #[serde(with = "time::serde::rfc3339")]
+        pub timestamp: OffsetDateTime,
     }
 }
 
@@ -210,7 +211,7 @@ mod tests {
 
         assert_eq!(quote.bid, Price::new(dec!(42640.5)).unwrap());
         assert_eq!(quote.ask, Price::new(dec!(42641)).unwrap());
-        assert_eq!(quote.timestamp.seconds(), 1632192000)
+        assert_eq!(quote.timestamp.unix_timestamp(), 1632192000)
     }
 
     #[test]
@@ -231,9 +232,9 @@ mod tests {
         assert!(is_older)
     }
 
-    fn dummy_quote_at(time: OffsetDateTime) -> Quote {
+    fn dummy_quote_at(timestamp: OffsetDateTime) -> Quote {
         Quote {
-            timestamp: Timestamp::new(time.unix_timestamp()),
+            timestamp,
             bid: Price::new(dec!(10)).unwrap(),
             ask: Price::new(dec!(10)).unwrap(),
         }
