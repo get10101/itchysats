@@ -138,8 +138,6 @@ pub struct Order {
 
     pub price: Price,
 
-    // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
-    //  always 1 USD
     pub min_quantity: Usd,
     pub max_quantity: Usd,
 
