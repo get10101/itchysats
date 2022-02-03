@@ -775,7 +775,7 @@ impl From<bitmex_price_feed::Quote> for Quote {
         Quote {
             bid: quote.bid,
             ask: quote.ask,
-            last_updated_at: quote.timestamp,
+            last_updated_at: Timestamp::new(quote.timestamp.unix_timestamp()),
         }
     }
 }
