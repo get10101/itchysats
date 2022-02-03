@@ -14,7 +14,6 @@ use daemon::projection::Cfd;
 use daemon::projection::CfdAction;
 use daemon::projection::Feeds;
 use daemon::wallet;
-use daemon::MakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
 use rocket::http::ContentType;
@@ -34,7 +33,7 @@ use tokio::select;
 use tokio::sync::watch;
 use uuid::Uuid;
 
-pub type Maker = MakerActorSystem<oracle::Actor, wallet::Actor>;
+pub type Maker = maker::ActorSystem<oracle::Actor, wallet::Actor>;
 
 #[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]

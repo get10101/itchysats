@@ -15,7 +15,6 @@ use daemon::projection;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::wallet;
-use daemon::MakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
@@ -220,7 +219,7 @@ async fn main() -> Result<()> {
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
-    let maker = MakerActorSystem::new(
+    let maker = maker::ActorSystem::new(
         db.clone(),
         wallet.clone(),
         oracle,

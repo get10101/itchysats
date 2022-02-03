@@ -7,7 +7,6 @@ use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Address;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
-use daemon::connection::connect;
 use daemon::db;
 use daemon::model::cfd::Role;
 use daemon::model::Identity;
@@ -18,7 +17,6 @@ use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::seed::UmbrelSeed;
 use daemon::wallet;
-use daemon::TakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
@@ -253,7 +251,7 @@ async fn main() -> Result<()> {
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
-    let taker = TakerActorSystem::new(
+    let taker = taker::ActorSystem::new(
         db.clone(),
         wallet.clone(),
         oracle,
@@ -283,7 +281,7 @@ async fn main() -> Result<()> {
 
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
 
-    tasks.add(connect(
+    tasks.add(taker::connection::connect(
         taker.maker_online_status_feed_receiver.clone(),
         taker.connection_actor.clone(),
         maker_identity,

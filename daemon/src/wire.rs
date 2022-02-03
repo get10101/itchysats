@@ -125,6 +125,10 @@ impl fmt::Display for TakerToMaker {
     }
 }
 
+impl xtra::Message for TakerToMaker {
+    type Result = ();
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
@@ -157,6 +161,10 @@ pub enum MakerToTaker {
     },
 }
 
+impl xtra::Message for MakerToTaker {
+    type Result = ();
+}
+
 pub mod maker_to_taker {
     use super::*;
 
@@ -165,6 +173,10 @@ pub mod maker_to_taker {
     pub enum Settlement {
         Confirm,
         Reject,
+    }
+
+    impl xtra::Message for Settlement {
+        type Result = ();
     }
 
     impl fmt::Display for Settlement {
@@ -310,6 +322,10 @@ impl fmt::Display for SetupMsg {
     }
 }
 
+impl xtra::Message for SetupMsg {
+    type Result = Result<()>;
+}
+
 impl SetupMsg {
     pub fn try_into_msg0(self) -> Result<Msg0> {
         if let Self::Msg0(v) = self {
@@ -451,6 +467,10 @@ pub enum RolloverMsg {
     Msg1(RolloverMsg1),
     Msg2(RolloverMsg2),
     Msg3(RolloverMsg3),
+}
+
+impl xtra::Message for RolloverMsg {
+    type Result = ();
 }
 
 impl fmt::Display for RolloverMsg {

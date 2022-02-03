@@ -1,7 +1,6 @@
 use daemon::bdk;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
-use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
 use daemon::model::Leverage;
 use daemon::model::Price;
@@ -13,7 +12,6 @@ use daemon::projection;
 use daemon::projection::CfdAction;
 use daemon::projection::Feeds;
 use daemon::wallet;
-use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
 use rocket::http::ContentType;
@@ -35,7 +33,7 @@ use tokio::select;
 use tokio::sync::watch;
 use uuid::Uuid;
 
-type Taker = TakerActorSystem<oracle::Actor, wallet::Actor, xtra_bitmex_price_feed::Actor>;
+type Taker = taker::ActorSystem<oracle::Actor, wallet::Actor, xtra_bitmex_price_feed::Actor>;
 
 const HEARTBEAT_INTERVAL_SECS: u64 = 5;
 
@@ -43,7 +41,7 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 5;
 pub async fn feed(
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
-    rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
+    rx_maker_status: &State<watch::Receiver<taker::connection::ConnectionStatus>>,
     _auth: Authenticated,
 ) -> EventStream![] {
     let rx = rx.inner();

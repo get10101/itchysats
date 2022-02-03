@@ -1,14 +1,10 @@
 use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
 use crate::mocks::wallet::WalletActor;
-use daemon::auto_rollover;
 use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
-use daemon::connection::connect;
-use daemon::connection::ConnectionStatus;
 use daemon::db;
-use daemon::maker_cfd;
 use daemon::model;
 use daemon::model::cfd::OrderId;
 use daemon::model::cfd::Role;
@@ -24,10 +20,10 @@ use daemon::projection::CfdOrder;
 use daemon::projection::Feeds;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
-use daemon::MakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
+use maker::maker_cfd;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::net::IpAddr;
@@ -129,7 +125,7 @@ impl Default for TakerConfig {
 
 /// Maker Test Setup
 pub struct Maker {
-    pub system: MakerActorSystem<OracleActor, WalletActor>,
+    pub system: maker::ActorSystem<OracleActor, WalletActor>,
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     pub listen_addr: SocketAddr,
@@ -187,7 +183,7 @@ impl Maker {
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
 
-        let maker = daemon::MakerActorSystem::new(
+        let maker = maker::ActorSystem::new(
             db.clone(),
             wallet_addr,
             config.oracle_pk,
@@ -231,7 +227,7 @@ impl Maker {
 /// Taker Test Setup
 pub struct Taker {
     pub id: Identity,
-    pub system: daemon::TakerActorSystem<OracleActor, WalletActor, PriceFeedActor>,
+    pub system: taker::ActorSystem<OracleActor, WalletActor, PriceFeedActor>,
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     _tasks: Tasks,
@@ -250,7 +246,9 @@ impl Taker {
         &mut self.feeds.quote
     }
 
-    pub fn maker_status_feed(&mut self) -> &mut watch::Receiver<ConnectionStatus> {
+    pub fn maker_status_feed(
+        &mut self,
+    ) -> &mut watch::Receiver<taker::connection::ConnectionStatus> {
         &mut self.system.maker_online_status_feed_receiver
     }
 
@@ -276,7 +274,7 @@ impl Taker {
         // system startup sends sync messages, mock them
         mocks.mock_sync_handlers().await;
 
-        let taker = daemon::TakerActorSystem::new(
+        let taker = taker::ActorSystem::new(
             db.clone(),
             wallet_addr,
             config.oracle_pk,
@@ -296,7 +294,8 @@ impl Taker {
             projection::Actor::new(db, Role::Taker, Network::Testnet, &taker.price_feed_actor);
         tasks.add(projection_context.run(proj_actor));
 
-        tasks.add(connect(
+        // TODO: Move make this as message on connection actor.
+        tasks.add(taker::connection::connect(
             taker.maker_online_status_feed_receiver.clone(),
             taker.connection_actor.clone(),
             maker_identity,
@@ -315,7 +314,7 @@ impl Taker {
     pub async fn trigger_rollover(&self, id: OrderId) {
         self.system
             .auto_rollover_actor
-            .send(auto_rollover::Rollover(id))
+            .send(taker::auto_rollover::Rollover(id))
             .await
             .unwrap()
     }

@@ -7,8 +7,10 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
+async-trait = "0.1"
 clap = { version = "3", features = ["derive"] }
 daemon = { path = "../daemon" }
+futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 http-api-problem = { version = "0.51.0", features = ["rocket"] }
 itertools = "0.10"
@@ -21,11 +23,14 @@ shared-bin = { path = "../shared-bin" }
 time = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tasks = { path = "../tokio-tasks" }
+tokio-util = { version = "0.6", features = ["codec"] }
 tracing = { version = "0.1" }
 uuid = "0.8"
 x25519-dalek = "1.1"
 xtra = { version = "0.6" }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
+xtra_productivity = "0.1"
+xtras = { path = "../xtras" }
 
 [dev-dependencies]
 serde_test = "1"

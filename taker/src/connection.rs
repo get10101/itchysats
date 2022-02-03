@@ -1,22 +1,22 @@
 use crate::collab_settlement_taker;
-use crate::future_ext::FutureExt;
-use crate::model::cfd::OrderId;
-use crate::model::Identity;
-use crate::model::Price;
-use crate::model::Timestamp;
-use crate::model::Usd;
-use crate::noise;
+// use crate::future_ext::FutureExt;
 use crate::rollover_taker;
 use crate::setup_taker;
 use crate::taker_cfd::CurrentOrder;
-use crate::wire;
-use crate::wire::EncryptedJsonCodec;
-use crate::wire::TakerToMaker;
-use crate::wire::Version;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use bdk::bitcoin::Amount;
+use daemon::bdk::bitcoin::Amount;
+use daemon::model::cfd::OrderId;
+use daemon::model::Identity;
+use daemon::model::Price;
+use daemon::model::Timestamp;
+use daemon::model::Usd;
+use daemon::noise;
+use daemon::wire;
+use daemon::wire::EncryptedJsonCodec;
+use daemon::wire::TakerToMaker;
+use daemon::wire::Version;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
@@ -251,16 +251,16 @@ impl Actor {
     async fn handle_rollover_actor_stopping(&mut self, message: Stopping<rollover_taker::Actor>) {
         self.rollover_actors.gc(message);
     }
-}
 
-#[xtra_productivity]
-impl Actor {
     async fn handle_taker_to_maker(&mut self, message: wire::TakerToMaker) {
         if let Err(e) = self.state.send(message).await {
             tracing::warn!("{:#}", e);
         }
     }
+}
 
+#[xtra_productivity]
+impl Actor {
     async fn handle_take_order(&mut self, msg: TakeOrder) -> Result<()> {
         self.state
             .send(wire::TakerToMaker::TakeOrder {
@@ -335,13 +335,13 @@ impl Actor {
 
         let (mut write, mut read) = {
             let mut connection = TcpStream::connect(&maker_addr)
-                .timeout(self.connect_timeout)
+                // .timeout(self.connect_timeout)
                 .await
-                .with_context(|| {
-                    let seconds = self.connect_timeout.as_secs();
-
-                    format!("Connection attempt to {maker_addr} timed out after {seconds}s",)
-                })?
+                // .with_context(|| {
+                //     let seconds = self.connect_timeout.as_secs();
+                //
+                //     format!("Connection attempt to {maker_addr} timed out after {seconds}s",)
+                // })?
                 .with_context(|| format!("Failed to connect to {maker_addr}"))?;
             let noise = noise::initiator_handshake(
                 &mut connection,
@@ -358,14 +358,15 @@ impl Actor {
 
         match read
             .try_next()
-            .timeout(Duration::from_secs(10))
+            // .timeout(Duration::from_secs(10))
             .await
-            .with_context(|| {
-                format!(
-                    "Maker {maker_identity} did not send Hello within 10 seconds, dropping connection"
-                )
-            })?
-            .with_context(|| format!("Failed to read first message from maker {maker_identity}"))? {
+            // .with_context(|| {
+            //     format!(
+            //         "Maker {maker_identity} did not send Hello within 10 seconds, dropping
+            // connection"     )
+            // })?
+            .with_context(|| format!("Failed to read first message from maker {maker_identity}"))?
+        {
             Some(wire::MakerToTaker::Hello(maker_version)) => {
                 if our_version != maker_version {
                     self.status_sender
@@ -383,14 +384,10 @@ impl Actor {
                 }
             }
             Some(unexpected_message) => {
-                bail!(
-                    "Unexpected message {unexpected_message} from maker {maker_identity}"
-                )
+                bail!("Unexpected message {unexpected_message} from maker {maker_identity}")
             }
             None => {
-                bail!(
-                    "Connection to maker {maker_identity} closed before receiving first message"
-                )
+                bail!("Connection to maker {maker_identity} closed before receiving first message")
             }
         }
 

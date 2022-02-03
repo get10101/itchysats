@@ -723,11 +723,13 @@ dependencies = [
  "anyhow",
  "async-trait",
  "daemon",
+ "maker",
  "mockall",
  "mockall_derive",
  "rand 0.6.5",
  "rust_decimal",
  "rust_decimal_macros",
+ "taker",
  "time 0.3.7",
  "tokio",
  "tokio-tasks",
@@ -1563,8 +1565,10 @@ name = "maker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
  "daemon",
+ "futures",
  "hex",
  "http-api-problem",
  "rocket",
@@ -1573,13 +1577,18 @@ dependencies = [
  "rust-embed-rocket",
  "serde",
  "shared-bin",
+ "thiserror",
+ "time 0.3.7",
  "tokio",
  "tokio-tasks",
+ "tokio-util",
  "tracing",
  "uuid",
  "vergen",
+ "x25519-dalek",
  "xtra",
  "xtra-bitmex-price-feed",
+ "xtra_productivity",
  "xtras",
 ]
 
@@ -3475,8 +3484,10 @@ name = "taker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
  "daemon",
+ "futures",
  "hex",
  "http-api-problem",
  "itertools",
@@ -3490,12 +3501,15 @@ dependencies = [
  "time 0.3.7",
  "tokio",
  "tokio-tasks",
+ "tokio-util",
  "tracing",
  "uuid",
  "vergen",
  "x25519-dalek",
  "xtra",
  "xtra-bitmex-price-feed",
+ "xtra_productivity",
+ "xtras",
 ]
 
 [[package]]

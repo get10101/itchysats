@@ -1,25 +1,26 @@
-use crate::command;
 use crate::connection;
-use crate::model::cfd::Dlc;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::Role;
-use crate::model::cfd::SetupCompleted;
-use crate::model::Usd;
-use crate::oracle::Announcement;
-use crate::process_manager;
-use crate::setup_contract;
-use crate::wallet;
-use crate::wire;
-use crate::wire::SetupMsg;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use daemon::command;
+use daemon::maia::secp256k1_zkp::schnorrsig;
+use daemon::model::cfd::Dlc;
+use daemon::model::cfd::OrderId;
+use daemon::model::cfd::Role;
+use daemon::model::cfd::SetupCompleted;
+use daemon::model::Usd;
+use daemon::oracle::Announcement;
+use daemon::process_manager;
+use daemon::setup_contract;
+use daemon::sqlx;
+use daemon::wallet;
+use daemon::wire;
+use daemon::wire::SetupMsg;
 use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
-use maia::secp256k1_zkp::schnorrsig;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::prelude::*;
@@ -71,6 +72,19 @@ impl Actor {
     /// Returns whether the maker has accepted our setup proposal.
     fn is_accepted(&self) -> bool {
         self.setup_msg_sender.is_some()
+    }
+}
+
+#[xtra_productivity(message_impl = false)]
+impl Actor {
+    fn handle(&mut self, msg: wire::SetupMsg, _ctx: &mut xtra::Context<Self>) -> Result<()> {
+        let mut sender = self
+            .setup_msg_sender
+            .clone()
+            .context("Cannot forward message to contract setup task")?;
+        sender.send(msg).await?;
+
+        Ok(())
     }
 }
 
@@ -134,16 +148,6 @@ impl Actor {
         }
 
         ctx.stop();
-
-        Ok(())
-    }
-
-    fn handle(&mut self, msg: wire::SetupMsg, _ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let mut sender = self
-            .setup_msg_sender
-            .clone()
-            .context("Cannot forward message to contract setup task")?;
-        sender.send(msg).await?;
 
         Ok(())
     }

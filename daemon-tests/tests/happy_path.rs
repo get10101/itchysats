@@ -1,5 +1,4 @@
 use daemon::bdk::bitcoin::Amount;
-use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::calculate_long_margin;
 use daemon::model::cfd::OrderId;
 use daemon::model::Identity;
@@ -27,6 +26,7 @@ use daemon_tests::Taker;
 use daemon_tests::TakerConfig;
 use rust_decimal_macros::dec;
 use std::time::Duration;
+use taker::connection::ConnectionStatus;
 use tokio::time::sleep;
 
 #[tokio::test]

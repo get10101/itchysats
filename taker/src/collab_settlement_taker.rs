@@ -1,18 +1,19 @@
-use crate::cfd_actors::load_cfd;
 use crate::connection;
-use crate::model::cfd;
-use crate::model::cfd::CfdEvent;
-use crate::model::cfd::CollaborativeSettlement;
-use crate::model::cfd::CollaborativeSettlementCompleted;
-use crate::model::cfd::Completed;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::SettlementProposal;
-use crate::model::Price;
-use crate::process_manager;
-use crate::wire;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
+use daemon::cfd_actors::load_cfd;
+use daemon::model::cfd;
+use daemon::model::cfd::CfdEvent;
+use daemon::model::cfd::CollaborativeSettlement;
+use daemon::model::cfd::CollaborativeSettlementCompleted;
+use daemon::model::cfd::Completed;
+use daemon::model::cfd::OrderId;
+use daemon::model::cfd::SettlementProposal;
+use daemon::model::Price;
+use daemon::process_manager;
+use daemon::sqlx;
+use daemon::wire;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
@@ -194,7 +195,7 @@ impl xtra::Actor for Actor {
     }
 }
 
-#[xtra_productivity]
+#[xtra_productivity(message_impl = false)]
 impl Actor {
     async fn handle(
         &mut self,
@@ -220,7 +221,10 @@ impl Actor {
 
         self.complete(completed, ctx).await;
     }
+}
 
+#[xtra_productivity]
+impl Actor {
     pub async fn handle_collab_settlement_timeout_reached(
         &mut self,
         msg: MakerResponseTimeoutReached,

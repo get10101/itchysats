@@ -1,29 +1,30 @@
-use crate::command;
 use crate::connection;
-use crate::model::cfd::Dlc;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::Role;
-use crate::model::cfd::RolloverCompleted;
-use crate::model::BitMexPriceEventId;
-use crate::model::FundingFee;
-use crate::model::FundingRate;
-use crate::model::Timestamp;
-use crate::model::TxFeeRate;
-use crate::oracle;
-use crate::oracle::GetAnnouncement;
-use crate::process_manager;
-use crate::setup_contract;
-use crate::wire;
-use crate::wire::RolloverMsg;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use daemon::command;
+use daemon::maia::secp256k1_zkp::schnorrsig;
+use daemon::model::cfd::Dlc;
+use daemon::model::cfd::OrderId;
+use daemon::model::cfd::Role;
+use daemon::model::cfd::RolloverCompleted;
+use daemon::model::BitMexPriceEventId;
+use daemon::model::FundingFee;
+use daemon::model::FundingRate;
+use daemon::model::Timestamp;
+use daemon::model::TxFeeRate;
+use daemon::oracle;
+use daemon::oracle::GetAnnouncement;
+use daemon::process_manager;
+use daemon::setup_contract;
+use daemon::sqlx;
+use daemon::wire;
+use daemon::wire::RolloverMsg;
 use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
-use maia::secp256k1_zkp::schnorrsig;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
@@ -307,7 +308,10 @@ impl Actor {
 
         self.complete(completed, ctx).await;
     }
+}
 
+#[xtra_productivity(message_impl = false)]
+impl Actor {
     pub async fn handle_protocol_msg(
         &mut self,
         msg: wire::RolloverMsg,

@@ -1,26 +1,26 @@
-use crate::collab_settlement_maker;
-use crate::future_ext::FutureExt;
-use crate::maker_cfd;
-use crate::maker_cfd::FromTaker;
-use crate::maker_cfd::TakerConnected;
-use crate::maker_cfd::TakerDisconnected;
-use crate::model::cfd::Order;
-use crate::model::cfd::OrderId;
-use crate::model::Identity;
-use crate::noise;
-use crate::noise::TransportStateExt;
-use crate::rollover_maker;
-use crate::setup_maker;
-use crate::wire;
-use crate::wire::taker_to_maker;
-use crate::wire::EncryptedJsonCodec;
-use crate::wire::MakerToTaker;
-use crate::wire::TakerToMaker;
-use crate::wire::Version;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+// use daemon::future_ext::FutureExt;
+use crate::collab_settlement_maker;
+use crate::maker_cfd;
+use crate::maker_cfd::FromTaker;
+use crate::maker_cfd::TakerConnected;
+use crate::maker_cfd::TakerDisconnected;
+use crate::rollover_maker;
+use crate::setup_maker;
+use daemon::model::cfd::Order;
+use daemon::model::cfd::OrderId;
+use daemon::model::Identity;
+use daemon::noise;
+use daemon::noise::TransportStateExt;
+use daemon::wire;
+use daemon::wire::taker_to_maker;
+use daemon::wire::EncryptedJsonCodec;
+use daemon::wire::MakerToTaker;
+use daemon::wire::TakerToMaker;
+use daemon::wire::Version;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
@@ -56,6 +56,7 @@ pub struct ConfirmOrder {
 
 pub mod settlement {
     use super::*;
+    use crate::collab_settlement_maker;
 
     /// Message sent from the `collab_settlement_maker::Actor` to the
     /// `maker_inc_connections::Actor` so that it can forward it to the
@@ -407,6 +408,8 @@ impl Actor {
 
         tracing::trace!(target: "wire", taker_id = %msg.taker_id, "Received {msg_str}");
 
+        use crate::collab_settlement_maker;
+        use crate::rollover_maker;
         use wire::TakerToMaker::*;
         match msg.msg {
             Protocol { order_id, msg } => match self.setup_actors.get_connected(&order_id) {
@@ -475,9 +478,10 @@ async fn upgrade(
     tracing::info!(%taker_address, "Upgrade new connection");
 
     let transport_state = noise::responder_handshake(&mut stream, &noise_priv_key)
-        .timeout(Duration::from_secs(20))
+        // .timeout(Duration::from_secs(20))
         .await
-        .context("Failed to complete noise handshake within 20 seconds")??;
+        // .context("Failed to complete noise handshake within 20 seconds")?
+        ?;
     let taker_id = Identity::new(transport_state.get_remote_public_key()?);
 
     let (mut write, mut read) =
@@ -485,9 +489,9 @@ async fn upgrade(
 
     let first_message = read
         .try_next()
-        .timeout(Duration::from_secs(10))
+        // .timeout(Duration::from_secs(10))
         .await
-        .context("No message from taker within 10 seconds")?
+        // .context("No message from taker within 10 seconds")?
         .context("Failed to read first message on stream")?
         .context("Stream closed before first message")?;
 
