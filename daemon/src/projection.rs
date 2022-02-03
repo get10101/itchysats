@@ -481,14 +481,33 @@ impl Cfd {
         }
 
         // Otherwise, compute based on current quote.
-        let latest_price = match (latest_quote, self.role) {
-            (None, _) => None,
-            (Some(quote), Role::Maker) => Some(quote.for_maker()),
-            (Some(quote), Role::Taker) => Some(quote.for_taker()),
+        let latest_quote = match latest_quote {
+            Some(latest_quote) => latest_quote,
+            None => {
+                tracing::debug!(order_id = %self.order_id, "Unable to calculate profit/loss without current price");
+
+                return Self {
+                    payout: None,
+                    profit_btc: None,
+                    profit_percent: None,
+                    ..self
+                };
+            }
         };
 
-        let (profit_btc_latest_price, profit_percent_latest_price, payout) = latest_price.and_then(|latest_price| {
-            match calculate_profit_at_price(self.initial_price, latest_price, self.quantity_usd, self.leverage, self.aggregated.fee_account) {
+        let latest_price = match self.role {
+            Role::Maker => latest_quote.for_maker(),
+            Role::Taker => latest_quote.for_taker(),
+        };
+
+        let (profit_btc_latest_price, profit_percent_latest_price, payout) =
+            match calculate_profit_at_price(
+                self.initial_price,
+                latest_price,
+                self.quantity_usd,
+                self.leverage,
+                self.aggregated.fee_account,
+            ) {
                 Ok(profit) => Some(profit),
                 Err(e) => {
                     tracing::warn!("Failed to calculate profit/loss {:#}", e);
@@ -496,12 +515,14 @@ impl Cfd {
                     None
                 }
             }
-        }).map(|(in_btc, in_percent, payout)| (Some(in_btc), Some(in_percent.round_dp(1).to_string()), Some(payout)))
-            .unwrap_or_else(|| {
-                tracing::debug!(order_id = %self.order_id, "Unable to calculate profit/loss without current price");
-
-                (None, None, None)
-            });
+            .map(|(in_btc, in_percent, payout)| {
+                (
+                    Some(in_btc),
+                    Some(in_percent.round_dp(1).to_string()),
+                    Some(payout),
+                )
+            })
+            .unwrap_or_else(|| (None, None, None));
 
         Self {
             payout,
