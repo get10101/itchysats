@@ -56,8 +56,8 @@ where
     }
 
     fn spawn_new(&mut self, ctx: &mut Context<Self>) {
-        let actor = T::name();
-        tracing::info!(actor = %&actor, "Spawning new actor instance");
+        let actor_name = T::name();
+        tracing::info!(actor = %&actor_name, "Spawning new actor instance");
 
         let this = ctx.address().expect("we are alive");
         let actor = (self.ctor)(this.clone());
@@ -68,7 +68,9 @@ where
 
             async move {
                 match AssertUnwindSafe(task).catch_unwind().await {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        tracing::warn!(actor = %&actor_name, "Actor stopped without sending a `Stopped` message");
+                    }
                     Err(error) => {
                         let _ = this.send(Panicked { error }).await;
                     }
