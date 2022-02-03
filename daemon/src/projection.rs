@@ -484,7 +484,7 @@ impl Cfd {
         let latest_quote = match latest_quote {
             Some(latest_quote) => latest_quote,
             None => {
-                tracing::debug!(order_id = %self.order_id, "Unable to calculate profit/loss without current price");
+                tracing::trace!(order_id = %self.order_id, "Unable to calculate profit/loss without current price");
 
                 return Self {
                     payout: None,
