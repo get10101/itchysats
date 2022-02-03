@@ -26,13 +26,21 @@ jobs:
       - uses: Swatinem/rust-cache@v1.3.0
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
-  block-fixup:
+  lint-commits:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2.0.0
-      - name: Block Fixup Commit Merge
-        uses: 13rac1/block-fixup-merge-action@v1.1.2
+        with:
+          fetch-depth: 0
+      - name: Get all commits on current master
+        run: git fetch origin master
+      - name: Log all commits we will analyze
+        run: git log --pretty=format:%s origin/master..HEAD
+      - name: Disallow fixup! commits
+        run: git log --pretty=format:%s origin/master..HEAD | grep -zv fixup!
+      - name: Disallow squash! commits
+        run: git log --pretty=format:%s origin/master..HEAD | grep -zv squash!
 
   frontend:
     strategy:
