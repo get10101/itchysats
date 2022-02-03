@@ -23,7 +23,6 @@ use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
 use crate::Order;
-use crate::Tasks;
 use crate::SETTLEMENT_INTERVAL;
 use anyhow::Context;
 use anyhow::Result;
@@ -48,6 +47,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
+use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 

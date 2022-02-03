@@ -1,6 +1,5 @@
 use crate::model::Price;
 use crate::model::Timestamp;
-use crate::Tasks;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::SinkExt;
@@ -9,6 +8,7 @@ use rust_decimal::Decimal;
 use std::convert::TryFrom;
 use std::time::Duration;
 use time::OffsetDateTime;
+use tokio_tasks::Tasks;
 use tokio_tungstenite::tungstenite;
 use xtra::Disconnected;
 use xtra_productivity::xtra_productivity;

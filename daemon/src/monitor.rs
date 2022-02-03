@@ -13,7 +13,6 @@ use crate::oracle;
 use crate::oracle::Attestation;
 use crate::try_continue;
 use crate::wallet::RpcErrorCode;
-use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -38,6 +37,7 @@ use std::fmt;
 use std::ops::Add;
 use std::ops::RangeInclusive;
 use std::time::Duration;
+use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
