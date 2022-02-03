@@ -885,9 +885,6 @@ impl Cfd {
     }
 
     pub fn setup_contract(self, completed: SetupCompleted) -> Result<Event> {
-        // Version 1 is acceptable, as it means that we started contract setup
-        // TODO: Use self.during_contract_setup after introducing
-        // ContractSetupAccepted event
         if self.version > 1 {
             bail!(
                 "Complete contract setup not allowed because cfd in version {}",
