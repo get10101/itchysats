@@ -9,7 +9,6 @@ use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
 use bdk::bitcoin::SignedAmount;
-use chrono::DateTime;
 use parse_display::Display;
 use reqwest::Url;
 use rust_decimal::prelude::ToPrimitive;
@@ -585,14 +584,6 @@ impl Timestamp {
         Self(seconds)
     }
 
-    pub fn parse_from_rfc3339(datetime_str: &str) -> Result<Self> {
-        let datetime = DateTime::parse_from_rfc3339(datetime_str)
-            .context("Unable to parse datetime as RFC3339")?;
-        let seconds = datetime.timestamp();
-
-        Ok(Self(seconds))
-    }
-
     pub fn seconds(&self) -> i64 {
         self.0
     }
@@ -996,16 +987,6 @@ mod tests {
 
         assert_eq!(long_buyin, expected_buyin);
         assert_eq!(long_payout, Amount::ZERO);
-    }
-
-    #[test]
-    fn test_timestamp() {
-        let datetime_str_a = "1999-12-31T23:59:00.00Z";
-        let datetime_str_b = "1999-12-31T23:59:00.00+10:00";
-        let ts_a = Timestamp::parse_from_rfc3339(datetime_str_a).unwrap();
-        let ts_b = Timestamp::parse_from_rfc3339(datetime_str_b).unwrap();
-
-        assert_eq!(ts_b.seconds() - ts_a.seconds(), -36000);
     }
 
     #[test]
