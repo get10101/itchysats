@@ -307,7 +307,7 @@ pub enum CfdEvent {
     // TODO: We can distinguish different "failed" scenarios and potentially decide to publish the
     // commit transaction for some
     CollaborativeSettlementFailed,
-    
+
     LockConfirmed,
     /// The lock transaction is confirmed after CFD is already final
     ///
@@ -331,10 +331,6 @@ pub enum CfdEvent {
         refund_tx: Transaction,
     },
 
-    // TODO: Once we use multiple aggregates in different actors we could change this to something
-    // like CetReadyForPublication that is emitted by the CfdActor. The Oracle actor would
-    // take care of saving and broadcasting an attestation event that can be picked up by the
-    // wallet actor which can then decide to publish the CetReadyForPublication event.
     OracleAttestedPriorCetTimelock {
         #[serde(with = "hex_transaction")]
         timelocked_cet: Transaction,
