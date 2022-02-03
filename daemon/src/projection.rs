@@ -513,35 +513,32 @@ impl Cfd {
             Role::Taker => latest_quote.for_taker(),
         };
 
-        let (profit_btc_latest_price, profit_percent_latest_price, payout) =
-            match calculate_profit_at_price(
-                self.initial_price,
-                latest_price,
-                self.quantity_usd,
-                self.leverage,
-                self.aggregated.fee_account,
-            ) {
-                Ok((profit_btc_latest_price, profit_percent_latest_price, payout)) => (
-                    profit_btc_latest_price,
-                    profit_percent_latest_price.round_dp(1).to_string(),
-                    payout,
-                ),
-                Err(e) => {
-                    tracing::warn!("Failed to calculate profit/loss {:#}", e);
+        let (profit_btc, profit_percent, payout) = match calculate_profit_at_price(
+            self.initial_price,
+            latest_price,
+            self.quantity_usd,
+            self.leverage,
+            self.aggregated.fee_account,
+        ) {
+            Ok((profit_btc, profit_percent, payout)) => {
+                (profit_btc, profit_percent.round_dp(1).to_string(), payout)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to calculate profit/loss {:#}", e);
 
-                    return Self {
-                        payout: None,
-                        profit_btc: None,
-                        profit_percent: None,
-                        ..self
-                    };
-                }
-            };
+                return Self {
+                    payout: None,
+                    profit_btc: None,
+                    profit_percent: None,
+                    ..self
+                };
+            }
+        };
 
         Self {
             payout: Some(payout),
-            profit_btc: Some(profit_btc_latest_price),
-            profit_percent: Some(profit_percent_latest_price),
+            profit_btc: Some(profit_btc),
+            profit_percent: Some(profit_percent),
             ..self
         }
     }
