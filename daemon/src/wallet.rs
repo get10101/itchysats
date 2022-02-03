@@ -1,7 +1,6 @@
 use crate::model::Timestamp;
 use crate::model::TxFeeRate;
 use crate::model::WalletInfo;
-use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -26,6 +25,7 @@ use maia::TxBuilderExt;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::watch;
+use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
