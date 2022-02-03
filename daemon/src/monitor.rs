@@ -1,5 +1,3 @@
-use crate::bitcoin::consensus::encode::serialize_hex;
-use crate::bitcoin::Transaction;
 use crate::db;
 use crate::model;
 use crate::model::cfd;
@@ -15,9 +13,11 @@ use crate::wallet::RpcErrorCode;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use bdk::bitcoin::consensus::encode::serialize_hex;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Script;
+use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::electrum_client;

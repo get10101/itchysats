@@ -1,6 +1,5 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
-use crate::bitcoin::Txid;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
@@ -13,6 +12,7 @@ use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
+use bdk::bitcoin::Txid;
 use bdk::FeeRate;
 use connection::ConnectionStatus;
 use maia::secp256k1_zkp::schnorrsig;
