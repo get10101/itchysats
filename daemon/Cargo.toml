@@ -24,14 +24,14 @@ parse-display = "0.5.3"
 rand = "0.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 rust_decimal = "1.21"
-rust_decimal_macros = "1.20"
+rust_decimal_macros = "1.21"
 semver = { version = "1.0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_plain = "1"
 serde_with = { version = "1", features = ["macros"] }
 sha2 = "0.10"
-snow = "0.8"
+snow = "0.9"
 sqlx = { version = "0.5", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
 thiserror = "1"
 time = { version = "0.3", features = ["serde", "macros", "parsing", "formatting"] }
