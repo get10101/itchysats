@@ -363,10 +363,6 @@ macro_rules! wait_next_state {
     };
 }
 
-pub fn dummy_price() -> Price {
-    Price::new(dec!(50_000)).expect("to not fail")
-}
-
 pub fn dummy_quote() -> Quote {
     Quote {
         timestamp: OffsetDateTime::now_utc(),
@@ -385,6 +381,10 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
         funding_rate: FundingRate::new(dec!(0.00024)).unwrap(),
         opening_fee: OpeningFee::new(Amount::from_sat(2)),
     }
+}
+
+fn dummy_price() -> Price {
+    Price::new(dec!(50_000)).expect("to not fail")
 }
 
 pub fn init_tracing() -> DefaultGuard {
