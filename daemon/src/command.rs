@@ -1,8 +1,8 @@
 use crate::cfd_actors::load_cfd;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::Event;
+use crate::model::cfd::OrderId;
 use crate::process_manager;
-use crate::OrderId;
 use anyhow::Context;
 use anyhow::Result;
 use xtra::Address;
