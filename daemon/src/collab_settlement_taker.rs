@@ -1,4 +1,3 @@
-use crate::address_map::Stopping;
 use crate::cfd_actors::load_cfd;
 use crate::connection;
 use crate::model::cfd;
@@ -11,13 +10,14 @@ use crate::model::cfd::SettlementProposal;
 use crate::model::Price;
 use crate::process_manager;
 use crate::wire;
-use crate::xtra_ext::SendAsyncSafe;
-use crate::Tasks;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
 use std::time::Duration;
+use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::Stopping;
+use xtras::SendAsyncSafe;
 
 /// The maximum amount of time we give the maker to send us a response.
 const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);

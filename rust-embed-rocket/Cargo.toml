@@ -1,0 +1,11 @@
+[package]
+name = "rust-embed-rocket"
+version = "0.1.0"
+edition = "2021"
+description = "First-class support for rocket in rust-embed."
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rocket = { version = "0.5.0-rc.1" }
+rust-embed = "6.3"

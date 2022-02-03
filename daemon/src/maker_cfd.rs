@@ -1,5 +1,3 @@
-use crate::address_map::AddressMap;
-use crate::address_map::Stopping;
 use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_maker;
@@ -32,7 +30,6 @@ use crate::setup_maker;
 use crate::wallet;
 use crate::wire;
 use crate::wire::TakerToMaker;
-use crate::xtra_ext::SendAsyncSafe;
 use crate::Tasks;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -45,6 +42,9 @@ use time::Duration;
 use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::Stopping;
+use xtras::AddressMap;
+use xtras::SendAsyncSafe;
 
 pub struct AcceptOrder {
     pub order_id: OrderId,

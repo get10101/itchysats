@@ -1,6 +1,5 @@
-use crate::address_map::AddressMap;
-use crate::address_map::Stopping;
 use crate::collab_settlement_taker;
+use crate::future_ext::FutureExt;
 use crate::model::cfd::OrderId;
 use crate::model::Identity;
 use crate::model::Price;
@@ -10,13 +9,10 @@ use crate::noise;
 use crate::rollover_taker;
 use crate::setup_taker;
 use crate::taker_cfd::CurrentOrder;
-use crate::tokio_ext::FutureExt;
 use crate::wire;
 use crate::wire::EncryptedJsonCodec;
 use crate::wire::TakerToMaker;
 use crate::wire::Version;
-use crate::xtra_ext::LogFailure;
-use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
@@ -35,6 +31,10 @@ use tokio_util::codec::Framed;
 use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::Stopping;
+use xtras::AddressMap;
+use xtras::LogFailure;
+use xtras::SendInterval;
 
 /// Time between reconnection attempts
 const CONNECT_TO_MAKER_INTERVAL: Duration = Duration::from_secs(5);

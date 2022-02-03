@@ -12,7 +12,6 @@ use crate::oracle;
 use crate::oracle::Attestation;
 use crate::try_continue;
 use crate::wallet::RpcErrorCode;
-use crate::xtra_ext::SendInterval;
 use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
@@ -41,6 +40,7 @@ use std::ops::RangeInclusive;
 use std::time::Duration;
 use xtra::prelude::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
+use xtras::SendInterval;
 
 const FINALITY_CONFIRMATIONS: u32 = 1;
 

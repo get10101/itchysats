@@ -7,10 +7,10 @@ use crate::monitor::MonitorParams;
 use crate::monitor::TransactionKind;
 use crate::oracle;
 use crate::projection;
-use crate::xtra_ext::SendAsyncSafe;
 use anyhow::Result;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
+use xtras::SendAsyncSafe;
 
 pub struct Actor {
     db: sqlx::SqlitePool,

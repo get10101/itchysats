@@ -1,6 +1,5 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
-#![warn(clippy::disallowed_method)]
-#![warn(clippy::dbg_macro)] // should be used only as a temporary debugging tool
+
 use crate::bitcoin::Txid;
 use crate::bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use crate::model::cfd::Order;
@@ -11,32 +10,32 @@ use crate::model::OpeningFee;
 use crate::model::Price;
 use crate::model::Usd;
 use crate::oracle::Attestation;
-use crate::tokio_ext::FutureExt;
-use address_map::Stopping;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use connection::ConnectionStatus;
-use futures::future::RemoteHandle;
 use maia::secp256k1_zkp::schnorrsig;
 use model::FundingRate;
 use model::TxFeeRate;
 use sqlx::SqlitePool;
-use std::future::Future;
 use std::net::SocketAddr;
 use std::time::Duration;
 use time::ext::NumericalDuration;
 use tokio::sync::watch;
+use tokio_tasks::Tasks;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
 use xtra::Address;
+use xtras::address_map::Stopping;
+use xtras::supervisor;
+
+pub use bdk;
+pub use maia;
 
 pub mod sqlx_ext; // Must come first because it is a macro.
 
-pub mod address_map;
-pub mod auth;
 pub mod auto_rollover;
 pub mod bdk_ext;
 pub mod bitmex_price_feed;
@@ -47,8 +46,8 @@ pub mod command;
 pub mod connection;
 pub mod db;
 pub mod fan_out;
+mod future_ext;
 pub mod keypair;
-pub mod logger;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
 pub mod model;
@@ -66,15 +65,11 @@ pub mod seed;
 pub mod setup_contract;
 pub mod setup_maker;
 pub mod setup_taker;
-pub mod supervisor;
 pub mod taker_cfd;
-pub mod to_sse_event;
-pub mod tokio_ext;
 mod transaction_ext;
 pub mod try_continue;
 pub mod wallet;
 pub mod wire;
-pub mod xtra_ext;
 
 /// Duration between the heartbeats sent by the maker, used by the taker to
 /// determine whether the maker is online.
@@ -93,45 +88,6 @@ pub const N_PAYOUTS: usize = 200;
 /// - The sliding window of cached oracle announcements (maker, taker)
 /// - The auto-rollover time-window (taker)
 pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
-
-/// Struct controlling the lifetime of the async tasks,
-/// such as running actors and periodic notifications.
-/// If it gets dropped, all tasks are cancelled.
-#[derive(Default)]
-pub struct Tasks(Vec<RemoteHandle<()>>);
-
-impl Tasks {
-    /// Spawn the task on the runtime and remembers the handle
-    /// NOTE: Do *not* call spawn_with_handle() before calling `add`,
-    /// such calls  will trigger panic in debug mode.
-    pub fn add(&mut self, f: impl Future<Output = ()> + Send + 'static) {
-        let handle = f.spawn_with_handle();
-        self.0.push(handle);
-    }
-
-    /// Spawn a fallible task on the runtime and remembers the handle.
-    ///
-    /// The task will be stopped if this instance of [`Tasks`] goes out of scope.
-    /// If the task fails, the `err_handler` will be invoked.
-    pub fn add_fallible<E, EF>(
-        &mut self,
-        f: impl Future<Output = Result<(), E>> + Send + 'static,
-        err_handler: impl FnOnce(E) -> EF + Send + 'static,
-    ) where
-        E: Send + 'static,
-        EF: Future<Output = ()> + Send + 'static,
-    {
-        let fut = async move {
-            match f.await {
-                Ok(()) => {}
-                Err(err) => err_handler(err).await,
-            }
-        };
-
-        let handle = fut.spawn_with_handle();
-        self.0.push(handle);
-    }
-}
 
 pub struct MakerActorSystem<O, W> {
     pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
