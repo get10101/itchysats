@@ -508,24 +508,27 @@ impl Cfd {
                 self.leverage,
                 self.aggregated.fee_account,
             ) {
-                Ok((profit_btc_latest_price, profit_percent_latest_price, payout)) => Some((
+                Ok((profit_btc_latest_price, profit_percent_latest_price, payout)) => (
                     profit_btc_latest_price,
                     profit_percent_latest_price.round_dp(1).to_string(),
                     payout,
-                )),
+                ),
                 Err(e) => {
                     tracing::warn!("Failed to calculate profit/loss {:#}", e);
 
-                    None
+                    return Self {
+                        payout: None,
+                        profit_btc: None,
+                        profit_percent: None,
+                        ..self
+                    };
                 }
-            }
-            .map(|(in_btc, in_percent, payout)| (Some(in_btc), Some(in_percent), Some(payout)))
-            .unwrap_or_else(|| (None, None, None));
+            };
 
         Self {
-            payout,
-            profit_btc: profit_btc_latest_price,
-            profit_percent: profit_percent_latest_price,
+            payout: Some(payout),
+            profit_btc: Some(profit_btc_latest_price),
+            profit_percent: Some(profit_percent_latest_price),
             ..self
         }
     }
