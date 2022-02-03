@@ -307,9 +307,7 @@ pub enum CfdEvent {
     // TODO: We can distinguish different "failed" scenarios and potentially decide to publish the
     // commit transaction for some
     CollaborativeSettlementFailed,
-
-    // TODO: The monitoring events should move into the monitor once we use multiple
-    // aggregates in different actors
+    
     LockConfirmed,
     /// The lock transaction is confirmed after CFD is already final
     ///
