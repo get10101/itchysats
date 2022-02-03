@@ -37,12 +37,12 @@ thiserror = "1"
 time = { version = "0.3", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tasks = { path = "../tokio-tasks" }
-tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 tokio-util = { version = "0.6", features = ["codec"] }
 tracing = { version = "0.1" }
 uuid = { version = "0.8", features = ["serde", "v4"] }
 x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6" }
+xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtra_productivity = { version = "0.1.0" }
 xtras = { path = "../xtras" }
 

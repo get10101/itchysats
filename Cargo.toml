@@ -9,6 +9,7 @@ members = [
   "daemon-tests",
   "tokio-tasks",
   "xtras",
+  "xtra-bitmex-price-feed",
 ]
 resolver = "2"
 

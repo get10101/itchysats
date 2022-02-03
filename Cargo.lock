@@ -722,13 +722,13 @@ dependencies = [
  "time 0.3.7",
  "tokio",
  "tokio-tasks",
- "tokio-tungstenite",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
  "uuid",
  "x25519-dalek",
  "xtra",
+ "xtra-bitmex-price-feed",
  "xtra_productivity",
  "xtras",
 ]
@@ -751,6 +751,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "xtra",
+ "xtra-bitmex-price-feed",
  "xtra_productivity",
 ]
 
@@ -1595,6 +1596,7 @@ dependencies = [
  "uuid",
  "vergen",
  "xtra",
+ "xtra-bitmex-price-feed",
  "xtras",
 ]
 
@@ -3473,6 +3475,7 @@ dependencies = [
  "vergen",
  "x25519-dalek",
  "xtra",
+ "xtra-bitmex-price-feed",
 ]
 
 [[package]]
@@ -4255,6 +4258,28 @@ dependencies = [
  "futures-util",
  "log",
  "pollster",
+]
+
+[[package]]
+name = "xtra-bitmex-price-feed"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time 0.3.7",
+ "tokio",
+ "tokio-tasks",
+ "tokio-tungstenite",
+ "tracing",
+ "xtra",
+ "xtra_productivity",
+ "xtras",
 ]
 
 [[package]]

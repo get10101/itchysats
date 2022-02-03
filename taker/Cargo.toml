@@ -25,6 +25,7 @@ tracing = { version = "0.1" }
 uuid = "0.8"
 x25519-dalek = "1.1"
 xtra = { version = "0.6" }
+xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 
 [dev-dependencies]
 serde_test = "1"

@@ -6,7 +6,6 @@ use daemon::bdk::bitcoin;
 use daemon::bdk::bitcoin::Address;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
-use daemon::bitmex_price_feed;
 use daemon::connection::connect;
 use daemon::db;
 use daemon::model::cfd::Role;
@@ -260,7 +259,7 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(db.clone(), electrum, executor)
             }
         },
-        bitmex_price_feed::Actor::default,
+        xtra_bitmex_price_feed::Actor::default,
         N_PAYOUTS,
         HEARTBEAT_INTERVAL,
         Duration::from_secs(10),
