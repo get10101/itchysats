@@ -784,7 +784,9 @@ impl xtra::Actor for Actor {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Quote {
+    #[serde(with = "round_to_two_dp")]
     bid: Price,
+    #[serde(with = "round_to_two_dp")]
     ask: Price,
     last_updated_at: Timestamp,
 }
