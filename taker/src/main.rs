@@ -3,7 +3,6 @@ use anyhow::Result;
 use clap::Parser;
 use clap::Subcommand;
 use daemon::bdk::bitcoin;
-use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Address;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
@@ -13,6 +12,7 @@ use daemon::db;
 use daemon::model::cfd::Role;
 use daemon::model::Identity;
 use daemon::monitor;
+use daemon::olivia;
 use daemon::oracle;
 use daemon::projection;
 use daemon::seed::RandomSeed;
@@ -28,7 +28,6 @@ use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::Actor;
@@ -238,11 +237,6 @@ async fn main() -> Result<()> {
     let auth_username = rocket_basicauth::Username("itchysats");
     tracing::info!("Authentication details: username='{auth_username}' password='{web_password}'");
 
-    // TODO: Actually fetch it from Olivia
-    let oracle = schnorrsig::PublicKey::from_str(
-        "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
-    )?;
-
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()))
@@ -257,7 +251,7 @@ async fn main() -> Result<()> {
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
-        oracle,
+        *olivia::PUBLIC_KEY,
         identity_sk,
         |channel| oracle::Actor::new(db.clone(), channel, SETTLEMENT_INTERVAL),
         {
