@@ -7,7 +7,6 @@ use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Address;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
-use daemon::bitmex_price_feed;
 use daemon::connection::connect;
 use daemon::db;
 use daemon::model::cfd::Role;
@@ -266,7 +265,7 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(db.clone(), electrum, channel)
             }
         },
-        bitmex_price_feed::Actor::new,
+        xtra_bitmex_price_feed::Actor::new,
         N_PAYOUTS,
         HEARTBEAT_INTERVAL,
         Duration::from_secs(10),

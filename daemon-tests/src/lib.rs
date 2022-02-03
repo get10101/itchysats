@@ -5,7 +5,6 @@ use daemon::auto_rollover;
 use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
-use daemon::bitmex_price_feed::Quote;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
@@ -45,6 +44,7 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use xtra::Actor;
+use xtra_bitmex_price_feed::Quote;
 
 pub mod flow;
 pub mod maia;

@@ -1,4 +1,3 @@
-use crate::bitmex_price_feed;
 use crate::db;
 use crate::model;
 use crate::model::calculate_funding_fee;
@@ -62,7 +61,7 @@ pub struct Actor {
     db: sqlx::SqlitePool,
     tx: Tx,
     state: State,
-    price_feed: Box<dyn MessageChannel<bitmex_price_feed::LatestQuote>>,
+    price_feed: Box<dyn MessageChannel<xtra_bitmex_price_feed::LatestQuote>>,
     tasks: Tasks,
 }
 
@@ -78,7 +77,7 @@ impl Actor {
         db: sqlx::SqlitePool,
         _role: Role,
         network: Network,
-        price_feed: &(impl MessageChannel<bitmex_price_feed::LatestQuote> + 'static),
+        price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote> + 'static),
     ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(Vec::new());
         let (tx_order, rx_order) = watch::channel(None);
@@ -458,7 +457,7 @@ impl Cfd {
         self
     }
 
-    fn with_current_quote(self, latest_quote: Option<bitmex_price_feed::Quote>) -> Self {
+    fn with_current_quote(self, latest_quote: Option<xtra_bitmex_price_feed::Quote>) -> Self {
         // If we have a dedicated closing price, use that one.
         if let Some(payout) = self.aggregated.clone().payout(self.role) {
             let payout = payout
@@ -651,7 +650,7 @@ impl Tx {
     fn send_cfds_update(
         &self,
         cfds: HashMap<OrderId, Cfd>,
-        quote: Option<bitmex_price_feed::Quote>,
+        quote: Option<xtra_bitmex_price_feed::Quote>,
     ) {
         let cfds_with_quote = cfds
             .into_iter()
@@ -661,7 +660,7 @@ impl Tx {
         let _ = self.cfds.send(cfds_with_quote);
     }
 
-    fn send_quote_update(&self, quote: Option<bitmex_price_feed::Quote>) {
+    fn send_quote_update(&self, quote: Option<xtra_bitmex_price_feed::Quote>) {
         let _ = self.quote.send(quote.map(|q| q.into()));
     }
 
@@ -684,7 +683,7 @@ impl Tx {
 /// Internal struct to keep state in one place
 struct State {
     network: Network,
-    quote: Option<bitmex_price_feed::Quote>,
+    quote: Option<xtra_bitmex_price_feed::Quote>,
     /// All hydrated CFDs.
     cfds: HashMap<OrderId, Cfd>,
 }
@@ -715,7 +714,7 @@ impl State {
         Ok(())
     }
 
-    fn update_quote(&mut self, quote: Option<bitmex_price_feed::Quote>) {
+    fn update_quote(&mut self, quote: Option<xtra_bitmex_price_feed::Quote>) {
         self.quote = quote;
     }
 }
@@ -736,7 +735,7 @@ impl Actor {
         self.tx.send_order_update(msg.0);
     }
 
-    fn handle(&mut self, msg: Update<Option<bitmex_price_feed::Quote>>) {
+    fn handle(&mut self, msg: Update<Option<xtra_bitmex_price_feed::Quote>>) {
         self.state.update_quote(msg.0);
 
         let hydrated_cfds = self.state.cfds.clone();
@@ -781,7 +780,7 @@ impl xtra::Actor for Actor {
 
             async move {
                 loop {
-                    match price_feed.send(bitmex_price_feed::LatestQuote).await {
+                    match price_feed.send(xtra_bitmex_price_feed::LatestQuote).await {
                         Ok(quote) => {
                             let _ = this.send(Update(quote)).await;
                         }
@@ -806,8 +805,8 @@ pub struct Quote {
     last_updated_at: Timestamp,
 }
 
-impl From<bitmex_price_feed::Quote> for Quote {
-    fn from(quote: bitmex_price_feed::Quote) -> Self {
+impl From<xtra_bitmex_price_feed::Quote> for Quote {
+    fn from(quote: xtra_bitmex_price_feed::Quote) -> Self {
         Quote {
             bid: quote.bid,
             ask: quote.ask,

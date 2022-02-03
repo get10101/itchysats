@@ -3,7 +3,6 @@ use self::oracle::OracleActor;
 use self::wallet::WalletActor;
 use super::maia::OliviaData;
 use crate::mocks::price_feed::PriceFeedActor;
-use daemon::bitmex_price_feed;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
@@ -106,7 +105,7 @@ impl Mocks {
             .return_const(());
     }
 
-    pub async fn mock_latest_quote(&mut self, latest_quote: Option<bitmex_price_feed::Quote>) {
+    pub async fn mock_latest_quote(&mut self, latest_quote: Option<xtra_bitmex_price_feed::Quote>) {
         self.price_feed().await.set_latest_quote(latest_quote);
     }
 }

@@ -7,7 +7,6 @@ use daemon::bdk::bitcoin;
 use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
-use daemon::bitmex_price_feed;
 use daemon::db;
 use daemon::model::cfd::Role;
 use daemon::monitor;
@@ -241,7 +240,7 @@ async fn main() -> Result<()> {
     )?;
 
     let (supervisor, price_feed) = supervisor::Actor::new(
-        bitmex_price_feed::Actor::new,
+        xtra_bitmex_price_feed::Actor::new,
         |_| true, // always restart price feed actor
     );
 
