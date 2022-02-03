@@ -29,6 +29,7 @@ use daemon::MakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -364,7 +365,7 @@ pub fn dummy_quote() -> Quote {
 
 pub fn dummy_new_order() -> maker_cfd::NewOrder {
     maker_cfd::NewOrder {
-        price: dummy_price(),
+        price: Price::new(dummy_price()).unwrap(),
         min_quantity: Usd::new(dec!(5)),
         max_quantity: Usd::new(dec!(100)),
         tx_fee_rate: TxFeeRate::new(1),
@@ -374,8 +375,8 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
     }
 }
 
-fn dummy_price() -> Price {
-    Price::new(dec!(50_000)).expect("to not fail")
+fn dummy_price() -> Decimal {
+    dec!(50_000)
 }
 
 pub fn init_tracing() -> DefaultGuard {

@@ -499,6 +499,21 @@ impl Cfd {
             Role::Maker => latest_quote.for_maker(),
             Role::Taker => latest_quote.for_taker(),
         };
+        let latest_price = match Price::new(latest_price) {
+            Ok(latest_price) => latest_price,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to compute profit/loss because latest price is invalid: {e}"
+                );
+
+                return Self {
+                    payout: None,
+                    profit_btc: None,
+                    profit_percent: None,
+                    ..self
+                };
+            }
+        };
 
         let (profit_btc, profit_percent, payout) = match calculate_profit_at_price(
             self.initial_price,
@@ -785,9 +800,9 @@ impl xtra::Actor for Actor {
 #[derive(Debug, Clone, Serialize)]
 pub struct Quote {
     #[serde(with = "round_to_two_dp")]
-    bid: Price,
+    bid: Decimal,
     #[serde(with = "round_to_two_dp")]
-    ask: Price,
+    ask: Decimal,
     last_updated_at: Timestamp,
 }
 
@@ -959,6 +974,12 @@ mod round_to_two_dp {
     impl ToDecimal for Price {
         fn to_decimal(&self) -> Decimal {
             self.into_decimal()
+        }
+    }
+
+    impl ToDecimal for Decimal {
+        fn to_decimal(&self) -> Decimal {
+            *self
         }
     }
 

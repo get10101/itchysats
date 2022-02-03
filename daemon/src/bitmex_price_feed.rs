@@ -1,10 +1,9 @@
-use crate::model::Price;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::SinkExt;
 use futures::TryStreamExt;
 use rust_decimal::Decimal;
-use std::convert::TryFrom;
+use rust_decimal_macros::dec;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;
@@ -136,8 +135,8 @@ pub struct LatestQuote;
 #[derive(Clone, Copy, Debug)]
 pub struct Quote {
     pub timestamp: OffsetDateTime,
-    pub bid: Price,
-    pub ask: Price,
+    pub bid: Decimal,
+    pub ask: Decimal,
 }
 
 impl Quote {
@@ -154,21 +153,21 @@ impl Quote {
 
         Ok(Some(Self {
             timestamp: quote.timestamp,
-            bid: Price::new(Decimal::try_from(quote.bid_price)?)?,
-            ask: Price::new(Decimal::try_from(quote.ask_price)?)?,
+            bid: quote.bid_price,
+            ask: quote.ask_price,
         }))
     }
 
-    pub fn for_maker(&self) -> Price {
+    pub fn for_maker(&self) -> Decimal {
         self.ask
     }
 
-    pub fn for_taker(&self) -> Price {
+    pub fn for_taker(&self) -> Decimal {
         self.mid_range()
     }
 
-    fn mid_range(&self) -> Price {
-        (self.bid + self.ask) / 2
+    fn mid_range(&self) -> Decimal {
+        (self.bid + self.ask) / dec!(2)
     }
 
     pub fn is_older_than(&self, duration: time::Duration) -> bool {
@@ -194,8 +193,10 @@ mod wire {
     pub struct QuoteData {
         pub bid_size: u64,
         pub ask_size: u64,
-        pub bid_price: f64,
-        pub ask_price: f64,
+        #[serde(with = "rust_decimal::serde::float")]
+        pub bid_price: Decimal,
+        #[serde(with = "rust_decimal::serde::float")]
+        pub ask_price: Decimal,
         pub symbol: String,
         #[serde(with = "time::serde::rfc3339")]
         pub timestamp: OffsetDateTime,
@@ -205,15 +206,14 @@ mod wire {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_decimal_macros::dec;
     use time::ext::NumericalDuration;
 
     #[test]
     fn can_deserialize_quote_message() {
         let quote = Quote::from_str(r#"{"table":"quoteBin1m","action":"insert","data":[{"timestamp":"2021-09-21T02:40:00.000Z","symbol":"XBTUSD","bidSize":50200,"bidPrice":42640.5,"askPrice":42641,"askSize":363600}]}"#).unwrap().unwrap();
 
-        assert_eq!(quote.bid, Price::new(dec!(42640.5)).unwrap());
-        assert_eq!(quote.ask, Price::new(dec!(42641)).unwrap());
+        assert_eq!(quote.bid, dec!(42640.5));
+        assert_eq!(quote.ask, dec!(42641));
         assert_eq!(quote.timestamp.unix_timestamp(), 1632192000)
     }
 
@@ -238,8 +238,8 @@ mod tests {
     fn dummy_quote_at(timestamp: OffsetDateTime) -> Quote {
         Quote {
             timestamp,
-            bid: Price::new(dec!(10)).unwrap(),
-            ask: Price::new(dec!(10)).unwrap(),
+            bid: dec!(10),
+            ask: dec!(10),
         }
     }
 }

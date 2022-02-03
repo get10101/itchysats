@@ -460,7 +460,7 @@ where
         self.cfd_actor
             .send(taker_cfd::ProposeSettlement {
                 order_id,
-                current_price: latest_quote.for_taker(),
+                current_price: Price::new(latest_quote.for_taker())?,
             })
             .await?
     }
