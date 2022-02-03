@@ -1177,7 +1177,6 @@ impl Cfd {
                 self.cet = Some(timelocked_cet);
             }
             ContractSetupFailed { .. } => {
-                // TODO: Deal with failed contract setup
                 self.during_contract_setup = false;
             }
             RolloverStarted => {
