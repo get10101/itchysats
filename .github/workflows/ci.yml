@@ -34,6 +34,7 @@ jobs:
 
   lint-commits:
     runs-on: ubuntu-latest
+    if: github.event.ref != 'refs/heads/master'
 
     steps:
       - uses: actions/checkout@v2.0.0
