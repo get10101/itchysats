@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2022-02-04
+
 ## [0.4.0] - 2022-01-31
 
 ### Added
@@ -28,11 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.6] - 2022-01-05
 
-Backport of https://github.com/itchysats/itchysats/pull/1016.
+Backport of <https://github.com/itchysats/itchysats/pull/1016>.
 
 ## [0.3.5] - 2021-12-30
 
-Backport of https://github.com/itchysats/itchysats/pull/987.
+Backport of <https://github.com/itchysats/itchysats/pull/987>.
 
 ## [0.3.4] - 2021-12-30
 
@@ -42,27 +44,28 @@ Backport of https://github.com/itchysats/itchysats/pull/987.
 
 ## [0.3.3] - 2021-12-29
 
-Backport of https://github.com/itchysats/itchysats/pull/982.
+Backport of <https://github.com/itchysats/itchysats/pull/982>.
 
-Backport of https://github.com/itchysats/itchysats/pull/972.
+Backport of <https://github.com/itchysats/itchysats/pull/972>.
 
-Backport of https://github.com/itchysats/itchysats/pull/977.
+Backport of <https://github.com/itchysats/itchysats/pull/977>.
 
-Backport of https://github.com/itchysats/itchysats/pull/971.
+Backport of <https://github.com/itchysats/itchysats/pull/971>.
 
 ## [0.3.2] - 2021-12-21
 
-Backport https://github.com/itchysats/itchysats/pull/927 in an attempt to fix https://github.com/itchysats/itchysats/issues/759.
+Backport <https://github.com/itchysats/itchysats/pull/927> in an attempt to fix <https://github.com/itchysats/itchysats/issues/759>.
 
 ## [0.3.1] - 2021-12-20
 
-Backport https://github.com/itchysats/itchysats/pull/924 in an attempt to fix https://github.com/itchysats/itchysats/issues/759.
+Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix <https://github.com/itchysats/itchysats/issues/759>.
 
 ## [0.3.0] - 2021-12-09
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.0...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.1...HEAD
+[0.4.1]: https://github.com/itchysats/itchysats/compare/0.4.0...0.4.1
 [0.4.0]: https://github.com/itchysats/itchysats/compare/0.3.6...0.4.0
 [0.3.6]: https://github.com/itchysats/itchysats/compare/0.3.5...0.3.6
 [0.3.5]: https://github.com/itchysats/itchysats/compare/0.3.4...0.3.5
