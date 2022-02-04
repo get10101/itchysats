@@ -205,6 +205,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn restarted_actor_is_usable() {
+        let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
+
+        let (supervisor, address) =
+            Actor::new(|supervisor| RemoteShutdown { supervisor }, |_| true);
+        let (_supervisor, task) = supervisor.create(None).run();
+
+        #[allow(clippy::disallowed_method)]
+        tokio::spawn(task);
+
+        address.send(Shutdown).await.unwrap();
+
+        let message = address.send(SayHello("World".to_owned())).await.unwrap();
+
+        assert_eq!(message, "Hello World");
+    }
+
+    #[tokio::test]
     async fn supervisor_tracks_panic_metrics() {
         let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
@@ -236,8 +254,14 @@ mod tests {
     #[derive(Debug)]
     struct Shutdown;
 
+    struct SayHello(String);
+
     #[async_trait]
     impl xtra::Actor for RemoteShutdown {
+        async fn stopping(&mut self, _ctx: &mut Context<Self>) -> xtra::KeepRunning {
+            xtra::KeepRunning::StopSelf
+        }
+
         async fn stopped(self) {
             self.supervisor
                 .send(Stopped {
@@ -252,6 +276,10 @@ mod tests {
     impl RemoteShutdown {
         fn handle(&mut self, _: Shutdown, ctx: &mut xtra::Context<Self>) {
             ctx.stop()
+        }
+
+        fn handle(&mut self, msg: SayHello) -> String {
+            format!("Hello {}", msg.0)
         }
     }
 
