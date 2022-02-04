@@ -29,7 +29,6 @@ use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
 use xtra::Address;
 use xtras::address_map::Stopping;
-use xtras::supervisor;
 
 pub use bdk;
 pub use maia;
@@ -287,10 +286,6 @@ pub struct TakerActorSystem<O, W, P> {
     pub auto_rollover_actor: Address<auto_rollover::Actor<O>>,
     pub price_feed_actor: Address<P>,
     executor: command::Executor,
-    /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
-    /// address.
-    _price_feed_supervisor: Address<supervisor::Actor<P, bitmex_price_feed::Error>>,
-
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
     _tasks: Tasks,
@@ -314,9 +309,7 @@ where
         identity_sk: x25519_dalek::StaticSecret,
         oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> Result<M>,
-        price_feed_constructor: impl (Fn(Address<supervisor::Actor<P, bitmex_price_feed::Error>>) -> P)
-            + Send
-            + 'static,
+        bitmex_quote_constructor: impl (Fn() -> P) + Send + 'static,
         n_payouts: usize,
         maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
@@ -336,6 +329,7 @@ where
         let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
         let (process_manager_addr, process_manager_ctx) = xtra::Context::new(None);
+        let (bitmex_quote_addr, bitmex_quote_ctx) = xtra::Context::new(None);
 
         let executor = command::Executor::new(db.clone(), process_manager_addr.clone());
 
@@ -404,13 +398,7 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
 
-        let (supervisor, price_feed_actor) = supervisor::Actor::new(
-            price_feed_constructor,
-            |_| true, // always restart price feed actor
-        );
-
-        let (price_feed_supervisor, supervisor_fut) = supervisor.create(None).run();
-        tasks.add(supervisor_fut);
+        tasks.add(bitmex_quote_ctx.run(bitmex_quote_constructor()));
 
         tracing::debug!("Taker actor system ready");
 
@@ -419,9 +407,8 @@ where
             connection_actor: connection_actor_addr,
             wallet_actor: wallet_actor_addr,
             auto_rollover_actor: auto_rollover_addr,
-            price_feed_actor,
+            price_feed_actor: bitmex_quote_addr,
             executor,
-            _price_feed_supervisor: price_feed_supervisor,
             _tasks: tasks,
             maker_online_status_feed_receiver,
         })
@@ -450,7 +437,7 @@ where
             .context("Price feed not available")?
             .context("No quote available")?;
 
-        if latest_quote.is_older_than(QUOTE_INTERVAL_MINUTES.minutes()) {
+        if latest_quote.is_older_than((QUOTE_INTERVAL_MINUTES as i64).minutes()) {
             anyhow::bail!(
                 "Latest quote is older than {} minutes. Refusing to settle with old price.",
                 QUOTE_INTERVAL_MINUTES

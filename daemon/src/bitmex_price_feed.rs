@@ -1,165 +1,30 @@
 use crate::model::Price;
-use crate::model::Timestamp;
-use crate::Tasks;
+use anyhow::bail;
 use anyhow::Result;
 use async_trait::async_trait;
-use futures::SinkExt;
-use futures::TryStreamExt;
-use rust_decimal::Decimal;
-use std::convert::TryFrom;
+use serde::Deserialize;
+use serde::Serialize;
 use std::time::Duration;
+use time::ext::NumericalDuration;
 use time::OffsetDateTime;
-use tokio_tungstenite::tungstenite;
-use xtra::Disconnected;
+use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
-use xtras::supervisor;
+use xtras::SendInterval;
 
-pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
+pub const QUOTE_INTERVAL_MINUTES: u64 = 1;
+const QUOTE_SYNC_INTERVAL_SECONDS: u64 = (QUOTE_INTERVAL_MINUTES * 60) - 15;
 
-pub struct Actor {
-    tasks: Tasks,
-    latest_quote: Option<Quote>,
-    supervisor: xtra::Address<supervisor::Actor<Self, Error>>,
-}
-
-impl Actor {
-    pub fn new(supervisor: xtra::Address<supervisor::Actor<Self, Error>>) -> Self {
-        Self {
-            tasks: Tasks::default(),
-            latest_quote: None,
-            supervisor,
-        }
-    }
-}
-
-#[async_trait]
-impl xtra::Actor for Actor {
-    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        let this = ctx.address().expect("we are alive");
-
-        self.tasks.add_fallible({
-            let this = this.clone();
-
-            async move {
-                tracing::debug!("Connecting to BitMex realtime API");
-
-                let (mut connection, _) = tokio_tungstenite::connect_async(format!("wss://www.bitmex.com/realtime?subscribe=quoteBin{QUOTE_INTERVAL_MINUTES}m:XBTUSD")).await.map_err(|e| Error::FailedToConnect { source: e })?;
-
-                tracing::info!("Connected to BitMex realtime API");
-
-                loop {
-                    tokio::select! {
-                        _ = tokio::time::sleep(Duration::from_secs(5)) => {
-                            tracing::trace!("No message from BitMex in the last 5 seconds, pinging");
-                            let _ = connection.send(tungstenite::Message::Ping([0u8; 32].to_vec())).await;
-                        },
-                        msg = connection.try_next() => {
-                            let msg = msg.map_err(|e| Error::Failed { source: e })?;
-                            let msg = msg.ok_or(Error::StreamEnded)?;
-
-                            match msg {
-                                tungstenite::Message::Pong(_) => {
-                                    tracing::trace!("Received pong");
-                                    continue;
-                                }
-                                tungstenite::Message::Text(text) => {
-                                    let quote = Quote::from_str(&text).map_err(|e| Error::FailedToParseQuote { source: e })?;
-
-                                    match quote {
-                                        Some(quote) => {
-                                            tracing::debug!("Received new quote: {:?}", quote);
-                                            let is_our_address_disconnected = this.send(NewQuoteReceived(quote)).await.is_err();
-
-                                            // Our task should already be dead and the actor restarted if this happens.
-                                            if is_our_address_disconnected {
-                                                return Ok(());
-                                            }
-                                        }
-                                        None => {
-                                            continue;
-                                        }
-                                    }
-                                }
-                                other => {
-                                    tracing::trace!("Unsupported message: {:?}", other);
-                                    continue;
-                                }
-                            }
-                        },
-                    }
-                }
-            }
-        }, |e: Error| async move {
-            let _: Result<(), Disconnected> = this.send(e).await;
-        });
-    }
-}
-
-#[xtra_productivity]
-impl Actor {
-    async fn handle(&mut self, msg: Error, ctx: &mut xtra::Context<Self>) {
-        let _ = self
-            .supervisor
-            .send(supervisor::Stopped { reason: msg })
-            .await;
-        ctx.stop();
-    }
-
-    async fn handle(&mut self, msg: NewQuoteReceived) {
-        self.latest_quote = Some(msg.0);
-    }
-
-    async fn handle(&mut self, _: LatestQuote) -> Option<Quote> {
-        self.latest_quote
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("Connection to BitMex API failed")]
-    Failed { source: tungstenite::Error },
-    #[error("Failed to connect to BitMex API")]
-    FailedToConnect { source: tungstenite::Error },
-    #[error("Websocket stream to BitMex API closed")]
-    StreamEnded,
-    #[error("Failed to parse quote")]
-    FailedToParseQuote { source: anyhow::Error },
-}
-
-/// Private message to update our internal state with the latest quote.
-#[derive(Debug)]
-struct NewQuoteReceived(Quote);
-
-/// Request the latest quote from the price feed.
-#[derive(Debug)]
-pub struct LatestQuote;
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 pub struct Quote {
-    pub timestamp: Timestamp,
+    #[serde(with = "time::serde::rfc3339")]
+    pub timestamp: OffsetDateTime,
+    #[serde(rename = "bidPrice")]
     pub bid: Price,
+    #[serde(rename = "askPrice")]
     pub ask: Price,
 }
 
 impl Quote {
-    fn from_str(text: &str) -> Result<Option<Self>> {
-        let table_message = match serde_json::from_str::<wire::TableMessage>(text) {
-            Ok(table_message) => table_message,
-            Err(_) => {
-                tracing::trace!(%text, "Not a 'table' message, skipping...");
-                return Ok(None);
-            }
-        };
-
-        let [quote] = table_message.data;
-
-        Ok(Some(Self {
-            timestamp: Timestamp::parse_from_rfc3339(&quote.timestamp)?,
-            bid: Price::new(Decimal::try_from(quote.bid_price)?)?,
-            ask: Price::new(Decimal::try_from(quote.ask_price)?)?,
-        }))
-    }
-
     pub fn for_maker(&self) -> Price {
         self.ask
     }
@@ -175,29 +40,174 @@ impl Quote {
     pub fn is_older_than(&self, duration: time::Duration) -> bool {
         let required_quote_timestamp = (OffsetDateTime::now_utc() - duration).unix_timestamp();
 
-        self.timestamp.seconds() < required_quote_timestamp
+        self.timestamp.unix_timestamp() < required_quote_timestamp
     }
 }
 
-mod wire {
-    use serde::Deserialize;
+#[derive(Default)]
+pub struct Actor {
+    client: Client,
+    latest_quote: Option<Quote>,
+    tasks: Tasks,
+}
 
-    #[derive(Debug, Clone, Deserialize, PartialEq)]
-    pub struct TableMessage {
-        pub table: String,
-        // we always just expect a single quote, hence the use of an array instead of a vec
-        pub data: [QuoteData; 1],
+impl Actor {
+    pub fn new() -> Self {
+        Self {
+            client: Client::new(),
+            latest_quote: None,
+            tasks: Tasks::default(),
+        }
+    }
+}
+
+#[async_trait]
+impl xtra::Actor for Actor {
+    async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        let this = ctx.address().expect("we are alive");
+        self.tasks
+            .add(this.send_interval(Duration::from_secs(QUOTE_SYNC_INTERVAL_SECONDS), || Sync));
+    }
+}
+
+#[xtra_productivity]
+impl Actor {
+    async fn handle(&mut self, _: Sync) {
+        tracing::trace!("Syncing latest XBTUSD quote from BitMEX");
+
+        if let Some(quote) = &self.latest_quote {
+            if !quote.is_older_than(1.minutes()) {
+                tracing::trace!("Aborting sync: too early");
+                return;
+            }
+        }
+
+        match self.client.get_latest_quote().await {
+            Ok(quote) => {
+                self.latest_quote = Some(quote);
+                tracing::debug!("Updated XBTUSD BitMEX latest quote: {quote:?}");
+            }
+
+            Err(e) => {
+                tracing::warn!("Could not fetch latest XBTUSD BitMEX quote: {e:#?}")
+            }
+        }
     }
 
-    #[derive(Debug, Clone, Deserialize, PartialEq)]
-    #[serde(rename_all = "camelCase")]
-    pub struct QuoteData {
-        pub bid_size: u64,
-        pub ask_size: u64,
-        pub bid_price: f64,
-        pub ask_price: f64,
-        pub symbol: String,
-        pub timestamp: String,
+    async fn handle(&mut self, _: LatestQuote) -> Option<Quote> {
+        self.latest_quote
+    }
+}
+
+/// Trigger a request for the latest XBTUSD BitMEX quote.
+struct Sync;
+
+/// Request the latest XBTUSD quote retrieved from BitMEX.
+#[derive(Debug)]
+pub struct LatestQuote;
+
+const BITMEX_QUOTE_URL: &str = "https://www.bitmex.com/api/v1/quote/bucketed";
+
+#[derive(Clone, Debug, Serialize)]
+/// Get previous quotes in time buckets.
+struct GetQuoteBucketedRequest {
+    /// Time interval to bucket by. Available options: [1m,5m,1h,1d].
+    #[serde(rename = "binSize")]
+    pub bin_size: BinSize,
+    /// Instrument symbol.
+    pub symbol: String,
+    /// Number of results to fetch.
+    pub count: u32,
+    /// If true, will sort results newest first.
+    pub reverse: bool,
+}
+
+impl GetQuoteBucketedRequest {
+    fn latest_xbt_usd() -> Self {
+        Self {
+            bin_size: BinSize::M1,
+            symbol: "XBTUSD".to_string(),
+            count: 1,
+            reverse: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename = "XBTUSD")]
+struct XbtUsd;
+
+#[derive(Clone, Debug, Serialize)]
+enum BinSize {
+    #[serde(rename = "1m")]
+    M1,
+}
+
+// The error response from bitmex;
+#[derive(Deserialize, Debug, Clone)]
+struct BitmexErrorResponse {
+    error: BitmexErrorMessage,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+struct BitmexErrorMessage {
+    message: String,
+    name: String,
+}
+
+#[derive(Default)]
+struct Client(reqwest::Client);
+
+impl Client {
+    fn new() -> Self {
+        Self(reqwest::Client::new())
+    }
+
+    async fn get_latest_quote(&self) -> Result<Quote> {
+        let mut url = reqwest::Url::parse(BITMEX_QUOTE_URL).expect("valid URL");
+        let query = serde_urlencoded::to_string(GetQuoteBucketedRequest::latest_xbt_usd())
+            .expect("valid query");
+        url.set_query(Some(&query));
+
+        let resp = self
+            .0
+            .request(reqwest::Method::GET, url)
+            .header("content-type", "application/json")
+            .body("")
+            .send()
+            .await?;
+
+        let status = resp.status();
+        let content = resp.text().await?;
+        if !status.is_success() {
+            match serde_json::from_str::<BitmexErrorResponse>(&content) {
+                Ok(BitmexErrorResponse {
+                    error: BitmexErrorMessage { message, name },
+                }) => {
+                    bail!("Failed to fetch latest quote from BitMEX: {name}, {message}")
+                }
+                Err(deser_err) => {
+                    tracing::warn!("Failed to deserialize BitMEX error: {}", deser_err);
+                    bail!("Failed to fetch latest quote from BitMEX: {}", content)
+                }
+            }
+        }
+
+        let quotes = match serde_json::from_str::<Vec<Quote>>(&content) {
+            Ok(quotes) => quotes,
+            Err(err) => bail!(
+                "Failed to deserialize BitMEX latest quotes {} from BitMEX: {}",
+                content,
+                err
+            ),
+        };
+
+        let quote = match quotes.as_slice() {
+            [quote] => *quote,
+            _ => bail!("Wrong number of quotes received from BitMEX"),
+        };
+
+        Ok(quote)
     }
 }
 
@@ -205,15 +215,22 @@ mod wire {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
-    use time::ext::NumericalDuration;
+    use time::macros::datetime;
 
-    #[test]
-    fn can_deserialize_quote_message() {
-        let quote = Quote::from_str(r#"{"table":"quoteBin1m","action":"insert","data":[{"timestamp":"2021-09-21T02:40:00.000Z","symbol":"XBTUSD","bidSize":50200,"bidPrice":42640.5,"askPrice":42641,"askSize":363600}]}"#).unwrap().unwrap();
+    #[tokio::test]
+    async fn can_deserialize_quote_response() {
+        let quote_response = "[{\"timestamp\":\"2022-02-04T01:58:00.000Z\",\"symbol\":\"XBTUSD\",\"bidSize\":460500,\"bidPrice\":37197.5,\"askPrice\":37198,\"askSize\":328600}]";
 
-        assert_eq!(quote.bid, Price::new(dec!(42640.5)).unwrap());
-        assert_eq!(quote.ask, Price::new(dec!(42641)).unwrap());
-        assert_eq!(quote.timestamp.seconds(), 1632192000)
+        let quotes = serde_json::from_str::<Vec<Quote>>(quote_response).unwrap();
+
+        assert_eq!(
+            quotes,
+            vec![Quote {
+                timestamp: datetime!(2022-02-04 01:58:00).assume_utc(),
+                bid: Price::new(dec!(37197.5)).unwrap(),
+                ask: Price::new(dec!(37198)).unwrap(),
+            }]
+        )
     }
 
     #[test]
@@ -234,9 +251,9 @@ mod tests {
         assert!(is_older)
     }
 
-    fn dummy_quote_at(time: OffsetDateTime) -> Quote {
+    fn dummy_quote_at(timestamp: OffsetDateTime) -> Quote {
         Quote {
-            timestamp: Timestamp::new(time.unix_timestamp()),
+            timestamp,
             bid: Price::new(dec!(10)).unwrap(),
             ask: Price::new(dec!(10)).unwrap(),
         }
