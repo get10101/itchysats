@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use daemon::bitmex_price_feed;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -17,7 +18,14 @@ impl PriceFeedActor {
     }
 }
 
-impl xtra::Actor for PriceFeedActor {}
+#[async_trait]
+impl xtra::Actor for PriceFeedActor {
+    type Stop = bitmex_price_feed::Error;
+
+    async fn stopped(self) -> Self::Stop {
+        bitmex_price_feed::Error::Unspecified
+    }
+}
 
 #[xtra_productivity(message_impl = false)]
 impl PriceFeedActor {

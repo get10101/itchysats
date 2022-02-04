@@ -240,10 +240,14 @@ async fn main() -> Result<()> {
         p2p_socket,
     )?;
 
-    let (supervisor, price_feed) = supervisor::Actor::new(
-        bitmex_price_feed::Actor::new,
-        |_| true, // always restart price feed actor
-    );
+    let (supervisor, price_feed) =
+        supervisor::Actor::with_policy(bitmex_price_feed::Actor::default, |e| match e {
+            bitmex_price_feed::Error::FailedToParseQuote { .. }
+            | bitmex_price_feed::Error::Failed { .. }
+            | bitmex_price_feed::Error::FailedToConnect { .. }
+            | bitmex_price_feed::Error::Unspecified
+            | bitmex_price_feed::Error::StreamEnded => true, // always restart price feed actor
+        });
 
     let (_supervisor_address, task) = supervisor.create(None).run();
     tasks.add(task);

@@ -17,6 +17,7 @@ use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use async_trait::async_trait;
 use bdk::bitcoin::Amount;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -569,7 +570,12 @@ impl Actor {
     }
 }
 
-impl xtra::Actor for Actor {}
+#[async_trait]
+impl xtra::Actor for Actor {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 // TODO: Move the reconnection logic inside the connection::Actor instead of
 // depending on a watch channel

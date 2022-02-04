@@ -305,6 +305,7 @@ impl From<Announcement> for maia::Announcement {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
         self.tasks.add(
@@ -342,6 +343,8 @@ impl xtra::Actor for Actor {
             },
         );
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 impl xtra::Message for Attestation {

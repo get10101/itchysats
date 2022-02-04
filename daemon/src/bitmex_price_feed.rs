@@ -12,28 +12,22 @@ use time::OffsetDateTime;
 use tokio_tungstenite::tungstenite;
 use xtra::Disconnected;
 use xtra_productivity::xtra_productivity;
-use xtras::supervisor;
 
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
 
+#[derive(Default)]
 pub struct Actor {
     tasks: Tasks,
     latest_quote: Option<Quote>,
-    supervisor: xtra::Address<supervisor::Actor<Self, Error>>,
-}
 
-impl Actor {
-    pub fn new(supervisor: xtra::Address<supervisor::Actor<Self, Error>>) -> Self {
-        Self {
-            tasks: Tasks::default(),
-            latest_quote: None,
-            supervisor,
-        }
-    }
+    /// Contains the reason we are stopping.
+    stop_reason: Option<Error>,
 }
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = Error;
+
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
 
@@ -94,18 +88,15 @@ impl xtra::Actor for Actor {
         });
     }
 
-    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> xtra::KeepRunning {
-        xtra::KeepRunning::StopSelf
+    async fn stopped(self) -> Self::Stop {
+        self.stop_reason.unwrap_or(Error::Unspecified)
     }
 }
 
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: Error, ctx: &mut xtra::Context<Self>) {
-        let _ = self
-            .supervisor
-            .send(supervisor::Stopped { reason: msg })
-            .await;
+        self.stop_reason = Some(msg);
         ctx.stop();
     }
 
@@ -128,6 +119,8 @@ pub enum Error {
     StreamEnded,
     #[error("Failed to parse quote")]
     FailedToParseQuote { source: anyhow::Error },
+    #[error("Stop reason was not specified")]
+    Unspecified,
 }
 
 /// Private message to update our internal state with the latest quote.

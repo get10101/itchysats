@@ -266,7 +266,7 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(db.clone(), electrum, executor)
             }
         },
-        bitmex_price_feed::Actor::new,
+        bitmex_price_feed::Actor::default,
         N_PAYOUTS,
         HEARTBEAT_INTERVAL,
         Duration::from_secs(10),

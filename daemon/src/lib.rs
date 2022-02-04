@@ -101,10 +101,12 @@ impl<O, W> MakerActorSystem<O, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
-        + xtra::Handler<oracle::Sync>,
+        + xtra::Handler<oracle::Sync>
+        + xtra::Actor<Stop = ()>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::Withdraw>,
+        + xtra::Handler<wallet::Withdraw>
+        + xtra::Actor<Stop = ()>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
@@ -125,7 +127,8 @@ where
             + xtra::Handler<monitor::Sync>
             + xtra::Handler<monitor::CollaborativeSettlement>
             + xtra::Handler<monitor::TryBroadcastTransaction>
-            + xtra::Handler<oracle::Attestation>,
+            + xtra::Handler<oracle::Attestation>
+            + xtra::Actor<Stop = ()>,
     {
         let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
@@ -300,11 +303,13 @@ impl<O, W, P> TakerActorSystem<O, W, P>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
-        + xtra::Handler<oracle::Sync>,
+        + xtra::Handler<oracle::Sync>
+        + xtra::Actor<Stop = ()>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::Withdraw>,
-    P: xtra::Handler<bitmex_price_feed::LatestQuote>,
+        + xtra::Handler<wallet::Withdraw>
+        + xtra::Actor<Stop = ()>,
+    P: xtra::Handler<bitmex_price_feed::LatestQuote> + xtra::Actor<Stop = bitmex_price_feed::Error>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
@@ -314,9 +319,7 @@ where
         identity_sk: x25519_dalek::StaticSecret,
         oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
-        price_feed_constructor: impl (Fn(Address<supervisor::Actor<P, bitmex_price_feed::Error>>) -> P)
-            + Send
-            + 'static,
+        price_feed_constructor: impl (Fn() -> P) + Send + 'static,
         n_payouts: usize,
         maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
@@ -328,7 +331,8 @@ where
             + xtra::Handler<monitor::Sync>
             + xtra::Handler<monitor::CollaborativeSettlement>
             + xtra::Handler<oracle::Attestation>
-            + xtra::Handler<monitor::TryBroadcastTransaction>,
+            + xtra::Handler<monitor::TryBroadcastTransaction>
+            + xtra::Actor<Stop = ()>,
     {
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
             watch::channel(ConnectionStatus::Offline { reason: None });
@@ -404,7 +408,7 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
 
-        let (supervisor, price_feed_actor) = supervisor::Actor::new(
+        let (supervisor, price_feed_actor) = supervisor::Actor::with_policy(
             price_feed_constructor,
             |_| true, // always restart price feed actor
         );

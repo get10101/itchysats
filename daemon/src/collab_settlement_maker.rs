@@ -80,6 +80,7 @@ impl Actor {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let order_id = self.proposal.order_id;
 
@@ -107,6 +108,8 @@ impl xtra::Actor for Actor {
 
         xtra::KeepRunning::StopAll
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 impl Actor {

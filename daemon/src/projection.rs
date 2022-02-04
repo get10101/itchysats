@@ -731,6 +731,7 @@ impl Actor {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we just started");
         let pool = self.db.clone();
@@ -774,6 +775,8 @@ impl xtra::Actor for Actor {
             }
         })
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 #[derive(Debug, Clone, Serialize)]

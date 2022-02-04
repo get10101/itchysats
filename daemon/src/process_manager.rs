@@ -8,6 +8,7 @@ use crate::monitor::TransactionKind;
 use crate::oracle;
 use crate::projection;
 use anyhow::Result;
+use async_trait::async_trait;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -201,4 +202,9 @@ impl Actor {
     }
 }
 
-impl xtra::Actor for Actor {}
+#[async_trait]
+impl xtra::Actor for Actor {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}

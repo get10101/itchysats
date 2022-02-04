@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use xtra::prelude::MessageChannel;
 
 /// A fan-out actor takes every incoming message and forwards it to a set of other actors.
@@ -13,7 +14,15 @@ impl<M: xtra::Message<Result = ()>> Actor<M> {
     }
 }
 
-impl<M> xtra::Actor for Actor<M> where M: xtra::Message<Result = ()> {}
+#[async_trait]
+impl<M> xtra::Actor for Actor<M>
+where
+    M: xtra::Message<Result = ()>,
+{
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 #[async_trait::async_trait]
 impl<M> xtra::Handler<M> for Actor<M>

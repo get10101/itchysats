@@ -175,7 +175,9 @@ impl Maker {
         tasks.add(wallet_fut);
 
         let (price_feed_addr, price_feed_fut) = price_feed.create(None).run();
-        tasks.add(price_feed_fut);
+        tasks.add(async move {
+            let _ = price_feed_fut.await;
+        });
 
         let settlement_interval = SETTLEMENT_INTERVAL;
 
@@ -289,7 +291,7 @@ impl Taker {
 
                 Ok(monitor)
             },
-            move |_| price_feed.clone(),
+            move || price_feed.clone(),
             config.n_payouts,
             config.heartbeat_interval,
             Duration::from_secs(10),
