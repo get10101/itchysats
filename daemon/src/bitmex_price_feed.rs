@@ -93,6 +93,10 @@ impl xtra::Actor for Actor {
             let _: Result<(), Disconnected> = this.send(e).await;
         });
     }
+
+    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> xtra::KeepRunning {
+        xtra::KeepRunning::StopSelf
+    }
 }
 
 #[xtra_productivity]
