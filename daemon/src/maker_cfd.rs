@@ -194,7 +194,7 @@ where
         taker_id: Identity,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
-        tracing::info!(%order_id, %taker_id,  "Received proposal from taker");
+        tracing::info!(%order_id, %taker_id,  "Received rollover proposal from taker");
         let this = ctx.address().expect("acquired own address");
 
         let (rollover_actor_addr, rollover_actor_future) = rollover_maker::Actor::new(
