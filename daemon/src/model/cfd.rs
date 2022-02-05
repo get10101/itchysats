@@ -415,6 +415,7 @@ fn from_json_inner(name: String, data: String) -> Result<CfdEvent> {
 /// `version`). To bring a cfd into a certain state version we load all events from the
 /// database and apply them in order (order by version).
 #[derive(Debug, PartialEq)]
+#[cfg_attr(test, derive(Clone))]
 pub struct Cfd {
     version: u64,
 
@@ -1860,10 +1861,21 @@ mod hex_transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bdk_ext::new_test_wallet;
     use crate::seed::RandomSeed;
     use crate::seed::Seed;
+    use crate::wallet;
+    use crate::wallet::BuildPartyParams;
+    use crate::N_PAYOUTS;
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
+    use bdk::wallet::tx_builder::TxOrdering;
+    use bdk::wallet::AddressIndex;
+    use bdk::FeeRate;
+    use maia::lock_descriptor;
+    use maia::PartyParams;
+    use maia::TxBuilderExt;
+    use rand::thread_rng;
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
     use std::str::FromStr;
@@ -2233,7 +2245,7 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //                                                          now
 
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let result = cfd.can_auto_rollover_taker(datetime!(2021-11-19 10:00:00).assume_utc());
@@ -2248,7 +2260,7 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //        now
 
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
 
@@ -2264,7 +2276,7 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //    now
 
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let cannot_roll_over = cfd
@@ -2281,7 +2293,7 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //  now
 
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let cannot_roll_over = cfd
@@ -2298,7 +2310,7 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //       now
 
-        let cfd = Cfd::dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let cannot_roll_over = cfd
@@ -2361,6 +2373,118 @@ mod tests {
         assert_eq!(funding_fee.rate, funding_rate);
     }
 
+    #[test]
+    fn ensure_collaborative_settlement_takes_rollover_fees_into_account() {
+        let quantity = Usd::new(dec!(10));
+        let leverage = Leverage::new(2).unwrap();
+        let opening_price = Price::new(dec!(10000)).unwrap();
+        let closing_price = Price::new(dec!(10000)).unwrap();
+        let positive_funding_rate = dec!(0.0001);
+
+        // 1 rollover
+        assert_collab_settlement_taker_long_maker_short(
+            quantity,
+            leverage,
+            opening_price,
+            closing_price,
+            positive_funding_rate,
+            1000,
+            1,
+            Amount::from_sat(48583),
+            Amount::from_sat(101247),
+        );
+
+        // 2 rollover
+        assert_collab_settlement_taker_long_maker_short(
+            quantity,
+            leverage,
+            opening_price,
+            closing_price,
+            positive_funding_rate,
+            1000,
+            2,
+            Amount::from_sat(47583),
+            Amount::from_sat(102247),
+        );
+
+        // 10 rollover
+        assert_collab_settlement_taker_long_maker_short(
+            quantity,
+            leverage,
+            opening_price,
+            closing_price,
+            positive_funding_rate,
+            1000,
+            10,
+            Amount::from_sat(39583),
+            Amount::from_sat(110247),
+        );
+
+        // TODO: Errors with "attempt to subtract with overflow" that has to be fixed!
+        // 50 rollover
+        // assert_collab_settlement_taker_long_maker_short(
+        //     quantity,
+        //     leverage,
+        //     opening_price,
+        //     closing_price,
+        //     positive_funding_rate,
+        //     1000,
+        //     50,
+        //     Amount::from_sat(0),
+        //     Amount::from_sat(149830),
+        // );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assert_collab_settlement_taker_long_maker_short(
+        quantity: Usd,
+        leverage: Leverage,
+        opening_price: Price,
+        closing_price: Price,
+        funding_rate: Decimal,
+        funding_fee_sat_per_rollover: u64,
+        nr_of_rollovers: u8,
+        expected_taker_payout: Amount,
+        expected_maker_payout: Amount,
+    ) {
+        // we need to agree on same order id
+        let order_id = OrderId::default();
+
+        let taker_long = Cfd::taker_long()
+            .with_id(order_id)
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage);
+
+        let maker_short = Cfd::maker_short()
+            .with_id(order_id)
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage); // TODO: The maker short having a leverage of 2 is actually wrong, but we also do that in
+                                      // production; it does not have any effect because we calculate the margin differently
+
+        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+
+        let (taker_long, proposal, taker_sig, taker_script) = taker_long
+            .dummy_open(dummy_event_id())
+            .dummy_rollovers(funding_fee_sat_per_rollover, funding_rate, nr_of_rollovers)
+            .with_lock(taker_keys, maker_keys)
+            .dummy_collab_settlement_taker(closing_price);
+
+        let (maker_short, maker_script) = maker_short
+            .dummy_open(dummy_event_id())
+            .dummy_rollovers(funding_fee_sat_per_rollover, funding_rate, nr_of_rollovers)
+            .with_lock(taker_keys, maker_keys)
+            .dummy_collab_settlement_maker(proposal, taker_sig);
+
+        let taker_payout = taker_long.collab_settlement_payout(taker_script);
+        let maker_payout = maker_short.collab_settlement_payout(maker_script);
+
+        assert_eq!(taker_payout, expected_taker_payout);
+        assert_eq!(maker_payout, expected_maker_payout);
+    }
+
     use proptest::prelude::*;
     proptest! {
         #[test]
@@ -2418,6 +2542,27 @@ mod tests {
             ]
         }
 
+        fn dummy_rollover(fee_sat: u64, funding_rate: Decimal) -> Vec<Self> {
+            vec![
+                Event {
+                    timestamp: Timestamp::now(),
+                    id: Default::default(),
+                    event: CfdEvent::RolloverStarted,
+                },
+                Event {
+                    timestamp: Timestamp::now(),
+                    id: Default::default(),
+                    event: CfdEvent::RolloverCompleted {
+                        dlc: Dlc::dummy(Some(dummy_event_id())),
+                        funding_fee: FundingFee {
+                            fee: Amount::from_sat(fee_sat),
+                            rate: FundingRate::new(funding_rate).unwrap(),
+                        },
+                    },
+                },
+            ]
+        }
+
         fn dummy_attestation_prior_timelock(event_id: BitMexPriceEventId) -> Vec<Self> {
             let mut open = Self::dummy_open(event_id);
             open.push(Event {
@@ -2446,6 +2591,26 @@ mod tests {
     }
 
     impl Cfd {
+        fn taker_long() -> Self {
+            Cfd::from_order(
+                Order::dummy_model(),
+                Position::Long,
+                Usd::new(dec!(1000)),
+                dummy_identity(),
+                Role::Taker,
+            )
+        }
+
+        fn maker_short() -> Self {
+            Cfd::from_order(
+                Order::dummy_model(),
+                Position::Short,
+                Usd::new(dec!(1000)),
+                dummy_identity(),
+                Role::Maker,
+            )
+        }
+
         fn dummy_not_open_yet() -> Self {
             Cfd::from_order(
                 Order::dummy_model(),
@@ -2456,18 +2621,165 @@ mod tests {
             )
         }
 
-        fn dummy_open(event_id: BitMexPriceEventId) -> Self {
-            let cfd = Cfd::from_order(
-                Order::dummy_model(),
-                Position::Long,
-                Usd::new(dec!(1000)),
-                dummy_identity(),
-                Role::Taker,
-            );
-
+        fn dummy_open(self, event_id: BitMexPriceEventId) -> Self {
             Event::dummy_open(event_id)
                 .into_iter()
-                .fold(cfd, Cfd::apply)
+                .fold(self, Cfd::apply)
+        }
+
+        /// Constructs a lock transaction from test wallet
+        ///
+        /// The transaction crated is not just a dummy, but is an actual lock transaction created
+        /// according to the CFD values. This can be used to plug in a lock transaction into
+        /// a dlc once we want to assert on spending from lock.
+        fn with_lock(
+            mut self,
+            taker_keys: (SecretKey, PublicKey),
+            maker_keys: (SecretKey, PublicKey),
+        ) -> Self {
+            let (sk_taker, pk_taker) = taker_keys;
+            let (sk_maker, pk_maker) = maker_keys;
+
+            let (taker_margin, maker_margin, own_sk, counterparty_pk) = match self.role {
+                Role::Taker => (
+                    self.margin(),
+                    self.counterparty_margin(),
+                    sk_taker,
+                    pk_maker,
+                ),
+                Role::Maker => (
+                    self.counterparty_margin(),
+                    self.margin(),
+                    sk_maker,
+                    pk_taker,
+                ),
+            };
+
+            let taker_params = BuildPartyParams {
+                amount: taker_margin,
+                identity_pk: pk_taker,
+                fee_rate: Default::default(),
+            };
+
+            let maker_params = BuildPartyParams {
+                amount: maker_margin,
+                identity_pk: pk_maker,
+                fee_rate: Default::default(),
+            };
+
+            let taker_params = build_party_params(taker_params).unwrap();
+            let maker_params = build_party_params(maker_params).unwrap();
+
+            let taker_address = taker_params.address.clone();
+            let maker_address = maker_params.address.clone();
+
+            let (lock_tx, descriptor) = build_lock_tx(maker_params, taker_params);
+
+            self.dlc = Some(self.dlc.unwrap().with_lock(
+                lock_tx,
+                descriptor,
+                taker_margin,
+                maker_margin,
+                taker_address,
+                maker_address,
+                own_sk,
+                counterparty_pk,
+            ));
+
+            self
+        }
+
+        fn dummy_rollovers(self, fee_sat: u64, funding_rate: Decimal, nr_of_rollovers: u8) -> Self {
+            let mut events = Vec::new();
+
+            for _ in 0..nr_of_rollovers {
+                let mut rollover = Event::dummy_rollover(fee_sat, funding_rate);
+                events.append(&mut rollover)
+            }
+
+            events.into_iter().fold(self, Cfd::apply)
+        }
+
+        fn dummy_collab_settlement_taker(
+            self,
+            price: Price,
+        ) -> (Self, SettlementProposal, Signature, Script) {
+            let mut events = Vec::new();
+
+            let propose = self
+                .propose_collaborative_settlement(price, N_PAYOUTS)
+                .unwrap();
+            events.push(propose.clone());
+
+            let settlement_proposal =
+                if let CfdEvent::CollaborativeSettlementStarted { proposal } = propose.event {
+                    proposal
+                } else {
+                    panic!("Proposal not created!");
+                };
+
+            let (spend_tx, taker_signature, taker_script) = self
+                .sign_collaborative_settlement_taker(&settlement_proposal)
+                .unwrap();
+
+            let settlement =
+                CollaborativeSettlement::new(spend_tx, taker_script.clone(), price).unwrap();
+
+            let settle = self
+                .clone()
+                .settle_collaboratively(CollaborativeSettlementCompleted::Succeeded {
+                    order_id: Default::default(),
+                    payload: settlement,
+                })
+                .unwrap();
+            events.push(settle);
+
+            let cfd = events.into_iter().fold(self, Cfd::apply);
+
+            (cfd, settlement_proposal, taker_signature, taker_script)
+        }
+
+        fn dummy_collab_settlement_maker(
+            self,
+            proposal: SettlementProposal,
+            taker_signature: Signature,
+        ) -> (Self, Script) {
+            // handle receiving
+            let mut events = Vec::new();
+            let incoming_settlement = self
+                .clone()
+                .receive_collaborative_settlement_proposal(proposal.clone(), N_PAYOUTS)
+                .unwrap();
+            events.push(incoming_settlement);
+
+            // apply receive because upon acceptance we ensure that we have a proposal (；￣Д￣）
+            let cfd = events.into_iter().fold(self, Cfd::apply);
+
+            let mut events = Vec::new();
+
+            let accept = cfd
+                .clone()
+                .accept_collaborative_settlement_proposal(&proposal)
+                .unwrap();
+            events.push(accept);
+
+            let settlement = cfd
+                .sign_collaborative_settlement_maker(proposal, taker_signature)
+                .unwrap();
+            let script_pubkey = settlement.script_pubkey.clone();
+
+            let settle = cfd
+                .clone()
+                .settle_collaboratively(CollaborativeSettlementCompleted::Succeeded {
+                    order_id: Default::default(),
+                    payload: settlement,
+                })
+                .unwrap();
+            events.push(settle);
+
+            let cfd = events.into_iter().fold(cfd, Cfd::apply);
+
+            (cfd, script_pubkey)
         }
 
         fn dummy_with_attestation(event_id: BitMexPriceEventId) -> Self {
@@ -2497,6 +2809,31 @@ mod tests {
                 .into_iter()
                 .fold(cfd, Cfd::apply)
         }
+
+        fn with_id(mut self, order_id: OrderId) -> Self {
+            self.id = order_id;
+            self
+        }
+
+        fn with_quantity(mut self, quantity: Usd) -> Self {
+            self.quantity = quantity;
+            self
+        }
+
+        fn with_opening_price(mut self, price: Price) -> Self {
+            self.initial_price = price;
+            self
+        }
+
+        fn with_leverage(mut self, leverage: Leverage) -> Self {
+            self.leverage = leverage;
+            self
+        }
+
+        fn collab_settlement_payout(self, script: Script) -> Amount {
+            let tx = self.collaborative_settlement_spend_tx.unwrap();
+            extract_payout_amount(tx, script)
+        }
     }
 
     impl Order {
@@ -2517,6 +2854,29 @@ mod tests {
     }
 
     impl Dlc {
+        #[allow(clippy::too_many_arguments)]
+        fn with_lock(
+            mut self,
+            lock_tx: PartiallySignedTransaction,
+            descriptor: Descriptor<PublicKey>,
+            amount_taker: Amount,
+            amount_maker: Amount,
+            taker_address: Address,
+            maker_address: Address,
+            identity_sk: SecretKey,
+            identity_counterparty_pk: PublicKey,
+        ) -> Self {
+            self.lock = (lock_tx.extract_tx(), descriptor);
+            self.taker_lock_amount = amount_taker;
+            self.maker_lock_amount = amount_maker;
+            self.identity = identity_sk;
+            self.identity_counterparty = identity_counterparty_pk;
+            self.taker_address = taker_address;
+            self.maker_address = maker_address;
+
+            self
+        }
+
         fn dummy(event_id: Option<BitMexPriceEventId>) -> Self {
             let dummy_sk = SecretKey::from_slice(&[1; 32]).unwrap();
             let dummy_pk = PublicKey::from_slice(&[
@@ -2608,5 +2968,114 @@ mod tests {
 
     pub fn dummy_event_id() -> BitMexPriceEventId {
         BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc())
+    }
+
+    fn extract_payout_amount(tx: Transaction, script: Script) -> Amount {
+        tx.output
+            .into_iter()
+            .find(|tx_out| tx_out.script_pubkey == script)
+            .map(|tx_out| Amount::from_sat(tx_out.value))
+            .unwrap_or(Amount::ZERO)
+    }
+
+    pub fn build_lock_tx(
+        maker: PartyParams,
+        taker: PartyParams,
+    ) -> (PartiallySignedTransaction, Descriptor<PublicKey>) {
+        let lock_tx = lock_transaction(
+            maker.lock_psbt.clone(),
+            taker.lock_psbt.clone(),
+            maker.identity_pk,
+            taker.identity_pk,
+            maker.lock_amount + taker.lock_amount,
+        );
+
+        let lock_desc = lock_descriptor(maker.identity_pk, taker.identity_pk);
+
+        (lock_tx, lock_desc)
+    }
+
+    pub fn build_party_params(msg: wallet::BuildPartyParams) -> Result<PartyParams> {
+        let mut rng = thread_rng();
+        let wallet = new_test_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+
+        let mut builder = wallet.build_tx();
+
+        builder
+            .ordering(TxOrdering::Bip69Lexicographic) // TODO: I think this is pointless but we did this in maia.
+            .fee_rate(FeeRate::from_sat_per_vb(1.0))
+            .add_2of2_multisig_recipient(msg.amount);
+
+        let (psbt, _) = builder.finish()?;
+
+        Ok(PartyParams {
+            lock_psbt: psbt,
+            identity_pk: msg.identity_pk,
+            lock_amount: msg.amount,
+            address: wallet.get_address(AddressIndex::New)?.address,
+        })
+    }
+
+    const DUMMY_2OF2_MULTISIG: &str =
+        "0020b5aa99ed7e0fa92483eb045ab8b7a59146d4d9f6653f21ba729b4331895a5b46";
+
+    // TODO: Pulled in from maia, would be cool if we can expose that for testing somehow?
+    fn lock_transaction(
+        maker_psbt: PartiallySignedTransaction,
+        taker_psbt: PartiallySignedTransaction,
+        maker_pk: PublicKey,
+        taker_pk: PublicKey,
+        amount: Amount,
+    ) -> PartiallySignedTransaction {
+        let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
+
+        let maker_change = maker_psbt
+            .global
+            .unsigned_tx
+            .output
+            .into_iter()
+            .filter(|out| {
+                out.script_pubkey != DUMMY_2OF2_MULTISIG.parse().expect("To be a valid script")
+            })
+            .collect::<Vec<_>>();
+
+        let taker_change = taker_psbt
+            .global
+            .unsigned_tx
+            .output
+            .into_iter()
+            .filter(|out| {
+                out.script_pubkey != DUMMY_2OF2_MULTISIG.parse().expect("To be a valid script")
+            })
+            .collect::<Vec<_>>();
+
+        let lock_output = TxOut {
+            value: amount.as_sat(),
+            script_pubkey: lock_descriptor.script_pubkey(),
+        };
+
+        let input = vec![
+            maker_psbt.global.unsigned_tx.input,
+            taker_psbt.global.unsigned_tx.input,
+        ]
+        .concat();
+
+        let output = std::iter::once(lock_output)
+            .chain(maker_change)
+            .chain(taker_change)
+            .collect();
+
+        let lock_tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input,
+            output,
+        };
+
+        PartiallySignedTransaction {
+            global: Global::from_unsigned_tx(lock_tx).expect("to be unsigned"),
+            inputs: vec![maker_psbt.inputs, taker_psbt.inputs].concat(),
+            outputs: vec![maker_psbt.outputs, taker_psbt.outputs].concat(),
+        }
     }
 }
