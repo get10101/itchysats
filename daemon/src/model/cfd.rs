@@ -237,12 +237,10 @@ pub enum NoRolloverReason {
     NotLocked,
     #[error("Cannot roll over when CFD is committed")]
     Committed,
-    #[error("Cannot roll over when CFD is attested by oracle")]
-    Attested,
     #[error("Cannot roll over while CFD is in collaborative settlement")]
     InCollaborativeSettlement,
-    #[error("Cannot roll over when CFD is final")]
-    Final,
+    #[error("Cannot roll over when CFD is already closed")]
+    Closed,
 }
 
 /// Errors that can happen when handling the expiry of the refund
@@ -313,10 +311,12 @@ pub enum CfdEvent {
     // TODO: The monitoring events should move into the monitor once we use multiple
     // aggregates in different actors
     LockConfirmed,
-    /// The lock transaction is confirmed after CFD is already final
+    /// The lock transaction is confirmed after CFD was closed
     ///
     /// This can happen in cases where we publish a settlement transaction while the lock
     /// transaction is still pending and they end up in the same block.
+    /// We include cases where we already have a transaction spending from lock, but it might not
+    /// be final yet.
     LockConfirmedAfterFinality,
     CommitConfirmed,
     CetConfirmed,
@@ -610,6 +610,10 @@ impl Cfd {
         self.settlement_proposal.is_some()
     }
 
+    fn is_in_force_close(&self) -> bool {
+        self.commit_tx.is_some()
+    }
+
     pub fn can_auto_rollover_taker(&self, now: OffsetDateTime) -> Result<(), NoRolloverReason> {
         let expiry_timestamp = self.expiry_timestamp().ok_or(NoRolloverReason::NoDlc)?;
         let time_until_expiry = expiry_timestamp - now;
@@ -623,12 +627,8 @@ impl Cfd {
     }
 
     fn can_rollover(&self) -> Result<(), NoRolloverReason> {
-        if self.is_final() {
-            return Err(NoRolloverReason::Final);
-        }
-
-        if self.is_attested() {
-            return Err(NoRolloverReason::Attested);
+        if self.is_closed() {
+            return Err(NoRolloverReason::Closed);
         }
 
         if self.commit_finality {
@@ -639,10 +639,13 @@ impl Cfd {
             return Err(NoRolloverReason::NotLocked);
         }
 
+        if self.is_in_force_close() {
+            return Err(NoRolloverReason::Committed);
+        }
+
         // Rollover and collaborative settlement are mutually exclusive, if we are currently
         // collaboratively settling we cannot roll over
-        if self.is_in_collaborative_settlement() || self.collaborative_settlement_spend_tx.is_some()
-        {
+        if self.is_in_collaborative_settlement() {
             return Err(NoRolloverReason::InCollaborativeSettlement);
         }
 
@@ -650,7 +653,7 @@ impl Cfd {
     }
 
     fn can_settle_collaboratively(&self) -> bool {
-        !self.commit_finality && !self.is_final() && !self.is_attested()
+        !self.is_closed() && !self.commit_finality && !self.is_attested()
     }
 
     fn is_attested(&self) -> bool {
@@ -659,6 +662,21 @@ impl Cfd {
 
     fn is_final(&self) -> bool {
         self.collaborative_settlement_finality || self.cet_finality || self.refund_finality
+    }
+
+    fn is_collaboratively_closed(&self) -> bool {
+        self.collaborative_settlement_spend_tx.is_some()
+    }
+
+    fn is_refunded(&self) -> bool {
+        self.refund_tx.is_some()
+    }
+
+    fn is_closed(&self) -> bool {
+        self.is_final()
+            || self.is_attested()
+            || self.is_collaboratively_closed()
+            || self.is_refunded()
     }
 
     pub fn start_contract_setup(&self) -> Result<(Event, SetupParams)> {
@@ -975,8 +993,11 @@ impl Cfd {
     }
 
     /// Given an attestation, find and decrypt the relevant CET.
+    ///
+    /// In case the Cfd was already closed we return `Ok(None)`, because then the attestation is not
+    /// relevant anymore. We don't treat this as error because it is not an error scenario.
     pub fn decrypt_cet(self, attestation: &oracle::Attestation) -> Result<Option<Event>> {
-        if self.is_final() {
+        if self.is_closed() {
             return Ok(None);
         }
 
@@ -1031,7 +1052,7 @@ impl Cfd {
     pub fn handle_refund_timelock_expired(self) -> Result<Event, RefundTimelockExpiryError> {
         use RefundTimelockExpiryError::*;
 
-        if self.is_final() {
+        if self.is_closed() {
             return Err(AlreadyFinal);
         }
 
@@ -1045,7 +1066,7 @@ impl Cfd {
 
     pub fn handle_lock_confirmed(self) -> Event {
         // For the special case where we close when lock is still pending
-        if self.is_final() {
+        if self.is_closed() {
             return self.event(CfdEvent::LockConfirmedAfterFinality);
         }
 
@@ -1073,7 +1094,7 @@ impl Cfd {
     }
 
     pub fn manual_commit_to_blockchain(&self) -> Result<Event> {
-        anyhow::ensure!(!self.is_final());
+        anyhow::ensure!(!self.is_closed());
 
         let dlc = self.dlc.as_ref().context("Cannot commit without a DLC")?;
 
@@ -1864,6 +1885,7 @@ mod tests {
     use crate::seed::Seed;
     use crate::wallet;
     use crate::wallet::BuildPartyParams;
+    use crate::Attestation;
     use crate::N_PAYOUTS;
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -2338,10 +2360,7 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(
-            cannot_roll_over,
-            NoRolloverReason::Attested { .. }
-        ))
+        assert!(matches!(cannot_roll_over, NoRolloverReason::Closed))
     }
 
     #[test]
@@ -2352,7 +2371,7 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(cannot_roll_over, NoRolloverReason::Final))
+        assert!(matches!(cannot_roll_over, NoRolloverReason::Closed))
     }
 
     #[test]
@@ -2369,6 +2388,186 @@ mod tests {
 
         assert_eq!(funding_fee.fee, Amount::ONE_BTC);
         assert_eq!(funding_fee.rate, funding_rate);
+    }
+
+    #[test]
+    fn given_collab_settlement_then_cannot_start_rollover() {
+        let quantity = Usd::new(dec!(10));
+        let leverage = Leverage::new(2).unwrap();
+        let opening_price = Price::new(dec!(10000)).unwrap();
+
+        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+
+        let (cfd, _, _, _) = Cfd::taker_long()
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys)
+            .dummy_collab_settlement_taker(opening_price);
+
+        let result = cfd.start_rollover();
+
+        let no_rollover_reason = result.unwrap_err().downcast::<NoRolloverReason>().unwrap();
+        assert_eq!(no_rollover_reason, NoRolloverReason::Closed);
+    }
+
+    /// Cover scenario where trigger a collab settlement during ongoing rollover
+    ///
+    /// In this scenario the collab settlement finished before the rollover finished.
+    /// If we trigger a collaborative settlement during rollover, the settlement will have priority
+    /// over the rollover. Upon finishing the rollover we fail because the cfd was already
+    /// settled.
+    #[test]
+    fn given_collab_settlement_finished_then_cannot_finish_rollover() {
+        let quantity = Usd::new(dec!(10));
+        let leverage = Leverage::new(2).unwrap();
+        let opening_price = Price::new(dec!(10000)).unwrap();
+
+        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+
+        let (cfd, _, _, _) = Cfd::taker_long()
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys)
+            .dummy_collab_settlement_taker(opening_price);
+
+        let result = cfd.roll_over(RolloverCompleted::succeeded(
+            OrderId::default(),
+            Dlc::dummy(None),
+            FundingFee::dummy(),
+        ));
+
+        let no_rollover_reason = result.unwrap_err();
+        assert_eq!(no_rollover_reason, NoRolloverReason::Closed);
+    }
+
+    /// Cover scenario where trigger a collab settlement during ongoing rollover
+    ///
+    /// In this scenario the collab settlement is still ongoing when the rollover finishes.
+    /// If we trigger a collaborative settlement during rollover, the settlement will have priority
+    /// over the rollover. Upon finishing the rollover we fail because the cfd was already
+    /// settled.
+    #[test]
+    fn given_ongoing_collab_settlement_then_cannot_finish_rollover() {
+        let cfd = Cfd::taker_long()
+            .dummy_open(dummy_event_id())
+            .dummy_start_collab_settlement();
+
+        let result = cfd.roll_over(RolloverCompleted::succeeded(
+            OrderId::default(),
+            Dlc::dummy(None),
+            FundingFee::dummy(),
+        ));
+
+        let no_rollover_reason = result.unwrap_err();
+        assert_eq!(
+            no_rollover_reason,
+            NoRolloverReason::InCollaborativeSettlement
+        );
+    }
+
+    #[test]
+    fn given_ongoing_collab_settlement_then_cannot_start_rollover() {
+        let cfd = Cfd::taker_long()
+            .dummy_open(dummy_event_id())
+            .dummy_start_collab_settlement();
+
+        let result = cfd.start_rollover();
+
+        let no_rollover_reason = result.unwrap_err().downcast::<NoRolloverReason>().unwrap();
+        assert_eq!(
+            no_rollover_reason,
+            NoRolloverReason::InCollaborativeSettlement
+        );
+
+        let cfd = Cfd::maker_short()
+            .dummy_open(dummy_event_id())
+            .dummy_start_collab_settlement();
+
+        let result = cfd.start_rollover();
+
+        let no_rollover_reason = result.unwrap_err().downcast::<NoRolloverReason>().unwrap();
+        assert_eq!(
+            no_rollover_reason,
+            NoRolloverReason::InCollaborativeSettlement
+        );
+    }
+
+    #[test]
+    fn given_ongoing_rollover_then_can_start_collaborative_settlement() {
+        let quantity = Usd::new(dec!(10));
+        let leverage = Leverage::new(2).unwrap();
+        let opening_price = Price::new(dec!(10000)).unwrap();
+        let order_id = OrderId::default();
+
+        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+
+        let taker_long = Cfd::taker_long()
+            .with_id(order_id)
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage)
+            .dummy_open(dummy_event_id())
+            .dummy_start_rollover()
+            .with_lock(taker_keys, maker_keys);
+
+        let maker_short = Cfd::maker_short()
+            .with_id(order_id)
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys)
+            .dummy_start_rollover();
+
+        let (taker_long, proposal, taker_sig, _) =
+            taker_long.dummy_collab_settlement_taker(opening_price);
+
+        let (maker_short, _) = maker_short.dummy_collab_settlement_maker(proposal, taker_sig);
+
+        assert!(
+            taker_long.collaborative_settlement_spend_tx.is_some(),
+            "No settlement tx even though the settlement passed"
+        );
+        assert!(
+            maker_short.collaborative_settlement_spend_tx.is_some(),
+            "No settlement tx even though the settlement passed"
+        );
+    }
+
+    #[test]
+    fn given_collab_settlement_then_cannot_force_close() {
+        let quantity = Usd::new(dec!(10));
+        let leverage = Leverage::new(2).unwrap();
+        let opening_price = Price::new(dec!(10000)).unwrap();
+
+        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+
+        let cfd = Cfd::taker_long()
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys);
+
+        let (cfd, _, _, _) = cfd.dummy_collab_settlement_taker(opening_price);
+
+        // TODO: Assert on the error string
+        assert!(
+            cfd.manual_commit_to_blockchain().is_err(),
+            "Manual commit to blockchain did not error"
+        );
+        assert!(
+            cfd.decrypt_cet(&Attestation::dummy()).unwrap().is_none(),
+            "The decrypted CET is not expected to be Some"
+        );
     }
 
     #[test]
@@ -2559,6 +2758,30 @@ mod tests {
             ]
         }
 
+        fn dummy_start_collab_settlement(order_id: OrderId) -> Vec<Self> {
+            vec![Event {
+                timestamp: Timestamp::now(),
+                id: order_id,
+                event: CfdEvent::CollaborativeSettlementStarted {
+                    proposal: SettlementProposal {
+                        order_id,
+                        timestamp: Timestamp::now(),
+                        taker: Default::default(),
+                        maker: Default::default(),
+                        price: Price::new(dec!(10000)).unwrap(),
+                    },
+                },
+            }]
+        }
+
+        fn dummy_start_rollover() -> Vec<Self> {
+            vec![Event {
+                timestamp: Timestamp::now(),
+                id: Default::default(),
+                event: CfdEvent::RolloverStarted,
+            }]
+        }
+
         fn dummy_rollover(fee_sat: u64, funding_rate: Decimal) -> Vec<Self> {
             vec![
                 Event {
@@ -2706,6 +2929,12 @@ mod tests {
             self
         }
 
+        fn dummy_start_rollover(self) -> Self {
+            Event::dummy_start_rollover()
+                .into_iter()
+                .fold(self, Cfd::apply)
+        }
+
         fn dummy_rollovers(self, fee_sat: u64, funding_rate: Decimal, nr_of_rollovers: u8) -> Self {
             let mut events = Vec::new();
 
@@ -2715,6 +2944,12 @@ mod tests {
             }
 
             events.into_iter().fold(self, Cfd::apply)
+        }
+
+        fn dummy_start_collab_settlement(self) -> Self {
+            Event::dummy_start_collab_settlement(self.id)
+                .into_iter()
+                .fold(self, Cfd::apply)
         }
 
         fn dummy_collab_settlement_taker(
@@ -3093,6 +3328,25 @@ mod tests {
             global: Global::from_unsigned_tx(lock_tx).expect("to be unsigned"),
             inputs: vec![maker_psbt.inputs, taker_psbt.inputs].concat(),
             outputs: vec![maker_psbt.outputs, taker_psbt.outputs].concat(),
+        }
+    }
+
+    impl Attestation {
+        fn dummy() -> Self {
+            Attestation {
+                id: dummy_event_id(),
+                price: 0,
+                scalars: vec![],
+            }
+        }
+    }
+
+    impl FundingFee {
+        fn dummy() -> Self {
+            FundingFee::new(
+                Amount::default(),
+                FundingRate::new(Decimal::default()).unwrap(),
+            )
         }
     }
 }
