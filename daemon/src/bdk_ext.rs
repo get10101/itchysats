@@ -1,5 +1,8 @@
 use anyhow::Result;
 use bdk::bitcoin;
+use bdk::bitcoin::secp256k1;
+use bdk::bitcoin::secp256k1::SecretKey;
+use bdk::bitcoin::secp256k1::SECP256K1;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Network;
@@ -35,4 +38,28 @@ pub fn new_test_wallet(
     let wallet = bdk::Wallet::new_offline(&descriptors.0, None, Network::Regtest, database)?;
 
     Ok(wallet)
+}
+
+#[cfg(test)]
+pub trait AddressExt {
+    fn random() -> Self;
+}
+
+#[cfg(test)]
+impl AddressExt for bdk::bitcoin::Address {
+    fn random() -> Self {
+        let (_, pk) = crate::keypair::new(&mut rand::thread_rng());
+
+        bdk::bitcoin::Address::p2wpkh(&pk, Network::Regtest).unwrap()
+    }
+}
+
+pub trait SecretKeyExt {
+    fn to_public_key(self) -> secp256k1::PublicKey;
+}
+
+impl SecretKeyExt for SecretKey {
+    fn to_public_key(self) -> secp256k1::PublicKey {
+        secp256k1::PublicKey::from_secret_key(SECP256K1, &self)
+    }
 }
