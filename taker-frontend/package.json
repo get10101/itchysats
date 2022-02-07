@@ -28,7 +28,7 @@
     "eslint": "^8.8.0",
     "eslint-config-react-app": "^7.0.0",
     "framer-motion": "^5",
-    "jest": "^27.4.7",
+    "jest": "^27.5.0",
     "npm-package-json-lint": "^5.4.2",
     "react": "^17.0.2",
     "react-async": "^10.0.1",
