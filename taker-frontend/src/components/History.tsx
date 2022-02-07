@@ -64,6 +64,7 @@ interface CfdDetailsProps {
 const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsProps) => {
     const initialPrice = cfd.initial_price;
     const liquidationPrice = cfd.liquidation_price;
+    const closing_price = cfd.closing_price || 0;
     const contracts = `${cfd.quantity_usd}`;
 
     const txLock = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Lock);
@@ -146,10 +147,15 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                             <Td><Text as={"b"}>Opening price</Text></Td>
                             <Td textAlign="right"><DollarAmount amount={initialPrice} /></Td>
                         </Tr>
-                        <Tr>
-                            <Td><Text as={"b"}>Liquidation</Text></Td>
-                            <Td textAlign="right"><DollarAmount amount={liquidationPrice} /></Td>
-                        </Tr>
+                        {cfd.closing_price
+                            ? <Tr>
+                                <Td><Text as={"b"}>Closing Price</Text></Td>
+                                <Td textAlign="right"><DollarAmount amount={closing_price} /></Td>
+                            </Tr>
+                            : <Tr>
+                                <Td><Text as={"b"}>Liquidation</Text></Td>
+                                <Td textAlign="right"><DollarAmount amount={liquidationPrice} /></Td>
+                            </Tr>}
                     </Tbody>
                 </Table>
                 <Table size="sm" variant={"unstyled"}>
