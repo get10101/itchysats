@@ -651,8 +651,6 @@ impl Cfd {
 
     fn can_settle_collaboratively(&self) -> bool {
         !self.commit_finality && !self.is_final() && !self.is_attested()
-            // Rollover and collaborative settlement are mutually exclusive, if we are currently rolling over we cannot settle
-            && !self.during_rollover
     }
 
     fn is_attested(&self) -> bool {
