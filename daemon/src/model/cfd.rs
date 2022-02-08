@@ -653,7 +653,10 @@ impl Cfd {
     }
 
     fn can_settle_collaboratively(&self) -> bool {
-        !self.is_closed() && !self.commit_finality && !self.is_attested()
+        !self.is_closed()
+            && !self.commit_finality
+            && !self.is_attested()
+            && !self.is_in_force_close()
     }
 
     fn is_attested(&self) -> bool {
@@ -2652,6 +2655,24 @@ mod tests {
     }
 
     #[test]
+    fn given_commit_then_cannot_collab_close() {
+        let taker_long = Cfd::taker_long()
+            .dummy_open(dummy_event_id())
+            .dummy_commit();
+
+        let maker_short = Cfd::maker_short()
+            .dummy_open(dummy_event_id())
+            .dummy_commit();
+
+        let result_taker = taker_long.propose_collaborative_settlement(Price::dummy(), N_PAYOUTS);
+        let result_maker = maker_short
+            .receive_collaborative_settlement_proposal(SettlementProposal::dummy(), N_PAYOUTS);
+
+        assert!(result_taker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
+        assert!(result_maker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
+    }
+
+    #[test]
     fn ensure_collaborative_settlement_takes_rollover_fees_into_account() {
         let quantity = Usd::new(dec!(10));
         let leverage = Leverage::new(2).unwrap();
@@ -3444,6 +3465,24 @@ mod tests {
                 Amount::default(),
                 FundingRate::new(Decimal::default()).unwrap(),
             )
+        }
+    }
+
+    impl SettlementProposal {
+        fn dummy() -> Self {
+            SettlementProposal {
+                order_id: Default::default(),
+                timestamp: Timestamp::now(),
+                taker: Default::default(),
+                maker: Default::default(),
+                price: Price::new(Decimal::ONE).unwrap(),
+            }
+        }
+    }
+
+    impl Price {
+        fn dummy() -> Self {
+            Price::new(Decimal::ONE).unwrap()
         }
     }
 }
