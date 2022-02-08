@@ -10,7 +10,7 @@
     "test": "vite-jest"
   },
   "dependencies": {
-    "@chakra-ui/icons": "^1.1.1",
+    "@chakra-ui/icons": "^1.1.5",
     "@chakra-ui/react": "^1.8.1",
     "@emotion/react": "^11",
     "@emotion/styled": "^11",
@@ -28,7 +28,7 @@
     "eslint": "^8.8.0",
     "eslint-config-react-app": "^7.0.0",
     "framer-motion": "^5",
-    "jest": "^27.4.7",
+    "jest": "^27.5.1",
     "npm-package-json-lint": "^5.4.2",
     "react": "^17.0.2",
     "react-async": "^10.0.1",
@@ -36,7 +36,7 @@
     "react-icons": "^4.3.1",
     "react-refresh": "^0.11.0",
     "react-router-dom": "6.2.1",
-    "react-use-websocket": "^2.9.1",
+    "react-use-websocket": "^3.0.0",
     "typescript": "^4.5.5",
     "vite": "^2.7.13",
     "vite-jest": "^0.1.4",
