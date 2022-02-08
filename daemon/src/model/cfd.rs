@@ -1066,7 +1066,7 @@ impl Cfd {
 
     pub fn handle_lock_confirmed(self) -> Event {
         // For the special case where we close when lock is still pending
-        if self.is_closed() {
+        if self.is_closed() || self.is_in_force_close() {
             return self.event(CfdEvent::LockConfirmedAfterFinality);
         }
 
@@ -2571,6 +2571,23 @@ mod tests {
     }
 
     #[test]
+    fn given_commit_when_lock_confirmed_then_lock_confirmed_after_finality() {
+        let taker_long = Cfd::taker_long()
+            .dummy_open(dummy_event_id())
+            .dummy_commit();
+
+        let maker_short = Cfd::maker_short()
+            .dummy_open(dummy_event_id())
+            .dummy_commit();
+
+        let taker_event = taker_long.handle_lock_confirmed();
+        let maker_event = maker_short.handle_lock_confirmed();
+
+        assert_eq!(taker_event.event, CfdEvent::LockConfirmedAfterFinality);
+        assert_eq!(maker_event.event, CfdEvent::LockConfirmedAfterFinality);
+    }
+
+    #[test]
     fn ensure_collaborative_settlement_takes_rollover_fees_into_account() {
         let quantity = Usd::new(dec!(10));
         let leverage = Leverage::new(2).unwrap();
@@ -2818,6 +2835,16 @@ mod tests {
             open
         }
 
+        fn dummy_manual_commit() -> Vec<Self> {
+            vec![Event {
+                timestamp: Timestamp::now(),
+                id: Default::default(),
+                event: CfdEvent::ManualCommit {
+                    tx: dummy_transaction(),
+                },
+            }]
+        }
+
         fn dummy_final_cet(event_id: BitMexPriceEventId) -> Vec<Self> {
             let mut open = Self::dummy_open(event_id);
             open.push(Event {
@@ -3032,6 +3059,12 @@ mod tests {
             let cfd = events.into_iter().fold(cfd, Cfd::apply);
 
             (cfd, script_pubkey)
+        }
+
+        fn dummy_commit(self) -> Self {
+            Event::dummy_manual_commit()
+                .into_iter()
+                .fold(self, Cfd::apply)
         }
 
         fn dummy_with_attestation(event_id: BitMexPriceEventId) -> Self {
