@@ -305,7 +305,7 @@ mod tests {
     async fn test_insert_and_load_cfd() {
         let mut conn = setup_test_db().await;
 
-        let cfd = Cfd::dummy().insert(&mut conn).await;
+        let cfd = insert(dummy_cfd(), &mut conn).await;
         let (
             super::Cfd {
                 id,
@@ -343,9 +343,9 @@ mod tests {
     async fn test_insert_and_load_cfd_ids_order_desc() {
         let mut conn = setup_test_db().await;
 
-        let cfd_1 = Cfd::dummy().insert(&mut conn).await;
-        let cfd_2 = Cfd::dummy().insert(&mut conn).await;
-        let cfd_3 = Cfd::dummy().insert(&mut conn).await;
+        let cfd_1 = insert(dummy_cfd(), &mut conn).await;
+        let cfd_2 = insert(dummy_cfd(), &mut conn).await;
+        let cfd_3 = insert(dummy_cfd(), &mut conn).await;
 
         let ids = load_all_cfd_ids(&mut conn).await.unwrap();
 
@@ -356,7 +356,7 @@ mod tests {
     async fn test_append_events() {
         let mut conn = setup_test_db().await;
 
-        let cfd = Cfd::dummy().insert(&mut conn).await;
+        let cfd = insert(dummy_cfd(), &mut conn).await;
 
         let timestamp = Timestamp::now();
 
@@ -389,30 +389,28 @@ mod tests {
         pool.acquire().await.unwrap()
     }
 
-    impl Cfd {
-        fn dummy() -> Self {
-            Self::new(
-                OrderId::default(),
-                Position::Long,
-                Price::new(dec!(60_000)).unwrap(),
-                Leverage::new(2).unwrap(),
-                Duration::hours(24),
-                Role::Taker,
-                Usd::new(dec!(1_000)),
-                "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
-                    .parse()
-                    .unwrap(),
-                OpeningFee::new(Amount::from_sat(2000)),
-                FundingRate::default(),
-                TxFeeRate::default(),
-            )
-        }
+    fn dummy_cfd() -> Cfd {
+        Cfd::new(
+            OrderId::default(),
+            Position::Long,
+            Price::new(dec!(60_000)).unwrap(),
+            Leverage::new(2).unwrap(),
+            Duration::hours(24),
+            Role::Taker,
+            Usd::new(dec!(1_000)),
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+                .parse()
+                .unwrap(),
+            OpeningFee::new(Amount::from_sat(2000)),
+            FundingRate::default(),
+            TxFeeRate::default(),
+        )
+    }
 
-        /// Insert this [`Cfd`] into the database, returning the instance for further chaining.
-        async fn insert(self, conn: &mut PoolConnection<Sqlite>) -> Self {
-            insert_cfd(&self, conn).await.unwrap();
-
-            self
-        }
+    /// Insert this [`Cfd`] into the database, returning the instance
+    /// for further chaining.
+    pub async fn insert(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> Cfd {
+        insert_cfd(&cfd, conn).await.unwrap();
+        cfd
     }
 }
