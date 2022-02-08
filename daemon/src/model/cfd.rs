@@ -1863,9 +1863,7 @@ mod tests {
     use super::*;
     use crate::bdk_ext::AddressExt;
     use crate::bdk_ext::SecretKeyExt;
-    use crate::seed::RandomSeed;
-    use crate::seed::Seed;
-    use crate::Attestation;
+    use crate::oracle::Attestation;
     use crate::N_PAYOUTS;
     use bdk::bitcoin;
     use bdk::bitcoin::util::psbt::Global;
@@ -3406,7 +3404,9 @@ mod tests {
     }
 
     pub fn dummy_identity() -> Identity {
-        Identity::new(RandomSeed::default().derive_identity().0)
+        Identity::new(x25519_dalek::PublicKey::from(
+            *b"hello world, oh what a beautiful",
+        ))
     }
 
     pub fn dummy_event_id() -> BitMexPriceEventId {
