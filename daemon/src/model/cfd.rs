@@ -653,13 +653,17 @@ impl Cfd {
     }
 
     fn can_settle_collaboratively(&self) -> bool {
-        !self.is_closed() && !self.commit_finality && !self.is_attested()
+        !self.is_closed()
+            && !self.commit_finality
+            && !self.is_attested()
+            && !self.is_in_force_close()
     }
 
     fn is_attested(&self) -> bool {
         self.cet.is_some()
     }
 
+    /// Any transaction spending from lock has reached finality on the blockchain
     fn is_final(&self) -> bool {
         self.collaborative_settlement_finality || self.cet_finality || self.refund_finality
     }
@@ -672,6 +676,15 @@ impl Cfd {
         self.refund_tx.is_some()
     }
 
+    /// Aggregate that defines if a CFD is considered closed
+    ///
+    /// A CFD is considered closed when the closing price can't change anymore, which means that we
+    /// have either spending transaction set. This is the case if:
+    /// - the cfd is already final (early exit if we have already reached finality on the
+    ///   blockchain)
+    /// - the cfd was attested (i.e.a CET is set)
+    /// - the cfd was collaboratively close (i.e. the collab close transaction is set)
+    /// - the cfd was refunded (i.e. the refund transaction is set)
     fn is_closed(&self) -> bool {
         self.is_final()
             || self.is_attested()
@@ -1066,7 +1079,7 @@ impl Cfd {
 
     pub fn handle_lock_confirmed(self) -> Event {
         // For the special case where we close when lock is still pending
-        if self.is_closed() {
+        if self.is_closed() || self.is_in_force_close() {
             return self.event(CfdEvent::LockConfirmedAfterFinality);
         }
 
@@ -2571,6 +2584,95 @@ mod tests {
     }
 
     #[test]
+    fn given_commit_when_lock_confirmed_then_lock_confirmed_after_finality() {
+        let taker_long = Cfd::taker_long()
+            .dummy_open(dummy_event_id())
+            .dummy_commit();
+
+        let maker_short = Cfd::maker_short()
+            .dummy_open(dummy_event_id())
+            .dummy_commit();
+
+        let taker_event = taker_long.handle_lock_confirmed();
+        let maker_event = maker_short.handle_lock_confirmed();
+
+        assert_eq!(taker_event.event, CfdEvent::LockConfirmedAfterFinality);
+        assert_eq!(maker_event.event, CfdEvent::LockConfirmedAfterFinality);
+    }
+
+    #[test]
+    fn given_ongoing_collab_settlement_when_lock_confirmed_then_lock_confirmed() {
+        let taker_long = Cfd::taker_long()
+            .dummy_open(dummy_event_id())
+            .dummy_start_collab_settlement();
+
+        let maker_short = Cfd::maker_short()
+            .dummy_open(dummy_event_id())
+            .dummy_start_collab_settlement();
+
+        let taker_event = taker_long.handle_lock_confirmed();
+        let maker_event = maker_short.handle_lock_confirmed();
+
+        assert_eq!(taker_event.event, CfdEvent::LockConfirmed);
+        assert_eq!(maker_event.event, CfdEvent::LockConfirmed);
+    }
+
+    #[test]
+    fn given_collab_settlement_finished_when_lock_confirmed_then_lock_confirmed_after_finality() {
+        let quantity = Usd::new(dec!(10));
+        let leverage = Leverage::new(2).unwrap();
+        let opening_price = Price::new(dec!(10000)).unwrap();
+        let order_id = OrderId::default();
+
+        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+
+        let taker_long = Cfd::taker_long()
+            .with_id(order_id)
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys);
+
+        let maker_short = Cfd::maker_short()
+            .with_id(order_id)
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys);
+
+        let (taker_long, proposal, taker_sig, _) =
+            taker_long.dummy_collab_settlement_taker(opening_price);
+        let (maker_short, _) = maker_short.dummy_collab_settlement_maker(proposal, taker_sig);
+
+        let taker_event = taker_long.handle_lock_confirmed();
+        let maker_event = maker_short.handle_lock_confirmed();
+
+        assert_eq!(taker_event.event, CfdEvent::LockConfirmedAfterFinality);
+        assert_eq!(maker_event.event, CfdEvent::LockConfirmedAfterFinality);
+    }
+
+    #[test]
+    fn given_commit_then_cannot_collab_close() {
+        let taker_long = Cfd::taker_long()
+            .dummy_open(dummy_event_id())
+            .dummy_commit();
+
+        let maker_short = Cfd::maker_short()
+            .dummy_open(dummy_event_id())
+            .dummy_commit();
+
+        let result_taker = taker_long.propose_collaborative_settlement(Price::dummy(), N_PAYOUTS);
+        let result_maker = maker_short
+            .receive_collaborative_settlement_proposal(SettlementProposal::dummy(), N_PAYOUTS);
+
+        assert!(result_taker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
+        assert!(result_maker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
+    }
+
+    #[test]
     fn ensure_collaborative_settlement_takes_rollover_fees_into_account() {
         let quantity = Usd::new(dec!(10));
         let leverage = Leverage::new(2).unwrap();
@@ -2818,6 +2920,16 @@ mod tests {
             open
         }
 
+        fn dummy_manual_commit() -> Vec<Self> {
+            vec![Event {
+                timestamp: Timestamp::now(),
+                id: Default::default(),
+                event: CfdEvent::ManualCommit {
+                    tx: dummy_transaction(),
+                },
+            }]
+        }
+
         fn dummy_final_cet(event_id: BitMexPriceEventId) -> Vec<Self> {
             let mut open = Self::dummy_open(event_id);
             open.push(Event {
@@ -3032,6 +3144,12 @@ mod tests {
             let cfd = events.into_iter().fold(cfd, Cfd::apply);
 
             (cfd, script_pubkey)
+        }
+
+        fn dummy_commit(self) -> Self {
+            Event::dummy_manual_commit()
+                .into_iter()
+                .fold(self, Cfd::apply)
         }
 
         fn dummy_with_attestation(event_id: BitMexPriceEventId) -> Self {
@@ -3347,6 +3465,24 @@ mod tests {
                 Amount::default(),
                 FundingRate::new(Decimal::default()).unwrap(),
             )
+        }
+    }
+
+    impl SettlementProposal {
+        fn dummy() -> Self {
+            SettlementProposal {
+                order_id: Default::default(),
+                timestamp: Timestamp::now(),
+                taker: Default::default(),
+                maker: Default::default(),
+                price: Price::new(Decimal::ONE).unwrap(),
+            }
+        }
+    }
+
+    impl Price {
+        fn dummy() -> Self {
+            Price::new(Decimal::ONE).unwrap()
         }
     }
 }
