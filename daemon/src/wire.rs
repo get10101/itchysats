@@ -1,6 +1,5 @@
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
-use crate::model::BitMexPriceEventId;
 use crate::model::FundingRate;
 use crate::model::Price;
 use crate::model::Timestamp;
@@ -8,6 +7,7 @@ use crate::model::TxFeeRate;
 use crate::model::Usd;
 use crate::noise::NOISE_MAX_MSG_LEN;
 use crate::noise::NOISE_TAG_LEN;
+use crate::olivia::BitMexPriceEventId;
 use anyhow::bail;
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::Signature;

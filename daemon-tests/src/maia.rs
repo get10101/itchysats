@@ -1,6 +1,6 @@
 use daemon::maia::secp256k1_zkp::schnorrsig;
 use daemon::maia::secp256k1_zkp::SecretKey;
-use daemon::model::BitMexPriceEventId;
+use daemon::olivia::BitMexPriceEventId;
 use daemon::oracle;
 use daemon::oracle::Attestation;
 use std::str::FromStr;

@@ -1,5 +1,4 @@
 use crate::model::calculate_funding_fee;
-use crate::model::BitMexPriceEventId;
 use crate::model::FeeAccount;
 use crate::model::FundingFee;
 use crate::model::FundingRate;
@@ -14,6 +13,7 @@ use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::TxFeeRate;
 use crate::model::Usd;
+use crate::olivia::BitMexPriceEventId;
 use crate::oracle;
 use crate::payout_curve;
 use crate::setup_contract::RolloverParams;
@@ -565,7 +565,7 @@ impl Cfd {
     fn expiry_timestamp(&self) -> Option<OffsetDateTime> {
         self.dlc
             .as_ref()
-            .map(|dlc| dlc.settlement_event_id.timestamp)
+            .map(|dlc| dlc.settlement_event_id.timestamp())
     }
 
     fn margin(&self) -> Amount {

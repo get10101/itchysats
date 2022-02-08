@@ -8,7 +8,7 @@ use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::CET_TIMELOCK;
-use crate::model::BitMexPriceEventId;
+use crate::olivia::BitMexPriceEventId;
 use crate::oracle;
 use crate::oracle::Attestation;
 use crate::try_continue;

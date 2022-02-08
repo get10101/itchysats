@@ -1,6 +1,6 @@
 use crate::maia::OliviaData;
 use async_trait::async_trait;
-use daemon::model::BitMexPriceEventId;
+use daemon::olivia::BitMexPriceEventId;
 use daemon::oracle;
 use mockall::*;
 use std::sync::Arc;

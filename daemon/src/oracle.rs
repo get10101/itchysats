@@ -1,7 +1,7 @@
 use crate::db;
 use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Event;
-use crate::model::BitMexPriceEventId;
+use crate::olivia::BitMexPriceEventId;
 use crate::try_continue;
 use anyhow::Context;
 use anyhow::Result;
@@ -352,7 +352,7 @@ impl xtra::Message for Attestation {
 }
 
 mod olivia_api {
-    use crate::model::BitMexPriceEventId;
+    use crate::olivia::BitMexPriceEventId;
     use anyhow::Context;
     use maia::secp256k1_zkp::schnorrsig;
     use maia::secp256k1_zkp::SecretKey;
@@ -463,7 +463,7 @@ mod olivia_api {
     mod tests {
         use std::vec;
 
-        use crate::model::BitMexPriceEventId;
+        use crate::olivia::BitMexPriceEventId;
         use crate::oracle;
         use time::macros::datetime;
 
