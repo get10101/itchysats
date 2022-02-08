@@ -151,6 +151,7 @@ pub struct Cfd {
     /// collborative close) then this is the final payout.
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
     pub payout: Option<SignedAmount>,
+    pub closing_price: Option<Price>,
 
     pub state: CfdState,
     pub actions: HashSet<CfdAction>,
@@ -297,6 +298,7 @@ impl Cfd {
             profit_btc: None,
             profit_percent: None,
             payout: None,
+            closing_price: None,
 
             state: CfdState::PendingSetup,
             actions: initial_actions,
@@ -360,9 +362,13 @@ impl Cfd {
                 self.state = CfdState::PendingClose;
             }
             CollaborativeSettlementCompleted {
-                spend_tx, script, ..
+                spend_tx,
+                script,
+                price,
             } => {
                 self.aggregated.collab_settlement_tx = Some((spend_tx, script));
+                self.closing_price = Some(price);
+
                 self.state = CfdState::PendingClose;
             }
             CollaborativeSettlementRejected => {
@@ -406,13 +412,20 @@ impl Cfd {
 
                 self.state = CfdState::PendingRefund;
             }
-            OracleAttestedPriorCetTimelock { timelocked_cet, .. } => {
+            OracleAttestedPriorCetTimelock {
+                timelocked_cet,
+                price,
+                ..
+            } => {
                 self.aggregated.timelocked_cet = Some(timelocked_cet);
+                self.closing_price = Some(price);
 
                 self.state = CfdState::PendingCommit;
             }
-            OracleAttestedPostCetTimelock { cet, .. } => {
+            OracleAttestedPostCetTimelock { cet, price, .. } => {
                 self.aggregated.cet = Some(cet);
+                self.closing_price = Some(price);
+
                 self.state = CfdState::PendingCet;
             }
             ManualCommit { .. } => {

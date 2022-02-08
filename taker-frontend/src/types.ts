@@ -62,6 +62,7 @@ export interface Cfd {
     profit_btc?: number;
     profit_percent?: number;
     payout?: number;
+    closing_price?: number;
 
     state: State;
     details: CfdDetails;
