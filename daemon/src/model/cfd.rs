@@ -2598,6 +2598,60 @@ mod tests {
     }
 
     #[test]
+    fn given_ongoing_collab_settlement_when_lock_confirmed_then_lock_confirmed() {
+        let taker_long = Cfd::taker_long()
+            .dummy_open(dummy_event_id())
+            .dummy_start_collab_settlement();
+
+        let maker_short = Cfd::maker_short()
+            .dummy_open(dummy_event_id())
+            .dummy_start_collab_settlement();
+
+        let taker_event = taker_long.handle_lock_confirmed();
+        let maker_event = maker_short.handle_lock_confirmed();
+
+        assert_eq!(taker_event.event, CfdEvent::LockConfirmed);
+        assert_eq!(maker_event.event, CfdEvent::LockConfirmed);
+    }
+
+    #[test]
+    fn given_collab_settlement_finished_when_lock_confirmed_then_lock_confirmed_after_finality() {
+        let quantity = Usd::new(dec!(10));
+        let leverage = Leverage::new(2).unwrap();
+        let opening_price = Price::new(dec!(10000)).unwrap();
+        let order_id = OrderId::default();
+
+        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+
+        let taker_long = Cfd::taker_long()
+            .with_id(order_id)
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys);
+
+        let maker_short = Cfd::maker_short()
+            .with_id(order_id)
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .with_leverage(leverage)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys);
+
+        let (taker_long, proposal, taker_sig, _) =
+            taker_long.dummy_collab_settlement_taker(opening_price);
+        let (maker_short, _) = maker_short.dummy_collab_settlement_maker(proposal, taker_sig);
+
+        let taker_event = taker_long.handle_lock_confirmed();
+        let maker_event = maker_short.handle_lock_confirmed();
+
+        assert_eq!(taker_event.event, CfdEvent::LockConfirmedAfterFinality);
+        assert_eq!(maker_event.event, CfdEvent::LockConfirmedAfterFinality);
+    }
+
+    #[test]
     fn ensure_collaborative_settlement_takes_rollover_fees_into_account() {
         let quantity = Usd::new(dec!(10));
         let leverage = Leverage::new(2).unwrap();
