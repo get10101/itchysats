@@ -1745,14 +1745,6 @@ pub enum Completed<P, E> {
     },
 }
 
-impl<P, E> xtra::Message for Completed<P, E>
-where
-    P: Send + 'static,
-    E: Send + 'static,
-{
-    type Result = Result<()>;
-}
-
 impl<P, E> Completed<P, E> {
     pub fn order_id(&self) -> OrderId {
         *match self {
