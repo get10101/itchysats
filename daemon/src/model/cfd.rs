@@ -660,6 +660,7 @@ impl Cfd {
         self.cet.is_some()
     }
 
+    /// Any transaction spending from lock has reached finality on the blockchain
     fn is_final(&self) -> bool {
         self.collaborative_settlement_finality || self.cet_finality || self.refund_finality
     }
@@ -672,6 +673,15 @@ impl Cfd {
         self.refund_tx.is_some()
     }
 
+    /// Aggregate that defines if a CFD is considered closed
+    ///
+    /// A CFD is considered closed when the closing price can't change anymore, which means that we
+    /// have either spending transaction set. This is the case if:
+    /// - the cfd is already final (early exit if we have already reached finality on the
+    ///   blockchain)
+    /// - the cfd was attested (i.e.a CET is set)
+    /// - the cfd was collaboratively close (i.e. the collab close transaction is set)
+    /// - the cfd was refunded (i.e. the refund transaction is set)
     fn is_closed(&self) -> bool {
         self.is_final()
             || self.is_attested()
