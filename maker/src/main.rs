@@ -4,13 +4,13 @@ use clap::Parser;
 use clap::Subcommand;
 use daemon::bdk;
 use daemon::bdk::bitcoin;
-use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
 use daemon::bitmex_price_feed;
 use daemon::db;
 use daemon::model::cfd::Role;
 use daemon::monitor;
+use daemon::olivia;
 use daemon::oracle;
 use daemon::projection;
 use daemon::seed::RandomSeed;
@@ -25,7 +25,6 @@ use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::str::FromStr;
 use tokio_tasks::Tasks;
 use xtra::Actor;
 use xtras::supervisor;
@@ -202,11 +201,6 @@ async fn main() -> Result<()> {
         "Authentication details: username='{auth_username}' password='{auth_password}', noise_public_key='{hex_pk}'",
     );
 
-    // TODO: Actually fetch it from Olivia
-    let oracle = schnorrsig::PublicKey::from_str(
-        "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
-    )?;
-
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()))
@@ -224,7 +218,7 @@ async fn main() -> Result<()> {
     let maker = MakerActorSystem::new(
         db.clone(),
         wallet.clone(),
-        oracle,
+        *olivia::PUBLIC_KEY,
         |channel| oracle::Actor::new(db.clone(), channel, SETTLEMENT_INTERVAL),
         {
             |executor| {

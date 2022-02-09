@@ -1,7 +1,6 @@
 import { HttpError } from "./HttpError";
 
 // A generic way of creating an error toast
-// TODO: Don't use any (`toast: typeof useToast` did not work :( )
 export default function createErrorToast(toast: any, e: any) {
     if (e instanceof HttpError) {
         const description = e.detail ? e.detail : "";

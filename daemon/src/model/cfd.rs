@@ -138,8 +138,6 @@ pub struct Order {
 
     pub price: Price,
 
-    // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
-    //  always 1 USD
     pub min_quantity: Usd,
     pub max_quantity: Usd,
 
@@ -296,8 +294,6 @@ pub enum CfdEvent {
     // commit transaction for some
     CollaborativeSettlementFailed,
 
-    // TODO: The monitoring events should move into the monitor once we use multiple
-    // aggregates in different actors
     LockConfirmed,
     /// The lock transaction is confirmed after CFD was closed
     ///
@@ -323,10 +319,6 @@ pub enum CfdEvent {
         refund_tx: Transaction,
     },
 
-    // TODO: Once we use multiple aggregates in different actors we could change this to something
-    // like CetReadyForPublication that is emitted by the CfdActor. The Oracle actor would
-    // take care of saving and broadcasting an attestation event that can be picked up by the
-    // wallet actor which can then decide to publish the CetReadyForPublication event.
     OracleAttestedPriorCetTimelock {
         #[serde(with = "hex_transaction")]
         timelocked_cet: Transaction,
@@ -911,9 +903,6 @@ impl Cfd {
     }
 
     pub fn setup_contract(self, completed: SetupCompleted) -> Result<Event> {
-        // Version 1 is acceptable, as it means that we started contract setup
-        // TODO: Use self.during_contract_setup after introducing
-        // ContractSetupAccepted event
         if self.version > 1 {
             bail!(
                 "Complete contract setup not allowed because cfd in version {}",
@@ -1209,7 +1198,6 @@ impl Cfd {
                 self.cet = Some(timelocked_cet);
             }
             ContractSetupFailed { .. } => {
-                // TODO: Deal with failed contract setup
                 self.during_contract_setup = false;
             }
             RolloverStarted => {

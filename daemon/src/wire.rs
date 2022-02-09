@@ -133,7 +133,7 @@ pub enum MakerToTaker {
     /// Periodically broadcasted message, indicating maker's presence
     Heartbeat,
     CurrentOrder(Option<Order>),
-    ConfirmOrder(OrderId), // TODO: Include payout curve in "accept" message from maker
+    ConfirmOrder(OrderId),
     RejectOrder(OrderId),
     InvalidOrderId(OrderId),
     Protocol {

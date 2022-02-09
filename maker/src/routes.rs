@@ -97,8 +97,6 @@ pub async fn maker_feed(
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfdNewOrderRequest {
     pub price: Price,
-    // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
-    // always 1 USD
     pub min_quantity: Usd,
     pub max_quantity: Usd,
     pub tx_fee_rate: Option<TxFeeRate>,
