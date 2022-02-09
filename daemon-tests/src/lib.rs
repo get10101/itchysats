@@ -6,7 +6,6 @@ use daemon::auto_rollover;
 use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
-use daemon::bitmex_price_feed::Quote;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
@@ -18,7 +17,6 @@ use daemon::model::FundingRate;
 use daemon::model::Identity;
 use daemon::model::OpeningFee;
 use daemon::model::Price;
-use daemon::model::Timestamp;
 use daemon::model::TxFeeRate;
 use daemon::model::Usd;
 use daemon::projection;
@@ -31,12 +29,14 @@ use daemon::MakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use daemon::SETTLEMENT_INTERVAL;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
+use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
@@ -45,6 +45,7 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use xtra::Actor;
+use xtra_bitmex_price_feed::Quote;
 
 pub mod flow;
 pub mod maia;
@@ -363,13 +364,9 @@ macro_rules! wait_next_state {
     };
 }
 
-pub fn dummy_price() -> Price {
-    Price::new(dec!(50_000)).expect("to not fail")
-}
-
 pub fn dummy_quote() -> Quote {
     Quote {
-        timestamp: Timestamp::now(),
+        timestamp: OffsetDateTime::now_utc(),
         bid: dummy_price(),
         ask: dummy_price(),
     }
@@ -377,7 +374,7 @@ pub fn dummy_quote() -> Quote {
 
 pub fn dummy_new_order() -> maker_cfd::NewOrder {
     maker_cfd::NewOrder {
-        price: dummy_price(),
+        price: Price::new(dummy_price()).unwrap(),
         min_quantity: Usd::new(dec!(5)),
         max_quantity: Usd::new(dec!(100)),
         tx_fee_rate: TxFeeRate::new(1),
@@ -385,6 +382,10 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
         funding_rate: FundingRate::new(dec!(0.00024)).unwrap(),
         opening_fee: OpeningFee::new(Amount::from_sat(2)),
     }
+}
+
+fn dummy_price() -> Decimal {
+    dec!(50_000)
 }
 
 pub fn init_tracing() -> DefaultGuard {

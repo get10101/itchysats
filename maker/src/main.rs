@@ -6,7 +6,6 @@ use daemon::bdk;
 use daemon::bdk::bitcoin;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
-use daemon::bitmex_price_feed;
 use daemon::db;
 use daemon::model::cfd::Role;
 use daemon::monitor;
@@ -235,12 +234,12 @@ async fn main() -> Result<()> {
     )?;
 
     let (supervisor, price_feed) =
-        supervisor::Actor::with_policy(bitmex_price_feed::Actor::default, |e| match e {
-            bitmex_price_feed::Error::FailedToParseQuote { .. }
-            | bitmex_price_feed::Error::Failed { .. }
-            | bitmex_price_feed::Error::FailedToConnect { .. }
-            | bitmex_price_feed::Error::Unspecified
-            | bitmex_price_feed::Error::StreamEnded => true, // always restart price feed actor
+        supervisor::Actor::with_policy(xtra_bitmex_price_feed::Actor::default, |e| match e {
+            xtra_bitmex_price_feed::Error::FailedToParseQuote { .. }
+            | xtra_bitmex_price_feed::Error::Failed { .. }
+            | xtra_bitmex_price_feed::Error::FailedToConnect { .. }
+            | xtra_bitmex_price_feed::Error::Unspecified
+            | xtra_bitmex_price_feed::Error::StreamEnded => true, // always restart price feed actor
         });
 
     let (_supervisor_address, task) = supervisor.create(None).run();

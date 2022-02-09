@@ -1,4 +1,3 @@
-use crate::bitmex_price_feed;
 use crate::db;
 use crate::model;
 use crate::model::calculate_funding_fee;
@@ -23,7 +22,6 @@ use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::Usd;
 use crate::Order;
-use crate::Tasks;
 use crate::SETTLEMENT_INTERVAL;
 use anyhow::Context;
 use anyhow::Result;
@@ -48,6 +46,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
+use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -62,7 +61,7 @@ pub struct Actor {
     db: sqlx::SqlitePool,
     tx: Tx,
     state: State,
-    price_feed: Box<dyn MessageChannel<bitmex_price_feed::LatestQuote>>,
+    price_feed: Box<dyn MessageChannel<xtra_bitmex_price_feed::LatestQuote>>,
     tasks: Tasks,
 }
 
@@ -78,7 +77,7 @@ impl Actor {
         db: sqlx::SqlitePool,
         _role: Role,
         network: Network,
-        price_feed: &(impl MessageChannel<bitmex_price_feed::LatestQuote> + 'static),
+        price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote> + 'static),
     ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(Vec::new());
         let (tx_order, rx_order) = watch::channel(None);
@@ -471,7 +470,7 @@ impl Cfd {
         self
     }
 
-    fn with_current_quote(self, latest_quote: Option<bitmex_price_feed::Quote>) -> Self {
+    fn with_current_quote(self, latest_quote: Option<xtra_bitmex_price_feed::Quote>) -> Self {
         // If we have a dedicated closing price, use that one.
         if let Some(payout) = self.aggregated.clone().payout(self.role) {
             let payout = payout
@@ -494,32 +493,66 @@ impl Cfd {
         }
 
         // Otherwise, compute based on current quote.
-        let latest_price = match (latest_quote, self.role) {
-            (None, _) => None,
-            (Some(quote), Role::Maker) => Some(quote.for_maker()),
-            (Some(quote), Role::Taker) => Some(quote.for_taker()),
+        let latest_quote = match latest_quote {
+            Some(latest_quote) => latest_quote,
+            None => {
+                tracing::trace!(order_id = %self.order_id, "Unable to calculate profit/loss without current price");
+
+                return Self {
+                    payout: None,
+                    profit_btc: None,
+                    profit_percent: None,
+                    ..self
+                };
+            }
         };
 
-        let (profit_btc_latest_price, profit_percent_latest_price, payout) = latest_price.and_then(|latest_price| {
-            match calculate_profit_at_price(self.initial_price, latest_price, self.quantity_usd, self.leverage, self.aggregated.fee_account) {
-                Ok(profit) => Some(profit),
-                Err(e) => {
-                    tracing::warn!("Failed to calculate profit/loss {:#}", e);
+        let latest_price = match self.role {
+            Role::Maker => latest_quote.for_maker(),
+            Role::Taker => latest_quote.for_taker(),
+        };
+        let latest_price = match Price::new(latest_price) {
+            Ok(latest_price) => latest_price,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to compute profit/loss because latest price is invalid: {e}"
+                );
 
-                    None
-                }
+                return Self {
+                    payout: None,
+                    profit_btc: None,
+                    profit_percent: None,
+                    ..self
+                };
             }
-        }).map(|(in_btc, in_percent, payout)| (Some(in_btc), Some(in_percent.round_dp(1).to_string()), Some(payout)))
-            .unwrap_or_else(|| {
-                tracing::debug!(order_id = %self.order_id, "Unable to calculate profit/loss without current price");
+        };
 
-                (None, None, None)
-            });
+        let (profit_btc, profit_percent, payout) = match calculate_profit_at_price(
+            self.initial_price,
+            latest_price,
+            self.quantity_usd,
+            self.leverage,
+            self.aggregated.fee_account,
+        ) {
+            Ok((profit_btc, profit_percent, payout)) => {
+                (profit_btc, profit_percent.round_dp(1).to_string(), payout)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to calculate profit/loss {:#}", e);
+
+                return Self {
+                    payout: None,
+                    profit_btc: None,
+                    profit_percent: None,
+                    ..self
+                };
+            }
+        };
 
         Self {
-            payout,
-            profit_btc: profit_btc_latest_price,
-            profit_percent: profit_percent_latest_price,
+            payout: Some(payout),
+            profit_btc: Some(profit_btc),
+            profit_percent: Some(profit_percent),
             ..self
         }
     }
@@ -630,7 +663,7 @@ impl Tx {
     fn send_cfds_update(
         &self,
         cfds: HashMap<OrderId, Cfd>,
-        quote: Option<bitmex_price_feed::Quote>,
+        quote: Option<xtra_bitmex_price_feed::Quote>,
     ) {
         let cfds_with_quote = cfds
             .into_iter()
@@ -640,7 +673,7 @@ impl Tx {
         let _ = self.cfds.send(cfds_with_quote);
     }
 
-    fn send_quote_update(&self, quote: Option<bitmex_price_feed::Quote>) {
+    fn send_quote_update(&self, quote: Option<xtra_bitmex_price_feed::Quote>) {
         let _ = self.quote.send(quote.map(|q| q.into()));
     }
 
@@ -663,7 +696,7 @@ impl Tx {
 /// Internal struct to keep state in one place
 struct State {
     network: Network,
-    quote: Option<bitmex_price_feed::Quote>,
+    quote: Option<xtra_bitmex_price_feed::Quote>,
     /// All hydrated CFDs.
     cfds: HashMap<OrderId, Cfd>,
 }
@@ -694,7 +727,7 @@ impl State {
         Ok(())
     }
 
-    fn update_quote(&mut self, quote: Option<bitmex_price_feed::Quote>) {
+    fn update_quote(&mut self, quote: Option<xtra_bitmex_price_feed::Quote>) {
         self.quote = quote;
     }
 }
@@ -715,7 +748,7 @@ impl Actor {
         self.tx.send_order_update(msg.0);
     }
 
-    fn handle(&mut self, msg: Update<Option<bitmex_price_feed::Quote>>) {
+    fn handle(&mut self, msg: Update<Option<xtra_bitmex_price_feed::Quote>>) {
         self.state.update_quote(msg.0);
 
         let hydrated_cfds = self.state.cfds.clone();
@@ -761,7 +794,7 @@ impl xtra::Actor for Actor {
 
             async move {
                 loop {
-                    match price_feed.send(bitmex_price_feed::LatestQuote).await {
+                    match price_feed.send(xtra_bitmex_price_feed::LatestQuote).await {
                         Ok(quote) => {
                             let _ = this.send(Update(quote)).await;
                         }
@@ -781,17 +814,19 @@ impl xtra::Actor for Actor {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Quote {
-    bid: Price,
-    ask: Price,
+    #[serde(with = "round_to_two_dp")]
+    bid: Decimal,
+    #[serde(with = "round_to_two_dp")]
+    ask: Decimal,
     last_updated_at: Timestamp,
 }
 
-impl From<bitmex_price_feed::Quote> for Quote {
-    fn from(quote: bitmex_price_feed::Quote) -> Self {
+impl From<xtra_bitmex_price_feed::Quote> for Quote {
+    fn from(quote: xtra_bitmex_price_feed::Quote) -> Self {
         Quote {
             bid: quote.bid,
             ask: quote.ask,
-            last_updated_at: quote.timestamp,
+            last_updated_at: Timestamp::new(quote.timestamp.unix_timestamp()),
         }
     }
 }
@@ -954,6 +989,12 @@ mod round_to_two_dp {
     impl ToDecimal for Price {
         fn to_decimal(&self) -> Decimal {
             self.into_decimal()
+        }
+    }
+
+    impl ToDecimal for Decimal {
+        fn to_decimal(&self) -> Decimal {
+            *self
         }
     }
 

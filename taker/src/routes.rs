@@ -1,7 +1,6 @@
 use daemon::bdk;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
-use daemon::bitmex_price_feed;
 use daemon::connection::ConnectionStatus;
 use daemon::model::cfd::OrderId;
 use daemon::model::Leverage;
@@ -36,7 +35,7 @@ use tokio::select;
 use tokio::sync::watch;
 use uuid::Uuid;
 
-type Taker = TakerActorSystem<oracle::Actor, wallet::Actor, bitmex_price_feed::Actor>;
+type Taker = TakerActorSystem<oracle::Actor, wallet::Actor, xtra_bitmex_price_feed::Actor>;
 
 const HEARTBEAT_INTERVAL_SECS: u64 = 5;
 

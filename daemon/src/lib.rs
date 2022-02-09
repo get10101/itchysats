@@ -1,7 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use crate::bitcoin::Txid;
-use crate::bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use crate::model::cfd::Order;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
@@ -28,6 +27,7 @@ use tokio_tasks::Tasks;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
 use xtra::Address;
+use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use xtras::address_map::Stopping;
 use xtras::supervisor;
 
@@ -38,7 +38,6 @@ pub mod sqlx_ext; // Must come first because it is a macro.
 
 pub mod auto_rollover;
 pub mod bdk_ext;
-pub mod bitmex_price_feed;
 pub mod cfd_actors;
 pub mod collab_settlement_maker;
 pub mod collab_settlement_taker;
@@ -292,7 +291,7 @@ pub struct TakerActorSystem<O, W, P> {
     executor: command::Executor,
     /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
     /// address.
-    _price_feed_supervisor: Address<supervisor::Actor<P, bitmex_price_feed::Error>>,
+    _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
@@ -309,7 +308,8 @@ where
         + xtra::Handler<wallet::Sign>
         + xtra::Handler<wallet::Withdraw>
         + xtra::Actor<Stop = ()>,
-    P: xtra::Handler<bitmex_price_feed::LatestQuote> + xtra::Actor<Stop = bitmex_price_feed::Error>,
+    P: xtra::Handler<xtra_bitmex_price_feed::LatestQuote>
+        + xtra::Actor<Stop = xtra_bitmex_price_feed::Error>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
@@ -449,7 +449,7 @@ where
     pub async fn propose_settlement(&self, order_id: OrderId) -> Result<()> {
         let latest_quote = self
             .price_feed_actor
-            .send(bitmex_price_feed::LatestQuote)
+            .send(xtra_bitmex_price_feed::LatestQuote)
             .await
             .context("Price feed not available")?
             .context("No quote available")?;
@@ -464,7 +464,7 @@ where
         self.cfd_actor
             .send(taker_cfd::ProposeSettlement {
                 order_id,
-                current_price: latest_quote.for_taker(),
+                current_price: Price::new(latest_quote.for_taker())?,
             })
             .await?
     }

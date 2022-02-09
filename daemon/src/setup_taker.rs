@@ -11,7 +11,6 @@ use crate::setup_contract;
 use crate::wallet;
 use crate::wire;
 use crate::wire::SetupMsg;
-use crate::Tasks;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -22,6 +21,7 @@ use futures::future;
 use futures::SinkExt;
 use maia::secp256k1_zkp::schnorrsig;
 use std::time::Duration;
+use tokio_tasks::Tasks;
 use xtra::prelude::*;
 use xtra_productivity::xtra_productivity;
 
