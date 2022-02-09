@@ -345,7 +345,8 @@ impl Actor {
 
         if self.connections.contains_key(&identity) {
             tracing::warn!(
-                "Refusing to accept 2nd connection from already connected taker {identity}!"
+                taker_id = %identity,
+                "Refusing to accept 2nd connection from already connected taker!"
             );
             return;
         }

@@ -84,6 +84,7 @@ impl xtra::Actor for Actor {
         let order_id = self.proposal.order_id;
 
         tracing::info!(
+            taker_id = %self.taker_id,
             %order_id,
             price = %self.proposal.price,
             "Received settlement proposal"
