@@ -1,4 +1,3 @@
-use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_taker;
 use crate::connection;
@@ -139,21 +138,6 @@ impl<O, W> Actor<O, W> {
         disconnected.insert(addr);
 
         Ok(())
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O, W> Actor<O, W> {
-    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
-        if let Err(e) = cfd_actors::handle_oracle_attestation(
-            msg.as_inner(),
-            &self.db,
-            &self.process_manager_actor,
-        )
-        .await
-        {
-            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
-        }
     }
 }
 

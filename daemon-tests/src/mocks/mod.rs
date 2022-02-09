@@ -1,7 +1,6 @@
 use super::maia::OliviaData;
-use crate::mocks::oracle::OracleActor;
-use crate::mocks::price_feed::PriceFeedActor;
-use crate::mocks::wallet::WalletActor;
+use crate::mocks::price_feed::MockPriceFeed;
+use crate::mocks::wallet::MockWallet;
 use model::olivia;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -15,29 +14,24 @@ pub mod wallet;
 #[derive(Clone)]
 pub struct Mocks {
     wallet: Arc<Mutex<wallet::MockWallet>>,
-    monitor: Option<Arc<Mutex<monitor::MockMonitor>>>,
+    monitor: Arc<Mutex<monitor::MockMonitor>>,
     oracle: Arc<Mutex<oracle::MockOracle>>,
     price_feed: Arc<Mutex<price_feed::MockPriceFeed>>,
 }
 
 impl Mocks {
-    pub fn new() -> (Mocks, OracleActor, WalletActor, PriceFeedActor) {
-        let (oracle, oracle_mock) = OracleActor::new();
-        let (wallet, wallet_mock) = WalletActor::new();
-        let (price_feed, price_feed_mock) = PriceFeedActor::new();
-
-        let mocks = Self {
-            wallet: wallet_mock,
-            monitor: None,
-            oracle: oracle_mock,
-            price_feed: price_feed_mock,
-        };
-
-        (mocks, oracle, wallet, price_feed)
-    }
-
-    pub fn set_monitor_mock(&mut self, monitor: Arc<Mutex<monitor::MockMonitor>>) {
-        self.monitor = Some(monitor);
+    pub fn new(
+        wallet: Arc<Mutex<MockWallet>>,
+        price_feed: Arc<Mutex<MockPriceFeed>>,
+        monitor: Arc<Mutex<monitor::MockMonitor>>,
+        oracle: Arc<Mutex<oracle::MockOracle>>,
+    ) -> Mocks {
+        Self {
+            wallet,
+            monitor,
+            oracle,
+            price_feed,
+        }
     }
 
     pub async fn wallet(&mut self) -> MutexGuard<'_, wallet::MockWallet> {
@@ -53,15 +47,7 @@ impl Mocks {
     }
 
     pub async fn monitor(&mut self) -> MutexGuard<'_, monitor::MockMonitor> {
-        self.monitor
-            .as_ref()
-            .expect("monitor mock to be initialized")
-            .lock()
-            .await
-    }
-
-    pub async fn mock_sync_handlers(&mut self) {
-        self.oracle().await.expect_sync().return_const(());
+        self.monitor.lock().await
     }
 
     // Helper function setting up a "happy path" wallet mock
@@ -78,17 +64,7 @@ impl Mocks {
     }
 
     pub async fn mock_oracle_announcement_with(&mut self, announcement: olivia::Announcement) {
-        self.oracle()
-            .await
-            .expect_get_announcement()
-            .return_const(Ok(announcement));
-    }
-
-    pub async fn mock_oracle_monitor_attestation(&mut self) {
-        self.oracle()
-            .await
-            .expect_monitor_attestation()
-            .return_const(());
+        self.oracle().await.set_announcement(announcement);
     }
 
     pub async fn mock_party_params(&mut self) {

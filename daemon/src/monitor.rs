@@ -2,13 +2,10 @@ use crate::bitcoin::consensus::encode::serialize_hex;
 use crate::bitcoin::Transaction;
 use crate::command;
 use crate::db;
-use crate::oracle;
-use crate::try_continue;
 use crate::wallet::RpcErrorCode;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use bdk::bitcoin::Address;
 use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Script;
 use bdk::bitcoin::Txid;
@@ -23,8 +20,6 @@ use model::cfd::CfdEvent;
 use model::cfd::Dlc;
 use model::cfd::OrderId;
 use model::cfd::CET_TIMELOCK;
-use model::olivia;
-use model::olivia::BitMexPriceEventId;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::collections::hash_map::Entry;
@@ -34,7 +29,6 @@ use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt;
 use std::ops::Add;
-use std::ops::RangeInclusive;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
@@ -52,16 +46,19 @@ pub struct CollaborativeSettlement {
     pub tx: (Txid, Script),
 }
 
+pub struct MonitorCetFinality {
+    pub order_id: OrderId,
+    pub cet: Transaction,
+}
+
 // TODO: The design of this struct causes a lot of marshalling und unmarshelling that is quite
 // unnecessary. Should be taken apart so we can handle all cases individually!
 #[derive(Clone)]
 pub struct MonitorParams {
     lock: (Txid, Descriptor<PublicKey>),
     commit: (Txid, Descriptor<PublicKey>),
-    cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
     refund: (Txid, Script, u32),
     revoked_commits: Vec<(Txid, Script)>,
-    event_id: BitMexPriceEventId,
 }
 
 pub struct TryBroadcastTransaction {
@@ -365,37 +362,6 @@ impl State {
             .push((ScriptStatus::finality(), Event::RefundFinality(order_id)));
     }
 
-    fn monitor_cet_finality(
-        &mut self,
-        cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
-        attestation: &olivia::Attestation,
-        order_id: OrderId,
-    ) -> Result<()> {
-        let attestation_id = attestation.id;
-        let cets = cets.get(&attestation_id).with_context(|| {
-            format!("No CET for oracle event {attestation_id} and cfd with order id {order_id}",)
-        })?;
-
-        let (txid, script_pubkey) = cets
-            .iter()
-            .find_map(
-                |Cet {
-                     txid,
-                     script,
-                     range,
-                     ..
-                 }| { range.contains(&attestation.price).then(|| (txid, script)) },
-            )
-            .context("No price range match for oracle attestation")?;
-
-        self.awaiting_status
-            .entry((*txid, script_pubkey.clone()))
-            .or_default()
-            .push((ScriptStatus::finality(), Event::CetFinality(order_id)));
-
-        Ok(())
-    }
-
     fn monitor_revoked_commit_transactions(&mut self, params: &MonitorParams, order_id: OrderId) {
         for revoked_commit_tx in params.revoked_commits.iter() {
             self.awaiting_status
@@ -485,19 +451,6 @@ impl Actor {
             Err(e) => {
                 tracing::warn!(order_id = %id, "Failed to update state of CFD: {e:#}");
             }
-        }
-    }
-
-    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) {
-        for (order_id, MonitorParams { cets, .. }) in self
-            .cfds
-            .clone()
-            .into_iter()
-            .filter(|(_, params)| params.event_id == attestation.id())
-        {
-            try_continue!(self
-                .state
-                .monitor_cet_finality(cets, attestation.as_inner(), order_id))
         }
     }
 }
@@ -747,43 +700,14 @@ impl MonitorParams {
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
             commit: (dlc.commit.0.txid(), dlc.commit.2),
-            cets: map_cets(dlc.cets, &dlc.maker_address),
             refund: (dlc.refund.0.txid(), script_pubkey, dlc.refund_timelock),
             revoked_commits: dlc
                 .revoked_commit
                 .iter()
                 .map(|rev_commit| (rev_commit.txid, rev_commit.script_pubkey.clone()))
                 .collect(),
-            event_id: dlc.settlement_event_id,
         }
     }
-}
-
-#[derive(Clone)]
-struct Cet {
-    txid: Txid,
-    script: Script,
-    range: RangeInclusive<u64>,
-}
-
-fn map_cets(
-    cets: HashMap<BitMexPriceEventId, Vec<model::cfd::Cet>>,
-    maker_address: &Address,
-) -> HashMap<BitMexPriceEventId, Vec<Cet>> {
-    cets.into_iter()
-        .map(|(event_id, cets)| {
-            (
-                event_id,
-                cets.into_iter()
-                    .map(|cet| Cet {
-                        txid: cet.txid,
-                        script: maker_address.script_pubkey(),
-                        range: cet.range,
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect()
 }
 
 impl xtra::Message for Sync {
@@ -1025,6 +949,24 @@ impl Actor {
             self.state.monitor_close_finality(params, id);
         }
     }
+
+    async fn handle_monitor_cet_finality(&mut self, msg: MonitorCetFinality) -> Result<()> {
+        self.state
+            .awaiting_status
+            .entry((
+                msg.cet.txid(),
+                msg.cet
+                    .output
+                    .first()
+                    .context("Failed to monitor cet using script pubkey because no TxOut's in CET")?
+                    .script_pubkey
+                    .clone(),
+            ))
+            .or_default()
+            .push((ScriptStatus::finality(), Event::CetFinality(msg.order_id)));
+
+        Ok(())
+    }
 }
 
 // TODO: Re-model this by tearing apart `MonitorParams`.
@@ -1050,13 +992,6 @@ impl xtra::Handler<Sync> for Actor {
         if let Err(e) = self.sync().await {
             tracing::warn!("Sync failed: {:#}", e);
         }
-    }
-}
-
-#[async_trait]
-impl xtra::Handler<oracle::Attestation> for Actor {
-    async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut xtra::Context<Self>) {
-        self.handle_oracle_attestation(msg).await
     }
 }
 

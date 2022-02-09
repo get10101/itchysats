@@ -1,5 +1,6 @@
 use crate::db::append_event;
 use crate::monitor;
+use crate::monitor::MonitorCetFinality;
 use crate::monitor::MonitorParams;
 use crate::monitor::TransactionKind;
 use crate::oracle;
@@ -19,6 +20,7 @@ pub struct Actor {
     cfds_changed: Box<dyn MessageChannel<projection::CfdChanged>>,
     try_broadcast_transaction: Box<dyn MessageChannel<monitor::TryBroadcastTransaction>>,
     start_monitoring: Box<dyn MessageChannel<monitor::StartMonitoring>>,
+    monitor_cet_finality: Box<dyn MessageChannel<monitor::MonitorCetFinality>>,
     monitor_collaborative_settlement: Box<dyn MessageChannel<monitor::CollaborativeSettlement>>,
     monitor_attestation: Box<dyn MessageChannel<oracle::MonitorAttestation>>,
 }
@@ -32,12 +34,14 @@ impl Event {
 }
 
 impl Actor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
         role: Role,
         cfds_changed: &(impl MessageChannel<projection::CfdChanged> + 'static),
         try_broadcast_transaction: &(impl MessageChannel<monitor::TryBroadcastTransaction> + 'static),
         start_monitoring: &(impl MessageChannel<monitor::StartMonitoring> + 'static),
+        monitor_cet: &(impl MessageChannel<monitor::MonitorCetFinality> + 'static),
         monitor_collaborative_settlement: &(impl MessageChannel<monitor::CollaborativeSettlement>
               + 'static),
         monitor_attestation: &(impl MessageChannel<oracle::MonitorAttestation> + 'static),
@@ -48,6 +52,7 @@ impl Actor {
             cfds_changed: cfds_changed.clone_channel(),
             try_broadcast_transaction: try_broadcast_transaction.clone_channel(),
             start_monitoring: start_monitoring.clone_channel(),
+            monitor_cet_finality: monitor_cet.clone_channel(),
             monitor_collaborative_settlement: monitor_collaborative_settlement.clone_channel(),
             monitor_attestation: monitor_attestation.clone_channel(),
         }
@@ -119,8 +124,29 @@ impl Actor {
                     })
                     .await?;
             }
-            OracleAttestedPostCetTimelock { cet, .. }
-            | CetTimelockExpiredPostOracleAttestation { cet } => {
+            CetTimelockExpiredPostOracleAttestation { cet } => {
+                let _ = self
+                    .monitor_cet_finality
+                    .send_async_safe(MonitorCetFinality {
+                        order_id: event.id,
+                        cet: cet.clone(),
+                    })
+                    .await?;
+                self.try_broadcast_transaction
+                    .send_async_safe(monitor::TryBroadcastTransaction {
+                        tx: cet,
+                        kind: TransactionKind::Cet,
+                    })
+                    .await?;
+            }
+            OracleAttestedPostCetTimelock { cet, .. } => {
+                let _ = self
+                    .monitor_cet_finality
+                    .send_async_safe(MonitorCetFinality {
+                        order_id: event.id,
+                        cet: cet.clone(),
+                    })
+                    .await?;
                 self.try_broadcast_transaction
                     .send_async_safe(monitor::TryBroadcastTransaction {
                         tx: cet,
@@ -130,9 +156,24 @@ impl Actor {
             }
             OracleAttestedPriorCetTimelock {
                 commit_tx: Some(tx),
+                timelocked_cet: cet,
                 ..
+            } => {
+                let _ = self
+                    .monitor_cet_finality
+                    .send_async_safe(MonitorCetFinality {
+                        order_id: event.id,
+                        cet,
+                    })
+                    .await?;
+                self.try_broadcast_transaction
+                    .send_async_safe(monitor::TryBroadcastTransaction {
+                        tx,
+                        kind: TransactionKind::Cet,
+                    })
+                    .await?;
             }
-            | ManualCommit { tx } => {
+            ManualCommit { tx } => {
                 self.try_broadcast_transaction
                     .send_async_safe(monitor::TryBroadcastTransaction {
                         tx,
@@ -141,10 +182,17 @@ impl Actor {
                     .await?;
             }
             OracleAttestedPriorCetTimelock {
-                commit_tx: None, ..
+                commit_tx: None,
+                timelocked_cet: cet,
+                ..
             } => {
-                // Nothing to do: The commit transaction has already been published but the timelock
-                // hasn't expired yet. We just need to wait.
+                let _ = self
+                    .monitor_cet_finality
+                    .send_async_safe(MonitorCetFinality {
+                        order_id: event.id,
+                        cet,
+                    })
+                    .await?;
             }
             RolloverCompleted { dlc, .. } => {
                 tracing::info!(order_id=%event.id, "Rollover complete");

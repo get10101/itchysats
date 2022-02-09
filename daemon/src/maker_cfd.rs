@@ -1,4 +1,3 @@
-use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_maker;
 use crate::command;
@@ -490,15 +489,6 @@ impl<O, T, W> Actor<O, T, W> {
         message: Stopping<collab_settlement_maker::Actor>,
     ) {
         self.settlement_actors.gc(message);
-    }
-
-    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
-        if let Err(e) =
-            cfd_actors::handle_oracle_attestation(msg.as_inner(), &self.db, &self.process_manager)
-                .await
-        {
-            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
-        }
     }
 
     async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_maker::Actor>) {

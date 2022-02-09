@@ -252,7 +252,7 @@ async fn main() -> Result<()> {
         wallet.clone(),
         *olivia::PUBLIC_KEY,
         identity_sk,
-        |channel| oracle::Actor::new(db.clone(), channel, SETTLEMENT_INTERVAL),
+        |executor| oracle::Actor::new(db.clone(), executor, SETTLEMENT_INTERVAL),
         {
             |executor| {
                 let electrum = opts.network.electrum().to_string();
