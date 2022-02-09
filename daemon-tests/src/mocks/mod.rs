@@ -1,8 +1,7 @@
-use self::monitor::MonitorActor;
-use self::oracle::OracleActor;
-use self::wallet::WalletActor;
 use super::maia::OliviaData;
+use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
+use crate::mocks::wallet::WalletActor;
 use daemon::bitmex_price_feed;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -15,19 +14,34 @@ pub mod wallet;
 
 #[derive(Clone)]
 pub struct Mocks {
-    pub wallet: Arc<Mutex<wallet::MockWallet>>,
-    pub monitor: Arc<Mutex<monitor::MockMonitor>>,
-    pub oracle: Arc<Mutex<oracle::MockOracle>>,
-    pub price_feed: Arc<Mutex<price_feed::MockPriceFeed>>,
+    wallet: Arc<Mutex<wallet::MockWallet>>,
+    monitor: Option<Arc<Mutex<monitor::MockMonitor>>>,
+    oracle: Arc<Mutex<oracle::MockOracle>>,
+    price_feed: Arc<Mutex<price_feed::MockPriceFeed>>,
 }
 
 impl Mocks {
-    pub async fn wallet(&mut self) -> MutexGuard<'_, wallet::MockWallet> {
-        self.wallet.lock().await
+    pub fn new() -> (Mocks, OracleActor, WalletActor, PriceFeedActor) {
+        let (oracle, oracle_mock) = OracleActor::new();
+        let (wallet, wallet_mock) = WalletActor::new();
+        let (price_feed, price_feed_mock) = PriceFeedActor::new();
+
+        let mocks = Self {
+            wallet: wallet_mock,
+            monitor: None,
+            oracle: oracle_mock,
+            price_feed: price_feed_mock,
+        };
+
+        (mocks, oracle, wallet, price_feed)
     }
 
-    pub async fn monitor(&mut self) -> MutexGuard<'_, monitor::MockMonitor> {
-        self.monitor.lock().await
+    pub fn set_monitor_mock(&mut self, monitor: Arc<Mutex<monitor::MockMonitor>>) {
+        self.monitor = Some(monitor);
+    }
+
+    pub async fn wallet(&mut self) -> MutexGuard<'_, wallet::MockWallet> {
+        self.wallet.lock().await
     }
 
     pub async fn oracle(&mut self) -> MutexGuard<'_, oracle::MockOracle> {
@@ -38,9 +52,16 @@ impl Mocks {
         self.price_feed.lock().await
     }
 
+    pub async fn monitor(&mut self) -> MutexGuard<'_, monitor::MockMonitor> {
+        self.monitor
+            .as_ref()
+            .expect("monitor mock to be initialized")
+            .lock()
+            .await
+    }
+
     pub async fn mock_sync_handlers(&mut self) {
         self.oracle().await.expect_sync().return_const(());
-        self.monitor().await.expect_sync().return_const(());
     }
 
     // Helper function setting up a "happy path" wallet mock
@@ -49,10 +70,6 @@ impl Mocks {
             .await
             .expect_sign()
             .returning(|sign_msg| Ok(sign_msg.psbt));
-        self.monitor()
-            .await
-            .expect_broadcast()
-            .returning(|_| Ok(()));
     }
 
     pub async fn mock_oracle_announcement(&mut self) {
@@ -85,56 +102,7 @@ impl Mocks {
             .returning(|msg| wallet::build_party_params(msg));
     }
 
-    pub async fn mock_monitor_oracle_attestation(&mut self) {
-        self.monitor()
-            .await
-            .expect_oracle_attestation()
-            .return_const(());
-    }
-
-    pub async fn mock_monitor_start_monitoring(&mut self) {
-        self.monitor()
-            .await
-            .expect_start_monitoring()
-            .return_const(());
-    }
-
-    pub async fn mock_monitor_collaborative_settlement(&mut self) {
-        self.monitor()
-            .await
-            .expect_collaborative_settlement()
-            .return_const(());
-    }
-
     pub async fn mock_latest_quote(&mut self, latest_quote: Option<bitmex_price_feed::Quote>) {
         self.price_feed().await.set_latest_quote(latest_quote);
     }
-}
-
-impl Default for Mocks {
-    fn default() -> Self {
-        Self {
-            oracle: Arc::new(Mutex::new(oracle::MockOracle::new())),
-            monitor: Arc::new(Mutex::new(monitor::MockMonitor::new())),
-            wallet: Arc::new(Mutex::new(wallet::MockWallet::new())),
-            price_feed: Arc::new(Mutex::new(price_feed::MockPriceFeed::default())),
-        }
-    }
-}
-
-/// Creates actors with embedded mock handlers
-pub fn create_actors(mocks: &Mocks) -> (OracleActor, MonitorActor, WalletActor, PriceFeedActor) {
-    let oracle = OracleActor {
-        mock: mocks.oracle.clone(),
-    };
-    let monitor = MonitorActor {
-        mock: mocks.monitor.clone(),
-    };
-    let wallet = WalletActor {
-        mock: mocks.wallet.clone(),
-    };
-    let price_feed = PriceFeedActor {
-        mock: mocks.price_feed.clone(),
-    };
-    (oracle, monitor, wallet, price_feed)
 }

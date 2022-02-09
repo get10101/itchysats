@@ -23,7 +23,16 @@ use xtra_productivity::xtra_productivity;
 /// Test Stub simulating the Wallet actor.
 /// Serves as an entrypoint for injected mock handlers.
 pub struct WalletActor {
-    pub mock: Arc<Mutex<dyn Wallet + Send>>,
+    mock: Arc<Mutex<MockWallet>>,
+}
+
+impl WalletActor {
+    pub fn new() -> (WalletActor, Arc<Mutex<MockWallet>>) {
+        let mock = Arc::new(Mutex::new(MockWallet::new()));
+        let actor = Self { mock: mock.clone() };
+
+        (actor, mock)
+    }
 }
 
 impl xtra::Actor for WalletActor {}

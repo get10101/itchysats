@@ -261,9 +261,9 @@ async fn main() -> Result<()> {
         identity_sk,
         |channel| oracle::Actor::new(db.clone(), channel, SETTLEMENT_INTERVAL),
         {
-            |channel| {
+            |executor| {
                 let electrum = opts.network.electrum().to_string();
-                monitor::Actor::new(db.clone(), electrum, channel)
+                monitor::Actor::new(db.clone(), electrum, executor)
             }
         },
         bitmex_price_feed::Actor::new,
