@@ -230,6 +230,7 @@ impl Actor {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let quantity = self.quantity;
         if quantity < self.order.min_quantity || quantity > self.order.max_quantity {
@@ -267,6 +268,8 @@ impl xtra::Actor for Actor {
 
         xtra::KeepRunning::StopAll
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 /// Message sent from the `maker_cfd::Actor` to the

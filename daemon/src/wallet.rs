@@ -190,12 +190,15 @@ impl Actor {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
 
         self.tasks
             .add(this.send_interval(Duration::from_secs(10), || Sync));
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 pub struct BuildPartyParams {

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use daemon::bdk;
 use daemon::bdk::bitcoin::ecdsa;
 use daemon::bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -35,7 +36,12 @@ impl WalletActor {
     }
 }
 
-impl xtra::Actor for WalletActor {}
+#[async_trait]
+impl xtra::Actor for WalletActor {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 #[xtra_productivity(message_impl = false)]
 impl WalletActor {

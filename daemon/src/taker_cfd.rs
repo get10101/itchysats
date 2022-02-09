@@ -19,6 +19,7 @@ use crate::wallet;
 use crate::Tasks;
 use anyhow::Context as _;
 use anyhow::Result;
+use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use xtra::prelude::*;
 use xtra::Actor as _;
@@ -224,4 +225,9 @@ where
     }
 }
 
-impl<O: 'static, W: 'static> xtra::Actor for Actor<O, W> {}
+#[async_trait]
+impl<O: 'static, W: 'static> xtra::Actor for Actor<O, W> {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}

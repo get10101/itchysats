@@ -793,6 +793,7 @@ impl xtra::Message for Sync {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
         self.tasks
@@ -910,6 +911,8 @@ impl xtra::Actor for Actor {
             },
         );
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 #[xtra_productivity]

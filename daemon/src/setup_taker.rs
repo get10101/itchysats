@@ -212,6 +212,7 @@ impl Actor {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let address = ctx
             .address()
@@ -246,6 +247,8 @@ impl xtra::Actor for Actor {
 
         self.tasks.add(maker_response_timeout);
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 /// Message sent from the `connection::Actor` to the

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use daemon::command;
 use daemon::model::cfd::OrderId;
 use daemon::monitor;
@@ -24,7 +25,12 @@ impl MonitorActor {
     }
 }
 
-impl xtra::Actor for MonitorActor {}
+#[async_trait]
+impl xtra::Actor for MonitorActor {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 #[xtra_productivity(message_impl = false)]
 impl MonitorActor {

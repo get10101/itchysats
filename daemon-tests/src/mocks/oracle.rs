@@ -1,4 +1,5 @@
 use crate::maia::OliviaData;
+use async_trait::async_trait;
 use daemon::model::BitMexPriceEventId;
 use daemon::oracle;
 use mockall::*;
@@ -22,7 +23,12 @@ impl OracleActor {
     }
 }
 
-impl xtra::Actor for OracleActor {}
+#[async_trait]
+impl xtra::Actor for OracleActor {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 impl Oracle for OracleActor {}
 
 #[xtra_productivity(message_impl = false)]

@@ -4244,7 +4244,7 @@ dependencies = [
 [[package]]
 name = "xtra"
 version = "0.6.0"
-source = "git+https://github.com/comit-network/xtra#b90ffec9c1b27fea1210379cb4a0df3f7f0c77e1"
+source = "git+https://github.com/comit-network/xtra#95508e6a39a96721f7ca292a075ac7200b755a2e"
 dependencies = [
  "async-trait",
  "barrage",

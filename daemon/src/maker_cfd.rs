@@ -721,4 +721,9 @@ impl Message for FromTaker {
     type Result = ();
 }
 
-impl<O: 'static, T: 'static, W: 'static> xtra::Actor for Actor<O, T, W> {}
+#[async_trait]
+impl<O: 'static, T: 'static, W: 'static> xtra::Actor for Actor<O, T, W> {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}

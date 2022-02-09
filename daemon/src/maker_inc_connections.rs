@@ -535,7 +535,10 @@ struct ListenerFailed {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         self.start_listener(ctx).await;
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
