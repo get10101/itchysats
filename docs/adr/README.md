@@ -17,3 +17,4 @@ This directory contains all ADRs (architecture decision records) for itchysats.
 - [ADR 011: Process manager must only fail on saving the event](./011-process-manager-no-fail.md)
 - [ADR 012: Do not panic on actors being `Disconnected`](./012-no-panic-on-disconnected.md)
 - [ADR 013: Allow all actors to load and hydrate a CFD, not just the `{taker,maker}_cfd::Actor`](./013-all-actors-can-hydrate-cfd.md)
+- [ADR 014: Use a blue/green deployment-like approach for handling releases](./014-two-instance-release.md)
