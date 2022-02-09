@@ -1,4 +1,4 @@
-name: Project automation
+name: Add new issues to project board
 
 on:
   issues:
@@ -7,7 +7,6 @@ on:
 
 jobs:
   add_issue_to_project:
-    name: Add new issues to project board
     runs-on: ubuntu-latest
     steps:
       - run: |
