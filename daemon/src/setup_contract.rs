@@ -3,14 +3,9 @@ use crate::model::cfd::Cet;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::RevokedCommit;
 use crate::model::cfd::Role;
+use crate::model::cfd::RolloverParams;
+use crate::model::cfd::SetupParams;
 use crate::model::cfd::CET_TIMELOCK;
-use crate::model::FeeAccount;
-use crate::model::FundingFee;
-use crate::model::Identity;
-use crate::model::Leverage;
-use crate::model::Price;
-use crate::model::TxFeeRate;
-use crate::model::Usd;
 use crate::olivia;
 use crate::payout_curve;
 use crate::transaction_ext::TransactionExt;
@@ -61,49 +56,6 @@ use xtra::prelude::MessageChannel;
 
 /// How long protocol waits for the next message before giving up
 const MSG_TIMEOUT: Duration = Duration::from_secs(70);
-
-pub struct SetupParams {
-    margin: Amount,
-    counterparty_margin: Amount,
-    counterparty_identity: Identity,
-    price: Price,
-    quantity: Usd,
-    leverage: Leverage,
-    refund_timelock: u32,
-    tx_fee_rate: TxFeeRate,
-    fee_account: FeeAccount,
-}
-
-impl SetupParams {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        margin: Amount,
-        counterparty_margin: Amount,
-        counterparty_identity: Identity,
-        price: Price,
-        quantity: Usd,
-        leverage: Leverage,
-        refund_timelock: u32,
-        tx_fee_rate: TxFeeRate,
-        fee_account: FeeAccount,
-    ) -> Result<Self> {
-        Ok(Self {
-            margin,
-            counterparty_margin,
-            counterparty_identity,
-            price,
-            quantity,
-            leverage,
-            refund_timelock,
-            tx_fee_rate,
-            fee_account,
-        })
-    }
-
-    pub fn counterparty_identity(&self) -> Identity {
-        self.counterparty_identity
-    }
-}
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
@@ -383,43 +335,6 @@ pub async fn new(
         settlement_event_id,
         refund_timelock: setup_params.refund_timelock,
     })
-}
-
-#[derive(Debug, Clone)]
-pub struct RolloverParams {
-    price: Price,
-    quantity: Usd,
-    leverage: Leverage,
-    refund_timelock: u32,
-    fee_rate: TxFeeRate,
-    fee_account: FeeAccount,
-    current_fee: FundingFee,
-}
-
-impl RolloverParams {
-    pub fn new(
-        price: Price,
-        quantity: Usd,
-        leverage: Leverage,
-        refund_timelock: u32,
-        fee_rate: TxFeeRate,
-        fee_account: FeeAccount,
-        current_fee: FundingFee,
-    ) -> Self {
-        Self {
-            price,
-            quantity,
-            leverage,
-            refund_timelock,
-            fee_rate,
-            fee_account,
-            current_fee,
-        }
-    }
-
-    pub fn funding_fee(&self) -> &FundingFee {
-        &self.current_fee
-    }
 }
 
 pub async fn roll_over(

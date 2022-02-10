@@ -16,8 +16,6 @@ use crate::model::Usd;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
-use crate::setup_contract::RolloverParams;
-use crate::setup_contract::SetupParams;
 use crate::SETTLEMENT_INTERVAL;
 use anyhow::bail;
 use anyhow::Context;
@@ -1252,6 +1250,86 @@ impl Cfd {
         }
 
         self
+    }
+}
+
+pub struct SetupParams {
+    pub margin: Amount,
+    pub counterparty_margin: Amount,
+    pub counterparty_identity: Identity,
+    pub price: Price,
+    pub quantity: Usd,
+    pub leverage: Leverage,
+    pub refund_timelock: u32,
+    pub tx_fee_rate: TxFeeRate,
+    pub fee_account: FeeAccount,
+}
+
+impl SetupParams {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        margin: Amount,
+        counterparty_margin: Amount,
+        counterparty_identity: Identity,
+        price: Price,
+        quantity: Usd,
+        leverage: Leverage,
+        refund_timelock: u32,
+        tx_fee_rate: TxFeeRate,
+        fee_account: FeeAccount,
+    ) -> Result<Self> {
+        Ok(Self {
+            margin,
+            counterparty_margin,
+            counterparty_identity,
+            price,
+            quantity,
+            leverage,
+            refund_timelock,
+            tx_fee_rate,
+            fee_account,
+        })
+    }
+
+    pub fn counterparty_identity(&self) -> Identity {
+        self.counterparty_identity
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RolloverParams {
+    pub price: Price,
+    pub quantity: Usd,
+    pub leverage: Leverage,
+    pub refund_timelock: u32,
+    pub fee_rate: TxFeeRate,
+    pub fee_account: FeeAccount,
+    pub current_fee: FundingFee,
+}
+
+impl RolloverParams {
+    pub fn new(
+        price: Price,
+        quantity: Usd,
+        leverage: Leverage,
+        refund_timelock: u32,
+        fee_rate: TxFeeRate,
+        fee_account: FeeAccount,
+        current_fee: FundingFee,
+    ) -> Self {
+        Self {
+            price,
+            quantity,
+            leverage,
+            refund_timelock,
+            fee_rate,
+            fee_account,
+            current_fee,
+        }
+    }
+
+    pub fn funding_fee(&self) -> &FundingFee {
+        &self.current_fee
     }
 }
 
