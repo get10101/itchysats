@@ -2,6 +2,7 @@ use super::maia::OliviaData;
 use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
 use crate::mocks::wallet::WalletActor;
+use model::olivia;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
@@ -76,10 +77,7 @@ impl Mocks {
             .await;
     }
 
-    pub async fn mock_oracle_announcement_with(
-        &mut self,
-        announcement: daemon::oracle::Announcement,
-    ) {
+    pub async fn mock_oracle_announcement_with(&mut self, announcement: olivia::Announcement) {
         self.oracle()
             .await
             .expect_get_announcement()

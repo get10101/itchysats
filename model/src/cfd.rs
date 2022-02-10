@@ -1,22 +1,22 @@
-use crate::model::calculate_funding_fee;
-use crate::model::FeeAccount;
-use crate::model::FundingFee;
-use crate::model::FundingRate;
-use crate::model::Identity;
-use crate::model::InversePrice;
-use crate::model::Leverage;
-use crate::model::OpeningFee;
-use crate::model::Percent;
-use crate::model::Position;
-use crate::model::Price;
-use crate::model::Timestamp;
-use crate::model::TradingPair;
-use crate::model::TxFeeRate;
-use crate::model::Usd;
-use crate::model::SETTLEMENT_INTERVAL;
+use crate::calculate_funding_fee;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
+use crate::FeeAccount;
+use crate::FundingFee;
+use crate::FundingRate;
+use crate::Identity;
+use crate::InversePrice;
+use crate::Leverage;
+use crate::OpeningFee;
+use crate::Percent;
+use crate::Position;
+use crate::Price;
+use crate::Timestamp;
+use crate::TradingPair;
+use crate::TxFeeRate;
+use crate::Usd;
+use crate::SETTLEMENT_INTERVAL;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -1560,7 +1560,7 @@ impl Dlc {
     /// Create a close transaction based on the current contract and a settlement proposals
     pub fn close_transaction(
         &self,
-        proposal: &crate::model::cfd::SettlementProposal,
+        proposal: &crate::cfd::SettlementProposal,
     ) -> Result<(Transaction, Signature)> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {

@@ -1,12 +1,12 @@
 use crate::db;
-use crate::model::cfd::Cfd;
-use crate::model::cfd::OrderId;
 use crate::olivia;
 use crate::process_manager;
 use crate::projection;
 use crate::try_continue;
 use anyhow::Context;
 use anyhow::Result;
+use model::cfd::Cfd;
+use model::cfd::OrderId;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;

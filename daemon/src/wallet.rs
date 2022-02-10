@@ -1,6 +1,3 @@
-use crate::model::Timestamp;
-use crate::model::TxFeeRate;
-use crate::model::WalletInfo;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -22,6 +19,9 @@ use bdk::KeychainKind;
 use bdk::SignOptions;
 use maia::PartyParams;
 use maia::TxBuilderExt;
+use model::Timestamp;
+use model::TxFeeRate;
+use model::WalletInfo;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::watch;

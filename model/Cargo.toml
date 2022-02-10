@@ -1,0 +1,37 @@
+[package]
+name = "model"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+bdk = { version = "0.16", default-features = false }
+bdk-ext = { path = "../bdk-ext" }
+cached = { version = "0.30.0", default-features = false, features = ["proc_macro"] }
+conquer-once = "0.3"
+hex = "0.4"
+itertools = "0.10"
+maia = "0.1.0"
+nalgebra = { version = "0.30", default-features = false, features = ["std"] }
+ndarray = "0.15.4"
+ndarray_einsum_beta = "0.7.0"
+num = "0.4.0"
+rand = "0.6"
+rust_decimal = "1.21"
+rust_decimal_macros = "1.21"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_with = { version = "1", features = ["macros"] }
+sqlx = { version = "0.5", features = ["sqlite", "runtime-tokio-rustls"] }
+thiserror = "1"
+time = { version = "0.3", features = ["macros", "formatting", "parsing", "serde"] }
+tracing = "0.1"
+url = { version = "2", default-features = false }
+uuid = { version = "0.8", features = ["serde", "v4"] }
+x25519-dalek = { version = "1.1" }
+
+[dev-dependencies]
+bdk-ext = { path = "../bdk-ext" }
+pretty_assertions = "1"
+proptest = { version = "1", default-features = false, features = ["std"] }
+serde_test = "1"

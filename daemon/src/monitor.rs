@@ -2,14 +2,6 @@ use crate::bitcoin::consensus::encode::serialize_hex;
 use crate::bitcoin::Transaction;
 use crate::command;
 use crate::db;
-use crate::model;
-use crate::model::cfd;
-use crate::model::cfd::CfdEvent;
-use crate::model::cfd::Dlc;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::CET_TIMELOCK;
-use crate::olivia;
-use crate::olivia::BitMexPriceEventId;
 use crate::oracle;
 use crate::try_continue;
 use crate::wallet::RpcErrorCode;
@@ -26,6 +18,13 @@ use bdk::electrum_client::ElectrumApi;
 use bdk::electrum_client::GetHistoryRes;
 use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
+use model::cfd;
+use model::cfd::CfdEvent;
+use model::cfd::Dlc;
+use model::cfd::OrderId;
+use model::cfd::CET_TIMELOCK;
+use model::olivia;
+use model::olivia::BitMexPriceEventId;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::collections::hash_map::Entry;
@@ -1064,7 +1063,7 @@ impl xtra::Handler<oracle::Attestation> for Actor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::cfd::CET_TIMELOCK;
+    use model::cfd::CET_TIMELOCK;
     use tracing_subscriber::prelude::*;
 
     #[tokio::test]

@@ -1,20 +1,19 @@
-use crate::model;
-use crate::model::cfd::CfdEvent;
-use crate::model::cfd::Event;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::Role;
-use crate::model::FundingRate;
-use crate::model::Identity;
-use crate::model::Leverage;
-use crate::model::OpeningFee;
-use crate::model::Position;
-use crate::model::Price;
-use crate::model::TxFeeRate;
-use crate::model::Usd;
 use anyhow::Context;
 use anyhow::Result;
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use model::cfd::CfdEvent;
+use model::cfd::Event;
+use model::cfd::OrderId;
+use model::cfd::Role;
+use model::FundingRate;
+use model::Identity;
+use model::Leverage;
+use model::OpeningFee;
+use model::Position;
+use model::Price;
+use model::TxFeeRate;
+use model::Usd;
 use sqlx::migrate::MigrateError;
 use sqlx::pool::PoolConnection;
 use sqlx::sqlite::SqliteConnectOptions;
@@ -200,23 +199,23 @@ pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<
         r#"
             select
                 id as cfd_id,
-                uuid as "uuid: crate::model::cfd::OrderId",
-                position as "position: crate::model::Position",
-                initial_price as "initial_price: crate::model::Price",
-                leverage as "leverage: crate::model::Leverage",
+                uuid as "uuid: model::cfd::OrderId",
+                position as "position: model::Position",
+                initial_price as "initial_price: model::Price",
+                leverage as "leverage: model::Leverage",
                 settlement_time_interval_hours,
-                quantity_usd as "quantity_usd: crate::model::Usd",
-                counterparty_network_identity as "counterparty_network_identity: crate::model::Identity",
-                role as "role: crate::model::cfd::Role",
-                opening_fee as "opening_fee: crate::model::OpeningFee",
-                initial_funding_rate as "initial_funding_rate: crate::model::FundingRate",
-                initial_tx_fee_rate as "initial_tx_fee_rate: crate::model::TxFeeRate"
+                quantity_usd as "quantity_usd: model::Usd",
+                counterparty_network_identity as "counterparty_network_identity: model::Identity",
+                role as "role: model::cfd::Role",
+                opening_fee as "opening_fee: model::OpeningFee",
+                initial_funding_rate as "initial_funding_rate: model::FundingRate",
+                initial_tx_fee_rate as "initial_tx_fee_rate: model::TxFeeRate"
             from
                 cfds
             where
                 cfds.uuid = $1
             "#,
-            id
+        id
     )
     .fetch_one(&mut *conn)
     .await?;
@@ -241,7 +240,7 @@ pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<
         select
             name,
             data,
-            created_at as "created_at: crate::model::Timestamp"
+            created_at as "created_at: model::Timestamp"
         from
             events
         where
@@ -269,7 +268,7 @@ pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<O
         r#"
             select
                 id as cfd_id,
-                uuid as "uuid: crate::model::cfd::OrderId"
+                uuid as "uuid: model::cfd::OrderId"
             from
                 cfds
             order by cfd_id desc
@@ -287,16 +286,16 @@ pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<O
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::cfd::Cfd;
-    use crate::model::cfd::Role;
-    use crate::model::Leverage;
-    use crate::model::OpeningFee;
-    use crate::model::Position;
-    use crate::model::Price;
-    use crate::model::Timestamp;
-    use crate::model::TxFeeRate;
-    use crate::model::Usd;
     use bdk::bitcoin::Amount;
+    use model::cfd::Cfd;
+    use model::cfd::Role;
+    use model::Leverage;
+    use model::OpeningFee;
+    use model::Position;
+    use model::Price;
+    use model::Timestamp;
+    use model::TxFeeRate;
+    use model::Usd;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
     use sqlx::SqlitePool;

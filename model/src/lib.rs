@@ -1,14 +1,12 @@
-use self::cfd::Role;
-use crate::impl_sqlx_type_display_from_str;
-use crate::model::cfd::calculate_long_margin;
-use crate::model::cfd::calculate_short_margin;
+use crate::cfd::calculate_long_margin;
+use crate::cfd::calculate_short_margin;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
 use bdk::bitcoin::SignedAmount;
-use parse_display::Display;
+use cfd::Role;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::de::Error as _;
@@ -25,9 +23,11 @@ use std::str;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-pub mod sqlx_ext; // Must come first because it is a macro.
+mod sqlx_ext; // Must come first because it is a macro.
 
 pub mod cfd;
+pub mod olivia;
+pub mod payout_curve;
 
 /// The interval until the cfd gets settled, i.e. the attestation happens
 ///
@@ -407,7 +407,7 @@ pub enum TradingPair {
     BtcUsd,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type, Display)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub enum Position {
     Long,
     Short,

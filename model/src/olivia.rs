@@ -3,7 +3,6 @@ use anyhow::Context;
 use conquer_once::Lazy;
 use maia::secp256k1_zkp::schnorrsig;
 use maia::secp256k1_zkp::SecretKey;
-use reqwest::Url;
 use serde::Deserialize;
 use serde_with::DeserializeFromStr;
 use serde_with::SerializeDisplay;
@@ -14,6 +13,7 @@ use time::macros::format_description;
 use time::OffsetDateTime;
 use time::PrimitiveDateTime;
 use time::Time;
+use url::Url;
 
 pub const EVENT_TIME_FORMAT: &[FormatItem] =
     format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");

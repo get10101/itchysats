@@ -10,17 +10,11 @@ bdk = { version = "0.16", default-features = false, features = ["electrum"] }
 bdk-ext = { path = "../bdk-ext" }
 bytes = "1"
 cached = { version = "0.30.0", default-features = false, features = ["proc_macro"] }
-conquer-once = "0.3"
 derivative = "2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
-hex = "0.4"
 hkdf = "0.12"
-itertools = "0.10"
 maia = "0.1.0"
-nalgebra = { version = "0.30", default-features = false, features = ["std"] }
-ndarray = "0.15.4"
-ndarray_einsum_beta = "0.7.0"
-num = "0.4.0"
+model = { path = "../model" }
 parse-display = "0.5.3"
 rand = "0.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
@@ -49,7 +43,6 @@ xtras = { path = "../xtras" }
 
 [dev-dependencies]
 pretty_assertions = "1"
-proptest = { version = "1", default-features = false, features = ["std"] }
 serde_test = "1"
 time = { version = "0.3", features = ["std"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "tracing-log"] }

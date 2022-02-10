@@ -10,6 +10,7 @@ status = [
   "clippy (tokio-tasks)",
   "clippy (xtras)",
   "clippy (bdk-ext)",
+  "clippy (model)",
   "lint-commits",
   "frontend (maker)",
   "frontend (taker)",

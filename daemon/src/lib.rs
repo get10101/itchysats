@@ -1,14 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use crate::bitcoin::Txid;
-use crate::model::cfd::Order;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::Role;
-use crate::model::Identity;
-use crate::model::OpeningFee;
-use crate::model::Price;
-use crate::model::Usd;
-use crate::oracle::Attestation;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -16,8 +8,16 @@ use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use connection::ConnectionStatus;
 use maia::secp256k1_zkp::schnorrsig;
+use model::cfd::Order;
+use model::cfd::OrderId;
+use model::cfd::Role;
+use model::olivia;
 use model::FundingRate;
+use model::Identity;
+use model::OpeningFee;
+use model::Price;
 use model::TxFeeRate;
+use model::Usd;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -45,12 +45,9 @@ pub mod fan_out;
 mod future_ext;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
-pub mod model;
 pub mod monitor;
 mod noise;
-pub mod olivia;
 pub mod oracle;
-pub mod payout_curve;
 pub mod process_manager;
 pub mod projection;
 pub mod rollover_maker;
@@ -96,7 +93,7 @@ where
         db: SqlitePool,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
+        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<oracle::Attestation>>) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         settlement_interval: time::Duration,
         n_payouts: usize,
@@ -301,7 +298,7 @@ where
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         identity_sk: x25519_dalek::StaticSecret,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
+        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<oracle::Attestation>>) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         price_feed_constructor: impl (Fn() -> P) + Send + 'static,
         n_payouts: usize,
