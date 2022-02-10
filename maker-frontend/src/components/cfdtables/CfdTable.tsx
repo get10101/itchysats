@@ -154,13 +154,20 @@ export function CfdTable(
                 },
             },
             {
+                Header: "Closing Price",
+                isNumeric: true,
+                accessor: ({ closing_price }) => {
+                    return (<Dollars amount={closing_price || 0} />);
+                },
+            },
+            {
                 Header: "Unrealized P/L",
                 accessor: "profit_btc",
                 isNumeric: true,
             },
             {
                 Header: "Unrealized P/L %",
-                accessor: "profit_in_percent",
+                accessor: "profit_percent",
                 isNumeric: true,
             },
             {
