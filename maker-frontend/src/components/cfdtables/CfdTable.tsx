@@ -160,7 +160,7 @@ export function CfdTable(
             },
             {
                 Header: "Unrealized P/L %",
-                accessor: "profit_in_percent",
+                accessor: "profit_percent",
                 isNumeric: true,
             },
             {
