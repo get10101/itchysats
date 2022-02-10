@@ -1,4 +1,4 @@
-use crate::bdk_ext::SecretKeyExt;
+use crate::SecretKeyExt;
 use bdk::bitcoin;
 use bdk::bitcoin::secp256k1;
 use rand::CryptoRng;

@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
+bdk-ext = { path = "../bdk-ext" }
 daemon = { path = "../daemon" }
 mockall = "0.11"
 mockall_derive = "0.11"

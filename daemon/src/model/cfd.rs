@@ -1861,13 +1861,14 @@ mod hex_transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bdk_ext::AddressExt;
-    use crate::bdk_ext::SecretKeyExt;
     use crate::oracle::Attestation;
     use crate::N_PAYOUTS;
     use bdk::bitcoin;
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
+    use bdk_ext::keypair;
+    use bdk_ext::AddressExt;
+    use bdk_ext::SecretKeyExt;
     use maia::lock_descriptor;
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
@@ -2368,8 +2369,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let (cfd, _, _, _) = Cfd::dummy_taker_long()
             .with_quantity(quantity)
@@ -2395,8 +2396,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let (cfd, _, _, _) = Cfd::dummy_taker_long()
             .with_quantity(quantity)
@@ -2473,8 +2474,8 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let taker_long = Cfd::dummy_taker_long()
             .with_id(order_id)
@@ -2512,8 +2513,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let cfd = Cfd::dummy_taker_long()
             .with_quantity(quantity)
@@ -2574,8 +2575,8 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let taker_long = Cfd::dummy_taker_long()
             .with_id(order_id)
@@ -2801,8 +2802,8 @@ mod tests {
         )
         .with_id(order_id);
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let (taker_long, proposal, taker_sig, taker_script) = taker_long
             .dummy_open(dummy_event_id())

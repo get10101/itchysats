@@ -9,6 +9,7 @@ status = [
   "clippy (daemon-tests)",
   "clippy (tokio-tasks)",
   "clippy (xtras)",
+  "clippy (bdk-ext)",
   "lint-commits",
   "frontend (maker)",
   "frontend (taker)",

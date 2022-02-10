@@ -10,6 +10,7 @@ members = [
   "tokio-tasks",
   "xtras",
   "xtra-bitmex-price-feed",
+  "bdk-ext",
 ]
 resolver = "2"
 

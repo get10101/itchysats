@@ -36,6 +36,7 @@ use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Transaction;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
+use bdk_ext::keypair;
 use futures::stream::FusedStream;
 use futures::Sink;
 use futures::SinkExt;
@@ -117,9 +118,9 @@ pub async fn new(
     role: Role,
     n_payouts: usize,
 ) -> Result<Dlc> {
-    let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
-    let (rev_sk, rev_pk) = crate::keypair::new(&mut rand::thread_rng());
-    let (publish_sk, publish_pk) = crate::keypair::new(&mut rand::thread_rng());
+    let (sk, pk) = keypair::new(&mut rand::thread_rng());
+    let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
+    let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
 
     let own_params = build_party_params_channel
         .send(wallet::BuildPartyParams {
@@ -433,8 +434,8 @@ pub async fn roll_over(
     let sk = dlc.identity;
     let pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk));
 
-    let (rev_sk, rev_pk) = crate::keypair::new(&mut rand::thread_rng());
-    let (publish_sk, publish_pk) = crate::keypair::new(&mut rand::thread_rng());
+    let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
+    let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
 
     let own_punish = PunishParams {
         revocation_pk: rev_pk,

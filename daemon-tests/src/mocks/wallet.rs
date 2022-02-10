@@ -1,5 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use bdk_ext::new_test_wallet;
 use daemon::bdk;
 use daemon::bdk::bitcoin::ecdsa;
 use daemon::bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -8,7 +9,6 @@ use daemon::bdk::bitcoin::Txid;
 use daemon::bdk::wallet::tx_builder::TxOrdering;
 use daemon::bdk::wallet::AddressIndex;
 use daemon::bdk::FeeRate;
-use daemon::bdk_ext::new_test_wallet;
 use daemon::maia::secp256k1_zkp::Secp256k1;
 use daemon::maia::PartyParams;
 use daemon::maia::TxBuilderExt;

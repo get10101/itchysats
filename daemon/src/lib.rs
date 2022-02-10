@@ -37,7 +37,6 @@ pub use maia;
 pub mod sqlx_ext; // Must come first because it is a macro.
 
 pub mod auto_rollover;
-pub mod bdk_ext;
 pub mod cfd_actors;
 pub mod collab_settlement_maker;
 pub mod collab_settlement_taker;
@@ -46,7 +45,6 @@ pub mod connection;
 pub mod db;
 pub mod fan_out;
 mod future_ext;
-pub mod keypair;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
 pub mod model;

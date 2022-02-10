@@ -250,6 +250,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bdk-ext"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bdk",
+ "rand 0.6.5",
+ "secp256k1",
+]
+
+[[package]]
 name = "bdk-macros"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -689,6 +699,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bdk",
+ "bdk-ext",
  "bytes",
  "cached",
  "conquer-once",
@@ -739,6 +750,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bdk-ext",
  "daemon",
  "mockall",
  "mockall_derive",

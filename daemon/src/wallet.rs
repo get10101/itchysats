@@ -285,7 +285,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bdk_ext::new_test_wallet;
+    use bdk_ext::new_test_wallet;
     use rand::thread_rng;
     use std::collections::HashSet;
 

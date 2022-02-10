@@ -9,6 +9,8 @@ use bdk::bitcoin::Network;
 use rand::CryptoRng;
 use rand::RngCore;
 
+pub mod keypair;
+
 pub fn new_test_wallet(
     rng: &mut (impl RngCore + CryptoRng),
     utxo_amount: Amount,
@@ -40,15 +42,16 @@ pub fn new_test_wallet(
     Ok(wallet)
 }
 
-#[cfg(test)]
 pub trait AddressExt {
     fn random() -> Self;
 }
 
-#[cfg(test)]
 impl AddressExt for bdk::bitcoin::Address {
     fn random() -> Self {
-        let (_, pk) = crate::keypair::new(&mut rand::thread_rng());
+        let pk = {
+            let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+            bitcoin::PublicKey::new(sk.to_public_key())
+        };
 
         bdk::bitcoin::Address::p2wpkh(&pk, Network::Regtest).unwrap()
     }
