@@ -2,7 +2,6 @@ use self::cfd::Role;
 use crate::impl_sqlx_type_display_from_str;
 use crate::model::cfd::calculate_long_margin;
 use crate::model::cfd::calculate_short_margin;
-use crate::SETTLEMENT_INTERVAL;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::Address;
@@ -29,6 +28,18 @@ use std::time::UNIX_EPOCH;
 pub mod sqlx_ext; // Must come first because it is a macro.
 
 pub mod cfd;
+
+/// The interval until the cfd gets settled, i.e. the attestation happens
+///
+/// This variable defines at what point in time the oracle event id will be chose to settle the cfd.
+/// Hence, this constant defines how long a cfd is open (until it gets either settled or rolled
+/// over).
+///
+/// Multiple code parts align on this constant:
+/// - How the oracle event id is chosen when creating an order (maker)
+/// - The sliding window of cached oracle announcements (maker, taker)
+/// - The auto-rollover time-window (taker)
+pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
