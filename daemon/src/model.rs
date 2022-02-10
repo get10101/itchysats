@@ -26,6 +26,8 @@ use std::str;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
+pub mod sqlx_ext; // Must come first because it is a macro.
+
 pub mod cfd;
 
 #[derive(thiserror::Error, Debug)]

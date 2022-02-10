@@ -34,8 +34,6 @@ use xtras::supervisor;
 pub use bdk;
 pub use maia;
 
-pub mod sqlx_ext; // Must come first because it is a macro.
-
 pub mod auto_rollover;
 pub mod cfd_actors;
 pub mod collab_settlement_maker;
