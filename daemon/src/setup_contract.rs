@@ -11,7 +11,7 @@ use crate::model::Leverage;
 use crate::model::Price;
 use crate::model::TxFeeRate;
 use crate::model::Usd;
-use crate::oracle;
+use crate::olivia;
 use crate::payout_curve;
 use crate::transaction_ext::TransactionExt;
 use crate::wallet;
@@ -111,7 +111,7 @@ impl SetupParams {
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
-    (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
+    (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     setup_params: SetupParams,
     build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
@@ -425,7 +425,7 @@ impl RolloverParams {
 pub async fn roll_over(
     mut sink: impl Sink<RolloverMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = RolloverMsg> + Unpin,
-    (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
+    (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     rollover_params: RolloverParams,
     our_role: Role,
     dlc: Dlc,

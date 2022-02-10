@@ -8,9 +8,9 @@ use crate::model::cfd::CfdEvent;
 use crate::model::cfd::Dlc;
 use crate::model::cfd::OrderId;
 use crate::model::cfd::CET_TIMELOCK;
+use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
 use crate::oracle;
-use crate::oracle::Attestation;
 use crate::try_continue;
 use crate::wallet::RpcErrorCode;
 use anyhow::Context;
@@ -369,7 +369,7 @@ impl State {
     fn monitor_cet_finality(
         &mut self,
         cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
-        attestation: Attestation,
+        attestation: &olivia::Attestation,
         order_id: OrderId,
     ) -> Result<()> {
         let attestation_id = attestation.id;
@@ -494,11 +494,11 @@ impl Actor {
             .cfds
             .clone()
             .into_iter()
-            .filter(|(_, params)| params.event_id == attestation.id)
+            .filter(|(_, params)| params.event_id == attestation.id())
         {
             try_continue!(self
                 .state
-                .monitor_cet_finality(cets, attestation.clone(), order_id))
+                .monitor_cet_finality(cets, attestation.as_inner(), order_id))
         }
     }
 }

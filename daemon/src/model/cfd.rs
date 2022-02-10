@@ -13,8 +13,8 @@ use crate::model::Timestamp;
 use crate::model::TradingPair;
 use crate::model::TxFeeRate;
 use crate::model::Usd;
+use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
-use crate::oracle;
 use crate::payout_curve;
 use crate::setup_contract::RolloverParams;
 use crate::setup_contract::SetupParams;
@@ -986,7 +986,7 @@ impl Cfd {
     ///
     /// In case the Cfd was already closed we return `Ok(None)`, because then the attestation is not
     /// relevant anymore. We don't treat this as error because it is not an error scenario.
-    pub fn decrypt_cet(self, attestation: &oracle::Attestation) -> Result<Option<Event>> {
+    pub fn decrypt_cet(self, attestation: &olivia::Attestation) -> Result<Option<Event>> {
         if self.is_closed() {
             return Ok(None);
         }
@@ -1601,7 +1601,7 @@ impl Dlc {
 
     pub fn signed_cet(
         &self,
-        attestation: &oracle::Attestation,
+        attestation: &olivia::Attestation,
     ) -> Result<Result<Transaction, IrrelevantAttestation>> {
         let cets = match self.cets.get(&attestation.id) {
             Some(cets) => cets,
@@ -1861,7 +1861,7 @@ mod hex_transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::oracle::Attestation;
+    use crate::olivia::Attestation;
     use crate::N_PAYOUTS;
     use bdk::bitcoin;
     use bdk::bitcoin::util::psbt::Global;

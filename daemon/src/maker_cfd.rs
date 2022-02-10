@@ -494,7 +494,8 @@ impl<O, T, W> Actor<O, T, W> {
 
     async fn handle_attestation(&mut self, msg: oracle::Attestation) {
         if let Err(e) =
-            cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager).await
+            cfd_actors::handle_oracle_attestation(msg.as_inner(), &self.db, &self.process_manager)
+                .await
         {
             tracing::warn!("Failed to handle oracle attestation: {:#}", e)
         }

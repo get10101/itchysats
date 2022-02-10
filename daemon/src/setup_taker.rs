@@ -5,7 +5,7 @@ use crate::model::cfd::OrderId;
 use crate::model::cfd::Role;
 use crate::model::cfd::SetupCompleted;
 use crate::model::Usd;
-use crate::oracle::Announcement;
+use crate::olivia::Announcement;
 use crate::process_manager;
 use crate::setup_contract;
 use crate::wallet;
