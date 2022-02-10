@@ -11,6 +11,7 @@ status = [
   "clippy (xtras)",
   "clippy (bdk-ext)",
   "clippy (model)",
+  "clippy (xtra-bitmex-price-feed)",
   "lint-commits",
   "frontend (maker)",
   "frontend (taker)",
