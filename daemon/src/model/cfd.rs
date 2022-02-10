@@ -1869,22 +1869,16 @@ mod hex_transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bdk_ext::new_test_wallet;
+    use crate::bdk_ext::AddressExt;
+    use crate::bdk_ext::SecretKeyExt;
     use crate::seed::RandomSeed;
     use crate::seed::Seed;
-    use crate::wallet;
-    use crate::wallet::BuildPartyParams;
     use crate::Attestation;
     use crate::N_PAYOUTS;
+    use bdk::bitcoin;
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-    use bdk::wallet::tx_builder::TxOrdering;
-    use bdk::wallet::AddressIndex;
-    use bdk::FeeRate;
     use maia::lock_descriptor;
-    use maia::PartyParams;
-    use maia::TxBuilderExt;
-    use rand::thread_rng;
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
     use std::str::FromStr;
@@ -2968,51 +2962,30 @@ mod tests {
             let (sk_taker, pk_taker) = taker_keys;
             let (sk_maker, pk_maker) = maker_keys;
 
-            let (taker_margin, maker_margin, own_sk, counterparty_pk) = match self.role {
-                Role::Taker => (
-                    self.margin(),
-                    self.counterparty_margin(),
-                    sk_taker,
-                    pk_maker,
-                ),
-                Role::Maker => (
-                    self.counterparty_margin(),
-                    self.margin(),
-                    sk_maker,
-                    pk_taker,
-                ),
+            match self.role {
+                Role::Taker => {
+                    let taker_margin = self.margin();
+                    let maker_margin = self.counterparty_margin();
+
+                    self.dlc = Some(self.dlc.unwrap().with_lock_taker(
+                        taker_margin,
+                        maker_margin,
+                        sk_taker,
+                        pk_maker,
+                    ));
+                }
+                Role::Maker => {
+                    let taker_margin = self.counterparty_margin();
+                    let maker_margin = self.margin();
+
+                    self.dlc = Some(self.dlc.unwrap().with_lock_maker(
+                        taker_margin,
+                        maker_margin,
+                        sk_maker,
+                        pk_taker,
+                    ));
+                }
             };
-
-            let taker_params = BuildPartyParams {
-                amount: taker_margin,
-                identity_pk: pk_taker,
-                fee_rate: Default::default(),
-            };
-
-            let maker_params = BuildPartyParams {
-                amount: maker_margin,
-                identity_pk: pk_maker,
-                fee_rate: Default::default(),
-            };
-
-            let taker_params = build_party_params(taker_params).unwrap();
-            let maker_params = build_party_params(maker_params).unwrap();
-
-            let taker_address = taker_params.address.clone();
-            let maker_address = maker_params.address.clone();
-
-            let (lock_tx, descriptor) = build_lock_tx(maker_params, taker_params);
-
-            self.dlc = Some(self.dlc.unwrap().with_lock(
-                lock_tx,
-                descriptor,
-                taker_margin,
-                maker_margin,
-                taker_address,
-                maker_address,
-                own_sk,
-                counterparty_pk,
-            ));
 
             self
         }
@@ -3200,25 +3173,71 @@ mod tests {
     }
 
     impl Dlc {
-        #[allow(clippy::too_many_arguments)]
-        fn with_lock(
-            mut self,
-            lock_tx: PartiallySignedTransaction,
-            descriptor: Descriptor<PublicKey>,
+        fn with_lock_maker(
+            self,
             amount_taker: Amount,
             amount_maker: Amount,
-            taker_address: Address,
-            maker_address: Address,
             identity_sk: SecretKey,
             identity_counterparty_pk: PublicKey,
         ) -> Self {
-            self.lock = (lock_tx.extract_tx(), descriptor);
+            let maker_pk = bitcoin::PublicKey::new(identity_sk.to_public_key());
+            let taker_pk = identity_counterparty_pk;
+            let descriptor = lock_descriptor(maker_pk, taker_pk);
+
+            self.with_lock(
+                amount_taker,
+                amount_maker,
+                identity_sk,
+                identity_counterparty_pk,
+                descriptor,
+            )
+        }
+
+        fn with_lock_taker(
+            self,
+            amount_taker: Amount,
+            amount_maker: Amount,
+            identity_sk: SecretKey,
+            identity_counterparty_pk: PublicKey,
+        ) -> Self {
+            let maker_pk = identity_counterparty_pk;
+            let taker_pk = bitcoin::PublicKey::new(identity_sk.to_public_key());
+            let descriptor = lock_descriptor(maker_pk, taker_pk);
+
+            self.with_lock(
+                amount_taker,
+                amount_maker,
+                identity_sk,
+                identity_counterparty_pk,
+                descriptor,
+            )
+        }
+
+        fn with_lock(
+            mut self,
+            amount_taker: Amount,
+            amount_maker: Amount,
+            identity_sk: SecretKey,
+            identity_counterparty_pk: PublicKey,
+            descriptor: Descriptor<PublicKey>,
+        ) -> Self {
+            let lock_tx = Transaction {
+                version: 0,
+                lock_time: 0,
+                input: vec![],
+                output: vec![TxOut {
+                    value: amount_taker.as_sat() + amount_maker.as_sat(),
+                    script_pubkey: descriptor.script_pubkey(),
+                }],
+            };
+
+            self.lock = (lock_tx, descriptor);
             self.taker_lock_amount = amount_taker;
             self.maker_lock_amount = amount_maker;
             self.identity = identity_sk;
             self.identity_counterparty = identity_counterparty_pk;
-            self.taker_address = taker_address;
-            self.maker_address = maker_address;
+            self.taker_address = Address::random();
+            self.maker_address = Address::random();
 
             self
         }
@@ -3322,107 +3341,6 @@ mod tests {
             .find(|tx_out| tx_out.script_pubkey == script)
             .map(|tx_out| Amount::from_sat(tx_out.value))
             .unwrap_or(Amount::ZERO)
-    }
-
-    pub fn build_lock_tx(
-        maker: PartyParams,
-        taker: PartyParams,
-    ) -> (PartiallySignedTransaction, Descriptor<PublicKey>) {
-        let lock_tx = lock_transaction(
-            maker.lock_psbt.clone(),
-            taker.lock_psbt.clone(),
-            maker.identity_pk,
-            taker.identity_pk,
-            maker.lock_amount + taker.lock_amount,
-        );
-
-        let lock_desc = lock_descriptor(maker.identity_pk, taker.identity_pk);
-
-        (lock_tx, lock_desc)
-    }
-
-    pub fn build_party_params(msg: wallet::BuildPartyParams) -> Result<PartyParams> {
-        let mut rng = thread_rng();
-        let wallet = new_test_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
-
-        let mut builder = wallet.build_tx();
-
-        builder
-            .ordering(TxOrdering::Bip69Lexicographic) // TODO: I think this is pointless but we did this in maia.
-            .fee_rate(FeeRate::from_sat_per_vb(1.0))
-            .add_2of2_multisig_recipient(msg.amount);
-
-        let (psbt, _) = builder.finish()?;
-
-        Ok(PartyParams {
-            lock_psbt: psbt,
-            identity_pk: msg.identity_pk,
-            lock_amount: msg.amount,
-            address: wallet.get_address(AddressIndex::New)?.address,
-        })
-    }
-
-    const DUMMY_2OF2_MULTISIG: &str =
-        "0020b5aa99ed7e0fa92483eb045ab8b7a59146d4d9f6653f21ba729b4331895a5b46";
-
-    // TODO: Pulled in from maia, would be cool if we can expose that for testing somehow?
-    fn lock_transaction(
-        maker_psbt: PartiallySignedTransaction,
-        taker_psbt: PartiallySignedTransaction,
-        maker_pk: PublicKey,
-        taker_pk: PublicKey,
-        amount: Amount,
-    ) -> PartiallySignedTransaction {
-        let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
-
-        let maker_change = maker_psbt
-            .global
-            .unsigned_tx
-            .output
-            .into_iter()
-            .filter(|out| {
-                out.script_pubkey != DUMMY_2OF2_MULTISIG.parse().expect("To be a valid script")
-            })
-            .collect::<Vec<_>>();
-
-        let taker_change = taker_psbt
-            .global
-            .unsigned_tx
-            .output
-            .into_iter()
-            .filter(|out| {
-                out.script_pubkey != DUMMY_2OF2_MULTISIG.parse().expect("To be a valid script")
-            })
-            .collect::<Vec<_>>();
-
-        let lock_output = TxOut {
-            value: amount.as_sat(),
-            script_pubkey: lock_descriptor.script_pubkey(),
-        };
-
-        let input = vec![
-            maker_psbt.global.unsigned_tx.input,
-            taker_psbt.global.unsigned_tx.input,
-        ]
-        .concat();
-
-        let output = std::iter::once(lock_output)
-            .chain(maker_change)
-            .chain(taker_change)
-            .collect();
-
-        let lock_tx = Transaction {
-            version: 2,
-            lock_time: 0,
-            input,
-            output,
-        };
-
-        PartiallySignedTransaction {
-            global: Global::from_unsigned_tx(lock_tx).expect("to be unsigned"),
-            inputs: vec![maker_psbt.inputs, taker_psbt.inputs].concat(),
-            outputs: vec![maker_psbt.outputs, taker_psbt.outputs].concat(),
-        }
     }
 
     impl Attestation {
