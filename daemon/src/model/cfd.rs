@@ -1940,7 +1940,6 @@ mod hex_transaction {
 mod tests {
     use super::*;
     use crate::olivia::Attestation;
-    use crate::N_PAYOUTS;
     use bdk::bitcoin;
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -3543,4 +3542,6 @@ mod tests {
     /// sat/vbytes. This constant represents what each party pays, i.e. the split fee for each
     /// party.
     const TX_FEE_COLLAB_SETTLEMENT: u64 = 85;
+
+    const N_PAYOUTS: usize = 200;
 }
