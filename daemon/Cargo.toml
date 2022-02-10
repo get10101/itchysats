@@ -10,7 +10,6 @@ bdk = { version = "0.16", default-features = false, features = ["electrum"] }
 bdk-ext = { path = "../bdk-ext" }
 bytes = "1"
 cached = { version = "0.30.0", default-features = false, features = ["proc_macro"] }
-derivative = "2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 hkdf = "0.12"
 maia = "0.1.0"
@@ -23,7 +22,6 @@ rust_decimal_macros = "1.21"
 semver = { version = "1.0.5", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_plain = "1"
 serde_with = { version = "1", features = ["macros"] }
 sha2 = "0.10"
 snow = "0.9"
