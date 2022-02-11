@@ -542,3 +542,75 @@ impl xtra::Actor for Actor {
 
     async fn stopped(self) -> Self::Stop {}
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::seed::{RandomSeed, Seed};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn reproduce_connection_hang_from_production() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+        let (maker, taker) = tokio::join!(
+            listener.accept(),
+            TcpStream::connect(listener.local_addr().unwrap())
+        );
+
+        let ((mut maker, _maker_sock), mut taker) = (maker.unwrap(), taker.unwrap());
+
+        // Add a function to upgrade the connection on the taker side, and potentially fail on the taker
+        // side.
+
+        let taker_address = taker
+            .peer_addr()
+            .context("Failed to get peer address")
+            .unwrap();
+
+        tracing::info!(%taker_address, "Upgrade new connection");
+
+        let maker_seed = RandomSeed::default();
+        let (maker_pk, maker_sk) = maker_seed.derive_identity();
+
+        let taker_seed = RandomSeed::default();
+        let (_taker_pk, taker_sk) = taker_seed.derive_identity();
+
+        let taker_fut = async {
+            let noise_taker = noise::initiator_handshake(&mut taker, &taker_sk, &maker_pk)
+                .await
+                .unwrap();
+
+            let (mut write, mut read) = Framed::new(
+                taker,
+                EncryptedJsonCodec::<MakerToTaker, TakerToMaker>::new(noise_taker),
+            )
+            .split();
+
+            let our_version = Version::current();
+            write
+                .send(TakerToMaker::Hello(our_version.clone()))
+                .timeout(Duration::from_secs(10))
+                .await
+                .unwrap()
+                .unwrap();
+        };
+
+        let maker_fut = async {
+            let transport_state = noise::responder_handshake(&mut maker, &maker_sk)
+                .timeout(Duration::from_secs(20))
+                .await
+                .context("Failed to complete noise handshake within 20 seconds")
+                .unwrap()
+                .unwrap();
+
+            let (mut write, mut read) = Framed::new(
+                maker,
+                EncryptedJsonCodec::<TakerToMaker, MakerToTaker>::new(transport_state),
+            )
+            .split();
+        };
+
+        tokio::join!(maker_fut, taker_fut);
+    }
+}
