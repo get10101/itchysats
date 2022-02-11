@@ -103,11 +103,11 @@ impl Actor {
                 match self.role {
                     Role::Maker => {
                         self.try_broadcast_transaction
-                            .send(monitor::TryBroadcastTransaction {
+                            .send_async_safe(monitor::TryBroadcastTransaction {
                                 tx: spend_tx,
                                 kind: TransactionKind::CollaborativeClose,
                             })
-                            .await??;
+                            .await?;
                     }
                     Role::Taker => {
                         // TODO: Publish the tx once the collaborative settlement is symmetric,
