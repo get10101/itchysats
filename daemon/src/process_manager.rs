@@ -1,7 +1,4 @@
 use crate::db::append_event;
-use crate::model::cfd;
-use crate::model::cfd::CfdEvent;
-use crate::model::cfd::Role;
 use crate::monitor;
 use crate::monitor::MonitorParams;
 use crate::monitor::TransactionKind;
@@ -9,6 +6,9 @@ use crate::oracle;
 use crate::projection;
 use anyhow::Result;
 use async_trait::async_trait;
+use model::cfd;
+use model::cfd::CfdEvent;
+use model::cfd::Role;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;

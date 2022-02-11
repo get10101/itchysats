@@ -1,23 +1,17 @@
-use crate::impl_sqlx_type_display_from_str;
-use crate::model::cfd::calculate_long_margin;
-use crate::model::cfd::calculate_short_margin;
-use crate::olivia;
-use crate::SETTLEMENT_INTERVAL;
+use crate::cfd::calculate_long_margin;
+use crate::cfd::calculate_short_margin;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
 use bdk::bitcoin::SignedAmount;
-use parse_display::Display;
-use reqwest::Url;
+use cfd::Role;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::de::Error as _;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_with::DeserializeFromStr;
-use serde_with::SerializeDisplay;
 use std::convert::TryInto;
 use std::fmt;
 use std::num::NonZeroU8;
@@ -28,13 +22,24 @@ use std::ops::Sub;
 use std::str;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use time::OffsetDateTime;
-use time::PrimitiveDateTime;
-use time::Time;
 
-use self::cfd::Role;
+mod sqlx_ext; // Must come first because it is a macro.
 
 pub mod cfd;
+pub mod olivia;
+pub mod payout_curve;
+
+/// The interval until the cfd gets settled, i.e. the attestation happens
+///
+/// This variable defines at what point in time the oracle event id will be chose to settle the cfd.
+/// Hence, this constant defines how long a cfd is open (until it gets either settled or rolled
+/// over).
+///
+/// Multiple code parts align on this constant:
+/// - How the oracle event id is chosen when creating an order (maker)
+/// - The sliding window of cached oracle announcements (maker, taker)
+/// - The auto-rollover time-window (taker)
+pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -402,7 +407,7 @@ pub enum TradingPair {
     BtcUsd,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type, Display)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub enum Position {
     Long,
     Short,
@@ -482,87 +487,6 @@ pub struct WalletInfo {
     pub address: Address,
     pub last_updated_at: Timestamp,
 }
-
-#[derive(
-    Debug, Clone, Copy, SerializeDisplay, DeserializeFromStr, PartialEq, Eq, Hash, PartialOrd, Ord,
-)]
-pub struct BitMexPriceEventId {
-    /// The timestamp this price event refers to.
-    timestamp: OffsetDateTime,
-    digits: usize,
-}
-
-impl BitMexPriceEventId {
-    pub fn new(timestamp: OffsetDateTime, digits: usize) -> Self {
-        let (hours, minutes, seconds) = timestamp.time().as_hms();
-        let time_without_nanos =
-            Time::from_hms(hours, minutes, seconds).expect("original timestamp was valid");
-
-        let timestamp_without_nanos = timestamp.replace_time(time_without_nanos);
-
-        Self {
-            timestamp: timestamp_without_nanos,
-            digits,
-        }
-    }
-
-    pub fn with_20_digits(timestamp: OffsetDateTime) -> Self {
-        Self::new(timestamp, 20)
-    }
-
-    /// Checks whether this event has likely already occurred.
-    ///
-    /// We can't be sure about it because our local clock might be off from the oracle's clock.
-    pub fn has_likely_occured(&self) -> bool {
-        let now = OffsetDateTime::now_utc();
-
-        now > self.timestamp
-    }
-
-    pub fn to_olivia_url(self) -> Url {
-        "https://h00.ooo"
-            .parse::<Url>()
-            .expect("valid URL from constant")
-            .join(&self.to_string())
-            .expect("Event id can be joined")
-    }
-
-    pub fn timestamp(&self) -> OffsetDateTime {
-        self.timestamp
-    }
-}
-
-impl fmt::Display for BitMexPriceEventId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "/x/BitMEX/BXBT/{}.price?n={}",
-            self.timestamp
-                .format(&olivia::EVENT_TIME_FORMAT)
-                .expect("should always format and we can't return an error here"),
-            self.digits
-        )
-    }
-}
-
-impl str::FromStr for BitMexPriceEventId {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let remaining = s.trim_start_matches("/x/BitMEX/BXBT/");
-        let (timestamp, rest) = remaining.split_at(19);
-        let digits = rest.trim_start_matches(".price?n=");
-
-        Ok(Self {
-            timestamp: PrimitiveDateTime::parse(timestamp, &olivia::EVENT_TIME_FORMAT)
-                .with_context(|| format!("Failed to parse {timestamp} as timestamp"))?
-                .assume_utc(),
-            digits: digits.parse()?,
-        })
-    }
-}
-
-impl_sqlx_type_display_from_str!(BitMexPriceEventId);
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
 #[sqlx(transparent)]
@@ -892,46 +816,6 @@ impl_sqlx_type_display_from_str!(TxFeeRate);
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
-    use time::macros::datetime;
-
-    #[test]
-    fn to_olivia_url() {
-        let url = BitMexPriceEventId::with_20_digits(datetime!(2021-09-23 10:00:00).assume_utc())
-            .to_olivia_url();
-
-        assert_eq!(
-            url,
-            "https://h00.ooo/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20"
-                .parse()
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn parse_event_id() {
-        let parsed = "/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20"
-            .parse::<BitMexPriceEventId>()
-            .unwrap();
-        let expected =
-            BitMexPriceEventId::with_20_digits(datetime!(2021-09-23 10:00:00).assume_utc());
-
-        assert_eq!(parsed, expected);
-    }
-
-    #[test]
-    fn new_event_has_no_nanos() {
-        let now = BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc());
-
-        assert_eq!(now.timestamp.nanosecond(), 0);
-    }
-
-    #[test]
-    fn has_occured_if_in_the_past() {
-        let past_event =
-            BitMexPriceEventId::with_20_digits(datetime!(2021-09-23 10:00:00).assume_utc());
-
-        assert!(past_event.has_likely_occured());
-    }
 
     #[test]
     fn algebra_with_usd() {

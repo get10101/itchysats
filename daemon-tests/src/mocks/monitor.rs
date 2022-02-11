@@ -1,9 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use daemon::command;
-use daemon::model::cfd::OrderId;
 use daemon::monitor;
 use daemon::oracle;
+use model::cfd::OrderId;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;

@@ -1,7 +1,6 @@
 use crate::cfd_actors::load_cfd;
 use crate::connection;
 use crate::db;
-use crate::model::cfd::OrderId;
 use crate::oracle;
 use crate::process_manager;
 use crate::rollover_taker;
@@ -10,6 +9,7 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use maia::secp256k1_zkp::schnorrsig;
+use model::cfd::OrderId;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;

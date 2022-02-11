@@ -1,14 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use crate::bitcoin::Txid;
-use crate::model::cfd::Order;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::Role;
-use crate::model::Identity;
-use crate::model::OpeningFee;
-use crate::model::Price;
-use crate::model::Usd;
-use crate::oracle::Attestation;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -16,8 +8,16 @@ use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use connection::ConnectionStatus;
 use maia::secp256k1_zkp::schnorrsig;
+use model::cfd::Order;
+use model::cfd::OrderId;
+use model::cfd::Role;
+use model::olivia;
 use model::FundingRate;
+use model::Identity;
+use model::OpeningFee;
+use model::Price;
 use model::TxFeeRate;
+use model::Usd;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -34,10 +34,7 @@ use xtras::supervisor;
 pub use bdk;
 pub use maia;
 
-pub mod sqlx_ext; // Must come first because it is a macro.
-
 pub mod auto_rollover;
-pub mod bdk_ext;
 pub mod cfd_actors;
 pub mod collab_settlement_maker;
 pub mod collab_settlement_taker;
@@ -46,15 +43,11 @@ pub mod connection;
 pub mod db;
 pub mod fan_out;
 mod future_ext;
-pub mod keypair;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
-pub mod model;
 pub mod monitor;
 mod noise;
-pub mod olivia;
 pub mod oracle;
-pub mod payout_curve;
 pub mod process_manager;
 pub mod projection;
 pub mod rollover_maker;
@@ -75,18 +68,6 @@ pub mod wire;
 pub const HEARTBEAT_INTERVAL: std::time::Duration = Duration::from_secs(5);
 
 pub const N_PAYOUTS: usize = 200;
-
-/// The interval until the cfd gets settled, i.e. the attestation happens
-///
-/// This variable defines at what point in time the oracle event id will be chose to settle the cfd.
-/// Hence, this constant defines how long a cfd is open (until it gets either settled or rolled
-/// over).
-///
-/// Multiple code parts align on this constant:
-/// - How the oracle event id is chosen when creating an order (maker)
-/// - The sliding window of cached oracle announcements (maker, taker)
-/// - The auto-rollover time-window (taker)
-pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
 pub struct MakerActorSystem<O, W> {
     pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
@@ -112,7 +93,7 @@ where
         db: SqlitePool,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
+        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<oracle::Attestation>>) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         settlement_interval: time::Duration,
         n_payouts: usize,
@@ -317,7 +298,7 @@ where
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         identity_sk: x25519_dalek::StaticSecret,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
+        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<oracle::Attestation>>) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         price_feed_constructor: impl (Fn() -> P) + Send + 'static,
         n_payouts: usize,

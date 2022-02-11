@@ -1,10 +1,5 @@
 use daemon::bdk::bitcoin::Amount;
 use daemon::connection::ConnectionStatus;
-use daemon::model::cfd::calculate_long_margin;
-use daemon::model::cfd::OrderId;
-use daemon::model::Identity;
-use daemon::model::Usd;
-use daemon::oracle;
 use daemon::projection::CfdOrder;
 use daemon::projection::CfdState;
 use daemon_tests::deliver_event;
@@ -24,6 +19,11 @@ use daemon_tests::Maker;
 use daemon_tests::MakerConfig;
 use daemon_tests::Taker;
 use daemon_tests::TakerConfig;
+use model::cfd::calculate_long_margin;
+use model::cfd::OrderId;
+use model::olivia;
+use model::Identity;
+use model::Usd;
 use rust_decimal_macros::dec;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -405,7 +405,7 @@ async fn maker_notices_lack_of_taker() {
 /// Useful when reading tests that should start at this point.
 /// For convenience, returns also OrderId of the opened Cfd.
 /// `announcement` is used during Cfd's creation.
-async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker, Taker, OrderId) {
+async fn start_from_open_cfd_state(announcement: olivia::Announcement) -> (Maker, Taker, OrderId) {
     let mut maker = Maker::start(&MakerConfig::default()).await;
     let mut taker = Taker::start(&TakerConfig::default(), maker.listen_addr, maker.identity).await;
 

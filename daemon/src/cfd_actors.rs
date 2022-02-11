@@ -1,12 +1,12 @@
 use crate::db;
-use crate::model::cfd::Cfd;
-use crate::model::cfd::OrderId;
-use crate::oracle;
+use crate::olivia;
 use crate::process_manager;
 use crate::projection;
 use crate::try_continue;
 use anyhow::Context;
 use anyhow::Result;
+use model::cfd::Cfd;
+use model::cfd::OrderId;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;
@@ -59,7 +59,7 @@ pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> R
 }
 
 pub async fn handle_oracle_attestation(
-    attestation: oracle::Attestation,
+    attestation: &olivia::Attestation,
     db: &SqlitePool,
     process_manager: &xtra::Address<process_manager::Actor>,
 ) -> Result<()> {
@@ -71,7 +71,7 @@ pub async fn handle_oracle_attestation(
     for id in db::load_all_cfd_ids(&mut conn).await? {
         let cfd = try_continue!(load_cfd(id, &mut conn).await);
         let event = try_continue!(cfd
-            .decrypt_cet(&attestation)
+            .decrypt_cet(attestation)
             .context("Failed to decrypt CET using attestation"));
 
         if let Some(event) = event {

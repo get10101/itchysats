@@ -1,11 +1,11 @@
-use crate::model::FeeFlow;
-use crate::model::Leverage;
-use crate::model::Price;
-use crate::model::Usd;
-use crate::payout_curve::curve::Curve;
+use crate::FeeFlow;
+use crate::Leverage;
+use crate::Price;
+use crate::Usd;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
+use curve::Curve;
 use itertools::Itertools;
 use maia::generate_payouts;
 use maia::Payout;

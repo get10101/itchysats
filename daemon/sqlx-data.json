@@ -1,7 +1,7 @@
 {
   "db": "SQLite",
-  "45eee9716b6df670e4211ac924ea98127254dea442e309d4b8e769779212e87f": {
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: crate::model::cfd::OrderId\"\n            from\n                cfds\n            order by cfd_id desc\n            ",
+  "2880579fa9b77623761bbbd2151a50ab4f5cc2e5837424a6dfb03bb36a4080ce": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::cfd::OrderId\"\n            from\n                cfds\n            order by cfd_id desc\n            ",
     "describe": {
       "columns": [
         {
@@ -10,7 +10,7 @@
           "type_info": "Int64"
         },
         {
-          "name": "uuid: crate::model::cfd::OrderId",
+          "name": "uuid: model::cfd::OrderId",
           "ordinal": 1,
           "type_info": "Text"
         }
@@ -24,8 +24,8 @@
       ]
     }
   },
-  "9de33832b4ae2eff5a2e3f97feca0b2586949bba2f606b3a2f504956fc37add3": {
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: crate::model::cfd::OrderId\",\n                position as \"position: crate::model::Position\",\n                initial_price as \"initial_price: crate::model::Price\",\n                leverage as \"leverage: crate::model::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: crate::model::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: crate::model::Identity\",\n                role as \"role: crate::model::cfd::Role\",\n                opening_fee as \"opening_fee: crate::model::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: crate::model::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: crate::model::TxFeeRate\"\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            ",
+  "5af9f33a90da4f2f613d755c072f80e15b9e44f292f27c57eb13705a02397b70": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::cfd::OrderId\",\n                position as \"position: model::Position\",\n                initial_price as \"initial_price: model::Price\",\n                leverage as \"leverage: model::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: model::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: model::Identity\",\n                role as \"role: model::cfd::Role\",\n                opening_fee as \"opening_fee: model::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: model::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: model::TxFeeRate\"\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            ",
     "describe": {
       "columns": [
         {
@@ -34,22 +34,22 @@
           "type_info": "Int64"
         },
         {
-          "name": "uuid: crate::model::cfd::OrderId",
+          "name": "uuid: model::cfd::OrderId",
           "ordinal": 1,
           "type_info": "Text"
         },
         {
-          "name": "position: crate::model::Position",
+          "name": "position: model::Position",
           "ordinal": 2,
           "type_info": "Text"
         },
         {
-          "name": "initial_price: crate::model::Price",
+          "name": "initial_price: model::Price",
           "ordinal": 3,
           "type_info": "Text"
         },
         {
-          "name": "leverage: crate::model::Leverage",
+          "name": "leverage: model::Leverage",
           "ordinal": 4,
           "type_info": "Int64"
         },
@@ -59,32 +59,32 @@
           "type_info": "Int64"
         },
         {
-          "name": "quantity_usd: crate::model::Usd",
+          "name": "quantity_usd: model::Usd",
           "ordinal": 6,
           "type_info": "Text"
         },
         {
-          "name": "counterparty_network_identity: crate::model::Identity",
+          "name": "counterparty_network_identity: model::Identity",
           "ordinal": 7,
           "type_info": "Text"
         },
         {
-          "name": "role: crate::model::cfd::Role",
+          "name": "role: model::cfd::Role",
           "ordinal": 8,
           "type_info": "Text"
         },
         {
-          "name": "opening_fee: crate::model::OpeningFee",
+          "name": "opening_fee: model::OpeningFee",
           "ordinal": 9,
           "type_info": "Null"
         },
         {
-          "name": "initial_funding_rate: crate::model::FundingRate",
+          "name": "initial_funding_rate: model::FundingRate",
           "ordinal": 10,
           "type_info": "Null"
         },
         {
-          "name": "initial_tx_fee_rate: crate::model::TxFeeRate",
+          "name": "initial_tx_fee_rate: model::TxFeeRate",
           "ordinal": 11,
           "type_info": "Null"
         }
@@ -108,8 +108,8 @@
       ]
     }
   },
-  "fdf6b7cee19e20e6c3ba00a821b5d92949a707a23c9fc8ebbc4502ffd7b1a5f1": {
-    "query": "\n\n        select\n            name,\n            data,\n            created_at as \"created_at: crate::model::Timestamp\"\n        from\n            events\n        where\n            cfd_id = $1\n            ",
+  "b15ee697209deb50569172bbf4a67bde5d9936525e4937119ba88447cec52a4e": {
+    "query": "\n\n        select\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        where\n            cfd_id = $1\n            ",
     "describe": {
       "columns": [
         {
@@ -123,7 +123,7 @@
           "type_info": "Text"
         },
         {
-          "name": "created_at: crate::model::Timestamp",
+          "name": "created_at: model::Timestamp",
           "ordinal": 2,
           "type_info": "Text"
         }

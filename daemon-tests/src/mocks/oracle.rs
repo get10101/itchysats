@@ -1,8 +1,9 @@
 use crate::maia::OliviaData;
 use async_trait::async_trait;
-use daemon::model::BitMexPriceEventId;
 use daemon::oracle;
 use mockall::*;
+use model::olivia;
+use model::olivia::BitMexPriceEventId;
 use std::sync::Arc;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
@@ -36,7 +37,7 @@ impl OracleActor {
     async fn handle(
         &mut self,
         msg: oracle::GetAnnouncement,
-    ) -> Result<oracle::Announcement, oracle::NoAnnouncement> {
+    ) -> Result<olivia::Announcement, oracle::NoAnnouncement> {
         self.mock.lock().await.get_announcement(msg)
     }
 
@@ -54,7 +55,7 @@ pub trait Oracle {
     fn get_announcement(
         &mut self,
         _msg: oracle::GetAnnouncement,
-    ) -> Result<oracle::Announcement, oracle::NoAnnouncement> {
+    ) -> Result<olivia::Announcement, oracle::NoAnnouncement> {
         unreachable!("mockall will reimplement this method")
     }
 
@@ -71,14 +72,15 @@ pub trait Oracle {
 /// announcement/attestation is hard-coded in OliviaData struct (along with event id's).
 /// Therefore, an attestation based on current utc time will always be wrong.
 pub fn dummy_wrong_attestation() -> oracle::Attestation {
-    let oracle::Attestation {
+    let olivia::Attestation {
         id: _,
         price,
         scalars,
-    } = OliviaData::example_0().attestation();
-    oracle::Attestation {
+    } = OliviaData::example_0().attestation().into_inner();
+
+    oracle::Attestation::new(olivia::Attestation {
         id: BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
         price,
         scalars,
-    }
+    })
 }

@@ -250,6 +250,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bdk-ext"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bdk",
+ "rand 0.6.5",
+ "secp256k1",
+]
+
+[[package]]
 name = "bdk-macros"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -689,22 +699,15 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bdk",
+ "bdk-ext",
  "bytes",
  "cached",
- "conquer-once",
- "derivative",
  "futures",
- "hex",
  "hkdf",
- "itertools",
  "maia",
- "nalgebra",
- "ndarray",
- "ndarray_einsum_beta",
- "num",
+ "model",
  "parse-display",
  "pretty_assertions",
- "proptest",
  "rand 0.6.5",
  "reqwest",
  "rust_decimal",
@@ -712,7 +715,6 @@ dependencies = [
  "semver 1.0.5",
  "serde",
  "serde_json",
- "serde_plain",
  "serde_test",
  "serde_with",
  "sha2 0.10.1",
@@ -739,9 +741,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bdk-ext",
  "daemon",
  "mockall",
  "mockall_derive",
+ "model",
  "rand 0.6.5",
  "rust_decimal",
  "rust_decimal_macros",
@@ -786,17 +790,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ade7bff147130fe5e6d39f089c6bd49ec0250f35d70b2eebf72afdfc919f15cc"
 dependencies = [
  "darling_core",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "derivative"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
-dependencies = [
- "proc-macro2",
  "quote",
  "syn",
 ]
@@ -1584,6 +1577,7 @@ dependencies = [
  "daemon",
  "hex",
  "http-api-problem",
+ "model",
  "rocket",
  "rocket-basicauth",
  "rust-embed",
@@ -1699,6 +1693,40 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "model"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bdk",
+ "bdk-ext",
+ "cached",
+ "conquer-once",
+ "hex",
+ "itertools",
+ "maia",
+ "nalgebra",
+ "ndarray",
+ "ndarray_einsum_beta",
+ "num",
+ "pretty_assertions",
+ "proptest",
+ "rand 0.6.5",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "serde_test",
+ "serde_with",
+ "sqlx",
+ "thiserror",
+ "time 0.3.7",
+ "tracing",
+ "url",
+ "uuid",
+ "x25519-dalek",
 ]
 
 [[package]]
@@ -2962,15 +2990,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_plain"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95455e7e29fada2052e72170af226fbe368a4ca33dee847875325d9fdb133858"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "serde_test"
 version = "1.0.136"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3082,9 +3101,9 @@ dependencies = [
  "anyhow",
  "atty",
  "daemon",
+ "model",
  "rocket",
  "serde",
- "serde_test",
  "time 0.3.7",
  "tracing",
  "tracing-subscriber",
@@ -3460,6 +3479,7 @@ dependencies = [
  "hex",
  "http-api-problem",
  "itertools",
+ "model",
  "rocket",
  "rocket-basicauth",
  "rust-embed",

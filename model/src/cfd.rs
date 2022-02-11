@@ -1,23 +1,21 @@
-use crate::model::calculate_funding_fee;
-use crate::model::BitMexPriceEventId;
-use crate::model::FeeAccount;
-use crate::model::FundingFee;
-use crate::model::FundingRate;
-use crate::model::Identity;
-use crate::model::InversePrice;
-use crate::model::Leverage;
-use crate::model::OpeningFee;
-use crate::model::Percent;
-use crate::model::Position;
-use crate::model::Price;
-use crate::model::Timestamp;
-use crate::model::TradingPair;
-use crate::model::TxFeeRate;
-use crate::model::Usd;
-use crate::oracle;
+use crate::calculate_funding_fee;
+use crate::olivia;
+use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
-use crate::setup_contract::RolloverParams;
-use crate::setup_contract::SetupParams;
+use crate::FeeAccount;
+use crate::FundingFee;
+use crate::FundingRate;
+use crate::Identity;
+use crate::InversePrice;
+use crate::Leverage;
+use crate::OpeningFee;
+use crate::Percent;
+use crate::Position;
+use crate::Price;
+use crate::Timestamp;
+use crate::TradingPair;
+use crate::TxFeeRate;
+use crate::Usd;
 use crate::SETTLEMENT_INTERVAL;
 use anyhow::bail;
 use anyhow::Context;
@@ -565,7 +563,7 @@ impl Cfd {
     fn expiry_timestamp(&self) -> Option<OffsetDateTime> {
         self.dlc
             .as_ref()
-            .map(|dlc| dlc.settlement_event_id.timestamp)
+            .map(|dlc| dlc.settlement_event_id.timestamp())
     }
 
     fn margin(&self) -> Amount {
@@ -986,7 +984,7 @@ impl Cfd {
     ///
     /// In case the Cfd was already closed we return `Ok(None)`, because then the attestation is not
     /// relevant anymore. We don't treat this as error because it is not an error scenario.
-    pub fn decrypt_cet(self, attestation: &oracle::Attestation) -> Result<Option<Event>> {
+    pub fn decrypt_cet(self, attestation: &olivia::Attestation) -> Result<Option<Event>> {
         if self.is_closed() {
             return Ok(None);
         }
@@ -1255,6 +1253,86 @@ impl Cfd {
     }
 }
 
+pub struct SetupParams {
+    pub margin: Amount,
+    pub counterparty_margin: Amount,
+    pub counterparty_identity: Identity,
+    pub price: Price,
+    pub quantity: Usd,
+    pub leverage: Leverage,
+    pub refund_timelock: u32,
+    pub tx_fee_rate: TxFeeRate,
+    pub fee_account: FeeAccount,
+}
+
+impl SetupParams {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        margin: Amount,
+        counterparty_margin: Amount,
+        counterparty_identity: Identity,
+        price: Price,
+        quantity: Usd,
+        leverage: Leverage,
+        refund_timelock: u32,
+        tx_fee_rate: TxFeeRate,
+        fee_account: FeeAccount,
+    ) -> Result<Self> {
+        Ok(Self {
+            margin,
+            counterparty_margin,
+            counterparty_identity,
+            price,
+            quantity,
+            leverage,
+            refund_timelock,
+            tx_fee_rate,
+            fee_account,
+        })
+    }
+
+    pub fn counterparty_identity(&self) -> Identity {
+        self.counterparty_identity
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RolloverParams {
+    pub price: Price,
+    pub quantity: Usd,
+    pub leverage: Leverage,
+    pub refund_timelock: u32,
+    pub fee_rate: TxFeeRate,
+    pub fee_account: FeeAccount,
+    pub current_fee: FundingFee,
+}
+
+impl RolloverParams {
+    pub fn new(
+        price: Price,
+        quantity: Usd,
+        leverage: Leverage,
+        refund_timelock: u32,
+        fee_rate: TxFeeRate,
+        fee_account: FeeAccount,
+        current_fee: FundingFee,
+    ) -> Self {
+        Self {
+            price,
+            quantity,
+            leverage,
+            refund_timelock,
+            fee_rate,
+            fee_account,
+            current_fee,
+        }
+    }
+
+    pub fn funding_fee(&self) -> &FundingFee {
+        &self.current_fee
+    }
+}
+
 pub trait AsBlocks {
     /// Calculates the duration in Bitcoin blocks.
     ///
@@ -1482,7 +1560,7 @@ impl Dlc {
     /// Create a close transaction based on the current contract and a settlement proposals
     pub fn close_transaction(
         &self,
-        proposal: &crate::model::cfd::SettlementProposal,
+        proposal: &crate::cfd::SettlementProposal,
     ) -> Result<(Transaction, Signature)> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {
@@ -1601,7 +1679,7 @@ impl Dlc {
 
     pub fn signed_cet(
         &self,
-        attestation: &oracle::Attestation,
+        attestation: &olivia::Attestation,
     ) -> Result<Result<Transaction, IrrelevantAttestation>> {
         let cets = match self.cets.get(&attestation.id) {
             Some(cets) => cets,
@@ -1745,14 +1823,6 @@ pub enum Completed<P, E> {
     },
 }
 
-impl<P, E> xtra::Message for Completed<P, E>
-where
-    P: Send + 'static,
-    E: Send + 'static,
-{
-    type Result = Result<()>;
-}
-
 impl<P, E> Completed<P, E> {
     pub fn order_id(&self) -> OrderId {
         *match self {
@@ -1869,15 +1939,13 @@ mod hex_transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bdk_ext::AddressExt;
-    use crate::bdk_ext::SecretKeyExt;
-    use crate::seed::RandomSeed;
-    use crate::seed::Seed;
-    use crate::Attestation;
-    use crate::N_PAYOUTS;
+    use crate::olivia::Attestation;
     use bdk::bitcoin;
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
+    use bdk_ext::keypair;
+    use bdk_ext::AddressExt;
+    use bdk_ext::SecretKeyExt;
     use maia::lock_descriptor;
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
@@ -2378,8 +2446,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let (cfd, _, _, _) = Cfd::dummy_taker_long()
             .with_quantity(quantity)
@@ -2405,8 +2473,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let (cfd, _, _, _) = Cfd::dummy_taker_long()
             .with_quantity(quantity)
@@ -2483,8 +2551,8 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let taker_long = Cfd::dummy_taker_long()
             .with_id(order_id)
@@ -2522,8 +2590,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let cfd = Cfd::dummy_taker_long()
             .with_quantity(quantity)
@@ -2584,8 +2652,8 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let taker_long = Cfd::dummy_taker_long()
             .with_id(order_id)
@@ -2811,8 +2879,8 @@ mod tests {
         )
         .with_id(order_id);
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let (taker_long, proposal, taker_sig, taker_script) = taker_long
             .dummy_open(dummy_event_id())
@@ -3414,7 +3482,9 @@ mod tests {
     }
 
     pub fn dummy_identity() -> Identity {
-        Identity::new(RandomSeed::default().derive_identity().0)
+        Identity::new(x25519_dalek::PublicKey::from(
+            *b"hello world, oh what a beautiful",
+        ))
     }
 
     pub fn dummy_event_id() -> BitMexPriceEventId {
@@ -3472,4 +3542,6 @@ mod tests {
     /// sat/vbytes. This constant represents what each party pays, i.e. the split fee for each
     /// party.
     const TX_FEE_COLLAB_SETTLEMENT: u64 = 85;
+
+    const N_PAYOUTS: usize = 200;
 }
