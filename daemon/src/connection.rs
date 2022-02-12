@@ -355,7 +355,10 @@ impl Actor {
         };
 
         let our_version = Version::current();
-        write.send(TakerToMaker::Hello(our_version.clone())).await?;
+        write
+            .send(TakerToMaker::Hello(our_version.clone()))
+            .timeout(Duration::from_secs(10))
+            .await??;
 
         match read
             .try_next()
