@@ -41,6 +41,8 @@ use xtras::SendInterval;
 /// Time between reconnection attempts
 pub const MAX_RECONNECT_INTERVAL_SECONDS: u64 = 60;
 
+const TCP_TIMEOUT: std::time::Duration = Duration::from_secs(10);
+
 /// The "Connected" state of our connection with the maker.
 #[allow(clippy::large_enum_variant)]
 enum State {
@@ -350,7 +352,7 @@ impl Actor {
                 &self.identity_sk,
                 &maker_identity.pk(),
             )
-            .timeout(Duration::from_secs(10))
+            .timeout(TCP_TIMEOUT)
             .await??;
 
             Framed::new(connection, EncryptedJsonCodec::new(noise)).split()
@@ -359,12 +361,12 @@ impl Actor {
         let our_version = Version::current();
         write
             .send(TakerToMaker::Hello(our_version.clone()))
-            .timeout(Duration::from_secs(10))
+            .timeout(TCP_TIMEOUT)
             .await??;
 
         match read
             .try_next()
-            .timeout(Duration::from_secs(10))
+            .timeout(TCP_TIMEOUT)
             .await
             .with_context(|| {
                 format!(
