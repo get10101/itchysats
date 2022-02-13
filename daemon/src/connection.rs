@@ -21,6 +21,8 @@ use bdk::bitcoin::Amount;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
+use rand::thread_rng;
+use rand::Rng;
 use std::net::SocketAddr;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -37,7 +39,7 @@ use xtras::LogFailure;
 use xtras::SendInterval;
 
 /// Time between reconnection attempts
-const CONNECT_TO_MAKER_INTERVAL: Duration = Duration::from_secs(5);
+pub const MAX_RECONNECT_INTERVAL_SECONDS: u64 = 60;
 
 /// The "Connected" state of our connection with the maker.
 #[allow(clippy::large_enum_variant)]
@@ -605,13 +607,16 @@ pub async fn connect(
                 }
 
                 let num_addresses = maker_addresses.len();
-                let seconds = CONNECT_TO_MAKER_INTERVAL.as_secs();
+
+                // Apply a random number of seconds between the reconnection
+                // attempts so that all takers don't try to reconnect at the same time
+                let seconds = thread_rng().gen_range(5, MAX_RECONNECT_INTERVAL_SECONDS);
 
                 tracing::warn!(
                     "Tried connecting to {num_addresses} addresses without success, retrying in {seconds} seconds",
                 );
 
-                tokio::time::sleep(CONNECT_TO_MAKER_INTERVAL).await;
+                tokio::time::sleep(Duration::from_secs(seconds)).await;
             }
         }
         maker_online_status_feed_receiver
