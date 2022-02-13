@@ -1,5 +1,6 @@
 use daemon::bdk::bitcoin::Amount;
 use daemon::connection::ConnectionStatus;
+use daemon::connection::MAX_RECONNECT_INTERVAL_SECONDS;
 use daemon::projection::CfdOrder;
 use daemon::projection::CfdState;
 use daemon_tests::deliver_event;
@@ -375,7 +376,8 @@ async fn taker_notices_lack_of_maker() {
 
     let _maker = Maker::start(&maker_config).await;
 
-    sleep(taker_config.heartbeat_interval).await;
+    sleep(Duration::from_secs(MAX_RECONNECT_INTERVAL_SECONDS) + taker_config.heartbeat_interval)
+        .await;
 
     assert_eq!(
         ConnectionStatus::Online,
