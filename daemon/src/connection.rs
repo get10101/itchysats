@@ -350,7 +350,8 @@ impl Actor {
                 &self.identity_sk,
                 &maker_identity.pk(),
             )
-            .await?;
+            .timeout(Duration::from_secs(10))
+            .await??;
 
             Framed::new(connection, EncryptedJsonCodec::new(noise)).split()
         };
