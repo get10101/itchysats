@@ -24,7 +24,6 @@ use std::time::Duration;
 use time::ext::NumericalDuration;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
-use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
 use xtra::Address;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
@@ -93,7 +92,7 @@ where
         db: SqlitePool,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<oracle::Attestation>>) -> O,
+        oracle_constructor: impl FnOnce(command::Executor) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         settlement_interval: time::Duration,
         n_payouts: usize,
@@ -107,7 +106,7 @@ where
             + xtra::Handler<monitor::Sync>
             + xtra::Handler<monitor::CollaborativeSettlement>
             + xtra::Handler<monitor::TryBroadcastTransaction>
-            + xtra::Handler<oracle::Attestation>
+            + xtra::Handler<monitor::MonitorCetFinality>
             + xtra::Actor<Stop = ()>,
     {
         let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
@@ -123,6 +122,7 @@ where
             db.clone(),
             Role::Maker,
             &projection_actor,
+            &monitor_addr,
             &monitor_addr,
             &monitor_addr,
             &monitor_addr,
@@ -156,13 +156,7 @@ where
 
         tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
 
-        let (fan_out_actor, fan_out_actor_fut) =
-            fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
-                .create(None)
-                .run();
-        tasks.add(fan_out_actor_fut);
-
-        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
+        tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
         tracing::debug!("Maker actor system ready");
 
@@ -298,7 +292,7 @@ where
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         identity_sk: x25519_dalek::StaticSecret,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<oracle::Attestation>>) -> O,
+        oracle_constructor: impl FnOnce(command::Executor) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         price_feed_constructor: impl (Fn() -> P) + Send + 'static,
         n_payouts: usize,
@@ -311,7 +305,7 @@ where
         M: xtra::Handler<monitor::StartMonitoring>
             + xtra::Handler<monitor::Sync>
             + xtra::Handler<monitor::CollaborativeSettlement>
-            + xtra::Handler<oracle::Attestation>
+            + xtra::Handler<monitor::MonitorCetFinality>
             + xtra::Handler<monitor::TryBroadcastTransaction>
             + xtra::Actor<Stop = ()>,
     {
@@ -330,6 +324,7 @@ where
             db.clone(),
             Role::Taker,
             &projection_actor,
+            &monitor_addr,
             &monitor_addr,
             &monitor_addr,
             &monitor_addr,
@@ -380,14 +375,7 @@ where
 
         tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
 
-        let (fan_out_actor, fan_out_actor_fut) =
-            fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
-                .create(None)
-                .run();
-
-        tasks.add(fan_out_actor_fut);
-
-        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
+        tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
         let (supervisor, price_feed_actor) = supervisor::Actor::with_policy(
             price_feed_constructor,

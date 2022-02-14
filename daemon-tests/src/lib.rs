@@ -167,7 +167,8 @@ impl Maker {
 
         let db = db::memory().await.unwrap();
 
-        let (mut mocks, oracle, wallet, price_feed) = mocks::Mocks::new();
+        let (wallet, wallet_mock) = WalletActor::new();
+        let (price_feed, price_feed_mock) = PriceFeedActor::new();
 
         let mut tasks = Tasks::default();
 
@@ -185,28 +186,40 @@ impl Maker {
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
-        // system startup sends sync messages, mock them
-        mocks.mock_sync_handlers().await;
+        let mut monitor_mock = None;
+        let mut oracle_mock = None;
 
         let maker = daemon::MakerActorSystem::new(
             db.clone(),
             wallet_addr,
             config.oracle_pk,
-            |_| oracle,
             |executor| {
-                let (monitor, monitor_mock) = MonitorActor::new(executor);
-                mocks.set_monitor_mock(monitor_mock);
+                let (oracle, mock) = OracleActor::new(executor);
+                oracle_mock = Some(mock);
+
+                oracle
+            },
+            |executor| {
+                let (monitor, mock) = MonitorActor::new(executor);
+                monitor_mock = Some(mock);
 
                 Ok(monitor)
             },
             settlement_interval,
             config.n_payouts,
-            projection_actor.clone(),
+            projection_actor,
             identity_sk,
             config.heartbeat_interval,
             address,
         )
         .unwrap();
+
+        let mocks = mocks::Mocks::new(
+            wallet_mock,
+            price_feed_mock,
+            monitor_mock.unwrap(),
+            oracle_mock.unwrap(),
+        );
 
         let (proj_actor, feeds) =
             projection::Actor::new(db, Role::Maker, Network::Testnet, &price_feed_addr);
@@ -267,27 +280,33 @@ impl Taker {
 
         let db = db::memory().await.unwrap();
 
-        let (mut mocks, oracle, wallet, price_feed) = mocks::Mocks::new();
-
         let mut tasks = Tasks::default();
+
+        let (wallet, wallet_mock) = WalletActor::new();
+        let (price_feed, price_feed_mock) = PriceFeedActor::new();
 
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tasks.add(wallet_fut);
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
-        // system startup sends sync messages, mock them
-        mocks.mock_sync_handlers().await;
+        let mut oracle_mock = None;
+        let mut monitor_mock = None;
 
         let taker = daemon::TakerActorSystem::new(
             db.clone(),
             wallet_addr,
             config.oracle_pk,
             identity_sk,
-            |_| oracle,
             |executor| {
-                let (monitor, monitor_mock) = MonitorActor::new(executor);
-                mocks.set_monitor_mock(monitor_mock);
+                let (oracle, mock) = OracleActor::new(executor);
+                oracle_mock = Some(mock);
+
+                oracle
+            },
+            |executor| {
+                let (monitor, mock) = MonitorActor::new(executor);
+                monitor_mock = Some(mock);
 
                 Ok(monitor)
             },
@@ -299,6 +318,13 @@ impl Taker {
             maker_identity,
         )
         .unwrap();
+
+        let mocks = mocks::Mocks::new(
+            wallet_mock,
+            price_feed_mock,
+            monitor_mock.unwrap(),
+            oracle_mock.unwrap(),
+        );
 
         let (proj_actor, feeds) =
             projection::Actor::new(db, Role::Taker, Network::Testnet, &taker.price_feed_actor);
@@ -329,14 +355,25 @@ impl Taker {
     }
 }
 
-/// Deliver monitor event to both actor systems
+/// Simulate oracle attestation for both actor systems
 #[macro_export]
-macro_rules! deliver_event {
-    ($maker:expr, $taker:expr, $event:expr) => {{
-        tracing::debug!("Delivering event: {:?}", $event);
+macro_rules! simulate_attestation {
+    ($maker:expr, $taker:expr, $order_id:expr, $attestation:expr) => {{
+        tracing::debug!("Simulating attestation: {:?}", $attestation);
 
-        $taker.system.cfd_actor.send($event).await.unwrap();
-        $maker.system.cfd_actor.send($event).await.unwrap();
+        $maker
+            .mocks
+            .oracle()
+            .await
+            .simulate_attestation($order_id, $attestation)
+            .await;
+
+        $taker
+            .mocks
+            .oracle()
+            .await
+            .simulate_attestation($order_id, $attestation)
+            .await;
     }};
 }
 

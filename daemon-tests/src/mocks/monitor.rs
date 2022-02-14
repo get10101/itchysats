@@ -2,7 +2,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use daemon::command;
 use daemon::monitor;
-use daemon::oracle;
 use model::cfd::OrderId;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -40,9 +39,11 @@ impl MonitorActor {
 
     async fn handle(&mut self, _: monitor::CollaborativeSettlement) {}
 
-    async fn handle(&mut self, _: oracle::Attestation) {}
-
     async fn handle(&mut self, _: monitor::TryBroadcastTransaction) -> Result<()> {
+        Ok(())
+    }
+
+    async fn handle(&mut self, _: monitor::MonitorCetFinality) -> Result<()> {
         Ok(())
     }
 }

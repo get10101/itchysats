@@ -1,3 +1,4 @@
+use crate::command;
 use crate::db;
 use crate::try_continue;
 use anyhow::Context;
@@ -17,15 +18,13 @@ use time::Duration;
 use time::OffsetDateTime;
 use time::Time;
 use tokio_tasks::Tasks;
-use xtra::prelude::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
-use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
 pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
     pending_attestations: HashSet<BitMexPriceEventId>,
-    attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
+    executor: command::Executor,
     announcement_lookahead: Duration,
     tasks: Tasks,
     db: sqlx::SqlitePool,
@@ -91,13 +90,13 @@ impl Cfd {
 impl Actor {
     pub fn new(
         db: SqlitePool,
-        attestation_channel: Box<dyn StrongMessageChannel<Attestation>>,
+        executor: command::Executor,
         announcement_lookahead: Duration,
     ) -> Self {
         Self {
             announcements: HashMap::new(),
             pending_attestations: HashSet::new(),
-            attestation_channel,
+            executor,
             announcement_lookahead,
             tasks: Tasks::default(),
             db,
@@ -190,7 +189,7 @@ impl Actor {
                         id: event_id,
                         attestation: Attestation(attestation),
                     })
-                    .await?;
+                    .await??;
 
                     Ok(())
                 },
@@ -245,14 +244,26 @@ impl Actor {
         self.update_pending_attestations(ctx);
     }
 
-    async fn handle_new_attestation_fetched(&mut self, msg: NewAttestationFetched) {
+    async fn handle_new_attestation_fetched(&mut self, msg: NewAttestationFetched) -> Result<()> {
         let NewAttestationFetched { id, attestation } = msg;
 
         tracing::info!("Fetched new attestation for {id}");
 
-        let _: Result<(), xtra::Disconnected> =
-            self.attestation_channel.send_async_safe(attestation).await;
+        let mut conn = self.db.acquire().await?;
+
+        for id in db::load_all_cfd_ids(&mut conn).await? {
+            if let Err(err) = self
+                .executor
+                .execute(id, |cfd| cfd.decrypt_cet(&attestation.0))
+                .await
+            {
+                tracing::warn!(order_id = %id, "Failed to decrypt CET using attestation: {}", err)
+            }
+        }
+
         self.pending_attestations.remove(&id);
+
+        Ok(())
     }
 }
 

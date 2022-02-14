@@ -3,7 +3,6 @@ use daemon::connection::ConnectionStatus;
 use daemon::connection::MAX_RECONNECT_INTERVAL_SECONDS;
 use daemon::projection::CfdOrder;
 use daemon::projection::CfdState;
-use daemon_tests::deliver_event;
 use daemon_tests::dummy_new_order;
 use daemon_tests::dummy_quote;
 use daemon_tests::flow::is_next_none;
@@ -14,6 +13,7 @@ use daemon_tests::flow::one_cfd_with_state;
 use daemon_tests::init_tracing;
 use daemon_tests::maia::OliviaData;
 use daemon_tests::mocks::oracle::dummy_wrong_attestation;
+use daemon_tests::simulate_attestation;
 use daemon_tests::start_both;
 use daemon_tests::wait_next_state;
 use daemon_tests::Maker;
@@ -197,9 +197,6 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
 
-    maker.mocks.mock_oracle_monitor_attestation().await;
-    taker.mocks.mock_oracle_monitor_attestation().await;
-
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
@@ -263,12 +260,14 @@ async fn force_close_an_open_cfd() {
     expire!(cet timelock, order_id, maker, taker);
 
     // Delivering the wrong attestation does not move state to `PendingCet`
-    deliver_event!(maker, taker, dummy_wrong_attestation());
+    simulate_attestation!(taker, maker, order_id, dummy_wrong_attestation());
+
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
     // Delivering correct attestation moves the state `PendingCet`
-    deliver_event!(maker, taker, oracle_data.attestation());
+    simulate_attestation!(taker, maker, order_id, oracle_data.attestation());
+
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::PendingCet);
 
@@ -437,9 +436,6 @@ async fn start_from_open_cfd_state(announcement: olivia::Announcement) -> (Maker
 
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
-
-    maker.mocks.mock_oracle_monitor_attestation().await;
-    taker.mocks.mock_oracle_monitor_attestation().await;
 
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
