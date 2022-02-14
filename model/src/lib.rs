@@ -488,7 +488,9 @@ pub struct WalletInfo {
     pub last_updated_at: Timestamp,
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(
+    Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, sqlx::Type,
+)]
 #[sqlx(transparent)]
 pub struct Timestamp(i64);
 

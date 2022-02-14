@@ -11,6 +11,7 @@ use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
 use bdk::miniscript::DescriptorTrait;
 use core::fmt;
+use itertools::Itertools;
 use maia::TransactionExt;
 use model::calculate_funding_fee;
 use model::cfd::calculate_long_liquidation_price;
@@ -168,6 +169,9 @@ pub struct Cfd {
 
     #[serde(skip)]
     aggregated: Aggregated,
+
+    #[serde(skip)]
+    creation_timestamp: Timestamp,
 }
 
 /// Bundle all state extracted from the events in one struct.
@@ -352,6 +356,7 @@ impl Cfd {
             counterparty: counterparty_network_identity,
             pending_settlement_proposal_price: None,
             aggregated: Aggregated::new(fee_account),
+            creation_timestamp: Timestamp::now(),
         }
     }
 
@@ -361,6 +366,7 @@ impl Cfd {
         match event.event {
             ContractSetupStarted => {
                 self.aggregated.state = CfdState::ContractSetup;
+                self.creation_timestamp = event.timestamp;
             }
             ContractSetupCompleted { dlc } => {
                 self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
@@ -704,6 +710,7 @@ impl Tx {
         let cfds_with_quote = cfds
             .into_iter()
             .map(|(_, cfd)| cfd.with_current_quote(quote))
+            .sorted_by(|a, b| Ord::cmp(&b.creation_timestamp, &a.creation_timestamp))
             .collect();
 
         let _ = self.cfds.send(cfds_with_quote);

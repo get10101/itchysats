@@ -704,6 +704,7 @@ dependencies = [
  "cached",
  "futures",
  "hkdf",
+ "itertools",
  "maia",
  "model",
  "parse-display",
