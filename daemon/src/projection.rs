@@ -194,6 +194,14 @@ struct Aggregated {
 
     commit_published: bool,
     refund_published: bool,
+
+    /// Keep track of persistent state in case a protocol fails and we need to
+    /// return to previous state
+    state: CfdState,
+
+    /// Negotiated states of protocols
+    rollover_state: Option<ProtocolNegotiationState>,
+    settlement_state: Option<ProtocolNegotiationState>,
 }
 
 impl Aggregated {
@@ -207,6 +215,9 @@ impl Aggregated {
             timelocked_cet: None,
             commit_published: false,
             refund_published: false,
+            state: CfdState::PendingSetup,
+            rollover_state: None,
+            settlement_state: None,
         }
     }
 
@@ -224,6 +235,31 @@ impl Aggregated {
 
         Some(extract_payout_amount(tx, script))
     }
+
+    /// Derive Cfd state based on aggregated state from the events and the
+    /// protocol state
+    fn derive_cfd_state(&self, role: Role) -> CfdState {
+        if let Some(rollover_state) = self.rollover_state {
+            return match rollover_state {
+                ProtocolNegotiationState::Started => match role {
+                    Role::Maker => CfdState::IncomingRolloverProposal,
+                    Role::Taker => CfdState::OutgoingRolloverProposal,
+                },
+                ProtocolNegotiationState::Accepted => CfdState::ContractSetup,
+            };
+        };
+
+        if let Some(settlement_state) = self.settlement_state {
+            return match settlement_state {
+                ProtocolNegotiationState::Started => match role {
+                    Role::Maker => CfdState::IncomingSettlementProposal,
+                    Role::Taker => CfdState::OutgoingSettlementProposal,
+                },
+                ProtocolNegotiationState::Accepted => CfdState::PendingClose,
+            };
+        };
+        self.state
+    }
 }
 
 /// Returns output if it can be found or zero amount
@@ -235,6 +271,15 @@ fn extract_payout_amount(tx: Transaction, script: Script) -> Amount {
         .find(|tx_out| tx_out.script_pubkey == script)
         .map(|tx_out| Amount::from_sat(tx_out.value))
         .unwrap_or(Amount::ZERO)
+}
+
+/// Capture state of protocol negotiation for the UI purposes.
+#[derive(Clone, Copy, Debug)]
+enum ProtocolNegotiationState {
+    /// Protocol has been kicked off, likely by user action
+    Started,
+    /// Other party has agreed to proceed with the protocol
+    Accepted,
 }
 
 impl Cfd {
@@ -315,100 +360,96 @@ impl Cfd {
         use CfdEvent::*;
         match event.event {
             ContractSetupStarted => {
-                self.state = CfdState::ContractSetup;
+                self.aggregated.state = CfdState::ContractSetup;
             }
             ContractSetupCompleted { dlc } => {
                 self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
                 self.aggregated.latest_dlc = Some(dlc);
 
-                self.state = CfdState::PendingOpen;
+                self.aggregated.state = CfdState::PendingOpen;
             }
             ContractSetupFailed => {
-                self.state = CfdState::SetupFailed;
+                self.aggregated.state = CfdState::SetupFailed;
             }
             OfferRejected => {
-                self.state = CfdState::Rejected;
+                self.aggregated.state = CfdState::Rejected;
             }
             RolloverCompleted { dlc, funding_fee } => {
+                self.aggregated.rollover_state = None;
                 self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
                 self.aggregated.latest_dlc = Some(dlc);
                 self.aggregated.fee_account =
                     self.aggregated.fee_account.add_funding_fee(funding_fee);
                 self.accumulated_fees = self.aggregated.fee_account.balance();
 
-                self.state = CfdState::Open;
+                self.aggregated.state = CfdState::Open;
             }
             RolloverRejected => {
-                self.state = CfdState::Open;
+                self.aggregated.rollover_state = None;
             }
             RolloverFailed => {
-                self.state = CfdState::Open;
+                self.aggregated.rollover_state = None;
             }
-            CollaborativeSettlementStarted { proposal } => match self.role {
-                Role::Maker => {
+            CollaborativeSettlementStarted { proposal } => {
+                self.aggregated.settlement_state = Some(ProtocolNegotiationState::Started);
+                if let Role::Maker = self.role {
                     self.pending_settlement_proposal_price = Some(proposal.price);
-
-                    self.state = CfdState::IncomingSettlementProposal;
-                }
-                Role::Taker => {
-                    self.state = CfdState::OutgoingSettlementProposal;
-                }
-            },
+                };
+            }
             CollaborativeSettlementProposalAccepted => {
+                self.aggregated.settlement_state = Some(ProtocolNegotiationState::Accepted);
                 self.pending_settlement_proposal_price = None;
-
-                self.state = CfdState::PendingClose;
             }
             CollaborativeSettlementCompleted {
                 spend_tx,
                 script,
                 price,
             } => {
+                self.aggregated.settlement_state = None;
                 self.aggregated.collab_settlement_tx = Some((spend_tx, script));
                 self.closing_price = Some(price);
 
-                self.state = CfdState::PendingClose;
+                self.aggregated.state = CfdState::PendingClose;
             }
             CollaborativeSettlementRejected => {
+                self.aggregated.settlement_state = None;
                 self.pending_settlement_proposal_price = None;
-
-                self.state = CfdState::Open;
             }
             CollaborativeSettlementFailed => {
+                self.aggregated.settlement_state = None;
                 self.pending_settlement_proposal_price = None;
-                self.state = CfdState::Open;
             }
             LockConfirmed => {
-                self.state = CfdState::Open;
+                self.aggregated.state = CfdState::Open;
             }
             CommitConfirmed => {
                 // Commit can be published by either party, meaning it being confirmed might be the
                 // first time we hear about it!
                 self.aggregated.commit_published = true;
 
-                self.state = CfdState::OpenCommitted;
+                self.aggregated.state = CfdState::OpenCommitted;
             }
             CetConfirmed => {
-                self.state = CfdState::Closed;
+                self.aggregated.state = CfdState::Closed;
             }
             RefundConfirmed => {
-                self.state = CfdState::Refunded;
+                self.aggregated.state = CfdState::Refunded;
             }
             LockConfirmedAfterFinality | CollaborativeSettlementConfirmed => {
-                self.state = CfdState::Closed;
+                self.aggregated.state = CfdState::Closed;
             }
             CetTimelockExpiredPriorOracleAttestation => {
-                self.state = CfdState::OpenCommitted;
+                self.aggregated.state = CfdState::OpenCommitted;
             }
             CetTimelockExpiredPostOracleAttestation { cet } => {
                 self.aggregated.cet = Some(cet);
 
-                self.state = CfdState::PendingCet;
+                self.aggregated.state = CfdState::PendingCet;
             }
             RefundTimelockExpired { .. } => {
                 self.aggregated.refund_published = true;
 
-                self.state = CfdState::PendingRefund;
+                self.aggregated.state = CfdState::PendingRefund;
             }
             OracleAttestedPriorCetTimelock {
                 timelocked_cet,
@@ -418,36 +459,32 @@ impl Cfd {
                 self.aggregated.timelocked_cet = Some(timelocked_cet);
                 self.closing_price = Some(price);
 
-                self.state = CfdState::PendingCommit;
+                self.aggregated.state = CfdState::PendingCommit;
             }
             OracleAttestedPostCetTimelock { cet, price, .. } => {
                 self.aggregated.cet = Some(cet);
                 self.closing_price = Some(price);
 
-                self.state = CfdState::PendingCet;
+                self.aggregated.state = CfdState::PendingCet;
             }
             ManualCommit { .. } => {
                 self.aggregated.commit_published = true;
 
-                self.state = CfdState::PendingCommit;
+                self.aggregated.state = CfdState::PendingCommit;
             }
             RevokeConfirmed => {
                 tracing::error!(order_id = %self.order_id, "Revoked logic not implemented");
-                self.state = CfdState::OpenCommitted;
+                self.aggregated.state = CfdState::OpenCommitted;
             }
-            RolloverStarted { .. } => match self.role {
-                Role::Maker => {
-                    self.state = CfdState::IncomingRolloverProposal;
-                }
-                Role::Taker => {
-                    self.state = CfdState::OutgoingRolloverProposal;
-                }
-            },
+            RolloverStarted { .. } => {
+                self.aggregated.rollover_state = Some(ProtocolNegotiationState::Started);
+            }
             RolloverAccepted => {
-                self.state = CfdState::ContractSetup;
+                self.aggregated.rollover_state = Some(ProtocolNegotiationState::Accepted);
             }
         };
 
+        self.state = self.aggregated.derive_cfd_state(self.role);
         self.actions = self.derive_actions();
 
         if let Some(lock_tx_url) = self.lock_tx_url(network) {

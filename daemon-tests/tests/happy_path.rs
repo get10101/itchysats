@@ -325,6 +325,37 @@ async fn maker_rejects_rollover_of_open_cfd() {
 }
 
 #[tokio::test]
+async fn maker_rejects_rollover_after_commit_finality() {
+    let _guard = init_tracing();
+    let oracle_data = OliviaData::example_0();
+    let (mut maker, mut taker, order_id) =
+        start_from_open_cfd_state(oracle_data.announcement()).await;
+
+    taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
+    maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
+    next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
+
+    taker.trigger_rollover(order_id).await;
+
+    wait_next_state!(
+        order_id,
+        maker,
+        taker,
+        CfdState::IncomingRolloverProposal,
+        CfdState::OutgoingRolloverProposal
+    );
+
+    confirm!(commit transaction, order_id, maker, taker);
+    // Cfd would be in "OpenCommitted" if it wasn't for the rollover
+
+    maker.system.reject_rollover(order_id).await.unwrap();
+
+    // After rejecting rollover, we should display where we were before the
+    // rollover attempt
+    wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
+}
+
+#[tokio::test]
 async fn open_cfd_is_refunded() {
     let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
