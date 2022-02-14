@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.3] - 2022-02-14
 
+## [0.4.3] - 2022-02-14
+
 - Fix a potential deadlock in taker after losing connection to a maker by introducing timeouts for reading and writing to TCP socket.
 
 ## [0.4.2] - 2022-02-08
@@ -70,7 +72,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.2...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.3...HEAD
+[0.4.3]: https://github.com/itchysats/itchysats/compare/0.4.3...0.4.3
 [0.4.2]: https://github.com/itchysats/itchysats/compare/0.4.1...0.4.2
 [0.4.1]: https://github.com/itchysats/itchysats/compare/0.4.0...0.4.1
 [0.4.0]: https://github.com/itchysats/itchysats/compare/0.3.6...0.4.0
