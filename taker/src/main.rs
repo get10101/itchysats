@@ -3,15 +3,11 @@ use anyhow::Result;
 use clap::Parser;
 use clap::Subcommand;
 use daemon::bdk::bitcoin;
-use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Address;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
-use daemon::bitmex_price_feed;
 use daemon::connection::connect;
 use daemon::db;
-use daemon::model::cfd::Role;
-use daemon::model::Identity;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
@@ -22,13 +18,15 @@ use daemon::wallet;
 use daemon::TakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
-use daemon::SETTLEMENT_INTERVAL;
+use model::cfd::Role;
+use model::olivia;
+use model::Identity;
+use model::SETTLEMENT_INTERVAL;
 use rocket::fairing::AdHoc;
 use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::Actor;
@@ -238,11 +236,6 @@ async fn main() -> Result<()> {
     let auth_username = rocket_basicauth::Username("itchysats");
     tracing::info!("Authentication details: username='{auth_username}' password='{web_password}'");
 
-    // TODO: Actually fetch it from Olivia
-    let oracle = schnorrsig::PublicKey::from_str(
-        "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
-    )?;
-
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()))
@@ -257,16 +250,16 @@ async fn main() -> Result<()> {
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
-        oracle,
+        *olivia::PUBLIC_KEY,
         identity_sk,
-        |channel| oracle::Actor::new(db.clone(), channel, SETTLEMENT_INTERVAL),
+        |executor| oracle::Actor::new(db.clone(), executor, SETTLEMENT_INTERVAL),
         {
-            |channel| {
+            |executor| {
                 let electrum = opts.network.electrum().to_string();
-                monitor::Actor::new(db.clone(), electrum, channel)
+                monitor::Actor::new(db.clone(), electrum, executor)
             }
         },
-        bitmex_price_feed::Actor::new,
+        xtra_bitmex_price_feed::Actor::default,
         N_PAYOUTS,
         HEARTBEAT_INTERVAL,
         Duration::from_secs(10),

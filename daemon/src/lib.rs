@@ -1,15 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use crate::bitcoin::Txid;
-use crate::bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
-use crate::model::cfd::Order;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::Role;
-use crate::model::Identity;
-use crate::model::OpeningFee;
-use crate::model::Price;
-use crate::model::Usd;
-use crate::oracle::Attestation;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -17,28 +8,32 @@ use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use connection::ConnectionStatus;
 use maia::secp256k1_zkp::schnorrsig;
+use model::cfd::Order;
+use model::cfd::OrderId;
+use model::cfd::Role;
+use model::olivia;
 use model::FundingRate;
+use model::Identity;
+use model::OpeningFee;
+use model::Price;
 use model::TxFeeRate;
+use model::Usd;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::time::Duration;
 use time::ext::NumericalDuration;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
-use xtra::message_channel::StrongMessageChannel;
 use xtra::Actor;
 use xtra::Address;
+use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use xtras::address_map::Stopping;
 use xtras::supervisor;
 
 pub use bdk;
 pub use maia;
 
-pub mod sqlx_ext; // Must come first because it is a macro.
-
 pub mod auto_rollover;
-pub mod bdk_ext;
-pub mod bitmex_price_feed;
 pub mod cfd_actors;
 pub mod collab_settlement_maker;
 pub mod collab_settlement_taker;
@@ -47,15 +42,11 @@ pub mod connection;
 pub mod db;
 pub mod fan_out;
 mod future_ext;
-pub mod keypair;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
-pub mod model;
 pub mod monitor;
 mod noise;
-pub mod olivia;
 pub mod oracle;
-pub mod payout_curve;
 pub mod process_manager;
 pub mod projection;
 pub mod rollover_maker;
@@ -77,18 +68,6 @@ pub const HEARTBEAT_INTERVAL: std::time::Duration = Duration::from_secs(5);
 
 pub const N_PAYOUTS: usize = 200;
 
-/// The interval until the cfd gets settled, i.e. the attestation happens
-///
-/// This variable defines at what point in time the oracle event id will be chose to settle the cfd.
-/// Hence, this constant defines how long a cfd is open (until it gets either settled or rolled
-/// over).
-///
-/// Multiple code parts align on this constant:
-/// - How the oracle event id is chosen when creating an order (maker)
-/// - The sliding window of cached oracle announcements (maker, taker)
-/// - The auto-rollover time-window (taker)
-pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
-
 pub struct MakerActorSystem<O, W> {
     pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
     wallet_actor: Address<W>,
@@ -101,18 +80,20 @@ impl<O, W> MakerActorSystem<O, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
-        + xtra::Handler<oracle::Sync>,
+        + xtra::Handler<oracle::Sync>
+        + xtra::Actor<Stop = ()>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::Withdraw>,
+        + xtra::Handler<wallet::Withdraw>
+        + xtra::Actor<Stop = ()>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
         db: SqlitePool,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
-        monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> Result<M>,
+        oracle_constructor: impl FnOnce(command::Executor) -> O,
+        monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         settlement_interval: time::Duration,
         n_payouts: usize,
         projection_actor: Address<projection::Actor>,
@@ -125,7 +106,8 @@ where
             + xtra::Handler<monitor::Sync>
             + xtra::Handler<monitor::CollaborativeSettlement>
             + xtra::Handler<monitor::TryBroadcastTransaction>
-            + xtra::Handler<oracle::Attestation>,
+            + xtra::Handler<monitor::MonitorCetFinality>
+            + xtra::Actor<Stop = ()>,
     {
         let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
         let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
@@ -140,6 +122,7 @@ where
             db.clone(),
             Role::Maker,
             &projection_actor,
+            &monitor_addr,
             &monitor_addr,
             &monitor_addr,
             &monitor_addr,
@@ -171,15 +154,9 @@ where
             p2p_socket,
         )));
 
-        tasks.add(monitor_ctx.run(monitor_constructor(Box::new(cfd_actor_addr.clone()))?));
+        tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
 
-        let (fan_out_actor, fan_out_actor_fut) =
-            fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
-                .create(None)
-                .run();
-        tasks.add(fan_out_actor_fut);
-
-        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
+        tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
         tracing::debug!("Maker actor system ready");
 
@@ -289,7 +266,7 @@ pub struct TakerActorSystem<O, W, P> {
     executor: command::Executor,
     /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
     /// address.
-    _price_feed_supervisor: Address<supervisor::Actor<P, bitmex_price_feed::Error>>,
+    _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
@@ -300,11 +277,14 @@ impl<O, W, P> TakerActorSystem<O, W, P>
 where
     O: xtra::Handler<oracle::MonitorAttestation>
         + xtra::Handler<oracle::GetAnnouncement>
-        + xtra::Handler<oracle::Sync>,
+        + xtra::Handler<oracle::Sync>
+        + xtra::Actor<Stop = ()>,
     W: xtra::Handler<wallet::BuildPartyParams>
         + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::Withdraw>,
-    P: xtra::Handler<bitmex_price_feed::LatestQuote>,
+        + xtra::Handler<wallet::Withdraw>
+        + xtra::Actor<Stop = ()>,
+    P: xtra::Handler<xtra_bitmex_price_feed::LatestQuote>
+        + xtra::Actor<Stop = xtra_bitmex_price_feed::Error>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
@@ -312,11 +292,9 @@ where
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         identity_sk: x25519_dalek::StaticSecret,
-        oracle_constructor: impl FnOnce(Box<dyn StrongMessageChannel<Attestation>>) -> O,
-        monitor_constructor: impl FnOnce(Box<dyn StrongMessageChannel<monitor::Event>>) -> Result<M>,
-        price_feed_constructor: impl (Fn(Address<supervisor::Actor<P, bitmex_price_feed::Error>>) -> P)
-            + Send
-            + 'static,
+        oracle_constructor: impl FnOnce(command::Executor) -> O,
+        monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
+        price_feed_constructor: impl (Fn() -> P) + Send + 'static,
         n_payouts: usize,
         maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
@@ -327,8 +305,9 @@ where
         M: xtra::Handler<monitor::StartMonitoring>
             + xtra::Handler<monitor::Sync>
             + xtra::Handler<monitor::CollaborativeSettlement>
-            + xtra::Handler<oracle::Attestation>
-            + xtra::Handler<monitor::TryBroadcastTransaction>,
+            + xtra::Handler<monitor::MonitorCetFinality>
+            + xtra::Handler<monitor::TryBroadcastTransaction>
+            + xtra::Actor<Stop = ()>,
     {
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
             watch::channel(ConnectionStatus::Offline { reason: None });
@@ -345,6 +324,7 @@ where
             db.clone(),
             Role::Taker,
             &projection_actor,
+            &monitor_addr,
             &monitor_addr,
             &monitor_addr,
             &monitor_addr,
@@ -393,18 +373,11 @@ where
             connect_timeout,
         )));
 
-        tasks.add(monitor_ctx.run(monitor_constructor(Box::new(cfd_actor_addr.clone()))?));
+        tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
 
-        let (fan_out_actor, fan_out_actor_fut) =
-            fan_out::Actor::new(&[&cfd_actor_addr, &monitor_addr])
-                .create(None)
-                .run();
+        tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
-        tasks.add(fan_out_actor_fut);
-
-        tasks.add(oracle_ctx.run(oracle_constructor(Box::new(fan_out_actor))));
-
-        let (supervisor, price_feed_actor) = supervisor::Actor::new(
+        let (supervisor, price_feed_actor) = supervisor::Actor::with_policy(
             price_feed_constructor,
             |_| true, // always restart price feed actor
         );
@@ -445,7 +418,7 @@ where
     pub async fn propose_settlement(&self, order_id: OrderId) -> Result<()> {
         let latest_quote = self
             .price_feed_actor
-            .send(bitmex_price_feed::LatestQuote)
+            .send(xtra_bitmex_price_feed::LatestQuote)
             .await
             .context("Price feed not available")?
             .context("No quote available")?;
@@ -460,7 +433,7 @@ where
         self.cfd_actor
             .send(taker_cfd::ProposeSettlement {
                 order_id,
-                current_price: latest_quote.for_taker(),
+                current_price: Price::new(latest_quote.for_taker())?,
             })
             .await?
     }

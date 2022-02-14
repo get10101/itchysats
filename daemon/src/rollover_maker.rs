@@ -2,15 +2,6 @@ use crate::command;
 use crate::maker_inc_connections;
 use crate::maker_inc_connections::RegisterRollover;
 use crate::maker_inc_connections::TakerMessage;
-use crate::model::cfd::Completed;
-use crate::model::cfd::Dlc;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::Role;
-use crate::model::cfd::RolloverCompleted;
-use crate::model::FundingFee;
-use crate::model::FundingRate;
-use crate::model::Identity;
-use crate::model::TxFeeRate;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
 use crate::process_manager;
@@ -20,13 +11,22 @@ use crate::wire;
 use crate::wire::MakerToTaker;
 use crate::wire::RolloverMsg;
 use crate::Stopping;
-use crate::Tasks;
 use anyhow::Context as _;
 use anyhow::Result;
 use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
+use model::cfd::Completed;
+use model::cfd::Dlc;
+use model::cfd::OrderId;
+use model::cfd::Role;
+use model::cfd::RolloverCompleted;
+use model::FundingFee;
+use model::FundingRate;
+use model::Identity;
+use model::TxFeeRate;
+use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra::Context;
 use xtra::KeepRunning;
@@ -230,6 +230,7 @@ impl Actor {
 
 #[async_trait::async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let order_id = self.order_id;
 
@@ -278,6 +279,8 @@ impl xtra::Actor for Actor {
 
         KeepRunning::StopAll
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 #[xtra_productivity]

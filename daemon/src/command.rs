@@ -1,12 +1,13 @@
 use crate::cfd_actors::load_cfd;
-use crate::model::cfd::Cfd;
-use crate::model::cfd::Event;
 use crate::process_manager;
 use crate::OrderId;
 use anyhow::Context;
 use anyhow::Result;
+use model::cfd::Cfd;
+use model::cfd::Event;
 use xtra::Address;
 
+#[derive(Clone)]
 pub struct Executor {
     db: sqlx::SqlitePool,
     process_manager: Address<process_manager::Actor>,

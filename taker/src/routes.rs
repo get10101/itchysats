@@ -1,14 +1,7 @@
 use daemon::bdk;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
-use daemon::bitmex_price_feed;
 use daemon::connection::ConnectionStatus;
-use daemon::model::cfd::OrderId;
-use daemon::model::Leverage;
-use daemon::model::Price;
-use daemon::model::Timestamp;
-use daemon::model::Usd;
-use daemon::model::WalletInfo;
 use daemon::oracle;
 use daemon::projection;
 use daemon::projection::CfdAction;
@@ -17,6 +10,12 @@ use daemon::wallet;
 use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
+use model::cfd::OrderId;
+use model::Leverage;
+use model::Price;
+use model::Timestamp;
+use model::Usd;
+use model::WalletInfo;
 use rocket::http::ContentType;
 use rocket::http::Status;
 use rocket::response::stream::Event;
@@ -36,7 +35,7 @@ use tokio::select;
 use tokio::sync::watch;
 use uuid::Uuid;
 
-type Taker = TakerActorSystem<oracle::Actor, wallet::Actor, bitmex_price_feed::Actor>;
+type Taker = TakerActorSystem<oracle::Actor, wallet::Actor, xtra_bitmex_price_feed::Actor>;
 
 const HEARTBEAT_INTERVAL_SECS: u64 = 5;
 

@@ -1,18 +1,4 @@
 use crate::future_ext::FutureExt;
-use crate::model::cfd::Cet;
-use crate::model::cfd::Dlc;
-use crate::model::cfd::RevokedCommit;
-use crate::model::cfd::Role;
-use crate::model::cfd::CET_TIMELOCK;
-use crate::model::FeeAccount;
-use crate::model::FundingFee;
-use crate::model::Identity;
-use crate::model::Leverage;
-use crate::model::Price;
-use crate::model::TxFeeRate;
-use crate::model::Usd;
-use crate::oracle;
-use crate::payout_curve;
 use crate::transaction_ext::TransactionExt;
 use crate::wallet;
 use crate::wire::Msg0;
@@ -36,6 +22,7 @@ use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Transaction;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
+use bdk_ext::keypair;
 use futures::stream::FusedStream;
 use futures::Sink;
 use futures::SinkExt;
@@ -52,6 +39,15 @@ use maia::spending_tx_sighash;
 use maia::Announcement;
 use maia::PartyParams;
 use maia::PunishParams;
+use model::cfd::Cet;
+use model::cfd::Dlc;
+use model::cfd::RevokedCommit;
+use model::cfd::Role;
+use model::cfd::RolloverParams;
+use model::cfd::SetupParams;
+use model::cfd::CET_TIMELOCK;
+use model::olivia;
+use model::payout_curve;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::ops::RangeInclusive;
@@ -59,51 +55,7 @@ use std::time::Duration;
 use xtra::prelude::MessageChannel;
 
 /// How long protocol waits for the next message before giving up
-// TODO: Analyse why event sourcing refactor made us change the timeout from 60 to 70 secs.
 const MSG_TIMEOUT: Duration = Duration::from_secs(70);
-
-pub struct SetupParams {
-    margin: Amount,
-    counterparty_margin: Amount,
-    counterparty_identity: Identity,
-    price: Price,
-    quantity: Usd,
-    leverage: Leverage,
-    refund_timelock: u32,
-    tx_fee_rate: TxFeeRate,
-    fee_account: FeeAccount,
-}
-
-impl SetupParams {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        margin: Amount,
-        counterparty_margin: Amount,
-        counterparty_identity: Identity,
-        price: Price,
-        quantity: Usd,
-        leverage: Leverage,
-        refund_timelock: u32,
-        tx_fee_rate: TxFeeRate,
-        fee_account: FeeAccount,
-    ) -> Result<Self> {
-        Ok(Self {
-            margin,
-            counterparty_margin,
-            counterparty_identity,
-            price,
-            quantity,
-            leverage,
-            refund_timelock,
-            tx_fee_rate,
-            fee_account,
-        })
-    }
-
-    pub fn counterparty_identity(&self) -> Identity {
-        self.counterparty_identity
-    }
-}
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
@@ -111,16 +63,16 @@ impl SetupParams {
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
-    (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
+    (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     setup_params: SetupParams,
     build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
     role: Role,
     n_payouts: usize,
 ) -> Result<Dlc> {
-    let (sk, pk) = crate::keypair::new(&mut rand::thread_rng());
-    let (rev_sk, rev_pk) = crate::keypair::new(&mut rand::thread_rng());
-    let (publish_sk, publish_pk) = crate::keypair::new(&mut rand::thread_rng());
+    let (sk, pk) = keypair::new(&mut rand::thread_rng());
+    let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
+    let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
 
     let own_params = build_party_params_channel
         .send(wallet::BuildPartyParams {
@@ -385,47 +337,10 @@ pub async fn new(
     })
 }
 
-#[derive(Debug, Clone)]
-pub struct RolloverParams {
-    price: Price,
-    quantity: Usd,
-    leverage: Leverage,
-    refund_timelock: u32,
-    fee_rate: TxFeeRate,
-    fee_account: FeeAccount,
-    current_fee: FundingFee,
-}
-
-impl RolloverParams {
-    pub fn new(
-        price: Price,
-        quantity: Usd,
-        leverage: Leverage,
-        refund_timelock: u32,
-        fee_rate: TxFeeRate,
-        fee_account: FeeAccount,
-        current_fee: FundingFee,
-    ) -> Self {
-        Self {
-            price,
-            quantity,
-            leverage,
-            refund_timelock,
-            fee_rate,
-            fee_account,
-            current_fee,
-        }
-    }
-
-    pub fn funding_fee(&self) -> &FundingFee {
-        &self.current_fee
-    }
-}
-
 pub async fn roll_over(
     mut sink: impl Sink<RolloverMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = RolloverMsg> + Unpin,
-    (oracle_pk, announcement): (schnorrsig::PublicKey, oracle::Announcement),
+    (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     rollover_params: RolloverParams,
     our_role: Role,
     dlc: Dlc,
@@ -434,8 +349,8 @@ pub async fn roll_over(
     let sk = dlc.identity;
     let pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk));
 
-    let (rev_sk, rev_pk) = crate::keypair::new(&mut rand::thread_rng());
-    let (publish_sk, publish_pk) = crate::keypair::new(&mut rand::thread_rng());
+    let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
+    let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
 
     let own_punish = PunishParams {
         revocation_pk: rev_pk,

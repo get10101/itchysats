@@ -1,14 +1,6 @@
 use anyhow::Result;
 use daemon::bdk;
 use daemon::bdk::bitcoin::Network;
-use daemon::model::cfd::OrderId;
-use daemon::model::FundingRate;
-use daemon::model::Identity;
-use daemon::model::OpeningFee;
-use daemon::model::Price;
-use daemon::model::TxFeeRate;
-use daemon::model::Usd;
-use daemon::model::WalletInfo;
 use daemon::oracle;
 use daemon::projection::Cfd;
 use daemon::projection::CfdAction;
@@ -17,6 +9,14 @@ use daemon::wallet;
 use daemon::MakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
+use model::cfd::OrderId;
+use model::FundingRate;
+use model::Identity;
+use model::OpeningFee;
+use model::Price;
+use model::TxFeeRate;
+use model::Usd;
+use model::WalletInfo;
 use rocket::http::ContentType;
 use rocket::http::Status;
 use rocket::response::stream::EventStream;
@@ -97,8 +97,6 @@ pub async fn maker_feed(
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfdNewOrderRequest {
     pub price: Price,
-    // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
-    // always 1 USD
     pub min_quantity: Usd,
     pub max_quantity: Usd,
     pub tx_fee_rate: Option<TxFeeRate>,

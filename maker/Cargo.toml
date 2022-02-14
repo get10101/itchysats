@@ -11,6 +11,7 @@ clap = { version = "3", features = ["derive"] }
 daemon = { path = "../daemon" }
 hex = "0.4"
 http-api-problem = { version = "0.51.0", features = ["rocket"] }
+model = { path = "../model" }
 rocket = { version = "0.5.0-rc.1", features = ["json", "uuid"] }
 rocket-basicauth = { path = "../rocket-basicauth" }
 rust-embed = "6.3"
@@ -22,6 +23,7 @@ tokio-tasks = { path = "../tokio-tasks" }
 tracing = { version = "0.1" }
 uuid = "0.8"
 xtra = { version = "0.6" }
+xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtras = { path = "../xtras" }
 
 [build-dependencies]

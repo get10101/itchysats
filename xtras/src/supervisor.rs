@@ -14,7 +14,7 @@ use xtra_productivity::xtra_productivity;
 /// a given policy.
 pub struct Actor<T, R> {
     context: Context<T>,
-    ctor: Box<dyn Fn(Address<Self>) -> T + Send + 'static>,
+    ctor: Box<dyn Fn() -> T + Send + 'static>,
     tasks: Tasks,
     restart_policy: Box<dyn FnMut(R) -> bool + Send + 'static>,
     metrics: Metrics,
@@ -28,18 +28,58 @@ struct Metrics {
     pub num_panics: u64,
 }
 
-impl<T, R> Actor<T, R>
+struct UnitReason {}
+
+impl fmt::Display for UnitReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "()")
+    }
+}
+
+impl From<()> for UnitReason {
+    fn from(_: ()) -> Self {
+        UnitReason {}
+    }
+}
+
+impl<T> Actor<T, UnitReason>
 where
-    T: xtra::Actor,
-    R: fmt::Display + fmt::Debug + 'static,
+    T: xtra::Actor<Stop = ()>,
+{
+    /// Construct a new supervisor for an [`Actor`] with an [`xtra::Actor::Stop`] value of `()`.
+    ///
+    /// The actor will always be restarted if it stops. If you don't want this behaviour, don't use
+    /// a supervisor. If you want more fine-granular control in which circumstances the actor
+    /// should be restarted, set [`xtra::Actor::Stop`] to a more descriptive value and use
+    /// [`Actor::with_policy`].
+    pub fn new(ctor: impl (Fn() -> T) + Send + 'static) -> (Self, Address<T>) {
+        let (address, context) = Context::new(None);
+
+        let supervisor = Self {
+            context,
+            ctor: Box::new(ctor),
+            tasks: Tasks::default(),
+            restart_policy: Box::new(|UnitReason {}| true),
+            metrics: Metrics::default(),
+        };
+
+        (supervisor, address)
+    }
+}
+
+impl<T, R, S> Actor<T, R>
+where
+    T: xtra::Actor<Stop = S>,
+    R: fmt::Display + Send + 'static,
+    S: Into<R> + Send + 'static,
 {
     /// Construct a new supervisor.
     ///
     /// The supervisor needs to know two things:
     /// 1. How to construct an instance of the actor.
     /// 2. When to construct an instance of the actor.
-    pub fn new(
-        ctor: impl (Fn(Address<Self>) -> T) + Send + 'static,
+    pub fn with_policy(
+        ctor: impl (Fn() -> T) + Send + 'static,
         restart_policy: impl (FnMut(R) -> bool) + Send + 'static,
     ) -> (Self, Address<T>) {
         let (address, context) = Context::new(None);
@@ -60,7 +100,7 @@ where
         tracing::info!(actor = %&actor_name, "Spawning new actor instance");
 
         let this = ctx.address().expect("we are alive");
-        let actor = (self.ctor)(this.clone());
+        let actor = (self.ctor)();
 
         self.metrics.num_spawns += 1;
         self.tasks.add({
@@ -68,8 +108,12 @@ where
 
             async move {
                 match AssertUnwindSafe(task).catch_unwind().await {
-                    Ok(()) => {
-                        tracing::warn!(actor = %&actor_name, "Actor stopped without sending a `Stopped` message");
+                    Ok(reason) => {
+                        let _ = this
+                            .send(Stopped {
+                                reason: reason.into(),
+                            })
+                            .await;
                     }
                     Err(error) => {
                         let _ = this.send(Panicked { error }).await;
@@ -81,21 +125,27 @@ where
 }
 
 #[async_trait]
-impl<T, R> xtra::Actor for Actor<T, R>
+impl<T, R, S> xtra::Actor for Actor<T, R>
 where
-    T: xtra::Actor,
-    R: fmt::Display + fmt::Debug + 'static,
+    T: xtra::Actor<Stop = S>,
+    R: fmt::Display + Send + 'static,
+    S: Into<R> + Send + 'static,
 {
+    type Stop = ();
+
     async fn started(&mut self, ctx: &mut Context<Self>) {
         self.spawn_new(ctx);
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 #[xtra_productivity(message_impl = false)]
-impl<T, R> Actor<T, R>
+impl<T, R, S> Actor<T, R>
 where
-    T: xtra::Actor,
-    R: fmt::Display + fmt::Debug + 'static,
+    T: xtra::Actor<Stop = S>,
+    R: fmt::Display + Send + 'static,
+    S: Into<R> + Send + 'static,
 {
     pub fn handle(&mut self, msg: Stopped<R>, ctx: &mut Context<Self>) {
         let actor = T::name();
@@ -111,10 +161,11 @@ where
 }
 
 #[xtra_productivity]
-impl<T, R> Actor<T, R>
+impl<T, R, S> Actor<T, R>
 where
-    T: xtra::Actor,
-    R: fmt::Display + fmt::Debug + 'static,
+    T: xtra::Actor<Stop = S>,
+    R: fmt::Display + Send + 'static,
+    S: Into<R>,
 {
     pub fn handle(&mut self, _: GetMetrics) -> Metrics {
         self.metrics
@@ -122,10 +173,11 @@ where
 }
 
 #[async_trait]
-impl<T, R> xtra::Handler<Panicked> for Actor<T, R>
+impl<T, R, S> xtra::Handler<Panicked> for Actor<T, R>
 where
-    T: xtra::Actor,
-    R: fmt::Display + fmt::Debug + 'static,
+    T: xtra::Actor<Stop = S>,
+    R: fmt::Display + Send + 'static,
+    S: Into<R> + Send + 'static,
 {
     async fn handle(&mut self, msg: Panicked, ctx: &mut Context<Self>) {
         let actor = T::name();
@@ -141,16 +193,16 @@ where
     }
 }
 
-/// Tell the supervisor that the actor was stopped.
+/// Module private message to notify ourselves that an actor stopped.
 ///
 /// The given `reason` will be passed to the `restart_policy` configured in the supervisor. If it
 /// yields `true`, a new instance of the actor will be spawned.
 #[derive(Debug)]
-pub struct Stopped<R> {
+struct Stopped<R> {
     pub reason: R,
 }
 
-impl<R: fmt::Debug + Send + 'static> Message for Stopped<R> {
+impl<R: Send + 'static> Message for Stopped<R> {
     type Result = ();
 }
 
@@ -182,8 +234,7 @@ mod tests {
     async fn supervisor_tracks_spawn_metrics() {
         let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
-        let (supervisor, address) =
-            Actor::new(|supervisor| RemoteShutdown { supervisor }, |_| true);
+        let (supervisor, address) = Actor::with_policy(|| RemoteShutdown, |_: String| true);
         let (supervisor, task) = supervisor.create(None).run();
 
         #[allow(clippy::disallowed_method)]
@@ -208,8 +259,7 @@ mod tests {
     async fn restarted_actor_is_usable() {
         let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
-        let (supervisor, address) =
-            Actor::new(|supervisor| RemoteShutdown { supervisor }, |_| true);
+        let (supervisor, address) = Actor::with_policy(|| RemoteShutdown, |_: String| true);
         let (_supervisor, task) = supervisor.create(None).run();
 
         #[allow(clippy::disallowed_method)]
@@ -228,12 +278,7 @@ mod tests {
 
         std::panic::set_hook(Box::new(|_| ())); // Override hook to avoid panic printing to log.
 
-        let (supervisor, address) = Actor::new(
-            |supervisor| PanickingActor {
-                _supervisor: supervisor,
-            },
-            |_| true,
-        );
+        let (supervisor, address) = Actor::with_policy(|| PanickingActor, |_: String| true);
         let (supervisor, task) = supervisor.create(None).run();
 
         #[allow(clippy::disallowed_method)]
@@ -246,10 +291,19 @@ mod tests {
         assert_eq!(metrics.num_panics, 1, "after panic, should have 1 panic");
     }
 
-    /// An actor that can be shutdown remotely.
-    struct RemoteShutdown {
-        supervisor: Address<Actor<Self, String>>,
+    #[tokio::test]
+    async fn supervisor_can_supervise_unit_actor() {
+        let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
+
+        let (supervisor, _address) = Actor::new(|| UnitActor);
+        let (_supervisor, task) = supervisor.create(None).run();
+
+        #[allow(clippy::disallowed_method)]
+        tokio::spawn(task);
     }
+
+    /// An actor that can be shutdown remotely.
+    struct RemoteShutdown;
 
     #[derive(Debug)]
     struct Shutdown;
@@ -258,17 +312,10 @@ mod tests {
 
     #[async_trait]
     impl xtra::Actor for RemoteShutdown {
-        async fn stopping(&mut self, _ctx: &mut Context<Self>) -> xtra::KeepRunning {
-            xtra::KeepRunning::StopSelf
-        }
+        type Stop = String;
 
-        async fn stopped(self) {
-            self.supervisor
-                .send(Stopped {
-                    reason: String::new(),
-                })
-                .await
-                .unwrap();
+        async fn stopped(self) -> Self::Stop {
+            String::new()
         }
     }
 
@@ -283,19 +330,33 @@ mod tests {
         }
     }
 
-    struct PanickingActor {
-        _supervisor: Address<Actor<Self, String>>,
-    }
+    struct PanickingActor;
 
     #[derive(Debug)]
     struct Panic;
 
-    impl xtra::Actor for PanickingActor {}
+    #[async_trait]
+    impl xtra::Actor for PanickingActor {
+        type Stop = String;
+
+        async fn stopped(self) -> Self::Stop {
+            String::new()
+        }
+    }
 
     #[xtra_productivity]
     impl PanickingActor {
         fn handle(&mut self, _: Panic) {
             panic!("Help!")
         }
+    }
+
+    struct UnitActor;
+
+    #[async_trait]
+    impl xtra::Actor for UnitActor {
+        type Stop = ();
+
+        async fn stopped(self) -> Self::Stop {}
     }
 }

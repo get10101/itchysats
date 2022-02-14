@@ -1,22 +1,11 @@
 use crate::bitcoin::consensus::encode::serialize_hex;
 use crate::bitcoin::Transaction;
+use crate::command;
 use crate::db;
-use crate::model;
-use crate::model::cfd;
-use crate::model::cfd::CfdEvent;
-use crate::model::cfd::Dlc;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::CET_TIMELOCK;
-use crate::model::BitMexPriceEventId;
-use crate::oracle;
-use crate::oracle::Attestation;
-use crate::try_continue;
 use crate::wallet::RpcErrorCode;
-use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use bdk::bitcoin::Address;
 use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Script;
 use bdk::bitcoin::Txid;
@@ -26,6 +15,11 @@ use bdk::electrum_client::ElectrumApi;
 use bdk::electrum_client::GetHistoryRes;
 use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
+use model::cfd;
+use model::cfd::CfdEvent;
+use model::cfd::Dlc;
+use model::cfd::OrderId;
+use model::cfd::CET_TIMELOCK;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::collections::hash_map::Entry;
@@ -34,11 +28,9 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt;
-use std::marker::Send;
 use std::ops::Add;
-use std::ops::RangeInclusive;
 use std::time::Duration;
-use xtra::prelude::StrongMessageChannel;
+use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -54,16 +46,19 @@ pub struct CollaborativeSettlement {
     pub tx: (Txid, Script),
 }
 
+pub struct MonitorCetFinality {
+    pub order_id: OrderId,
+    pub cet: Transaction,
+}
+
 // TODO: The design of this struct causes a lot of marshalling und unmarshelling that is quite
 // unnecessary. Should be taken apart so we can handle all cases individually!
 #[derive(Clone)]
 pub struct MonitorParams {
     lock: (Txid, Descriptor<PublicKey>),
     commit: (Txid, Descriptor<PublicKey>),
-    cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
     refund: (Txid, Script, u32),
     revoked_commits: Vec<(Txid, Script)>,
-    event_id: BitMexPriceEventId,
 }
 
 pub struct TryBroadcastTransaction {
@@ -132,10 +127,10 @@ pub struct Sync;
 
 // TODO: Send messages to the projection actor upon finality events so we send out updates.
 //  -> Might as well just send out all events independent of sending to the cfd actor.
-pub struct Actor<C = bdk::electrum_client::Client> {
+pub struct Actor {
     cfds: HashMap<OrderId, MonitorParams>,
-    event_channel: Box<dyn StrongMessageChannel<Event>>,
-    client: C,
+    executor: command::Executor,
+    client: bdk::electrum_client::Client,
     tasks: Tasks,
     state: State,
     db: sqlx::SqlitePool,
@@ -283,11 +278,11 @@ impl Cfd {
     }
 }
 
-impl Actor<bdk::electrum_client::Client> {
+impl Actor {
     pub fn new(
         db: SqlitePool,
         electrum_rpc_url: String,
-        event_channel: Box<dyn StrongMessageChannel<Event>>,
+        executor: command::Executor,
     ) -> Result<Self> {
         let client = bdk::electrum_client::Client::new(&electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
@@ -300,8 +295,8 @@ impl Actor<bdk::electrum_client::Client> {
 
         Ok(Self {
             cfds: HashMap::new(),
-            event_channel,
             client,
+            executor,
             state: State::new(BlockHeight::try_from(latest_block)?),
             tasks: Tasks::default(),
             db,
@@ -367,37 +362,6 @@ impl State {
             .push((ScriptStatus::finality(), Event::RefundFinality(order_id)));
     }
 
-    fn monitor_cet_finality(
-        &mut self,
-        cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
-        attestation: Attestation,
-        order_id: OrderId,
-    ) -> Result<()> {
-        let attestation_id = attestation.id;
-        let cets = cets.get(&attestation_id).with_context(|| {
-            format!("No CET for oracle event {attestation_id} and cfd with order id {order_id}",)
-        })?;
-
-        let (txid, script_pubkey) = cets
-            .iter()
-            .find_map(
-                |Cet {
-                     txid,
-                     script,
-                     range,
-                     ..
-                 }| { range.contains(&attestation.price).then(|| (txid, script)) },
-            )
-            .context("No price range match for oracle attestation")?;
-
-        self.awaiting_status
-            .entry((*txid, script_pubkey.clone()))
-            .or_default()
-            .push((ScriptStatus::finality(), Event::CetFinality(order_id)));
-
-        Ok(())
-    }
-
     fn monitor_revoked_commit_transactions(&mut self, params: &MonitorParams, order_id: OrderId) {
         for revoked_commit_tx in params.revoked_commits.iter() {
             self.awaiting_status
@@ -411,10 +375,7 @@ impl State {
     }
 }
 
-impl<C> Actor<C>
-where
-    C: bdk::electrum_client::ElectrumApi,
-{
+impl Actor {
     async fn sync(&mut self) -> Result<()> {
         // Fetch the latest block for storing the height.
         // We do not act on this subscription after this call, as we cannot rely on
@@ -439,10 +400,40 @@ where
         let mut ready_events = self.state.update(latest_block_height, histories);
 
         while let Some(event) = ready_events.pop() {
-            match self.event_channel.send(event).await {
-                Ok(()) => {}
-                Err(_) => {
-                    tracing::warn!("Address is disconnected, cannot deliver monitoring event");
+            match event {
+                Event::LockFinality(id) => {
+                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_lock_confirmed())))
+                        .await
+                }
+                Event::CommitFinality(id) => {
+                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_commit_confirmed())))
+                        .await
+                }
+                Event::CloseFinality(id) => {
+                    self.invoke_cfd_command(id, |cfd| {
+                        Ok(Some(cfd.handle_collaborative_settlement_confirmed()))
+                    })
+                    .await
+                }
+                Event::CetTimelockExpired(id) => {
+                    self.invoke_cfd_command(id, |cfd| cfd.handle_cet_timelock_expired().map(Some))
+                        .await
+                }
+                Event::CetFinality(id) => {
+                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_cet_confirmed())))
+                        .await
+                }
+                Event::RefundFinality(id) => {
+                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_refund_confirmed())))
+                        .await
+                }
+                Event::RevokedTransactionFound(id) => {
+                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_revoke_confirmed())))
+                        .await
+                }
+                Event::RefundTimelockExpired(id) => {
+                    self.invoke_cfd_command(id, |cfd| cfd.handle_refund_timelock_expired())
+                        .await
                 }
             }
         }
@@ -450,16 +441,16 @@ where
         Ok(())
     }
 
-    async fn handle_oracle_attestation(&mut self, attestation: oracle::Attestation) {
-        for (order_id, MonitorParams { cets, .. }) in self
-            .cfds
-            .clone()
-            .into_iter()
-            .filter(|(_, params)| params.event_id == attestation.id)
-        {
-            try_continue!(self
-                .state
-                .monitor_cet_finality(cets, attestation.clone(), order_id))
+    async fn invoke_cfd_command(
+        &self,
+        id: OrderId,
+        handler: impl FnOnce(model::cfd::Cfd) -> Result<Option<model::cfd::Event>>,
+    ) {
+        match self.executor.execute(id, handler).await {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::warn!(order_id = %id, "Failed to update state of CFD: {e:#}");
+            }
         }
     }
 }
@@ -692,7 +683,7 @@ impl Add<u32> for BlockHeight {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Event {
+enum Event {
     LockFinality(OrderId),
     CommitFinality(OrderId),
     CloseFinality(OrderId),
@@ -703,70 +694,20 @@ pub enum Event {
     RevokedTransactionFound(OrderId),
 }
 
-impl Event {
-    pub fn order_id(&self) -> OrderId {
-        let order_id = match self {
-            Event::LockFinality(order_id) => order_id,
-            Event::CommitFinality(order_id) => order_id,
-            Event::CloseFinality(order_id) => order_id,
-            Event::CetTimelockExpired(order_id) => order_id,
-            Event::RefundTimelockExpired(order_id) => order_id,
-            Event::RefundFinality(order_id) => order_id,
-            Event::CetFinality(order_id) => order_id,
-            Event::RevokedTransactionFound(order_id) => order_id,
-        };
-
-        *order_id
-    }
-}
-
 impl MonitorParams {
     pub fn new(dlc: Dlc) -> Self {
         let script_pubkey = dlc.maker_address.script_pubkey();
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
             commit: (dlc.commit.0.txid(), dlc.commit.2),
-            cets: map_cets(dlc.cets, &dlc.maker_address),
             refund: (dlc.refund.0.txid(), script_pubkey, dlc.refund_timelock),
             revoked_commits: dlc
                 .revoked_commit
                 .iter()
                 .map(|rev_commit| (rev_commit.txid, rev_commit.script_pubkey.clone()))
                 .collect(),
-            event_id: dlc.settlement_event_id,
         }
     }
-}
-
-#[derive(Clone)]
-struct Cet {
-    txid: Txid,
-    script: Script,
-    range: RangeInclusive<u64>,
-}
-
-fn map_cets(
-    cets: HashMap<BitMexPriceEventId, Vec<model::cfd::Cet>>,
-    maker_address: &Address,
-) -> HashMap<BitMexPriceEventId, Vec<Cet>> {
-    cets.into_iter()
-        .map(|(event_id, cets)| {
-            (
-                event_id,
-                cets.into_iter()
-                    .map(|cet| Cet {
-                        txid: cet.txid,
-                        script: maker_address.script_pubkey(),
-                        range: cet.range,
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect()
-}
-
-impl xtra::Message for Event {
-    type Result = ();
 }
 
 impl xtra::Message for Sync {
@@ -774,10 +715,8 @@ impl xtra::Message for Sync {
 }
 
 #[async_trait]
-impl<C> xtra::Actor for Actor<C>
-where
-    C: bdk::electrum_client::ElectrumApi + Send + 'static,
-{
+impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
         self.tasks
@@ -895,13 +834,12 @@ where
             },
         );
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 #[xtra_productivity]
-impl<C> Actor<C>
-where
-    C: bdk::electrum_client::ElectrumApi + Send + 'static,
-{
+impl Actor {
     async fn handle_start_monitoring(
         &mut self,
         msg: StartMonitoring,
@@ -1011,6 +949,24 @@ where
             self.state.monitor_close_finality(params, id);
         }
     }
+
+    async fn handle_monitor_cet_finality(&mut self, msg: MonitorCetFinality) -> Result<()> {
+        self.state
+            .awaiting_status
+            .entry((
+                msg.cet.txid(),
+                msg.cet
+                    .output
+                    .first()
+                    .context("Failed to monitor cet using script pubkey because no TxOut's in CET")?
+                    .script_pubkey
+                    .clone(),
+            ))
+            .or_default()
+            .push((ScriptStatus::finality(), Event::CetFinality(msg.order_id)));
+
+        Ok(())
+    }
 }
 
 // TODO: Re-model this by tearing apart `MonitorParams`.
@@ -1031,10 +987,7 @@ struct ReinitMonitoring {
 }
 
 #[async_trait]
-impl<C> xtra::Handler<Sync> for Actor<C>
-where
-    C: bdk::electrum_client::ElectrumApi + Send + 'static,
-{
+impl xtra::Handler<Sync> for Actor {
     async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self.sync().await {
             tracing::warn!("Sync failed: {:#}", e);
@@ -1042,17 +995,10 @@ where
     }
 }
 
-#[async_trait]
-impl xtra::Handler<oracle::Attestation> for Actor {
-    async fn handle(&mut self, msg: oracle::Attestation, _ctx: &mut xtra::Context<Self>) {
-        self.handle_oracle_attestation(msg).await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::cfd::CET_TIMELOCK;
+    use model::cfd::CET_TIMELOCK;
     use tracing_subscriber::prelude::*;
 
     #[tokio::test]

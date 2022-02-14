@@ -1,13 +1,6 @@
-use crate::model::cfd::Order;
-use crate::model::cfd::OrderId;
-use crate::model::BitMexPriceEventId;
-use crate::model::FundingRate;
-use crate::model::Price;
-use crate::model::Timestamp;
-use crate::model::TxFeeRate;
-use crate::model::Usd;
 use crate::noise::NOISE_MAX_MSG_LEN;
 use crate::noise::NOISE_TAG_LEN;
+use crate::olivia::BitMexPriceEventId;
 use anyhow::bail;
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::Signature;
@@ -23,6 +16,13 @@ use maia::secp256k1_zkp::SecretKey;
 use maia::CfdTransactions;
 use maia::PartyParams;
 use maia::PunishParams;
+use model::cfd::Order;
+use model::cfd::OrderId;
+use model::FundingRate;
+use model::Price;
+use model::Timestamp;
+use model::TxFeeRate;
+use model::Usd;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
@@ -133,7 +133,7 @@ pub enum MakerToTaker {
     /// Periodically broadcasted message, indicating maker's presence
     Heartbeat,
     CurrentOrder(Option<Order>),
-    ConfirmOrder(OrderId), // TODO: Include payout curve in "accept" message from maker
+    ConfirmOrder(OrderId),
     RejectOrder(OrderId),
     InvalidOrderId(OrderId),
     Protocol {

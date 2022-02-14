@@ -1,21 +1,11 @@
 use crate::command;
 use crate::connection;
-use crate::model::cfd::Dlc;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::Role;
-use crate::model::cfd::RolloverCompleted;
-use crate::model::BitMexPriceEventId;
-use crate::model::FundingFee;
-use crate::model::FundingRate;
-use crate::model::Timestamp;
-use crate::model::TxFeeRate;
 use crate::oracle;
 use crate::oracle::GetAnnouncement;
 use crate::process_manager;
 use crate::setup_contract;
 use crate::wire;
 use crate::wire::RolloverMsg;
-use crate::Tasks;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -25,7 +15,17 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia::secp256k1_zkp::schnorrsig;
+use model::cfd::Dlc;
+use model::cfd::OrderId;
+use model::cfd::Role;
+use model::cfd::RolloverCompleted;
+use model::olivia::BitMexPriceEventId;
+use model::FundingFee;
+use model::FundingRate;
+use model::Timestamp;
+use model::TxFeeRate;
 use std::time::Duration;
+use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra::Disconnected;
 use xtra_productivity::xtra_productivity;
@@ -186,6 +186,7 @@ impl Actor {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
 
@@ -229,6 +230,8 @@ impl xtra::Actor for Actor {
 
         xtra::KeepRunning::StopAll
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 #[xtra_productivity]

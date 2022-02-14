@@ -9,7 +9,6 @@ use daemon::monitor::Event;
 use daemon::oracle;
 use daemon::projection::CfdOrder;
 use daemon::projection::CfdState;
-use daemon_tests::deliver_event;
 use daemon_tests::dummy_new_order;
 use daemon_tests::dummy_quote;
 use daemon_tests::flow::is_next_none;
@@ -20,15 +19,105 @@ use daemon_tests::flow::one_cfd_with_state;
 use daemon_tests::init_tracing;
 use daemon_tests::maia::OliviaData;
 use daemon_tests::mocks::oracle::dummy_wrong_attestation;
+use daemon_tests::simulate_attestation;
 use daemon_tests::start_both;
 use daemon_tests::wait_next_state;
 use daemon_tests::Maker;
 use daemon_tests::MakerConfig;
 use daemon_tests::Taker;
 use daemon_tests::TakerConfig;
+use model::cfd::calculate_long_margin;
+use model::cfd::OrderId;
+use model::olivia;
+use model::Identity;
+use model::Usd;
 use rust_decimal_macros::dec;
 use std::time::Duration;
 use tokio::time::sleep;
+
+macro_rules! confirm {
+    (lock transaction, $id:expr, $maker:expr, $taker:expr) => {
+        $maker
+            .mocks
+            .monitor()
+            .await
+            .confirm_lock_transaction($id)
+            .await;
+        $taker
+            .mocks
+            .monitor()
+            .await
+            .confirm_lock_transaction($id)
+            .await;
+    };
+    (commit transaction, $id:expr, $maker:expr, $taker:expr) => {
+        $maker
+            .mocks
+            .monitor()
+            .await
+            .confirm_commit_transaction($id)
+            .await;
+        $taker
+            .mocks
+            .monitor()
+            .await
+            .confirm_commit_transaction($id)
+            .await;
+    };
+    (refund transaction, $id:expr, $maker:expr, $taker:expr) => {
+        $maker
+            .mocks
+            .monitor()
+            .await
+            .confirm_refund_transaction($id)
+            .await;
+        $taker
+            .mocks
+            .monitor()
+            .await
+            .confirm_refund_transaction($id)
+            .await;
+    };
+    (close transaction, $id:expr, $maker:expr, $taker:expr) => {
+        $maker
+            .mocks
+            .monitor()
+            .await
+            .confirm_close_transaction($id)
+            .await;
+        $taker
+            .mocks
+            .monitor()
+            .await
+            .confirm_close_transaction($id)
+            .await;
+    };
+    (cet, $id:expr, $maker:expr, $taker:expr) => {
+        $maker.mocks.monitor().await.confirm_cet($id).await;
+        $taker.mocks.monitor().await.confirm_cet($id).await;
+    };
+}
+
+macro_rules! expire {
+    (cet timelock, $id:expr, $maker:expr, $taker:expr) => {
+        $maker.mocks.monitor().await.expire_cet_timelock($id).await;
+        $taker.mocks.monitor().await.expire_cet_timelock($id).await;
+    };
+    (refund timelock, $id:expr, $maker:expr, $taker:expr) => {
+        $maker
+            .mocks
+            .monitor()
+            .await
+            .expire_refund_timelock($id)
+            .await;
+        $taker
+            .mocks
+            .monitor()
+            .await
+            .expire_refund_timelock($id)
+            .await;
+    };
+}
 
 #[tokio::test]
 async fn taker_receives_order_from_maker_on_publication() {
@@ -114,15 +203,6 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
 
-    maker.mocks.mock_monitor_oracle_attestation().await;
-    taker.mocks.mock_monitor_oracle_attestation().await;
-
-    maker.mocks.mock_oracle_monitor_attestation().await;
-    taker.mocks.mock_oracle_monitor_attestation().await;
-
-    maker.mocks.mock_monitor_start_monitoring().await;
-    taker.mocks.mock_monitor_start_monitoring().await;
-
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
@@ -132,7 +212,7 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(received.id, maker, taker, CfdState::PendingOpen);
 
-    deliver_event!(maker, taker, Event::LockFinality(received.id));
+    confirm!(lock transaction, received.id, maker, taker);
     wait_next_state!(received.id, maker, taker, CfdState::Open);
 }
 
@@ -156,15 +236,12 @@ async fn collaboratively_close_an_open_cfd() {
         CfdState::OutgoingSettlementProposal
     );
 
-    maker.mocks.mock_monitor_collaborative_settlement().await;
-    taker.mocks.mock_monitor_collaborative_settlement().await;
-
     maker.system.accept_settlement(order_id).await.unwrap();
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 
     wait_next_state!(order_id, maker, taker, CfdState::PendingClose);
 
-    deliver_event!(maker, taker, Event::CloseFinality(order_id));
+    confirm!(close transaction, order_id, maker, taker);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 
@@ -181,24 +258,26 @@ async fn force_close_an_open_cfd() {
     // Taker initiates force-closing
     taker.system.commit(order_id).await.unwrap();
 
-    deliver_event!(maker, taker, Event::CommitFinality(order_id));
+    confirm!(commit transaction, order_id, maker, taker);
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
     // After CetTimelockExpired, we're only waiting for attestation
-    deliver_event!(maker, taker, Event::CetTimelockExpired(order_id));
+    expire!(cet timelock, order_id, maker, taker);
 
     // Delivering the wrong attestation does not move state to `PendingCet`
-    deliver_event!(maker, taker, dummy_wrong_attestation());
+    simulate_attestation!(taker, maker, order_id, dummy_wrong_attestation());
+
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
     // Delivering correct attestation moves the state `PendingCet`
-    deliver_event!(maker, taker, oracle_data.attestation());
+    simulate_attestation!(taker, maker, order_id, oracle_data.attestation());
+
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::PendingCet);
 
-    deliver_event!(maker, taker, Event::CetFinality(order_id));
+    confirm!(cet, order_id, maker, taker);
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::Closed);
 }
@@ -258,15 +337,16 @@ async fn open_cfd_is_refunded() {
     let (mut maker, mut taker, order_id) =
         start_from_open_cfd_state(oracle_data.announcement()).await;
 
-    deliver_event!(maker, taker, Event::CommitFinality(order_id));
+    confirm!(commit transaction, order_id, maker, taker);
+
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
-    deliver_event!(maker, taker, Event::RefundTimelockExpired(order_id));
+    expire!(refund timelock, order_id, maker, taker);
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::PendingRefund);
 
-    deliver_event!(maker, taker, Event::RefundFinality(order_id));
+    confirm!(refund transaction, order_id, maker, taker);
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::Refunded);
 }
@@ -332,7 +412,7 @@ async fn maker_notices_lack_of_taker() {
 /// Useful when reading tests that should start at this point.
 /// For convenience, returns also OrderId of the opened Cfd.
 /// `announcement` is used during Cfd's creation.
-async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker, Taker, OrderId) {
+async fn start_from_open_cfd_state(announcement: olivia::Announcement) -> (Maker, Taker, OrderId) {
     let mut maker = Maker::start(&MakerConfig::default()).await;
     let mut taker = Taker::start(&TakerConfig::default(), maker.listen_addr, maker.identity).await;
 
@@ -363,15 +443,6 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
 
-    maker.mocks.mock_monitor_oracle_attestation().await;
-    taker.mocks.mock_monitor_oracle_attestation().await;
-
-    maker.mocks.mock_oracle_monitor_attestation().await;
-    taker.mocks.mock_oracle_monitor_attestation().await;
-
-    maker.mocks.mock_monitor_start_monitoring().await;
-    taker.mocks.mock_monitor_start_monitoring().await;
-
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
@@ -381,7 +452,7 @@ async fn start_from_open_cfd_state(announcement: oracle::Announcement) -> (Maker
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(received.id, maker, taker, CfdState::PendingOpen);
 
-    deliver_event!(maker, taker, Event::LockFinality(received.id));
+    confirm!(lock transaction, received.id, maker, taker);
     wait_next_state!(received.id, maker, taker, CfdState::Open);
 
     (maker, taker, received.id)

@@ -1,3 +1,4 @@
+use crate::mocks::monitor::MonitorActor;
 use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
 use crate::mocks::wallet::WalletActor;
@@ -5,21 +6,10 @@ use daemon::auto_rollover;
 use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
-use daemon::bitmex_price_feed::Quote;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
 use daemon::maker_cfd;
-use daemon::model;
-use daemon::model::cfd::OrderId;
-use daemon::model::cfd::Role;
-use daemon::model::FundingRate;
-use daemon::model::Identity;
-use daemon::model::OpeningFee;
-use daemon::model::Price;
-use daemon::model::Timestamp;
-use daemon::model::TxFeeRate;
-use daemon::model::Usd;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::CfdOrder;
@@ -29,13 +19,23 @@ use daemon::seed::Seed;
 use daemon::MakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
-use daemon::SETTLEMENT_INTERVAL;
+use model::cfd::OrderId;
+use model::cfd::Role;
+use model::FundingRate;
+use model::Identity;
+use model::OpeningFee;
+use model::Price;
+use model::TxFeeRate;
+use model::Usd;
+use model::SETTLEMENT_INTERVAL;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
+use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
@@ -44,6 +44,7 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use xtra::Actor;
+use xtra_bitmex_price_feed::Quote;
 
 pub mod flow;
 pub mod maia;
@@ -166,8 +167,8 @@ impl Maker {
 
         let db = db::memory().await.unwrap();
 
-        let mut mocks = mocks::Mocks::default();
-        let (oracle, monitor, wallet, price_feed) = mocks::create_actors(&mocks);
+        let (wallet, wallet_mock) = WalletActor::new();
+        let (price_feed, price_feed_mock) = PriceFeedActor::new();
 
         let mut tasks = Tasks::default();
 
@@ -175,7 +176,9 @@ impl Maker {
         tasks.add(wallet_fut);
 
         let (price_feed_addr, price_feed_fut) = price_feed.create(None).run();
-        tasks.add(price_feed_fut);
+        tasks.add(async move {
+            let _ = price_feed_fut.await;
+        });
 
         let settlement_interval = SETTLEMENT_INTERVAL;
 
@@ -183,23 +186,40 @@ impl Maker {
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
-        // system startup sends sync messages, mock them
-        mocks.mock_sync_handlers().await;
+        let mut monitor_mock = None;
+        let mut oracle_mock = None;
 
         let maker = daemon::MakerActorSystem::new(
             db.clone(),
             wallet_addr,
             config.oracle_pk,
-            |_| oracle,
-            |_| Ok(monitor),
+            |executor| {
+                let (oracle, mock) = OracleActor::new(executor);
+                oracle_mock = Some(mock);
+
+                oracle
+            },
+            |executor| {
+                let (monitor, mock) = MonitorActor::new(executor);
+                monitor_mock = Some(mock);
+
+                Ok(monitor)
+            },
             settlement_interval,
             config.n_payouts,
-            projection_actor.clone(),
+            projection_actor,
             identity_sk,
             config.heartbeat_interval,
             address,
         )
         .unwrap();
+
+        let mocks = mocks::Mocks::new(
+            wallet_mock,
+            price_feed_mock,
+            monitor_mock.unwrap(),
+            oracle_mock.unwrap(),
+        );
 
         let (proj_actor, feeds) =
             projection::Actor::new(db, Role::Maker, Network::Testnet, &price_feed_addr);
@@ -216,8 +236,6 @@ impl Maker {
     }
 
     pub async fn publish_order(&mut self, new_order_params: maker_cfd::NewOrder) {
-        self.mocks.mock_monitor_oracle_attestation().await;
-
         self.system
             .cfd_actor
             .send(new_order_params)
@@ -262,27 +280,37 @@ impl Taker {
 
         let db = db::memory().await.unwrap();
 
-        let mut mocks = mocks::Mocks::default();
-        let (oracle, monitor, wallet, price_feed) = mocks::create_actors(&mocks);
-
         let mut tasks = Tasks::default();
+
+        let (wallet, wallet_mock) = WalletActor::new();
+        let (price_feed, price_feed_mock) = PriceFeedActor::new();
 
         let (wallet_addr, wallet_fut) = wallet.create(None).run();
         tasks.add(wallet_fut);
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
-        // system startup sends sync messages, mock them
-        mocks.mock_sync_handlers().await;
+        let mut oracle_mock = None;
+        let mut monitor_mock = None;
 
         let taker = daemon::TakerActorSystem::new(
             db.clone(),
             wallet_addr,
             config.oracle_pk,
             identity_sk,
-            |_| oracle,
-            |_| Ok(monitor),
-            move |_| price_feed.clone(),
+            |executor| {
+                let (oracle, mock) = OracleActor::new(executor);
+                oracle_mock = Some(mock);
+
+                oracle
+            },
+            |executor| {
+                let (monitor, mock) = MonitorActor::new(executor);
+                monitor_mock = Some(mock);
+
+                Ok(monitor)
+            },
+            move || price_feed.clone(),
             config.n_payouts,
             config.heartbeat_interval,
             Duration::from_secs(10),
@@ -290,6 +318,13 @@ impl Taker {
             maker_identity,
         )
         .unwrap();
+
+        let mocks = mocks::Mocks::new(
+            wallet_mock,
+            price_feed_mock,
+            monitor_mock.unwrap(),
+            oracle_mock.unwrap(),
+        );
 
         let (proj_actor, feeds) =
             projection::Actor::new(db, Role::Taker, Network::Testnet, &taker.price_feed_actor);
@@ -320,14 +355,25 @@ impl Taker {
     }
 }
 
-/// Deliver monitor event to both actor systems
+/// Simulate oracle attestation for both actor systems
 #[macro_export]
-macro_rules! deliver_event {
-    ($maker:expr, $taker:expr, $event:expr) => {{
-        tracing::debug!("Delivering event: {:?}", $event);
+macro_rules! simulate_attestation {
+    ($maker:expr, $taker:expr, $order_id:expr, $attestation:expr) => {{
+        tracing::debug!("Simulating attestation: {:?}", $attestation);
 
-        $taker.system.cfd_actor.send($event).await.unwrap();
-        $maker.system.cfd_actor.send($event).await.unwrap();
+        $maker
+            .mocks
+            .oracle()
+            .await
+            .simulate_attestation($order_id, $attestation)
+            .await;
+
+        $taker
+            .mocks
+            .oracle()
+            .await
+            .simulate_attestation($order_id, $attestation)
+            .await;
     }};
 }
 
@@ -354,13 +400,9 @@ macro_rules! wait_next_state {
     };
 }
 
-pub fn dummy_price() -> Price {
-    Price::new(dec!(50_000)).expect("to not fail")
-}
-
 pub fn dummy_quote() -> Quote {
     Quote {
-        timestamp: Timestamp::now(),
+        timestamp: OffsetDateTime::now_utc(),
         bid: dummy_price(),
         ask: dummy_price(),
     }
@@ -368,7 +410,7 @@ pub fn dummy_quote() -> Quote {
 
 pub fn dummy_new_order() -> maker_cfd::NewOrder {
     maker_cfd::NewOrder {
-        price: dummy_price(),
+        price: Price::new(dummy_price()).unwrap(),
         min_quantity: Usd::new(dec!(5)),
         max_quantity: Usd::new(dec!(100)),
         tx_fee_rate: TxFeeRate::new(1),
@@ -376,6 +418,10 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
         funding_rate: FundingRate::new(dec!(0.00024)).unwrap(),
         opening_fee: OpeningFee::new(Amount::from_sat(2)),
     }
+}
+
+fn dummy_price() -> Decimal {
+    dec!(50_000)
 }
 
 pub fn init_tracing() -> DefaultGuard {

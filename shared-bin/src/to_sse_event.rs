@@ -2,12 +2,11 @@ use crate::ConnectionCloseReason::MakerVersionOutdated;
 use crate::ConnectionCloseReason::TakerVersionOutdated;
 use daemon::bdk::bitcoin::Amount;
 use daemon::connection;
-use daemon::model;
-use daemon::model::Identity;
-use daemon::model::Timestamp;
 use daemon::projection::Cfd;
 use daemon::projection::CfdOrder;
 use daemon::projection::Quote;
+use model::Identity;
+use model::Timestamp;
 use rocket::response::stream::Event;
 use serde::Serialize;
 

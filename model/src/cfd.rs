@@ -1,23 +1,21 @@
-use crate::model::calculate_funding_fee;
-use crate::model::BitMexPriceEventId;
-use crate::model::FeeAccount;
-use crate::model::FundingFee;
-use crate::model::FundingRate;
-use crate::model::Identity;
-use crate::model::InversePrice;
-use crate::model::Leverage;
-use crate::model::OpeningFee;
-use crate::model::Percent;
-use crate::model::Position;
-use crate::model::Price;
-use crate::model::Timestamp;
-use crate::model::TradingPair;
-use crate::model::TxFeeRate;
-use crate::model::Usd;
-use crate::oracle;
+use crate::calculate_funding_fee;
+use crate::olivia;
+use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
-use crate::setup_contract::RolloverParams;
-use crate::setup_contract::SetupParams;
+use crate::FeeAccount;
+use crate::FundingFee;
+use crate::FundingRate;
+use crate::Identity;
+use crate::InversePrice;
+use crate::Leverage;
+use crate::OpeningFee;
+use crate::Percent;
+use crate::Position;
+use crate::Price;
+use crate::Timestamp;
+use crate::TradingPair;
+use crate::TxFeeRate;
+use crate::Usd;
 use crate::SETTLEMENT_INTERVAL;
 use anyhow::bail;
 use anyhow::Context;
@@ -138,8 +136,6 @@ pub struct Order {
 
     pub price: Price,
 
-    // TODO: [post-MVP] Representation of the contract size; at the moment the contract size is
-    //  always 1 USD
     pub min_quantity: Usd,
     pub max_quantity: Usd,
 
@@ -243,18 +239,6 @@ pub enum NoRolloverReason {
     Closed,
 }
 
-/// Errors that can happen when handling the expiry of the refund
-/// timelock on the commit transaciton.
-#[derive(thiserror::Error, Debug)]
-pub enum RefundTimelockExpiryError {
-    #[error("CFD is already final")]
-    AlreadyFinal,
-    #[error("CFD does not have a DLC")]
-    NoDlc,
-    #[error("Failed to sign refund transaction")]
-    Signing(#[from] anyhow::Error),
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
     pub timestamp: Timestamp,
@@ -308,8 +292,6 @@ pub enum CfdEvent {
     // commit transaction for some
     CollaborativeSettlementFailed,
 
-    // TODO: The monitoring events should move into the monitor once we use multiple
-    // aggregates in different actors
     LockConfirmed,
     /// The lock transaction is confirmed after CFD was closed
     ///
@@ -335,10 +317,6 @@ pub enum CfdEvent {
         refund_tx: Transaction,
     },
 
-    // TODO: Once we use multiple aggregates in different actors we could change this to something
-    // like CetReadyForPublication that is emitted by the CfdActor. The Oracle actor would
-    // take care of saving and broadcasting an attestation event that can be picked up by the
-    // wallet actor which can then decide to publish the CetReadyForPublication event.
     OracleAttestedPriorCetTimelock {
         #[serde(with = "hex_transaction")]
         timelocked_cet: Transaction,
@@ -585,7 +563,7 @@ impl Cfd {
     fn expiry_timestamp(&self) -> Option<OffsetDateTime> {
         self.dlc
             .as_ref()
-            .map(|dlc| dlc.settlement_event_id.timestamp)
+            .map(|dlc| dlc.settlement_event_id.timestamp())
     }
 
     fn margin(&self) -> Amount {
@@ -923,9 +901,6 @@ impl Cfd {
     }
 
     pub fn setup_contract(self, completed: SetupCompleted) -> Result<Event> {
-        // Version 1 is acceptable, as it means that we started contract setup
-        // TODO: Use self.during_contract_setup after introducing
-        // ContractSetupAccepted event
         if self.version > 1 {
             bail!(
                 "Complete contract setup not allowed because cfd in version {}",
@@ -1009,7 +984,7 @@ impl Cfd {
     ///
     /// In case the Cfd was already closed we return `Ok(None)`, because then the attestation is not
     /// relevant anymore. We don't treat this as error because it is not an error scenario.
-    pub fn decrypt_cet(self, attestation: &oracle::Attestation) -> Result<Option<Event>> {
+    pub fn decrypt_cet(self, attestation: &olivia::Attestation) -> Result<Option<Event>> {
         if self.is_closed() {
             return Ok(None);
         }
@@ -1062,19 +1037,19 @@ impl Cfd {
         Ok(self.event(cfd_event))
     }
 
-    pub fn handle_refund_timelock_expired(self) -> Result<Event, RefundTimelockExpiryError> {
-        use RefundTimelockExpiryError::*;
-
+    pub fn handle_refund_timelock_expired(self) -> Result<Option<Event>> {
         if self.is_closed() {
-            return Err(AlreadyFinal);
+            return Ok(None);
         }
 
-        let dlc = self.dlc.as_ref().ok_or(NoDlc)?;
-        let refund_tx = dlc.signed_refund_tx()?;
+        let dlc = self.dlc.as_ref().context("CFD does not have a DLC")?;
+        let refund_tx = dlc
+            .signed_refund_tx()
+            .context("Failed to sign refund transaction")?;
 
         let event = self.event(CfdEvent::RefundTimelockExpired { refund_tx });
 
-        Ok(event)
+        Ok(Some(event))
     }
 
     pub fn handle_lock_confirmed(self) -> Event {
@@ -1221,7 +1196,6 @@ impl Cfd {
                 self.cet = Some(timelocked_cet);
             }
             ContractSetupFailed { .. } => {
-                // TODO: Deal with failed contract setup
                 self.during_contract_setup = false;
             }
             RolloverStarted => {
@@ -1276,6 +1250,86 @@ impl Cfd {
         }
 
         self
+    }
+}
+
+pub struct SetupParams {
+    pub margin: Amount,
+    pub counterparty_margin: Amount,
+    pub counterparty_identity: Identity,
+    pub price: Price,
+    pub quantity: Usd,
+    pub leverage: Leverage,
+    pub refund_timelock: u32,
+    pub tx_fee_rate: TxFeeRate,
+    pub fee_account: FeeAccount,
+}
+
+impl SetupParams {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        margin: Amount,
+        counterparty_margin: Amount,
+        counterparty_identity: Identity,
+        price: Price,
+        quantity: Usd,
+        leverage: Leverage,
+        refund_timelock: u32,
+        tx_fee_rate: TxFeeRate,
+        fee_account: FeeAccount,
+    ) -> Result<Self> {
+        Ok(Self {
+            margin,
+            counterparty_margin,
+            counterparty_identity,
+            price,
+            quantity,
+            leverage,
+            refund_timelock,
+            tx_fee_rate,
+            fee_account,
+        })
+    }
+
+    pub fn counterparty_identity(&self) -> Identity {
+        self.counterparty_identity
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RolloverParams {
+    pub price: Price,
+    pub quantity: Usd,
+    pub leverage: Leverage,
+    pub refund_timelock: u32,
+    pub fee_rate: TxFeeRate,
+    pub fee_account: FeeAccount,
+    pub current_fee: FundingFee,
+}
+
+impl RolloverParams {
+    pub fn new(
+        price: Price,
+        quantity: Usd,
+        leverage: Leverage,
+        refund_timelock: u32,
+        fee_rate: TxFeeRate,
+        fee_account: FeeAccount,
+        current_fee: FundingFee,
+    ) -> Self {
+        Self {
+            price,
+            quantity,
+            leverage,
+            refund_timelock,
+            fee_rate,
+            fee_account,
+            current_fee,
+        }
+    }
+
+    pub fn funding_fee(&self) -> &FundingFee {
+        &self.current_fee
     }
 }
 
@@ -1506,7 +1560,7 @@ impl Dlc {
     /// Create a close transaction based on the current contract and a settlement proposals
     pub fn close_transaction(
         &self,
-        proposal: &crate::model::cfd::SettlementProposal,
+        proposal: &crate::cfd::SettlementProposal,
     ) -> Result<(Transaction, Signature)> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {
@@ -1625,7 +1679,7 @@ impl Dlc {
 
     pub fn signed_cet(
         &self,
-        attestation: &oracle::Attestation,
+        attestation: &olivia::Attestation,
     ) -> Result<Result<Transaction, IrrelevantAttestation>> {
         let cets = match self.cets.get(&attestation.id) {
             Some(cets) => cets,
@@ -1769,14 +1823,6 @@ pub enum Completed<P, E> {
     },
 }
 
-impl<P, E> xtra::Message for Completed<P, E>
-where
-    P: Send + 'static,
-    E: Send + 'static,
-{
-    type Result = Result<()>;
-}
-
 impl<P, E> Completed<P, E> {
     pub fn order_id(&self) -> OrderId {
         *match self {
@@ -1893,22 +1939,14 @@ mod hex_transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bdk_ext::new_test_wallet;
-    use crate::seed::RandomSeed;
-    use crate::seed::Seed;
-    use crate::wallet;
-    use crate::wallet::BuildPartyParams;
-    use crate::Attestation;
-    use crate::N_PAYOUTS;
+    use crate::olivia::Attestation;
+    use bdk::bitcoin;
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-    use bdk::wallet::tx_builder::TxOrdering;
-    use bdk::wallet::AddressIndex;
-    use bdk::FeeRate;
+    use bdk_ext::keypair;
+    use bdk_ext::AddressExt;
+    use bdk_ext::SecretKeyExt;
     use maia::lock_descriptor;
-    use maia::PartyParams;
-    use maia::TxBuilderExt;
-    use rand::thread_rng;
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
     use std::str::FromStr;
@@ -2278,7 +2316,7 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //                                                          now
 
-        let cfd = Cfd::taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::dummy_taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let result = cfd.can_auto_rollover_taker(datetime!(2021-11-19 10:00:00).assume_utc());
@@ -2293,7 +2331,7 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //        now
 
-        let cfd = Cfd::taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::dummy_taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
 
@@ -2309,7 +2347,7 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //    now
 
-        let cfd = Cfd::taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::dummy_taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let cannot_roll_over = cfd
@@ -2326,7 +2364,7 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //  now
 
-        let cfd = Cfd::taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::dummy_taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let cannot_roll_over = cfd
@@ -2343,7 +2381,7 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //       now
 
-        let cfd = Cfd::taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::dummy_taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
         let cannot_roll_over = cfd
@@ -2406,16 +2444,14 @@ mod tests {
     #[test]
     fn given_collab_settlement_then_cannot_start_rollover() {
         let quantity = Usd::new(dec!(10));
-        let leverage = Leverage::new(2).unwrap();
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
-        let (cfd, _, _, _) = Cfd::taker_long()
+        let (cfd, _, _, _) = Cfd::dummy_taker_long()
             .with_quantity(quantity)
             .with_opening_price(opening_price)
-            .with_leverage(leverage)
             .dummy_open(dummy_event_id())
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_taker(opening_price);
@@ -2435,16 +2471,14 @@ mod tests {
     #[test]
     fn given_collab_settlement_finished_then_cannot_finish_rollover() {
         let quantity = Usd::new(dec!(10));
-        let leverage = Leverage::new(2).unwrap();
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
-        let (cfd, _, _, _) = Cfd::taker_long()
+        let (cfd, _, _, _) = Cfd::dummy_taker_long()
             .with_quantity(quantity)
             .with_opening_price(opening_price)
-            .with_leverage(leverage)
             .dummy_open(dummy_event_id())
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_taker(opening_price);
@@ -2467,7 +2501,7 @@ mod tests {
     /// settled.
     #[test]
     fn given_ongoing_collab_settlement_then_cannot_finish_rollover() {
-        let cfd = Cfd::taker_long()
+        let cfd = Cfd::dummy_taker_long()
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
@@ -2486,7 +2520,7 @@ mod tests {
 
     #[test]
     fn given_ongoing_collab_settlement_then_cannot_start_rollover() {
-        let cfd = Cfd::taker_long()
+        let cfd = Cfd::dummy_taker_long()
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
@@ -2498,7 +2532,7 @@ mod tests {
             NoRolloverReason::InCollaborativeSettlement
         );
 
-        let cfd = Cfd::maker_short()
+        let cfd = Cfd::dummy_maker_short()
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
@@ -2514,27 +2548,24 @@ mod tests {
     #[test]
     fn given_ongoing_rollover_then_can_start_collaborative_settlement() {
         let quantity = Usd::new(dec!(10));
-        let leverage = Leverage::new(2).unwrap();
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
-        let taker_long = Cfd::taker_long()
+        let taker_long = Cfd::dummy_taker_long()
             .with_id(order_id)
             .with_quantity(quantity)
             .with_opening_price(opening_price)
-            .with_leverage(leverage)
             .dummy_open(dummy_event_id())
             .dummy_start_rollover()
             .with_lock(taker_keys, maker_keys);
 
-        let maker_short = Cfd::maker_short()
+        let maker_short = Cfd::dummy_maker_short()
             .with_id(order_id)
             .with_quantity(quantity)
             .with_opening_price(opening_price)
-            .with_leverage(leverage)
             .dummy_open(dummy_event_id())
             .with_lock(taker_keys, maker_keys)
             .dummy_start_rollover();
@@ -2557,16 +2588,14 @@ mod tests {
     #[test]
     fn given_collab_settlement_then_cannot_force_close() {
         let quantity = Usd::new(dec!(10));
-        let leverage = Leverage::new(2).unwrap();
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
-        let cfd = Cfd::taker_long()
+        let cfd = Cfd::dummy_taker_long()
             .with_quantity(quantity)
             .with_opening_price(opening_price)
-            .with_leverage(leverage)
             .dummy_open(dummy_event_id())
             .with_lock(taker_keys, maker_keys);
 
@@ -2585,11 +2614,11 @@ mod tests {
 
     #[test]
     fn given_commit_when_lock_confirmed_then_lock_confirmed_after_finality() {
-        let taker_long = Cfd::taker_long()
+        let taker_long = Cfd::dummy_taker_long()
             .dummy_open(dummy_event_id())
             .dummy_commit();
 
-        let maker_short = Cfd::maker_short()
+        let maker_short = Cfd::dummy_maker_short()
             .dummy_open(dummy_event_id())
             .dummy_commit();
 
@@ -2602,11 +2631,11 @@ mod tests {
 
     #[test]
     fn given_ongoing_collab_settlement_when_lock_confirmed_then_lock_confirmed() {
-        let taker_long = Cfd::taker_long()
+        let taker_long = Cfd::dummy_taker_long()
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
-        let maker_short = Cfd::maker_short()
+        let maker_short = Cfd::dummy_maker_short()
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
@@ -2620,26 +2649,23 @@ mod tests {
     #[test]
     fn given_collab_settlement_finished_when_lock_confirmed_then_lock_confirmed_after_finality() {
         let quantity = Usd::new(dec!(10));
-        let leverage = Leverage::new(2).unwrap();
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
-        let taker_long = Cfd::taker_long()
+        let taker_long = Cfd::dummy_taker_long()
             .with_id(order_id)
             .with_quantity(quantity)
             .with_opening_price(opening_price)
-            .with_leverage(leverage)
             .dummy_open(dummy_event_id())
             .with_lock(taker_keys, maker_keys);
 
-        let maker_short = Cfd::maker_short()
+        let maker_short = Cfd::dummy_maker_short()
             .with_id(order_id)
             .with_quantity(quantity)
             .with_opening_price(opening_price)
-            .with_leverage(leverage)
             .dummy_open(dummy_event_id())
             .with_lock(taker_keys, maker_keys);
 
@@ -2656,11 +2682,11 @@ mod tests {
 
     #[test]
     fn given_commit_then_cannot_collab_close() {
-        let taker_long = Cfd::taker_long()
+        let taker_long = Cfd::dummy_taker_long()
             .dummy_open(dummy_event_id())
             .dummy_commit();
 
-        let maker_short = Cfd::maker_short()
+        let maker_short = Cfd::dummy_maker_short()
             .dummy_open(dummy_event_id())
             .dummy_commit();
 
@@ -2673,117 +2699,188 @@ mod tests {
     }
 
     #[test]
-    fn ensure_collaborative_settlement_takes_rollover_fees_into_account() {
+    fn given_no_rollover_then_no_rollover_fee() {
         let quantity = Usd::new(dec!(10));
-        let leverage = Leverage::new(2).unwrap();
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
 
-        assert_eq!(
-            calculate_long_margin(opening_price, quantity, leverage),
-            Amount::from_sat(50000)
-        );
-        assert_eq!(
-            calculate_short_margin(opening_price, quantity),
-            Amount::from_sat(100000)
-        );
-
-        // 0 rollover
-        let (taker_payout, maker_payout) = collab_settlement_taker_long_maker_short(
+        let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
             quantity,
-            leverage,
             opening_price,
             closing_price,
             positive_funding_rate,
-            1000,
+            0,
             0,
         );
-        assert_eq!(taker_payout, Amount::from_sat(49583));
-        assert_eq!(maker_payout, Amount::from_sat(100247));
 
-        // 1 rollover
-        let (taker_payout, maker_payout) = collab_settlement_taker_long_maker_short(
+        // Expected payout at closing-price-interval defined by payout curve
+        let payout_interval_taker_amount = 49668;
+        let payout_interval_maker_amount = 100332;
+        // Expected initial funding fee based on the funding rate and short-margin (because the rate
+        // is positive meaning long pays short)
+        let initial_funding_fee = 10;
+
+        assert_eq!(
+            long_payout,
+            payout_interval_taker_amount - initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT
+        );
+        assert_eq!(
+            short_payout,
+            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT
+        );
+    }
+
+    #[test]
+    fn given_one_rollover_with_positive_rate_then_long_pays_rollover_fee() {
+        let quantity = Usd::new(dec!(10));
+        let opening_price = Price::new(dec!(10000)).unwrap();
+        let closing_price = Price::new(dec!(10000)).unwrap();
+        let positive_funding_rate = dec!(0.0001);
+
+        let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
             quantity,
-            leverage,
             opening_price,
             closing_price,
             positive_funding_rate,
             1000,
             1,
         );
-        assert_eq!(taker_payout, Amount::from_sat(48583));
-        assert_eq!(maker_payout, Amount::from_sat(101247));
 
-        // 2 rollover
-        let (taker_payout, maker_payout) = collab_settlement_taker_long_maker_short(
+        // Expected payout at closing-price-interval defined by payout curve
+        let payout_interval_taker_amount = 49668;
+        let payout_interval_maker_amount = 100332;
+        // Expected initial funding fee based on the funding rate and short-margin (because the rate
+        // is positive meaning long pays short)
+        let initial_funding_fee = 10;
+
+        assert_eq!(
+            long_payout,
+            payout_interval_taker_amount - initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT - 1000
+        );
+        assert_eq!(
+            short_payout,
+            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT + 1000
+        );
+    }
+
+    #[test]
+    fn given_two_rollover_with_positive_rate_then_long_pays_two_rollover_fees() {
+        let quantity = Usd::new(dec!(10));
+        let opening_price = Price::new(dec!(10000)).unwrap();
+        let closing_price = Price::new(dec!(10000)).unwrap();
+        let positive_funding_rate = dec!(0.0001);
+
+        let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
             quantity,
-            leverage,
             opening_price,
             closing_price,
             positive_funding_rate,
             1000,
             2,
         );
-        assert_eq!(taker_payout, Amount::from_sat(47583));
-        assert_eq!(maker_payout, Amount::from_sat(102247));
 
-        // 10 rollover
+        // Expected payout at closing-price-interval defined by payout curve
+        let payout_interval_taker_amount = 49668;
+        let payout_interval_maker_amount = 100332;
+        // Expected initial funding fee based on the funding rate and short-margin (because the rate
+        // is positive meaning long pays short)
+        let initial_funding_fee = 10;
+
+        assert_eq!(
+            long_payout,
+            payout_interval_taker_amount - initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT - 2000
+        );
+        assert_eq!(
+            short_payout,
+            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT + 2000
+        );
+    }
+
+    // TODO: Payout cove calculation uderflows because long is not capped at zero!
+    // #[test]
+    // fn given_more_rollover_then_long_margin_with_positive_rate_then_long_gets_liquidated() {
+    //     let quantity = Usd::new(dec!(10));
+    //     let opening_price = Price::new(dec!(10000)).unwrap();
+    //     let closing_price = Price::new(dec!(10000)).unwrap();
+    //     let positive_funding_rate = dec!(0.0001);
+    //
+    //     let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
+    //         quantity,
+    //         opening_price,
+    //         closing_price,
+    //         positive_funding_rate,
+    //         1000,
+    //         50,
+    //     );
+    //
+    //     // Expected payout at closing-price-interval defined by payout curve
+    //     let payout_interval_taker_amount = 49668;
+    //     let payout_interval_maker_amount = 100332;
+    //
+    //     assert_eq!(
+    //         long_payout,
+    //         0
+    //     );
+    //     assert_eq!(
+    //         short_payout,
+    //         payout_interval_maker_amount + payout_interval_taker_amount -
+    // TX_FEE_COLLAB_SETTLEMENT     );
+    // }
+
+    #[test]
+    fn given_production_values_then_collab_settlement_is_as_expected() {
+        // The values for this test are from production on 05.02.2022
+        // For testing purpose different values can be plugged in to ensure sanity / debugging
+
+        let quantity = Usd::new(dec!(100));
+        let opening_price = Price::new(dec!(41015.60)).unwrap();
+        let closing_price = Price::new(dec!(40600)).unwrap();
+        let positive_funding_rate = dec!(0.0005);
+
         let (taker_payout, maker_payout) = collab_settlement_taker_long_maker_short(
             quantity,
-            leverage,
             opening_price,
             closing_price,
             positive_funding_rate,
-            1000,
-            10,
+            0,
+            0,
         );
-        assert_eq!(taker_payout, Amount::from_sat(39583));
-        assert_eq!(maker_payout, Amount::from_sat(110247));
 
-        // TODO: Errors with "attempt to subtract with overflow" that has to be fixed!
-        // 50 rollover
-        // let (taker_payout, maker_payout) = assert_collab_settlement_taker_long_maker_short(
-        //     quantity,
-        //     leverage,
-        //     opening_price,
-        //     closing_price,
-        //     positive_funding_rate,
-        //     1000,
-        //     50,
-        // );
-        // assert_eq!(taker_payout, Amount::from_sat(0));
-        // assert_eq!(maker_payout, Amount::from_sat(149830));
+        assert_eq!(taker_payout, 119239);
+        assert_eq!(maker_payout, 246306);
     }
 
     #[allow(clippy::too_many_arguments)]
     fn collab_settlement_taker_long_maker_short(
         quantity: Usd,
-        leverage: Leverage,
         opening_price: Price,
         closing_price: Price,
         funding_rate: Decimal,
         funding_fee_sat_per_rollover: u64,
         nr_of_rollovers: u8,
-    ) -> (Amount, Amount) {
+    ) -> (u64, u64) {
         // we need to agree on same order id
         let order_id = OrderId::default();
 
-        let taker_long = Cfd::taker_long()
-            .with_id(order_id)
-            .with_quantity(quantity)
-            .with_opening_price(opening_price)
-            .with_leverage(leverage);
+        let taker_long = Cfd::taker_long_from_order(
+            Order::dummy_model()
+                .with_price(opening_price)
+                .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
+            quantity,
+        )
+        .with_id(order_id);
 
-        let maker_short = Cfd::maker_short()
-            .with_id(order_id)
-            .with_quantity(quantity)
-            .with_opening_price(opening_price)
-            .with_leverage(leverage); // TODO: The maker short having a leverage of 2 is actually wrong, but we also do that in
-                                      // production; it does not have any effect because we calculate the margin differently
+        let maker_short = Cfd::maker_short_from_order(
+            Order::dummy_model()
+                .with_price(opening_price)
+                .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
+            quantity,
+        )
+        .with_id(order_id);
 
-        let taker_keys = crate::keypair::new(&mut rand::thread_rng());
-        let maker_keys = crate::keypair::new(&mut rand::thread_rng());
+        let taker_keys = keypair::new(&mut rand::thread_rng());
+        let maker_keys = keypair::new(&mut rand::thread_rng());
 
         let (taker_long, proposal, taker_sig, taker_script) = taker_long
             .dummy_open(dummy_event_id())
@@ -2800,7 +2897,7 @@ mod tests {
         let taker_payout = taker_long.collab_settlement_payout(taker_script);
         let maker_payout = maker_short.collab_settlement_payout(maker_script);
 
-        (taker_payout, maker_payout)
+        (taker_payout.as_sat(), maker_payout.as_sat())
     }
 
     use proptest::prelude::*;
@@ -2943,7 +3040,29 @@ mod tests {
     }
 
     impl Cfd {
-        fn taker_long() -> Self {
+        fn taker_long_from_order(mut order: Order, quantity: Usd) -> Self {
+            order.origin = Origin::Theirs;
+
+            Cfd::from_order(
+                order,
+                Position::Long,
+                quantity,
+                dummy_identity(),
+                Role::Taker,
+            )
+        }
+
+        fn maker_short_from_order(order: Order, quantity: Usd) -> Self {
+            Cfd::from_order(
+                order,
+                Position::Short,
+                quantity,
+                dummy_identity(),
+                Role::Maker,
+            )
+        }
+
+        fn dummy_taker_long() -> Self {
             Cfd::from_order(
                 Order::dummy_model(),
                 Position::Long,
@@ -2953,7 +3072,7 @@ mod tests {
             )
         }
 
-        fn maker_short() -> Self {
+        fn dummy_maker_short() -> Self {
             Cfd::from_order(
                 Order::dummy_model(),
                 Position::Short,
@@ -2992,51 +3111,30 @@ mod tests {
             let (sk_taker, pk_taker) = taker_keys;
             let (sk_maker, pk_maker) = maker_keys;
 
-            let (taker_margin, maker_margin, own_sk, counterparty_pk) = match self.role {
-                Role::Taker => (
-                    self.margin(),
-                    self.counterparty_margin(),
-                    sk_taker,
-                    pk_maker,
-                ),
-                Role::Maker => (
-                    self.counterparty_margin(),
-                    self.margin(),
-                    sk_maker,
-                    pk_taker,
-                ),
+            match self.role {
+                Role::Taker => {
+                    let taker_margin = self.margin();
+                    let maker_margin = self.counterparty_margin();
+
+                    self.dlc = Some(self.dlc.unwrap().with_lock_taker(
+                        taker_margin,
+                        maker_margin,
+                        sk_taker,
+                        pk_maker,
+                    ));
+                }
+                Role::Maker => {
+                    let taker_margin = self.counterparty_margin();
+                    let maker_margin = self.margin();
+
+                    self.dlc = Some(self.dlc.unwrap().with_lock_maker(
+                        taker_margin,
+                        maker_margin,
+                        sk_maker,
+                        pk_taker,
+                    ));
+                }
             };
-
-            let taker_params = BuildPartyParams {
-                amount: taker_margin,
-                identity_pk: pk_taker,
-                fee_rate: Default::default(),
-            };
-
-            let maker_params = BuildPartyParams {
-                amount: maker_margin,
-                identity_pk: pk_maker,
-                fee_rate: Default::default(),
-            };
-
-            let taker_params = build_party_params(taker_params).unwrap();
-            let maker_params = build_party_params(maker_params).unwrap();
-
-            let taker_address = taker_params.address.clone();
-            let maker_address = maker_params.address.clone();
-
-            let (lock_tx, descriptor) = build_lock_tx(maker_params, taker_params);
-
-            self.dlc = Some(self.dlc.unwrap().with_lock(
-                lock_tx,
-                descriptor,
-                taker_margin,
-                maker_margin,
-                taker_address,
-                maker_address,
-                own_sk,
-                counterparty_pk,
-            ));
 
             self
         }
@@ -3195,11 +3293,6 @@ mod tests {
             self
         }
 
-        fn with_leverage(mut self, leverage: Leverage) -> Self {
-            self.leverage = leverage;
-            self
-        }
-
         fn collab_settlement_payout(self, script: Script) -> Amount {
             let tx = self.collaborative_settlement_spend_tx.unwrap();
             extract_payout_amount(tx, script)
@@ -3221,28 +3314,84 @@ mod tests {
             )
             .unwrap()
         }
+
+        fn with_price(mut self, price: Price) -> Self {
+            self.price = price;
+            self
+        }
+
+        fn with_funding_rate(mut self, funding_rate: FundingRate) -> Self {
+            self.funding_rate = funding_rate;
+            self
+        }
     }
 
     impl Dlc {
-        #[allow(clippy::too_many_arguments)]
-        fn with_lock(
-            mut self,
-            lock_tx: PartiallySignedTransaction,
-            descriptor: Descriptor<PublicKey>,
+        fn with_lock_maker(
+            self,
             amount_taker: Amount,
             amount_maker: Amount,
-            taker_address: Address,
-            maker_address: Address,
             identity_sk: SecretKey,
             identity_counterparty_pk: PublicKey,
         ) -> Self {
-            self.lock = (lock_tx.extract_tx(), descriptor);
+            let maker_pk = bitcoin::PublicKey::new(identity_sk.to_public_key());
+            let taker_pk = identity_counterparty_pk;
+            let descriptor = lock_descriptor(maker_pk, taker_pk);
+
+            self.with_lock(
+                amount_taker,
+                amount_maker,
+                identity_sk,
+                identity_counterparty_pk,
+                descriptor,
+            )
+        }
+
+        fn with_lock_taker(
+            self,
+            amount_taker: Amount,
+            amount_maker: Amount,
+            identity_sk: SecretKey,
+            identity_counterparty_pk: PublicKey,
+        ) -> Self {
+            let maker_pk = identity_counterparty_pk;
+            let taker_pk = bitcoin::PublicKey::new(identity_sk.to_public_key());
+            let descriptor = lock_descriptor(maker_pk, taker_pk);
+
+            self.with_lock(
+                amount_taker,
+                amount_maker,
+                identity_sk,
+                identity_counterparty_pk,
+                descriptor,
+            )
+        }
+
+        fn with_lock(
+            mut self,
+            amount_taker: Amount,
+            amount_maker: Amount,
+            identity_sk: SecretKey,
+            identity_counterparty_pk: PublicKey,
+            descriptor: Descriptor<PublicKey>,
+        ) -> Self {
+            let lock_tx = Transaction {
+                version: 0,
+                lock_time: 0,
+                input: vec![],
+                output: vec![TxOut {
+                    value: amount_taker.as_sat() + amount_maker.as_sat(),
+                    script_pubkey: descriptor.script_pubkey(),
+                }],
+            };
+
+            self.lock = (lock_tx, descriptor);
             self.taker_lock_amount = amount_taker;
             self.maker_lock_amount = amount_maker;
             self.identity = identity_sk;
             self.identity_counterparty = identity_counterparty_pk;
-            self.taker_address = taker_address;
-            self.maker_address = maker_address;
+            self.taker_address = Address::random();
+            self.maker_address = Address::random();
 
             self
         }
@@ -3333,7 +3482,9 @@ mod tests {
     }
 
     pub fn dummy_identity() -> Identity {
-        Identity::new(RandomSeed::default().derive_identity().0)
+        Identity::new(x25519_dalek::PublicKey::from(
+            *b"hello world, oh what a beautiful",
+        ))
     }
 
     pub fn dummy_event_id() -> BitMexPriceEventId {
@@ -3346,107 +3497,6 @@ mod tests {
             .find(|tx_out| tx_out.script_pubkey == script)
             .map(|tx_out| Amount::from_sat(tx_out.value))
             .unwrap_or(Amount::ZERO)
-    }
-
-    pub fn build_lock_tx(
-        maker: PartyParams,
-        taker: PartyParams,
-    ) -> (PartiallySignedTransaction, Descriptor<PublicKey>) {
-        let lock_tx = lock_transaction(
-            maker.lock_psbt.clone(),
-            taker.lock_psbt.clone(),
-            maker.identity_pk,
-            taker.identity_pk,
-            maker.lock_amount + taker.lock_amount,
-        );
-
-        let lock_desc = lock_descriptor(maker.identity_pk, taker.identity_pk);
-
-        (lock_tx, lock_desc)
-    }
-
-    pub fn build_party_params(msg: wallet::BuildPartyParams) -> Result<PartyParams> {
-        let mut rng = thread_rng();
-        let wallet = new_test_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
-
-        let mut builder = wallet.build_tx();
-
-        builder
-            .ordering(TxOrdering::Bip69Lexicographic) // TODO: I think this is pointless but we did this in maia.
-            .fee_rate(FeeRate::from_sat_per_vb(1.0))
-            .add_2of2_multisig_recipient(msg.amount);
-
-        let (psbt, _) = builder.finish()?;
-
-        Ok(PartyParams {
-            lock_psbt: psbt,
-            identity_pk: msg.identity_pk,
-            lock_amount: msg.amount,
-            address: wallet.get_address(AddressIndex::New)?.address,
-        })
-    }
-
-    const DUMMY_2OF2_MULTISIG: &str =
-        "0020b5aa99ed7e0fa92483eb045ab8b7a59146d4d9f6653f21ba729b4331895a5b46";
-
-    // TODO: Pulled in from maia, would be cool if we can expose that for testing somehow?
-    fn lock_transaction(
-        maker_psbt: PartiallySignedTransaction,
-        taker_psbt: PartiallySignedTransaction,
-        maker_pk: PublicKey,
-        taker_pk: PublicKey,
-        amount: Amount,
-    ) -> PartiallySignedTransaction {
-        let lock_descriptor = lock_descriptor(maker_pk, taker_pk);
-
-        let maker_change = maker_psbt
-            .global
-            .unsigned_tx
-            .output
-            .into_iter()
-            .filter(|out| {
-                out.script_pubkey != DUMMY_2OF2_MULTISIG.parse().expect("To be a valid script")
-            })
-            .collect::<Vec<_>>();
-
-        let taker_change = taker_psbt
-            .global
-            .unsigned_tx
-            .output
-            .into_iter()
-            .filter(|out| {
-                out.script_pubkey != DUMMY_2OF2_MULTISIG.parse().expect("To be a valid script")
-            })
-            .collect::<Vec<_>>();
-
-        let lock_output = TxOut {
-            value: amount.as_sat(),
-            script_pubkey: lock_descriptor.script_pubkey(),
-        };
-
-        let input = vec![
-            maker_psbt.global.unsigned_tx.input,
-            taker_psbt.global.unsigned_tx.input,
-        ]
-        .concat();
-
-        let output = std::iter::once(lock_output)
-            .chain(maker_change)
-            .chain(taker_change)
-            .collect();
-
-        let lock_tx = Transaction {
-            version: 2,
-            lock_time: 0,
-            input,
-            output,
-        };
-
-        PartiallySignedTransaction {
-            global: Global::from_unsigned_tx(lock_tx).expect("to be unsigned"),
-            inputs: vec![maker_psbt.inputs, taker_psbt.inputs].concat(),
-            outputs: vec![maker_psbt.outputs, taker_psbt.outputs].concat(),
-        }
     }
 
     impl Attestation {
@@ -3485,4 +3535,13 @@ mod tests {
             Price::new(Decimal::ONE).unwrap()
         }
     }
+
+    /// The transaction fee for collaborative settlement in sats for each party
+    ///
+    /// This is based on the fact that collaborative settlement uses a fixed fee rate of 1
+    /// sat/vbytes. This constant represents what each party pays, i.e. the split fee for each
+    /// party.
+    const TX_FEE_COLLAB_SETTLEMENT: u64 = 85;
+
+    const N_PAYOUTS: usize = 200;
 }

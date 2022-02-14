@@ -4,12 +4,9 @@ use clap::Parser;
 use clap::Subcommand;
 use daemon::bdk;
 use daemon::bdk::bitcoin;
-use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
-use daemon::bitmex_price_feed;
 use daemon::db;
-use daemon::model::cfd::Role;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
@@ -19,13 +16,14 @@ use daemon::wallet;
 use daemon::MakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
-use daemon::SETTLEMENT_INTERVAL;
+use model::cfd::Role;
+use model::olivia;
+use model::SETTLEMENT_INTERVAL;
 use rocket::fairing::AdHoc;
 use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::str::FromStr;
 use tokio_tasks::Tasks;
 use xtra::Actor;
 use xtras::supervisor;
@@ -202,11 +200,6 @@ async fn main() -> Result<()> {
         "Authentication details: username='{auth_username}' password='{auth_password}', noise_public_key='{hex_pk}'",
     );
 
-    // TODO: Actually fetch it from Olivia
-    let oracle = schnorrsig::PublicKey::from_str(
-        "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
-    )?;
-
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()))
@@ -224,12 +217,12 @@ async fn main() -> Result<()> {
     let maker = MakerActorSystem::new(
         db.clone(),
         wallet.clone(),
-        oracle,
-        |channel| oracle::Actor::new(db.clone(), channel, SETTLEMENT_INTERVAL),
+        *olivia::PUBLIC_KEY,
+        |executor| oracle::Actor::new(db.clone(), executor, SETTLEMENT_INTERVAL),
         {
-            |channel| {
+            |executor| {
                 let electrum = opts.network.electrum().to_string();
-                monitor::Actor::new(db.clone(), electrum, channel)
+                monitor::Actor::new(db.clone(), electrum, executor)
             }
         },
         SETTLEMENT_INTERVAL,
@@ -240,10 +233,14 @@ async fn main() -> Result<()> {
         p2p_socket,
     )?;
 
-    let (supervisor, price_feed) = supervisor::Actor::new(
-        bitmex_price_feed::Actor::new,
-        |_| true, // always restart price feed actor
-    );
+    let (supervisor, price_feed) =
+        supervisor::Actor::with_policy(xtra_bitmex_price_feed::Actor::default, |e| match e {
+            xtra_bitmex_price_feed::Error::FailedToParseQuote { .. }
+            | xtra_bitmex_price_feed::Error::Failed { .. }
+            | xtra_bitmex_price_feed::Error::FailedToConnect { .. }
+            | xtra_bitmex_price_feed::Error::Unspecified
+            | xtra_bitmex_price_feed::Error::StreamEnded => true, // always restart price feed actor
+        });
 
     let (_supervisor_address, task) = supervisor.create(None).run();
     tasks.add(task);

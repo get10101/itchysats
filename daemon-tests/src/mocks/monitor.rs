@@ -1,7 +1,8 @@
 use anyhow::Result;
+use async_trait::async_trait;
+use daemon::command;
 use daemon::monitor;
-use daemon::oracle;
-use mockall::*;
+use model::cfd::OrderId;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;
@@ -9,54 +10,102 @@ use xtra_productivity::xtra_productivity;
 /// Test Stub simulating the Monitor actor.
 /// Serves as an entrypoint for injected mock handlers.
 pub struct MonitorActor {
-    pub mock: Arc<Mutex<dyn Monitor + Send>>,
+    _mock: Arc<Mutex<MockMonitor>>,
 }
 
-impl xtra::Actor for MonitorActor {}
-impl Monitor for MonitorActor {}
+impl MonitorActor {
+    pub fn new(executor: command::Executor) -> (Self, Arc<Mutex<MockMonitor>>) {
+        let mock = Arc::new(Mutex::new(MockMonitor::new(executor)));
+        let actor = Self {
+            _mock: mock.clone(),
+        };
+
+        (actor, mock)
+    }
+}
+
+#[async_trait]
+impl xtra::Actor for MonitorActor {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 #[xtra_productivity(message_impl = false)]
 impl MonitorActor {
-    async fn handle(&mut self, msg: monitor::Sync) {
-        self.mock.lock().await.sync(msg)
+    async fn handle(&mut self, _: monitor::Sync) {}
+
+    async fn handle(&mut self, _: monitor::StartMonitoring) {}
+
+    async fn handle(&mut self, _: monitor::CollaborativeSettlement) {}
+
+    async fn handle(&mut self, _: monitor::TryBroadcastTransaction) -> Result<()> {
+        Ok(())
     }
 
-    async fn handle(&mut self, msg: monitor::StartMonitoring) {
-        self.mock.lock().await.start_monitoring(msg)
-    }
-
-    async fn handle(&mut self, msg: monitor::CollaborativeSettlement) {
-        self.mock.lock().await.collaborative_settlement(msg)
-    }
-
-    async fn handle(&mut self, msg: oracle::Attestation) {
-        self.mock.lock().await.oracle_attestation(msg);
-    }
-
-    async fn handle(&mut self, msg: monitor::TryBroadcastTransaction) -> Result<()> {
-        self.mock.lock().await.broadcast(msg)
+    async fn handle(&mut self, _: monitor::MonitorCetFinality) -> Result<()> {
+        Ok(())
     }
 }
 
-#[automock]
-pub trait Monitor {
-    fn sync(&mut self, _msg: monitor::Sync) {
-        unreachable!("mockall will reimplement this method")
+pub struct MockMonitor {
+    executor: command::Executor,
+}
+
+impl MockMonitor {
+    pub fn new(executor: command::Executor) -> Self {
+        MockMonitor { executor }
     }
 
-    fn start_monitoring(&mut self, _msg: monitor::StartMonitoring) {
-        unreachable!("mockall will reimplement this method")
+    pub async fn confirm_lock_transaction(&mut self, id: OrderId) {
+        self.executor
+            .execute(id, |cfd| Ok(cfd.handle_lock_confirmed()))
+            .await
+            .unwrap();
     }
 
-    fn collaborative_settlement(&mut self, _msg: monitor::CollaborativeSettlement) {
-        unreachable!("mockall will reimplement this method")
+    pub async fn confirm_commit_transaction(&mut self, id: OrderId) {
+        self.executor
+            .execute(id, |cfd| Ok(cfd.handle_commit_confirmed()))
+            .await
+            .unwrap();
     }
 
-    fn oracle_attestation(&mut self, _msg: oracle::Attestation) {
-        unreachable!("mockall will reimplement this method")
+    pub async fn expire_refund_timelock(&mut self, id: OrderId) {
+        self.executor
+            .execute(id, |cfd| cfd.handle_refund_timelock_expired())
+            .await
+            .unwrap();
     }
 
-    fn broadcast(&mut self, _msg: monitor::TryBroadcastTransaction) -> Result<()> {
-        unreachable!("mockall will reimplement this method")
+    pub async fn confirm_refund_transaction(&mut self, id: OrderId) {
+        self.executor
+            .execute(id, |cfd| Ok(cfd.handle_refund_confirmed()))
+            .await
+            .unwrap();
+    }
+
+    pub async fn expire_cet_timelock(&mut self, id: OrderId) {
+        self.executor
+            .execute(id, |cfd| cfd.handle_cet_timelock_expired())
+            .await
+            .unwrap();
+    }
+
+    pub async fn confirm_cet(&mut self, id: OrderId) {
+        self.executor
+            .execute(id, |cfd| Ok(cfd.handle_cet_confirmed()))
+            .await
+            .unwrap();
+    }
+
+    pub async fn confirm_close_transaction(&mut self, id: OrderId) {
+        self.executor
+            .execute(
+                id,
+                |cfd| Ok(cfd.handle_collaborative_settlement_confirmed()),
+            )
+            .await
+            .unwrap();
     }
 }

@@ -39,13 +39,14 @@ export interface Cfd {
     trading_pair: string;
     position: Position;
     liquidation_price: number;
+    closing_price?: number;
 
     quantity_usd: number;
 
     margin: number;
 
     profit_btc?: number;
-    profit_in_percent?: number;
+    profit_percent?: number;
     payout?: number;
 
     state: State;

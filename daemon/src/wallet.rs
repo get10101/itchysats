@@ -1,7 +1,3 @@
-use crate::model::Timestamp;
-use crate::model::TxFeeRate;
-use crate::model::WalletInfo;
-use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -23,9 +19,13 @@ use bdk::KeychainKind;
 use bdk::SignOptions;
 use maia::PartyParams;
 use maia::TxBuilderExt;
+use model::Timestamp;
+use model::TxFeeRate;
+use model::WalletInfo;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::watch;
+use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -190,12 +190,15 @@ impl Actor {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
 
         self.tasks
             .add(this.send_interval(Duration::from_secs(10), || Sync));
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 pub struct BuildPartyParams {
@@ -282,7 +285,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bdk_ext::new_test_wallet;
+    use bdk_ext::new_test_wallet;
     use rand::thread_rng;
     use std::collections::HashSet;
 

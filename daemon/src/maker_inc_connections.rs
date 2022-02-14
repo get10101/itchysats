@@ -4,9 +4,6 @@ use crate::maker_cfd;
 use crate::maker_cfd::FromTaker;
 use crate::maker_cfd::TakerConnected;
 use crate::maker_cfd::TakerDisconnected;
-use crate::model::cfd::Order;
-use crate::model::cfd::OrderId;
-use crate::model::Identity;
 use crate::noise;
 use crate::noise::TransportStateExt;
 use crate::rollover_maker;
@@ -17,7 +14,6 @@ use crate::wire::EncryptedJsonCodec;
 use crate::wire::MakerToTaker;
 use crate::wire::TakerToMaker;
 use crate::wire::Version;
-use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -25,11 +21,15 @@ use async_trait::async_trait;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
+use model::cfd::Order;
+use model::cfd::OrderId;
+use model::Identity;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio_tasks::Tasks;
 use tokio_util::codec::Framed;
 use xtra::prelude::*;
 use xtra_productivity::xtra_productivity;
@@ -345,7 +345,8 @@ impl Actor {
 
         if self.connections.contains_key(&identity) {
             tracing::warn!(
-                "Refusing to accept 2nd connection from already connected taker {identity}!"
+                taker_id = %identity,
+                "Refusing to accept 2nd connection from already connected taker!"
             );
             return;
         }
@@ -534,7 +535,10 @@ struct ListenerFailed {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         self.start_listener(ctx).await;
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }

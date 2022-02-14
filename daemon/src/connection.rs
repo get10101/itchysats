@@ -1,10 +1,5 @@
 use crate::collab_settlement_taker;
 use crate::future_ext::FutureExt;
-use crate::model::cfd::OrderId;
-use crate::model::Identity;
-use crate::model::Price;
-use crate::model::Timestamp;
-use crate::model::Usd;
 use crate::noise;
 use crate::rollover_taker;
 use crate::setup_taker;
@@ -13,10 +8,10 @@ use crate::wire;
 use crate::wire::EncryptedJsonCodec;
 use crate::wire::TakerToMaker;
 use crate::wire::Version;
-use crate::Tasks;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use async_trait::async_trait;
 use bdk::bitcoin::Amount;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -29,6 +24,7 @@ use std::time::SystemTime;
 use time::OffsetDateTime;
 use tokio::net::TcpStream;
 use tokio::sync::watch;
+use tokio_tasks::Tasks;
 use tokio_util::codec::Framed;
 use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
@@ -577,7 +573,12 @@ impl Actor {
     }
 }
 
-impl xtra::Actor for Actor {}
+#[async_trait]
+impl xtra::Actor for Actor {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 // TODO: Move the reconnection logic inside the connection::Actor instead of
 // depending on a watch channel

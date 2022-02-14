@@ -1,26 +1,25 @@
-use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_taker;
 use crate::connection;
-use crate::model::cfd::Cfd;
-use crate::model::cfd::Order;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::Origin;
-use crate::model::cfd::Role;
-use crate::model::Identity;
-use crate::model::Position;
-use crate::model::Price;
-use crate::model::Usd;
-use crate::monitor;
 use crate::oracle;
 use crate::process_manager;
 use crate::projection;
 use crate::setup_taker;
 use crate::wallet;
-use crate::Tasks;
 use anyhow::Context as _;
 use anyhow::Result;
+use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
+use model::cfd::Cfd;
+use model::cfd::Order;
+use model::cfd::OrderId;
+use model::cfd::Origin;
+use model::cfd::Role;
+use model::Identity;
+use model::Position;
+use model::Price;
+use model::Usd;
+use tokio_tasks::Tasks;
 use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
@@ -142,25 +141,6 @@ impl<O, W> Actor<O, W> {
     }
 }
 
-#[xtra_productivity(message_impl = false)]
-impl<O, W> Actor<O, W> {
-    async fn handle_monitor(&mut self, msg: monitor::Event) {
-        if let Err(e) =
-            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager_actor).await
-        {
-            tracing::error!("Unable to handle monotoring event: {:#}", e)
-        }
-    }
-
-    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
-        if let Err(e) =
-            cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager_actor).await
-        {
-            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
-        }
-    }
-}
-
 #[xtra_productivity]
 impl<O, W> Actor<O, W>
 where
@@ -233,4 +213,9 @@ where
     }
 }
 
-impl<O: 'static, W: 'static> xtra::Actor for Actor<O, W> {}
+#[async_trait]
+impl<O: 'static, W: 'static> xtra::Actor for Actor<O, W> {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}

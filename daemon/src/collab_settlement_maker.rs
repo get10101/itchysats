@@ -1,14 +1,14 @@
 use crate::cfd_actors::load_cfd;
 use crate::maker_inc_connections;
-use crate::model::cfd::CollaborativeSettlementCompleted;
-use crate::model::cfd::Completed;
-use crate::model::cfd::SettlementProposal;
-use crate::model::Identity;
 use crate::process_manager;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use maia::secp256k1_zkp::Signature;
+use model::cfd::CollaborativeSettlementCompleted;
+use model::cfd::Completed;
+use model::cfd::SettlementProposal;
+use model::Identity;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::Stopping;
@@ -80,10 +80,12 @@ impl Actor {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let order_id = self.proposal.order_id;
 
         tracing::info!(
+            taker_id = %self.taker_id,
             %order_id,
             price = %self.proposal.price,
             "Received settlement proposal"
@@ -106,6 +108,8 @@ impl xtra::Actor for Actor {
 
         xtra::KeepRunning::StopAll
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 impl Actor {

@@ -1,4 +1,6 @@
 use anyhow::Result;
+use async_trait::async_trait;
+use bdk_ext::new_test_wallet;
 use daemon::bdk;
 use daemon::bdk::bitcoin::ecdsa;
 use daemon::bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -7,14 +9,13 @@ use daemon::bdk::bitcoin::Txid;
 use daemon::bdk::wallet::tx_builder::TxOrdering;
 use daemon::bdk::wallet::AddressIndex;
 use daemon::bdk::FeeRate;
-use daemon::bdk_ext::new_test_wallet;
 use daemon::maia::secp256k1_zkp::Secp256k1;
 use daemon::maia::PartyParams;
 use daemon::maia::TxBuilderExt;
-use daemon::model::Timestamp;
-use daemon::model::WalletInfo;
 use daemon::wallet;
 use mockall::*;
+use model::Timestamp;
+use model::WalletInfo;
 use rand::thread_rng;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -23,10 +24,24 @@ use xtra_productivity::xtra_productivity;
 /// Test Stub simulating the Wallet actor.
 /// Serves as an entrypoint for injected mock handlers.
 pub struct WalletActor {
-    pub mock: Arc<Mutex<dyn Wallet + Send>>,
+    mock: Arc<Mutex<MockWallet>>,
 }
 
-impl xtra::Actor for WalletActor {}
+impl WalletActor {
+    pub fn new() -> (WalletActor, Arc<Mutex<MockWallet>>) {
+        let mock = Arc::new(Mutex::new(MockWallet::new()));
+        let actor = Self { mock: mock.clone() };
+
+        (actor, mock)
+    }
+}
+
+#[async_trait]
+impl xtra::Actor for WalletActor {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 #[xtra_productivity(message_impl = false)]
 impl WalletActor {

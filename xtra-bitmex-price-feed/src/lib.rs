@@ -1,39 +1,31 @@
-use crate::model::Price;
-use crate::model::Timestamp;
-use crate::Tasks;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::SinkExt;
 use futures::TryStreamExt;
 use rust_decimal::Decimal;
-use std::convert::TryFrom;
+use rust_decimal_macros::dec;
 use std::time::Duration;
 use time::OffsetDateTime;
+use tokio_tasks::Tasks;
 use tokio_tungstenite::tungstenite;
 use xtra::Disconnected;
 use xtra_productivity::xtra_productivity;
-use xtras::supervisor;
 
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
 
+#[derive(Default)]
 pub struct Actor {
     tasks: Tasks,
     latest_quote: Option<Quote>,
-    supervisor: xtra::Address<supervisor::Actor<Self, Error>>,
-}
 
-impl Actor {
-    pub fn new(supervisor: xtra::Address<supervisor::Actor<Self, Error>>) -> Self {
-        Self {
-            tasks: Tasks::default(),
-            latest_quote: None,
-            supervisor,
-        }
-    }
+    /// Contains the reason we are stopping.
+    stop_reason: Option<Error>,
 }
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = Error;
+
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
 
@@ -94,18 +86,15 @@ impl xtra::Actor for Actor {
         });
     }
 
-    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> xtra::KeepRunning {
-        xtra::KeepRunning::StopSelf
+    async fn stopped(self) -> Self::Stop {
+        self.stop_reason.unwrap_or(Error::Unspecified)
     }
 }
 
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: Error, ctx: &mut xtra::Context<Self>) {
-        let _ = self
-            .supervisor
-            .send(supervisor::Stopped { reason: msg })
-            .await;
+        self.stop_reason = Some(msg);
         ctx.stop();
     }
 
@@ -128,6 +117,8 @@ pub enum Error {
     StreamEnded,
     #[error("Failed to parse quote")]
     FailedToParseQuote { source: anyhow::Error },
+    #[error("Stop reason was not specified")]
+    Unspecified,
 }
 
 /// Private message to update our internal state with the latest quote.
@@ -140,9 +131,9 @@ pub struct LatestQuote;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Quote {
-    pub timestamp: Timestamp,
-    pub bid: Price,
-    pub ask: Price,
+    pub timestamp: OffsetDateTime,
+    pub bid: Decimal,
+    pub ask: Decimal,
 }
 
 impl Quote {
@@ -158,32 +149,33 @@ impl Quote {
         let [quote] = table_message.data;
 
         Ok(Some(Self {
-            timestamp: Timestamp::parse_from_rfc3339(&quote.timestamp)?,
-            bid: Price::new(Decimal::try_from(quote.bid_price)?)?,
-            ask: Price::new(Decimal::try_from(quote.ask_price)?)?,
+            timestamp: quote.timestamp,
+            bid: quote.bid_price,
+            ask: quote.ask_price,
         }))
     }
 
-    pub fn for_maker(&self) -> Price {
+    pub fn for_maker(&self) -> Decimal {
         self.ask
     }
 
-    pub fn for_taker(&self) -> Price {
+    pub fn for_taker(&self) -> Decimal {
         self.mid_range()
     }
 
-    fn mid_range(&self) -> Price {
-        (self.bid + self.ask) / 2
+    fn mid_range(&self) -> Decimal {
+        (self.bid + self.ask) / dec!(2)
     }
 
     pub fn is_older_than(&self, duration: time::Duration) -> bool {
         let required_quote_timestamp = (OffsetDateTime::now_utc() - duration).unix_timestamp();
 
-        self.timestamp.seconds() < required_quote_timestamp
+        self.timestamp.unix_timestamp() < required_quote_timestamp
     }
 }
 
 mod wire {
+    use super::*;
     use serde::Deserialize;
 
     #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -198,26 +190,28 @@ mod wire {
     pub struct QuoteData {
         pub bid_size: u64,
         pub ask_size: u64,
-        pub bid_price: f64,
-        pub ask_price: f64,
+        #[serde(with = "rust_decimal::serde::float")]
+        pub bid_price: Decimal,
+        #[serde(with = "rust_decimal::serde::float")]
+        pub ask_price: Decimal,
         pub symbol: String,
-        pub timestamp: String,
+        #[serde(with = "time::serde::rfc3339")]
+        pub timestamp: OffsetDateTime,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_decimal_macros::dec;
     use time::ext::NumericalDuration;
 
     #[test]
     fn can_deserialize_quote_message() {
         let quote = Quote::from_str(r#"{"table":"quoteBin1m","action":"insert","data":[{"timestamp":"2021-09-21T02:40:00.000Z","symbol":"XBTUSD","bidSize":50200,"bidPrice":42640.5,"askPrice":42641,"askSize":363600}]}"#).unwrap().unwrap();
 
-        assert_eq!(quote.bid, Price::new(dec!(42640.5)).unwrap());
-        assert_eq!(quote.ask, Price::new(dec!(42641)).unwrap());
-        assert_eq!(quote.timestamp.seconds(), 1632192000)
+        assert_eq!(quote.bid, dec!(42640.5));
+        assert_eq!(quote.ask, dec!(42641));
+        assert_eq!(quote.timestamp.unix_timestamp(), 1632192000)
     }
 
     #[test]
@@ -238,11 +232,11 @@ mod tests {
         assert!(is_older)
     }
 
-    fn dummy_quote_at(time: OffsetDateTime) -> Quote {
+    fn dummy_quote_at(timestamp: OffsetDateTime) -> Quote {
         Quote {
-            timestamp: Timestamp::new(time.unix_timestamp()),
-            bid: Price::new(dec!(10)).unwrap(),
-            ask: Price::new(dec!(10)).unwrap(),
+            timestamp,
+            bid: dec!(10),
+            ask: dec!(10),
         }
     }
 }

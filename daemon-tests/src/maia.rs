@@ -1,8 +1,8 @@
 use daemon::maia::secp256k1_zkp::schnorrsig;
 use daemon::maia::secp256k1_zkp::SecretKey;
-use daemon::model::BitMexPriceEventId;
 use daemon::oracle;
-use daemon::oracle::Attestation;
+use model::olivia;
+use model::olivia::BitMexPriceEventId;
 use std::str::FromStr;
 
 #[allow(dead_code)]
@@ -52,20 +52,20 @@ impl OliviaData {
         }
     }
 
-    pub fn announcement(&self) -> oracle::Announcement {
-        oracle::Announcement {
+    pub fn announcement(&self) -> olivia::Announcement {
+        olivia::Announcement {
             id: self.id,
             expected_outcome_time: self.id.timestamp(),
             nonce_pks: self.nonce_pks.clone(),
         }
     }
 
-    pub fn attestation(&self) -> Attestation {
-        Attestation {
+    pub fn attestation(&self) -> oracle::Attestation {
+        oracle::Attestation::new(olivia::Attestation {
             id: self.id,
             price: self.price,
             scalars: self.attestations.clone(),
-        }
+        })
     }
 
     const OLIVIA_PK: &'static str =

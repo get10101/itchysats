@@ -1,26 +1,7 @@
-use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_maker;
 use crate::command;
 use crate::maker_inc_connections;
-use crate::model::cfd::Cfd;
-use crate::model::cfd::CollaborativeSettlementCompleted;
-use crate::model::cfd::Order;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::Origin;
-use crate::model::cfd::Role;
-use crate::model::cfd::RolloverCompleted;
-use crate::model::cfd::RolloverProposal;
-use crate::model::cfd::SettlementProposal;
-use crate::model::cfd::SetupCompleted;
-use crate::model::FundingRate;
-use crate::model::Identity;
-use crate::model::OpeningFee;
-use crate::model::Position;
-use crate::model::Price;
-use crate::model::TxFeeRate;
-use crate::model::Usd;
-use crate::monitor;
 use crate::oracle;
 use crate::process_manager;
 use crate::projection;
@@ -30,15 +11,32 @@ use crate::setup_maker;
 use crate::wallet;
 use crate::wire;
 use crate::wire::TakerToMaker;
-use crate::Tasks;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
+use model::cfd::Cfd;
+use model::cfd::CollaborativeSettlementCompleted;
+use model::cfd::Order;
+use model::cfd::OrderId;
+use model::cfd::Origin;
+use model::cfd::Role;
+use model::cfd::RolloverCompleted;
+use model::cfd::RolloverProposal;
+use model::cfd::SettlementProposal;
+use model::cfd::SetupCompleted;
+use model::FundingRate;
+use model::Identity;
+use model::OpeningFee;
+use model::Position;
+use model::Price;
+use model::TxFeeRate;
+use model::Usd;
 use std::collections::HashSet;
 use time::Duration;
+use tokio_tasks::Tasks;
 use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
@@ -194,7 +192,7 @@ where
         taker_id: Identity,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
-        tracing::info!(%order_id, "Received proposal from taker {taker_id}");
+        tracing::info!(%order_id, %taker_id,  "Received rollover proposal from taker");
         let this = ctx.address().expect("acquired own address");
 
         let (rollover_actor_addr, rollover_actor_future) = rollover_maker::Actor::new(
@@ -493,22 +491,6 @@ impl<O, T, W> Actor<O, T, W> {
         self.settlement_actors.gc(message);
     }
 
-    async fn handle_monitor(&mut self, msg: monitor::Event) {
-        if let Err(e) =
-            cfd_actors::handle_monitoring_event(msg, &self.db, &self.process_manager).await
-        {
-            tracing::error!("Unable to handle monotoring event: {:#}", e)
-        }
-    }
-
-    async fn handle_attestation(&mut self, msg: oracle::Attestation) {
-        if let Err(e) =
-            cfd_actors::handle_oracle_attestation(msg, &self.db, &self.process_manager).await
-        {
-            tracing::warn!("Failed to handle oracle attestation: {:#}", e)
-        }
-    }
-
     async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_maker::Actor>) {
         self.rollover_actors.gc(msg);
     }
@@ -730,4 +712,9 @@ impl Message for FromTaker {
     type Result = ();
 }
 
-impl<O: 'static, T: 'static, W: 'static> xtra::Actor for Actor<O, T, W> {}
+#[async_trait]
+impl<O: 'static, T: 'static, W: 'static> xtra::Actor for Actor<O, T, W> {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}

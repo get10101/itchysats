@@ -1,18 +1,18 @@
 use crate::cfd_actors::load_cfd;
 use crate::connection;
 use crate::db;
-use crate::model::cfd::OrderId;
 use crate::oracle;
 use crate::process_manager;
 use crate::rollover_taker;
 use crate::try_continue;
-use crate::Tasks;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use maia::secp256k1_zkp::schnorrsig;
+use model::cfd::OrderId;
 use std::time::Duration;
 use time::OffsetDateTime;
+use tokio_tasks::Tasks;
 use xtra::Actor as _;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
@@ -143,14 +143,17 @@ where
 #[async_trait]
 impl<O> xtra::Actor for Actor<O>
 where
-    O: 'static,
-    Self: xtra::Handler<AutoRollover>,
+    O: xtra::Handler<oracle::GetAnnouncement> + 'static,
 {
+    type Stop = ();
+
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
         self.tasks
             .add(this.send_interval(Duration::from_secs(5 * 60), || AutoRollover));
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 /// Message sent to ourselves at an interval to check if rollover can

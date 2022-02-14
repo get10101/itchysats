@@ -153,5 +153,10 @@ mod tests {
 
     struct Dummy;
 
-    impl xtra::Actor for Dummy {}
+    #[async_trait::async_trait]
+    impl xtra::Actor for Dummy {
+        type Stop = ();
+
+        async fn stopped(self) -> Self::Stop {}
+    }
 }

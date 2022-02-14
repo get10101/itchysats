@@ -1,18 +1,18 @@
 use crate::cfd_actors::load_cfd;
 use crate::connection;
-use crate::model::cfd;
-use crate::model::cfd::CfdEvent;
-use crate::model::cfd::CollaborativeSettlement;
-use crate::model::cfd::CollaborativeSettlementCompleted;
-use crate::model::cfd::Completed;
-use crate::model::cfd::OrderId;
-use crate::model::cfd::SettlementProposal;
-use crate::model::Price;
 use crate::process_manager;
 use crate::wire;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
+use model::cfd;
+use model::cfd::CfdEvent;
+use model::cfd::CollaborativeSettlement;
+use model::cfd::CollaborativeSettlementCompleted;
+use model::cfd::Completed;
+use model::cfd::OrderId;
+use model::cfd::SettlementProposal;
+use model::Price;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
@@ -155,6 +155,7 @@ impl Actor {
 
 #[async_trait]
 impl xtra::Actor for Actor {
+    type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("get address to ourselves");
 
@@ -192,6 +193,8 @@ impl xtra::Actor for Actor {
 
         xtra::KeepRunning::StopAll
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 #[xtra_productivity]
