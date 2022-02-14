@@ -1,4 +1,4 @@
-name: "Build release binary"
+name: "Attach binaries to GitHub release"
 
 on:
   release:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   build_binaries:
-    name: Build release binary
+    name: Build and attach release binary
     strategy:
       matrix:
         include:
@@ -45,40 +45,11 @@ jobs:
       - name: Fetch all tags (workaround for https://github.com/actions/checkout/issues/290)
         run: git fetch --tags --force
 
-      - name: Install toolchain from `rust-toolchain.toml`
-        run: rustup show
-
-      - uses: Swatinem/rust-cache@v1.3.0
+      - uses: ./.github/actions/build-release-binary
+        id: build
         with:
-          key: ${{ matrix.target }}
-
-      - name: Install compiler for aarch64 arch (armv8)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install 'gcc-aarch64-linux-gnu'
-
-      - uses: actions/setup-node@v2
-        with:
-          node-version: '16'
-          cache: yarn
-          cache-dependency-path: '**/yarn.lock'
-
-      - name: Build frontends
-        shell: bash
-        run: |
-          cd ${{ matrix.bin }}-frontend;
-          yarn
-          yarn build
-
-
-      - name: Build ${{ matrix.target }} ${{ matrix.bin }} release binary
-        run: cargo build --target=${{ matrix.target }} --release --bin ${{ matrix.bin }}
-
-      - name: Smoke test the binary
-        # aarch64-* is only cross-compiled, no smoke test
-        if: matrix.target != 'aarch64-unknown-linux-gnu'
-        run: target/${{ matrix.target }}/release/${{ matrix.bin }} --help
+          target: ${{ matrix.target }}
+          binary: ${{ matrix.bin }}
 
       # Remove once python 3 is the default
       - uses: actions/setup-python@v2.3.2
@@ -119,71 +90,3 @@ jobs:
           asset_path: ./${{ steps.create-archive-name.outputs.archive }}
           asset_name: ${{ steps.create-archive-name.outputs.archive }}
           asset_content_type: application/gzip
-
-
-  build_docker_image:
-    needs: build_binaries
-    name: Build docker images
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          - bin: maker
-          - bin: taker
-    env:
-      GITHUB_TOKEN: ${{ secrets.ITCHY_GITHUB_TOKEN }}
-    steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@v2.4.0
-        with:
-          ref: ${{ github.event.release.target_commitish }}
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
-
-      - name: Set up docker buildx
-        uses: docker/setup-buildx-action@v1
-
-      - name: Login into github registry
-        uses: docker/login-action@v1.12.0
-        with:
-          registry: ghcr.io
-          username:  ${{ github.repository }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download release from github
-        run: |
-          gh release download ${{ github.event.release.tag_name }} -p '${{matrix.bin}}*Linux_x86_64*' -p '${{matrix.bin}}*aarch64*'
-
-      - name: Unpack archives
-        run: |
-          # We need to extract into sub folders to so that our dockerimage can fine the binaries.
-          #
-          # By providing `platform` to `docker buildx` the variable `TARGETPLATFORM` will be available
-          # when building the image. This variable is either
-          # `linux/amd64/`, `linux/arm64/`. Hence we need to extract into subfolders.
-
-          7z x ${{matrix.bin}}_${{ github.event.release.tag_name }}_Linux_aarch64.tar -olinux/arm64/
-
-          7z x ${{matrix.bin}}_${{ github.event.release.tag_name }}_Linux_x86_64.tar -olinux/amd64/
-
-          chmod a+x linux/amd64/*
-          chmod a+x linux/arm64/*
-
-      - name: Build docker image for ${{matrix.bin}}
-        run: |
-          VERSION=${{ github.event.release.tag_name }}
-
-          if [ "$VERSION" = "preview" ]; then
-              VERSION=latest
-          fi
-
-          docker buildx build \
-              --push \
-              --platform linux/amd64,linux/arm64 \
-              --label "org.opencontainers.image.source https://github.com/${{ github.repository }}" \
-              --tag ghcr.io/${{ github.repository }}/${{matrix.bin}}:${VERSION} \
-              --build-arg BINARY_PATH=${{matrix.bin}} \
-              .

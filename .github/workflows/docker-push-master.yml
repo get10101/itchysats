@@ -1,0 +1,12 @@
+name: "Build and push docker image for latest master"
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build_docker_image_for_latest_master:
+    uses: ./.github/workflows/docker.yml
+    with:
+      tag: master
