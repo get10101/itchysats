@@ -108,6 +108,30 @@
       ]
     }
   },
+  "93c7f10cbb553b0191d00f20320bb561936281bcfb1a6c63d655c1bb76aacea0": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::cfd::OrderId\"\n            from\n                cfds\n            where not exists (\n                select id from EVENTS as events\n                where cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2 or\n                    events.name= $3 or\n                    events.name= $4 or\n                    events.name= $5\n                )\n            )\n            order by cfd_id desc\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "uuid: model::cfd::OrderId",
+          "ordinal": 1,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 5
+      },
+      "nullable": [
+        false,
+        false
+      ]
+    }
+  },
   "b15ee697209deb50569172bbf4a67bde5d9936525e4937119ba88447cec52a4e": {
     "query": "\n\n        select\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        where\n            cfd_id = $1\n            ",
     "describe": {

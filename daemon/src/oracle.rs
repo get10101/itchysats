@@ -251,7 +251,7 @@ impl Actor {
 
         let mut conn = self.db.acquire().await?;
 
-        for id in db::load_all_cfd_ids(&mut conn).await? {
+        for id in db::load_open_cfd_ids(&mut conn).await? {
             if let Err(err) = self
                 .executor
                 .execute(id, |cfd| cfd.decrypt_cet(&attestation.0))
@@ -303,7 +303,7 @@ impl xtra::Actor for Actor {
                 async move {
                     let mut conn = db.acquire().await?;
 
-                    for id in db::load_all_cfd_ids(&mut conn).await? {
+                    for id in db::load_open_cfd_ids(&mut conn).await? {
                         let (_, events) = db::load_cfd(id, &mut conn).await?;
                         let cfd = events
                             .into_iter()
