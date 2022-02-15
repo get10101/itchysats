@@ -108,7 +108,7 @@ where
         ctx: &mut xtra::Context<Actor<O>>,
     ) -> Result<(), anyhow::Error> {
         let mut conn = self.db.acquire().await?;
-        let cfd_ids = db::load_all_cfd_ids(&mut conn).await?;
+        let cfd_ids = db::load_non_final_cfd_ids(&mut conn).await?;
         let this = ctx
             .address()
             .expect("actor to be able to give address to itself");
