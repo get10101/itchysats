@@ -42,6 +42,7 @@ pub mod connection;
 pub mod db;
 pub mod fan_out;
 mod future_ext;
+pub mod limit_close_taker;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
 pub mod monitor;
