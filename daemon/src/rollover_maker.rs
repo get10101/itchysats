@@ -17,14 +17,12 @@ use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
-use model::Completed;
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
 use model::Identity;
 use model::OrderId;
 use model::Role;
-use model::RolloverCompleted;
 use model::TxFeeRate;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
@@ -102,10 +100,41 @@ impl Actor {
         }
     }
 
-    async fn complete(&mut self, completed: RolloverCompleted, ctx: &mut xtra::Context<Self>) {
+    async fn emit_complete(
+        &mut self,
+        dlc: Dlc,
+        funding_fee: FundingFee,
+        ctx: &mut xtra::Context<Self>,
+    ) {
         if let Err(e) = self
             .executor
-            .execute(self.order_id, |cfd| Ok(cfd.roll_over(completed)?))
+            .execute(self.order_id, |cfd| {
+                Ok(cfd.complete_rollover(dlc, funding_fee)?)
+            })
+            .await
+        {
+            tracing::warn!(order_id = %self.order_id, "{:#}", e)
+        }
+
+        ctx.stop();
+    }
+
+    async fn emit_reject(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
+        if let Err(e) = self
+            .executor
+            .execute(self.order_id, |cfd| Ok(cfd.reject_rollover(reason)))
+            .await
+        {
+            tracing::warn!(order_id = %self.order_id, "{:#}", e)
+        }
+
+        ctx.stop();
+    }
+
+    async fn emit_fail(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
+        if let Err(e) = self
+            .executor
+            .execute(self.order_id, |cfd| Ok(cfd.fail_rollover(error)))
             .await
         {
             tracing::warn!(order_id = %self.order_id, "{:#}", e)
@@ -208,8 +237,7 @@ impl Actor {
             .context("Maker connection actor disconnected")?
             .context("Failed to send reject rollover message")?;
 
-        self.complete(RolloverCompleted::rejected(self.order_id), ctx)
-            .await;
+        self.emit_reject(anyhow::format_err!("unknown"), ctx).await;
 
         ctx.stop();
 
@@ -259,14 +287,7 @@ impl xtra::Actor for Actor {
         };
 
         if let Err(source) = fut.await {
-            self.complete(
-                Completed::Failed {
-                    order_id,
-                    error: source,
-                },
-                ctx,
-            )
-            .await;
+            self.emit_fail(source, ctx).await;
         }
     }
 
@@ -287,14 +308,7 @@ impl xtra::Actor for Actor {
 impl Actor {
     async fn handle_accept_rollover(&mut self, msg: AcceptRollover, ctx: &mut xtra::Context<Self>) {
         if let Err(error) = self.accept(msg, ctx).await {
-            self.complete(
-                RolloverCompleted::Failed {
-                    order_id: self.order_id,
-                    error,
-                },
-                ctx,
-            )
-            .await;
+            self.emit_fail(error, ctx).await;
         };
     }
 
@@ -304,33 +318,18 @@ impl Actor {
         ctx: &mut xtra::Context<Self>,
     ) {
         if let Err(error) = self.reject(ctx).await {
-            self.complete(
-                RolloverCompleted::Failed {
-                    order_id: self.order_id,
-                    error,
-                },
-                ctx,
-            )
-            .await;
+            self.emit_fail(error, ctx).await;
         };
     }
 
     async fn handle_protocol_msg(&mut self, msg: ProtocolMsg, ctx: &mut xtra::Context<Self>) {
         if let Err(error) = self.forward_protocol_msg(msg).await {
-            self.complete(
-                RolloverCompleted::Failed {
-                    order_id: self.order_id,
-                    error,
-                },
-                ctx,
-            )
-            .await;
+            self.emit_fail(error, ctx).await;
         };
     }
 
     async fn handle_rollover_failed(&mut self, msg: RolloverFailed, ctx: &mut xtra::Context<Self>) {
-        self.complete(RolloverCompleted::failed(self.order_id, msg.error), ctx)
-            .await
+        self.emit_fail(msg.error, ctx).await
     }
 
     async fn handle_rollover_succeeded(
@@ -338,10 +337,6 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        self.complete(
-            RolloverCompleted::succeeded(self.order_id, msg.dlc, msg.funding_fee),
-            ctx,
-        )
-        .await
+        self.emit_complete(msg.dlc, msg.funding_fee, ctx).await
     }
 }

@@ -21,7 +21,6 @@ use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
 use model::Role;
-use model::RolloverCompleted;
 use model::Timestamp;
 use model::TxFeeRate;
 use std::time::Duration;
@@ -165,14 +164,43 @@ impl Actor {
         Ok(())
     }
 
-    async fn complete(&mut self, completed: RolloverCompleted, ctx: &mut xtra::Context<Self>) {
+    async fn emit_complete(
+        &mut self,
+        dlc: Dlc,
+        funding_fee: FundingFee,
+        ctx: &mut xtra::Context<Self>,
+    ) {
         let result = self
             .executor
-            .execute(self.id, |cfd| Ok(cfd.roll_over(completed)?))
+            .execute(self.id, |cfd| Ok(cfd.complete_rollover(dlc, funding_fee)?))
             .await;
 
         if let Err(e) = result {
             tracing::warn!(order_id = %self.id, "Failed to complete rollover: {:#}", e)
+        }
+
+        ctx.stop();
+    }
+
+    async fn emit_reject(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
+        if let Err(e) = self
+            .executor
+            .execute(self.id, |cfd| Ok(cfd.reject_rollover(reason)))
+            .await
+        {
+            tracing::warn!(order_id = %self.id, "{:#}", e)
+        }
+
+        ctx.stop();
+    }
+
+    async fn emit_fail(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
+        if let Err(e) = self
+            .executor
+            .execute(self.id, |cfd| Ok(cfd.fail_rollover(error)))
+            .await
+        {
+            tracing::warn!(order_id = %self.id, "{:#}", e)
         }
 
         ctx.stop();
@@ -191,14 +219,7 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("self to be alive");
 
         if let Err(error) = self.propose(this).await {
-            self.complete(
-                RolloverCompleted::Failed {
-                    order_id: self.id,
-                    error,
-                },
-                ctx,
-            )
-            .await;
+            self.emit_fail(error, ctx).await;
 
             return;
         }
@@ -242,14 +263,7 @@ impl Actor {
         ctx: &mut xtra::Context<Self>,
     ) {
         if let Err(error) = self.handle_confirmed(msg, ctx).await {
-            self.complete(
-                RolloverCompleted::Failed {
-                    order_id: self.id,
-                    error,
-                },
-                ctx,
-            )
-            .await;
+            self.emit_fail(error, ctx).await;
         }
     }
 
@@ -258,8 +272,7 @@ impl Actor {
 
         tracing::info!(%order_id, "Rollover proposal got rejected");
 
-        self.complete(RolloverCompleted::rejected(order_id), ctx)
-            .await;
+        self.emit_reject(anyhow::format_err!("unknown"), ctx).await;
     }
 
     pub async fn handle_rollover_succeeded(
@@ -267,11 +280,7 @@ impl Actor {
         msg: RolloverSucceeded,
         ctx: &mut xtra::Context<Self>,
     ) {
-        self.complete(
-            RolloverCompleted::succeeded(self.id, msg.dlc, msg.funding_fee),
-            ctx,
-        )
-        .await;
+        self.emit_complete(msg.dlc, msg.funding_fee, ctx).await;
     }
 
     pub async fn handle_rollover_failed(
@@ -279,14 +288,7 @@ impl Actor {
         msg: RolloverFailed,
         ctx: &mut xtra::Context<Self>,
     ) {
-        self.complete(
-            RolloverCompleted::Failed {
-                order_id: self.id,
-                error: msg.error,
-            },
-            ctx,
-        )
-        .await;
+        self.emit_fail(msg.error, ctx).await;
     }
 
     pub async fn handle_rollover_timeout_reached(
@@ -303,12 +305,11 @@ impl Actor {
         // If the proposal is rejected, our entire actor would already be shut down and we hence
         // never get this message.
         let timeout = msg.timeout.as_secs();
-        let completed = RolloverCompleted::Failed {
-            order_id: self.id,
-            error: anyhow!("Maker did not respond within {timeout} seconds"),
-        };
-
-        self.complete(completed, ctx).await;
+        self.emit_fail(
+            anyhow!("Maker did not respond within {timeout} seconds"),
+            ctx,
+        )
+        .await;
     }
 
     pub async fn handle_protocol_msg(
@@ -317,14 +318,7 @@ impl Actor {
         ctx: &mut xtra::Context<Self>,
     ) {
         if let Err(error) = self.forward_protocol_msg(msg).await {
-            self.complete(
-                RolloverCompleted::Failed {
-                    order_id: self.id,
-                    error,
-                },
-                ctx,
-            )
-            .await;
+            self.emit_fail(error, ctx).await;
         }
     }
 }

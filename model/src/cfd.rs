@@ -927,31 +927,28 @@ impl Cfd {
         Ok(self.event(event))
     }
 
-    pub fn roll_over(
+    pub fn complete_rollover(
         self,
-        completed: RolloverCompleted,
-    ) -> Result<Option<CfdEvent>, NoRolloverReason> {
-        let event = match completed {
-            Completed::Succeeded {
-                payload: (dlc, funding_fee, _),
-                ..
-            } => {
-                self.can_rollover()?;
-                EventKind::RolloverCompleted { dlc, funding_fee }
-            }
-            Completed::Rejected { reason, .. } => {
-                tracing::info!(order_id = %self.id, "Rollover was rejected: {:#}", reason);
+        dlc: Dlc,
+        funding_fee: FundingFee,
+    ) -> Result<CfdEvent, NoRolloverReason> {
+        self.can_rollover()?;
 
-                EventKind::RolloverRejected
-            }
-            Completed::Failed { error, .. } => {
-                tracing::warn!(order_id = %self.id, "Rollover failed: {:#}", error);
+        tracing::info!(order_id = %self.id, "Rollover was completed");
 
-                EventKind::RolloverFailed
-            }
-        };
+        Ok(self.event(EventKind::RolloverCompleted { dlc, funding_fee }))
+    }
 
-        Ok(Some(self.event(event)))
+    pub fn reject_rollover(self, reason: anyhow::Error) -> CfdEvent {
+        tracing::info!(order_id = %self.id, "Rollover was rejected: {:#}", reason);
+
+        self.event(EventKind::RolloverRejected)
+    }
+
+    pub fn fail_rollover(self, error: anyhow::Error) -> CfdEvent {
+        tracing::warn!(order_id = %self.id, "Rollover failed: {:#}", error);
+
+        self.event(EventKind::RolloverFailed)
     }
 
     pub fn settle_collaboratively(
@@ -1777,18 +1774,11 @@ pub mod marker {
     /// Marker type for contract setup completion
     #[derive(Debug)]
     pub struct Setup;
-    /// Marker type for rollover  completion
-    #[derive(Debug)]
-    pub struct Rollover;
 }
 
 /// Message sent from a setup actor to the
 /// cfd actor to notify that the contract setup has finished.
 pub type SetupCompleted = Completed<(Dlc, marker::Setup), anyhow::Error>;
-
-/// Message sent from a rollover actor to the
-/// cfd actor to notify that the rollover has finished (contract got updated).
-pub type RolloverCompleted = Completed<(Dlc, FundingFee, marker::Rollover), anyhow::Error>;
 
 pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;
 
@@ -1797,15 +1787,6 @@ impl Completed<(Dlc, marker::Setup), anyhow::Error> {
         Self::Succeeded {
             order_id,
             payload: (dlc, marker::Setup),
-        }
-    }
-}
-
-impl Completed<(Dlc, FundingFee, marker::Rollover), anyhow::Error> {
-    pub fn succeeded(order_id: OrderId, dlc: Dlc, funding_fee: FundingFee) -> Self {
-        Self::Succeeded {
-            order_id,
-            payload: (dlc, funding_fee, marker::Rollover),
         }
     }
 }
@@ -2382,11 +2363,7 @@ mod tests {
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_taker(opening_price);
 
-        let result = cfd.roll_over(RolloverCompleted::succeeded(
-            OrderId::default(),
-            Dlc::dummy(None),
-            FundingFee::dummy(),
-        ));
+        let result = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
 
         let no_rollover_reason = result.unwrap_err();
         assert_eq!(no_rollover_reason, NoRolloverReason::Closed);
@@ -2404,11 +2381,7 @@ mod tests {
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
-        let result = cfd.roll_over(RolloverCompleted::succeeded(
-            OrderId::default(),
-            Dlc::dummy(None),
-            FundingFee::dummy(),
-        ));
+        let result = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
 
         let no_rollover_reason = result.unwrap_err();
         assert_eq!(
