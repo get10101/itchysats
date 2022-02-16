@@ -27,9 +27,11 @@ mod contract_setup;
 mod hex_transaction;
 pub mod olivia;
 pub mod payout_curve;
+mod rollover;
 
 pub use cfd::*;
 pub use contract_setup::SetupParams;
+pub use rollover::RolloverParams;
 
 /// The interval until the cfd gets settled, i.e. the attestation happens
 ///
