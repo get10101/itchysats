@@ -7,7 +7,7 @@ use crate::oracle;
 use crate::projection;
 use anyhow::Result;
 use async_trait::async_trait;
-use model::cfd;
+use model::cfd::CfdEvent;
 use model::cfd::EventKind;
 use model::cfd::Role;
 use xtra::prelude::MessageChannel;
@@ -25,10 +25,10 @@ pub struct Actor {
     monitor_attestation: Box<dyn MessageChannel<oracle::MonitorAttestation>>,
 }
 
-pub struct Event(cfd::Event);
+pub struct Event(CfdEvent);
 
 impl Event {
-    pub fn new(event: cfd::Event) -> Self {
+    pub fn new(event: CfdEvent) -> Self {
         Self(event)
     }
 }

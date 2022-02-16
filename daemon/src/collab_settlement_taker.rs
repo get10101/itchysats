@@ -5,7 +5,7 @@ use crate::wire;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
-use model::cfd;
+use model::cfd::CfdEvent;
 use model::cfd::CollaborativeSettlement;
 use model::cfd::CollaborativeSettlementCompleted;
 use model::cfd::Completed;
@@ -61,7 +61,7 @@ impl Actor {
         let cfd = load_cfd(self.order_id, &mut conn).await?;
 
         let event = cfd.propose_collaborative_settlement(self.current_price, self.n_payouts)?;
-        let proposal = if let cfd::Event {
+        let proposal = if let CfdEvent {
             event: EventKind::CollaborativeSettlementStarted { ref proposal },
             ..
         } = event

@@ -5,7 +5,7 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use maia::secp256k1_zkp::schnorrsig;
-use model::cfd::Event;
+use model::cfd::CfdEvent;
 use model::cfd::EventKind;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
@@ -68,7 +68,7 @@ struct Cfd {
 }
 
 impl Cfd {
-    fn apply(self, event: Event) -> Self {
+    fn apply(self, event: CfdEvent) -> Self {
         let settlement_event_id = match event.event {
             EventKind::ContractSetupCompleted { dlc, .. } => dlc.settlement_event_id,
             EventKind::RolloverCompleted { dlc, .. } => dlc.settlement_event_id,

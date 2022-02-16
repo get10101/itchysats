@@ -2,7 +2,7 @@ use anyhow::Context;
 use anyhow::Result;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use model::cfd::Event;
+use model::cfd::CfdEvent;
 use model::cfd::EventKind;
 use model::cfd::OrderId;
 use model::cfd::Role;
@@ -140,7 +140,7 @@ pub async fn insert_cfd(cfd: &model::cfd::Cfd, conn: &mut PoolConnection<Sqlite>
 /// To make handling of `None` events more ergonomic, you can pass anything in here that implements
 /// `Into<Option>` event.
 pub async fn append_event(
-    event: impl Into<Option<Event>>,
+    event: impl Into<Option<CfdEvent>>,
     conn: &mut PoolConnection<Sqlite>,
 ) -> Result<()> {
     let event = match event.into() {
@@ -194,7 +194,10 @@ pub struct Cfd {
     pub initial_tx_fee_rate: TxFeeRate,
 }
 
-pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<(Cfd, Vec<Event>)> {
+pub async fn load_cfd(
+    id: OrderId,
+    conn: &mut PoolConnection<Sqlite>,
+) -> Result<(Cfd, Vec<CfdEvent>)> {
     let cfd_row = sqlx::query!(
         r#"
             select
@@ -252,7 +255,7 @@ pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<
     .await?
     .into_iter()
     .map(|row| {
-        Ok(Event {
+        Ok(CfdEvent {
             timestamp: row.created_at,
             id,
             event: EventKind::from_json(row.name, row.data)?,
@@ -405,7 +408,7 @@ mod tests {
 
         let timestamp = Timestamp::now();
 
-        let event1 = Event {
+        let event1 = CfdEvent {
             timestamp,
             id: cfd.id(),
             event: EventKind::OfferRejected,
@@ -415,7 +418,7 @@ mod tests {
         let (_, events) = load_cfd(cfd.id(), &mut conn).await.unwrap();
         assert_eq!(events, vec![event1.clone()]);
 
-        let event2 = Event {
+        let event2 = CfdEvent {
             timestamp,
             id: cfd.id(),
             event: EventKind::RevokeConfirmed,
@@ -563,48 +566,48 @@ mod tests {
         cfd
     }
 
-    fn lock_confirmed(cfd: &Cfd) -> Event {
-        Event {
+    fn lock_confirmed(cfd: &Cfd) -> CfdEvent {
+        CfdEvent {
             timestamp: Timestamp::now(),
             id: cfd.id(),
             event: EventKind::LockConfirmed,
         }
     }
 
-    fn collab_settlement_confirmed(cfd: &Cfd) -> Event {
-        Event {
+    fn collab_settlement_confirmed(cfd: &Cfd) -> CfdEvent {
+        CfdEvent {
             timestamp: Timestamp::now(),
             id: cfd.id(),
             event: EventKind::CollaborativeSettlementConfirmed,
         }
     }
 
-    fn cet_confirmed(cfd: &Cfd) -> Event {
-        Event {
+    fn cet_confirmed(cfd: &Cfd) -> CfdEvent {
+        CfdEvent {
             timestamp: Timestamp::now(),
             id: cfd.id(),
             event: EventKind::CetConfirmed,
         }
     }
 
-    fn refund_confirmed(cfd: &Cfd) -> Event {
-        Event {
+    fn refund_confirmed(cfd: &Cfd) -> CfdEvent {
+        CfdEvent {
             timestamp: Timestamp::now(),
             id: cfd.id(),
             event: EventKind::RefundConfirmed,
         }
     }
 
-    fn setup_failed(cfd: &Cfd) -> Event {
-        Event {
+    fn setup_failed(cfd: &Cfd) -> CfdEvent {
+        CfdEvent {
             timestamp: Timestamp::now(),
             id: cfd.id(),
             event: EventKind::ContractSetupFailed,
         }
     }
 
-    fn order_rejected(cfd: &Cfd) -> Event {
-        Event {
+    fn order_rejected(cfd: &Cfd) -> CfdEvent {
+        CfdEvent {
             timestamp: Timestamp::now(),
             id: cfd.id(),
             event: EventKind::OfferRejected,

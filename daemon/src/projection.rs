@@ -19,8 +19,8 @@ use model::cfd::calculate_long_margin;
 use model::cfd::calculate_profit;
 use model::cfd::calculate_profit_at_price;
 use model::cfd::calculate_short_margin;
+use model::cfd::CfdEvent;
 use model::cfd::Dlc;
-use model::cfd::Event;
 use model::cfd::EventKind;
 use model::cfd::OrderId;
 use model::cfd::Origin;
@@ -360,7 +360,7 @@ impl Cfd {
         }
     }
 
-    fn apply(mut self, event: Event, network: Network) -> Self {
+    fn apply(mut self, event: CfdEvent, network: Network) -> Self {
         // First, try to set state based on event.
         use EventKind::*;
         match event.event {

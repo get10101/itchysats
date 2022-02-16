@@ -4,7 +4,7 @@ use crate::OrderId;
 use anyhow::Context;
 use anyhow::Result;
 use model::cfd::Cfd;
-use model::cfd::Event;
+use model::cfd::CfdEvent;
 use xtra::Address;
 
 #[derive(Clone)]
@@ -56,45 +56,45 @@ impl Executor {
 pub trait ExtractEventFromTuple {
     type Rest;
 
-    fn extract_event(self) -> (Option<Event>, Self::Rest);
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest);
 }
 
-impl ExtractEventFromTuple for Option<Event> {
+impl ExtractEventFromTuple for Option<CfdEvent> {
     type Rest = ();
 
-    fn extract_event(self) -> (Option<Event>, Self::Rest) {
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
         (self, ())
     }
 }
 
-impl ExtractEventFromTuple for Event {
+impl ExtractEventFromTuple for CfdEvent {
     type Rest = ();
 
-    fn extract_event(self) -> (Option<Event>, Self::Rest) {
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
         (Some(self), ())
     }
 }
 
-impl<TOne> ExtractEventFromTuple for (Event, TOne) {
+impl<TOne> ExtractEventFromTuple for (CfdEvent, TOne) {
     type Rest = TOne;
 
-    fn extract_event(self) -> (Option<Event>, Self::Rest) {
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
         (Some(self.0), self.1)
     }
 }
 
-impl<TOne, TTwo> ExtractEventFromTuple for (Event, TOne, TTwo) {
+impl<TOne, TTwo> ExtractEventFromTuple for (CfdEvent, TOne, TTwo) {
     type Rest = (TOne, TTwo);
 
-    fn extract_event(self) -> (Option<Event>, Self::Rest) {
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
         (Some(self.0), (self.1, self.2))
     }
 }
 
-impl<TOne, TTwo, TThree> ExtractEventFromTuple for (Event, TOne, TTwo, TThree) {
+impl<TOne, TTwo, TThree> ExtractEventFromTuple for (CfdEvent, TOne, TTwo, TThree) {
     type Rest = (TOne, TTwo, TThree);
 
-    fn extract_event(self) -> (Option<Event>, Self::Rest) {
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
         (Some(self.0), (self.1, self.2, self.3))
     }
 }
