@@ -1,12 +1,9 @@
-use crate::cfd::calculate_long_margin;
-use crate::cfd::calculate_short_margin;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
 use bdk::bitcoin::SignedAmount;
-use cfd::Role;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::de::Error as _;
@@ -25,9 +22,11 @@ use std::time::UNIX_EPOCH;
 
 mod sqlx_ext; // Must come first because it is a macro.
 
-pub mod cfd;
+mod cfd;
 pub mod olivia;
 pub mod payout_curve;
+
+pub use cfd::*;
 
 /// The interval until the cfd gets settled, i.e. the attestation happens
 ///

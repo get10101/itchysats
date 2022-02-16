@@ -3,8 +3,8 @@ use crate::process_manager;
 use crate::OrderId;
 use anyhow::Context;
 use anyhow::Result;
-use model::cfd::Cfd;
-use model::cfd::CfdEvent;
+use model::Cfd;
+use model::CfdEvent;
 use xtra::Address;
 
 #[derive(Clone)]

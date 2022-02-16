@@ -15,11 +15,11 @@ use bdk::electrum_client::ElectrumApi;
 use bdk::electrum_client::GetHistoryRes;
 use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
-use model::cfd::CfdEvent;
-use model::cfd::Dlc;
-use model::cfd::EventKind;
-use model::cfd::OrderId;
-use model::cfd::CET_TIMELOCK;
+use model::CfdEvent;
+use model::Dlc;
+use model::EventKind;
+use model::OrderId;
+use model::CET_TIMELOCK;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::collections::hash_map::Entry;
@@ -444,7 +444,7 @@ impl Actor {
     async fn invoke_cfd_command(
         &self,
         id: OrderId,
-        handler: impl FnOnce(model::cfd::Cfd) -> Result<Option<model::cfd::CfdEvent>>,
+        handler: impl FnOnce(model::Cfd) -> Result<Option<model::CfdEvent>>,
     ) {
         match self.executor.execute(id, handler).await {
             Ok(()) => {}
@@ -998,7 +998,7 @@ impl xtra::Handler<Sync> for Actor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use model::cfd::CET_TIMELOCK;
+    use model::CET_TIMELOCK;
     use tracing_subscriber::prelude::*;
 
     #[tokio::test]

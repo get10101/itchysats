@@ -9,7 +9,7 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use maia::secp256k1_zkp::schnorrsig;
-use model::cfd::OrderId;
+use model::OrderId;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;

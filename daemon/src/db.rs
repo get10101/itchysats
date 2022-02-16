@@ -2,16 +2,16 @@ use anyhow::Context;
 use anyhow::Result;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use model::cfd::CfdEvent;
-use model::cfd::EventKind;
-use model::cfd::OrderId;
-use model::cfd::Role;
+use model::CfdEvent;
+use model::EventKind;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
 use model::OpeningFee;
+use model::OrderId;
 use model::Position;
 use model::Price;
+use model::Role;
 use model::TxFeeRate;
 use model::Usd;
 use sqlx::migrate::MigrateError;
@@ -97,7 +97,7 @@ async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-pub async fn insert_cfd(cfd: &model::cfd::Cfd, conn: &mut PoolConnection<Sqlite>) -> Result<()> {
+pub async fn insert_cfd(cfd: &model::Cfd, conn: &mut PoolConnection<Sqlite>) -> Result<()> {
     let query_result = sqlx::query(
         r#"
         insert into cfds (
@@ -202,14 +202,14 @@ pub async fn load_cfd(
         r#"
             select
                 id as cfd_id,
-                uuid as "uuid: model::cfd::OrderId",
+                uuid as "uuid: model::OrderId",
                 position as "position: model::Position",
                 initial_price as "initial_price: model::Price",
                 leverage as "leverage: model::Leverage",
                 settlement_time_interval_hours,
                 quantity_usd as "quantity_usd: model::Usd",
                 counterparty_network_identity as "counterparty_network_identity: model::Identity",
-                role as "role: model::cfd::Role",
+                role as "role: model::Role",
                 opening_fee as "opening_fee: model::OpeningFee",
                 initial_funding_rate as "initial_funding_rate: model::FundingRate",
                 initial_tx_fee_rate as "initial_tx_fee_rate: model::TxFeeRate"
@@ -271,7 +271,7 @@ pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<O
         r#"
             select
                 id as cfd_id,
-                uuid as "uuid: model::cfd::OrderId"
+                uuid as "uuid: model::OrderId"
             from
                 cfds
             order by cfd_id desc
@@ -301,7 +301,7 @@ pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<
         r#"
             select
                 id as cfd_id,
-                uuid as "uuid: model::cfd::OrderId"
+                uuid as "uuid: model::OrderId"
             from
                 cfds
             where not exists (
@@ -336,12 +336,12 @@ pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<
 mod tests {
     use super::*;
     use bdk::bitcoin::Amount;
-    use model::cfd::Cfd;
-    use model::cfd::Role;
+    use model::Cfd;
     use model::Leverage;
     use model::OpeningFee;
     use model::Position;
     use model::Price;
+    use model::Role;
     use model::Timestamp;
     use model::TxFeeRate;
     use model::Usd;
