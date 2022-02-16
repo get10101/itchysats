@@ -1,15 +1,14 @@
 use crate::cfd_actors::load_cfd;
+use crate::command;
 use crate::connection;
 use crate::process_manager;
 use crate::wire;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
-use model::CfdEvent;
 use model::CollaborativeSettlement;
 use model::CollaborativeSettlementCompleted;
 use model::Completed;
-use model::EventKind;
 use model::OrderId;
 use model::Price;
 use model::SettlementProposal;
@@ -28,7 +27,7 @@ pub struct Actor {
     current_price: Price,
     n_payouts: usize,
     connection: xtra::Address<connection::Actor>,
-    process_manager: xtra::Address<process_manager::Actor>,
+    executor: command::Executor,
     db: sqlx::SqlitePool,
     tasks: Tasks,
     maker_replied: bool,
@@ -49,7 +48,7 @@ impl Actor {
             n_payouts,
             current_price,
             connection,
-            process_manager,
+            executor: command::Executor::new(db.clone(), process_manager),
             db,
             tasks: Tasks::default(),
             maker_replied: false,
@@ -57,19 +56,12 @@ impl Actor {
     }
 
     async fn propose(&mut self, this: xtra::Address<Self>) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(self.order_id, &mut conn).await?;
-
-        let event = cfd.propose_collaborative_settlement(self.current_price, self.n_payouts)?;
-        let proposal = if let CfdEvent {
-            event: EventKind::CollaborativeSettlementStarted { ref proposal },
-            ..
-        } = event
-        {
-            proposal
-        } else {
-            unreachable!()
-        };
+        let proposal = self
+            .executor
+            .execute(self.order_id, |cfd| {
+                cfd.propose_collaborative_settlement(self.current_price, self.n_payouts)
+            })
+            .await?;
 
         self.proposal = Some(proposal.clone());
 
@@ -82,10 +74,6 @@ impl Actor {
                 address: this,
                 order_id: self.order_id,
             })
-            .await??;
-
-        self.process_manager
-            .send(process_manager::Event::new(event))
             .await??;
 
         Ok(())
@@ -124,25 +112,13 @@ impl Actor {
         ctx: &mut xtra::Context<Self>,
     ) {
         let order_id = self.order_id;
-        let event_fut = async {
-            let mut conn = self.db.acquire().await?;
-            let cfd = load_cfd(order_id, &mut conn).await?;
-            let event = cfd.settle_collaboratively(completed)?;
-
-            anyhow::Ok(event)
-        };
-
-        match event_fut.await {
-            Ok(event) => {
-                let _ = self
-                    .process_manager
-                    .send(process_manager::Event::new(event))
-                    .await;
-            }
-            Err(e) => {
-                tracing::warn!(%order_id, "Failed to report completion of collab settlement: {:#}", e)
-            }
-        };
+        if let Err(e) = self
+            .executor
+            .execute(order_id, |cfd| cfd.settle_collaboratively(completed))
+            .await
+        {
+            tracing::warn!(%order_id, "Failed to execute `settle_collaboratively` command: {e:#}");
+        }
 
         ctx.stop();
     }

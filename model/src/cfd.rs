@@ -811,7 +811,7 @@ impl Cfd {
         &self,
         current_price: Price,
         n_payouts: usize,
-    ) -> Result<CfdEvent> {
+    ) -> Result<(CfdEvent, SettlementProposal)> {
         anyhow::ensure!(
             !self.is_in_collaborative_settlement()
                 && self.role == Role::Taker
@@ -843,9 +843,14 @@ impl Cfd {
             price: current_price,
         };
 
-        Ok(CfdEvent::new(
-            self.id,
-            EventKind::CollaborativeSettlementStarted { proposal },
+        Ok((
+            CfdEvent::new(
+                self.id,
+                EventKind::CollaborativeSettlementStarted {
+                    proposal: proposal.clone(),
+                },
+            ),
+            proposal,
         ))
     }
 
@@ -3035,17 +3040,10 @@ mod tests {
         ) -> (Self, SettlementProposal, Signature, Script) {
             let mut events = Vec::new();
 
-            let propose = self
+            let (propose, settlement_proposal) = self
                 .propose_collaborative_settlement(price, N_PAYOUTS)
                 .unwrap();
-            events.push(propose.clone());
-
-            let settlement_proposal =
-                if let EventKind::CollaborativeSettlementStarted { proposal } = propose.event {
-                    proposal
-                } else {
-                    panic!("Proposal not created!");
-                };
+            events.push(propose);
 
             let (spend_tx, taker_signature, taker_script) = self
                 .sign_collaborative_settlement_taker(&settlement_proposal)
