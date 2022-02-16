@@ -8,7 +8,7 @@ use crate::projection;
 use anyhow::Result;
 use async_trait::async_trait;
 use model::cfd;
-use model::cfd::CfdEvent;
+use model::cfd::EventKind;
 use model::cfd::Role;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
@@ -69,7 +69,7 @@ impl Actor {
         append_event(event.clone(), &mut conn).await?;
 
         // 2. Post process event
-        use CfdEvent::*;
+        use EventKind::*;
         match event.event {
             ContractSetupCompleted { dlc, .. } => {
                 tracing::info!("Setup complete, publishing on chain now");

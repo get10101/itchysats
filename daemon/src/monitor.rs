@@ -16,8 +16,8 @@ use bdk::electrum_client::GetHistoryRes;
 use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
 use model::cfd;
-use model::cfd::CfdEvent;
 use model::cfd::Dlc;
+use model::cfd::EventKind;
 use model::cfd::OrderId;
 use model::cfd::CET_TIMELOCK;
 use serde_json::Value;
@@ -184,7 +184,7 @@ impl Cfd {
     // At the moment, neither of those two is the case which is why we set everything to true that
     // might become relevant. See also https://github.com/itchysats/itchysats/issues/605 and https://github.com/itchysats/itchysats/issues/236.
     fn apply(self, event: cfd::Event) -> Self {
-        use CfdEvent::*;
+        use EventKind::*;
         match event.event {
             ContractSetupCompleted { dlc, .. } => Self {
                 params: Some(MonitorParams::new(dlc.clone())),

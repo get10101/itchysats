@@ -2,8 +2,8 @@ use anyhow::Context;
 use anyhow::Result;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use model::cfd::CfdEvent;
 use model::cfd::Event;
+use model::cfd::EventKind;
 use model::cfd::OrderId;
 use model::cfd::Role;
 use model::FundingRate;
@@ -255,7 +255,7 @@ pub async fn load_cfd(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<
         Ok(Event {
             timestamp: row.created_at,
             id,
-            event: CfdEvent::from_json(row.name, row.data)?,
+            event: EventKind::from_json(row.name, row.data)?,
         })
     })
     .collect::<Result<Vec<_>>>()?;
@@ -314,11 +314,11 @@ pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<
             )
             order by cfd_id desc
             "#,
-        CfdEvent::COLLABORATIVE_SETTLEMENT_CONFIRMED,
-        CfdEvent::CET_CONFIRMED,
-        CfdEvent::REFUND_CONFIRMED,
-        CfdEvent::CONTRACT_SETUP_FAILED,
-        CfdEvent::OFFER_REJECTED
+        EventKind::COLLABORATIVE_SETTLEMENT_CONFIRMED,
+        EventKind::CET_CONFIRMED,
+        EventKind::REFUND_CONFIRMED,
+        EventKind::CONTRACT_SETUP_FAILED,
+        EventKind::OFFER_REJECTED
     )
     .fetch_all(&mut *conn)
     .await?
@@ -408,7 +408,7 @@ mod tests {
         let event1 = Event {
             timestamp,
             id: cfd.id(),
-            event: CfdEvent::OfferRejected,
+            event: EventKind::OfferRejected,
         };
 
         append_event(event1.clone(), &mut conn).await.unwrap();
@@ -418,7 +418,7 @@ mod tests {
         let event2 = Event {
             timestamp,
             id: cfd.id(),
-            event: CfdEvent::RevokeConfirmed,
+            event: EventKind::RevokeConfirmed,
         };
 
         append_event(event2.clone(), &mut conn).await.unwrap();
@@ -567,7 +567,7 @@ mod tests {
         Event {
             timestamp: Timestamp::now(),
             id: cfd.id(),
-            event: CfdEvent::LockConfirmed,
+            event: EventKind::LockConfirmed,
         }
     }
 
@@ -575,7 +575,7 @@ mod tests {
         Event {
             timestamp: Timestamp::now(),
             id: cfd.id(),
-            event: CfdEvent::CollaborativeSettlementConfirmed,
+            event: EventKind::CollaborativeSettlementConfirmed,
         }
     }
 
@@ -583,7 +583,7 @@ mod tests {
         Event {
             timestamp: Timestamp::now(),
             id: cfd.id(),
-            event: CfdEvent::CetConfirmed,
+            event: EventKind::CetConfirmed,
         }
     }
 
@@ -591,7 +591,7 @@ mod tests {
         Event {
             timestamp: Timestamp::now(),
             id: cfd.id(),
-            event: CfdEvent::RefundConfirmed,
+            event: EventKind::RefundConfirmed,
         }
     }
 
@@ -599,7 +599,7 @@ mod tests {
         Event {
             timestamp: Timestamp::now(),
             id: cfd.id(),
-            event: CfdEvent::ContractSetupFailed,
+            event: EventKind::ContractSetupFailed,
         }
     }
 
@@ -607,7 +607,7 @@ mod tests {
         Event {
             timestamp: Timestamp::now(),
             id: cfd.id(),
-            event: CfdEvent::OfferRejected,
+            event: EventKind::OfferRejected,
         }
     }
 }

@@ -5,8 +5,8 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use maia::secp256k1_zkp::schnorrsig;
-use model::cfd::CfdEvent;
 use model::cfd::Event;
+use model::cfd::EventKind;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use sqlx::SqlitePool;
@@ -70,8 +70,8 @@ struct Cfd {
 impl Cfd {
     fn apply(self, event: Event) -> Self {
         let settlement_event_id = match event.event {
-            CfdEvent::ContractSetupCompleted { dlc, .. } => dlc.settlement_event_id,
-            CfdEvent::RolloverCompleted { dlc, .. } => dlc.settlement_event_id,
+            EventKind::ContractSetupCompleted { dlc, .. } => dlc.settlement_event_id,
+            EventKind::RolloverCompleted { dlc, .. } => dlc.settlement_event_id,
             // TODO: There might be a few cases where we do not need to monitor the attestation,
             // e.g. when we already agreed to collab. settle. Ignoring it for now
             // because I don't want to think about it and it doesn't cause much harm to do the

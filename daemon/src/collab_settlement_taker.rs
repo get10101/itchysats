@@ -6,10 +6,10 @@ use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
 use model::cfd;
-use model::cfd::CfdEvent;
 use model::cfd::CollaborativeSettlement;
 use model::cfd::CollaborativeSettlementCompleted;
 use model::cfd::Completed;
+use model::cfd::EventKind;
 use model::cfd::OrderId;
 use model::cfd::SettlementProposal;
 use model::Price;
@@ -62,7 +62,7 @@ impl Actor {
 
         let event = cfd.propose_collaborative_settlement(self.current_price, self.n_payouts)?;
         let proposal = if let cfd::Event {
-            event: CfdEvent::CollaborativeSettlementStarted { ref proposal },
+            event: EventKind::CollaborativeSettlementStarted { ref proposal },
             ..
         } = event
         {
