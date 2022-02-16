@@ -69,6 +69,7 @@ pub struct NewOrder {
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
     pub opening_fee: OpeningFee,
+    pub position: Position,
 }
 
 pub struct TakerConnected {
@@ -268,7 +269,7 @@ where
 
         let cfd = Cfd::from_order(
             current_order.clone(),
-            Position::Short,
+            current_order.position,
             quantity,
             taker_id,
             Role::Maker,
@@ -549,13 +550,15 @@ where
             tx_fee_rate,
             funding_rate,
             opening_fee,
+            position,
         } = msg;
 
         let oracle_event_id = oracle::next_announcement_after(
             time::OffsetDateTime::now_utc() + self.settlement_interval,
         )?;
 
-        let order = Order::new_short(
+        let order = Order::new(
+            position,
             price,
             min_quantity,
             max_quantity,

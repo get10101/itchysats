@@ -15,6 +15,7 @@ use model::olivia;
 use model::FundingRate;
 use model::Identity;
 use model::OpeningFee;
+use model::Position;
 use model::Price;
 use model::TxFeeRate;
 use model::Usd;
@@ -168,6 +169,7 @@ where
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn new_order(
         &self,
         price: Price,
@@ -176,6 +178,7 @@ where
         fee_rate: Option<TxFeeRate>,
         funding_rate: Option<FundingRate>,
         opening_fee: Option<OpeningFee>,
+        position: Option<Position>,
     ) -> Result<()> {
         self.cfd_actor
             .send(maker_cfd::NewOrder {
@@ -185,6 +188,8 @@ where
                 tx_fee_rate: fee_rate.unwrap_or_default(),
                 funding_rate: funding_rate.unwrap_or_default(),
                 opening_fee: opening_fee.unwrap_or_default(),
+                // For backwards compatibility, default to maker going short
+                position: position.unwrap_or(Position::Short),
             })
             .await??;
 

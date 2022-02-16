@@ -24,6 +24,7 @@ use model::cfd::calculate_long_margin;
 use model::cfd::OrderId;
 use model::olivia;
 use model::Identity;
+use model::Position;
 use model::Usd;
 use rust_decimal_macros::dec;
 use std::time::Duration;
@@ -120,7 +121,7 @@ async fn taker_receives_order_from_maker_on_publication() {
 
     assert!(is_next_none(taker.order_feed()).await.unwrap());
 
-    maker.publish_order(dummy_new_order()).await;
+    maker.publish_order(dummy_new_order(Position::Short)).await;
 
     let (published, received) = next_order(maker.order_feed(), taker.order_feed())
         .await
@@ -150,7 +151,7 @@ async fn taker_takes_order_and_maker_rejects() {
     // TODO: Why is this needed? For the cfd stream it is not needed
     is_next_none(taker.order_feed()).await.unwrap();
 
-    maker.publish_order(dummy_new_order()).await;
+    maker.publish_order(dummy_new_order(Position::Short)).await;
 
     let (_, received) = next_order(maker.order_feed(), taker.order_feed())
         .await
@@ -178,7 +179,7 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 
     is_next_none(taker.order_feed()).await.unwrap();
 
-    maker.publish_order(dummy_new_order()).await;
+    maker.publish_order(dummy_new_order(Position::Short)).await;
 
     let (_, received) = next_order(maker.order_feed(), taker.order_feed())
         .await
@@ -211,11 +212,20 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 }
 
 #[tokio::test]
-async fn collaboratively_close_an_open_cfd() {
+async fn collaboratively_close_an_open_cfd_maker_going_short() {
     let _guard = init_tracing();
-    let (mut maker, mut taker, order_id) =
-        start_from_open_cfd_state(OliviaData::example_0().announcement()).await;
+    collaboratively_close_an_open_cfd(Position::Short).await;
+}
 
+#[tokio::test]
+async fn collaboratively_close_an_open_cfd_maker_going_long() {
+    let _guard = init_tracing();
+    collaboratively_close_an_open_cfd(Position::Long).await;
+}
+
+async fn collaboratively_close_an_open_cfd(maker_position: Position) {
+    let (mut maker, mut taker, order_id) =
+        start_from_open_cfd_state(OliviaData::example_0().announcement(), maker_position).await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
@@ -234,7 +244,6 @@ async fn collaboratively_close_an_open_cfd() {
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
 
     wait_next_state!(order_id, maker, taker, CfdState::PendingClose);
-
     confirm!(close transaction, order_id, maker, taker);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
@@ -243,12 +252,21 @@ async fn collaboratively_close_an_open_cfd() {
 }
 
 #[tokio::test]
-async fn force_close_an_open_cfd() {
+async fn force_close_an_open_cfd_maker_going_short() {
     let _guard = init_tracing();
+    force_close_open_cfd(Position::Short).await;
+}
+
+#[tokio::test]
+async fn force_close_an_open_cfd_maker_going_long() {
+    let _guard = init_tracing();
+    force_close_open_cfd(Position::Long).await;
+}
+
+async fn force_close_open_cfd(maker_position: Position) {
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id) =
-        start_from_open_cfd_state(oracle_data.announcement()).await;
-
+        start_from_open_cfd_state(oracle_data.announcement(), maker_position).await;
     // Taker initiates force-closing
     taker.system.commit(order_id).await.unwrap();
 
@@ -277,14 +295,24 @@ async fn force_close_an_open_cfd() {
 }
 
 #[tokio::test]
-async fn rollover_an_open_cfd() {
+async fn rollover_an_open_cfd_maker_going_short() {
     let _guard = init_tracing();
+    rollover_an_open_cfd(Position::Short).await;
+}
+
+#[tokio::test]
+async fn rollover_an_open_cfd_maker_going_long() {
+    let _guard = init_tracing();
+    rollover_an_open_cfd(Position::Long).await;
+}
+
+async fn rollover_an_open_cfd(maker_position: Position) {
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id) =
-        start_from_open_cfd_state(oracle_data.announcement()).await;
+        start_from_open_cfd_state(oracle_data.announcement(), maker_position).await;
 
     // Maker needs to have an active offer in order to accept rollover
-    maker.publish_order(dummy_new_order()).await;
+    maker.publish_order(dummy_new_order(maker_position)).await;
 
     taker.trigger_rollover(order_id).await;
 
@@ -307,7 +335,7 @@ async fn maker_rejects_rollover_of_open_cfd() {
     let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id) =
-        start_from_open_cfd_state(oracle_data.announcement()).await;
+        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
 
     taker.trigger_rollover(order_id).await;
 
@@ -329,7 +357,7 @@ async fn maker_rejects_rollover_after_commit_finality() {
     let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id) =
-        start_from_open_cfd_state(oracle_data.announcement()).await;
+        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
 
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
@@ -360,8 +388,7 @@ async fn open_cfd_is_refunded() {
     let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id) =
-        start_from_open_cfd_state(oracle_data.announcement()).await;
-
+        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
     confirm!(commit transaction, order_id, maker, taker);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
@@ -437,13 +464,16 @@ async fn maker_notices_lack_of_taker() {
 /// Useful when reading tests that should start at this point.
 /// For convenience, returns also OrderId of the opened Cfd.
 /// `announcement` is used during Cfd's creation.
-async fn start_from_open_cfd_state(announcement: olivia::Announcement) -> (Maker, Taker, OrderId) {
+async fn start_from_open_cfd_state(
+    announcement: olivia::Announcement,
+    position: Position,
+) -> (Maker, Taker, OrderId) {
     let mut maker = Maker::start(&MakerConfig::default()).await;
     let mut taker = Taker::start(&TakerConfig::default(), maker.listen_addr, maker.identity).await;
 
     is_next_none(taker.order_feed()).await.unwrap();
 
-    maker.publish_order(dummy_new_order()).await;
+    maker.publish_order(dummy_new_order(position)).await;
 
     let (_, received) = next_order(maker.order_feed(), taker.order_feed())
         .await
