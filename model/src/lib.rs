@@ -23,6 +23,7 @@ use std::time::UNIX_EPOCH;
 mod sqlx_ext; // Must come first because it is a macro.
 
 mod cfd;
+mod hex_transaction;
 pub mod olivia;
 pub mod payout_curve;
 
