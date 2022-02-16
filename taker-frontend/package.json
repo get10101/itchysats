@@ -27,7 +27,7 @@
     "dayjs": "^1.10.7",
     "eslint": "^8.9.0",
     "eslint-config-react-app": "^7.0.0",
-    "framer-motion": "^5",
+    "framer-motion": "^6",
     "jest": "^27.5.1",
     "npm-package-json-lint": "^5.4.2",
     "react": "^17.0.2",
