@@ -351,7 +351,7 @@ function Quantity({ min, max, onChange, quantity, parcelSize }: QuantityProps) {
                 <NumberInput
                     min={min}
                     max={max}
-                    default={min}
+                    defaultValue={min}
                     step={parcelSize}
                     onChange={onChange}
                     value={quantity}
@@ -379,7 +379,7 @@ function Leverage({ leverage }: LeverageProps) {
             <Center>
                 <FormLabel>Leverage</FormLabel>
             </Center>
-            <Slider disabled value={leverage} min={1} max={5} step={1}>
+            <Slider isDisabled={true} value={leverage} min={1} max={5} step={1}>
                 <SliderTrack>
                     <Box position="relative" right={10} />
                     <SliderFilledTrack />
