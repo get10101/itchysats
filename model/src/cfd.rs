@@ -56,9 +56,6 @@ use uuid::Uuid;
 
 pub const CET_TIMELOCK: u32 = 12;
 
-const CONTRACT_SETUP_COMPLETED_EVENT: &str = "ContractSetupCompleted";
-const ROLLOVER_COMPLETED_EVENT: &str = "RolloverCompleted";
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct OrderId(Hyphenated);
@@ -340,6 +337,14 @@ pub enum CfdEvent {
 }
 
 impl CfdEvent {
+    pub const CONTRACT_SETUP_COMPLETED_EVENT: &'static str = "ContractSetupCompleted";
+    pub const ROLLOVER_COMPLETED_EVENT: &'static str = "RolloverCompleted";
+    pub const COLLABORATIVE_SETTLEMENT_CONFIRMED: &'static str = "CollaborativeSettlementConfirmed";
+    pub const CET_CONFIRMED: &'static str = "CetConfirmed";
+    pub const REFUND_CONFIRMED: &'static str = "RefundConfirmed";
+    pub const CONTRACT_SETUP_FAILED: &'static str = "ContractSetupFailed";
+    pub const OFFER_REJECTED: &'static str = "OfferRejected";
+
     pub fn to_json(&self) -> (String, String) {
         let value = serde_json::to_value(self).expect("serialization to always work");
         let object = value.as_object().expect("always an object");
@@ -357,7 +362,7 @@ impl CfdEvent {
 
     pub fn from_json(name: String, data: String) -> Result<Self> {
         match name.as_str() {
-            CONTRACT_SETUP_COMPLETED_EVENT | ROLLOVER_COMPLETED_EVENT => {
+            Self::CONTRACT_SETUP_COMPLETED_EVENT | Self::ROLLOVER_COMPLETED_EVENT => {
                 from_json_inner_cached(name, data)
             }
             _ => from_json_inner(name, data),
@@ -2295,8 +2300,33 @@ mod tests {
         }
         .to_json();
 
-        assert_eq!(setup_event_name, CONTRACT_SETUP_COMPLETED_EVENT.to_owned());
-        assert_eq!(rollover_event_name, ROLLOVER_COMPLETED_EVENT.to_owned());
+        assert_eq!(
+            setup_event_name,
+            CfdEvent::CONTRACT_SETUP_COMPLETED_EVENT.to_owned()
+        );
+        assert_eq!(
+            rollover_event_name,
+            CfdEvent::ROLLOVER_COMPLETED_EVENT.to_owned()
+        );
+    }
+
+    #[test]
+    fn cfd_ensure_stable_names_for_load_filter_in_db() {
+        let (collaborative_settlement_confirmed, _) =
+            CfdEvent::CollaborativeSettlementConfirmed.to_json();
+        let (cet_confirmed, _) = CfdEvent::CetConfirmed.to_json();
+        let (refund_confirmed, _) = CfdEvent::RefundConfirmed.to_json();
+        let (setup_failed, _) = CfdEvent::ContractSetupFailed.to_json();
+        let (rejected, _) = CfdEvent::OfferRejected.to_json();
+
+        assert_eq!(
+            collaborative_settlement_confirmed,
+            CfdEvent::COLLABORATIVE_SETTLEMENT_CONFIRMED.to_owned()
+        );
+        assert_eq!(cet_confirmed, CfdEvent::CET_CONFIRMED.to_owned());
+        assert_eq!(refund_confirmed, CfdEvent::REFUND_CONFIRMED.to_owned());
+        assert_eq!(setup_failed, CfdEvent::CONTRACT_SETUP_FAILED.to_owned());
+        assert_eq!(rejected, CfdEvent::OFFER_REJECTED.to_owned());
     }
 
     #[test]

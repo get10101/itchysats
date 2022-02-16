@@ -283,6 +283,52 @@ pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<O
     Ok(ids)
 }
 
+/// Loads all CFDs where we are still able to append events
+///
+/// This function is to be called when we only want to process CFDs where events can still be
+/// appended, but ignore all other CFDs.
+/// Open in this context means that the CFD is not final yet, i.e. we can still append events.
+/// In this context a CFD is not open anymore if one of the following happened:
+/// 1. Event of the confirmation of a payout (spend) transaction on the blockchain was recorded
+///     Cases: Collaborative settlement, CET, Refund
+/// 2. Event that fails the CFD early was recorded, meaning it becomes irrelevant for processing
+///     Cases: Setup failed, Taker's take order rejected
+pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<OrderId>> {
+    let ids = sqlx::query!(
+        r#"
+            select
+                id as cfd_id,
+                uuid as "uuid: model::cfd::OrderId"
+            from
+                cfds
+            where not exists (
+                select id from EVENTS as events
+                where cfd_id = cfds.id and
+                (
+                    events.name = $1 or
+                    events.name = $2 or
+                    events.name= $3 or
+                    events.name= $4 or
+                    events.name= $5
+                )
+            )
+            order by cfd_id desc
+            "#,
+        CfdEvent::COLLABORATIVE_SETTLEMENT_CONFIRMED,
+        CfdEvent::CET_CONFIRMED,
+        CfdEvent::REFUND_CONFIRMED,
+        CfdEvent::CONTRACT_SETUP_FAILED,
+        CfdEvent::OFFER_REJECTED
+    )
+    .fetch_all(&mut *conn)
+    .await?
+    .into_iter()
+    .map(|r| r.uuid)
+    .collect();
+
+    Ok(ids)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,6 +426,110 @@ mod tests {
         assert_eq!(events, vec![event1, event2])
     }
 
+    #[tokio::test]
+    async fn given_collaborative_close_confirmed_then_do_not_load_non_final_cfd() {
+        let mut conn = setup_test_db().await;
+
+        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        append_event(lock_confirmed(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+        append_event(collab_settlement_confirmed(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+
+        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+
+        assert!(cfd_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn given_cet_confirmed_then_do_not_load_non_final_cfd() {
+        let mut conn = setup_test_db().await;
+
+        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        append_event(lock_confirmed(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+        append_event(cet_confirmed(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+
+        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+        assert!(cfd_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn given_refund_confirmed_then_do_not_load_non_final_cfd() {
+        let mut conn = setup_test_db().await;
+
+        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        append_event(lock_confirmed(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+        append_event(refund_confirmed(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+
+        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+        assert!(cfd_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn given_setup_failed_then_do_not_load_non_final_cfd() {
+        let mut conn = setup_test_db().await;
+
+        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        append_event(lock_confirmed(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+        append_event(setup_failed(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+
+        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+        assert!(cfd_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn given_order_rejected_then_do_not_load_non_final_cfd() {
+        let mut conn = setup_test_db().await;
+
+        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        append_event(lock_confirmed(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+        append_event(order_rejected(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+
+        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+        assert!(cfd_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn given_final_and_non_final_cfd_then_non_final_one_still_loaded() {
+        let mut conn = setup_test_db().await;
+
+        let cfd_not_final = insert(dummy_cfd(), &mut conn).await;
+        append_event(lock_confirmed(&cfd_not_final), &mut conn)
+            .await
+            .unwrap();
+
+        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        append_event(lock_confirmed(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+        append_event(order_rejected(&cfd_final), &mut conn)
+            .await
+            .unwrap();
+
+        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+
+        assert_eq!(cfd_ids.len(), 1);
+        assert_eq!(*cfd_ids.first().unwrap(), cfd_not_final.id())
+    }
+
     async fn setup_test_db() -> PoolConnection<Sqlite> {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
 
@@ -411,5 +561,53 @@ mod tests {
     pub async fn insert(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> Cfd {
         insert_cfd(&cfd, conn).await.unwrap();
         cfd
+    }
+
+    fn lock_confirmed(cfd: &Cfd) -> Event {
+        Event {
+            timestamp: Timestamp::now(),
+            id: cfd.id(),
+            event: CfdEvent::LockConfirmed,
+        }
+    }
+
+    fn collab_settlement_confirmed(cfd: &Cfd) -> Event {
+        Event {
+            timestamp: Timestamp::now(),
+            id: cfd.id(),
+            event: CfdEvent::CollaborativeSettlementConfirmed,
+        }
+    }
+
+    fn cet_confirmed(cfd: &Cfd) -> Event {
+        Event {
+            timestamp: Timestamp::now(),
+            id: cfd.id(),
+            event: CfdEvent::CetConfirmed,
+        }
+    }
+
+    fn refund_confirmed(cfd: &Cfd) -> Event {
+        Event {
+            timestamp: Timestamp::now(),
+            id: cfd.id(),
+            event: CfdEvent::RefundConfirmed,
+        }
+    }
+
+    fn setup_failed(cfd: &Cfd) -> Event {
+        Event {
+            timestamp: Timestamp::now(),
+            id: cfd.id(),
+            event: CfdEvent::ContractSetupFailed,
+        }
+    }
+
+    fn order_rejected(cfd: &Cfd) -> Event {
+        Event {
+            timestamp: Timestamp::now(),
+            id: cfd.id(),
+            event: CfdEvent::OfferRejected,
+        }
     }
 }

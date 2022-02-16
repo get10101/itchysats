@@ -730,7 +730,7 @@ impl xtra::Actor for Actor {
                 async move {
                     let mut conn = db.acquire().await?;
 
-                    for id in db::load_all_cfd_ids(&mut conn).await? {
+                    for id in db::load_open_cfd_ids(&mut conn).await? {
                         let (_, events) = db::load_cfd(id, &mut conn).await?;
 
                         let Cfd {
@@ -792,7 +792,7 @@ impl xtra::Actor for Actor {
                 async move {
                     let mut conn = db.acquire().await?;
 
-                    for id in db::load_all_cfd_ids(&mut conn).await? {
+                    for id in db::load_open_cfd_ids(&mut conn).await? {
                         let (_, events) = db::load_cfd(id, &mut conn).await?;
 
                         let Cfd {
