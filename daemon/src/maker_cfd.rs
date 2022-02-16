@@ -29,9 +29,9 @@ use model::Position;
 use model::Price;
 use model::Role;
 use model::RolloverCompleted;
-use model::RolloverProposal;
 use model::SettlementProposal;
 use model::SetupCompleted;
+use model::Timestamp;
 use model::TxFeeRate;
 use model::Usd;
 use std::collections::HashSet;
@@ -83,6 +83,13 @@ pub struct TakerDisconnected {
 pub struct FromTaker {
     pub taker_id: Identity,
     pub msg: wire::TakerToMaker,
+}
+
+/// Proposed rollover
+#[derive(Debug, Clone, PartialEq)]
+struct RolloverProposal {
+    pub order_id: OrderId,
+    pub timestamp: Timestamp,
 }
 
 pub struct Actor<O, T, W> {

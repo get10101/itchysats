@@ -218,13 +218,6 @@ pub struct SettlementProposal {
     pub price: Price,
 }
 
-/// Proposed rollover
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RolloverProposal {
-    pub order_id: OrderId,
-    pub timestamp: Timestamp,
-}
-
 #[derive(Debug, Clone)]
 pub enum SettlementKind {
     Incoming,
