@@ -23,11 +23,13 @@ use std::time::UNIX_EPOCH;
 mod sqlx_ext; // Must come first because it is a macro.
 
 mod cfd;
+mod contract_setup;
 mod hex_transaction;
 pub mod olivia;
 pub mod payout_curve;
 
 pub use cfd::*;
+pub use contract_setup::SetupParams;
 
 /// The interval until the cfd gets settled, i.e. the attestation happens
 ///
