@@ -121,7 +121,7 @@ export default function Wallet(
                                 <NumberInput
                                     min={0}
                                     max={balance}
-                                    default={0}
+                                    defaultValue={0}
                                     onChange={(_, amount) => setWithdrawAmount(amount)}
                                     value={withdrawAmount}
                                     precision={8}
@@ -141,7 +141,7 @@ export default function Wallet(
                                 <NumberInput
                                     min={1}
                                     max={100}
-                                    default={0}
+                                    defaultValue={0}
                                     onChange={(_, amount) => setFee(amount)}
                                     value={fee}
                                     step={1}
