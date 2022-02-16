@@ -218,12 +218,6 @@ pub struct SettlementProposal {
     pub price: Price,
 }
 
-#[derive(Debug, Clone)]
-pub enum SettlementKind {
-    Incoming,
-    Outgoing,
-}
-
 /// Reasons why we cannot rollover a CFD.
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum NoRolloverReason {
