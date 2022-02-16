@@ -1046,12 +1046,12 @@ impl Cfd {
         )))
     }
 
-    pub fn handle_cet_timelock_expired(mut self) -> Result<CfdEvent> {
+    pub fn handle_cet_timelock_expired(self) -> Result<CfdEvent> {
         anyhow::ensure!(!self.is_final());
 
         let cfd_event = self
             .cet
-            .take()
+            .clone()
             // If we have cet, that means it has been attested
             .map(|cet| EventKind::CetTimelockExpiredPostOracleAttestation { cet })
             .unwrap_or_else(|| EventKind::CetTimelockExpiredPriorOracleAttestation);
