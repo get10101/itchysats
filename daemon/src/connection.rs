@@ -431,11 +431,7 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_wire_message(
-        &mut self,
-        message: MakerStreamMessage,
-        _ctx: &mut xtra::Context<Self>,
-    ) -> KeepRunning {
+    async fn handle_wire_message(&mut self, message: MakerStreamMessage) -> KeepRunning {
         let msg = match message.item {
             Ok(msg) => msg,
             Err(e) => {

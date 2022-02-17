@@ -518,7 +518,16 @@ where
 #[xtra_productivity]
 impl<O, T, W> Actor<O, T, W>
 where
-    T: xtra::Handler<maker_inc_connections::BroadcastOrder>,
+    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
+    T: xtra::Handler<maker_inc_connections::ConfirmOrder>
+        + xtra::Handler<maker_inc_connections::TakerMessage>
+        + xtra::Handler<maker_inc_connections::BroadcastOrder>
+        + xtra::Handler<Stopping<setup_maker::Actor>>
+        + xtra::Handler<Stopping<rollover_maker::Actor>>
+        + xtra::Handler<maker_inc_connections::settlement::Response>
+        + xtra::Handler<Stopping<collab_settlement_maker::Actor>>
+        + xtra::Handler<maker_inc_connections::RegisterRollover>,
+    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle_new_order(&mut self, msg: NewOrder) -> Result<()> {
         let NewOrder {
@@ -563,46 +572,15 @@ where
 
         Ok(())
     }
-}
 
-#[async_trait]
-impl<O: 'static, T: 'static, W: 'static> Handler<TakerConnected> for Actor<O, T, W>
-where
-    T: xtra::Handler<maker_inc_connections::TakerMessage>,
-{
-    async fn handle(&mut self, msg: TakerConnected, _ctx: &mut xtra::Context<Self>) -> Result<()> {
+    async fn handle(&mut self, msg: TakerConnected) -> Result<()> {
         self.handle_taker_connected(msg.id).await
     }
-}
 
-#[async_trait]
-impl<O: 'static, T: 'static, W: 'static> Handler<TakerDisconnected> for Actor<O, T, W>
-where
-    T: xtra::Handler<maker_inc_connections::TakerMessage>,
-{
-    async fn handle(
-        &mut self,
-        msg: TakerDisconnected,
-        _ctx: &mut xtra::Context<Self>,
-    ) -> Result<()> {
+    async fn handle(&mut self, msg: TakerDisconnected) -> Result<()> {
         self.handle_taker_disconnected(msg.id).await
     }
-}
 
-#[async_trait]
-impl<O: 'static, T: 'static, W: 'static> Handler<FromTaker> for Actor<O, T, W>
-where
-    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    T: xtra::Handler<maker_inc_connections::ConfirmOrder>
-        + xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>
-        + xtra::Handler<Stopping<setup_maker::Actor>>
-        + xtra::Handler<Stopping<rollover_maker::Actor>>
-        + xtra::Handler<maker_inc_connections::settlement::Response>
-        + xtra::Handler<Stopping<collab_settlement_maker::Actor>>
-        + xtra::Handler<maker_inc_connections::RegisterRollover>,
-    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
-{
     async fn handle(
         &mut self,
         FromTaker { taker_id, msg }: FromTaker,
@@ -679,18 +657,6 @@ where
             }
         }
     }
-}
-
-impl Message for TakerConnected {
-    type Result = Result<()>;
-}
-
-impl Message for TakerDisconnected {
-    type Result = Result<()>;
-}
-
-impl Message for FromTaker {
-    type Result = ();
 }
 
 #[async_trait]

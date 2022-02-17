@@ -226,7 +226,7 @@ impl Actor {
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    fn handle(&mut self, msg: wire::SetupMsg, _ctx: &mut xtra::Context<Self>) -> Result<()> {
+    fn handle(&mut self, msg: wire::SetupMsg) -> Result<()> {
         let mut sender = self
             .setup_msg_sender
             .clone()
