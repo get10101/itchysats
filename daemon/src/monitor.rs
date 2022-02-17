@@ -485,7 +485,7 @@ impl State {
         }
 
         if latest_block_height > self.latest_block_height {
-            tracing::debug!(
+            tracing::trace!(
                 block_height = u32::from(latest_block_height),
                 "Got notification for new block"
             );
