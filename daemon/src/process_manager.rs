@@ -7,9 +7,9 @@ use crate::oracle;
 use crate::projection;
 use anyhow::Result;
 use async_trait::async_trait;
-use model::cfd;
-use model::cfd::CfdEvent;
-use model::cfd::Role;
+use model::CfdEvent;
+use model::EventKind;
+use model::Role;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -25,10 +25,10 @@ pub struct Actor {
     monitor_attestation: Box<dyn MessageChannel<oracle::MonitorAttestation>>,
 }
 
-pub struct Event(cfd::Event);
+pub struct Event(CfdEvent);
 
 impl Event {
-    pub fn new(event: cfd::Event) -> Self {
+    pub fn new(event: CfdEvent) -> Self {
         Self(event)
     }
 }
@@ -69,7 +69,7 @@ impl Actor {
         append_event(event.clone(), &mut conn).await?;
 
         // 2. Post process event
-        use CfdEvent::*;
+        use EventKind::*;
         match event.event {
             ContractSetupCompleted { dlc, .. } => {
                 tracing::info!("Setup complete, publishing on chain now");

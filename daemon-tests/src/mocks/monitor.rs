@@ -2,7 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use daemon::command;
 use daemon::monitor;
-use model::cfd::OrderId;
+use model::OrderId;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use xtra_productivity::xtra_productivity;

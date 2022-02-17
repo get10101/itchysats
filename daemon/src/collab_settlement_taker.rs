@@ -1,18 +1,15 @@
 use crate::cfd_actors::load_cfd;
+use crate::command;
 use crate::connection;
 use crate::process_manager;
 use crate::wire;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
-use model::cfd;
-use model::cfd::CfdEvent;
-use model::cfd::CollaborativeSettlement;
-use model::cfd::CollaborativeSettlementCompleted;
-use model::cfd::Completed;
-use model::cfd::OrderId;
-use model::cfd::SettlementProposal;
+use model::CollaborativeSettlement;
+use model::OrderId;
 use model::Price;
+use model::SettlementProposal;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
@@ -28,7 +25,7 @@ pub struct Actor {
     current_price: Price,
     n_payouts: usize,
     connection: xtra::Address<connection::Actor>,
-    process_manager: xtra::Address<process_manager::Actor>,
+    executor: command::Executor,
     db: sqlx::SqlitePool,
     tasks: Tasks,
     maker_replied: bool,
@@ -49,7 +46,7 @@ impl Actor {
             n_payouts,
             current_price,
             connection,
-            process_manager,
+            executor: command::Executor::new(db.clone(), process_manager),
             db,
             tasks: Tasks::default(),
             maker_replied: false,
@@ -57,19 +54,12 @@ impl Actor {
     }
 
     async fn propose(&mut self, this: xtra::Address<Self>) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(self.order_id, &mut conn).await?;
-
-        let event = cfd.propose_collaborative_settlement(self.current_price, self.n_payouts)?;
-        let proposal = if let cfd::Event {
-            event: CfdEvent::CollaborativeSettlementStarted { ref proposal },
-            ..
-        } = event
-        {
-            proposal
-        } else {
-            unreachable!()
-        };
+        let proposal = self
+            .executor
+            .execute(self.order_id, |cfd| {
+                cfd.propose_collaborative_settlement(self.current_price, self.n_payouts)
+            })
+            .await?;
 
         self.proposal = Some(proposal.clone());
 
@@ -82,10 +72,6 @@ impl Actor {
                 address: this,
                 order_id: self.order_id,
             })
-            .await??;
-
-        self.process_manager
-            .send(process_manager::Event::new(event))
             .await??;
 
         Ok(())
@@ -118,31 +104,47 @@ impl Actor {
         )?)
     }
 
-    async fn complete(
+    async fn emit_completed(
         &mut self,
-        completed: CollaborativeSettlementCompleted,
+        settlement: CollaborativeSettlement,
         ctx: &mut xtra::Context<Self>,
     ) {
         let order_id = self.order_id;
-        let event_fut = async {
-            let mut conn = self.db.acquire().await?;
-            let cfd = load_cfd(order_id, &mut conn).await?;
-            let event = cfd.settle_collaboratively(completed)?;
+        if let Err(e) = self
+            .executor
+            .execute(order_id, |cfd| {
+                cfd.complete_collaborative_settlement(settlement)
+            })
+            .await
+        {
+            tracing::warn!(%order_id, "Failed to execute `complete_collaborative_settlement` command: {e:#}");
+        }
 
-            anyhow::Ok(event)
-        };
+        ctx.stop();
+    }
 
-        match event_fut.await {
-            Ok(event) => {
-                let _ = self
-                    .process_manager
-                    .send(process_manager::Event::new(event))
-                    .await;
-            }
-            Err(e) => {
-                tracing::warn!(%order_id, "Failed to report completion of collab settlement: {:#}", e)
-            }
-        };
+    async fn emit_rejected(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
+        let order_id = self.order_id;
+        if let Err(e) = self
+            .executor
+            .execute(order_id, |cfd| cfd.reject_collaborative_settlement(reason))
+            .await
+        {
+            tracing::warn!(%order_id, "Failed to execute `reject_collaborative_settlement` command: {e:#}");
+        }
+
+        ctx.stop();
+    }
+
+    async fn emit_failed(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
+        let order_id = self.order_id;
+        if let Err(e) = self
+            .executor
+            .execute(order_id, |cfd| cfd.fail_collaborative_settlement(error))
+            .await
+        {
+            tracing::warn!(%order_id, "Failed to execute `fail_collaborative_settlement` command: {e:#}");
+        }
 
         ctx.stop();
     }
@@ -160,14 +162,7 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("get address to ourselves");
 
         if let Err(e) = self.propose(this).await {
-            self.complete(
-                Completed::Failed {
-                    order_id: self.order_id,
-                    error: e,
-                },
-                ctx,
-            )
-            .await;
+            self.emit_failed(e, ctx).await;
         }
 
         let maker_response_timeout = {
@@ -207,21 +202,17 @@ impl Actor {
         let order_id = self.order_id;
         self.maker_replied = true;
 
-        let completed = match msg {
+        match msg {
             wire::maker_to_taker::Settlement::Confirm => match self.handle_confirmed().await {
-                Ok(settlement) => Completed::Succeeded {
-                    order_id,
-                    payload: settlement,
-                },
-                Err(e) => Completed::Failed { error: e, order_id },
+                Ok(settlement) => self.emit_completed(settlement, ctx).await,
+                Err(e) => self.emit_failed(e, ctx).await,
             },
             wire::maker_to_taker::Settlement::Reject => {
                 tracing::info!(%order_id, "Settlement proposal got rejected");
-                Completed::rejected(order_id)
+                self.emit_rejected(anyhow::format_err!("unknown"), ctx)
+                    .await
             }
         };
-
-        self.complete(completed, ctx).await;
     }
 
     pub async fn handle_collab_settlement_timeout_reached(
@@ -238,12 +229,22 @@ impl Actor {
         // If the proposal is rejected, our entire actor would already be shut down and we hence
         // never get this message.
         let timeout = msg.timeout.as_secs();
-        let completed = CollaborativeSettlementCompleted::Failed {
-            order_id: self.order_id,
-            error: anyhow!("Maker did not respond within {timeout} seconds"),
-        };
+        if let Err(e) = self
+            .executor
+            .execute(self.order_id, |cfd| {
+                cfd.fail_collaborative_settlement(anyhow!(
+                    "Maker did not respond within {timeout} seconds"
+                ))
+            })
+            .await
+        {
+            tracing::warn!(
+                "Failed to execute `fail_collaborative_settlement` command: {:#}",
+                e
+            );
+        }
 
-        self.complete(completed, ctx).await;
+        ctx.stop()
     }
 }
 

@@ -14,11 +14,10 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia::secp256k1_zkp::schnorrsig;
-use model::cfd::Dlc;
-use model::cfd::OrderId;
-use model::cfd::Role;
-use model::cfd::SetupCompleted;
 use model::olivia::Announcement;
+use model::Dlc;
+use model::OrderId;
+use model::Role;
 use model::Usd;
 use std::time::Duration;
 use tokio_tasks::Tasks;
@@ -105,8 +104,8 @@ impl Actor {
         let this = ctx.address().expect("self to be alive");
         self.tasks.add(async move {
             let _: Result<(), xtra::Disconnected> = match contract_future.await {
-                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await,
-                Err(error) => this.send(SetupFailed { order_id, error }).await,
+                Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
+                Err(error) => this.send(SetupFailed { error }).await,
             };
         });
 
@@ -125,12 +124,10 @@ impl Actor {
 
         if let Err(e) = self
             .executor
-            .execute(order_id, |cfd| {
-                cfd.setup_contract(SetupCompleted::rejected_due_to(order_id, reason))
-            })
+            .execute(order_id, |cfd| cfd.reject_contract_setup(reason))
             .await
         {
-            tracing::warn!("{:#}", e);
+            tracing::warn!("Failed to execute `reject_contract_setup` command: {e:#}");
         }
 
         ctx.stop();
@@ -151,12 +148,10 @@ impl Actor {
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self
             .executor
-            .execute(self.order_id, |cfd| {
-                cfd.setup_contract(SetupCompleted::succeeded(msg.order_id, msg.dlc))
-            })
+            .execute(self.order_id, |cfd| cfd.complete_contract_setup(msg.dlc))
             .await
         {
-            tracing::warn!("{:#}", e);
+            tracing::warn!("Failed to execute `complete_contract_setup` command: {e:#}");
         }
 
         ctx.stop();
@@ -165,15 +160,10 @@ impl Actor {
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self
             .executor
-            .execute(self.order_id, |cfd| {
-                cfd.setup_contract(SetupCompleted::Failed {
-                    order_id: msg.order_id,
-                    error: msg.error,
-                })
-            })
+            .execute(self.order_id, |cfd| cfd.fail_contract_setup(msg.error))
             .await
         {
-            tracing::warn!("{:#}", e);
+            tracing::warn!("Failed to execute `fail_contract_setup` command: {e:#}");
         }
 
         ctx.stop();
@@ -193,17 +183,14 @@ impl Actor {
         // If the proposal is rejected, our entire actor would already be shut down and we hence
         // never get this message.
         let timeout = msg.timeout.as_secs();
-        let failed = SetupCompleted::Failed {
-            order_id: self.order_id,
-            error: anyhow!("Maker did not respond within {timeout} seconds"),
-        };
-
         if let Err(e) = self
             .executor
-            .execute(self.order_id, |cfd| cfd.setup_contract(failed))
+            .execute(self.order_id, |cfd| {
+                cfd.fail_contract_setup(anyhow!("Maker did not respond within {timeout} seconds"))
+            })
             .await
         {
-            tracing::warn!("{:#}", e);
+            tracing::warn!("Failed to execute `fail_contract_setup` command: {:#}", e);
         }
 
         ctx.stop();
@@ -268,14 +255,12 @@ pub struct Rejected {
 /// Message sent from the spawned task to `setup_taker::Actor` to
 /// notify that the contract setup has finished successfully.
 struct SetupSucceeded {
-    order_id: OrderId,
     dlc: Dlc,
 }
 
 /// Message sent from the spawned task to `setup_taker::Actor` to
 /// notify that the contract setup has failed.
 struct SetupFailed {
-    order_id: OrderId,
     error: anyhow::Error,
 }
 

@@ -1,7 +1,10 @@
 use crate::calculate_funding_fee;
+use crate::contract_setup::SetupParams;
+use crate::hex_transaction;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
+use crate::rollover::RolloverParams;
 use crate::FeeAccount;
 use crate::FundingFee;
 use crate::FundingRate;
@@ -215,19 +218,6 @@ pub struct SettlementProposal {
     pub price: Price,
 }
 
-/// Proposed rollover
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RolloverProposal {
-    pub order_id: OrderId,
-    pub timestamp: Timestamp,
-}
-
-#[derive(Debug, Clone)]
-pub enum SettlementKind {
-    Incoming,
-    Outgoing,
-}
-
 /// Reasons why we cannot rollover a CFD.
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum NoRolloverReason {
@@ -246,15 +236,15 @@ pub enum NoRolloverReason {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Event {
+pub struct CfdEvent {
     pub timestamp: Timestamp,
     pub id: OrderId,
-    pub event: CfdEvent,
+    pub event: EventKind,
 }
 
-impl Event {
-    pub fn new(id: OrderId, event: CfdEvent) -> Self {
-        Event {
+impl CfdEvent {
+    pub fn new(id: OrderId, event: EventKind) -> Self {
+        CfdEvent {
             timestamp: Timestamp::now(),
             id,
             event,
@@ -265,7 +255,7 @@ impl Event {
 /// CfdEvents used by the maker and taker, some events are only for one role
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(tag = "name", content = "data")]
-pub enum CfdEvent {
+pub enum EventKind {
     ContractSetupStarted,
     ContractSetupCompleted {
         dlc: Dlc,
@@ -345,7 +335,7 @@ pub enum CfdEvent {
     },
 }
 
-impl CfdEvent {
+impl EventKind {
     pub const CONTRACT_SETUP_COMPLETED_EVENT: &'static str = "ContractSetupCompleted";
     pub const ROLLOVER_COMPLETED_EVENT: &'static str = "RolloverCompleted";
     pub const COLLABORATIVE_SETTLEMENT_CONFIRMED: &'static str = "CollaborativeSettlementConfirmed";
@@ -382,16 +372,16 @@ impl CfdEvent {
 // Deserialisation of events has been proved to use substantial amount of the CPU.
 // Cache the events.
 #[cached(size = 500, result = true)]
-fn from_json_inner_cached(name: String, data: String) -> Result<CfdEvent> {
+fn from_json_inner_cached(name: String, data: String) -> Result<EventKind> {
     from_json_inner(name, data)
 }
 
-fn from_json_inner(name: String, data: String) -> Result<CfdEvent> {
+fn from_json_inner(name: String, data: String) -> Result<EventKind> {
     use serde_json::json;
 
     let data = serde_json::from_str::<serde_json::Value>(&data)?;
 
-    let event = serde_json::from_value::<CfdEvent>(json!({
+    let event = serde_json::from_value::<EventKind>(json!({
         "name": name,
         "data": data
     }))?;
@@ -556,7 +546,7 @@ impl Cfd {
         opening_fee: OpeningFee,
         initial_funding_rate: FundingRate,
         initial_tx_fee_rate: TxFeeRate,
-        events: Vec<Event>,
+        events: Vec<CfdEvent>,
     ) -> Self {
         let cfd = Self::new(
             id,
@@ -684,7 +674,7 @@ impl Cfd {
             || self.is_refunded()
     }
 
-    pub fn start_contract_setup(&self) -> Result<(Event, SetupParams)> {
+    pub fn start_contract_setup(&self) -> Result<(CfdEvent, SetupParams)> {
         if self.version > 0 {
             bail!("Start contract not allowed in version {}", self.version)
         }
@@ -693,7 +683,7 @@ impl Cfd {
         let counterparty_margin = self.counterparty_margin();
 
         Ok((
-            Event::new(self.id(), CfdEvent::ContractSetupStarted),
+            CfdEvent::new(self.id(), EventKind::ContractSetupStarted),
             SetupParams::new(
                 margin,
                 counterparty_margin,
@@ -708,21 +698,21 @@ impl Cfd {
         ))
     }
 
-    pub fn start_rollover(&self) -> Result<Event> {
+    pub fn start_rollover(&self) -> Result<CfdEvent> {
         if self.during_rollover {
             bail!("The CFD is already being rolled over")
         };
 
         self.can_rollover()?;
 
-        Ok(Event::new(self.id, CfdEvent::RolloverStarted))
+        Ok(CfdEvent::new(self.id, EventKind::RolloverStarted))
     }
 
     pub fn accept_rollover_proposal(
         self,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
-    ) -> Result<(Event, RolloverParams, Dlc, Duration)> {
+    ) -> Result<(CfdEvent, RolloverParams, Dlc, Duration)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -742,7 +732,7 @@ impl Cfd {
         )?;
 
         Ok((
-            Event::new(self.id, CfdEvent::RolloverAccepted),
+            CfdEvent::new(self.id, EventKind::RolloverAccepted),
             RolloverParams::new(
                 self.initial_price,
                 self.quantity,
@@ -761,7 +751,7 @@ impl Cfd {
         &self,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
-    ) -> Result<(Event, RolloverParams, Dlc)> {
+    ) -> Result<(CfdEvent, RolloverParams, Dlc)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -784,7 +774,7 @@ impl Cfd {
         )?;
 
         Ok((
-            self.event(CfdEvent::RolloverAccepted),
+            self.event(EventKind::RolloverAccepted),
             RolloverParams::new(
                 self.initial_price,
                 self.quantity,
@@ -821,7 +811,7 @@ impl Cfd {
         &self,
         current_price: Price,
         n_payouts: usize,
-    ) -> Result<Event> {
+    ) -> Result<(CfdEvent, SettlementProposal)> {
         anyhow::ensure!(
             !self.is_in_collaborative_settlement()
                 && self.role == Role::Taker
@@ -853,9 +843,14 @@ impl Cfd {
             price: current_price,
         };
 
-        Ok(Event::new(
-            self.id,
-            CfdEvent::CollaborativeSettlementStarted { proposal },
+        Ok((
+            CfdEvent::new(
+                self.id,
+                EventKind::CollaborativeSettlementStarted {
+                    proposal: proposal.clone(),
+                },
+            ),
+            proposal,
         ))
     }
 
@@ -863,7 +858,7 @@ impl Cfd {
         self,
         proposal: SettlementProposal,
         n_payouts: usize,
-    ) -> Result<Event> {
+    ) -> Result<CfdEvent> {
         anyhow::ensure!(
             !self.is_in_collaborative_settlement()
                 && self.role == Role::Maker
@@ -894,111 +889,132 @@ impl Cfd {
             bail!("The settlement amounts sent by the taker are not according to the agreed payout curve. Expected taker {} and maker {} but received taker {} and maker {}", payout.taker_amount(), payout.maker_amount(), proposal.taker, proposal.maker);
         }
 
-        Ok(Event::new(
+        Ok(CfdEvent::new(
             self.id,
-            CfdEvent::CollaborativeSettlementStarted { proposal },
+            EventKind::CollaborativeSettlementStarted { proposal },
         ))
     }
 
     pub fn accept_collaborative_settlement_proposal(
         self,
         proposal: &SettlementProposal,
-    ) -> Result<Event> {
+    ) -> Result<CfdEvent> {
         anyhow::ensure!(
             self.role == Role::Maker && self.settlement_proposal.as_ref() == Some(proposal)
         );
 
-        Ok(Event::new(
+        Ok(CfdEvent::new(
             self.id,
-            CfdEvent::CollaborativeSettlementProposalAccepted,
+            EventKind::CollaborativeSettlementProposalAccepted,
         ))
     }
 
-    pub fn setup_contract(self, completed: SetupCompleted) -> Result<Event> {
+    pub fn complete_contract_setup(self, dlc: Dlc) -> Result<CfdEvent> {
         if self.version > 1 {
             bail!(
-                "Complete contract setup not allowed because cfd in version {}",
+                "Completing contract setup not allowed because cfd in version {}",
                 self.version
             )
         }
 
-        let event = match completed {
-            SetupCompleted::Succeeded {
-                payload: (dlc, _), ..
-            } => CfdEvent::ContractSetupCompleted { dlc },
-            SetupCompleted::Rejected { .. } => CfdEvent::OfferRejected,
-            SetupCompleted::Failed { error, .. } => {
-                tracing::error!("Contract setup failed: {:#}", error);
+        tracing::info!(order_id = %self.id, "Contract setup was completed");
 
-                CfdEvent::ContractSetupFailed
-            }
-        };
-
-        Ok(self.event(event))
+        Ok(self.event(EventKind::ContractSetupCompleted { dlc }))
     }
 
-    pub fn roll_over(
-        self,
-        completed: RolloverCompleted,
-    ) -> Result<Option<Event>, NoRolloverReason> {
-        let event = match completed {
-            Completed::Succeeded {
-                payload: (dlc, funding_fee, _),
-                ..
-            } => {
-                self.can_rollover()?;
-                CfdEvent::RolloverCompleted { dlc, funding_fee }
-            }
-            Completed::Rejected { reason, .. } => {
-                tracing::info!(order_id = %self.id, "Rollover was rejected: {:#}", reason);
+    pub fn reject_contract_setup(self, reason: anyhow::Error) -> Result<CfdEvent> {
+        anyhow::ensure!(
+            self.version <= 1,
+            "Rejecting contract setup not allowed because cfd in version {}",
+            self.version
+        );
 
-                CfdEvent::RolloverRejected
-            }
-            Completed::Failed { error, .. } => {
-                tracing::warn!(order_id = %self.id, "Rollover failed: {:#}", error);
+        tracing::info!(order_id = %self.id, "Contract setup was rejected: {reason:#}");
 
-                CfdEvent::RolloverFailed
-            }
-        };
-
-        Ok(Some(self.event(event)))
+        Ok(self.event(EventKind::OfferRejected))
     }
 
-    pub fn settle_collaboratively(
+    pub fn fail_contract_setup(self, error: anyhow::Error) -> Result<CfdEvent> {
+        anyhow::ensure!(
+            self.version <= 1,
+            "Failing contract setup not allowed because cfd in version {}",
+            self.version
+        );
+
+        tracing::error!(order_id = %self.id, "Contract setup failed: {error:#}");
+
+        Ok(self.event(EventKind::ContractSetupFailed))
+    }
+
+    pub fn complete_rollover(
         self,
-        settlement: CollaborativeSettlementCompleted,
-    ) -> Result<Event> {
-        if !self.can_settle_collaboratively() {
-            bail!("Cannot collaboratively settle")
-        }
+        dlc: Dlc,
+        funding_fee: FundingFee,
+    ) -> Result<CfdEvent, NoRolloverReason> {
+        self.can_rollover()?;
 
-        let event = match settlement {
-            Completed::Succeeded {
-                payload: settlement,
-                ..
-            } => CfdEvent::CollaborativeSettlementCompleted {
-                spend_tx: settlement.tx,
-                script: settlement.script_pubkey,
-                price: settlement.price,
-            },
-            Completed::Rejected { reason, .. } => {
-                tracing::info!(order_id=%self.id(), "Collaborative close rejected: {:#}", reason);
-                CfdEvent::CollaborativeSettlementRejected
-            }
-            Completed::Failed { error, .. } => {
-                tracing::warn!(order_id=%self.id(), "Collaborative close failed: {:#}", error);
-                CfdEvent::CollaborativeSettlementFailed
-            }
-        };
+        tracing::info!(order_id = %self.id, "Rollover was completed");
 
-        Ok(self.event(event))
+        Ok(self.event(EventKind::RolloverCompleted { dlc, funding_fee }))
+    }
+
+    pub fn reject_rollover(self, reason: anyhow::Error) -> CfdEvent {
+        tracing::info!(order_id = %self.id, "Rollover was rejected: {:#}", reason);
+
+        self.event(EventKind::RolloverRejected)
+    }
+
+    pub fn fail_rollover(self, error: anyhow::Error) -> CfdEvent {
+        tracing::warn!(order_id = %self.id, "Rollover failed: {:#}", error);
+
+        self.event(EventKind::RolloverFailed)
+    }
+
+    pub fn complete_collaborative_settlement(
+        self,
+        settlement: CollaborativeSettlement,
+    ) -> Result<CfdEvent> {
+        anyhow::ensure!(
+            self.can_settle_collaboratively(),
+            "Cannot complete collaborative settlement"
+        );
+
+        tracing::info!(order_id=%self.id(), "Collaborative settlement completed");
+
+        Ok(self.event(EventKind::CollaborativeSettlementCompleted {
+            spend_tx: settlement.tx,
+            script: settlement.script_pubkey,
+            price: settlement.price,
+        }))
+    }
+
+    pub fn reject_collaborative_settlement(self, reason: anyhow::Error) -> Result<CfdEvent> {
+        anyhow::ensure!(
+            self.can_settle_collaboratively(),
+            "Cannot reject collaborative settlement"
+        );
+
+        tracing::info!(order_id=%self.id(), "Collaborative settlement rejected: {reason:#}");
+
+        Ok(self.event(EventKind::CollaborativeSettlementRejected))
+    }
+
+    pub fn fail_collaborative_settlement(self, error: anyhow::Error) -> Result<CfdEvent> {
+        anyhow::ensure!(
+            self.can_settle_collaboratively(),
+            "Cannot fail collaborative settlement"
+        );
+
+        tracing::warn!(order_id=%self.id(), "Collaborative settlement failed: {:#}", error);
+
+        Ok(self.event(EventKind::CollaborativeSettlementFailed))
     }
 
     /// Given an attestation, find and decrypt the relevant CET.
     ///
     /// In case the Cfd was already closed we return `Ok(None)`, because then the attestation is not
     /// relevant anymore. We don't treat this as error because it is not an error scenario.
-    pub fn decrypt_cet(self, attestation: &olivia::Attestation) -> Result<Option<Event>> {
+    pub fn decrypt_cet(self, attestation: &olivia::Attestation) -> Result<Option<CfdEvent>> {
         if self.is_closed() {
             return Ok(None);
         }
@@ -1021,7 +1037,7 @@ impl Cfd {
 
         if self.cet_timelock_expired {
             return Ok(Some(
-                self.event(CfdEvent::OracleAttestedPostCetTimelock { cet, price }),
+                self.event(EventKind::OracleAttestedPostCetTimelock { cet, price }),
             ));
         }
 
@@ -1031,27 +1047,29 @@ impl Cfd {
             None => Some(dlc.signed_commit_tx()?),
         };
 
-        Ok(Some(self.event(CfdEvent::OracleAttestedPriorCetTimelock {
-            timelocked_cet: cet,
-            commit_tx: commit_tx_to_emit,
-            price,
-        })))
+        Ok(Some(self.event(
+            EventKind::OracleAttestedPriorCetTimelock {
+                timelocked_cet: cet,
+                commit_tx: commit_tx_to_emit,
+                price,
+            },
+        )))
     }
 
-    pub fn handle_cet_timelock_expired(mut self) -> Result<Event> {
+    pub fn handle_cet_timelock_expired(self) -> Result<CfdEvent> {
         anyhow::ensure!(!self.is_final());
 
         let cfd_event = self
             .cet
-            .take()
+            .clone()
             // If we have cet, that means it has been attested
-            .map(|cet| CfdEvent::CetTimelockExpiredPostOracleAttestation { cet })
-            .unwrap_or_else(|| CfdEvent::CetTimelockExpiredPriorOracleAttestation);
+            .map(|cet| EventKind::CetTimelockExpiredPostOracleAttestation { cet })
+            .unwrap_or_else(|| EventKind::CetTimelockExpiredPriorOracleAttestation);
 
         Ok(self.event(cfd_event))
     }
 
-    pub fn handle_refund_timelock_expired(self) -> Result<Option<Event>> {
+    pub fn handle_refund_timelock_expired(self) -> Result<Option<CfdEvent>> {
         if self.is_closed() {
             return Ok(None);
         }
@@ -1061,52 +1079,52 @@ impl Cfd {
             .signed_refund_tx()
             .context("Failed to sign refund transaction")?;
 
-        let event = self.event(CfdEvent::RefundTimelockExpired { refund_tx });
+        let event = self.event(EventKind::RefundTimelockExpired { refund_tx });
 
         Ok(Some(event))
     }
 
-    pub fn handle_lock_confirmed(self) -> Event {
+    pub fn handle_lock_confirmed(self) -> CfdEvent {
         // For the special case where we close when lock is still pending
         if self.is_closed() || self.is_in_force_close() {
-            return self.event(CfdEvent::LockConfirmedAfterFinality);
+            return self.event(EventKind::LockConfirmedAfterFinality);
         }
 
-        self.event(CfdEvent::LockConfirmed)
+        self.event(EventKind::LockConfirmed)
     }
 
-    pub fn handle_commit_confirmed(self) -> Event {
-        self.event(CfdEvent::CommitConfirmed)
+    pub fn handle_commit_confirmed(self) -> CfdEvent {
+        self.event(EventKind::CommitConfirmed)
     }
 
-    pub fn handle_collaborative_settlement_confirmed(self) -> Event {
-        self.event(CfdEvent::CollaborativeSettlementConfirmed)
+    pub fn handle_collaborative_settlement_confirmed(self) -> CfdEvent {
+        self.event(EventKind::CollaborativeSettlementConfirmed)
     }
 
-    pub fn handle_cet_confirmed(self) -> Event {
-        self.event(CfdEvent::CetConfirmed)
+    pub fn handle_cet_confirmed(self) -> CfdEvent {
+        self.event(EventKind::CetConfirmed)
     }
 
-    pub fn handle_refund_confirmed(self) -> Event {
-        self.event(CfdEvent::RefundConfirmed)
+    pub fn handle_refund_confirmed(self) -> CfdEvent {
+        self.event(EventKind::RefundConfirmed)
     }
 
-    pub fn handle_revoke_confirmed(self) -> Event {
-        self.event(CfdEvent::RevokeConfirmed)
+    pub fn handle_revoke_confirmed(self) -> CfdEvent {
+        self.event(EventKind::RevokeConfirmed)
     }
 
-    pub fn manual_commit_to_blockchain(&self) -> Result<Event> {
+    pub fn manual_commit_to_blockchain(&self) -> Result<CfdEvent> {
         anyhow::ensure!(!self.is_closed());
 
         let dlc = self.dlc.as_ref().context("Cannot commit without a DLC")?;
 
-        Ok(self.event(CfdEvent::ManualCommit {
+        Ok(self.event(EventKind::ManualCommit {
             tx: dlc.signed_commit_tx()?,
         }))
     }
 
-    fn event(&self, event: CfdEvent) -> Event {
-        Event::new(self.id, event)
+    fn event(&self, event: EventKind) -> CfdEvent {
+        CfdEvent::new(self.id, event)
     }
 
     /// A factor to be added to the CFD order settlement_interval for calculating the
@@ -1194,8 +1212,8 @@ impl Cfd {
         self.version
     }
 
-    pub fn apply(mut self, evt: Event) -> Cfd {
-        use CfdEvent::*;
+    pub fn apply(mut self, evt: CfdEvent) -> Cfd {
+        use EventKind::*;
 
         self.version += 1;
 
@@ -1264,86 +1282,6 @@ impl Cfd {
         }
 
         self
-    }
-}
-
-pub struct SetupParams {
-    pub margin: Amount,
-    pub counterparty_margin: Amount,
-    pub counterparty_identity: Identity,
-    pub price: Price,
-    pub quantity: Usd,
-    pub leverage: Leverage,
-    pub refund_timelock: u32,
-    pub tx_fee_rate: TxFeeRate,
-    pub fee_account: FeeAccount,
-}
-
-impl SetupParams {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        margin: Amount,
-        counterparty_margin: Amount,
-        counterparty_identity: Identity,
-        price: Price,
-        quantity: Usd,
-        leverage: Leverage,
-        refund_timelock: u32,
-        tx_fee_rate: TxFeeRate,
-        fee_account: FeeAccount,
-    ) -> Result<Self> {
-        Ok(Self {
-            margin,
-            counterparty_margin,
-            counterparty_identity,
-            price,
-            quantity,
-            leverage,
-            refund_timelock,
-            tx_fee_rate,
-            fee_account,
-        })
-    }
-
-    pub fn counterparty_identity(&self) -> Identity {
-        self.counterparty_identity
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RolloverParams {
-    pub price: Price,
-    pub quantity: Usd,
-    pub leverage: Leverage,
-    pub refund_timelock: u32,
-    pub fee_rate: TxFeeRate,
-    pub fee_account: FeeAccount,
-    pub current_fee: FundingFee,
-}
-
-impl RolloverParams {
-    pub fn new(
-        price: Price,
-        quantity: Usd,
-        leverage: Leverage,
-        refund_timelock: u32,
-        fee_rate: TxFeeRate,
-        fee_account: FeeAccount,
-        current_fee: FundingFee,
-    ) -> Self {
-        Self {
-            price,
-            quantity,
-            leverage,
-            refund_timelock,
-            fee_rate,
-            fee_account,
-            current_fee,
-        }
-    }
-
-    pub fn funding_fee(&self) -> &FundingFee {
-        &self.current_fee
     }
 }
 
@@ -1820,136 +1758,6 @@ impl CollaborativeSettlement {
     }
 }
 
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-pub enum Completed<P, E> {
-    Succeeded {
-        order_id: OrderId,
-        payload: P,
-    },
-    Rejected {
-        order_id: OrderId,
-        reason: anyhow::Error,
-    },
-    Failed {
-        order_id: OrderId,
-        error: E,
-    },
-}
-
-impl<P, E> Completed<P, E> {
-    pub fn order_id(&self) -> OrderId {
-        *match self {
-            Completed::Succeeded { order_id, .. } => order_id,
-            Completed::Rejected { order_id, .. } => order_id,
-            Completed::Failed { order_id, .. } => order_id,
-        }
-    }
-
-    pub fn rejected(order_id: OrderId) -> Self {
-        Self::Rejected {
-            order_id,
-            reason: anyhow::format_err!("unknown"),
-        }
-    }
-    pub fn rejected_due_to(order_id: OrderId, reason: anyhow::Error) -> Self {
-        Self::Rejected { order_id, reason }
-    }
-
-    pub fn failed(order_id: OrderId, error: E) -> Self {
-        Self::Failed { order_id, error }
-    }
-}
-
-pub mod marker {
-    /// Marker type for contract setup completion
-    #[derive(Debug)]
-    pub struct Setup;
-    /// Marker type for rollover  completion
-    #[derive(Debug)]
-    pub struct Rollover;
-}
-
-/// Message sent from a setup actor to the
-/// cfd actor to notify that the contract setup has finished.
-pub type SetupCompleted = Completed<(Dlc, marker::Setup), anyhow::Error>;
-
-/// Message sent from a rollover actor to the
-/// cfd actor to notify that the rollover has finished (contract got updated).
-pub type RolloverCompleted = Completed<(Dlc, FundingFee, marker::Rollover), anyhow::Error>;
-
-pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;
-
-impl Completed<(Dlc, marker::Setup), anyhow::Error> {
-    pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
-        Self::Succeeded {
-            order_id,
-            payload: (dlc, marker::Setup),
-        }
-    }
-}
-
-impl Completed<(Dlc, FundingFee, marker::Rollover), anyhow::Error> {
-    pub fn succeeded(order_id: OrderId, dlc: Dlc, funding_fee: FundingFee) -> Self {
-        Self::Succeeded {
-            order_id,
-            payload: (dlc, funding_fee, marker::Rollover),
-        }
-    }
-}
-
-mod hex_transaction {
-    use super::*;
-    use bdk::bitcoin;
-    use serde::Deserializer;
-    use serde::Serializer;
-
-    pub fn serialize<S: Serializer>(value: &Transaction, serializer: S) -> Result<S::Ok, S::Error> {
-        let bytes = bitcoin::consensus::serialize(value);
-        let hex_str = hex::encode(bytes);
-        serializer.serialize_str(hex_str.as_str())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Transaction, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let hex = String::deserialize(deserializer).map_err(D::Error::custom)?;
-        let bytes = hex::decode(hex).map_err(D::Error::custom)?;
-        let tx = bitcoin::consensus::deserialize(&bytes).map_err(D::Error::custom)?;
-        Ok(tx)
-    }
-
-    pub mod opt {
-        use super::*;
-
-        pub fn serialize<S: Serializer>(
-            value: &Option<Transaction>,
-            serializer: S,
-        ) -> Result<S::Ok, S::Error> {
-            match value {
-                None => serializer.serialize_none(),
-                Some(value) => super::serialize(value, serializer),
-            }
-        }
-
-        pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Transaction>, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let hex = match Option::<String>::deserialize(deserializer).map_err(D::Error::custom)? {
-                None => return Ok(None),
-                Some(hex) => hex,
-            };
-
-            let bytes = hex::decode(hex).map_err(D::Error::custom)?;
-            let tx = bitcoin::consensus::deserialize(&bytes).map_err(D::Error::custom)?;
-
-            Ok(Some(tx))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2278,7 +2086,7 @@ mod tests {
 
     #[test]
     fn cfd_event_to_json() {
-        let event = CfdEvent::ContractSetupFailed;
+        let event = EventKind::ContractSetupFailed;
 
         let (name, data) = event.to_json();
 
@@ -2291,51 +2099,51 @@ mod tests {
         let name = "ContractSetupFailed".to_owned();
         let data = r#"null"#.to_owned();
 
-        let event = CfdEvent::from_json(name, data).unwrap();
+        let event = EventKind::from_json(name, data).unwrap();
 
-        assert_eq!(event, CfdEvent::ContractSetupFailed);
+        assert_eq!(event, EventKind::ContractSetupFailed);
     }
 
     #[test]
     fn cfd_ensure_stable_names_for_expensive_events() {
-        let (rollover_event_name, _) = CfdEvent::RolloverCompleted {
+        let (rollover_event_name, _) = EventKind::RolloverCompleted {
             dlc: Dlc::dummy(None),
             funding_fee: FundingFee::new(Amount::ZERO, FundingRate::default()),
         }
         .to_json();
 
-        let (setup_event_name, _) = CfdEvent::ContractSetupCompleted {
+        let (setup_event_name, _) = EventKind::ContractSetupCompleted {
             dlc: Dlc::dummy(None),
         }
         .to_json();
 
         assert_eq!(
             setup_event_name,
-            CfdEvent::CONTRACT_SETUP_COMPLETED_EVENT.to_owned()
+            EventKind::CONTRACT_SETUP_COMPLETED_EVENT.to_owned()
         );
         assert_eq!(
             rollover_event_name,
-            CfdEvent::ROLLOVER_COMPLETED_EVENT.to_owned()
+            EventKind::ROLLOVER_COMPLETED_EVENT.to_owned()
         );
     }
 
     #[test]
     fn cfd_ensure_stable_names_for_load_filter_in_db() {
         let (collaborative_settlement_confirmed, _) =
-            CfdEvent::CollaborativeSettlementConfirmed.to_json();
-        let (cet_confirmed, _) = CfdEvent::CetConfirmed.to_json();
-        let (refund_confirmed, _) = CfdEvent::RefundConfirmed.to_json();
-        let (setup_failed, _) = CfdEvent::ContractSetupFailed.to_json();
-        let (rejected, _) = CfdEvent::OfferRejected.to_json();
+            EventKind::CollaborativeSettlementConfirmed.to_json();
+        let (cet_confirmed, _) = EventKind::CetConfirmed.to_json();
+        let (refund_confirmed, _) = EventKind::RefundConfirmed.to_json();
+        let (setup_failed, _) = EventKind::ContractSetupFailed.to_json();
+        let (rejected, _) = EventKind::OfferRejected.to_json();
 
         assert_eq!(
             collaborative_settlement_confirmed,
-            CfdEvent::COLLABORATIVE_SETTLEMENT_CONFIRMED.to_owned()
+            EventKind::COLLABORATIVE_SETTLEMENT_CONFIRMED.to_owned()
         );
-        assert_eq!(cet_confirmed, CfdEvent::CET_CONFIRMED.to_owned());
-        assert_eq!(refund_confirmed, CfdEvent::REFUND_CONFIRMED.to_owned());
-        assert_eq!(setup_failed, CfdEvent::CONTRACT_SETUP_FAILED.to_owned());
-        assert_eq!(rejected, CfdEvent::OFFER_REJECTED.to_owned());
+        assert_eq!(cet_confirmed, EventKind::CET_CONFIRMED.to_owned());
+        assert_eq!(refund_confirmed, EventKind::REFUND_CONFIRMED.to_owned());
+        assert_eq!(setup_failed, EventKind::CONTRACT_SETUP_FAILED.to_owned());
+        assert_eq!(rejected, EventKind::OFFER_REJECTED.to_owned());
     }
 
     #[test]
@@ -2343,9 +2151,9 @@ mod tests {
         let name = "OfferRejected".to_owned();
         let data = r#"null"#.to_owned();
 
-        let event = CfdEvent::from_json(name, data).unwrap();
+        let event = EventKind::from_json(name, data).unwrap();
 
-        assert_eq!(event, CfdEvent::OfferRejected);
+        assert_eq!(event, EventKind::OfferRejected);
     }
 
     #[test]
@@ -2522,11 +2330,7 @@ mod tests {
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_taker(opening_price);
 
-        let result = cfd.roll_over(RolloverCompleted::succeeded(
-            OrderId::default(),
-            Dlc::dummy(None),
-            FundingFee::dummy(),
-        ));
+        let result = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
 
         let no_rollover_reason = result.unwrap_err();
         assert_eq!(no_rollover_reason, NoRolloverReason::Closed);
@@ -2544,11 +2348,7 @@ mod tests {
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
-        let result = cfd.roll_over(RolloverCompleted::succeeded(
-            OrderId::default(),
-            Dlc::dummy(None),
-            FundingFee::dummy(),
-        ));
+        let result = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
 
         let no_rollover_reason = result.unwrap_err();
         assert_eq!(
@@ -2664,8 +2464,8 @@ mod tests {
         let taker_event = taker_long.handle_lock_confirmed();
         let maker_event = maker_short.handle_lock_confirmed();
 
-        assert_eq!(taker_event.event, CfdEvent::LockConfirmedAfterFinality);
-        assert_eq!(maker_event.event, CfdEvent::LockConfirmedAfterFinality);
+        assert_eq!(taker_event.event, EventKind::LockConfirmedAfterFinality);
+        assert_eq!(maker_event.event, EventKind::LockConfirmedAfterFinality);
     }
 
     #[test]
@@ -2681,8 +2481,8 @@ mod tests {
         let taker_event = taker_long.handle_lock_confirmed();
         let maker_event = maker_short.handle_lock_confirmed();
 
-        assert_eq!(taker_event.event, CfdEvent::LockConfirmed);
-        assert_eq!(maker_event.event, CfdEvent::LockConfirmed);
+        assert_eq!(taker_event.event, EventKind::LockConfirmed);
+        assert_eq!(maker_event.event, EventKind::LockConfirmed);
     }
 
     #[test]
@@ -2715,8 +2515,8 @@ mod tests {
         let taker_event = taker_long.handle_lock_confirmed();
         let maker_event = maker_short.handle_lock_confirmed();
 
-        assert_eq!(taker_event.event, CfdEvent::LockConfirmedAfterFinality);
-        assert_eq!(maker_event.event, CfdEvent::LockConfirmedAfterFinality);
+        assert_eq!(taker_event.event, EventKind::LockConfirmedAfterFinality);
+        assert_eq!(maker_event.event, EventKind::LockConfirmedAfterFinality);
     }
 
     #[test]
@@ -2973,34 +2773,34 @@ mod tests {
     }
     }
 
-    impl Event {
+    impl CfdEvent {
         fn dummy_open(event_id: BitMexPriceEventId) -> Vec<Self> {
             vec![
-                Event {
+                CfdEvent {
                     timestamp: Timestamp::now(),
                     id: Default::default(),
-                    event: CfdEvent::ContractSetupStarted,
+                    event: EventKind::ContractSetupStarted,
                 },
-                Event {
+                CfdEvent {
                     timestamp: Timestamp::now(),
                     id: Default::default(),
-                    event: CfdEvent::ContractSetupCompleted {
+                    event: EventKind::ContractSetupCompleted {
                         dlc: Dlc::dummy(Some(event_id)),
                     },
                 },
-                Event {
+                CfdEvent {
                     timestamp: Timestamp::now(),
                     id: Default::default(),
-                    event: CfdEvent::LockConfirmed,
+                    event: EventKind::LockConfirmed,
                 },
             ]
         }
 
         fn dummy_start_collab_settlement(order_id: OrderId) -> Vec<Self> {
-            vec![Event {
+            vec![CfdEvent {
                 timestamp: Timestamp::now(),
                 id: order_id,
-                event: CfdEvent::CollaborativeSettlementStarted {
+                event: EventKind::CollaborativeSettlementStarted {
                     proposal: SettlementProposal {
                         order_id,
                         timestamp: Timestamp::now(),
@@ -3013,24 +2813,24 @@ mod tests {
         }
 
         fn dummy_start_rollover() -> Vec<Self> {
-            vec![Event {
+            vec![CfdEvent {
                 timestamp: Timestamp::now(),
                 id: Default::default(),
-                event: CfdEvent::RolloverStarted,
+                event: EventKind::RolloverStarted,
             }]
         }
 
         fn dummy_rollover(fee_sat: u64, funding_rate: Decimal) -> Vec<Self> {
             vec![
-                Event {
+                CfdEvent {
                     timestamp: Timestamp::now(),
                     id: Default::default(),
-                    event: CfdEvent::RolloverStarted,
+                    event: EventKind::RolloverStarted,
                 },
-                Event {
+                CfdEvent {
                     timestamp: Timestamp::now(),
                     id: Default::default(),
-                    event: CfdEvent::RolloverCompleted {
+                    event: EventKind::RolloverCompleted {
                         dlc: Dlc::dummy(Some(dummy_event_id())),
                         funding_fee: FundingFee {
                             fee: Amount::from_sat(fee_sat),
@@ -3043,10 +2843,10 @@ mod tests {
 
         fn dummy_attestation_prior_timelock(event_id: BitMexPriceEventId) -> Vec<Self> {
             let mut open = Self::dummy_open(event_id);
-            open.push(Event {
+            open.push(CfdEvent {
                 timestamp: Timestamp::now(),
                 id: Default::default(),
-                event: CfdEvent::OracleAttestedPriorCetTimelock {
+                event: EventKind::OracleAttestedPriorCetTimelock {
                     timelocked_cet: dummy_transaction(),
                     commit_tx: Some(dummy_transaction()),
                     price: Price(dec!(10000)),
@@ -3057,10 +2857,10 @@ mod tests {
         }
 
         fn dummy_manual_commit() -> Vec<Self> {
-            vec![Event {
+            vec![CfdEvent {
                 timestamp: Timestamp::now(),
                 id: Default::default(),
-                event: CfdEvent::ManualCommit {
+                event: EventKind::ManualCommit {
                     tx: dummy_transaction(),
                 },
             }]
@@ -3068,10 +2868,10 @@ mod tests {
 
         fn dummy_final_cet(event_id: BitMexPriceEventId) -> Vec<Self> {
             let mut open = Self::dummy_open(event_id);
-            open.push(Event {
+            open.push(CfdEvent {
                 timestamp: Timestamp::now(),
                 id: Default::default(),
-                event: CfdEvent::CetConfirmed,
+                event: EventKind::CetConfirmed,
             });
 
             open
@@ -3132,7 +2932,7 @@ mod tests {
         }
 
         fn dummy_open(self, event_id: BitMexPriceEventId) -> Self {
-            Event::dummy_open(event_id)
+            CfdEvent::dummy_open(event_id)
                 .into_iter()
                 .fold(self, Cfd::apply)
         }
@@ -3179,7 +2979,7 @@ mod tests {
         }
 
         fn dummy_start_rollover(self) -> Self {
-            Event::dummy_start_rollover()
+            CfdEvent::dummy_start_rollover()
                 .into_iter()
                 .fold(self, Cfd::apply)
         }
@@ -3188,7 +2988,7 @@ mod tests {
             let mut events = Vec::new();
 
             for _ in 0..nr_of_rollovers {
-                let mut rollover = Event::dummy_rollover(fee_sat, funding_rate);
+                let mut rollover = CfdEvent::dummy_rollover(fee_sat, funding_rate);
                 events.append(&mut rollover)
             }
 
@@ -3196,7 +2996,7 @@ mod tests {
         }
 
         fn dummy_start_collab_settlement(self) -> Self {
-            Event::dummy_start_collab_settlement(self.id)
+            CfdEvent::dummy_start_collab_settlement(self.id)
                 .into_iter()
                 .fold(self, Cfd::apply)
         }
@@ -3207,17 +3007,10 @@ mod tests {
         ) -> (Self, SettlementProposal, Signature, Script) {
             let mut events = Vec::new();
 
-            let propose = self
+            let (propose, settlement_proposal) = self
                 .propose_collaborative_settlement(price, N_PAYOUTS)
                 .unwrap();
-            events.push(propose.clone());
-
-            let settlement_proposal =
-                if let CfdEvent::CollaborativeSettlementStarted { proposal } = propose.event {
-                    proposal
-                } else {
-                    panic!("Proposal not created!");
-                };
+            events.push(propose);
 
             let (spend_tx, taker_signature, taker_script) = self
                 .sign_collaborative_settlement_taker(&settlement_proposal)
@@ -3228,10 +3021,7 @@ mod tests {
 
             let settle = self
                 .clone()
-                .settle_collaboratively(CollaborativeSettlementCompleted::Succeeded {
-                    order_id: Default::default(),
-                    payload: settlement,
-                })
+                .complete_collaborative_settlement(settlement)
                 .unwrap();
             events.push(settle);
 
@@ -3271,10 +3061,7 @@ mod tests {
 
             let settle = cfd
                 .clone()
-                .settle_collaboratively(CollaborativeSettlementCompleted::Succeeded {
-                    order_id: Default::default(),
-                    payload: settlement,
-                })
+                .complete_collaborative_settlement(settlement)
                 .unwrap();
             events.push(settle);
 
@@ -3284,7 +3071,7 @@ mod tests {
         }
 
         fn dummy_commit(self) -> Self {
-            Event::dummy_manual_commit()
+            CfdEvent::dummy_manual_commit()
                 .into_iter()
                 .fold(self, Cfd::apply)
         }
@@ -3298,7 +3085,7 @@ mod tests {
                 Role::Taker,
             );
 
-            Event::dummy_attestation_prior_timelock(event_id)
+            CfdEvent::dummy_attestation_prior_timelock(event_id)
                 .into_iter()
                 .fold(cfd, Cfd::apply)
         }
@@ -3312,7 +3099,7 @@ mod tests {
                 Role::Taker,
             );
 
-            Event::dummy_final_cet(event_id)
+            CfdEvent::dummy_final_cet(event_id)
                 .into_iter()
                 .fold(cfd, Cfd::apply)
         }

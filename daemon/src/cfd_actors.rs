@@ -1,8 +1,8 @@
 use crate::db;
 use crate::projection;
 use anyhow::Result;
-use model::cfd::Cfd;
-use model::cfd::OrderId;
+use model::Cfd;
+use model::OrderId;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 

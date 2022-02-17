@@ -17,21 +17,18 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use model::cfd::Cfd;
-use model::cfd::CollaborativeSettlementCompleted;
-use model::cfd::Order;
-use model::cfd::OrderId;
-use model::cfd::Origin;
-use model::cfd::Role;
-use model::cfd::RolloverCompleted;
-use model::cfd::RolloverProposal;
-use model::cfd::SettlementProposal;
-use model::cfd::SetupCompleted;
+use model::Cfd;
 use model::FundingRate;
 use model::Identity;
 use model::OpeningFee;
+use model::Order;
+use model::OrderId;
+use model::Origin;
 use model::Position;
 use model::Price;
+use model::Role;
+use model::SettlementProposal;
+use model::Timestamp;
 use model::TxFeeRate;
 use model::Usd;
 use std::collections::HashSet;
@@ -83,6 +80,13 @@ pub struct TakerDisconnected {
 pub struct FromTaker {
     pub taker_id: Identity,
     pub msg: wire::TakerToMaker,
+}
+
+/// Proposed rollover
+#[derive(Debug, Clone, PartialEq)]
+struct RolloverProposal {
+    pub order_id: OrderId,
+    pub timestamp: Timestamp,
 }
 
 pub struct Actor<O, T, W> {
@@ -336,12 +340,7 @@ impl<O, T, W> Actor<O, T, W> {
             .await
         {
             self.executor
-                .execute(order_id, |cfd| {
-                    cfd.setup_contract(SetupCompleted::Failed {
-                        order_id,
-                        error: anyhow!(error),
-                    })
-                })
+                .execute(order_id, |cfd| cfd.fail_contract_setup(anyhow!(error)))
                 .await?;
 
             bail!("Accept failed: No active contract setup for order {order_id}")
@@ -361,12 +360,7 @@ impl<O, T, W> Actor<O, T, W> {
             .await
         {
             self.executor
-                .execute(order_id, |cfd| {
-                    cfd.setup_contract(SetupCompleted::Failed {
-                        order_id,
-                        error: anyhow!(error),
-                    })
-                })
+                .execute(order_id, |cfd| cfd.fail_contract_setup(anyhow!(error)))
                 .await?;
 
             bail!("Reject failed: No active contract setup for order {order_id}")
@@ -385,10 +379,7 @@ impl<O, T, W> Actor<O, T, W> {
         {
             self.executor
                 .execute(order_id, |cfd| {
-                    cfd.settle_collaboratively(CollaborativeSettlementCompleted::Failed {
-                        order_id,
-                        error: anyhow!(error),
-                    })
+                    cfd.fail_collaborative_settlement(anyhow!(error))
                 })
                 .await?;
 
@@ -408,10 +399,7 @@ impl<O, T, W> Actor<O, T, W> {
         {
             self.executor
                 .execute(order_id, |cfd| {
-                    cfd.settle_collaboratively(CollaborativeSettlementCompleted::Failed {
-                        order_id,
-                        error: anyhow!(error),
-                    })
+                    cfd.fail_collaborative_settlement(anyhow!(error))
                 })
                 .await?;
 
@@ -441,12 +429,7 @@ impl<O, T, W> Actor<O, T, W> {
             .await
         {
             self.executor
-                .execute(order_id, |cfd| {
-                    Ok(cfd.roll_over(RolloverCompleted::Failed {
-                        order_id,
-                        error: anyhow!(error),
-                    })?)
-                })
+                .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(error))))
                 .await?;
 
             bail!("Accept failed: No active rollover for order {order_id}")
@@ -464,12 +447,7 @@ impl<O, T, W> Actor<O, T, W> {
             .await
         {
             self.executor
-                .execute(order_id, |cfd| {
-                    Ok(cfd.roll_over(RolloverCompleted::Failed {
-                        order_id,
-                        error: anyhow!(error),
-                    })?)
-                })
+                .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(error))))
                 .await?;
 
             bail!("Reject failed: No active rollover for order {order_id}")

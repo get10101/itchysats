@@ -14,23 +14,23 @@ use core::fmt;
 use itertools::Itertools;
 use maia::TransactionExt;
 use model::calculate_funding_fee;
-use model::cfd::calculate_long_liquidation_price;
-use model::cfd::calculate_long_margin;
-use model::cfd::calculate_profit;
-use model::cfd::calculate_profit_at_price;
-use model::cfd::calculate_short_margin;
-use model::cfd::CfdEvent;
-use model::cfd::Dlc;
-use model::cfd::Event;
-use model::cfd::OrderId;
-use model::cfd::Origin;
-use model::cfd::Role;
+use model::calculate_long_liquidation_price;
+use model::calculate_long_margin;
+use model::calculate_profit;
+use model::calculate_profit_at_price;
+use model::calculate_short_margin;
+use model::CfdEvent;
+use model::Dlc;
+use model::EventKind;
 use model::FeeAccount;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
+use model::OrderId;
+use model::Origin;
 use model::Position;
 use model::Price;
+use model::Role;
 use model::Timestamp;
 use model::TradingPair;
 use model::Usd;
@@ -360,9 +360,9 @@ impl Cfd {
         }
     }
 
-    fn apply(mut self, event: Event, network: Network) -> Self {
+    fn apply(mut self, event: CfdEvent, network: Network) -> Self {
         // First, try to set state based on event.
-        use CfdEvent::*;
+        use EventKind::*;
         match event.event {
             ContractSetupStarted => {
                 self.aggregated.state = CfdState::ContractSetup;
