@@ -19,7 +19,6 @@ use model::olivia::Announcement;
 use model::Dlc;
 use model::Identity;
 use model::Order;
-use model::OrderId;
 use model::Role;
 use model::SetupCompleted;
 use model::Usd;
@@ -117,8 +116,8 @@ impl Actor {
 
         self.tasks.add(async move {
             let _: Result<(), xtra::Disconnected> = match contract_future.await {
-                Ok(dlc) => this.send(SetupSucceeded { order_id, dlc }).await,
-                Err(error) => this.send(SetupFailed { order_id, error }).await,
+                Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
+                Err(error) => this.send(SetupFailed { error }).await,
             };
         });
 
@@ -199,14 +198,14 @@ impl Actor {
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
-        self.complete(SetupCompleted::succeeded(msg.order_id, msg.dlc), ctx)
+        self.complete(SetupCompleted::succeeded(self.order.id, msg.dlc), ctx)
             .await
     }
 
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
         self.complete(
             SetupCompleted::Failed {
-                order_id: msg.order_id,
+                order_id: self.order.id,
                 error: msg.error,
             },
             ctx,
@@ -285,13 +284,11 @@ pub struct Rejected;
 /// Message sent from the spawned task to `setup_maker::Actor` to
 /// notify that the contract setup has finished successfully.
 struct SetupSucceeded {
-    order_id: OrderId,
     dlc: Dlc,
 }
 
 /// Message sent from the spawned task to `setup_maker::Actor` to
 /// notify that the contract setup has failed.
 struct SetupFailed {
-    order_id: OrderId,
     error: anyhow::Error,
 }
