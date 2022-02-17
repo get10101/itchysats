@@ -22,7 +22,7 @@ use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::Stopping;
+use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
 
 /// Upon accepting Rollover maker sends the current estimated transaction fee and
 /// funding rate
@@ -58,7 +58,6 @@ pub struct Actor {
     oracle_pk: schnorrsig::PublicKey,
     sent_from_taker: Option<UnboundedSender<wire::RolloverMsg>>,
     oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
-    on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     register: Box<dyn MessageChannel<maker_inc_connections::RegisterRollover>>,
     tasks: Tasks,
     executor: command::Executor,
@@ -73,10 +72,6 @@ impl Actor {
         taker_id: Identity,
         oracle_pk: schnorrsig::PublicKey,
         oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
-        (on_stopping0, on_stopping1): (
-            &(impl MessageChannel<Stopping<Self>> + 'static),
-            &(impl MessageChannel<Stopping<Self>> + 'static),
-        ),
         process_manager: xtra::Address<process_manager::Actor>,
         register: &(impl MessageChannel<maker_inc_connections::RegisterRollover> + 'static),
         db: sqlx::SqlitePool,
@@ -89,7 +84,6 @@ impl Actor {
             oracle_pk,
             sent_from_taker: None,
             oracle_actor: oracle_actor.clone_channel(),
-            on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
             register: register.clone_channel(),
             executor: command::Executor::new(db, process_manager),
             tasks: Tasks::default(),
@@ -287,18 +281,14 @@ impl xtra::Actor for Actor {
         }
     }
 
-    async fn stopping(&mut self, ctx: &mut xtra::Context<Self>) -> KeepRunning {
-        let this = ctx.address().expect("self to be alive");
-
-        for channel in self.on_stopping.iter() {
-            let _ = channel.send(Stopping { me: this.clone() }).await;
-        }
-
+    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {
         KeepRunning::StopAll
     }
 
     async fn stopped(self) -> Self::Stop {}
 }
+
+impl IPromiseIamReturningStopAllFromStopping for Actor {}
 
 #[xtra_productivity]
 impl Actor {

@@ -33,7 +33,6 @@ use tokio_util::codec::Framed;
 use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::Stopping;
 use xtras::AddressMap;
 use xtras::LogFailure;
 use xtras::SendInterval;
@@ -247,20 +246,6 @@ impl Actor {
             collab_settlement_actors: AddressMap::default(),
             rollover_actors: AddressMap::default(),
         }
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl Actor {
-    async fn handle_collab_settlement_actor_stopping(
-        &mut self,
-        message: Stopping<collab_settlement_taker::Actor>,
-    ) {
-        self.collab_settlement_actors.gc(message);
-    }
-
-    async fn handle_rollover_actor_stopping(&mut self, message: Stopping<rollover_taker::Actor>) {
-        self.rollover_actors.gc(message);
     }
 }
 

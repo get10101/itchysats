@@ -20,8 +20,9 @@ use model::Role;
 use model::Usd;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
+use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::Stopping;
+use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
 use xtras::LogFailure;
 
 pub struct Actor {
@@ -35,7 +36,6 @@ pub struct Actor {
     taker: Box<dyn MessageChannel<maker_inc_connections::TakerMessage>>,
     confirm_order: Box<dyn MessageChannel<maker_inc_connections::ConfirmOrder>>,
     taker_id: Identity,
-    on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     setup_msg_sender: Option<UnboundedSender<wire::SetupMsg>>,
     tasks: Tasks,
     executor: command::Executor,
@@ -55,10 +55,6 @@ impl Actor {
             &(impl MessageChannel<maker_inc_connections::ConfirmOrder> + 'static),
             Identity,
         ),
-        (on_stopping0, on_stopping1): (
-            &(impl MessageChannel<Stopping<Self>> + 'static),
-            &(impl MessageChannel<Stopping<Self>> + 'static),
-        ),
     ) -> Self {
         Self {
             executor: command::Executor::new(db, process_manager),
@@ -72,7 +68,6 @@ impl Actor {
             taker: taker.clone_channel(),
             confirm_order: confirm_order.clone_channel(),
             taker_id,
-            on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
             setup_msg_sender: None,
             tasks: Tasks::default(),
         }
@@ -258,20 +253,14 @@ impl xtra::Actor for Actor {
         }
     }
 
-    async fn stopping(&mut self, ctx: &mut xtra::Context<Self>) -> xtra::KeepRunning {
-        // inform other actors that we are stopping so that our
-        // address can be GCd from their AddressMaps
-        let me = ctx.address().expect("we are still alive");
-
-        for channel in self.on_stopping.iter() {
-            let _ = channel.send(Stopping { me: me.clone() }).await;
-        }
-
-        xtra::KeepRunning::StopAll
+    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {
+        KeepRunning::StopAll
     }
 
     async fn stopped(self) -> Self::Stop {}
 }
+
+impl IPromiseIamReturningStopAllFromStopping for Actor {}
 
 /// Message sent from the `maker_cfd::Actor` to the
 /// `setup_maker::Actor` to inform that the maker user has accepted
