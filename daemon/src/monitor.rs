@@ -836,11 +836,7 @@ impl xtra::Actor for Actor {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle_start_monitoring(
-        &mut self,
-        msg: StartMonitoring,
-        _ctx: &mut xtra::Context<Self>,
-    ) {
+    async fn handle_start_monitoring(&mut self, msg: StartMonitoring) {
         let StartMonitoring { id, params } = msg;
 
         self.state.monitor_all(&params, id);
@@ -984,7 +980,7 @@ struct ReinitMonitoring {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
+    async fn handle(&mut self, _: Sync) {
         if let Err(e) = self.sync().await {
             tracing::warn!("Sync failed: {:#}", e);
         }

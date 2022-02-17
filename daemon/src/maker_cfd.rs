@@ -595,15 +595,11 @@ where
         Ok(())
     }
 
-    async fn handle(&mut self, msg: TakerConnected, _ctx: &mut xtra::Context<Self>) -> Result<()> {
+    async fn handle(&mut self, msg: TakerConnected) -> Result<()> {
         self.handle_taker_connected(msg.id).await
     }
 
-    async fn handle(
-        &mut self,
-        msg: TakerDisconnected,
-        _ctx: &mut xtra::Context<Self>,
-    ) -> Result<()> {
+    async fn handle(&mut self, msg: TakerDisconnected) -> Result<()> {
         self.handle_taker_disconnected(msg.id).await
     }
 

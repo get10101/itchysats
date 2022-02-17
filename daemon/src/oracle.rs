@@ -203,11 +203,7 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    fn handle_monitor_attestation(
-        &mut self,
-        msg: MonitorAttestation,
-        _ctx: &mut xtra::Context<Self>,
-    ) {
+    fn handle_monitor_attestation(&mut self, msg: MonitorAttestation) {
         let price_event_id = msg.event_id;
 
         if !self.pending_attestations.insert(price_event_id) {
@@ -218,7 +214,6 @@ impl Actor {
     fn handle_get_announcement(
         &mut self,
         msg: GetAnnouncement,
-        _ctx: &mut xtra::Context<Self>,
     ) -> Result<olivia::Announcement, NoAnnouncement> {
         self.announcements
             .get_key_value(&msg.0)
@@ -230,11 +225,7 @@ impl Actor {
             .ok_or(NoAnnouncement(msg.0))
     }
 
-    fn handle_new_announcement_fetched(
-        &mut self,
-        msg: NewAnnouncementFetched,
-        _ctx: &mut xtra::Context<Self>,
-    ) {
+    fn handle_new_announcement_fetched(&mut self, msg: NewAnnouncementFetched) {
         self.announcements
             .insert(msg.id, (msg.expected_outcome_time, msg.nonce_pks));
     }
