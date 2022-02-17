@@ -1758,47 +1758,6 @@ impl CollaborativeSettlement {
     }
 }
 
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-pub enum Completed<P, E> {
-    Succeeded {
-        order_id: OrderId,
-        payload: P,
-    },
-    Rejected {
-        order_id: OrderId,
-        reason: anyhow::Error,
-    },
-    Failed {
-        order_id: OrderId,
-        error: E,
-    },
-}
-
-impl<P, E> Completed<P, E> {
-    pub fn order_id(&self) -> OrderId {
-        *match self {
-            Completed::Succeeded { order_id, .. } => order_id,
-            Completed::Rejected { order_id, .. } => order_id,
-            Completed::Failed { order_id, .. } => order_id,
-        }
-    }
-
-    pub fn rejected(order_id: OrderId) -> Self {
-        Self::Rejected {
-            order_id,
-            reason: anyhow::format_err!("unknown"),
-        }
-    }
-    pub fn rejected_due_to(order_id: OrderId, reason: anyhow::Error) -> Self {
-        Self::Rejected { order_id, reason }
-    }
-
-    pub fn failed(order_id: OrderId, error: E) -> Self {
-        Self::Failed { order_id, error }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
