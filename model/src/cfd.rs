@@ -904,27 +904,41 @@ impl Cfd {
         ))
     }
 
-    pub fn setup_contract(self, completed: SetupCompleted) -> Result<CfdEvent> {
+    pub fn complete_contract_setup(self, dlc: Dlc) -> Result<CfdEvent> {
         if self.version > 1 {
             bail!(
-                "Complete contract setup not allowed because cfd in version {}",
+                "Completing contract setup not allowed because cfd in version {}",
                 self.version
             )
         }
 
-        let event = match completed {
-            SetupCompleted::Succeeded {
-                payload: (dlc, _), ..
-            } => EventKind::ContractSetupCompleted { dlc },
-            SetupCompleted::Rejected { .. } => EventKind::OfferRejected,
-            SetupCompleted::Failed { error, .. } => {
-                tracing::error!("Contract setup failed: {:#}", error);
+        tracing::info!(order_id = %self.id, "Contract setup was completed");
 
-                EventKind::ContractSetupFailed
-            }
-        };
+        Ok(self.event(EventKind::ContractSetupCompleted { dlc }))
+    }
 
-        Ok(self.event(event))
+    pub fn reject_contract_setup(self, reason: anyhow::Error) -> Result<CfdEvent> {
+        anyhow::ensure!(
+            self.version <= 1,
+            "Rejecting contract setup not allowed because cfd in version {}",
+            self.version
+        );
+
+        tracing::info!(order_id = %self.id, "Contract setup was rejected: {reason:#}");
+
+        Ok(self.event(EventKind::OfferRejected))
+    }
+
+    pub fn fail_contract_setup(self, error: anyhow::Error) -> Result<CfdEvent> {
+        anyhow::ensure!(
+            self.version <= 1,
+            "Failing contract setup not allowed because cfd in version {}",
+            self.version
+        );
+
+        tracing::error!(order_id = %self.id, "Contract setup failed: {error:#}");
+
+        Ok(self.event(EventKind::ContractSetupFailed))
     }
 
     pub fn complete_rollover(
@@ -1770,26 +1784,7 @@ impl<P, E> Completed<P, E> {
     }
 }
 
-pub mod marker {
-    /// Marker type for contract setup completion
-    #[derive(Debug)]
-    pub struct Setup;
-}
-
-/// Message sent from a setup actor to the
-/// cfd actor to notify that the contract setup has finished.
-pub type SetupCompleted = Completed<(Dlc, marker::Setup), anyhow::Error>;
-
 pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;
-
-impl Completed<(Dlc, marker::Setup), anyhow::Error> {
-    pub fn succeeded(order_id: OrderId, dlc: Dlc) -> Self {
-        Self::Succeeded {
-            order_id,
-            payload: (dlc, marker::Setup),
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -29,7 +29,6 @@ use model::Position;
 use model::Price;
 use model::Role;
 use model::SettlementProposal;
-use model::SetupCompleted;
 use model::Timestamp;
 use model::TxFeeRate;
 use model::Usd;
@@ -342,12 +341,7 @@ impl<O, T, W> Actor<O, T, W> {
             .await
         {
             self.executor
-                .execute(order_id, |cfd| {
-                    cfd.setup_contract(SetupCompleted::Failed {
-                        order_id,
-                        error: anyhow!(error),
-                    })
-                })
+                .execute(order_id, |cfd| cfd.fail_contract_setup(anyhow!(error)))
                 .await?;
 
             bail!("Accept failed: No active contract setup for order {order_id}")
@@ -367,12 +361,7 @@ impl<O, T, W> Actor<O, T, W> {
             .await
         {
             self.executor
-                .execute(order_id, |cfd| {
-                    cfd.setup_contract(SetupCompleted::Failed {
-                        order_id,
-                        error: anyhow!(error),
-                    })
-                })
+                .execute(order_id, |cfd| cfd.fail_contract_setup(anyhow!(error)))
                 .await?;
 
             bail!("Reject failed: No active contract setup for order {order_id}")

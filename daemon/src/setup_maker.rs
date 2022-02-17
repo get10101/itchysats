@@ -20,7 +20,6 @@ use model::Dlc;
 use model::Identity;
 use model::Order;
 use model::Role;
-use model::SetupCompleted;
 use model::Usd;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
@@ -124,16 +123,37 @@ impl Actor {
         Ok(())
     }
 
-    async fn complete(&mut self, completed: SetupCompleted, ctx: &mut xtra::Context<Self>) {
-        match self
+    async fn emit_complete(&mut self, dlc: Dlc, ctx: &mut xtra::Context<Self>) {
+        if let Err(e) = self
             .executor
-            .execute(completed.order_id(), |cfd| cfd.setup_contract(completed))
+            .execute(self.order.id, |cfd| cfd.complete_contract_setup(dlc))
             .await
         {
-            Ok(()) => {}
-            Err(e) => {
-                tracing::error!("Failed to execute `contract_setup` command: {:#}", e);
-            }
+            tracing::error!("Failed to execute `complete_contract_setup` command: {e:#}");
+        }
+
+        ctx.stop();
+    }
+
+    async fn emit_reject(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
+        if let Err(e) = self
+            .executor
+            .execute(self.order.id, |cfd| cfd.reject_contract_setup(reason))
+            .await
+        {
+            tracing::error!("Failed to execute `reject_contract_setup` command: {e:#}");
+        }
+
+        ctx.stop();
+    }
+
+    async fn emit_fail(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
+        if let Err(e) = self
+            .executor
+            .execute(self.order.id, |cfd| cfd.fail_contract_setup(error))
+            .await
+        {
+            tracing::error!("Failed to execute `fail_contract_setup` command: {e:#}");
         }
 
         ctx.stop();
@@ -176,8 +196,7 @@ impl Actor {
         if let Err(error) = fut.await {
             tracing::warn!(%order_id, "Stopping setup_maker actor: {error}");
 
-            self.complete(SetupCompleted::Failed { order_id, error }, ctx)
-                .await;
+            self.emit_fail(error, ctx).await;
 
             return;
         }
@@ -193,24 +212,15 @@ impl Actor {
             .log_failure("Failed to reject order to taker")
             .await;
 
-        self.complete(SetupCompleted::rejected(self.order.id), ctx)
-            .await
+        self.emit_reject(anyhow::format_err!("unknown"), ctx).await
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
-        self.complete(SetupCompleted::succeeded(self.order.id, msg.dlc), ctx)
-            .await
+        self.emit_complete(msg.dlc, ctx).await
     }
 
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
-        self.complete(
-            SetupCompleted::Failed {
-                order_id: self.order.id,
-                error: msg.error,
-            },
-            ctx,
-        )
-        .await
+        self.emit_fail(msg.error, ctx).await
     }
 }
 
@@ -248,11 +258,7 @@ impl xtra::Actor for Actor {
                 })
                 .await;
 
-            self.complete(
-                SetupCompleted::rejected_due_to(self.order.id, anyhow::format_err!(reason)),
-                ctx,
-            )
-            .await;
+            self.emit_reject(anyhow::format_err!(reason), ctx).await;
         }
     }
 
