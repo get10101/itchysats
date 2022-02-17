@@ -18,7 +18,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use model::Cfd;
-use model::CollaborativeSettlementCompleted;
 use model::FundingRate;
 use model::Identity;
 use model::OpeningFee;
@@ -380,10 +379,7 @@ impl<O, T, W> Actor<O, T, W> {
         {
             self.executor
                 .execute(order_id, |cfd| {
-                    cfd.settle_collaboratively(CollaborativeSettlementCompleted::Failed {
-                        order_id,
-                        error: anyhow!(error),
-                    })
+                    cfd.fail_collaborative_settlement(anyhow!(error))
                 })
                 .await?;
 
@@ -403,10 +399,7 @@ impl<O, T, W> Actor<O, T, W> {
         {
             self.executor
                 .execute(order_id, |cfd| {
-                    cfd.settle_collaboratively(CollaborativeSettlementCompleted::Failed {
-                        order_id,
-                        error: anyhow!(error),
-                    })
+                    cfd.fail_collaborative_settlement(anyhow!(error))
                 })
                 .await?;
 

@@ -970,34 +970,44 @@ impl Cfd {
         self.event(EventKind::RolloverFailed)
     }
 
-    pub fn settle_collaboratively(
+    pub fn complete_collaborative_settlement(
         self,
-        settlement: CollaborativeSettlementCompleted,
+        settlement: CollaborativeSettlement,
     ) -> Result<CfdEvent> {
-        if !self.can_settle_collaboratively() {
-            bail!("Cannot collaboratively settle")
-        }
+        anyhow::ensure!(
+            self.can_settle_collaboratively(),
+            "Cannot complete collaborative settlement"
+        );
 
-        let event = match settlement {
-            Completed::Succeeded {
-                payload: settlement,
-                ..
-            } => EventKind::CollaborativeSettlementCompleted {
-                spend_tx: settlement.tx,
-                script: settlement.script_pubkey,
-                price: settlement.price,
-            },
-            Completed::Rejected { reason, .. } => {
-                tracing::info!(order_id=%self.id(), "Collaborative close rejected: {:#}", reason);
-                EventKind::CollaborativeSettlementRejected
-            }
-            Completed::Failed { error, .. } => {
-                tracing::warn!(order_id=%self.id(), "Collaborative close failed: {:#}", error);
-                EventKind::CollaborativeSettlementFailed
-            }
-        };
+        tracing::info!(order_id=%self.id(), "Collaborative settlement completed");
 
-        Ok(self.event(event))
+        Ok(self.event(EventKind::CollaborativeSettlementCompleted {
+            spend_tx: settlement.tx,
+            script: settlement.script_pubkey,
+            price: settlement.price,
+        }))
+    }
+
+    pub fn reject_collaborative_settlement(self, reason: anyhow::Error) -> Result<CfdEvent> {
+        anyhow::ensure!(
+            self.can_settle_collaboratively(),
+            "Cannot reject collaborative settlement"
+        );
+
+        tracing::info!(order_id=%self.id(), "Collaborative settlement rejected: {reason:#}");
+
+        Ok(self.event(EventKind::CollaborativeSettlementRejected))
+    }
+
+    pub fn fail_collaborative_settlement(self, error: anyhow::Error) -> Result<CfdEvent> {
+        anyhow::ensure!(
+            self.can_settle_collaboratively(),
+            "Cannot fail collaborative settlement"
+        );
+
+        tracing::warn!(order_id=%self.id(), "Collaborative settlement failed: {:#}", error);
+
+        Ok(self.event(EventKind::CollaborativeSettlementFailed))
     }
 
     /// Given an attestation, find and decrypt the relevant CET.
@@ -1788,8 +1798,6 @@ impl<P, E> Completed<P, E> {
         Self::Failed { order_id, error }
     }
 }
-
-pub type CollaborativeSettlementCompleted = Completed<CollaborativeSettlement, anyhow::Error>;
 
 #[cfg(test)]
 mod tests {
@@ -3054,10 +3062,7 @@ mod tests {
 
             let settle = self
                 .clone()
-                .settle_collaboratively(CollaborativeSettlementCompleted::Succeeded {
-                    order_id: Default::default(),
-                    payload: settlement,
-                })
+                .complete_collaborative_settlement(settlement)
                 .unwrap();
             events.push(settle);
 
@@ -3097,10 +3102,7 @@ mod tests {
 
             let settle = cfd
                 .clone()
-                .settle_collaboratively(CollaborativeSettlementCompleted::Succeeded {
-                    order_id: Default::default(),
-                    payload: settlement,
-                })
+                .complete_collaborative_settlement(settlement)
                 .unwrap();
             events.push(settle);
 

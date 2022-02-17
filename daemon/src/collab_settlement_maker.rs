@@ -6,8 +6,7 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use maia::secp256k1_zkp::Signature;
-use model::CollaborativeSettlementCompleted;
-use model::Completed;
+use model::CollaborativeSettlement;
 use model::Identity;
 use model::SettlementProposal;
 use xtra::prelude::MessageChannel;
@@ -35,14 +34,7 @@ pub struct Initiated {
 impl Actor {
     async fn handle(&mut self, _: Accepted, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self.accept(ctx).await {
-            self.complete(
-                Completed::Failed {
-                    order_id: self.proposal.order_id,
-                    error: e,
-                },
-                ctx,
-            )
-            .await;
+            self.emit_failed(e, ctx).await;
         }
     }
 
@@ -51,7 +43,7 @@ impl Actor {
     }
 
     async fn handle(&mut self, msg: Initiated, ctx: &mut xtra::Context<Self>) {
-        let completed = async {
+        match async {
             tracing::info!(
                 order_id = %self.proposal.order_id,
                 taker_id = %self.taker_id,
@@ -64,18 +56,13 @@ impl Actor {
             let settlement =
                 cfd.sign_collaborative_settlement_maker(self.proposal.clone(), msg.sig_taker)?;
 
-            anyhow::Ok(Completed::Succeeded {
-                order_id: self.proposal.order_id,
-                payload: settlement,
-            })
+            anyhow::Ok(settlement)
         }
         .await
-        .unwrap_or_else(|e| Completed::Failed {
-            order_id: self.proposal.order_id,
-            error: e,
-        });
-
-        self.complete(completed, ctx).await;
+        {
+            Ok(settlement) => self.emit_completed(settlement, ctx).await,
+            Err(e) => self.emit_failed(e, ctx).await,
+        };
     }
 }
 
@@ -93,8 +80,7 @@ impl xtra::Actor for Actor {
         );
 
         if let Err(error) = self.handle_proposal().await {
-            self.complete(Completed::Failed { order_id, error }, ctx)
-                .await;
+            self.emit_failed(error, ctx).await;
         }
     }
 
@@ -148,18 +134,46 @@ impl Actor {
         Ok(())
     }
 
-    async fn complete(
+    async fn emit_completed(
         &mut self,
-        completed: CollaborativeSettlementCompleted,
+        settlement: CollaborativeSettlement,
         ctx: &mut xtra::Context<Self>,
     ) {
         let order_id = self.proposal.order_id;
         if let Err(e) = self
             .executor
-            .execute(order_id, |cfd| cfd.settle_collaboratively(completed))
+            .execute(order_id, |cfd| {
+                cfd.complete_collaborative_settlement(settlement)
+            })
             .await
         {
-            tracing::warn!(%order_id, "Failed to execute `settle_collaboratively` command: {e:#}");
+            tracing::warn!(%order_id, "Failed to execute `complete_collaborative_settlement` command: {e:#}");
+        }
+
+        ctx.stop();
+    }
+
+    async fn emit_rejected(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
+        let order_id = self.proposal.order_id;
+        if let Err(e) = self
+            .executor
+            .execute(order_id, |cfd| cfd.reject_collaborative_settlement(reason))
+            .await
+        {
+            tracing::warn!(%order_id, "Failed to execute `reject_collaborative_settlement` command: {e:#}");
+        }
+
+        ctx.stop();
+    }
+
+    async fn emit_failed(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
+        let order_id = self.proposal.order_id;
+        if let Err(e) = self
+            .executor
+            .execute(order_id, |cfd| cfd.fail_collaborative_settlement(error))
+            .await
+        {
+            tracing::warn!(%order_id, "Failed to execute `fail_collaborative_settlement` command: {e:#}");
         }
 
         ctx.stop();
@@ -208,6 +222,7 @@ impl Actor {
             })
             .await;
 
-        self.complete(Completed::rejected(order_id), ctx).await;
+        self.emit_rejected(anyhow::format_err!("unknown"), ctx)
+            .await;
     }
 }
