@@ -28,9 +28,7 @@ mod utils;
 ///
 /// A key item to note is that although the POC logic has been to imposed
 /// that maker goes short every time, there is no reason to make the math
-/// have this imposition as well. As such, the `long_position` parameter
-/// is used to indicate which party (Maker or Taker) has the long position,
-/// and everything else is handled internally.
+/// have this imposition as well.
 ///
 /// As well, the POC has also demanded that the Maker always has unity
 /// leverage, hence why the ability to to specify this amount has been
