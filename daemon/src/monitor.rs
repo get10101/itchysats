@@ -710,10 +710,6 @@ impl MonitorParams {
     }
 }
 
-impl xtra::Message for Sync {
-    type Result = ();
-}
-
 #[async_trait]
 impl xtra::Actor for Actor {
     type Stop = ();
@@ -986,8 +982,8 @@ struct ReinitMonitoring {
     monitor_collaborative_settlement_finality: Option<(Txid, Script)>,
 }
 
-#[async_trait]
-impl xtra::Handler<Sync> for Actor {
+#[xtra_productivity]
+impl Actor {
     async fn handle(&mut self, _: Sync, _ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self.sync().await {
             tracing::warn!("Sync failed: {:#}", e);
