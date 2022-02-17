@@ -106,6 +106,7 @@ where
             + xtra::Handler<monitor::Sync>
             + xtra::Handler<monitor::CollaborativeSettlement>
             + xtra::Handler<monitor::TryBroadcastTransaction>
+            + xtra::Handler<monitor::RefundTimelockExpired>
             + xtra::Handler<monitor::MonitorCetFinality>
             + xtra::Actor<Stop = ()>,
     {
@@ -122,6 +123,7 @@ where
             db.clone(),
             Role::Maker,
             &projection_actor,
+            &monitor_addr,
             &monitor_addr,
             &monitor_addr,
             &monitor_addr,
@@ -307,6 +309,7 @@ where
             + xtra::Handler<monitor::CollaborativeSettlement>
             + xtra::Handler<monitor::MonitorCetFinality>
             + xtra::Handler<monitor::TryBroadcastTransaction>
+            + xtra::Handler<monitor::RefundTimelockExpired>
             + xtra::Actor<Stop = ()>,
     {
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
@@ -324,6 +327,7 @@ where
             db.clone(),
             Role::Taker,
             &projection_actor,
+            &monitor_addr,
             &monitor_addr,
             &monitor_addr,
             &monitor_addr,

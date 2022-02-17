@@ -32,6 +32,7 @@ use std::ops::Add;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
+use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
 const FINALITY_CONFIRMATIONS: u32 = 1;
@@ -64,6 +65,11 @@ pub struct MonitorParams {
 pub struct TryBroadcastTransaction {
     pub tx: Transaction,
     pub kind: TransactionKind,
+}
+
+pub struct RefundTimelockExpired {
+    pub id: OrderId,
+    pub tx: Transaction,
 }
 
 pub enum TransactionKind {
@@ -859,6 +865,29 @@ impl Actor {
             collaborative_settlement.tx,
             collaborative_settlement.order_id,
         );
+    }
+
+    fn handle_refund_timelock_expired(
+        &mut self,
+        msg: RefundTimelockExpired,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let (_, events) = db::load_cfd(msg.id, &mut conn).await?;
+
+        let Cfd { cet, .. } = events.into_iter().fold(Cfd::default(), Cfd::apply);
+
+        let this = ctx.address().expect("We are alive.");
+
+        if cet.is_none() {
+            this.send_async_safe(TryBroadcastTransaction {
+                tx: msg.tx,
+                kind: TransactionKind::Refund,
+            })
+            .await?;
+        }
+
+        Ok(())
     }
 
     async fn handle_try_broadcast_transaction(&self, msg: TryBroadcastTransaction) -> Result<()> {

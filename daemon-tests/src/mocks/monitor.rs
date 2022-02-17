@@ -46,6 +46,10 @@ impl MonitorActor {
     async fn handle(&mut self, _: monitor::MonitorCetFinality) -> Result<()> {
         Ok(())
     }
+
+    async fn handle(&mut self, _: monitor::RefundTimelockExpired) -> Result<()> {
+        Ok(())
+    }
 }
 
 pub struct MockMonitor {

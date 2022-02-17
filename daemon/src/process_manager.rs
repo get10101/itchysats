@@ -19,6 +19,7 @@ pub struct Actor {
     role: Role,
     cfds_changed: Box<dyn MessageChannel<projection::CfdChanged>>,
     try_broadcast_transaction: Box<dyn MessageChannel<monitor::TryBroadcastTransaction>>,
+    refund_timelock_expired: Box<dyn MessageChannel<monitor::RefundTimelockExpired>>,
     start_monitoring: Box<dyn MessageChannel<monitor::StartMonitoring>>,
     monitor_cet_finality: Box<dyn MessageChannel<monitor::MonitorCetFinality>>,
     monitor_collaborative_settlement: Box<dyn MessageChannel<monitor::CollaborativeSettlement>>,
@@ -40,6 +41,7 @@ impl Actor {
         role: Role,
         cfds_changed: &(impl MessageChannel<projection::CfdChanged> + 'static),
         try_broadcast_transaction: &(impl MessageChannel<monitor::TryBroadcastTransaction> + 'static),
+        refund_timelock_expired: &(impl MessageChannel<monitor::RefundTimelockExpired> + 'static),
         start_monitoring: &(impl MessageChannel<monitor::StartMonitoring> + 'static),
         monitor_cet: &(impl MessageChannel<monitor::MonitorCetFinality> + 'static),
         monitor_collaborative_settlement: &(impl MessageChannel<monitor::CollaborativeSettlement>
@@ -51,6 +53,7 @@ impl Actor {
             role,
             cfds_changed: cfds_changed.clone_channel(),
             try_broadcast_transaction: try_broadcast_transaction.clone_channel(),
+            refund_timelock_expired: refund_timelock_expired.clone_channel(),
             start_monitoring: start_monitoring.clone_channel(),
             monitor_cet_finality: monitor_cet.clone_channel(),
             monitor_collaborative_settlement: monitor_collaborative_settlement.clone_channel(),
@@ -210,11 +213,15 @@ impl Actor {
                     })
                     .await?;
             }
-            RefundTimelockExpired { refund_tx: tx } => {
-                self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
-                        tx,
-                        kind: TransactionKind::Refund,
+            // The process manager is just a dumb forwarder.
+            // It does make the decision to broadcast a tx because it is too dumb.
+            // It is to too dumb to remember whether an attestation has been received.
+            // The monitor actor decides what to do with the new information.
+            RefundTimelockExpired { refund_tx } => {
+                self.refund_timelock_expired
+                    .send_async_safe(monitor::RefundTimelockExpired {
+                        id: event.id,
+                        tx: refund_tx,
                     })
                     .await?;
             }
