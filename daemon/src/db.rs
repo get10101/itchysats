@@ -117,7 +117,7 @@ pub async fn insert_cfd(cfd: &model::Cfd, conn: &mut PoolConnection<Sqlite>) -> 
     .bind(&cfd.id())
     .bind(&cfd.position())
     .bind(&cfd.initial_price())
-    .bind(&cfd.leverage())
+    .bind(&cfd.taker_leverage())
     .bind(&cfd.settlement_time_interval_hours().whole_hours())
     .bind(&cfd.quantity())
     .bind(&cfd.counterparty_network_identity())
@@ -184,7 +184,7 @@ pub struct Cfd {
     pub id: OrderId,
     pub position: Position,
     pub initial_price: Price,
-    pub leverage: Leverage,
+    pub taker_leverage: Leverage,
     pub settlement_interval: Duration,
     pub quantity_usd: Usd,
     pub counterparty_network_identity: Identity,
@@ -227,7 +227,7 @@ pub async fn load_cfd(
         id: cfd_row.uuid,
         position: cfd_row.position,
         initial_price: cfd_row.initial_price,
-        leverage: cfd_row.leverage,
+        taker_leverage: cfd_row.leverage,
         settlement_interval: Duration::hours(cfd_row.settlement_time_interval_hours),
         quantity_usd: cfd_row.quantity_usd,
         counterparty_network_identity: cfd_row.counterparty_network_identity,
@@ -359,7 +359,7 @@ mod tests {
                 id,
                 position,
                 initial_price,
-                leverage,
+                taker_leverage: leverage,
                 settlement_interval,
                 quantity_usd,
                 counterparty_network_identity,
@@ -374,7 +374,7 @@ mod tests {
         assert_eq!(cfd.id(), id);
         assert_eq!(cfd.position(), position);
         assert_eq!(cfd.initial_price(), initial_price);
-        assert_eq!(cfd.leverage(), leverage);
+        assert_eq!(cfd.taker_leverage(), leverage);
         assert_eq!(cfd.settlement_time_interval_hours(), settlement_interval);
         assert_eq!(cfd.quantity(), quantity_usd);
         assert_eq!(
@@ -546,7 +546,7 @@ mod tests {
             OrderId::default(),
             Position::Long,
             Price::new(dec!(60_000)).unwrap(),
-            Leverage::new(2).unwrap(),
+            Leverage::TWO,
             Duration::hours(24),
             Role::Taker,
             Usd::new(dec!(1_000)),

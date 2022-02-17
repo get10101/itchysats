@@ -273,7 +273,7 @@ where
 
         let cfd = Cfd::from_order(
             current_order.clone(),
-            current_order.position,
+            current_order.position_maker,
             quantity,
             taker_id,
             Role::Maker,

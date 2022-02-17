@@ -170,7 +170,7 @@ where
         // recorded
         let cfd = Cfd::from_order(
             current_order.clone(),
-            current_order.position.counter_position(),
+            current_order.position_maker.counter_position(),
             quantity,
             self.maker_identity,
             Role::Taker,

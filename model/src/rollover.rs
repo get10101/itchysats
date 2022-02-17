@@ -9,7 +9,11 @@ use crate::Usd;
 pub struct RolloverParams {
     pub price: Price,
     pub quantity: Usd,
-    pub leverage: Leverage,
+    /// The long leverage
+    ///
+    /// This is used for calculating the payout curve only, which always requires the long leverage
+    /// at the moment
+    pub long_leverage: Leverage,
     pub refund_timelock: u32,
     pub fee_rate: TxFeeRate,
     pub fee_account: FeeAccount,
@@ -20,7 +24,7 @@ impl RolloverParams {
     pub fn new(
         price: Price,
         quantity: Usd,
-        leverage: Leverage,
+        long_leverage: Leverage,
         refund_timelock: u32,
         fee_rate: TxFeeRate,
         fee_account: FeeAccount,
@@ -29,7 +33,7 @@ impl RolloverParams {
         Self {
             price,
             quantity,
-            leverage,
+            long_leverage,
             refund_timelock,
             fee_rate,
             fee_account,

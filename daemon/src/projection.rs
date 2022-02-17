@@ -15,10 +15,10 @@ use itertools::Itertools;
 use maia::TransactionExt;
 use model::calculate_funding_fee;
 use model::calculate_long_liquidation_price;
-use model::calculate_long_margin;
+use model::calculate_margin;
 use model::calculate_profit;
 use model::calculate_profit_at_price;
-use model::calculate_short_margin;
+use model::long_and_short_leverage;
 use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
@@ -119,7 +119,9 @@ pub struct Cfd {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub accumulated_fees: SignedAmount,
 
-    pub leverage: Leverage,
+    /// The taker leverage
+    #[serde(rename = "leverage")]
+    pub leverage_taker: Leverage,
     pub trading_pair: TradingPair,
     pub position: Position,
     #[serde(with = "round_to_two_dp")]
@@ -292,7 +294,7 @@ impl Cfd {
             id,
             position,
             initial_price,
-            leverage,
+            taker_leverage,
             quantity_usd,
             counterparty_network_identity,
             role,
@@ -301,19 +303,27 @@ impl Cfd {
             ..
         }: db::Cfd,
     ) -> Self {
-        let long_margin = calculate_long_margin(initial_price, quantity_usd, leverage);
-        let short_margin = calculate_short_margin(initial_price, quantity_usd);
-
-        let (margin, margin_counterparty) = match position {
-            Position::Long => (long_margin, short_margin),
-            Position::Short => (short_margin, long_margin),
+        let (our_leverage, counterparty_leverage) = match role {
+            Role::Maker => (Leverage::ONE, taker_leverage),
+            Role::Taker => (taker_leverage, Leverage::ONE),
         };
-        let liquidation_price = calculate_long_liquidation_price(leverage, initial_price);
+
+        let margin = calculate_margin(initial_price, quantity_usd, our_leverage);
+        let margin_counterparty =
+            calculate_margin(initial_price, quantity_usd, counterparty_leverage);
+
+        // TODO: Change this to reflect that we can be short! - does this make sense for short? What
+        // should the taker UI display?
+        let liquidation_price = calculate_long_liquidation_price(our_leverage, initial_price);
+
+        let (long_leverage, short_leverage) =
+            long_and_short_leverage(taker_leverage, role, position);
 
         let initial_funding_fee = calculate_funding_fee(
             initial_price,
             quantity_usd,
-            leverage,
+            long_leverage,
+            short_leverage,
             initial_funding_rate,
             SETTLEMENT_INTERVAL.whole_hours(),
         )
@@ -333,7 +343,7 @@ impl Cfd {
             order_id: id,
             initial_price,
             accumulated_fees: fee_account.balance(),
-            leverage,
+            leverage_taker: taker_leverage,
             trading_pair: TradingPair::BtcUsd,
             position,
             liquidation_price,
@@ -569,11 +579,15 @@ impl Cfd {
             }
         };
 
+        let (long_leverage, short_leverage) =
+            long_and_short_leverage(self.leverage_taker, self.role, self.position);
+
         let (profit_btc, profit_percent, payout) = match calculate_profit_at_price(
             self.initial_price,
             latest_price,
             self.quantity_usd,
-            self.leverage,
+            long_leverage,
+            short_leverage,
             self.aggregated.fee_account,
         ) {
             Ok((profit_btc, profit_percent, payout)) => {
@@ -879,7 +893,9 @@ pub struct CfdOrder {
     pub id: OrderId,
 
     pub trading_pair: TradingPair,
-    pub position: Position,
+
+    #[serde(rename = "position")]
+    pub position_maker: Position,
 
     /// The maker's price for opening a position
     #[serde(with = "round_to_two_dp")]
@@ -920,7 +936,8 @@ pub struct CfdOrder {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub initial_funding_fee_per_parcel: Amount,
 
-    pub leverage: Leverage,
+    #[serde(rename = "leverage")]
+    pub leverage_taker: Leverage,
     #[serde(with = "round_to_two_dp")]
     pub liquidation_price: Price,
 
@@ -934,23 +951,31 @@ impl TryFrom<Order> for CfdOrder {
     fn try_from(order: Order) -> std::result::Result<Self, Self::Error> {
         let parcel_size = Usd::new(dec!(100)); // TODO: Have the maker tell us this.
 
+        let own_position = match order.origin {
+            // we are the maker, the order's position is our position
+            Origin::Ours => order.position_maker,
+            // we are the taker, the order's position is our counter-position
+            Origin::Theirs => order.position_maker.counter_position(),
+        };
+
+        let (long_leverage, short_leverage) =
+            long_and_short_leverage(order.leverage_taker, order.origin.into(), own_position);
+
         Ok(Self {
             id: order.id,
             trading_pair: order.trading_pair,
-            position: order.position,
+            position_maker: order.position_maker,
             price: order.price,
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
             parcel_size,
-            margin_per_parcel: match (order.origin, order.position) {
-                (Origin::Theirs, Position::Short) | (Origin::Ours, Position::Long) => {
-                    calculate_long_margin(order.price, parcel_size, order.leverage)
-                }
-                (Origin::Ours, Position::Short) | (Origin::Theirs, Position::Long) => {
-                    calculate_short_margin(order.price, parcel_size)
-                }
+            margin_per_parcel: match order.origin {
+                // we are the maker
+                Origin::Ours => calculate_margin(order.price, parcel_size, Leverage::ONE),
+                // we are the taker
+                Origin::Theirs => calculate_margin(order.price, parcel_size, order.leverage_taker),
             },
-            leverage: order.leverage,
+            leverage_taker: order.leverage_taker,
             liquidation_price: order.liquidation_price,
             creation_timestamp: order.creation_timestamp,
             settlement_time_interval_in_secs: order
@@ -965,7 +990,8 @@ impl TryFrom<Order> for CfdOrder {
             initial_funding_fee_per_parcel: calculate_funding_fee(
                 order.price,
                 parcel_size,
-                order.leverage,
+                long_leverage,
+                short_leverage,
                 order.funding_rate,
                 SETTLEMENT_INTERVAL.whole_hours(),
             )

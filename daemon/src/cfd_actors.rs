@@ -25,7 +25,7 @@ pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> R
             id,
             position,
             initial_price,
-            leverage,
+            taker_leverage: leverage,
             settlement_interval,
             counterparty_network_identity,
             role,

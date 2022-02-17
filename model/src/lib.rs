@@ -170,6 +170,10 @@ impl Leverage {
     pub fn get(&self) -> u8 {
         self.0
     }
+
+    pub const ONE: Self = Self(1);
+
+    pub const TWO: Self = Self(2);
 }
 
 impl fmt::Display for Leverage {
@@ -741,7 +745,8 @@ impl FeeAccount {
 pub fn calculate_funding_fee(
     price: Price,
     quantity: Usd,
-    leverage: Leverage,
+    long_leverage: Leverage,
+    short_leverage: Leverage,
     funding_rate: FundingRate,
     hours_to_charge: i64,
 ) -> Result<FundingFee> {
@@ -750,9 +755,9 @@ pub fn calculate_funding_fee(
     }
 
     let margin = if funding_rate.short_pays_long() {
-        calculate_long_margin(price, quantity, leverage)
+        calculate_margin(price, quantity, long_leverage)
     } else {
-        calculate_short_margin(price, quantity)
+        calculate_margin(price, quantity, short_leverage)
     };
 
     let fraction_of_funding_period = if hours_to_charge as i64 == SETTLEMENT_INTERVAL.whole_hours()
@@ -1153,13 +1158,15 @@ mod tests {
 
     #[test]
     fn proportional_funding_fees_if_sign_of_funding_rate_changes() {
-        let long_leverage = Leverage::new(2).unwrap();
+        let long_leverage = Leverage::TWO;
+        let short_leverage = Leverage::ONE;
 
         let funding_rate_pos = FundingRate::new(dec!(0.01)).unwrap();
         let long_pays_short_fee = calculate_funding_fee(
             dummy_price(),
             dummy_n_contracts(),
             long_leverage,
+            short_leverage,
             funding_rate_pos,
             dummy_settlement_interval(),
         )
@@ -1170,6 +1177,7 @@ mod tests {
             dummy_price(),
             dummy_n_contracts(),
             long_leverage,
+            short_leverage,
             funding_rate_neg,
             dummy_settlement_interval(),
         )
@@ -1188,6 +1196,7 @@ mod tests {
         let fee = calculate_funding_fee(
             dummy_price(),
             dummy_n_contracts(),
+            dummy_leverage,
             dummy_leverage,
             zero_funding_rate,
             dummy_settlement_interval(),
