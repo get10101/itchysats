@@ -111,18 +111,6 @@ jobs:
           curl --fail http://localhost:8000/api/alive
           curl --fail http://localhost:8001/api/alive
 
-  test_daemons_release_mode:
-    strategy:
-      matrix:
-        os: [ ubuntu-latest, macos-latest ]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v2.4.0
-      - name: Setup rust toolchain
-        run: rustup show
-      - uses: Swatinem/rust-cache@v1.3.0
-      - run: cargo test --release --workspace
-
   daemons_arm_build:
     runs-on: ubuntu-latest
     steps:
