@@ -1,6 +1,6 @@
 use crate::db::append_event;
-use crate::monitor::CollaborativeSettlement;
 use crate::monitor::MonitorCetFinality;
+use crate::monitor::MonitorCollaborativeSettlement;
 use crate::monitor::MonitorParams;
 use crate::monitor::StartMonitoring;
 use crate::monitor::TransactionKind;
@@ -23,7 +23,7 @@ pub struct Actor {
     try_broadcast_transaction: Box<dyn MessageChannel<TryBroadcastTransaction>>,
     start_monitoring: Box<dyn MessageChannel<StartMonitoring>>,
     monitor_cet_finality: Box<dyn MessageChannel<MonitorCetFinality>>,
-    monitor_collaborative_settlement: Box<dyn MessageChannel<CollaborativeSettlement>>,
+    monitor_collaborative_settlement: Box<dyn MessageChannel<MonitorCollaborativeSettlement>>,
     monitor_attestation: Box<dyn MessageChannel<oracle::MonitorAttestation>>,
 }
 
@@ -44,7 +44,8 @@ impl Actor {
         try_broadcast_transaction: &(impl MessageChannel<TryBroadcastTransaction> + 'static),
         start_monitoring: &(impl MessageChannel<StartMonitoring> + 'static),
         monitor_cet: &(impl MessageChannel<MonitorCetFinality> + 'static),
-        monitor_collaborative_settlement: &(impl MessageChannel<CollaborativeSettlement> + 'static),
+        monitor_collaborative_settlement: &(impl MessageChannel<MonitorCollaborativeSettlement>
+              + 'static),
         monitor_attestation: &(impl MessageChannel<oracle::MonitorAttestation> + 'static),
     ) -> Self {
         Self {
@@ -119,7 +120,7 @@ impl Actor {
                 };
 
                 self.monitor_collaborative_settlement
-                    .send_async_safe(CollaborativeSettlement {
+                    .send_async_safe(MonitorCollaborativeSettlement {
                         order_id: event.id,
                         tx: (txid, script),
                     })

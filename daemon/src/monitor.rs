@@ -41,7 +41,7 @@ pub struct StartMonitoring {
     pub params: MonitorParams,
 }
 
-pub struct CollaborativeSettlement {
+pub struct MonitorCollaborativeSettlement {
     pub order_id: OrderId,
     pub tx: (Txid, Script),
 }
@@ -847,7 +847,7 @@ impl Actor {
 
     fn handle_collaborative_settlement(
         &mut self,
-        collaborative_settlement: CollaborativeSettlement,
+        collaborative_settlement: MonitorCollaborativeSettlement,
     ) {
         self.state.monitor_close_finality(
             collaborative_settlement.tx,

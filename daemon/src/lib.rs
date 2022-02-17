@@ -102,7 +102,7 @@ where
     where
         M: Handler<monitor::StartMonitoring>
             + Handler<monitor::Sync>
-            + Handler<monitor::CollaborativeSettlement>
+            + Handler<monitor::MonitorCollaborativeSettlement>
             + Handler<monitor::TryBroadcastTransaction>
             + Handler<monitor::MonitorCetFinality>
             + Actor<Stop = ()>,
@@ -308,7 +308,7 @@ where
     where
         M: Handler<monitor::StartMonitoring>
             + Handler<monitor::Sync>
-            + Handler<monitor::CollaborativeSettlement>
+            + Handler<monitor::MonitorCollaborativeSettlement>
             + Handler<monitor::MonitorCetFinality>
             + Handler<monitor::TryBroadcastTransaction>
             + Actor<Stop = ()>,

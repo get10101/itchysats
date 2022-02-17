@@ -37,7 +37,7 @@ impl MonitorActor {
 
     async fn handle(&mut self, _: monitor::StartMonitoring) {}
 
-    async fn handle(&mut self, _: monitor::CollaborativeSettlement) {}
+    async fn handle(&mut self, _: monitor::MonitorCollaborativeSettlement) {}
 
     async fn handle(&mut self, _: monitor::TryBroadcastTransaction) -> Result<()> {
         Ok(())
