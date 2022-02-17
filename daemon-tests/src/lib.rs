@@ -24,6 +24,7 @@ use model::cfd::Role;
 use model::FundingRate;
 use model::Identity;
 use model::OpeningFee;
+use model::Position;
 use model::Price;
 use model::TxFeeRate;
 use model::Usd;
@@ -408,7 +409,7 @@ pub fn dummy_quote() -> Quote {
     }
 }
 
-pub fn dummy_new_order() -> maker_cfd::NewOrder {
+pub fn dummy_new_order(position: Position) -> maker_cfd::NewOrder {
     maker_cfd::NewOrder {
         price: Price::new(dummy_price()).unwrap(),
         min_quantity: Usd::new(dec!(5)),
@@ -417,6 +418,7 @@ pub fn dummy_new_order() -> maker_cfd::NewOrder {
         // 8.76% annualized = rate of 0.0876 annualized = rate of 0.00024 daily
         funding_rate: FundingRate::new(dec!(0.00024)).unwrap(),
         opening_fee: OpeningFee::new(Amount::from_sat(2)),
+        position,
     }
 }
 

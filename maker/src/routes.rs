@@ -13,6 +13,7 @@ use model::cfd::OrderId;
 use model::FundingRate;
 use model::Identity;
 use model::OpeningFee;
+use model::Position;
 use model::Price;
 use model::TxFeeRate;
 use model::Usd;
@@ -104,6 +105,7 @@ pub struct CfdNewOrderRequest {
     // TODO: This is not inline with other parts of the API! We should not expose internal types
     // here. We have to specify sats for here because of that.
     pub opening_fee: Option<OpeningFee>,
+    pub position: Option<Position>,
 }
 
 #[rocket::post("/order/sell", data = "<order>")]
@@ -120,6 +122,7 @@ pub async fn post_sell_order(
             order.tx_fee_rate,
             order.funding_rate,
             order.opening_fee,
+            order.position,
         )
         .await
         .map_err(|e| {

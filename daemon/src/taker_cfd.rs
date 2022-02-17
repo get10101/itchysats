@@ -16,7 +16,6 @@ use model::cfd::OrderId;
 use model::cfd::Origin;
 use model::cfd::Role;
 use model::Identity;
-use model::Position;
 use model::Price;
 use model::Usd;
 use tokio_tasks::Tasks;
@@ -171,7 +170,7 @@ where
         // recorded
         let cfd = Cfd::from_order(
             current_order.clone(),
-            Position::Long,
+            current_order.position.counter_position(),
             quantity,
             self.maker_identity,
             Role::Taker,
