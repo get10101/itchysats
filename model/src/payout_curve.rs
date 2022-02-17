@@ -49,21 +49,28 @@ mod utils;
 pub fn calculate(
     price: Price,
     quantity: Usd,
-    leverage: Leverage,
+    long_leverage: Leverage,
+    short_leverage: Leverage,
     n_payouts: usize,
     fee: FeeFlow,
 ) -> Result<Vec<Payout>> {
-    let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts, fee)?
-        .into_iter()
-        .map(PayoutParameter::into_payouts)
-        .flatten_ok()
-        .collect::<Result<Vec<_>>>()?;
+    let payouts = calculate_payout_parameters(
+        price,
+        quantity,
+        long_leverage,
+        short_leverage,
+        n_payouts,
+        fee,
+    )?
+    .into_iter()
+    .map(PayoutParameter::into_payouts)
+    .flatten_ok()
+    .collect::<Result<Vec<_>>>()?;
 
     Ok(payouts)
 }
 
 const CONTRACT_VALUE: f64 = 1.;
-const SHORT_LEVERAGE: usize = 1;
 
 /// Internal calculate function for the payout curve.
 ///
@@ -73,6 +80,7 @@ fn calculate_payout_parameters(
     price: Price,
     quantity: Usd,
     long_leverage: Leverage,
+    short_leverage: Leverage,
     n_payouts: usize,
     fee: FeeFlow,
 ) -> Result<Vec<PayoutParameter>> {
@@ -86,7 +94,7 @@ fn calculate_payout_parameters(
     let payout_curve = PayoutCurve::new(
         initial_rate,
         long_leverage.get() as usize,
-        SHORT_LEVERAGE,
+        short_leverage.get() as usize,
         quantity,
         CONTRACT_VALUE,
         None,
@@ -536,6 +544,7 @@ mod tests {
             Price::new(dec!(54000.00)).unwrap(),
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
+            Leverage::new(1).unwrap(),
             200,
             FeeFlow::Nein,
         )
@@ -757,6 +766,7 @@ mod tests {
             price,
             quantity,
             Leverage::new(5).unwrap(),
+            Leverage::new(1).unwrap(),
             200,
             FeeFlow::Nein,
         )
@@ -764,9 +774,15 @@ mod tests {
 
         let fee = FeeFlow::LongPaysShort(Amount::from_sat(100));
 
-        let payouts_with_fee =
-            calculate_payout_parameters(price, quantity, Leverage::new(5).unwrap(), 200, fee)
-                .unwrap();
+        let payouts_with_fee = calculate_payout_parameters(
+            price,
+            quantity,
+            Leverage::new(5).unwrap(),
+            Leverage::new(1).unwrap(),
+            200,
+            fee,
+        )
+        .unwrap();
         assert_eq!(payouts.len(), payouts_with_fee.len());
 
         let total_per_payout = payouts
@@ -814,6 +830,7 @@ mod tests {
             Price::new(dec!(54000.00)).unwrap(),
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
+            Leverage::new(1).unwrap(),
             200,
             FeeFlow::Nein,
         )
@@ -834,6 +851,7 @@ mod tests {
             price in arb_price(1.0, 340_000.0),
             n_contracts in arb_contracts(1, 10_000_000),
             taker_leverage in arb_leverage(1, 200),
+            maker_leverage in arb_leverage(1, 200),
             n_payouts in 10usize..2000,
             fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
         ) {
@@ -841,6 +859,7 @@ mod tests {
                 price,
                 n_contracts,
                 taker_leverage,
+                maker_leverage,
                 n_payouts,
                 fee_flow,
             )
