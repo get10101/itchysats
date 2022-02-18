@@ -271,13 +271,7 @@ where
             }
         };
 
-        let cfd = Cfd::from_order(
-            current_order.clone(),
-            current_order.position_maker,
-            quantity,
-            taker_id,
-            Role::Maker,
-        );
+        let cfd = Cfd::from_order(current_order.clone(), quantity, taker_id, Role::Maker);
 
         // 2. Remove current order
         // The order is removed before we update the state, because the maker might react on the
