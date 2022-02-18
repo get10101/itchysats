@@ -19,6 +19,7 @@ use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
 use model::OrderId;
+use model::Timestamp;
 use model::CET_TIMELOCK;
 use serde_json::Value;
 use sqlx::SqlitePool;
@@ -134,6 +135,7 @@ pub struct Actor {
     tasks: Tasks,
     state: State,
     db: sqlx::SqlitePool,
+    initialized_at: Option<Timestamp>,
 }
 
 /// Internal data structure encapsulating the monitoring state without performing any IO.
@@ -300,6 +302,7 @@ impl Actor {
             state: State::new(BlockHeight::try_from(latest_block)?),
             tasks: Tasks::default(),
             db,
+            initialized_at: None,
         })
     }
 }
@@ -432,8 +435,21 @@ impl Actor {
                         .await
                 }
                 Event::RefundTimelockExpired(id) => {
-                    self.invoke_cfd_command(id, |cfd| cfd.handle_refund_timelock_expired())
-                        .await
+                    // NOTE: this is a band-aid fix.
+                    // It is possible for an attestation to be available when the refund timelock
+                    // has expired, for example, when the daemon goes down and is restarted.
+                    // In this case we want to prioritise broadcasting the cet over the refund
+                    // transaction. We wait at least 5 seconds after the monitor
+                    // actor is initialised before broadcasting refund to give the daemon time to
+                    // fetch and decrypt the cet from the oracle if it is available.
+                    if let Some(initialized_at) = self.initialized_at {
+                        if Timestamp::now().seconds() - initialized_at.seconds() > 5 {
+                            self.invoke_cfd_command(id, |cfd| cfd.handle_refund_timelock_expired())
+                                .await
+                        }
+                    } else {
+                        tracing::trace!(order_id=%id, "Postponed broadcasting refund, checking if attestation is available.");
+                    }
                 }
             }
         }
@@ -829,6 +845,8 @@ impl xtra::Actor for Actor {
                 tracing::warn!("Failed to re-initialize monitoring: {e:#}");
             },
         );
+
+        self.initialized_at = Some(Timestamp::now());
     }
 
     async fn stopped(self) -> Self::Stop {}
