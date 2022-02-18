@@ -20,7 +20,7 @@ use daemon_tests::Maker;
 use daemon_tests::MakerConfig;
 use daemon_tests::Taker;
 use daemon_tests::TakerConfig;
-use model::calculate_long_margin;
+use model::calculate_margin;
 use model::olivia;
 use model::Identity;
 use model::OrderId;
@@ -132,8 +132,11 @@ async fn taker_receives_order_from_maker_on_publication() {
 
 fn assert_eq_order(mut published: CfdOrder, received: CfdOrder) {
     // align margin_per_parcel to be the long margin_per_parcel
-    let long_margin_per_parcel =
-        calculate_long_margin(published.price, published.parcel_size, published.leverage);
+    let long_margin_per_parcel = calculate_margin(
+        published.price,
+        published.parcel_size,
+        published.leverage_taker,
+    );
     published.margin_per_parcel = long_margin_per_parcel;
 
     assert_eq!(published, received);

@@ -121,7 +121,7 @@ pub async fn new(
         payout_curve::calculate(
             setup_params.price,
             setup_params.quantity,
-            setup_params.leverage,
+            setup_params.long_leverage,
             n_payouts,
             setup_params.fee_account.settle(),
         )?,
@@ -381,7 +381,7 @@ pub async fn roll_over(
         payout_curve::calculate(
             rollover_params.price,
             rollover_params.quantity,
-            rollover_params.leverage,
+            rollover_params.long_leverage,
             n_payouts,
             rollover_params.fee_account.settle(),
         )?,

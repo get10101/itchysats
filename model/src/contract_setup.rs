@@ -13,7 +13,11 @@ pub struct SetupParams {
     pub counterparty_identity: Identity,
     pub price: Price,
     pub quantity: Usd,
-    pub leverage: Leverage,
+    /// The long leverage
+    ///
+    /// This is used for calculating the payout curve only, which always requires the long leverage
+    /// at the moment
+    pub long_leverage: Leverage,
     pub refund_timelock: u32,
     pub tx_fee_rate: TxFeeRate,
     pub fee_account: FeeAccount,
@@ -27,7 +31,7 @@ impl SetupParams {
         counterparty_identity: Identity,
         price: Price,
         quantity: Usd,
-        leverage: Leverage,
+        long_leverage: Leverage,
         refund_timelock: u32,
         tx_fee_rate: TxFeeRate,
         fee_account: FeeAccount,
@@ -38,7 +42,7 @@ impl SetupParams {
             counterparty_identity,
             price,
             quantity,
-            leverage,
+            long_leverage,
             refund_timelock,
             tx_fee_rate,
             fee_account,
