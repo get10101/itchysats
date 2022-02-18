@@ -286,11 +286,13 @@ where
         self.current_order = None;
 
         self.takers
-            .send_async_safe(maker_inc_connections::BroadcastOrder(None))
+            .send_async_safe(maker_inc_connections::BroadcastOrder(
+                self.current_order.clone(),
+            ))
             .await?;
 
         self.projection
-            .send(projection::Update(Option::<Order>::None))
+            .send(projection::Update(self.current_order.clone()))
             .await?;
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection).await?;
 
