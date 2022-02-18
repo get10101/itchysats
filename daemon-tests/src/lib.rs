@@ -246,12 +246,17 @@ impl Maker {
             opening_fee,
             position,
         } = offer_params;
-
         self.system
-            .cfd_actor
-            .send(offer_params)
+            .set_offer_params(
+                price,
+                min_quantity,
+                max_quantity,
+                Some(tx_fee_rate),
+                Some(funding_rate),
+                Some(opening_fee),
+                Some(position),
+            )
             .await
-            .unwrap()
             .unwrap();
     }
 }
