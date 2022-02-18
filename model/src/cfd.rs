@@ -176,7 +176,7 @@ pub struct Order {
 impl Order {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        position: Position,
+        position_maker: Position,
         price: Price,
         min_quantity: Usd,
         max_quantity: Usd,
@@ -189,7 +189,7 @@ impl Order {
     ) -> Result<Self> {
         let leverage_choices_for_taker = Leverage::TWO;
 
-        let liquidation_price = match position {
+        let liquidation_price = match position_maker {
             Position::Short => calculate_long_liquidation_price(leverage_choices_for_taker, price),
             Position::Long => {
                 // TODO: Should be different
@@ -205,7 +205,7 @@ impl Order {
             leverage_taker: leverage_choices_for_taker,
             trading_pair: TradingPair::BtcUsd,
             liquidation_price,
-            position_maker: position,
+            position_maker,
             creation_timestamp: Timestamp::now(),
             settlement_interval,
             origin,
