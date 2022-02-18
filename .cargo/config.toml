@@ -10,5 +10,7 @@ dev-taker = "run --bin taker -- --maker localhost:9999 --maker-id 10d4ba2ac3f7a2
 rustflags = [
   "-Wclippy::disallowed_method",
   "-Wclippy::dbg_macro",
+  "-Wclippy::print_stderr",
+  "-Wclippy::print_stdout",
   "-Wunused-import-braces",
 ]
