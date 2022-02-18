@@ -481,12 +481,6 @@ impl Cfd {
         let (long_leverage, short_leverage) =
             long_and_short_leverage(taker_leverage, role, position);
 
-        tracing::info!(
-            "New Cfd: long_leverage {}, short_leverage {}",
-            long_leverage,
-            short_leverage
-        );
-
         let initial_funding_fee = calculate_funding_fee(
             initial_price,
             quantity,
@@ -712,13 +706,6 @@ impl Cfd {
 
         let margin = self.margin();
         let counterparty_margin = self.counterparty_margin();
-
-        tracing::info!(
-            "Starting contract setup, position {:?}, margin {}, countermargin {}",
-            self.position,
-            margin,
-            counterparty_margin
-        );
 
         Ok((
             CfdEvent::new(self.id(), EventKind::ContractSetupStarted),
