@@ -186,7 +186,7 @@ impl Order {
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
         opening_fee: OpeningFee,
-    ) -> Result<Self> {
+    ) -> Self {
         let leverage_choices_for_taker = Leverage::TWO;
 
         let liquidation_price = match position_maker {
@@ -197,7 +197,7 @@ impl Order {
             }
         };
 
-        Ok(Order {
+        Order {
             id: OrderId::default(),
             price,
             min_quantity,
@@ -213,11 +213,11 @@ impl Order {
             tx_fee_rate,
             funding_rate,
             opening_fee,
-        })
+        }
     }
 
     /// Replicates the order with a new ID
-    pub fn replicate(&self) -> Result<Self> {
+    pub fn replicate(&self) -> Self {
         Self::new(
             self.position_maker,
             self.price,
@@ -3238,7 +3238,6 @@ mod tests {
                 FundingRate::default(),
                 OpeningFee::default(),
             )
-            .unwrap()
         }
 
         fn with_price(mut self, price: Price) -> Self {

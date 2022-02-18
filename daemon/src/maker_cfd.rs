@@ -281,7 +281,7 @@ where
 
         // 2. Replicate the order with a new one to allow other takers to use
         // the same offer
-        self.current_order = Some(current_order.replicate().context("can't replicate order")?);
+        self.current_order = Some(current_order.replicate());
 
         self.takers
             .send_async_safe(maker_inc_connections::BroadcastOrder(
@@ -555,7 +555,7 @@ where
             tx_fee_rate,
             funding_rate,
             opening_fee,
-        )?;
+        );
 
         // 1. Update actor state to current order
         self.current_order.replace(order.clone());
