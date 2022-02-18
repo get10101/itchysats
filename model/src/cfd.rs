@@ -2617,8 +2617,10 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
+        let taker = (Position::Long, Leverage::TWO);
 
-        let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
+        let (long_payout, short_payout) = collab_settlement(
+            taker,
             quantity,
             opening_price,
             closing_price,
@@ -2650,8 +2652,10 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
+        let taker = (Position::Long, Leverage::TWO);
 
-        let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
+        let (long_payout, short_payout) = collab_settlement(
+            taker,
             quantity,
             opening_price,
             closing_price,
@@ -2683,8 +2687,10 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
+        let taker = (Position::Long, Leverage::TWO);
 
-        let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
+        let (long_payout, short_payout) = collab_settlement(
+            taker,
             quantity,
             opening_price,
             closing_price,
@@ -2710,15 +2716,17 @@ mod tests {
         );
     }
 
-    // TODO: Payout cove calculation uderflows because long is not capped at zero!
-    // #[test]
+    // TODO: Our payout curve handling should be able to handle liquidation (i.e. payout calculation
+    // going below zero)! #[test]
     // fn given_more_rollover_then_long_margin_with_positive_rate_then_long_gets_liquidated() {
     //     let quantity = Usd::new(dec!(10));
     //     let opening_price = Price::new(dec!(10000)).unwrap();
     //     let closing_price = Price::new(dec!(10000)).unwrap();
     //     let positive_funding_rate = dec!(0.0001);
+    //     let taker = (Position::Long, Leverage::TWO);
     //
-    //     let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
+    //     let (long_payout, short_payout) = collab_settlement(
+    //         taker,
     //         quantity,
     //         opening_price,
     //         closing_price,
@@ -2738,7 +2746,8 @@ mod tests {
     //     assert_eq!(
     //         short_payout,
     //         payout_interval_maker_amount + payout_interval_taker_amount -
-    // TX_FEE_COLLAB_SETTLEMENT     );
+    //         TX_FEE_COLLAB_SETTLEMENT
+    //     );
     // }
 
     #[test]
@@ -2750,8 +2759,10 @@ mod tests {
         let opening_price = Price::new(dec!(41015.60)).unwrap();
         let closing_price = Price::new(dec!(40600)).unwrap();
         let positive_funding_rate = dec!(0.0005);
+        let taker = (Position::Long, Leverage::TWO);
 
-        let (taker_payout, maker_payout) = collab_settlement_taker_long_maker_short(
+        let (taker_payout, maker_payout) = collab_settlement(
+            taker,
             quantity,
             opening_price,
             closing_price,
@@ -2764,8 +2775,36 @@ mod tests {
         assert_eq!(maker_payout, 246306);
     }
 
+    #[test]
+    fn given_taker_short_maker_long_production_values_then_collab_settlement_is_as_expected() {
+        // The values for this test are from production on 05.02.2022
+        // For testing purpose different values can be plugged in to ensure sanity / debugging
+
+        let quantity = Usd::new(dec!(100));
+        let opening_price = Price::new(dec!(41015.60)).unwrap();
+        let closing_price = Price::new(dec!(40600)).unwrap();
+        let positive_funding_rate = dec!(0.0005);
+        let taker = (Position::Short, Leverage::TWO);
+
+        let (taker_payout, maker_payout) = collab_settlement(
+            taker,
+            quantity,
+            opening_price,
+            closing_price,
+            positive_funding_rate,
+            0,
+            0,
+        );
+
+        // TODO: We have to adapt these values according to the fee flow, but the taker payout
+        // should definitely be within the range of 1xxxxx
+        assert_eq!(taker_payout, 119239);
+        assert_eq!(maker_payout, 246306);
+    }
+
     #[allow(clippy::too_many_arguments)]
-    fn collab_settlement_taker_long_maker_short(
+    fn collab_settlement(
+        taker: (Position, Leverage),
         quantity: Usd,
         opening_price: Price,
         closing_price: Price,
@@ -2776,39 +2815,38 @@ mod tests {
         // we need to agree on same order id
         let order_id = OrderId::default();
 
-        let taker_long = Cfd::taker_long_from_order(
-            Order::dummy_short()
-                .with_price(opening_price)
-                .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
-            quantity,
-        )
-        .with_id(order_id);
+        let (taker_position, taker_leverage) = taker;
+        let maker_position = taker_position.counter_position();
 
-        let maker_short = Cfd::maker_short_from_order(
-            Order::dummy_short()
-                .with_price(opening_price)
-                .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
-            quantity,
-        )
-        .with_id(order_id);
+        let offer = Order::dummy_short()
+            .with_price(opening_price)
+            .with_funding_rate(FundingRate::new(funding_rate).unwrap())
+            .with_leverage_taker(taker_leverage)
+            .with_position_maker(maker_position);
+
+        let taker = Cfd::taker_from_order(offer.clone(), quantity).with_id(order_id);
+        let maker = Cfd::maker_from_order(offer, quantity).with_id(order_id);
+
+        println!("taker position: {:?}", taker.position);
+        println!("maker position: {:?}", maker.position);
 
         let taker_keys = keypair::new(&mut rand::thread_rng());
         let maker_keys = keypair::new(&mut rand::thread_rng());
 
-        let (taker_long, proposal, taker_sig, taker_script) = taker_long
+        let (taker, proposal, taker_sig, taker_script) = taker
             .dummy_open(dummy_event_id())
             .dummy_rollovers(funding_fee_sat_per_rollover, funding_rate, nr_of_rollovers)
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_taker(closing_price);
 
-        let (maker_short, maker_script) = maker_short
+        let (maker, maker_script) = maker
             .dummy_open(dummy_event_id())
             .dummy_rollovers(funding_fee_sat_per_rollover, funding_rate, nr_of_rollovers)
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_maker(proposal, taker_sig);
 
-        let taker_payout = taker_long.collab_settlement_payout(taker_script);
-        let maker_payout = maker_short.collab_settlement_payout(maker_script);
+        let taker_payout = taker.collab_settlement_payout(taker_script);
+        let maker_payout = maker.collab_settlement_payout(maker_script);
 
         (taker_payout.as_sat(), maker_payout.as_sat())
     }
@@ -2953,13 +2991,13 @@ mod tests {
     }
 
     impl Cfd {
-        fn taker_long_from_order(mut order: Order, quantity: Usd) -> Self {
+        fn taker_from_order(mut order: Order, quantity: Usd) -> Self {
             order.origin = Origin::Theirs;
 
             Cfd::from_order(order, quantity, dummy_identity(), Role::Taker)
         }
 
-        fn maker_short_from_order(order: Order, quantity: Usd) -> Self {
+        fn maker_from_order(order: Order, quantity: Usd) -> Self {
             Cfd::from_order(order, quantity, dummy_identity(), Role::Maker)
         }
 
@@ -3206,6 +3244,16 @@ mod tests {
 
         fn with_funding_rate(mut self, funding_rate: FundingRate) -> Self {
             self.funding_rate = funding_rate;
+            self
+        }
+
+        fn with_leverage_taker(mut self, leverage_taker: Leverage) -> Self {
+            self.leverage_taker = leverage_taker;
+            self
+        }
+
+        fn with_position_maker(mut self, position_maker: Position) -> Self {
+            self.position_maker = position_maker;
             self
         }
     }
