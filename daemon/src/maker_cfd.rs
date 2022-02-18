@@ -279,11 +279,9 @@ where
             Role::Maker,
         );
 
-        // 2. Remove current order
-        // The order is removed before we update the state, because the maker might react on the
-        // state change. Once we know that we go for either an accept/reject scenario we
-        // have to remove the current order.
-        self.current_order = None;
+        // 2. Replicate the order with a new one to allow other takers to use
+        // the same offer
+        self.current_order = Some(current_order.replicate().context("can't replicate order")?);
 
         self.takers
             .send_async_safe(maker_inc_connections::BroadcastOrder(

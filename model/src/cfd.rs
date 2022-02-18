@@ -215,6 +215,22 @@ impl Order {
             opening_fee,
         })
     }
+
+    /// Replicates the order with a new ID
+    pub fn replicate(&self) -> Result<Self> {
+        Self::new(
+            self.position_maker,
+            self.price,
+            self.min_quantity,
+            self.max_quantity,
+            self.origin,
+            self.oracle_event_id,
+            self.settlement_interval,
+            self.tx_fee_rate,
+            self.funding_rate,
+            self.opening_fee,
+        )
+    }
 }
 
 /// Proposed collaborative settlement

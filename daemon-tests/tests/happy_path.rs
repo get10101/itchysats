@@ -176,6 +176,37 @@ async fn taker_takes_order_and_maker_rejects() {
 }
 
 #[tokio::test]
+async fn another_offer_is_automatically_created_after_taker_takes_order() {
+    let _guard = init_tracing();
+    let (mut maker, mut taker) = start_both().await;
+
+    // TODO: Why is this needed? For the cfd stream it is not needed
+    is_next_none(taker.order_feed()).await.unwrap();
+
+    maker.publish_order(dummy_new_order(Position::Short)).await;
+
+    let (_, received) = next_order(maker.order_feed(), taker.order_feed())
+        .await
+        .unwrap();
+
+    taker.mocks.mock_oracle_announcement().await;
+    maker.mocks.mock_oracle_announcement().await;
+    taker
+        .system
+        .take_offer(received.id, Usd::new(dec!(10)))
+        .await
+        .unwrap();
+
+    let (_, received2) = next_order(maker.order_feed(), taker.order_feed())
+        .await
+        .unwrap();
+    assert_ne!(
+        received.id, received2.id,
+        "Another offer should be available, and it should have a different id than first one"
+    );
+}
+
+#[tokio::test]
 async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
