@@ -236,10 +236,20 @@ impl Maker {
         }
     }
 
-    pub async fn publish_order(&mut self, new_order_params: maker_cfd::NewOrder) {
+    pub async fn set_offer_params(&mut self, offer_params: maker_cfd::OfferParams) {
+        let maker_cfd::OfferParams {
+            price,
+            min_quantity,
+            max_quantity,
+            tx_fee_rate,
+            funding_rate,
+            opening_fee,
+            position,
+        } = offer_params;
+
         self.system
             .cfd_actor
-            .send(new_order_params)
+            .send(offer_params)
             .await
             .unwrap()
             .unwrap();
@@ -409,8 +419,8 @@ pub fn dummy_quote() -> Quote {
     }
 }
 
-pub fn dummy_new_order(position: Position) -> maker_cfd::NewOrder {
-    maker_cfd::NewOrder {
+pub fn dummy_offer_params(position: Position) -> maker_cfd::OfferParams {
+    maker_cfd::OfferParams {
         price: Price::new(dummy_price()).unwrap(),
         min_quantity: Usd::new(dec!(5)),
         max_quantity: Usd::new(dec!(100)),

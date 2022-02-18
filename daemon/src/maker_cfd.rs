@@ -59,7 +59,7 @@ pub struct AcceptRollover {
 pub struct RejectRollover {
     pub order_id: OrderId,
 }
-pub struct NewOrder {
+pub struct OfferParams {
     pub price: Price,
     pub min_quantity: Usd,
     pub max_quantity: Usd,
@@ -529,8 +529,8 @@ where
         + xtra::Handler<maker_inc_connections::RegisterRollover>,
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
-    async fn handle_new_order(&mut self, msg: NewOrder) -> Result<()> {
-        let NewOrder {
+    async fn handle_new_order(&mut self, msg: OfferParams) -> Result<()> {
+        let OfferParams {
             price,
             min_quantity,
             max_quantity,
