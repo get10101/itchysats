@@ -535,11 +535,15 @@ impl Cfd {
     /// A convenience method, creating a Cfd from an Order
     pub fn from_order(
         order: Order,
-        position: Position,
         quantity: Usd,
         counterparty_network_identity: Identity,
         role: Role,
     ) -> Self {
+        let position = match role {
+            Role::Maker => order.position_maker,
+            Role::Taker => order.position_maker.counter_position(),
+        };
+
         Cfd::new(
             order.id,
             position,
@@ -2751,7 +2755,7 @@ mod tests {
     // }
 
     #[test]
-    fn given_production_values_then_collab_settlement_is_as_expected() {
+    fn given_taker_long_maker_short_production_values_then_collab_settlement_is_as_expected() {
         // The values for this test are from production on 05.02.2022
         // For testing purpose different values can be plugged in to ensure sanity / debugging
 
@@ -2786,7 +2790,7 @@ mod tests {
         let order_id = OrderId::default();
 
         let taker_long = Cfd::taker_long_from_order(
-            Order::dummy_model()
+            Order::dummy_short()
                 .with_price(opening_price)
                 .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
             quantity,
@@ -2794,7 +2798,7 @@ mod tests {
         .with_id(order_id);
 
         let maker_short = Cfd::maker_short_from_order(
-            Order::dummy_model()
+            Order::dummy_short()
                 .with_price(opening_price)
                 .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
             quantity,
@@ -2965,29 +2969,16 @@ mod tests {
         fn taker_long_from_order(mut order: Order, quantity: Usd) -> Self {
             order.origin = Origin::Theirs;
 
-            Cfd::from_order(
-                order,
-                Position::Long,
-                quantity,
-                dummy_identity(),
-                Role::Taker,
-            )
+            Cfd::from_order(order, quantity, dummy_identity(), Role::Taker)
         }
 
         fn maker_short_from_order(order: Order, quantity: Usd) -> Self {
-            Cfd::from_order(
-                order,
-                Position::Short,
-                quantity,
-                dummy_identity(),
-                Role::Maker,
-            )
+            Cfd::from_order(order, quantity, dummy_identity(), Role::Maker)
         }
 
         fn dummy_taker_long() -> Self {
             Cfd::from_order(
-                Order::dummy_model(),
-                Position::Long,
+                Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 Role::Taker,
@@ -2996,8 +2987,7 @@ mod tests {
 
         fn dummy_maker_short() -> Self {
             Cfd::from_order(
-                Order::dummy_model(),
-                Position::Short,
+                Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 Role::Maker,
@@ -3006,8 +2996,7 @@ mod tests {
 
         fn dummy_not_open_yet() -> Self {
             Cfd::from_order(
-                Order::dummy_model(),
-                Position::Long,
+                Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 Role::Taker,
@@ -3161,8 +3150,7 @@ mod tests {
 
         fn dummy_with_attestation(event_id: BitMexPriceEventId) -> Self {
             let cfd = Cfd::from_order(
-                Order::dummy_model(),
-                Position::Long,
+                Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 Role::Taker,
@@ -3175,8 +3163,7 @@ mod tests {
 
         fn dummy_final(event_id: BitMexPriceEventId) -> Self {
             let cfd = Cfd::from_order(
-                Order::dummy_model(),
-                Position::Long,
+                Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 Role::Taker,
@@ -3209,7 +3196,7 @@ mod tests {
     }
 
     impl Order {
-        fn dummy_model() -> Self {
+        fn dummy_short() -> Self {
             Order::new(
                 Position::Short,
                 Price::new(dec!(1000)).unwrap(),
