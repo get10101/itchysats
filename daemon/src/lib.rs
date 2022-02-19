@@ -52,7 +52,6 @@ pub mod process_manager;
 pub mod projection;
 pub mod rollover_maker;
 pub mod rollover_taker;
-pub mod routes;
 pub mod seed;
 pub mod setup_contract;
 pub mod setup_maker;
