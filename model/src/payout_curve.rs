@@ -107,6 +107,10 @@ fn calculate_payout_parameters(
             let long_amount = to_sats(long_amount_btc)?;
 
             let long_amount_adjusted = match fee {
+                // We use `saturating_sub` because the adjusted payout
+                // cannot go below zero. If the original payout is
+                // close or equal to zero and the fee is sufficiently
+                // large we would overflow otherwise.
                 FeeFlow::LongPaysShort(fee) => long_amount.saturating_sub(fee.as_sat()),
                 FeeFlow::ShortPaysLong(fee) => long_amount.add(fee.as_sat()),
                 FeeFlow::Nein => long_amount,
