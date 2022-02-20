@@ -474,6 +474,7 @@ fn create_long_payout_function(
 mod tests {
     use super::*;
     use bdk::bitcoin::Amount;
+    use proptest::prelude::*;
     use rust_decimal_macros::dec;
     use std::ops::RangeInclusive;
 
@@ -818,6 +819,83 @@ mod tests {
 
         pretty_assertions::assert_eq!(actual_payouts.first().unwrap(), &lower_tail);
         pretty_assertions::assert_eq!(actual_payouts.last().unwrap(), &upper_tail);
+    }
+
+
+    proptest! {
+        /// By similar we mean that they're at most 1 satoshi off the
+        /// next payout sum.
+        #[test]
+        fn payout_totals_are_similar(
+            price in arb_price(1.0, 340_000.0),
+            n_contracts in arb_contracts(1, 10_000_000),
+            taker_leverage in arb_leverage(1, 200),
+            n_payouts in 10usize..2_000,
+            fee_flow in arb_fee_flow(0, 100_000_000),
+        ) {
+            let payouts = calculate_payout_parameters(
+                price,
+                n_contracts,
+                taker_leverage,
+                n_payouts,
+                fee_flow,
+            )
+            .unwrap();
+
+            let are_payout_totals_similar = payouts
+                .iter()
+                .zip(payouts.iter().skip(1))
+                .map(|(a, b)| {
+                    (
+                        (a.long_amount + a.short_amount),
+                        (b.long_amount + b.short_amount),
+                    )
+                })
+                .all(|(a, b)| (a as i64 - b as i64).abs() <= 1);
+
+            prop_assert!(are_payout_totals_similar)
+        }
+    }
+
+    prop_compose! {
+        fn arb_price(min: f64, max: f64)(price in min..max) -> Price {
+            let price = Decimal::from_f64(price).unwrap();
+
+            Price::new(price).unwrap()
+        }
+    }
+
+    prop_compose! {
+        fn arb_contracts(min: u64, max: u64)(contracts in min..max) -> Usd {
+            let contracts = Decimal::from_u64(contracts).unwrap();
+
+            Usd::new(contracts)
+        }
+    }
+
+    prop_compose! {
+        fn arb_leverage(min: u8, max: u8)(leverage in min..max) -> Leverage {
+            Leverage::new(leverage).unwrap()
+        }
+    }
+
+    prop_compose! {
+        /// Generate an arbitrary fee flow value, between the `lower`
+        /// and `upper` bounds.
+        ///
+        /// A positive value represents a fee flow from long to short.
+        /// Conversely, a negative valure represents a fee flow from
+        /// short to long.
+        fn arb_fee_flow(lower: i64, upper: i64)(fee in lower..upper) -> FeeFlow {
+            let fee_amount = Amount::from_sat(fee.abs().try_into().unwrap());
+            if fee.is_positive() {
+                FeeFlow::LongPaysShort(fee_amount)
+            } else if fee.is_negative() {
+                FeeFlow::ShortPaysLong(fee_amount)
+            } else {
+                FeeFlow::Nein
+            }
+        }
     }
 
     fn payout(range: RangeInclusive<u64>, short: u64, long: u64) -> PayoutParameter {
