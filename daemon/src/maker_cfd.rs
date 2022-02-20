@@ -79,7 +79,7 @@ pub struct OfferParams {
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
     pub opening_fee: OpeningFee,
-    pub position: Position,
+    pub position_maker: Position,
 }
 
 #[derive(Clone, Copy)]
@@ -553,7 +553,7 @@ where
             tx_fee_rate,
             funding_rate,
             opening_fee,
-            position,
+            position_maker,
         } = msg;
 
         let oracle_event_id = oracle::next_announcement_after(
@@ -561,7 +561,7 @@ where
         )?;
 
         let order = Order::new(
-            position,
+            position_maker,
             price,
             min_quantity,
             max_quantity,

@@ -245,7 +245,7 @@ impl Maker {
             tx_fee_rate,
             funding_rate,
             opening_fee,
-            position,
+            position_maker,
         } = offer_params;
         self.system
             .set_offer_params(
@@ -255,7 +255,7 @@ impl Maker {
                 Some(tx_fee_rate),
                 Some(funding_rate),
                 Some(opening_fee),
-                Some(position),
+                Some(position_maker),
             )
             .await
             .unwrap();
@@ -425,7 +425,7 @@ pub fn dummy_quote() -> Quote {
     }
 }
 
-pub fn dummy_offer_params(position: Position) -> maker_cfd::OfferParams {
+pub fn dummy_offer_params(position_maker: Position) -> maker_cfd::OfferParams {
     maker_cfd::OfferParams {
         price: Price::new(dummy_price()).unwrap(),
         min_quantity: Usd::new(dec!(5)),
@@ -434,7 +434,7 @@ pub fn dummy_offer_params(position: Position) -> maker_cfd::OfferParams {
         // 8.76% annualized = rate of 0.0876 annualized = rate of 0.00024 daily
         funding_rate: FundingRate::new(dec!(0.00024)).unwrap(),
         opening_fee: OpeningFee::new(Amount::from_sat(2)),
-        position,
+        position_maker,
     }
 }
 
