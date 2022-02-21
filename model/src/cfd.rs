@@ -176,7 +176,7 @@ pub struct Order {
 impl Order {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        position: Position,
+        position_maker: Position,
         price: Price,
         min_quantity: Usd,
         max_quantity: Usd,
@@ -186,10 +186,10 @@ impl Order {
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
         opening_fee: OpeningFee,
-    ) -> Result<Self> {
+    ) -> Self {
         let leverage_choices_for_taker = Leverage::TWO;
 
-        let liquidation_price = match position {
+        let liquidation_price = match position_maker {
             Position::Short => calculate_long_liquidation_price(leverage_choices_for_taker, price),
             Position::Long => {
                 // TODO: Should be different
@@ -197,7 +197,7 @@ impl Order {
             }
         };
 
-        Ok(Order {
+        Order {
             id: OrderId::default(),
             price,
             min_quantity,
@@ -205,7 +205,7 @@ impl Order {
             leverage_taker: leverage_choices_for_taker,
             trading_pair: TradingPair::BtcUsd,
             liquidation_price,
-            position_maker: position,
+            position_maker,
             creation_timestamp: Timestamp::now(),
             settlement_interval,
             origin,
@@ -213,7 +213,23 @@ impl Order {
             tx_fee_rate,
             funding_rate,
             opening_fee,
-        })
+        }
+    }
+
+    /// Replicates the order with a new ID
+    pub fn replicate(&self) -> Self {
+        Self::new(
+            self.position_maker,
+            self.price,
+            self.min_quantity,
+            self.max_quantity,
+            self.origin,
+            self.oracle_event_id,
+            self.settlement_interval,
+            self.tx_fee_rate,
+            self.funding_rate,
+            self.opening_fee,
+        )
     }
 }
 
@@ -3196,7 +3212,6 @@ mod tests {
                 FundingRate::default(),
                 OpeningFee::default(),
             )
-            .unwrap()
         }
 
         fn with_price(mut self, price: Price) -> Self {

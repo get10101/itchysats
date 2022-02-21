@@ -115,7 +115,7 @@ pub async fn post_sell_order(
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
     maker
-        .new_order(
+        .set_offer_params(
             order.price,
             order.min_quantity,
             order.max_quantity,

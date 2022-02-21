@@ -59,7 +59,7 @@ pub struct AcceptRollover {
 pub struct RejectRollover {
     pub order_id: OrderId,
 }
-pub struct NewOrder {
+pub struct OfferParams {
     pub price: Price,
     pub min_quantity: Usd,
     pub max_quantity: Usd,
@@ -273,18 +273,18 @@ where
 
         let cfd = Cfd::from_order(current_order.clone(), quantity, taker_id, Role::Maker);
 
-        // 2. Remove current order
-        // The order is removed before we update the state, because the maker might react on the
-        // state change. Once we know that we go for either an accept/reject scenario we
-        // have to remove the current order.
-        self.current_order = None;
+        // 2. Replicate the order with a new one to allow other takers to use
+        // the same offer
+        self.current_order = Some(current_order.replicate());
 
         self.takers
-            .send_async_safe(maker_inc_connections::BroadcastOrder(None))
+            .send_async_safe(maker_inc_connections::BroadcastOrder(
+                self.current_order.clone(),
+            ))
             .await?;
 
         self.projection
-            .send(projection::Update(Option::<Order>::None))
+            .send(projection::Update(self.current_order.clone()))
             .await?;
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection).await?;
 
@@ -523,8 +523,8 @@ where
         + xtra::Handler<maker_inc_connections::RegisterRollover>,
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
-    async fn handle_new_order(&mut self, msg: NewOrder) -> Result<()> {
-        let NewOrder {
+    async fn handle_new_order(&mut self, msg: OfferParams) -> Result<()> {
+        let OfferParams {
             price,
             min_quantity,
             max_quantity,
@@ -549,7 +549,7 @@ where
             tx_fee_rate,
             funding_rate,
             opening_fee,
-        )?;
+        );
 
         // 1. Update actor state to current order
         self.current_order.replace(order.clone());

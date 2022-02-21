@@ -3,7 +3,7 @@ use daemon::connection::ConnectionStatus;
 use daemon::connection::MAX_RECONNECT_INTERVAL_SECONDS;
 use daemon::projection::CfdOrder;
 use daemon::projection::CfdState;
-use daemon_tests::dummy_new_order;
+use daemon_tests::dummy_offer_params;
 use daemon_tests::dummy_quote;
 use daemon_tests::flow::is_next_none;
 use daemon_tests::flow::next;
@@ -121,7 +121,9 @@ async fn taker_receives_order_from_maker_on_publication() {
 
     assert!(is_next_none(taker.order_feed()).await.unwrap());
 
-    maker.publish_order(dummy_new_order(Position::Short)).await;
+    maker
+        .set_offer_params(dummy_offer_params(Position::Short))
+        .await;
 
     let (published, received) = next_order(maker.order_feed(), taker.order_feed())
         .await
@@ -154,7 +156,9 @@ async fn taker_takes_order_and_maker_rejects() {
     // TODO: Why is this needed? For the cfd stream it is not needed
     is_next_none(taker.order_feed()).await.unwrap();
 
-    maker.publish_order(dummy_new_order(Position::Short)).await;
+    maker
+        .set_offer_params(dummy_offer_params(Position::Short))
+        .await;
 
     let (_, received) = next_order(maker.order_feed(), taker.order_feed())
         .await
@@ -176,13 +180,48 @@ async fn taker_takes_order_and_maker_rejects() {
 }
 
 #[tokio::test]
+async fn another_offer_is_automatically_created_after_taker_takes_order() {
+    let _guard = init_tracing();
+    let (mut maker, mut taker) = start_both().await;
+
+    // TODO: Why is this needed? For the cfd stream it is not needed
+    is_next_none(taker.order_feed()).await.unwrap();
+
+    maker
+        .set_offer_params(dummy_offer_params(Position::Short))
+        .await;
+
+    let (_, received) = next_order(maker.order_feed(), taker.order_feed())
+        .await
+        .unwrap();
+
+    taker.mocks.mock_oracle_announcement().await;
+    maker.mocks.mock_oracle_announcement().await;
+    taker
+        .system
+        .take_offer(received.id, Usd::new(dec!(10)))
+        .await
+        .unwrap();
+
+    let (_, received2) = next_order(maker.order_feed(), taker.order_feed())
+        .await
+        .unwrap();
+    assert_ne!(
+        received.id, received2.id,
+        "Another offer should be available, and it should have a different id than first one"
+    );
+}
+
+#[tokio::test]
 async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
     is_next_none(taker.order_feed()).await.unwrap();
 
-    maker.publish_order(dummy_new_order(Position::Short)).await;
+    maker
+        .set_offer_params(dummy_offer_params(Position::Short))
+        .await;
 
     let (_, received) = next_order(maker.order_feed(), taker.order_feed())
         .await
@@ -315,7 +354,9 @@ async fn rollover_an_open_cfd(maker_position: Position) {
         start_from_open_cfd_state(oracle_data.announcement(), maker_position).await;
 
     // Maker needs to have an active offer in order to accept rollover
-    maker.publish_order(dummy_new_order(maker_position)).await;
+    maker
+        .set_offer_params(dummy_offer_params(maker_position))
+        .await;
 
     taker.trigger_rollover(order_id).await;
 
@@ -476,7 +517,7 @@ async fn start_from_open_cfd_state(
 
     is_next_none(taker.order_feed()).await.unwrap();
 
-    maker.publish_order(dummy_new_order(position)).await;
+    maker.set_offer_params(dummy_offer_params(position)).await;
 
     let (_, received) = next_order(maker.order_feed(), taker.order_feed())
         .await

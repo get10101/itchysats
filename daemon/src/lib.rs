@@ -168,8 +168,11 @@ where
         })
     }
 
+    /// Adjust the parameters which create offers for the connected takers.
+    ///
+    /// Once one offer is taken, another one with the same parameters is created.
     #[allow(clippy::too_many_arguments)]
-    pub async fn new_order(
+    pub async fn set_offer_params(
         &self,
         price: Price,
         min_quantity: Usd,
@@ -180,7 +183,7 @@ where
         position: Option<Position>,
     ) -> Result<()> {
         self.cfd_actor
-            .send(maker_cfd::NewOrder {
+            .send(maker_cfd::OfferParams {
                 price,
                 min_quantity,
                 max_quantity,
