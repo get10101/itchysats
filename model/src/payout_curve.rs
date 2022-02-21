@@ -14,7 +14,6 @@ use num::FromPrimitive;
 use num::ToPrimitive;
 use rust_decimal::Decimal;
 use std::fmt;
-use std::ops::Add;
 
 mod basis;
 mod basis_eval;
@@ -105,27 +104,35 @@ fn calculate_payout_parameters(
             let long_amount_btc = row[2];
 
             let long_amount = to_sats(long_amount_btc)?;
-
-            let long_amount_adjusted = match fee {
-                // We use `saturating_sub` because the adjusted payout
-                // cannot go below zero. If the original payout is
-                // close or equal to zero and the fee is sufficiently
-                // large we would overflow otherwise.
-                FeeFlow::LongPaysShort(fee) => long_amount.saturating_sub(fee.as_sat()),
-                FeeFlow::ShortPaysLong(fee) => long_amount.add(fee.as_sat()),
-                FeeFlow::Nein => long_amount,
-            };
-
-            let adjustment = long_amount - long_amount_adjusted;
-
             let short_amount = to_sats(payout_curve.total_value - long_amount_btc)?;
-            let short_amount_adjusted = short_amount + adjustment;
+
+            // We use `saturating_sub` when deducting fees because the
+            // adjusted payout cannot go below zero. If the original
+            // payout is close or equal to zero and the fee is
+            // sufficiently large we would overflow otherwise.
+            let (short_amount, long_amount) = match fee {
+                FeeFlow::LongPaysShort(fee) => {
+                    let long_minus_fee = long_amount.saturating_sub(fee.as_sat());
+                    let long_fee_deduction = (long_amount as i64) - (long_minus_fee as i64);
+                    let short_plus_fee = (short_amount as i64) + long_fee_deduction;
+
+                    (short_plus_fee as u64, long_minus_fee as u64)
+                }
+                FeeFlow::ShortPaysLong(fee) => {
+                    let short_minus_fee = short_amount.saturating_sub(fee.as_sat());
+                    let short_fee_deduction = (short_amount as i64) - (short_minus_fee as i64);
+                    let long_plus_fee = (long_amount as i64) + short_fee_deduction;
+
+                    (short_minus_fee as u64, long_plus_fee as u64)
+                }
+                FeeFlow::Nein => (short_amount, long_amount),
+            };
 
             Ok(PayoutParameter {
                 left_bound,
                 right_bound,
-                long_amount: long_amount_adjusted,
-                short_amount: short_amount_adjusted,
+                long_amount,
+                short_amount,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -821,7 +828,6 @@ mod tests {
         pretty_assertions::assert_eq!(actual_payouts.last().unwrap(), &upper_tail);
     }
 
-
     proptest! {
         /// By similar we mean that they're at most 1 satoshi off the
         /// next payout sum.
@@ -830,8 +836,8 @@ mod tests {
             price in arb_price(1.0, 340_000.0),
             n_contracts in arb_contracts(1, 10_000_000),
             taker_leverage in arb_leverage(1, 200),
-            n_payouts in 10usize..2_000,
-            fee_flow in arb_fee_flow(0, 100_000_000),
+            n_payouts in 10usize..2000,
+            fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
         ) {
             let payouts = calculate_payout_parameters(
                 price,
