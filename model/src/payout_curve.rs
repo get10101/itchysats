@@ -850,16 +850,16 @@ mod tests {
         fn payout_totals_are_similar(
             price in arb_price(1.0, 340_000.0),
             n_contracts in arb_contracts(1, 10_000_000),
-            taker_leverage in arb_leverage(1, 200),
-            maker_leverage in arb_leverage(1, 200),
+            long_leverage in arb_leverage(1, 200),
+            short_leverage in arb_leverage(1, 200),
             n_payouts in 10usize..2000,
             fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
         ) {
             let payouts = calculate_payout_parameters(
                 price,
                 n_contracts,
-                taker_leverage,
-                maker_leverage,
+                long_leverage,
+                short_leverage,
                 n_payouts,
                 fee_flow,
             )
