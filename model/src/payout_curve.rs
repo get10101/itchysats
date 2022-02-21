@@ -41,7 +41,10 @@ mod utils;
 /// * price: BTC-USD exchange rate used to create CFD contract
 /// * quantity: Interger number of one-dollar USD contracts contained in the
 /// CFD; expressed as a Usd amount
-/// * leverage: Leveraging used by the taker
+/// * long_leverage: leverage used by the party with the long position
+/// * short_leverage: leverage used by the party with the short position
+/// * n_payouts: number of segments into which the payout curve is discretised
+/// * fee: offset applied to the curve representing a fee paid between parties
 ///
 /// ### Returns
 ///
