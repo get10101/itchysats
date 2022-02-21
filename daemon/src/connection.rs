@@ -42,6 +42,7 @@ use xtras::SendInterval;
 pub const MAX_RECONNECT_INTERVAL_SECONDS: u64 = 60;
 
 const TCP_TIMEOUT: std::time::Duration = Duration::from_secs(10);
+const HANDLE_MESSAGE_TIMEOUT: std::time::Duration = Duration::from_secs(5);
 
 /// The "Connected" state of our connection with the maker.
 #[allow(clippy::large_enum_variant)]
@@ -449,6 +450,7 @@ impl Actor {
                 if self
                     .setup_actors
                     .send_fallible(&order_id, setup_taker::Accepted)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -459,6 +461,7 @@ impl Actor {
                 if self
                     .setup_actors
                     .send_fallible(&order_id, setup_taker::Rejected::without_reason())
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -469,6 +472,7 @@ impl Actor {
                 if self
                     .setup_actors
                     .send_fallible(&order_id, msg)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -479,6 +483,7 @@ impl Actor {
                 if self
                     .setup_actors
                     .send_fallible(&order_id, setup_taker::Rejected::invalid_order_id())
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -489,6 +494,7 @@ impl Actor {
                 if self
                     .collab_settlement_actors
                     .send(&order_id, msg)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -511,6 +517,7 @@ impl Actor {
                             funding_rate,
                         },
                     )
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -521,6 +528,7 @@ impl Actor {
                 if self
                     .rollover_actors
                     .send(&order_id, rollover_taker::RolloverRejected)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -528,7 +536,13 @@ impl Actor {
                 }
             }
             wire::MakerToTaker::RolloverProtocol { order_id, msg } => {
-                if self.rollover_actors.send(&order_id, msg).await.is_err() {
+                if self
+                    .rollover_actors
+                    .send(&order_id, msg)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
+                    .await
+                    .is_err()
+                {
                     tracing::warn!(%order_id, "No active rollover");
                 }
             }
@@ -537,6 +551,7 @@ impl Actor {
                     .current_order
                     .send(CurrentOrder(msg))
                     .log_failure("Failed to forward current order from maker")
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await;
             }
             wire::MakerToTaker::Hello(_) => {
