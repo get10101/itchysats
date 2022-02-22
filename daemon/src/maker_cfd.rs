@@ -2,6 +2,7 @@ use crate::cfd_actors;
 use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_maker;
 use crate::command;
+use crate::future_ext::FutureExt;
 use crate::maker_inc_connections;
 use crate::model::cfd::Cfd;
 use crate::model::cfd::CollaborativeSettlementCompleted;
@@ -45,6 +46,8 @@ use xtra_productivity::xtra_productivity;
 use xtras::address_map::Stopping;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
+
+const HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub struct AcceptOrder {
     pub order_id: OrderId,
@@ -334,6 +337,7 @@ impl<O, T, W> Actor<O, T, W> {
         if let Err(error) = self
             .setup_actors
             .send(&order_id, setup_maker::Accepted)
+            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
@@ -359,6 +363,7 @@ impl<O, T, W> Actor<O, T, W> {
         if let Err(error) = self
             .setup_actors
             .send(&order_id, setup_maker::Rejected)
+            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
@@ -382,6 +387,7 @@ impl<O, T, W> Actor<O, T, W> {
         if let Err(error) = self
             .settlement_actors
             .send(&order_id, collab_settlement_maker::Accepted)
+            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
@@ -405,6 +411,7 @@ impl<O, T, W> Actor<O, T, W> {
         if let Err(error) = self
             .settlement_actors
             .send(&order_id, collab_settlement_maker::Rejected)
+            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
@@ -439,6 +446,7 @@ impl<O, T, W> Actor<O, T, W> {
                     funding_rate: order.funding_rate,
                 },
             )
+            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
@@ -462,6 +470,7 @@ impl<O, T, W> Actor<O, T, W> {
         if let Err(error) = self
             .rollover_actors
             .send(&order_id, rollover_maker::RejectRollover)
+            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
