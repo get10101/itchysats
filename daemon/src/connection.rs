@@ -43,9 +43,7 @@ pub const MAX_RECONNECT_INTERVAL_SECONDS: u64 = 60;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Upper bound on the time it should take for an ephemeral actor to
-/// process a forwarded message.
-const FORWARD_MSG_TIMEOUT: Duration = Duration::from_secs(60);
+const HANDLE_MESSAGE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The "Connected" state of our connection with the maker.
 #[allow(clippy::large_enum_variant)]
@@ -450,7 +448,7 @@ impl Actor {
                 if self
                     .setup_actors
                     .send_fallible(&order_id, setup_taker::Accepted)
-                    .timeout(FORWARD_MSG_TIMEOUT)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -461,7 +459,7 @@ impl Actor {
                 if self
                     .setup_actors
                     .send_fallible(&order_id, setup_taker::Rejected::without_reason())
-                    .timeout(FORWARD_MSG_TIMEOUT)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -472,7 +470,7 @@ impl Actor {
                 if self
                     .setup_actors
                     .send_fallible(&order_id, msg)
-                    .timeout(FORWARD_MSG_TIMEOUT)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -483,7 +481,7 @@ impl Actor {
                 if self
                     .setup_actors
                     .send_fallible(&order_id, setup_taker::Rejected::invalid_order_id())
-                    .timeout(FORWARD_MSG_TIMEOUT)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -494,7 +492,7 @@ impl Actor {
                 if self
                     .collab_settlement_actors
                     .send(&order_id, msg)
-                    .timeout(FORWARD_MSG_TIMEOUT)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -517,7 +515,7 @@ impl Actor {
                             funding_rate,
                         },
                     )
-                    .timeout(FORWARD_MSG_TIMEOUT)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -528,7 +526,7 @@ impl Actor {
                 if self
                     .rollover_actors
                     .send(&order_id, rollover_taker::RolloverRejected)
-                    .timeout(FORWARD_MSG_TIMEOUT)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -539,7 +537,7 @@ impl Actor {
                 if self
                     .rollover_actors
                     .send(&order_id, msg)
-                    .timeout(FORWARD_MSG_TIMEOUT)
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -551,6 +549,7 @@ impl Actor {
                     .current_order
                     .send(CurrentOrder(msg))
                     .log_failure("Failed to forward current order from maker")
+                    .timeout(HANDLE_MESSAGE_TIMEOUT)
                     .await;
             }
             wire::MakerToTaker::Hello(_) => {

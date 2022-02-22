@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2022-02-14
+
+- Fix a potential deadlock in taker after losing connection to a maker by introducing timeouts for reading and writing to TCP socket.
+
 ## [0.4.2] - 2022-02-08
 
 ## [0.4.1] - 2022-02-04
