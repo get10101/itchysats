@@ -97,7 +97,8 @@ pub async fn maker_feed(
 /// The maker POSTs this to create a new CfdOrder
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfdNewOrderRequest {
-    pub price: Price,
+    #[serde(rename = "price")]
+    pub price_short: Price,
     pub min_quantity: Usd,
     pub max_quantity: Usd,
     pub tx_fee_rate: Option<TxFeeRate>,
@@ -106,6 +107,7 @@ pub struct CfdNewOrderRequest {
     // here. We have to specify sats for here because of that.
     pub opening_fee: Option<OpeningFee>,
     pub position: Option<Position>,
+    pub price_long: Option<Price>,
 }
 
 #[rocket::post("/order/sell", data = "<order>")]
@@ -116,7 +118,7 @@ pub async fn post_sell_order(
 ) -> Result<(), HttpApiProblem> {
     maker
         .set_offer_params(
-            order.price,
+            order.price_short,
             order.min_quantity,
             order.max_quantity,
             order.tx_fee_rate,
