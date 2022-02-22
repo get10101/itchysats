@@ -22,12 +22,49 @@ use maia::TxBuilderExt;
 use model::Timestamp;
 use model::TxFeeRate;
 use model::WalletInfo;
+use statrs::statistics::*;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
+
+static BALANCE_GAUGE: conquer_once::Lazy<prometheus::Gauge> = conquer_once::Lazy::new(|| {
+    prometheus::register_gauge!(
+        "balance",
+        "The sum of available UTXOs in the wallet in satoshis."
+    )
+    .unwrap()
+});
+static NUM_UTXO_GAUGE: conquer_once::Lazy<prometheus::Gauge> = conquer_once::Lazy::new(|| {
+    prometheus::register_gauge!("num_utxos", "The number of available UTXOs in the wallet.")
+        .unwrap()
+});
+static MEDIAN_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_gauge!("median_utxo_value", "The median UTXO, in satoshis.").unwrap()
+    });
+static MIN_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_gauge!("min_utxo_value", "The smallest UTXO, in satoshis.").unwrap()
+    });
+static MAX_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_gauge!("max_utxo_value", "The largest UTXO, in satoshis.").unwrap()
+    });
+static MEAN_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_gauge!("mean_utxo_value", "The mean UTXO, in satoshis.").unwrap()
+    });
+static STD_DEV_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_gauge!(
+            "stddev_utxo_value",
+            "The standard deviation across all UTXOs, in satoshis."
+        )
+        .unwrap()
+    });
 
 pub struct Actor {
     wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::MemoryDatabase>,
@@ -66,6 +103,14 @@ impl Actor {
             used_utxos: HashSet::default(),
         };
 
+        BALANCE_GAUGE.set(0.0);
+        NUM_UTXO_GAUGE.set(0.0);
+        MEDIAN_UTXO_VALUE_GAUGE.set(0.0);
+        MIN_UTXO_VALUE_GAUGE.set(0.0);
+        MAX_UTXO_VALUE_GAUGE.set(0.0);
+        MEAN_UTXO_VALUE_GAUGE.set(0.0);
+        STD_DEV_UTXO_VALUE_GAUGE.set(0.0);
+
         Ok((actor, receiver))
     }
 
@@ -75,6 +120,22 @@ impl Actor {
             .context("Failed to sync wallet")?;
 
         let balance = self.wallet.get_balance()?;
+
+        let utxo_values = Data::new(
+            self.wallet
+                .list_unspent()?
+                .into_iter()
+                .map(|utxo| utxo.txout.value as f64)
+                .collect::<Vec<_>>(),
+        );
+
+        BALANCE_GAUGE.set(balance as f64);
+        NUM_UTXO_GAUGE.set(utxo_values.len() as f64);
+        MEDIAN_UTXO_VALUE_GAUGE.set(utxo_values.median());
+        MIN_UTXO_VALUE_GAUGE.set(utxo_values.min());
+        MAX_UTXO_VALUE_GAUGE.set(utxo_values.max());
+        MEAN_UTXO_VALUE_GAUGE.set(utxo_values.mean().unwrap_or_default());
+        STD_DEV_UTXO_VALUE_GAUGE.set(utxo_values.std_dev().unwrap_or_default());
 
         let address = self.wallet.get_address(AddressIndex::LastUnused)?.address;
 

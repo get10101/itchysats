@@ -266,6 +266,7 @@ async fn main() -> Result<()> {
                 routes::post_withdraw_request,
                 routes::get_cfds,
                 routes::get_takers,
+                routes::get_metrics,
             ],
         )
         .register("/api", rocket::catchers![rocket_basicauth::unauthorized])
