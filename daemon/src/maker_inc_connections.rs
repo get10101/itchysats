@@ -319,7 +319,7 @@ impl Actor {
 
     async fn handle_read_fail(&mut self, msg: ReadFail) {
         let taker_id = msg.0;
-        tracing::error!(%taker_id, "Failed to read incoming messages from taker");
+        tracing::debug!(%taker_id, "Failed to read incoming messages from taker");
 
         self.drop_taker_connection(&taker_id).await;
     }
