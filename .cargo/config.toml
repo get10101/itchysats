@@ -13,4 +13,7 @@ rustflags = [
   "-Wclippy::print_stderr",
   "-Wclippy::print_stdout",
   "-Wunused-import-braces",
+  "-Wmissing-copy-implementations",
+  "-Wunused-import-braces",
+  "-Wunused-qualifications",
 ]

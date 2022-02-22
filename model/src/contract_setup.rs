@@ -7,6 +7,7 @@ use crate::Usd;
 use anyhow::Result;
 use bdk::bitcoin::Amount;
 
+#[derive(Clone, Copy)]
 pub struct SetupParams {
     pub margin: Amount,
     pub counterparty_margin: Amount,

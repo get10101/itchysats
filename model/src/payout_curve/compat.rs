@@ -68,6 +68,6 @@ impl<T: Clone + PartialEq + Scalar> To2DArray<T> for DMatrix<T> {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone, Copy)]
 #[error("The provided matrix is not one-dimensional and cannot be converted into a 1D array")]
 pub struct NotOneDimensional;

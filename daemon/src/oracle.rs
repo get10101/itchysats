@@ -27,11 +27,13 @@ pub struct Actor {
     executor: command::Executor,
     announcement_lookahead: Duration,
     tasks: Tasks,
-    db: sqlx::SqlitePool,
+    db: SqlitePool,
 }
 
+#[derive(Clone, Copy)]
 pub struct Sync;
 
+#[derive(Clone, Copy)]
 pub struct MonitorAttestation {
     pub event_id: BitMexPriceEventId,
 }
@@ -41,7 +43,7 @@ pub struct MonitorAttestation {
 ///
 /// The `Announcement` corresponds to the [`BitMexPriceEventId`] included in
 /// the message.
-#[derive(Debug, Clone)]
+#[derive(Clone, Copy)]
 pub struct GetAnnouncement(pub BitMexPriceEventId);
 
 #[derive(Debug, Clone)]
@@ -258,7 +260,7 @@ impl Actor {
     }
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error, Copy)]
 #[error("Announcement {0} not found")]
 pub struct NoAnnouncement(pub BitMexPriceEventId);
 

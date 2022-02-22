@@ -180,6 +180,7 @@ pub async fn append_event(
 
 // TODO: Make sqlx directly instantiate this struct instead of mapping manually. Need to create
 // newtype for `settlement_interval`.
+#[derive(Clone, Copy)]
 pub struct Cfd {
     pub id: OrderId,
     pub position: Position,

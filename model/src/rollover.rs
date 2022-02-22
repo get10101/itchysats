@@ -5,7 +5,7 @@ use crate::Price;
 use crate::TxFeeRate;
 use crate::Usd;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct RolloverParams {
     pub price: Price,
     pub quantity: Usd,

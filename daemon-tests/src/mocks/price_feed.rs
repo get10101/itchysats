@@ -36,7 +36,7 @@ impl PriceFeedActor {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct MockPriceFeed {
     latest_quote: Option<xtra_bitmex_price_feed::Quote>,
 }

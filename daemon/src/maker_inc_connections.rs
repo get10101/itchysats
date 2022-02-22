@@ -1,9 +1,6 @@
 use crate::collab_settlement_maker;
 use crate::future_ext::FutureExt;
 use crate::maker_cfd;
-use crate::maker_cfd::FromTaker;
-use crate::maker_cfd::TakerConnected;
-use crate::maker_cfd::TakerDisconnected;
 use crate::noise;
 use crate::noise::TransportStateExt;
 use crate::rollover_maker;
@@ -11,8 +8,6 @@ use crate::setup_maker;
 use crate::wire;
 use crate::wire::taker_to_maker;
 use crate::wire::EncryptedJsonCodec;
-use crate::wire::MakerToTaker;
-use crate::wire::TakerToMaker;
 use crate::wire::Version;
 use anyhow::bail;
 use anyhow::Context;
@@ -31,13 +26,14 @@ use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_tasks::Tasks;
 use tokio_util::codec::Framed;
-use xtra::prelude::*;
+use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::Stopping;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
+#[derive(Clone, Copy)]
 pub struct BroadcastOrder(pub Option<Order>);
 
 /// Message sent from the `setup_maker::Actor` to the
@@ -92,9 +88,9 @@ pub struct RegisterRollover {
 
 pub struct Actor {
     connections: HashMap<Identity, Connection>,
-    taker_connected_channel: Box<dyn MessageChannel<TakerConnected>>,
-    taker_disconnected_channel: Box<dyn MessageChannel<TakerDisconnected>>,
-    taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
+    taker_connected_channel: Box<dyn MessageChannel<maker_cfd::TakerConnected>>,
+    taker_disconnected_channel: Box<dyn MessageChannel<maker_cfd::TakerDisconnected>>,
+    taker_msg_channel: Box<dyn MessageChannel<maker_cfd::FromTaker>>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
     p2p_socket: SocketAddr,
@@ -137,9 +133,9 @@ impl Drop for Connection {
 
 impl Actor {
     pub fn new(
-        taker_connected_channel: Box<dyn MessageChannel<TakerConnected>>,
-        taker_disconnected_channel: Box<dyn MessageChannel<TakerDisconnected>>,
-        taker_msg_channel: Box<dyn MessageChannel<FromTaker>>,
+        taker_connected_channel: Box<dyn MessageChannel<maker_cfd::TakerConnected>>,
+        taker_disconnected_channel: Box<dyn MessageChannel<maker_cfd::TakerDisconnected>>,
+        taker_msg_channel: Box<dyn MessageChannel<maker_cfd::FromTaker>>,
         noise_priv_key: x25519_dalek::StaticSecret,
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
@@ -242,7 +238,7 @@ impl Actor {
 
 struct SendHeartbeat(Identity);
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone, Copy)]
 #[error("No connection to taker {0}")]
 pub struct NoConnection(Identity);
 
@@ -254,10 +250,7 @@ impl Actor {
         let mut broken_connections = Vec::with_capacity(self.connections.len());
 
         for (id, conn) in &mut self.connections {
-            if let Err(e) = conn
-                .send(wire::MakerToTaker::CurrentOrder(order.clone()))
-                .await
-            {
+            if let Err(e) = conn.send(wire::MakerToTaker::CurrentOrder(order)).await {
                 tracing::warn!("{:#}", e);
                 broken_connections.push(*id);
 
@@ -363,7 +356,7 @@ impl Actor {
             async move {
                 while let Ok(Some(msg)) = read.try_next().await {
                     let res = this
-                        .send(FromTaker {
+                        .send(maker_cfd::FromTaker {
                             taker_id: identity,
                             msg,
                         })
@@ -403,7 +396,7 @@ impl Actor {
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    async fn handle_msg_from_taker(&mut self, msg: FromTaker) {
+    async fn handle_msg_from_taker(&mut self, msg: maker_cfd::FromTaker) {
         let msg_str = msg.msg.to_string();
 
         tracing::trace!(target: "wire", taker_id = %msg.taker_id, "Received {msg_str}");
@@ -493,9 +486,11 @@ async fn upgrade(
         .context("Stream closed before first message")?;
 
     match first_message {
-        TakerToMaker::Hello(taker_version) => {
+        wire::TakerToMaker::Hello(taker_version) => {
             let our_version = Version::current();
-            write.send(MakerToTaker::Hello(our_version.clone())).await?;
+            write
+                .send(wire::MakerToTaker::Hello(our_version.clone()))
+                .await?;
 
             if our_version != taker_version {
                 bail!(

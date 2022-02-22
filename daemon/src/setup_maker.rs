@@ -1,12 +1,9 @@
 use crate::command;
 use crate::maker_inc_connections;
-use crate::maker_inc_connections::TakerMessage;
 use crate::process_manager;
 use crate::setup_contract;
 use crate::wallet;
 use crate::wire;
-use crate::wire::MakerToTaker;
-use crate::wire::SetupMsg;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -23,7 +20,6 @@ use model::Role;
 use model::Usd;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
-use xtra::Address;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::Stopping;
 use xtras::LogFailure;
@@ -40,7 +36,7 @@ pub struct Actor {
     confirm_order: Box<dyn MessageChannel<maker_inc_connections::ConfirmOrder>>,
     taker_id: Identity,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
-    setup_msg_sender: Option<UnboundedSender<SetupMsg>>,
+    setup_msg_sender: Option<UnboundedSender<wire::SetupMsg>>,
     tasks: Tasks,
     executor: command::Executor,
 }
@@ -49,7 +45,7 @@ impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        process_manager: Address<process_manager::Actor>,
+        process_manager: xtra::Address<process_manager::Actor>,
         (order, quantity, n_payouts): (Order, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
@@ -205,9 +201,9 @@ impl Actor {
     fn handle(&mut self, _msg: Rejected, ctx: &mut xtra::Context<Self>) {
         let _ = self
             .taker
-            .send(TakerMessage {
+            .send(maker_inc_connections::TakerMessage {
                 taker_id: self.taker_id,
-                msg: MakerToTaker::RejectOrder(self.order.id),
+                msg: wire::MakerToTaker::RejectOrder(self.order.id),
             })
             .log_failure("Failed to reject order to taker")
             .await;
@@ -280,11 +276,13 @@ impl xtra::Actor for Actor {
 /// Message sent from the `maker_cfd::Actor` to the
 /// `setup_maker::Actor` to inform that the maker user has accepted
 /// the taker order request from the taker.
+#[derive(Clone, Copy)]
 pub struct Accepted;
 
 /// Message sent from the `maker_cfd::Actor` to the
 /// `setup_maker::Actor` to inform that the maker user has rejected
 /// the taker order request from the taker.
+#[derive(Clone, Copy)]
 pub struct Rejected;
 
 /// Message sent from the spawned task to `setup_maker::Actor` to

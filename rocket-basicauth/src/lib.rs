@@ -11,6 +11,7 @@ use std::string::FromUtf8Error;
 use void::Void;
 
 /// A request guard that can be included in handler definitions to enforce authentication.
+#[derive(Debug, Clone, Copy)]
 pub struct Authenticated {}
 
 #[derive(Debug)]
@@ -31,7 +32,7 @@ pub enum Error {
     TooManyAuthHeaders,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Username(pub &'static str);
 
 impl fmt::Display for Username {
@@ -46,7 +47,7 @@ impl PartialEq<String> for Username {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Password(String);
 
 impl From<[u8; 32]> for Password {
@@ -137,7 +138,7 @@ pub fn unauthorized() -> PromptAuthentication {
 }
 
 /// A rocket responder that prompts the user to sign in to access the API.
-#[derive(rocket::Responder)]
+#[derive(Debug, rocket::Responder)]
 #[response(status = 401)]
 pub struct PromptAuthentication {
     inner: (),

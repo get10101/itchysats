@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use crate::bitcoin::Txid;
-use anyhow::Context;
+use anyhow::Context as _;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
@@ -25,10 +25,8 @@ use std::time::Duration;
 use time::ext::NumericalDuration;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
-use xtra::Actor;
-use xtra::Address;
+use xtra::prelude::*;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
-use xtras::address_map::Stopping;
 use xtras::supervisor;
 
 pub use bdk;
@@ -64,7 +62,7 @@ pub mod wire;
 
 /// Duration between the heartbeats sent by the maker, used by the taker to
 /// determine whether the maker is online.
-pub const HEARTBEAT_INTERVAL: std::time::Duration = Duration::from_secs(5);
+pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
 pub const N_PAYOUTS: usize = 200;
 
@@ -78,14 +76,14 @@ pub struct MakerActorSystem<O, W> {
 
 impl<O, W> MakerActorSystem<O, W>
 where
-    O: xtra::Handler<oracle::MonitorAttestation>
-        + xtra::Handler<oracle::GetAnnouncement>
-        + xtra::Handler<oracle::Sync>
-        + xtra::Actor<Stop = ()>,
-    W: xtra::Handler<wallet::BuildPartyParams>
-        + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::Withdraw>
-        + xtra::Actor<Stop = ()>,
+    O: Handler<oracle::MonitorAttestation>
+        + Handler<oracle::GetAnnouncement>
+        + Handler<oracle::Sync>
+        + Actor<Stop = ()>,
+    W: Handler<wallet::BuildPartyParams>
+        + Handler<wallet::Sign>
+        + Handler<wallet::Withdraw>
+        + Actor<Stop = ()>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
@@ -102,17 +100,17 @@ where
         p2p_socket: SocketAddr,
     ) -> Result<Self>
     where
-        M: xtra::Handler<monitor::StartMonitoring>
-            + xtra::Handler<monitor::Sync>
-            + xtra::Handler<monitor::CollaborativeSettlement>
-            + xtra::Handler<monitor::TryBroadcastTransaction>
-            + xtra::Handler<monitor::MonitorCetFinality>
-            + xtra::Actor<Stop = ()>,
+        M: Handler<monitor::StartMonitoring>
+            + Handler<monitor::Sync>
+            + Handler<monitor::MonitorCollaborativeSettlement>
+            + Handler<monitor::TryBroadcastTransaction>
+            + Handler<monitor::MonitorCetFinality>
+            + Actor<Stop = ()>,
     {
-        let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
-        let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
-        let (inc_conn_addr, inc_conn_ctx) = xtra::Context::new(None);
-        let (process_manager_addr, process_manager_ctx) = xtra::Context::new(None);
+        let (monitor_addr, monitor_ctx) = Context::new(None);
+        let (oracle_addr, oracle_ctx) = Context::new(None);
+        let (inc_conn_addr, inc_conn_ctx) = Context::new(None);
+        let (process_manager_addr, process_manager_ctx) = Context::new(None);
 
         let executor = command::Executor::new(db.clone(), process_manager_addr.clone());
 
@@ -282,16 +280,15 @@ pub struct TakerActorSystem<O, W, P> {
 
 impl<O, W, P> TakerActorSystem<O, W, P>
 where
-    O: xtra::Handler<oracle::MonitorAttestation>
-        + xtra::Handler<oracle::GetAnnouncement>
-        + xtra::Handler<oracle::Sync>
-        + xtra::Actor<Stop = ()>,
-    W: xtra::Handler<wallet::BuildPartyParams>
-        + xtra::Handler<wallet::Sign>
-        + xtra::Handler<wallet::Withdraw>
-        + xtra::Actor<Stop = ()>,
-    P: xtra::Handler<xtra_bitmex_price_feed::LatestQuote>
-        + xtra::Actor<Stop = xtra_bitmex_price_feed::Error>,
+    O: Handler<oracle::MonitorAttestation>
+        + Handler<oracle::GetAnnouncement>
+        + Handler<oracle::Sync>
+        + Actor<Stop = ()>,
+    W: Handler<wallet::BuildPartyParams>
+        + Handler<wallet::Sign>
+        + Handler<wallet::Withdraw>
+        + Actor<Stop = ()>,
+    P: Handler<xtra_bitmex_price_feed::LatestQuote> + Actor<Stop = xtra_bitmex_price_feed::Error>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
@@ -309,19 +306,19 @@ where
         maker_identity: Identity,
     ) -> Result<Self>
     where
-        M: xtra::Handler<monitor::StartMonitoring>
-            + xtra::Handler<monitor::Sync>
-            + xtra::Handler<monitor::CollaborativeSettlement>
-            + xtra::Handler<monitor::MonitorCetFinality>
-            + xtra::Handler<monitor::TryBroadcastTransaction>
-            + xtra::Actor<Stop = ()>,
+        M: Handler<monitor::StartMonitoring>
+            + Handler<monitor::Sync>
+            + Handler<monitor::MonitorCollaborativeSettlement>
+            + Handler<monitor::MonitorCetFinality>
+            + Handler<monitor::TryBroadcastTransaction>
+            + Actor<Stop = ()>,
     {
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
             watch::channel(ConnectionStatus::Offline { reason: None });
 
-        let (monitor_addr, monitor_ctx) = xtra::Context::new(None);
-        let (oracle_addr, oracle_ctx) = xtra::Context::new(None);
-        let (process_manager_addr, process_manager_ctx) = xtra::Context::new(None);
+        let (monitor_addr, monitor_ctx) = Context::new(None);
+        let (oracle_addr, oracle_ctx) = Context::new(None);
+        let (process_manager_addr, process_manager_ctx) = Context::new(None);
 
         let executor = command::Executor::new(db.clone(), process_manager_addr.clone());
 
@@ -338,7 +335,7 @@ where
             &oracle_addr,
         )));
 
-        let (connection_actor_addr, connection_actor_ctx) = xtra::Context::new(None);
+        let (connection_actor_addr, connection_actor_ctx) = Context::new(None);
         let (cfd_actor_addr, cfd_actor_fut) = taker_cfd::Actor::new(
             db.clone(),
             wallet_actor_addr.clone(),

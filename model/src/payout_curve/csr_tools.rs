@@ -35,7 +35,7 @@ impl CSR {
         let nnz = &data.len();
 
         if major_dim > 1 && shape.0 as isize == major_dim {
-            Result::Ok(CSR {
+            Ok(CSR {
                 data,
                 indices,
                 indptr,
@@ -43,7 +43,7 @@ impl CSR {
                 nnz: *nnz,
             })
         } else {
-            Result::Err(Error::CannotInitCSR)
+            Err(Error::CannotInitCSR)
         }
     }
 
@@ -82,7 +82,7 @@ impl CSR {
 
 fn lu_solve(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
     if !is_square(a) {
-        return Result::Err(Error::MatrixMustBeSquare);
+        return Err(Error::MatrixMustBeSquare);
     }
     let a = a.to_nalgebra_matrix().lu();
     let b = b.to_nalgebra_matrix();

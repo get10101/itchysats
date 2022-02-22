@@ -58,7 +58,7 @@ impl fmt::Display for Version {
 pub mod taker_to_maker {
     use super::*;
 
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Clone, Copy)]
     #[serde(tag = "type", content = "payload")]
     #[allow(clippy::large_enum_variant)]
     pub enum Settlement {
@@ -160,7 +160,7 @@ pub enum MakerToTaker {
 pub mod maker_to_taker {
     use super::*;
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
     #[serde(tag = "type", content = "payload")]
     pub enum Settlement {
         Confirm,
@@ -441,7 +441,7 @@ pub struct Msg2 {
     pub signed_lock: PartiallySignedTransaction, // TODO: Use binary representation
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Msg3;
 
 #[derive(Serialize, Deserialize)]
@@ -464,7 +464,7 @@ impl fmt::Display for RolloverMsg {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct RolloverMsg0 {
     pub revocation_pk: PublicKey,
     pub publish_pk: PublicKey,
@@ -511,12 +511,12 @@ pub struct RolloverMsg1 {
     pub refund: Signature,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct RolloverMsg2 {
     pub revocation_sk: SecretKey,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct RolloverMsg3;
 
 impl From<CfdTransactions> for RolloverMsg1 {

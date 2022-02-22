@@ -19,18 +19,20 @@ use model::Price;
 use model::Role;
 use model::Usd;
 use tokio_tasks::Tasks;
-use xtra::prelude::*;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;
 
+#[derive(Clone, Copy)]
 pub struct CurrentOrder(pub Option<Order>);
 
+#[derive(Clone, Copy)]
 pub struct TakeOffer {
     pub order_id: OrderId,
     pub quantity: Usd,
 }
 
+#[derive(Clone, Copy)]
 pub struct ProposeSettlement {
     pub order_id: OrderId,
     pub current_price: Price,
@@ -38,14 +40,14 @@ pub struct ProposeSettlement {
 
 pub struct Actor<O, W> {
     db: sqlx::SqlitePool,
-    wallet: Address<W>,
+    wallet: xtra::Address<W>,
     oracle_pk: schnorrsig::PublicKey,
-    projection_actor: Address<projection::Actor>,
-    process_manager_actor: Address<process_manager::Actor>,
-    conn_actor: Address<connection::Actor>,
+    projection_actor: xtra::Address<projection::Actor>,
+    process_manager_actor: xtra::Address<process_manager::Actor>,
+    conn_actor: xtra::Address<connection::Actor>,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
-    oracle_actor: Address<O>,
+    oracle_actor: xtra::Address<O>,
     n_payouts: usize,
     tasks: Tasks,
     current_order: Option<Order>,
@@ -59,12 +61,12 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlx::SqlitePool,
-        wallet: Address<W>,
+        wallet: xtra::Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        projection_actor: Address<projection::Actor>,
-        process_manager_actor: Address<process_manager::Actor>,
-        conn_actor: Address<connection::Actor>,
-        oracle_actor: Address<O>,
+        projection_actor: xtra::Address<projection::Actor>,
+        process_manager_actor: xtra::Address<process_manager::Actor>,
+        conn_actor: xtra::Address<connection::Actor>,
+        oracle_actor: xtra::Address<O>,
         n_payouts: usize,
         maker_identity: Identity,
     ) -> Self {
@@ -96,13 +98,16 @@ impl<O, W> Actor<O, W> {
             Some(mut order) => {
                 order.origin = Origin::Theirs;
 
-                self.current_order = Some(order.clone());
+                self.current_order = Some(order);
 
                 self.projection_actor
                     .send(projection::Update(Some(order)))
                     .await?;
             }
             None => {
+                #[allow(unused_qualifications)]
+                // Need to fully qualify `Option` because we have more than one `Update` message
+                // that contains an `Option<T>`.
                 self.projection_actor
                     .send(projection::Update(Option::<Order>::None))
                     .await?;
@@ -158,28 +163,23 @@ where
 
         let mut conn = self.db.acquire().await?;
 
-        let current_order = self
-            .current_order
-            .clone()
-            .context("No current order from maker")?;
+        let current_order = self.current_order.context("No current order from maker")?;
 
         tracing::info!("Taking current order: {:?}", &current_order);
 
         // We create the cfd here without any events yet, only static data
         // Once the contract setup completes (rejected / accepted / failed) the first event will be
         // recorded
-        let cfd = Cfd::from_order(
-            current_order.clone(),
-            quantity,
-            self.maker_identity,
-            Role::Taker,
-        );
+        let cfd = Cfd::from_order(current_order, quantity, self.maker_identity, Role::Taker);
 
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
 
         // Cleanup own order feed, after inserting the cfd.
         // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
         // same order id.
+        #[allow(unused_qualifications)]
+        // Need to fully qualify `Option` because we have more than one `Update` message that
+        // contains an `Option<T>`.
         self.projection_actor
             .send(projection::Update(Option::<Order>::None))
             .await?;

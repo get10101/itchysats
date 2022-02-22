@@ -158,9 +158,11 @@ where
 
 /// Message sent to ourselves at an interval to check if rollover can
 /// be triggered for any of the CFDs in the database.
+#[derive(Clone, Copy)]
 pub struct AutoRollover;
 
 /// Message used to trigger rollover internally within the `auto_rollover::Actor`
 ///
 /// This helps us trigger rollover in the tests unconditionally of time.
+#[derive(Clone, Copy)]
 pub struct Rollover(pub OrderId);

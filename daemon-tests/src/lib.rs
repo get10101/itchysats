@@ -64,6 +64,7 @@ pub async fn start_both() -> (Maker, Taker) {
     (maker, taker)
 }
 
+#[derive(Clone, Copy)]
 pub struct MakerConfig {
     oracle_pk: schnorrsig::PublicKey,
     seed: RandomSeed,
@@ -100,7 +101,7 @@ impl Default for MakerConfig {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct TakerConfig {
     oracle_pk: schnorrsig::PublicKey,
     seed: RandomSeed,
@@ -134,7 +135,7 @@ pub struct Maker {
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     pub listen_addr: SocketAddr,
-    pub identity: model::Identity,
+    pub identity: Identity,
     _tasks: Tasks,
 }
 
@@ -290,7 +291,7 @@ impl Taker {
     pub async fn start(
         config: &TakerConfig,
         maker_address: SocketAddr,
-        maker_identity: model::Identity,
+        maker_identity: Identity,
     ) -> Self {
         let (identity_pk, identity_sk) = config.seed.derive_identity();
 

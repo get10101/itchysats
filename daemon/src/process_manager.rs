@@ -1,8 +1,10 @@
 use crate::db::append_event;
-use crate::monitor;
 use crate::monitor::MonitorCetFinality;
+use crate::monitor::MonitorCollaborativeSettlement;
 use crate::monitor::MonitorParams;
+use crate::monitor::StartMonitoring;
 use crate::monitor::TransactionKind;
+use crate::monitor::TryBroadcastTransaction;
 use crate::oracle;
 use crate::projection;
 use anyhow::Result;
@@ -18,10 +20,10 @@ pub struct Actor {
     db: sqlx::SqlitePool,
     role: Role,
     cfds_changed: Box<dyn MessageChannel<projection::CfdChanged>>,
-    try_broadcast_transaction: Box<dyn MessageChannel<monitor::TryBroadcastTransaction>>,
-    start_monitoring: Box<dyn MessageChannel<monitor::StartMonitoring>>,
-    monitor_cet_finality: Box<dyn MessageChannel<monitor::MonitorCetFinality>>,
-    monitor_collaborative_settlement: Box<dyn MessageChannel<monitor::CollaborativeSettlement>>,
+    try_broadcast_transaction: Box<dyn MessageChannel<TryBroadcastTransaction>>,
+    start_monitoring: Box<dyn MessageChannel<StartMonitoring>>,
+    monitor_cet_finality: Box<dyn MessageChannel<MonitorCetFinality>>,
+    monitor_collaborative_settlement: Box<dyn MessageChannel<MonitorCollaborativeSettlement>>,
     monitor_attestation: Box<dyn MessageChannel<oracle::MonitorAttestation>>,
 }
 
@@ -39,10 +41,10 @@ impl Actor {
         db: sqlx::SqlitePool,
         role: Role,
         cfds_changed: &(impl MessageChannel<projection::CfdChanged> + 'static),
-        try_broadcast_transaction: &(impl MessageChannel<monitor::TryBroadcastTransaction> + 'static),
-        start_monitoring: &(impl MessageChannel<monitor::StartMonitoring> + 'static),
-        monitor_cet: &(impl MessageChannel<monitor::MonitorCetFinality> + 'static),
-        monitor_collaborative_settlement: &(impl MessageChannel<monitor::CollaborativeSettlement>
+        try_broadcast_transaction: &(impl MessageChannel<TryBroadcastTransaction> + 'static),
+        start_monitoring: &(impl MessageChannel<StartMonitoring> + 'static),
+        monitor_cet: &(impl MessageChannel<MonitorCetFinality> + 'static),
+        monitor_collaborative_settlement: &(impl MessageChannel<MonitorCollaborativeSettlement>
               + 'static),
         monitor_attestation: &(impl MessageChannel<oracle::MonitorAttestation> + 'static),
     ) -> Self {
@@ -76,14 +78,14 @@ impl Actor {
 
                 let lock_tx = dlc.lock.0.clone();
                 self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
+                    .send_async_safe(TryBroadcastTransaction {
                         tx: lock_tx,
                         kind: TransactionKind::Lock,
                     })
                     .await?;
 
                 self.start_monitoring
-                    .send_async_safe(monitor::StartMonitoring {
+                    .send_async_safe(StartMonitoring {
                         id: event.id,
                         params: MonitorParams::new(dlc.clone()),
                     })
@@ -103,7 +105,7 @@ impl Actor {
                 match self.role {
                     Role::Maker => {
                         self.try_broadcast_transaction
-                            .send_async_safe(monitor::TryBroadcastTransaction {
+                            .send_async_safe(TryBroadcastTransaction {
                                 tx: spend_tx,
                                 kind: TransactionKind::CollaborativeClose,
                             })
@@ -118,7 +120,7 @@ impl Actor {
                 };
 
                 self.monitor_collaborative_settlement
-                    .send_async_safe(monitor::CollaborativeSettlement {
+                    .send_async_safe(MonitorCollaborativeSettlement {
                         order_id: event.id,
                         tx: (txid, script),
                     })
@@ -133,7 +135,7 @@ impl Actor {
                     })
                     .await?;
                 self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
+                    .send_async_safe(TryBroadcastTransaction {
                         tx: cet,
                         kind: TransactionKind::Cet,
                     })
@@ -148,7 +150,7 @@ impl Actor {
                     })
                     .await?;
                 self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
+                    .send_async_safe(TryBroadcastTransaction {
                         tx: cet,
                         kind: TransactionKind::Cet,
                     })
@@ -167,7 +169,7 @@ impl Actor {
                     })
                     .await?;
                 self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
+                    .send_async_safe(TryBroadcastTransaction {
                         tx,
                         kind: TransactionKind::Cet,
                     })
@@ -175,7 +177,7 @@ impl Actor {
             }
             ManualCommit { tx } => {
                 self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
+                    .send_async_safe(TryBroadcastTransaction {
                         tx,
                         kind: TransactionKind::Commit,
                     })
@@ -198,7 +200,7 @@ impl Actor {
                 tracing::info!(order_id=%event.id, "Rollover complete");
 
                 self.start_monitoring
-                    .send_async_safe(monitor::StartMonitoring {
+                    .send_async_safe(StartMonitoring {
                         id: event.id,
                         params: MonitorParams::new(dlc.clone()),
                     })
@@ -212,7 +214,7 @@ impl Actor {
             }
             RefundTimelockExpired { refund_tx: tx } => {
                 self.try_broadcast_transaction
-                    .send_async_safe(monitor::TryBroadcastTransaction {
+                    .send_async_safe(TryBroadcastTransaction {
                         tx,
                         kind: TransactionKind::Refund,
                     })

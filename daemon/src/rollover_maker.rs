@@ -1,16 +1,10 @@
 use crate::command;
 use crate::maker_inc_connections;
-use crate::maker_inc_connections::RegisterRollover;
-use crate::maker_inc_connections::TakerMessage;
 use crate::oracle;
-use crate::oracle::GetAnnouncement;
 use crate::process_manager;
 use crate::schnorrsig;
 use crate::setup_contract;
 use crate::wire;
-use crate::wire::MakerToTaker;
-use crate::wire::RolloverMsg;
-use crate::Stopping;
 use anyhow::Context as _;
 use anyhow::Result;
 use futures::channel::mpsc;
@@ -26,17 +20,19 @@ use model::Role;
 use model::TxFeeRate;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
-use xtra::Context;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::Stopping;
 
 /// Upon accepting Rollover maker sends the current estimated transaction fee and
 /// funding rate
+#[derive(Clone, Copy)]
 pub struct AcceptRollover {
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
 }
 
+#[derive(Clone, Copy)]
 pub struct RejectRollover;
 
 pub struct ProtocolMsg(pub wire::RolloverMsg);
@@ -56,14 +52,14 @@ struct RolloverFailed {
 
 pub struct Actor {
     order_id: OrderId,
-    send_to_taker_actor: Box<dyn MessageChannel<TakerMessage>>,
+    send_to_taker_actor: Box<dyn MessageChannel<maker_inc_connections::TakerMessage>>,
     n_payouts: usize,
     taker_id: Identity,
     oracle_pk: schnorrsig::PublicKey,
-    sent_from_taker: Option<UnboundedSender<RolloverMsg>>,
-    oracle_actor: Box<dyn MessageChannel<GetAnnouncement>>,
+    sent_from_taker: Option<UnboundedSender<wire::RolloverMsg>>,
+    oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
     on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
-    register: Box<dyn MessageChannel<RegisterRollover>>,
+    register: Box<dyn MessageChannel<maker_inc_connections::RegisterRollover>>,
     tasks: Tasks,
     executor: command::Executor,
 }
@@ -73,16 +69,16 @@ impl Actor {
     pub fn new(
         order_id: OrderId,
         n_payouts: usize,
-        send_to_taker_actor: &(impl MessageChannel<TakerMessage> + 'static),
+        send_to_taker_actor: &(impl MessageChannel<maker_inc_connections::TakerMessage> + 'static),
         taker_id: Identity,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_actor: &(impl MessageChannel<GetAnnouncement> + 'static),
+        oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         (on_stopping0, on_stopping1): (
             &(impl MessageChannel<Stopping<Self>> + 'static),
             &(impl MessageChannel<Stopping<Self>> + 'static),
         ),
         process_manager: xtra::Address<process_manager::Actor>,
-        register: &(impl MessageChannel<RegisterRollover> + 'static),
+        register: &(impl MessageChannel<maker_inc_connections::RegisterRollover> + 'static),
         db: sqlx::SqlitePool,
     ) -> Self {
         Self {
@@ -229,9 +225,9 @@ impl Actor {
         tracing::info!(id = %self.order_id, "Rejecting rollover proposal" );
 
         self.send_to_taker_actor
-            .send(TakerMessage {
+            .send(maker_inc_connections::TakerMessage {
                 taker_id: self.taker_id,
-                msg: MakerToTaker::RejectRollover(self.order_id),
+                msg: wire::MakerToTaker::RejectRollover(self.order_id),
             })
             .await
             .context("Maker connection actor disconnected")?
@@ -273,7 +269,7 @@ impl xtra::Actor for Actor {
             // takers, so that it knows where to forward rollover messages
             // which correspond to this instance
             self.register
-                .send(RegisterRollover {
+                .send(maker_inc_connections::RegisterRollover {
                     order_id,
                     address: this,
                 })
@@ -291,7 +287,7 @@ impl xtra::Actor for Actor {
         }
     }
 
-    async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
+    async fn stopping(&mut self, ctx: &mut xtra::Context<Self>) -> KeepRunning {
         let this = ctx.address().expect("self to be alive");
 
         for channel in self.on_stopping.iter() {

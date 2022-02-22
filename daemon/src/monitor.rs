@@ -42,7 +42,7 @@ pub struct StartMonitoring {
     pub params: MonitorParams,
 }
 
-pub struct CollaborativeSettlement {
+pub struct MonitorCollaborativeSettlement {
     pub order_id: OrderId,
     pub tx: (Txid, Script),
 }
@@ -67,6 +67,7 @@ pub struct TryBroadcastTransaction {
     pub kind: TransactionKind,
 }
 
+#[derive(Clone, Copy)]
 pub enum TransactionKind {
     Lock,
     Commit,
@@ -124,6 +125,7 @@ struct RpcError {
     message: String,
 }
 
+#[derive(Clone, Copy)]
 pub struct Sync;
 
 // TODO: Send messages to the projection actor upon finality events so we send out updates.
@@ -134,7 +136,7 @@ pub struct Actor {
     client: bdk::electrum_client::Client,
     tasks: Tasks,
     state: State,
-    db: sqlx::SqlitePool,
+    db: SqlitePool,
 }
 
 /// Internal data structure encapsulating the monitoring state without performing any IO.
@@ -445,7 +447,7 @@ impl Actor {
     async fn invoke_cfd_command(
         &self,
         id: OrderId,
-        handler: impl FnOnce(model::Cfd) -> Result<Option<model::CfdEvent>>,
+        handler: impl FnOnce(model::Cfd) -> Result<Option<CfdEvent>>,
     ) {
         match self.executor.execute(id, handler).await {
             Ok(()) => {}
@@ -683,7 +685,7 @@ impl Add<u32> for BlockHeight {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 enum Event {
     LockFinality(OrderId),
     CommitFinality(OrderId),
@@ -856,7 +858,7 @@ impl Actor {
 
     fn handle_collaborative_settlement(
         &mut self,
-        collaborative_settlement: CollaborativeSettlement,
+        collaborative_settlement: MonitorCollaborativeSettlement,
     ) {
         self.state.monitor_close_finality(
             collaborative_settlement.tx,
@@ -1018,10 +1020,10 @@ mod tests {
         state.awaiting_status = HashMap::from_iter([(
             (txid1(), script1()),
             vec![
-                (ScriptStatus::finality(), commit_finality.clone()),
+                (ScriptStatus::finality(), commit_finality),
                 (
                     ScriptStatus::with_confirmations(CET_TIMELOCK),
-                    refund_expired.clone(),
+                    refund_expired,
                 ),
             ],
         )]);
@@ -1063,7 +1065,7 @@ mod tests {
         state.awaiting_status = HashMap::from_iter([
             (
                 (txid1(), script1()),
-                vec![(ScriptStatus::finality(), cet_finality.clone())],
+                vec![(ScriptStatus::finality(), cet_finality)],
             ),
             (
                 (txid2(), script1()),
@@ -1095,7 +1097,7 @@ mod tests {
         let mut state = State::new(BlockHeight(0));
         state.awaiting_status = HashMap::from_iter([(
             (txid1(), script1()),
-            vec![(ScriptStatus::finality(), cet_finality.clone())],
+            vec![(ScriptStatus::finality(), cet_finality)],
         )]);
 
         let ready_events = state.update(

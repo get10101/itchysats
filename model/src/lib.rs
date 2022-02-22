@@ -45,7 +45,7 @@ pub use rollover::RolloverParams;
 /// - The auto-rollover time-window (taker)
 pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone, Copy)]
 pub enum Error {
     #[error("Price of zero is not allowed.")]
     ZeroPrice,
@@ -574,7 +574,7 @@ impl str::FromStr for FundingRate {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone, Copy)]
 pub enum ConversionError {
     #[error("Underflow")]
     Underflow,

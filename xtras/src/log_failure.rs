@@ -31,7 +31,7 @@ where
 #[async_trait]
 impl<M, E> LogFailure for message_channel::SendFuture<M>
 where
-    M: xtra::Message<Result = anyhow::Result<(), E>>,
+    M: Message<Result = anyhow::Result<(), E>>,
     E: fmt::Display + Send,
 {
     async fn log_failure(self, context: &str) -> Result<(), Disconnected> {
