@@ -635,7 +635,7 @@ where
                     )
                     .await
                 {
-                    tracing::warn!("Failed ot handle settlement proposal: {:#}", e);
+                    tracing::warn!(%order_id, "Failed to handle settlement proposal: {:#}", e);
                 }
             }
             wire::TakerToMaker::Settlement {
