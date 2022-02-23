@@ -6,14 +6,12 @@ use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
 use curve::Curve;
-use itertools::Itertools;
-use maia::generate_payouts;
-use maia::Payout;
 use ndarray::prelude::*;
 use num::FromPrimitive;
 use num::ToPrimitive;
 use rust_decimal::Decimal;
 use std::fmt;
+use std::ops::RangeInclusive;
 
 mod basis;
 mod basis_eval;
@@ -66,11 +64,16 @@ pub fn calculate(
         fee,
     )?
     .into_iter()
-    .map(PayoutParameter::into_payouts)
-    .flatten_ok()
-    .collect::<Result<Vec<_>>>()?;
+    .map(PayoutParameter::into_payout)
+    .collect::<Vec<_>>();
 
     Ok(payouts)
+}
+
+pub struct Payout {
+    pub long: bitcoin::Amount,
+    pub short: bitcoin::Amount,
+    pub range: RangeInclusive<u64>,
 }
 
 const CONTRACT_VALUE: f64 = 1.;
@@ -158,12 +161,12 @@ struct PayoutParameter {
 }
 
 impl PayoutParameter {
-    fn into_payouts(self) -> Result<Vec<Payout>> {
-        generate_payouts(
-            self.left_bound..=self.right_bound,
-            bitcoin::Amount::from_sat(self.short_amount),
-            bitcoin::Amount::from_sat(self.long_amount),
-        )
+    fn into_payout(self) -> Payout {
+        Payout {
+            long: bitcoin::Amount::from_sat(self.long_amount),
+            short: bitcoin::Amount::from_sat(self.short_amount),
+            range: self.left_bound..=self.right_bound,
+        }
     }
 }
 

@@ -6,6 +6,7 @@ use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
 use crate::rollover::RolloverParams;
 use crate::FeeAccount;
+use crate::FeeFlow;
 use crate::FundingFee;
 use crate::FundingRate;
 use crate::Identity;
@@ -37,11 +38,14 @@ use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use cached::proc_macro::cached;
+use itertools::Itertools;
 use maia::finalize_spend_transaction;
+use maia::generate_payouts;
 use maia::secp256k1_zkp;
 use maia::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia::secp256k1_zkp::SECP256K1;
 use maia::spending_tx_sighash;
+use maia::Payout;
 use maia::TransactionExt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -864,7 +868,7 @@ impl Cfd {
             "Failed to propose collaborative settlement"
         );
 
-        let payout_curve = payout_curve::calculate(
+        let payout_curve = calculate_payouts_long_taker(
             self.initial_price,
             self.quantity,
             self.long_leverage,
@@ -913,7 +917,7 @@ impl Cfd {
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
-        let payout_curve_long = payout_curve::calculate(
+        let payout_curve_long = calculate_payouts_long_taker(
             self.initial_price,
             self.quantity,
             self.long_leverage,
@@ -1813,6 +1817,54 @@ impl CollaborativeSettlement {
     pub fn payout(&self) -> Amount {
         self.payout
     }
+}
+
+pub fn calculate_payouts_long_taker(
+    price: Price,
+    quantity: Usd,
+    long_leverage: Leverage,
+    short_leverage: Leverage,
+    n_payouts: usize,
+    fee: FeeFlow,
+) -> Result<Vec<Payout>> {
+    let payouts = payout_curve::calculate(
+        price,
+        quantity,
+        long_leverage,
+        short_leverage,
+        n_payouts,
+        fee,
+    )?;
+
+    payouts
+        .into_iter()
+        .map(|payout| generate_payouts(payout.range, payout.short, payout.long))
+        .flatten_ok()
+        .collect()
+}
+
+pub fn calculate_payouts_short_taker(
+    price: Price,
+    quantity: Usd,
+    long_leverage: Leverage,
+    short_leverage: Leverage,
+    n_payouts: usize,
+    fee: FeeFlow,
+) -> Result<Vec<Payout>> {
+    let payouts = payout_curve::calculate(
+        price,
+        quantity,
+        long_leverage,
+        short_leverage,
+        n_payouts,
+        fee,
+    )?;
+
+    payouts
+        .into_iter()
+        .map(|payout| generate_payouts(payout.range, payout.long, payout.short))
+        .flatten_ok()
+        .collect()
 }
 
 #[cfg(test)]
