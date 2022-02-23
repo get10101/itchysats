@@ -109,6 +109,62 @@ impl From<Uuid> for OrderId {
     }
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct MakerOffers {
+    pub long: Option<Order>,
+    pub short: Option<Order>,
+    pub tx_fee_rate: TxFeeRate,
+    pub funding_rate: FundingRate,
+}
+
+impl fmt::Debug for MakerOffers {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let long_order_id = self.long.as_ref().map(|o| o.id);
+        let short_order_id = self.long.as_ref().map(|o| o.id);
+        let tx_fee_rate = self.tx_fee_rate;
+        let funding_rate = self.funding_rate;
+
+        write!(
+            f,
+            "short order_id={short_order_id:?}, long order_id={long_order_id:?}, tx_fee_rate={tx_fee_rate:?}, funding_rate={funding_rate}"
+        )
+    }
+}
+
+impl MakerOffers {
+    pub fn take_offer_by_order_id(&self, id: OrderId) -> Option<Order> {
+        if let Some(long) = self.long {
+            if long.id == id {
+                self.long.expect("be still valid").replicate();
+                return Some(long);
+            }
+        }
+        if let Some(short) = self.short {
+            if short.id == id {
+                self.short.expect("be still valid").replicate();
+                return Some(short);
+            }
+        }
+        None
+    }
+
+    /// Update the orders after one of them got taken.
+    pub fn replicate(&self) -> MakerOffers {
+        MakerOffers {
+            long: self.long.and_then(|order| Some(order.replicate())),
+            short: self.short.and_then(|order| Some(order.replicate())),
+            tx_fee_rate: self.tx_fee_rate,
+            funding_rate: self.funding_rate,
+        }
+    }
+}
+
+// TODO: Remove this function when projection supports more orders than one
+/// This function prefers the maker going long offer if `price_long` is set.
+pub fn pick_single_offer(current_offers: Option<MakerOffers>) -> Option<Order> {
+    current_offers.and_then(|offers| offers.long.or(offers.short))
+}
+
 // TODO: Could potentially remove this and use the Role in the Order instead
 /// Origin of the order
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
