@@ -39,7 +39,12 @@ use xtras::address_map::Stopping;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 
-const HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(10);
+const HANDLE_ACCEPT_ROLLOVER_MESSAGE_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(10);
+const HANDLE_ACCEPT_SETTLEMENT_MESSAGE_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(120);
 
 #[derive(Clone, Copy)]
 pub struct AcceptOrder {
@@ -347,7 +352,7 @@ impl<O, T, W> Actor<O, T, W> {
         if let Err(error) = self
             .setup_actors
             .send(&order_id, setup_maker::Accepted)
-            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
+            .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
@@ -368,7 +373,7 @@ impl<O, T, W> Actor<O, T, W> {
         if let Err(error) = self
             .setup_actors
             .send(&order_id, setup_maker::Rejected)
-            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
+            .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
@@ -387,7 +392,7 @@ impl<O, T, W> Actor<O, T, W> {
         if let Err(error) = self
             .settlement_actors
             .send(&order_id, collab_settlement_maker::Accepted)
-            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
+            .timeout(HANDLE_ACCEPT_SETTLEMENT_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
@@ -408,7 +413,7 @@ impl<O, T, W> Actor<O, T, W> {
         if let Err(error) = self
             .settlement_actors
             .send(&order_id, collab_settlement_maker::Rejected)
-            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
+            .timeout(HANDLE_ACCEPT_SETTLEMENT_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
@@ -440,7 +445,7 @@ impl<O, T, W> Actor<O, T, W> {
                     funding_rate: order.funding_rate,
                 },
             )
-            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
+            .timeout(HANDLE_ACCEPT_ROLLOVER_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
@@ -459,7 +464,7 @@ impl<O, T, W> Actor<O, T, W> {
         if let Err(error) = self
             .rollover_actors
             .send(&order_id, rollover_maker::RejectRollover)
-            .timeout(HANDLE_ACCEPT_REJECT_MESSAGE_TIMEOUT)
+            .timeout(HANDLE_ACCEPT_ROLLOVER_MESSAGE_TIMEOUT)
             .await
         {
             self.executor
