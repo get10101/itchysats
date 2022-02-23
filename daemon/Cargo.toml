@@ -10,12 +10,14 @@ bdk = { version = "0.16", default-features = false, features = ["electrum"] }
 bdk-ext = { path = "../bdk-ext" }
 bytes = "1"
 cached = { version = "0.30.0", default-features = false, features = ["proc_macro"] }
+conquer-once = "0.3"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 hkdf = "0.12"
 itertools = "0.10"
 maia = "0.1.0"
 model = { path = "../model" }
 parse-display = "0.5.4"
+prometheus = "0.13"
 rand = "0.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 rust_decimal = { version = "1.22", features = ["serde-with-float"] }
@@ -27,6 +29,7 @@ serde_with = { version = "1", features = ["macros"] }
 sha2 = "0.10"
 snow = "0.9"
 sqlx = { version = "0.5", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
+statrs = "0.15"
 thiserror = "1"
 time = { version = "0.3", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }

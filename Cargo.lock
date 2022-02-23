@@ -703,6 +703,7 @@ dependencies = [
  "bdk-ext",
  "bytes",
  "cached",
+ "conquer-once",
  "futures",
  "hkdf",
  "itertools",
@@ -710,6 +711,7 @@ dependencies = [
  "model",
  "parse-display",
  "pretty_assertions",
+ "prometheus",
  "rand 0.6.5",
  "reqwest",
  "rust_decimal",
@@ -722,6 +724,7 @@ dependencies = [
  "sha2 0.10.2",
  "snow",
  "sqlx",
+ "statrs",
  "thiserror",
  "time 0.3.7",
  "tokio",
@@ -1490,6 +1493,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "libm"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33a33a362ce288760ec6a508b94caaec573ae7d3bbbd91b87aa0bad4456839db"
+
+[[package]]
 name = "libsqlite3-sys"
 version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1579,6 +1588,7 @@ dependencies = [
  "hex",
  "http-api-problem",
  "model",
+ "prometheus",
  "rocket",
  "rocket-basicauth",
  "rust-embed",
@@ -1708,7 +1718,7 @@ dependencies = [
  "hex",
  "itertools",
  "maia",
- "nalgebra",
+ "nalgebra 0.30.1",
  "ndarray",
  "ndarray_einsum_beta",
  "num",
@@ -1752,6 +1762,24 @@ dependencies = [
 
 [[package]]
 name = "nalgebra"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "462fffe4002f4f2e1f6a9dcf12cc1a6fc0e15989014efc02a941d3e0f5dc2120"
+dependencies = [
+ "approx 0.5.0",
+ "matrixmultiply",
+ "nalgebra-macros",
+ "num-complex",
+ "num-rational",
+ "num-traits",
+ "rand 0.8.4",
+ "rand_distr",
+ "simba 0.5.1",
+ "typenum",
+]
+
+[[package]]
+name = "nalgebra"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fb2d0de08694bed883320212c18ee3008576bfe8c306f4c3c4a58b4876998be"
@@ -1761,8 +1789,19 @@ dependencies = [
  "num-complex",
  "num-rational",
  "num-traits",
- "simba",
+ "simba 0.7.0",
  "typenum",
+]
+
+[[package]]
+name = "nalgebra-macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01fcc0b8149b4632adc89ac3b7b31a12fb6099a0317a4eb2ebff574ef7de7218"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1891,6 +1930,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a64b1ec5cda2586e284722486d802acf1f7dbdc623e2bfc57e65ca1cd099290"
 dependencies = [
  "autocfg 1.0.1",
+ "libm",
 ]
 
 [[package]]
@@ -2202,6 +2242,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "prometheus"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7f64969ffd5dd8f39bd57a68ac53c163a095ed9d0fb707146da1b27025a3504"
+dependencies = [
+ "cfg-if 1.0.0",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "protobuf",
+ "thiserror",
+]
+
+[[package]]
 name = "proptest"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2217,6 +2272,12 @@ dependencies = [
  "rand_xorshift 0.3.0",
  "regex-syntax",
 ]
+
+[[package]]
+name = "protobuf"
+version = "2.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf7e6d18738ecd0902d30d1ad232c9125985a3422929b16c65517b38adc14f96"
 
 [[package]]
 name = "quick-error"
@@ -2338,6 +2399,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d34f1408f55294453790c48b2f1ebbb1c5b4b7563eb1f418bcfcfdbb06ebb4e7"
 dependencies = [
  "getrandom 0.2.3",
+]
+
+[[package]]
+name = "rand_distr"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
+dependencies = [
+ "num-traits",
+ "rand 0.8.4",
 ]
 
 [[package]]
@@ -3121,6 +3192,18 @@ dependencies = [
 
 [[package]]
 name = "simba"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e82063457853d00243beda9952e910b82593e4b07ae9f721b9278a99a0d3d5c"
+dependencies = [
+ "approx 0.5.0",
+ "num-complex",
+ "num-traits",
+ "paste",
+]
+
+[[package]]
+name = "simba"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fa406d0a270fc91831a28f705ba803ad05b971486af492317f1607390245b99"
@@ -3337,6 +3420,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87cf4f5369e6d3044b5e365c9690f451516ac8f0954084622b49ea3fde2f6de5"
 dependencies = [
  "loom 0.5.1",
+]
+
+[[package]]
+name = "statrs"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05bdbb8e4e78216a85785a85d3ec3183144f98d0097b9281802c019bb07a6f05"
+dependencies = [
+ "approx 0.5.0",
+ "lazy_static",
+ "nalgebra 0.27.1",
+ "num-traits",
+ "rand 0.8.4",
 ]
 
 [[package]]
