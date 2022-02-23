@@ -220,7 +220,7 @@ where
         tracing::info!(%order_id, %taker_id,  "Received rollover proposal from taker");
         let this = ctx.address().expect("acquired own address");
 
-        let (rollover_actor_addr, rollover_actor_future) = rollover_maker::Actor::new(
+        let rollover_actor_addr = rollover_maker::Actor::new(
             order_id,
             self.n_payouts,
             &self.takers,
@@ -233,9 +233,7 @@ where
             self.db.clone(),
         )
         .create(None)
-        .run();
-
-        self.tasks.add(rollover_actor_future);
+        .spawn(&mut self.tasks);
 
         self.rollover_actors.insert(order_id, rollover_actor_addr);
 
@@ -321,7 +319,7 @@ where
             .address()
             .expect("actor to be able to give address to itself");
 
-        let (addr, fut) = setup_maker::Actor::new(
+        let addr = setup_maker::Actor::new(
             self.db.clone(),
             self.process_manager.clone(),
             (current_order, cfd.quantity(), self.n_payouts),
@@ -332,11 +330,9 @@ where
             (&self.takers, &this),
         )
         .create(None)
-        .run();
+        .spawn(&mut self.tasks);
 
         disconnected.insert(addr);
-
-        self.tasks.add(fut);
 
         Ok(())
     }
@@ -517,7 +513,7 @@ where
             .with_context(|| format!("Settlement for order {order_id} is already in progress",))?;
 
         let this = ctx.address().expect("self to be alive");
-        let (addr, task) = collab_settlement_maker::Actor::new(
+        let addr = collab_settlement_maker::Actor::new(
             proposal,
             taker_id,
             &self.takers,
@@ -527,9 +523,8 @@ where
             self.n_payouts,
         )
         .create(None)
-        .run();
+        .spawn(&mut self.tasks);
 
-        self.tasks.add(task);
         disconnected.insert(addr);
 
         Ok(())

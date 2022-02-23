@@ -44,3 +44,10 @@ impl Tasks {
         self.0.push(handle);
     }
 }
+
+#[cfg(feature = "xtra")]
+impl xtra::spawn::Spawner for Tasks {
+    fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
+        self.add(fut);
+    }
+}

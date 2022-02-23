@@ -127,7 +127,7 @@ impl<O, W> Actor<O, W> {
             .get_disconnected(order_id)
             .with_context(|| format!("Settlement for order {order_id} is already in progress"))?;
 
-        let (addr, fut) = collab_settlement_taker::Actor::new(
+        let addr = collab_settlement_taker::Actor::new(
             order_id,
             current_price,
             self.n_payouts,
@@ -136,9 +136,8 @@ impl<O, W> Actor<O, W> {
             self.db.clone(),
         )
         .create(None)
-        .run();
+        .spawn(&mut self.tasks);
 
-        self.tasks.add(fut);
         disconnected.insert(addr);
 
         Ok(())
@@ -191,7 +190,7 @@ where
             .await?
             .with_context(|| format!("Announcement {price_event_id} not found"))?;
 
-        let (addr, fut) = setup_taker::Actor::new(
+        let addr = setup_taker::Actor::new(
             self.db.clone(),
             self.process_manager_actor.clone(),
             (cfd.id(), cfd.quantity(), self.n_payouts),
@@ -201,11 +200,9 @@ where
             self.conn_actor.clone(),
         )
         .create(None)
-        .run();
+        .spawn(&mut self.tasks);
 
         disconnected.insert(addr);
-
-        self.tasks.add(fut);
 
         Ok(())
     }

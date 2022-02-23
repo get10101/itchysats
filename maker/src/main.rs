@@ -170,8 +170,7 @@ async fn main() -> Result<()> {
 
     let (wallet, wallet_feed_receiver) = wallet::Actor::new(opts.network.electrum(), ext_priv_key)?;
 
-    let (wallet, wallet_fut) = wallet.create(None).run();
-    tasks.add(wallet_fut);
+    let wallet = wallet.create(None).spawn(&mut tasks);
 
     if let Some(Withdraw::Withdraw {
         amount,
@@ -242,8 +241,7 @@ async fn main() -> Result<()> {
             | xtra_bitmex_price_feed::Error::StreamEnded => true, // always restart price feed actor
         });
 
-    let (_supervisor_address, task) = supervisor.create(None).run();
-    tasks.add(task);
+    let _supervisor_address = supervisor.create(None).spawn(&mut tasks);
 
     let (proj_actor, projection_feeds) =
         projection::Actor::new(db.clone(), Role::Maker, bitcoin_network, &price_feed);
