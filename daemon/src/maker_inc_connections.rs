@@ -33,7 +33,9 @@ use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
-const HANDLE_MESSAGE_TIMEOUT: Duration = Duration::from_secs(5);
+const HANDLE_ROLLOVER_MESSAGE_TIMEOUT: Duration = Duration::from_secs(10);
+const HANDLE_SETTLEMENT_MESSAGE_TIMEOUT: Duration = Duration::from_secs(120);
+const HANDLE_PROTOCOL_MESSAGE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy)]
 pub struct BroadcastOrder(pub Option<Order>);
@@ -407,7 +409,10 @@ impl Actor {
         match msg.msg {
             Protocol { order_id, msg } => match self.setup_actors.get_connected(&order_id) {
                 Some(addr) => {
-                    let _ = addr.send(msg).timeout(HANDLE_MESSAGE_TIMEOUT).await;
+                    let _ = addr
+                        .send(msg)
+                        .timeout(HANDLE_PROTOCOL_MESSAGE_TIMEOUT)
+                        .await;
                 }
                 None => {
                     tracing::error!(%order_id, "No active contract setup");
@@ -417,7 +422,7 @@ impl Actor {
                 if self
                     .rollover_actors
                     .send(&order_id, rollover_maker::ProtocolMsg(msg))
-                    .timeout(HANDLE_MESSAGE_TIMEOUT)
+                    .timeout(HANDLE_ROLLOVER_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
@@ -431,7 +436,7 @@ impl Actor {
                 if self
                     .settlement_actors
                     .send(&order_id, collab_settlement_maker::Initiated { sig_taker })
-                    .timeout(HANDLE_MESSAGE_TIMEOUT)
+                    .timeout(HANDLE_SETTLEMENT_MESSAGE_TIMEOUT)
                     .await
                     .is_err()
                 {
