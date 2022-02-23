@@ -17,7 +17,7 @@ use maia::CfdTransactions;
 use maia::PartyParams;
 use maia::PunishParams;
 use model::FundingRate;
-use model::Order;
+use model::MakerOffers;
 use model::OrderId;
 use model::Price;
 use model::Timestamp;
@@ -45,7 +45,7 @@ pub struct Version(semver::Version);
 
 impl Version {
     pub fn current() -> Self {
-        Self(semver::Version::new(2, 0, 0))
+        Self(semver::Version::new(3, 0, 0))
     }
 }
 
@@ -130,9 +130,9 @@ impl fmt::Display for TakerToMaker {
 #[allow(clippy::large_enum_variant)]
 pub enum MakerToTaker {
     Hello(Version),
-    /// Periodically broadcasted message, indicating maker's presence
+    /// Periodically broadcast message, indicating maker's presence
     Heartbeat,
-    CurrentOrder(Option<Order>),
+    CurrentOffers(Option<MakerOffers>),
     ConfirmOrder(OrderId),
     RejectOrder(OrderId),
     InvalidOrderId(OrderId),
@@ -182,7 +182,7 @@ impl fmt::Display for MakerToTaker {
         match self {
             MakerToTaker::Hello(_) => write!(f, "Hello"),
             MakerToTaker::Heartbeat { .. } => write!(f, "Heartbeat"),
-            MakerToTaker::CurrentOrder(_) => write!(f, "CurrentOrder"),
+            MakerToTaker::CurrentOffers { .. } => write!(f, "CurrentOffers"),
             MakerToTaker::ConfirmOrder(_) => write!(f, "ConfirmOrder"),
             MakerToTaker::RejectOrder(_) => write!(f, "RejectOrder"),
             MakerToTaker::InvalidOrderId(_) => write!(f, "InvalidOrderId"),

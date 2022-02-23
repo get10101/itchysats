@@ -16,9 +16,12 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
+use model::olivia::BitMexPriceEventId;
+use model::pick_single_offer;
 use model::Cfd;
 use model::FundingRate;
 use model::Identity;
+use model::MakerOffers;
 use model::OpeningFee;
 use model::Order;
 use model::OrderId;
@@ -44,6 +47,11 @@ const HANDLE_ACCEPT_ROLLOVER_MESSAGE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(10);
 const HANDLE_ACCEPT_SETTLEMENT_MESSAGE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(120);
+
+#[derive(Clone, Copy)]
+pub struct NewOffers {
+    pub params: OfferParams,
+}
 
 #[derive(Clone, Copy)]
 pub struct AcceptOrder {
@@ -76,17 +84,6 @@ pub struct RejectRollover {
 }
 
 #[derive(Clone, Copy)]
-pub struct OfferParams {
-    pub price: Price,
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
-    pub tx_fee_rate: TxFeeRate,
-    pub funding_rate: FundingRate,
-    pub opening_fee: OpeningFee,
-    pub position_maker: Position,
-}
-
-#[derive(Clone, Copy)]
 pub struct TakerConnected {
     pub id: Identity,
 }
@@ -94,6 +91,66 @@ pub struct TakerConnected {
 #[derive(Clone, Copy)]
 pub struct TakerDisconnected {
     pub id: Identity,
+}
+
+#[derive(Clone, Copy)]
+pub struct OfferParams {
+    pub price_long: Option<Price>,
+    pub price_short: Option<Price>,
+    pub min_quantity: Usd,
+    pub max_quantity: Usd,
+    pub tx_fee_rate: TxFeeRate,
+    pub funding_rate: FundingRate,
+    pub opening_fee: OpeningFee,
+}
+
+impl OfferParams {
+    fn pick_oracle_event_id(settlement_interval: Duration) -> BitMexPriceEventId {
+        oracle::next_announcement_after(time::OffsetDateTime::now_utc() + settlement_interval)
+    }
+
+    pub fn create_long_order(&self, settlement_interval: Duration) -> Option<Order> {
+        self.price_long.map(|price_long| {
+            Order::new(
+                Position::Long,
+                price_long,
+                self.min_quantity,
+                self.max_quantity,
+                Origin::Ours,
+                Self::pick_oracle_event_id(settlement_interval),
+                settlement_interval,
+                self.tx_fee_rate,
+                self.funding_rate,
+                self.opening_fee,
+            )
+        })
+    }
+
+    pub fn create_short_order(&self, settlement_interval: Duration) -> Option<Order> {
+        self.price_short.map(|price_short| {
+            Order::new(
+                Position::Short,
+                price_short,
+                self.min_quantity,
+                self.max_quantity,
+                Origin::Ours,
+                Self::pick_oracle_event_id(settlement_interval),
+                settlement_interval,
+                self.tx_fee_rate,
+                self.funding_rate,
+                self.opening_fee,
+            )
+        })
+    }
+}
+
+fn create_maker_offers(offer_params: OfferParams, settlement_interval: Duration) -> MakerOffers {
+    MakerOffers {
+        long: offer_params.create_long_order(settlement_interval),
+        short: offer_params.create_short_order(settlement_interval),
+        tx_fee_rate: offer_params.tx_fee_rate,
+        funding_rate: offer_params.funding_rate,
+    }
 }
 
 pub struct FromTaker {
@@ -118,7 +175,7 @@ pub struct Actor<O, T, W> {
     executor: command::Executor,
     rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
     takers: xtra::Address<T>,
-    current_order: Option<Order>,
+    current_offers: Option<MakerOffers>,
     setup_actors: AddressMap<OrderId, setup_maker::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
     oracle: xtra::Address<O>,
@@ -150,7 +207,7 @@ impl<O, T, W> Actor<O, T, W> {
             executor: command::Executor::new(db, process_manager),
             rollover_actors: AddressMap::default(),
             takers,
-            current_order: None,
+            current_offers: None,
             setup_actors: AddressMap::default(),
             oracle,
             n_payouts,
@@ -181,7 +238,7 @@ where
         self.takers
             .send_async_safe(maker_inc_connections::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::CurrentOrder(self.current_order),
+                msg: wire::MakerToTaker::CurrentOffers(self.current_offers),
             })
             .await?;
 
@@ -240,7 +297,7 @@ where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     T: xtra::Handler<maker_inc_connections::ConfirmOrder>
         + xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>,
+        + xtra::Handler<maker_inc_connections::BroadcastOffers>,
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle_take_order(
@@ -261,42 +318,43 @@ where
         let mut conn = self.db.acquire().await?;
 
         // 1. Validate if order is still valid
-        let current_order = match &self.current_order {
-            Some(current_order) if current_order.id == order_id => *current_order,
-            _ => {
-                // An outdated order on the taker side does not require any state change on the
-                // maker. notifying the taker with a specific message should be sufficient.
-                // Since this is a scenario that we should rarely see we log
-                // a warning to be sure we don't trigger this code path frequently.
-                tracing::warn!("Taker tried to take order with outdated id {order_id}");
+        let current_order = self
+            .current_offers
+            .and_then(|offers| offers.take_offer_by_order_id(order_id));
 
-                self.takers
-                    .send(maker_inc_connections::TakerMessage {
-                        taker_id,
-                        msg: wire::MakerToTaker::InvalidOrderId(order_id),
-                    })
-                    .await??;
+        let current_order = if let Some(current_order) = current_order {
+            current_order
+        } else {
+            // An outdated order on the taker side does not require any state change on the
+            // maker. notifying the taker with a specific message should be sufficient.
+            // Since this is a scenario that we should rarely see we log
+            // a warning to be sure we don't trigger this code path frequently.
+            tracing::warn!("Taker tried to take order with outdated id {order_id}");
 
-                return Ok(());
-            }
+            self.takers
+                .send(maker_inc_connections::TakerMessage {
+                    taker_id,
+                    msg: wire::MakerToTaker::InvalidOrderId(order_id),
+                })
+                .await??;
+
+            return Ok(());
         };
 
         let cfd = Cfd::from_order(current_order, quantity, taker_id, Role::Maker);
 
-        // 2. Replicate the order with a new one to allow other takers to use
+        // 2. Replicate the orders in the offers with new ones to allow other takers to use
         // the same offer
-        self.current_order = Some(current_order.replicate());
+        if let Some(offers) = self.current_offers {
+            self.current_offers = Some(offers.replicate());
+        }
 
         self.takers
-            .send_async_safe(maker_inc_connections::BroadcastOrder(self.current_order))
+            .send_async_safe(maker_inc_connections::BroadcastOffers(self.current_offers))
             .await?;
 
-        #[allow(unused_qualifications)]
-        // Need to fully qualify `Option` because we have more than one `Update` message that
-        // contains an `Option<T>`.
-        self.projection
-            .send(projection::Update(self.current_order))
-            .await?;
+        let order = pick_single_offer(self.current_offers);
+        self.projection.send(projection::Update(order)).await?;
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection).await?;
 
         // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any
@@ -412,8 +470,8 @@ impl<O, T, W> Actor<O, T, W> {
     }
 
     async fn handle_accept_rollover(&mut self, msg: AcceptRollover) -> Result<()> {
-        let order = self
-            .current_order
+        let current_offers = self
+            .current_offers
             .as_ref()
             .context("Cannot accept rollover without current offer, as we need up-to-date fees")?;
 
@@ -424,8 +482,8 @@ impl<O, T, W> Actor<O, T, W> {
             .send(
                 &order_id,
                 rollover_maker::AcceptRollover {
-                    tx_fee_rate: order.tx_fee_rate,
-                    funding_rate: order.funding_rate,
+                    tx_fee_rate: current_offers.tx_fee_rate,
+                    funding_rate: current_offers.funding_rate,
                 },
             )
             .timeout(HANDLE_ACCEPT_ROLLOVER_MESSAGE_TIMEOUT)
@@ -502,50 +560,24 @@ where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     T: xtra::Handler<maker_inc_connections::ConfirmOrder>
         + xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>
+        + xtra::Handler<maker_inc_connections::BroadcastOffers>
         + xtra::Handler<maker_inc_connections::settlement::Response>
         + xtra::Handler<maker_inc_connections::RegisterRollover>,
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle_new_order(&mut self, msg: OfferParams) -> Result<()> {
-        let OfferParams {
-            price,
-            min_quantity,
-            max_quantity,
-            tx_fee_rate,
-            funding_rate,
-            opening_fee,
-            position_maker,
-        } = msg;
-
-        let oracle_event_id = oracle::next_announcement_after(
-            time::OffsetDateTime::now_utc() + self.settlement_interval,
-        );
-
-        let order = Order::new(
-            position_maker,
-            price,
-            min_quantity,
-            max_quantity,
-            Origin::Ours,
-            oracle_event_id,
-            self.settlement_interval,
-            tx_fee_rate,
-            funding_rate,
-            opening_fee,
-        );
-
         // 1. Update actor state to current order
-        self.current_order.replace(order);
+        self.current_offers
+            .replace(create_maker_offers(msg, self.settlement_interval));
+
+        let order = pick_single_offer(self.current_offers);
 
         // 2. Notify UI via feed
-        self.projection
-            .send(projection::Update(Some(order)))
-            .await?;
+        self.projection.send(projection::Update(order)).await?;
 
         // 3. Inform connected takers
         self.takers
-            .send_async_safe(maker_inc_connections::BroadcastOrder(Some(order)))
+            .send_async_safe(maker_inc_connections::BroadcastOffers(self.current_offers))
             .await?;
 
         Ok(())

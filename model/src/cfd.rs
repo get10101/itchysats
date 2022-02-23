@@ -109,6 +109,57 @@ impl From<Uuid> for OrderId {
     }
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct MakerOffers {
+    pub long: Option<Order>,
+    pub short: Option<Order>,
+    pub tx_fee_rate: TxFeeRate,
+    pub funding_rate: FundingRate,
+}
+
+impl fmt::Debug for MakerOffers {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("MakerOffers")
+            .field("long_order_id", &self.long.as_ref().map(|o| o.id))
+            .field("short_order_id", &self.long.as_ref().map(|o| o.id))
+            .field("tx_fee_rate", &self.tx_fee_rate)
+            .field("funding_rate", &self.funding_rate)
+            .finish()
+    }
+}
+
+impl MakerOffers {
+    pub fn take_offer_by_order_id(&self, id: OrderId) -> Option<Order> {
+        if let Some(long) = self.long {
+            if long.id == id {
+                return Some(long);
+            }
+        }
+        if let Some(short) = self.short {
+            if short.id == id {
+                return Some(short);
+            }
+        }
+        None
+    }
+
+    /// Update the orders after one of them got taken.
+    pub fn replicate(&self) -> MakerOffers {
+        MakerOffers {
+            long: self.long.map(|order| order.replicate()),
+            short: self.short.map(|order| order.replicate()),
+            tx_fee_rate: self.tx_fee_rate,
+            funding_rate: self.funding_rate,
+        }
+    }
+}
+
+// TODO: Remove this function when projection supports more orders than one
+/// This function prefers the maker going long offer if `price_long` is set.
+pub fn pick_single_offer(current_offers: Option<MakerOffers>) -> Option<Order> {
+    current_offers.and_then(|offers| offers.long.or(offers.short))
+}
+
 // TODO: Could potentially remove this and use the Role in the Order instead
 /// Origin of the order
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]

@@ -95,10 +95,11 @@ pub async fn maker_feed(
     }
 }
 
-/// The maker POSTs this to create a new CfdOrder
+/// The maker POSTs this to set the offer params
 #[derive(Debug, Clone, Deserialize)]
-pub struct CfdNewOrderRequest {
+pub struct CfdNewOfferParamsRequest {
     #[serde(rename = "price")]
+    // TODO: Make this Option<Price> when we don't want to create other side
     pub price_short: Price,
     pub min_quantity: Usd,
     pub max_quantity: Usd,
@@ -107,25 +108,27 @@ pub struct CfdNewOrderRequest {
     // TODO: This is not inline with other parts of the API! We should not expose internal types
     // here. We have to specify sats for here because of that.
     pub opening_fee: Option<OpeningFee>,
+    // TODO: Remove this after turning off legacy maker
     pub position: Option<Position>,
     pub price_long: Option<Price>,
 }
 
-#[rocket::post("/order/sell", data = "<order>")]
+// TODO: Change to `/offer` after turning off legacy maker
+#[rocket::post("/order/sell", data = "<offer_params>")]
 pub async fn post_sell_order(
-    order: Json<CfdNewOrderRequest>,
+    offer_params: Json<CfdNewOfferParamsRequest>,
     maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
     maker
         .set_offer_params(
-            order.price_short,
-            order.min_quantity,
-            order.max_quantity,
-            order.tx_fee_rate,
-            order.funding_rate,
-            order.opening_fee,
-            order.position,
+            offer_params.price_long,
+            Some(offer_params.price_short),
+            offer_params.min_quantity,
+            offer_params.max_quantity,
+            offer_params.tx_fee_rate,
+            offer_params.funding_rate,
+            offer_params.opening_fee,
         )
         .await
         .map_err(|e| {
