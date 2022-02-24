@@ -428,6 +428,41 @@ async fn maker_rejects_rollover_after_commit_finality() {
 }
 
 #[tokio::test]
+async fn maker_accepts_rollover_after_commit_finality() {
+    let _guard = init_tracing();
+    let oracle_data = OliviaData::example_0();
+    let (mut maker, mut taker, order_id) =
+        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
+
+    taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
+    maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
+    next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
+
+    taker.trigger_rollover(order_id).await;
+
+    wait_next_state!(
+        order_id,
+        maker,
+        taker,
+        CfdState::IncomingRolloverProposal,
+        CfdState::OutgoingRolloverProposal
+    );
+
+    confirm!(commit transaction, order_id, maker, taker);
+
+    maker.system.accept_rollover(order_id).await.unwrap(); // This should fail
+
+    wait_next_state!(
+        order_id,
+        maker,
+        taker,
+        // FIXME: Maker wrongly changes state even when rollover does not happen
+        CfdState::ContractSetup,
+        CfdState::OpenCommitted
+    );
+}
+
+#[tokio::test]
 async fn maker_rejects_collab_settlement_after_commit_finality() {
     let _guard = init_tracing();
     let (mut maker, mut taker, order_id) =
