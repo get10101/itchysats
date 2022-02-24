@@ -245,16 +245,6 @@ impl Aggregated {
     /// Derive Cfd state based on aggregated state from the events and the
     /// protocol state
     fn derive_cfd_state(&self, role: Role) -> CfdState {
-        if let Some(rollover_state) = self.rollover_state {
-            return match rollover_state {
-                ProtocolNegotiationState::Started => match role {
-                    Role::Maker => CfdState::IncomingRolloverProposal,
-                    Role::Taker => CfdState::OutgoingRolloverProposal,
-                },
-                ProtocolNegotiationState::Accepted => CfdState::ContractSetup,
-            };
-        };
-
         if let Some(settlement_state) = self.settlement_state {
             return match settlement_state {
                 ProtocolNegotiationState::Started => match role {
@@ -262,6 +252,15 @@ impl Aggregated {
                     Role::Taker => CfdState::OutgoingSettlementProposal,
                 },
                 ProtocolNegotiationState::Accepted => CfdState::PendingClose,
+            };
+        };
+        if let Some(rollover_state) = self.rollover_state {
+            return match rollover_state {
+                ProtocolNegotiationState::Started => match role {
+                    Role::Maker => CfdState::IncomingRolloverProposal,
+                    Role::Taker => CfdState::OutgoingRolloverProposal,
+                },
+                ProtocolNegotiationState::Accepted => CfdState::ContractSetup,
             };
         };
         self.state
