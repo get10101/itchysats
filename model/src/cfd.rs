@@ -21,6 +21,7 @@ use crate::TradingPair;
 use crate::TxFeeRate;
 use crate::Usd;
 use crate::SETTLEMENT_INTERVAL;
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -1021,19 +1022,18 @@ impl Cfd {
     pub fn complete_collaborative_settlement(
         self,
         settlement: CollaborativeSettlement,
-    ) -> Result<CfdEvent> {
-        anyhow::ensure!(
-            self.can_settle_collaboratively(),
-            "Cannot complete collaborative settlement"
-        );
+    ) -> CfdEvent {
+        if self.can_settle_collaboratively() {
+            tracing::info!(order_id=%self.id(), "Collaborative settlement completed");
 
-        tracing::info!(order_id=%self.id(), "Collaborative settlement completed");
-
-        Ok(self.event(EventKind::CollaborativeSettlementCompleted {
-            spend_tx: settlement.tx,
-            script: settlement.script_pubkey,
-            price: settlement.price,
-        }))
+            self.event(EventKind::CollaborativeSettlementCompleted {
+                spend_tx: settlement.tx,
+                script: settlement.script_pubkey,
+                price: settlement.price,
+            })
+        } else {
+            self.fail_collaborative_settlement(anyhow!("Cannot complete collaborative settlement"))
+        }
     }
 
     pub fn reject_collaborative_settlement(self, reason: anyhow::Error) -> CfdEvent {
@@ -3134,10 +3134,7 @@ mod tests {
             let settlement =
                 CollaborativeSettlement::new(spend_tx, taker_script.clone(), price).unwrap();
 
-            let settle = self
-                .clone()
-                .complete_collaborative_settlement(settlement)
-                .unwrap();
+            let settle = self.clone().complete_collaborative_settlement(settlement);
             events.push(settle);
 
             let cfd = events.into_iter().fold(self, Cfd::apply);
@@ -3174,10 +3171,7 @@ mod tests {
                 .unwrap();
             let script_pubkey = settlement.script_pubkey.clone();
 
-            let settle = cfd
-                .clone()
-                .complete_collaborative_settlement(settlement)
-                .unwrap();
+            let settle = cfd.clone().complete_collaborative_settlement(settlement);
             events.push(settle);
 
             let cfd = events.into_iter().fold(cfd, Cfd::apply);

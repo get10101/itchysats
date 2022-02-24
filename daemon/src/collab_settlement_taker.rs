@@ -113,7 +113,7 @@ impl Actor {
         if let Err(e) = self
             .executor
             .execute(order_id, |cfd| {
-                cfd.complete_collaborative_settlement(settlement)
+                Ok(cfd.complete_collaborative_settlement(settlement))
             })
             .await
         {
