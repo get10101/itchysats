@@ -393,7 +393,7 @@ impl<O, T, W> Actor<O, T, W> {
         {
             self.executor
                 .execute(order_id, |cfd| {
-                    cfd.fail_collaborative_settlement(anyhow!(error))
+                    Ok(cfd.fail_collaborative_settlement(anyhow!(error)))
                 })
                 .await?;
 
@@ -414,7 +414,7 @@ impl<O, T, W> Actor<O, T, W> {
         {
             self.executor
                 .execute(order_id, |cfd| {
-                    cfd.fail_collaborative_settlement(anyhow!(error))
+                    Ok(cfd.fail_collaborative_settlement(anyhow!(error)))
                 })
                 .await?;
 

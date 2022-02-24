@@ -1036,26 +1036,16 @@ impl Cfd {
         }))
     }
 
-    pub fn reject_collaborative_settlement(self, reason: anyhow::Error) -> Result<CfdEvent> {
-        anyhow::ensure!(
-            self.can_settle_collaboratively(),
-            "Cannot reject collaborative settlement"
-        );
-
+    pub fn reject_collaborative_settlement(self, reason: anyhow::Error) -> CfdEvent {
         tracing::info!(order_id=%self.id(), "Collaborative settlement rejected: {reason:#}");
 
-        Ok(self.event(EventKind::CollaborativeSettlementRejected))
+        self.event(EventKind::CollaborativeSettlementRejected)
     }
 
-    pub fn fail_collaborative_settlement(self, error: anyhow::Error) -> Result<CfdEvent> {
-        anyhow::ensure!(
-            self.can_settle_collaboratively(),
-            "Cannot fail collaborative settlement"
-        );
-
+    pub fn fail_collaborative_settlement(self, error: anyhow::Error) -> CfdEvent {
         tracing::warn!(order_id=%self.id(), "Collaborative settlement failed: {:#}", error);
 
-        Ok(self.event(EventKind::CollaborativeSettlementFailed))
+        self.event(EventKind::CollaborativeSettlementFailed)
     }
 
     /// Given an attestation, find and decrypt the relevant CET.
