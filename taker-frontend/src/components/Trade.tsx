@@ -149,6 +149,7 @@ export default function Trade({
     }
 
     const confirmRef = useRef<HTMLButtonElement | null>(null);
+    // const confirmRefShort = useRef<HTMLButtonElement | null>(null);
 
     return (
         <VStack>
