@@ -127,7 +127,7 @@ where
             &oracle_addr,
         )));
 
-        let (cfd_actor_addr, cfd_actor_fut) = maker_cfd::Actor::new(
+        let cfd_actor_addr = maker_cfd::Actor::new(
             db,
             wallet_addr.clone(),
             settlement_interval,
@@ -139,9 +139,7 @@ where
             n_payouts,
         )
         .create(None)
-        .run();
-
-        tasks.add(cfd_actor_fut);
+        .spawn(&mut tasks);
 
         tasks.add(inc_conn_ctx.run(maker_inc_connections::Actor::new(
             Box::new(cfd_actor_addr.clone()),
@@ -336,7 +334,7 @@ where
         )));
 
         let (connection_actor_addr, connection_actor_ctx) = Context::new(None);
-        let (cfd_actor_addr, cfd_actor_fut) = taker_cfd::Actor::new(
+        let cfd_actor_addr = taker_cfd::Actor::new(
             db.clone(),
             wallet_actor_addr.clone(),
             oracle_pk,
@@ -348,9 +346,9 @@ where
             maker_identity,
         )
         .create(None)
-        .run();
+        .spawn(&mut tasks);
 
-        let (auto_rollover_addr, auto_rollover_fut) = auto_rollover::Actor::new(
+        let auto_rollover_addr = auto_rollover::Actor::new(
             db,
             oracle_pk,
             process_manager_addr,
@@ -359,10 +357,7 @@ where
             n_payouts,
         )
         .create(None)
-        .run();
-
-        tasks.add(cfd_actor_fut);
-        tasks.add(auto_rollover_fut);
+        .spawn(&mut tasks);
 
         // Timeout happens when taker did not receive two consecutive heartbeats
         let taker_heartbeat_timeout = maker_heartbeat_interval
@@ -386,8 +381,7 @@ where
             |_| true, // always restart price feed actor
         );
 
-        let (price_feed_supervisor, supervisor_fut) = supervisor.create(None).run();
-        tasks.add(supervisor_fut);
+        let price_feed_supervisor = supervisor.create(None).spawn(&mut tasks);
 
         tracing::debug!("Taker actor system ready");
 

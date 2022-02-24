@@ -81,7 +81,7 @@ where
         let this = ctx
             .address()
             .expect("actor to be able to give address to itself");
-        let (addr, fut) = rollover_taker::Actor::new(
+        let addr = rollover_taker::Actor::new(
             order_id,
             self.n_payouts,
             self.oracle_pk,
@@ -92,10 +92,9 @@ where
             self.db.clone(),
         )
         .create(None)
-        .run();
+        .spawn(&mut self.tasks);
 
         disconnected.insert(addr);
-        self.tasks.add(fut);
     }
 }
 

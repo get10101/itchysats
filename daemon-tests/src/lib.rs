@@ -174,8 +174,7 @@ impl Maker {
 
         let mut tasks = Tasks::default();
 
-        let (wallet_addr, wallet_fut) = wallet.create(None).run();
-        tasks.add(wallet_fut);
+        let wallet_addr = wallet.create(None).spawn(&mut tasks);
 
         let (price_feed_addr, price_feed_fut) = price_feed.create(None).run();
         tasks.add(async move {
@@ -302,8 +301,7 @@ impl Taker {
         let (wallet, wallet_mock) = WalletActor::new();
         let (price_feed, price_feed_mock) = PriceFeedActor::new();
 
-        let (wallet_addr, wallet_fut) = wallet.create(None).run();
-        tasks.add(wallet_fut);
+        let wallet_addr = wallet.create(None).spawn(&mut tasks);
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 

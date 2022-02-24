@@ -213,8 +213,7 @@ async fn main() -> Result<()> {
 
     let (wallet, wallet_feed_receiver) = wallet::Actor::new(opts.network.electrum(), ext_priv_key)?;
 
-    let (wallet, wallet_fut) = wallet.create(None).run();
-    tasks.add(wallet_fut);
+    let wallet = wallet.create(None).spawn(&mut tasks);
 
     if let Some(Withdraw::Withdraw {
         amount,
