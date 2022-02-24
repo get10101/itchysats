@@ -36,7 +36,7 @@ export class Position {
             case PositionKey.LONG:
                 return "green";
             case PositionKey.SHORT:
-                return "blue";
+                return "red";
         }
     }
 }
