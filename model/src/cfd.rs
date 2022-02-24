@@ -995,16 +995,15 @@ impl Cfd {
         Ok(self.event(EventKind::ContractSetupFailed))
     }
 
-    pub fn complete_rollover(
-        self,
-        dlc: Dlc,
-        funding_fee: FundingFee,
-    ) -> Result<CfdEvent, NoRolloverReason> {
-        self.can_rollover()?;
+    pub fn complete_rollover(self, dlc: Dlc, funding_fee: FundingFee) -> CfdEvent {
+        match self.can_rollover() {
+            Ok(_) => {
+                tracing::info!(order_id = %self.id, "Rollover was completed");
 
-        tracing::info!(order_id = %self.id, "Rollover was completed");
-
-        Ok(self.event(EventKind::RolloverCompleted { dlc, funding_fee }))
+                self.event(EventKind::RolloverCompleted { dlc, funding_fee })
+            }
+            Err(e) => self.fail_rollover(e.into()),
+        }
     }
 
     pub fn reject_rollover(self, reason: anyhow::Error) -> CfdEvent {
@@ -2473,10 +2472,9 @@ mod tests {
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_taker(opening_price);
 
-        let result = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
+        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
 
-        let no_rollover_reason = result.unwrap_err();
-        assert_eq!(no_rollover_reason, NoRolloverReason::Closed);
+        assert_eq!(rollover_event.event, EventKind::RolloverFailed);
     }
 
     /// Cover scenario where trigger a collab settlement during ongoing rollover
@@ -2491,13 +2489,9 @@ mod tests {
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
-        let result = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
+        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
 
-        let no_rollover_reason = result.unwrap_err();
-        assert_eq!(
-            no_rollover_reason,
-            NoRolloverReason::InCollaborativeSettlement
-        );
+        assert_eq!(rollover_event.event, EventKind::RolloverFailed);
     }
 
     #[test]
