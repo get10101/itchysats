@@ -6,14 +6,12 @@ use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
 use curve::Curve;
-use itertools::Itertools;
-use maia::generate_payouts;
-use maia::Payout;
 use ndarray::prelude::*;
 use num::FromPrimitive;
 use num::ToPrimitive;
 use rust_decimal::Decimal;
 use std::fmt;
+use std::ops::RangeInclusive;
 
 mod basis;
 mod basis_eval;
@@ -28,9 +26,7 @@ mod utils;
 ///
 /// A key item to note is that although the POC logic has been to imposed
 /// that maker goes short every time, there is no reason to make the math
-/// have this imposition as well. As such, the `long_position` parameter
-/// is used to indicate which party (Maker or Taker) has the long position,
-/// and everything else is handled internally.
+/// have this imposition as well.
 ///
 /// As well, the POC has also demanded that the Maker always has unity
 /// leverage, hence why the ability to to specify this amount has been
@@ -43,7 +39,10 @@ mod utils;
 /// * price: BTC-USD exchange rate used to create CFD contract
 /// * quantity: Interger number of one-dollar USD contracts contained in the
 /// CFD; expressed as a Usd amount
-/// * leverage: Leveraging used by the taker
+/// * long_leverage: leverage used by the party with the long position
+/// * short_leverage: leverage used by the party with the short position
+/// * n_payouts: number of segments into which the payout curve is discretised
+/// * fee: offset applied to the curve representing a fee paid between parties
 ///
 /// ### Returns
 ///
@@ -51,21 +50,33 @@ mod utils;
 pub fn calculate(
     price: Price,
     quantity: Usd,
-    leverage: Leverage,
+    long_leverage: Leverage,
+    short_leverage: Leverage,
     n_payouts: usize,
     fee: FeeFlow,
 ) -> Result<Vec<Payout>> {
-    let payouts = calculate_payout_parameters(price, quantity, leverage, n_payouts, fee)?
-        .into_iter()
-        .map(PayoutParameter::into_payouts)
-        .flatten_ok()
-        .collect::<Result<Vec<_>>>()?;
+    let payouts = calculate_payout_parameters(
+        price,
+        quantity,
+        long_leverage,
+        short_leverage,
+        n_payouts,
+        fee,
+    )?
+    .into_iter()
+    .map(PayoutParameter::into_payout)
+    .collect::<Vec<_>>();
 
     Ok(payouts)
 }
 
+pub struct Payout {
+    pub long: bitcoin::Amount,
+    pub short: bitcoin::Amount,
+    pub range: RangeInclusive<u64>,
+}
+
 const CONTRACT_VALUE: f64 = 1.;
-const SHORT_LEVERAGE: usize = 1;
 
 /// Internal calculate function for the payout curve.
 ///
@@ -75,6 +86,7 @@ fn calculate_payout_parameters(
     price: Price,
     quantity: Usd,
     long_leverage: Leverage,
+    short_leverage: Leverage,
     n_payouts: usize,
     fee: FeeFlow,
 ) -> Result<Vec<PayoutParameter>> {
@@ -88,7 +100,7 @@ fn calculate_payout_parameters(
     let payout_curve = PayoutCurve::new(
         initial_rate,
         long_leverage.get() as usize,
-        SHORT_LEVERAGE,
+        short_leverage.get() as usize,
         quantity,
         CONTRACT_VALUE,
         None,
@@ -149,12 +161,12 @@ struct PayoutParameter {
 }
 
 impl PayoutParameter {
-    fn into_payouts(self) -> Result<Vec<Payout>> {
-        generate_payouts(
-            self.left_bound..=self.right_bound,
-            bitcoin::Amount::from_sat(self.short_amount),
-            bitcoin::Amount::from_sat(self.long_amount),
-        )
+    fn into_payout(self) -> Payout {
+        Payout {
+            long: bitcoin::Amount::from_sat(self.long_amount),
+            short: bitcoin::Amount::from_sat(self.short_amount),
+            range: self.left_bound..=self.right_bound,
+        }
     }
 }
 
@@ -538,6 +550,7 @@ mod tests {
             Price::new(dec!(54000.00)).unwrap(),
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
+            Leverage::new(1).unwrap(),
             200,
             FeeFlow::Nein,
         )
@@ -759,6 +772,7 @@ mod tests {
             price,
             quantity,
             Leverage::new(5).unwrap(),
+            Leverage::new(1).unwrap(),
             200,
             FeeFlow::Nein,
         )
@@ -766,9 +780,15 @@ mod tests {
 
         let fee = FeeFlow::LongPaysShort(Amount::from_sat(100));
 
-        let payouts_with_fee =
-            calculate_payout_parameters(price, quantity, Leverage::new(5).unwrap(), 200, fee)
-                .unwrap();
+        let payouts_with_fee = calculate_payout_parameters(
+            price,
+            quantity,
+            Leverage::new(5).unwrap(),
+            Leverage::new(1).unwrap(),
+            200,
+            fee,
+        )
+        .unwrap();
         assert_eq!(payouts.len(), payouts_with_fee.len());
 
         let total_per_payout = payouts
@@ -816,6 +836,7 @@ mod tests {
             Price::new(dec!(54000.00)).unwrap(),
             Usd::new(dec!(3500.00)),
             Leverage::new(5).unwrap(),
+            Leverage::new(1).unwrap(),
             200,
             FeeFlow::Nein,
         )
@@ -835,14 +856,16 @@ mod tests {
         fn payout_totals_are_similar(
             price in arb_price(1.0, 340_000.0),
             n_contracts in arb_contracts(1, 10_000_000),
-            taker_leverage in arb_leverage(1, 200),
+            long_leverage in arb_leverage(1, 200),
+            short_leverage in arb_leverage(1, 200),
             n_payouts in 10usize..2000,
             fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
         ) {
             let payouts = calculate_payout_parameters(
                 price,
                 n_contracts,
-                taker_leverage,
+                long_leverage,
+                short_leverage,
                 n_payouts,
                 fee_flow,
             )

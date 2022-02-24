@@ -39,10 +39,11 @@ use maia::spending_tx_sighash;
 use maia::Announcement;
 use maia::PartyParams;
 use maia::PunishParams;
+use model::calculate_payouts_long_taker;
 use model::olivia;
-use model::payout_curve;
 use model::Cet;
 use model::Dlc;
+use model::Leverage;
 use model::RevokedCommit;
 use model::Role;
 use model::RolloverParams;
@@ -118,10 +119,11 @@ pub async fn new(
     let settlement_event_id = announcement.id;
     let payouts = HashMap::from_iter([(
         announcement.into(),
-        payout_curve::calculate(
+        calculate_payouts_long_taker(
             setup_params.price,
             setup_params.quantity,
             setup_params.long_leverage,
+            Leverage::new(model::SHORT_LEVERAGE).expect("non-zero leverage"),
             n_payouts,
             setup_params.fee_account.settle(),
         )?,
@@ -378,10 +380,11 @@ pub async fn roll_over(
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
         },
-        payout_curve::calculate(
+        calculate_payouts_long_taker(
             rollover_params.price,
             rollover_params.quantity,
             rollover_params.long_leverage,
+            Leverage::new(model::SHORT_LEVERAGE).expect("non-zero leverage"),
             n_payouts,
             rollover_params.fee_account.settle(),
         )?,
