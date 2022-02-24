@@ -235,6 +235,7 @@ export enum StateGroupKey {
 export interface CfdOrderRequestPayload {
     order_id: string;
     quantity: number;
+    position: string;
 }
 
 export function intoOrder(key: string, value: any): any {

@@ -95,7 +95,8 @@ export default function Trade({
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
 
-    const { isOpen, onOpen, onClose } = useDisclosure();
+    const { isOpen: isLongOpen, onOpen: onLongOpen, onClose: onLongClose } = useDisclosure();
+    const { isOpen: isShortOpen, onOpen: onShortOpen, onClose: onShortClose } = useDisclosure();
 
     const margin = (quantity / parcelSize) * marginPerParcel;
 
@@ -215,14 +216,22 @@ export default function Trade({
                                 padding="3"
                                 spacing="6"
                             >
-                                <Button colorScheme="red" size="lg" disabled h={16} w={"40"} fontSize={"xl"}>
+                                <Button
+                                    disabled={!canSubmit}
+                                    colorScheme="red"
+                                    size="lg"
+                                    onClick={onShortOpen}
+                                    h={16}
+                                    w={"40"}
+                                    fontSize={"xl"}
+                                >
                                     Short
                                 </Button>
                                 <Button
                                     disabled={!canSubmit}
                                     colorScheme="green"
                                     size="lg"
-                                    onClick={onOpen}
+                                    onClick={onLongOpen}
                                     h={16}
                                     w={"40"}
                                     fontSize={"xl"}
@@ -231,8 +240,24 @@ export default function Trade({
                                 </Button>
                                 <ConfirmOrderModal
                                     orderId={orderId!}
-                                    isOpen={isOpen}
-                                    onClose={onClose}
+                                    position="long"
+                                    isOpen={isLongOpen}
+                                    onClose={onLongClose}
+                                    isSubmitting={isSubmitting}
+                                    onSubmit={onSubmit}
+                                    quantity={quantity}
+                                    margin={margin}
+                                    leverage={leverage}
+                                    liquidationPriceAsNumber={liquidationPriceAsNumber}
+                                    feeForFirstSettlementInterval={feeForFirstSettlementInterval}
+                                    fundingRateHourly={fundingRateHourly}
+                                    fundingRateAnnualized={fundingRateAnnualized}
+                                />
+                                <ConfirmOrderModal
+                                    orderId={orderId!}
+                                    position="short"
+                                    isOpen={isShortOpen}
+                                    onClose={onShortClose}
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
                                     quantity={quantity}

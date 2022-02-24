@@ -24,6 +24,7 @@ import DollarAmount from "./DollarAmount";
 
 interface Props {
     orderId: string;
+    position: string;
     isOpen: boolean;
     onClose: any;
     onSubmit: (req: CfdOrderRequestPayload) => void;
@@ -40,6 +41,7 @@ interface Props {
 
 export default function ConfirmOrderModal({
     orderId,
+    position,
     isOpen,
     onClose,
     onSubmit,
@@ -129,6 +131,7 @@ export default function ConfirmOrderModal({
                                 onSubmit({
                                     order_id: orderId,
                                     quantity,
+                                    position,
                                 });
 
                                 onClose();
