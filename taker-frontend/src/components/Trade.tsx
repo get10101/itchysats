@@ -14,13 +14,6 @@ import {
     HStack,
     IconButton,
     InputGroup,
-    Modal,
-    ModalBody,
-    ModalCloseButton,
-    ModalContent,
-    ModalFooter,
-    ModalHeader,
-    ModalOverlay,
     NumberDecrementStepper,
     NumberIncrementStepper,
     NumberInput,
@@ -32,11 +25,9 @@ import {
     SliderThumb,
     SliderTrack,
     Table,
-    TableCaption,
     Tbody,
     Td,
     Text,
-    Tooltip,
     Tr,
     useColorModeValue,
     useDisclosure,
@@ -44,12 +35,13 @@ import {
 } from "@chakra-ui/react";
 import { motion } from "framer-motion";
 import * as React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
 import BitcoinAmount from "./BitcoinAmount";
+import ConfirmOrderModal from "./ConfirmOrderModal";
 import DollarAmount from "./DollarAmount";
 
 const MotionBox = motion<BoxProps>(Box);
@@ -98,7 +90,7 @@ export default function Trade({
         }
     }, [userHasEdited, minQuantity, setQuantity]);
 
-    let [onLongSubmit, isLongSubmitting] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
+    let [onSubmit, isSubmitting] = usePostRequest<CfdOrderRequestPayload>("/api/cfd/order");
 
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
@@ -115,7 +107,7 @@ export default function Trade({
     const quantityGreaterZero = quantity > 0;
     const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(quantity, parcelSize);
 
-    const canSubmit = orderId && !isLongSubmitting && !balanceTooLow
+    const canSubmit = orderId && !isSubmitting && !balanceTooLow
         && !quantityTooHigh && !quantityTooLow && quantityGreaterZero && quantityIsEvenlyDivisibleByIncrement;
 
     let alertBox;
@@ -155,11 +147,9 @@ export default function Trade({
         }
     }
 
-    const confirmRef = useRef<HTMLButtonElement | null>(null);
-
     return (
         <VStack>
-            <Center>
+            ?<Center>
                 <Grid
                     templateRows="repeat(1, 1fr)"
                     templateColumns="repeat(1, 1fr)"
@@ -239,90 +229,21 @@ export default function Trade({
                                 >
                                     Long
                                 </Button>
-
-                                <Modal isOpen={isOpen} onClose={onClose} size={"lg"} initialFocusRef={confirmRef}>
-                                    <ModalOverlay />
-                                    <ModalContent>
-                                        <ModalHeader>
-                                            <HStack>
-                                                <Text>
-                                                    Market buy <b>{quantity}</b> of BTC/USD @
-                                                </Text>
-                                                <DollarAmount amount={askPriceAsNumber || 0} />
-                                            </HStack>
-                                        </ModalHeader>
-                                        <ModalCloseButton />
-                                        <ModalBody>
-                                            <Table variant="striped" colorScheme="gray" size="sm">
-                                                <TableCaption>
-                                                    <HStack>
-                                                        <Text>
-                                                            By submitting
-                                                        </Text>
-                                                        <Text as={"b"}>
-                                                            <BitcoinAmount btc={margin} />
-                                                        </Text>
-                                                        <Text>
-                                                            will be locked on-chain in a contract.
-                                                        </Text>
-                                                    </HStack>
-                                                </TableCaption>
-                                                <Tbody>
-                                                    <Tr>
-                                                        <Td><Text as={"b"}>Leverage</Text></Td>
-                                                        <Td>{leverage}</Td>
-                                                    </Tr>
-                                                    <Tr>
-                                                        <Td><Text as={"b"}>Liquidation Price</Text></Td>
-                                                        <Td><DollarAmount amount={liquidationPriceAsNumber || 0} /></Td>
-                                                    </Tr>
-                                                    <Tr>
-                                                        <Td><Text as={"b"}>Margin</Text></Td>
-                                                        <Td><BitcoinAmount btc={margin} /></Td>
-                                                    </Tr>
-                                                    <Tr>
-                                                        <Td><Text as={"b"}>Funding for first 24h</Text></Td>
-                                                        <Td><BitcoinAmount btc={feeForFirstSettlementInterval} /></Td>
-                                                    </Tr>
-                                                    <Tooltip
-                                                        label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}%, annualized that is ${fundingRateAnnualized}%. The funding rate can fluctuate depending on the market movements.`}
-                                                        hasArrow
-                                                        placement={"right"}
-                                                    >
-                                                        <Tr>
-                                                            <Td><Text as={"b"}>Perpetual Costs</Text></Td>
-                                                            <Td>Hourly @ {fundingRateHourly}%</Td>
-                                                        </Tr>
-                                                    </Tooltip>
-                                                </Tbody>
-                                            </Table>
-                                        </ModalBody>
-
-                                        <ModalFooter>
-                                            <HStack>
-                                                <Button
-                                                    ref={confirmRef}
-                                                    colorScheme="teal"
-                                                    isLoading={isLongSubmitting}
-                                                    onClick={() => {
-                                                        let payload: CfdOrderRequestPayload = {
-                                                            order_id: orderId!,
-                                                            quantity,
-                                                        };
-                                                        onLongSubmit(payload);
-
-                                                        setQuantity(minQuantity);
-                                                        setUserHasEdited(false);
-
-                                                        onClose();
-                                                    }}
-                                                >
-                                                    Confirm
-                                                </Button>
-                                            </HStack>
-                                        </ModalFooter>
-                                    </ModalContent>
-                                </Modal>
+                                <ConfirmOrderModal
+                                    orderId={orderId!}
+                                    isOpen={isOpen}
+                                    onClose={onClose}
+                                    isSubmitting={isSubmitting}
+                                    onSubmit={onSubmit}
+                                    quantity={quantity}
+                                    askPriceAsNumber={askPriceAsNumber}
+                                    margin={margin}
+                                    leverage={leverage}
+                                    liquidationPriceAsNumber={liquidationPriceAsNumber}
+                                    feeForFirstSettlementInterval={feeForFirstSettlementInterval}
+                                    fundingRateHourly={fundingRateHourly}
+                                    fundingRateAnnualized={fundingRateAnnualized}
+                                />
                             </ButtonGroup>
                         </Center>
                     </GridItem>
