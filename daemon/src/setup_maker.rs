@@ -141,7 +141,7 @@ impl Actor {
     async fn emit_fail(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self
             .executor
-            .execute(self.order.id, |cfd| cfd.fail_contract_setup(error))
+            .execute(self.order.id, |cfd| Ok(cfd.fail_contract_setup(error)))
             .await
         {
             tracing::error!("Failed to execute `fail_contract_setup` command: {e:#}");

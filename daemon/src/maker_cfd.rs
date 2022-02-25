@@ -339,7 +339,7 @@ impl<O, T, W> Actor<O, T, W> {
             .await
         {
             self.executor
-                .execute(order_id, |cfd| cfd.fail_contract_setup(anyhow!(error)))
+                .execute(order_id, |cfd| Ok(cfd.fail_contract_setup(anyhow!(error))))
                 .await?;
 
             bail!("Accept failed: No active contract setup for order {order_id}")
@@ -360,7 +360,7 @@ impl<O, T, W> Actor<O, T, W> {
             .await
         {
             self.executor
-                .execute(order_id, |cfd| cfd.fail_contract_setup(anyhow!(error)))
+                .execute(order_id, |cfd| Ok(cfd.fail_contract_setup(anyhow!(error))))
                 .await?;
 
             bail!("Reject failed: No active contract setup for order {order_id}")

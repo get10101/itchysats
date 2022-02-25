@@ -984,16 +984,10 @@ impl Cfd {
         Ok(self.event(EventKind::OfferRejected))
     }
 
-    pub fn fail_contract_setup(self, error: anyhow::Error) -> Result<CfdEvent> {
-        anyhow::ensure!(
-            self.version <= 1,
-            "Failing contract setup not allowed because cfd in version {}",
-            self.version
-        );
-
+    pub fn fail_contract_setup(self, error: anyhow::Error) -> CfdEvent {
         tracing::error!(order_id = %self.id, "Contract setup failed: {error:#}");
 
-        Ok(self.event(EventKind::ContractSetupFailed))
+        self.event(EventKind::ContractSetupFailed)
     }
 
     pub fn complete_rollover(self, dlc: Dlc, funding_fee: FundingFee) -> CfdEvent {
