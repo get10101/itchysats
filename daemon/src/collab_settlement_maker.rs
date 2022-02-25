@@ -148,7 +148,7 @@ impl Actor {
         if let Err(e) = self
             .executor
             .execute(order_id, |cfd| {
-                cfd.complete_collaborative_settlement(settlement)
+                Ok(cfd.complete_collaborative_settlement(settlement))
             })
             .await
         {
@@ -162,7 +162,9 @@ impl Actor {
         let order_id = self.proposal.order_id;
         if let Err(e) = self
             .executor
-            .execute(order_id, |cfd| cfd.reject_collaborative_settlement(reason))
+            .execute(order_id, |cfd| {
+                Ok(cfd.reject_collaborative_settlement(reason))
+            })
             .await
         {
             tracing::warn!(%order_id, "Failed to execute `reject_collaborative_settlement` command: {e:#}");
@@ -175,7 +177,7 @@ impl Actor {
         let order_id = self.proposal.order_id;
         if let Err(e) = self
             .executor
-            .execute(order_id, |cfd| cfd.fail_collaborative_settlement(error))
+            .execute(order_id, |cfd| Ok(cfd.fail_collaborative_settlement(error)))
             .await
         {
             tracing::warn!(%order_id, "Failed to execute `fail_collaborative_settlement` command: {e:#}");

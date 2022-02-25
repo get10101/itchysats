@@ -21,6 +21,7 @@ use crate::TradingPair;
 use crate::TxFeeRate;
 use crate::Usd;
 use crate::SETTLEMENT_INTERVAL;
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -995,16 +996,15 @@ impl Cfd {
         Ok(self.event(EventKind::ContractSetupFailed))
     }
 
-    pub fn complete_rollover(
-        self,
-        dlc: Dlc,
-        funding_fee: FundingFee,
-    ) -> Result<CfdEvent, NoRolloverReason> {
-        self.can_rollover()?;
+    pub fn complete_rollover(self, dlc: Dlc, funding_fee: FundingFee) -> CfdEvent {
+        match self.can_rollover() {
+            Ok(_) => {
+                tracing::info!(order_id = %self.id, "Rollover was completed");
 
-        tracing::info!(order_id = %self.id, "Rollover was completed");
-
-        Ok(self.event(EventKind::RolloverCompleted { dlc, funding_fee }))
+                self.event(EventKind::RolloverCompleted { dlc, funding_fee })
+            }
+            Err(e) => self.fail_rollover(e.into()),
+        }
     }
 
     pub fn reject_rollover(self, reason: anyhow::Error) -> CfdEvent {
@@ -1022,41 +1022,30 @@ impl Cfd {
     pub fn complete_collaborative_settlement(
         self,
         settlement: CollaborativeSettlement,
-    ) -> Result<CfdEvent> {
-        anyhow::ensure!(
-            self.can_settle_collaboratively(),
-            "Cannot complete collaborative settlement"
-        );
+    ) -> CfdEvent {
+        if self.can_settle_collaboratively() {
+            tracing::info!(order_id=%self.id(), "Collaborative settlement completed");
 
-        tracing::info!(order_id=%self.id(), "Collaborative settlement completed");
-
-        Ok(self.event(EventKind::CollaborativeSettlementCompleted {
-            spend_tx: settlement.tx,
-            script: settlement.script_pubkey,
-            price: settlement.price,
-        }))
+            self.event(EventKind::CollaborativeSettlementCompleted {
+                spend_tx: settlement.tx,
+                script: settlement.script_pubkey,
+                price: settlement.price,
+            })
+        } else {
+            self.fail_collaborative_settlement(anyhow!("Cannot complete collaborative settlement"))
+        }
     }
 
-    pub fn reject_collaborative_settlement(self, reason: anyhow::Error) -> Result<CfdEvent> {
-        anyhow::ensure!(
-            self.can_settle_collaboratively(),
-            "Cannot reject collaborative settlement"
-        );
-
+    pub fn reject_collaborative_settlement(self, reason: anyhow::Error) -> CfdEvent {
         tracing::info!(order_id=%self.id(), "Collaborative settlement rejected: {reason:#}");
 
-        Ok(self.event(EventKind::CollaborativeSettlementRejected))
+        self.event(EventKind::CollaborativeSettlementRejected)
     }
 
-    pub fn fail_collaborative_settlement(self, error: anyhow::Error) -> Result<CfdEvent> {
-        anyhow::ensure!(
-            self.can_settle_collaboratively(),
-            "Cannot fail collaborative settlement"
-        );
-
+    pub fn fail_collaborative_settlement(self, error: anyhow::Error) -> CfdEvent {
         tracing::warn!(order_id=%self.id(), "Collaborative settlement failed: {:#}", error);
 
-        Ok(self.event(EventKind::CollaborativeSettlementFailed))
+        self.event(EventKind::CollaborativeSettlementFailed)
     }
 
     /// Given an attestation, find and decrypt the relevant CET.
@@ -2473,10 +2462,9 @@ mod tests {
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_taker(opening_price);
 
-        let result = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
+        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
 
-        let no_rollover_reason = result.unwrap_err();
-        assert_eq!(no_rollover_reason, NoRolloverReason::Closed);
+        assert_eq!(rollover_event.event, EventKind::RolloverFailed);
     }
 
     /// Cover scenario where trigger a collab settlement during ongoing rollover
@@ -2491,13 +2479,9 @@ mod tests {
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
-        let result = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
+        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
 
-        let no_rollover_reason = result.unwrap_err();
-        assert_eq!(
-            no_rollover_reason,
-            NoRolloverReason::InCollaborativeSettlement
-        );
+        assert_eq!(rollover_event.event, EventKind::RolloverFailed);
     }
 
     #[test]
@@ -3150,10 +3134,7 @@ mod tests {
             let settlement =
                 CollaborativeSettlement::new(spend_tx, taker_script.clone(), price).unwrap();
 
-            let settle = self
-                .clone()
-                .complete_collaborative_settlement(settlement)
-                .unwrap();
+            let settle = self.clone().complete_collaborative_settlement(settlement);
             events.push(settle);
 
             let cfd = events.into_iter().fold(self, Cfd::apply);
@@ -3190,10 +3171,7 @@ mod tests {
                 .unwrap();
             let script_pubkey = settlement.script_pubkey.clone();
 
-            let settle = cfd
-                .clone()
-                .complete_collaborative_settlement(settlement)
-                .unwrap();
+            let settle = cfd.clone().complete_collaborative_settlement(settlement);
             events.push(settle);
 
             let cfd = events.into_iter().fold(cfd, Cfd::apply);
