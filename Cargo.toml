@@ -19,4 +19,3 @@ resolver = "2"
 xtra = { git = "https://github.com/comit-network/xtra" } # We need to use unreleased patches.
 maia = { git = "https://github.com/comit-network/maia" } # Unreleased
 xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity" } # Unreleased
-sqlx = { git = "https://github.com/comit-network/sqlx", branch = "sqlite-unlock-notify" } # https://github.com/itchysats/itchysats/issues/1168
