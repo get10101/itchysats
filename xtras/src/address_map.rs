@@ -1,4 +1,5 @@
 use crate::ActorName;
+use crate::SendAsyncSafe;
 use anyhow::Result;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -81,6 +82,19 @@ where
         Ok(())
     }
 
+    pub async fn send_async<M>(&self, key: &K, msg: M) -> Result<(), NotConnected>
+    where
+        M: Message<Result = ()>,
+        A: Handler<M> + ActorName,
+    {
+        self.get(key)?
+            .send_async_safe(msg)
+            .await
+            .map_err(|_| NotConnected::new::<A>())?;
+
+        Ok(())
+    }
+
     /// Sends a message to the actor stored with the given key.
     pub async fn send_fallible<M>(&self, key: &K, msg: M) -> Result<Result<()>, NotConnected>
     where
@@ -106,7 +120,7 @@ where
 
 #[derive(thiserror::Error, Debug)]
 #[error("{0} actor is down")]
-pub struct NotConnected(String);
+pub struct NotConnected(pub String);
 
 impl NotConnected {
     pub fn new<A>() -> Self
