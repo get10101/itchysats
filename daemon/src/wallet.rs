@@ -9,6 +9,7 @@ use bdk::bitcoin::Amount;
 use bdk::bitcoin::OutPoint;
 use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Txid;
+use bdk::blockchain::Blockchain;
 use bdk::blockchain::ElectrumBlockchain;
 use bdk::blockchain::NoopProgress;
 use bdk::database::BatchDatabase;
@@ -66,8 +67,8 @@ static STD_DEV_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
         .unwrap()
     });
 
-pub struct Actor {
-    wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::MemoryDatabase>,
+pub struct Actor<B> {
+    wallet: bdk::Wallet<B, bdk::database::MemoryDatabase>,
     used_utxos: HashSet<OutPoint>,
     tasks: Tasks,
     sender: watch::Sender<Option<WalletInfo>>,
@@ -77,7 +78,7 @@ pub struct Actor {
 #[error("The transaction is already in the blockchain")]
 pub struct TransactionAlreadyInBlockchain;
 
-impl Actor {
+impl Actor<ElectrumBlockchain> {
     pub fn new(
         electrum_rpc_url: &str,
         ext_priv_key: ExtendedPrivKey,
@@ -113,7 +114,9 @@ impl Actor {
 
         Ok((actor, receiver))
     }
+}
 
+impl<B: Blockchain> Actor<B> {
     fn sync_internal(&mut self) -> Result<WalletInfo> {
         self.wallet
             .sync(NoopProgress, Some(1000))
@@ -150,7 +153,7 @@ impl Actor {
 }
 
 #[xtra_productivity]
-impl Actor {
+impl Actor<ElectrumBlockchain> {
     pub fn handle_sync(&mut self, _msg: Sync) {
         let wallet_info_update = match self.sync_internal() {
             Ok(wallet_info) => Some(wallet_info),
@@ -162,42 +165,6 @@ impl Actor {
         };
 
         let _ = self.sender.send(wallet_info_update);
-    }
-
-    pub fn handle_sign(&mut self, msg: Sign) -> Result<PartiallySignedTransaction> {
-        let mut psbt = msg.psbt;
-
-        self.wallet
-            .sign(
-                &mut psbt,
-                SignOptions {
-                    trust_witness_utxo: true,
-                    ..Default::default()
-                },
-            )
-            .context("could not sign transaction")?;
-
-        Ok(psbt)
-    }
-
-    pub fn build_party_params(
-        &mut self,
-        BuildPartyParams {
-            amount,
-            identity_pk,
-            fee_rate,
-        }: BuildPartyParams,
-    ) -> Result<PartyParams> {
-        let psbt = self
-            .wallet
-            .build_lock_tx(amount, &mut self.used_utxos, fee_rate.into())?;
-
-        Ok(PartyParams {
-            lock_psbt: psbt,
-            identity_pk,
-            lock_amount: amount,
-            address: self.wallet.get_address(AddressIndex::New)?.address,
-        })
     }
 
     pub fn handle_withdraw(&mut self, msg: Withdraw) -> Result<Txid> {
@@ -249,8 +216,50 @@ impl Actor {
     }
 }
 
+#[xtra_productivity]
+impl<B> Actor<B>
+where
+    Self: xtra::Actor,
+{
+    pub fn handle_sign(&mut self, msg: Sign) -> Result<PartiallySignedTransaction> {
+        let mut psbt = msg.psbt;
+
+        self.wallet
+            .sign(
+                &mut psbt,
+                SignOptions {
+                    trust_witness_utxo: true,
+                    ..Default::default()
+                },
+            )
+            .context("could not sign transaction")?;
+
+        Ok(psbt)
+    }
+
+    pub fn build_party_params(
+        &mut self,
+        BuildPartyParams {
+            amount,
+            identity_pk,
+            fee_rate,
+        }: BuildPartyParams,
+    ) -> Result<PartyParams> {
+        let psbt = self
+            .wallet
+            .build_lock_tx(amount, &mut self.used_utxos, fee_rate.into())?;
+
+        Ok(PartyParams {
+            lock_psbt: psbt,
+            identity_pk,
+            lock_amount: amount,
+            address: self.wallet.get_address(AddressIndex::New)?.address,
+        })
+    }
+}
+
 #[async_trait]
-impl xtra::Actor for Actor {
+impl xtra::Actor for Actor<ElectrumBlockchain> {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
