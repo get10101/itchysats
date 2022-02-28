@@ -161,7 +161,7 @@ impl Actor {
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self
             .executor
-            .execute(self.order_id, |cfd| cfd.fail_contract_setup(msg.error))
+            .execute(self.order_id, |cfd| Ok(cfd.fail_contract_setup(msg.error)))
             .await
         {
             tracing::warn!("Failed to execute `fail_contract_setup` command: {e:#}");
@@ -187,7 +187,8 @@ impl Actor {
         if let Err(e) = self
             .executor
             .execute(self.order_id, |cfd| {
-                cfd.fail_contract_setup(anyhow!("Maker did not respond within {timeout} seconds"))
+                Ok(cfd
+                    .fail_contract_setup(anyhow!("Maker did not respond within {timeout} seconds")))
             })
             .await
         {
