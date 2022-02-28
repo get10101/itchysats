@@ -1558,7 +1558,7 @@ dependencies = [
 [[package]]
 name = "maia"
 version = "0.1.0"
-source = "git+https://github.com/comit-network/maia#cf0df283e494a3452398dc62ca6c6df47963a329"
+source = "git+https://github.com/comit-network/maia#896d49ee340fc57f0ae441b979abf8aa45249085"
 dependencies = [
  "anyhow",
  "bdk",
