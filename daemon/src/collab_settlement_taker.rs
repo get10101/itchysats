@@ -12,8 +12,9 @@ use model::Price;
 use model::SettlementProposal;
 use std::time::Duration;
 use tokio_tasks::Tasks;
+use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::Stopping;
+use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
 use xtras::SendAsyncSafe;
 
 /// The maximum amount of time we give the maker to send us a response.
@@ -183,16 +184,14 @@ impl xtra::Actor for Actor {
         self.tasks.add(maker_response_timeout);
     }
 
-    async fn stopping(&mut self, ctx: &mut xtra::Context<Self>) -> xtra::KeepRunning {
-        // inform the connection actor that we stopping so it can GC the address from the hashmap
-        let me = ctx.address().expect("we are still alive");
-        let _ = self.connection.send(Stopping { me }).await;
-
-        xtra::KeepRunning::StopAll
+    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {
+        KeepRunning::StopAll
     }
 
     async fn stopped(self) -> Self::Stop {}
 }
+
+impl IPromiseIamReturningStopAllFromStopping for Actor {}
 
 #[xtra_productivity]
 impl Actor {

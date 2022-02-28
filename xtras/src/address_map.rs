@@ -11,6 +11,22 @@ pub struct AddressMap<K, A> {
     inner: HashMap<K, Address<A>>,
 }
 
+/// A loud trait that makes sure we don't forget to return `StopAll` from the `stopping` lifecycle
+/// callback.
+///
+/// Things might be outdated when you are reading this so bear that in mind.
+/// There is an open patch to `xtra` that changes the default implementation of an actor's
+/// `stopping` function to `StopSelf`. This is necessary, otherwise the supervisor implementation
+/// provided in this crate does not work correctly. At the same time though, returning `StopSelf`
+/// has another side-effect: It does not mark an address as disconnected if its only instance stops
+/// with a return value of `StopSelf`.
+///
+/// The GC mechanism of the [`AddressMap`] only works if [`Address::is_connected`] properly returns
+/// `false`. This trait is meant to remind users that we need to check this.
+///
+/// Once the bug in xtra is fixed, we can remove it again.
+pub trait IPromiseIamReturningStopAllFromStopping {}
+
 impl<K, A> Default for AddressMap<K, A> {
     fn default() -> Self {
         Self {
@@ -22,6 +38,7 @@ impl<K, A> Default for AddressMap<K, A> {
 impl<K, A> AddressMap<K, A>
 where
     K: Eq + Hash,
+    A: IPromiseIamReturningStopAllFromStopping,
 {
     pub fn get_disconnected(&mut self, key: K) -> Result<Disconnected<'_, K, A>, StillConnected> {
         let entry = self.inner.entry(key);
@@ -40,12 +57,13 @@ where
         }
     }
 
-    /// Garbage-collect an address that is no longer active.
-    pub fn gc(&mut self, stopping: Stopping<A>) {
-        self.inner.retain(|_, candidate| stopping.me != *candidate);
+    /// Garbage-collect addresses that are no longer active.
+    fn gc(&mut self) {
+        self.inner.retain(|_, candidate| candidate.is_connected());
     }
 
     pub fn insert(&mut self, key: K, address: Address<A>) {
+        self.gc();
         self.inner.insert(key, address);
     }
 
@@ -99,18 +117,6 @@ impl NotConnected {
     }
 }
 
-/// A message to notify that an actor instance is stopping.
-pub struct Stopping<A> {
-    pub me: Address<A>,
-}
-
-impl<A> Message for Stopping<A>
-where
-    A: 'static,
-{
-    type Result = ();
-}
-
 #[derive(thiserror::Error, Debug, Clone, Copy)]
 #[error("The address is still connected")]
 pub struct StillConnected;
@@ -135,28 +141,50 @@ impl<'a, K, A> Disconnected<'a, K, A> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+    use tokio_tasks::Tasks;
     use xtra::Context;
+    use xtra::KeepRunning;
 
-    #[test]
-    fn gc_removes_address() {
-        let (addr_1, _) = Context::<Dummy>::new(None);
-        let (addr_2, _) = Context::<Dummy>::new(None);
+    #[tokio::test]
+    async fn gc_removes_address_if_actor_returns_stop_all() {
+        let mut tasks = Tasks::default();
         let mut map = AddressMap::default();
-        map.insert("foo", addr_1);
-        map.insert("bar", addr_2.clone());
+        let (addr_1, ctx_1) = Context::new(None);
+        tasks.add(ctx_1.run(Dummy));
+        map.insert("addr_1", addr_1.clone());
 
-        map.gc(Stopping { me: addr_2 });
+        addr_1.send(Shutdown).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let (addr_2, _ctx_2) = Context::new(None);
+        map.insert("addr_2", addr_2); // inserting another address should GC `addr_1`
 
         assert_eq!(map.inner.len(), 1);
-        assert!(map.inner.get("foo").is_some());
+        assert!(map.inner.get("addr_2").is_some());
     }
 
     struct Dummy;
+
+    struct Shutdown;
 
     #[async_trait::async_trait]
     impl xtra::Actor for Dummy {
         type Stop = ();
 
+        async fn stopping(&mut self, _: &mut Context<Self>) -> KeepRunning {
+            KeepRunning::StopAll
+        }
+
         async fn stopped(self) -> Self::Stop {}
+    }
+
+    impl IPromiseIamReturningStopAllFromStopping for Dummy {}
+
+    #[xtra_productivity::xtra_productivity]
+    impl Dummy {
+        fn handle_shutdown(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
+            ctx.stop()
+        }
     }
 }

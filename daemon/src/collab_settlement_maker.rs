@@ -10,14 +10,14 @@ use model::CollaborativeSettlement;
 use model::Identity;
 use model::SettlementProposal;
 use xtra::prelude::MessageChannel;
+use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::Stopping;
+use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
 
 pub struct Actor {
     proposal: SettlementProposal,
     taker_id: Identity,
     connections: Box<dyn MessageChannel<maker_inc_connections::settlement::Response>>,
-    on_stopping: Vec<Box<dyn MessageChannel<Stopping<Self>>>>,
     has_accepted: bool,
     n_payouts: usize,
     executor: command::Executor,
@@ -89,20 +89,14 @@ impl xtra::Actor for Actor {
         }
     }
 
-    async fn stopping(&mut self, ctx: &mut xtra::Context<Self>) -> xtra::KeepRunning {
-        // inform other actors that we are stopping so that our
-        // address can be GCd from their AddressMaps
-        let me = ctx.address().expect("we are still alive");
-
-        for channel in self.on_stopping.iter() {
-            let _ = channel.send(Stopping { me: me.clone() }).await;
-        }
-
-        xtra::KeepRunning::StopAll
+    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {
+        KeepRunning::StopAll
     }
 
     async fn stopped(self) -> Self::Stop {}
 }
+
+impl IPromiseIamReturningStopAllFromStopping for Actor {}
 
 impl Actor {
     pub fn new(
@@ -110,10 +104,6 @@ impl Actor {
         taker_id: Identity,
         connections: &(impl MessageChannel<maker_inc_connections::settlement::Response> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
-        (on_stopping0, on_stopping1): (
-            &(impl MessageChannel<Stopping<Self>> + 'static),
-            &(impl MessageChannel<Stopping<Self>> + 'static),
-        ),
         db: sqlx::SqlitePool,
         n_payouts: usize,
     ) -> Self {
@@ -121,7 +111,6 @@ impl Actor {
             proposal,
             taker_id,
             connections: connections.clone_channel(),
-            on_stopping: vec![on_stopping0.clone_channel(), on_stopping1.clone_channel()],
             has_accepted: false,
             n_payouts,
             executor: command::Executor::new(db.clone(), process_manager),

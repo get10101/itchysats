@@ -35,7 +35,6 @@ use time::Duration;
 use tokio_tasks::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::Stopping;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 
@@ -206,19 +205,15 @@ impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     T: xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<Stopping<rollover_maker::Actor>>
         + xtra::Handler<maker_inc_connections::RegisterRollover>,
     W: 'static,
-    Self: xtra::Handler<Stopping<rollover_maker::Actor>>,
 {
     async fn handle_propose_rollover(
         &mut self,
         RolloverProposal { order_id, .. }: RolloverProposal,
         taker_id: Identity,
-        ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
         tracing::info!(%order_id, %taker_id,  "Received rollover proposal from taker");
-        let this = ctx.address().expect("acquired own address");
 
         let rollover_actor_addr = rollover_maker::Actor::new(
             order_id,
@@ -227,7 +222,6 @@ where
             taker_id,
             self.oracle_pk,
             &self.oracle,
-            (&self.takers, &this),
             self.process_manager.clone(),
             &self.takers,
             self.db.clone(),
@@ -246,8 +240,7 @@ where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
     T: xtra::Handler<maker_inc_connections::ConfirmOrder>
         + xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOrder>
-        + xtra::Handler<Stopping<setup_maker::Actor>>,
+        + xtra::Handler<maker_inc_connections::BroadcastOrder>,
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle_take_order(
@@ -255,7 +248,6 @@ where
         taker_id: Identity,
         order_id: OrderId,
         quantity: Usd,
-        ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
         tracing::debug!(%taker_id, %quantity, %order_id, "Taker wants to take an order");
 
@@ -315,10 +307,6 @@ where
             .await??;
 
         // 5. Start up contract setup actor
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
-
         let addr = setup_maker::Actor::new(
             self.db.clone(),
             self.process_manager.clone(),
@@ -327,7 +315,6 @@ where
             &self.wallet,
             &self.wallet,
             (&self.takers, &self.takers, taker_id),
-            (&self.takers, &this),
         )
         .create(None)
         .spawn(&mut self.tasks);
@@ -474,36 +461,16 @@ impl<O, T, W> Actor<O, T, W> {
     }
 }
 
-#[xtra_productivity(message_impl = false)]
-impl<O, T, W> Actor<O, T, W> {
-    async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
-        self.setup_actors.gc(message);
-    }
-
-    async fn handle_settlement_actor_stopping(
-        &mut self,
-        message: Stopping<collab_settlement_maker::Actor>,
-    ) {
-        self.settlement_actors.gc(message);
-    }
-
-    async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_maker::Actor>) {
-        self.rollover_actors.gc(msg);
-    }
-}
-
 impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
-    T: xtra::Handler<maker_inc_connections::settlement::Response>
-        + xtra::Handler<Stopping<collab_settlement_maker::Actor>>,
+    T: xtra::Handler<maker_inc_connections::settlement::Response>,
     W: 'static + Send,
 {
     async fn handle_propose_settlement(
         &mut self,
         taker_id: Identity,
         proposal: SettlementProposal,
-        ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
         let order_id = proposal.order_id;
 
@@ -512,13 +479,11 @@ where
             .get_disconnected(order_id)
             .with_context(|| format!("Settlement for order {order_id} is already in progress",))?;
 
-        let this = ctx.address().expect("self to be alive");
         let addr = collab_settlement_maker::Actor::new(
             proposal,
             taker_id,
             &self.takers,
             self.process_manager.clone(),
-            (&self.takers, &this),
             self.db.clone(),
             self.n_payouts,
         )
@@ -538,10 +503,7 @@ where
     T: xtra::Handler<maker_inc_connections::ConfirmOrder>
         + xtra::Handler<maker_inc_connections::TakerMessage>
         + xtra::Handler<maker_inc_connections::BroadcastOrder>
-        + xtra::Handler<Stopping<setup_maker::Actor>>
-        + xtra::Handler<Stopping<rollover_maker::Actor>>
         + xtra::Handler<maker_inc_connections::settlement::Response>
-        + xtra::Handler<Stopping<collab_settlement_maker::Actor>>
         + xtra::Handler<maker_inc_connections::RegisterRollover>,
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
@@ -597,17 +559,10 @@ where
         self.handle_taker_disconnected(msg.id).await
     }
 
-    async fn handle(
-        &mut self,
-        FromTaker { taker_id, msg }: FromTaker,
-        ctx: &mut xtra::Context<Self>,
-    ) {
+    async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker) {
         match msg {
             wire::TakerToMaker::TakeOrder { order_id, quantity } => {
-                if let Err(e) = self
-                    .handle_take_order(taker_id, order_id, quantity, ctx)
-                    .await
-                {
+                if let Err(e) = self.handle_take_order(taker_id, order_id, quantity).await {
                     tracing::error!("Error when handling order take request: {:#}", e)
                 }
             }
@@ -631,7 +586,6 @@ where
                             maker,
                             price,
                         },
-                        ctx,
                     )
                     .await
                 {
@@ -655,7 +609,6 @@ where
                             timestamp,
                         },
                         taker_id,
-                        ctx,
                     )
                     .await
                 {
@@ -676,7 +629,7 @@ where
 }
 
 #[async_trait]
-impl<O: 'static, T: 'static, W: 'static> xtra::Actor for Actor<O, T, W> {
+impl<O: Send + 'static, T: Send + 'static, W: Send + 'static> xtra::Actor for Actor<O, T, W> {
     type Stop = ();
 
     async fn stopped(self) -> Self::Stop {}

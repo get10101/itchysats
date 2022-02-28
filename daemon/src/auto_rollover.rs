@@ -16,7 +16,6 @@ use tokio_tasks::Tasks;
 use xtra::Actor as _;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::Stopping;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
@@ -69,7 +68,7 @@ where
         }
     }
 
-    async fn handle(&mut self, Rollover(order_id): Rollover, ctx: &mut xtra::Context<Self>) {
+    async fn handle(&mut self, Rollover(order_id): Rollover) {
         let disconnected = match self.rollover_actors.get_disconnected(order_id) {
             Ok(disconnected) => disconnected,
             Err(_) => {
@@ -78,9 +77,6 @@ where
             }
         };
 
-        let this = ctx
-            .address()
-            .expect("actor to be able to give address to itself");
         let addr = rollover_taker::Actor::new(
             order_id,
             self.n_payouts,
@@ -88,7 +84,6 @@ where
             self.conn.clone(),
             &self.oracle,
             self.process_manager.clone(),
-            (&this, &self.conn),
             self.db.clone(),
         )
         .create(None)
@@ -126,16 +121,6 @@ where
             .context("Cannot roll over"));
         }
         Ok(())
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl<O> Actor<O>
-where
-    O: xtra::Handler<oracle::GetAnnouncement>,
-{
-    async fn handle_rollover_actor_stopping(&mut self, msg: Stopping<rollover_taker::Actor>) {
-        self.rollover_actors.gc(msg);
     }
 }
 

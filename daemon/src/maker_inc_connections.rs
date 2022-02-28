@@ -28,7 +28,6 @@ use tokio_tasks::Tasks;
 use tokio_util::codec::Framed;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::Stopping;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
@@ -447,21 +446,6 @@ impl Actor {
                 let _ = self.taker_msg_channel.send(msg);
             }
         }
-    }
-
-    async fn handle_setup_actor_stopping(&mut self, message: Stopping<setup_maker::Actor>) {
-        self.setup_actors.gc(message);
-    }
-
-    async fn handle_rollover_actor_stopping(&mut self, message: Stopping<rollover_maker::Actor>) {
-        self.rollover_actors.gc(message);
-    }
-
-    async fn handle_settlement_actor_stopping(
-        &mut self,
-        message: Stopping<collab_settlement_maker::Actor>,
-    ) {
-        self.settlement_actors.gc(message);
     }
 }
 
