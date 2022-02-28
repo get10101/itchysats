@@ -357,9 +357,33 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bdk_ext::keypair;
     use bdk_ext::new_test_wallet;
     use rand::thread_rng;
     use std::collections::HashSet;
+    use xtra::Actor as _;
+
+    impl Actor<()> {
+        pub fn new_offline(utxo_amount: Amount, num_utxos: u8) -> Result<Self> {
+            let wallet = new_test_wallet(&mut thread_rng(), utxo_amount, num_utxos)?;
+
+            let (sender, _receiver) = watch::channel(None);
+
+            Ok(Self {
+                wallet,
+                tasks: Tasks::default(),
+                sender,
+                used_utxos: HashSet::default(),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl xtra::Actor for Actor<()> {
+        type Stop = ();
+
+        async fn stopped(self) -> Self::Stop {}
+    }
 
     #[test]
     fn creating_two_lock_transactions_uses_different_utxos() {
@@ -406,5 +430,41 @@ mod tests {
 
         assert_eq!(utxos_in_transaction.len(), expected_num_utxos);
         assert_eq!(utxos_in_transaction, used_utxos);
+    }
+
+    #[tokio::test]
+    async fn utxo_is_locked_after_building_party_params() {
+        let mut tasks = Tasks::default();
+
+        // create wallet with only one UTXO
+        let actor = Actor::new_offline(Amount::ONE_BTC, 1)
+            .unwrap()
+            .create(None)
+            .spawn(&mut tasks);
+
+        let (_, identity_pk) = keypair::new(&mut thread_rng());
+
+        // building party params locks our only UTXO
+        actor
+            .send(BuildPartyParams {
+                amount: Amount::from_btc(0.2).unwrap(),
+                identity_pk,
+                fee_rate: TxFeeRate::default(),
+            })
+            .await
+            .unwrap()
+            .expect("single UTXO to be available");
+
+        // our only UTXO remains locked, so the second attempt at
+        // building party params fails
+        actor
+            .send(BuildPartyParams {
+                amount: Amount::from_btc(0.2).unwrap(),
+                identity_pk,
+                fee_rate: TxFeeRate::default(),
+            })
+            .await
+            .unwrap()
+            .expect_err("single UTXO to remain locked");
     }
 }
