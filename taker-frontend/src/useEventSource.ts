@@ -26,7 +26,7 @@ export function useEventSource(url: string): [EventSource | null, boolean] {
 
             const hearbeat: Heartbeat = JSON.parse((event as EventSourceEvent).data);
             const interval_msecs = hearbeat.interval * 1000;
-            const buffered_interval_msecs = interval_msecs * 2;
+            const buffered_interval_msecs = interval_msecs * 2.2;
             timer = setTimeout(() => {
                 setIsConnected(false);
             }, buffered_interval_msecs);
