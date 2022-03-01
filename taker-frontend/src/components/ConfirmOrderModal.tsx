@@ -28,11 +28,9 @@ interface Props {
     onClose: any;
     onSubmit: (req: CfdOrderRequestPayload) => void;
     isSubmitting: boolean;
-    setQuantity: (req: any) => void;
     setUserHasEdited: (value: any) => void;
     confirmRef: any;
     quantity: number;
-    minQuantity: number;
     askPriceAsNumber?: number;
     margin: number;
     leverage: number;
@@ -49,11 +47,9 @@ export default function ConfirmOrderModal({
     onClose,
     onSubmit,
     isSubmitting,
-    setQuantity,
     setUserHasEdited,
     confirmRef,
     quantity,
-    minQuantity,
     askPriceAsNumber,
     margin,
     leverage,
@@ -140,7 +136,6 @@ export default function ConfirmOrderModal({
                                 };
                                 onSubmit(payload);
 
-                                setQuantity(minQuantity);
                                 setUserHasEdited(false);
 
                                 onClose();

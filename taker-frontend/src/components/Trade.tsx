@@ -244,14 +244,15 @@ export default function Trade({
                                     orderId={orderId!}
                                     position="long"
                                     isOpen={isLongOpen}
-                                    onClose={onLongClose}
+                                    onClose={() => {
+                                        setQuantity(minQuantity);
+                                        onLongClose();
+                                    }}
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
                                     confirmRef={confirmRef}
-                                    setQuantity={setQuantity}
                                     setUserHasEdited={setUserHasEdited}
                                     quantity={quantity}
-                                    minQuantity={minQuantity}
                                     askPriceAsNumber={askPriceAsNumber}
                                     margin={margin}
                                     leverage={leverage}
@@ -264,14 +265,17 @@ export default function Trade({
                                     orderId={orderId!}
                                     position="short"
                                     isOpen={isShortOpen}
-                                    onClose={onShortClose}
+                                    onClose={() => {
+                                        () => {
+                                            setQuantity(minQuantity);
+                                            onShortClose();
+                                        };
+                                    }}
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
                                     confirmRef={confirmRef}
-                                    setQuantity={setQuantity}
                                     setUserHasEdited={setUserHasEdited}
                                     quantity={quantity}
-                                    minQuantity={minQuantity}
                                     askPriceAsNumber={askPriceAsNumber}
                                     margin={margin}
                                     leverage={leverage}
