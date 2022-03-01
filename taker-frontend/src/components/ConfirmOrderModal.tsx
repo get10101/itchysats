@@ -128,12 +128,11 @@ export default function ConfirmOrderModal({
                             colorScheme="teal"
                             isLoading={isSubmitting}
                             onClick={() => {
-                                let payload: CfdOrderRequestPayload = {
+                                onSubmit({
                                     order_id: orderId,
                                     quantity,
                                     position,
-                                };
-                                onSubmit(payload);
+                                });
 
                                 onClose();
                             }}
