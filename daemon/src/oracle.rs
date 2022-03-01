@@ -1,6 +1,5 @@
 use crate::command;
 use crate::db;
-use crate::try_continue;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -112,9 +111,8 @@ impl Actor {
     ) {
         // we want inclusive the settlement_time_interval_hours length hence +1
         for hour in 1..announcement_lookahead.whole_hours() + 1 {
-            let event_id = try_continue!(next_announcement_after(
-                time::OffsetDateTime::now_utc() + Duration::hours(hour)
-            ));
+            let event_id =
+                next_announcement_after(time::OffsetDateTime::now_utc() + Duration::hours(hour));
 
             if self.announcements.get(&event_id).is_some() {
                 continue;
@@ -264,19 +262,18 @@ impl Actor {
 #[error("Announcement {0} not found")]
 pub struct NoAnnouncement(pub BitMexPriceEventId);
 
-pub fn next_announcement_after(timestamp: OffsetDateTime) -> Result<BitMexPriceEventId> {
-    let adjusted = ceil_to_next_hour(timestamp)?;
+pub fn next_announcement_after(timestamp: OffsetDateTime) -> BitMexPriceEventId {
+    let adjusted = ceil_to_next_hour(timestamp);
 
-    Ok(BitMexPriceEventId::with_20_digits(adjusted))
+    BitMexPriceEventId::with_20_digits(adjusted)
 }
 
-fn ceil_to_next_hour(original: OffsetDateTime) -> Result<OffsetDateTime, anyhow::Error> {
+fn ceil_to_next_hour(original: OffsetDateTime) -> OffsetDateTime {
     let timestamp = original.add(1.hours());
-    let exact_hour = Time::from_hms(timestamp.hour(), 0, 0)
-        .context("Could not adjust time for next announcement")?;
-    let adjusted = timestamp.replace_time(exact_hour);
-
-    Ok(adjusted)
+    let exact_hour = Time::from_hms(timestamp.hour(), 0, 0).expect(
+        "Exact hour from timestamp to be always within range, both docs and tests confirm it",
+    );
+    timestamp.replace_time(exact_hour)
 }
 
 #[async_trait]
@@ -352,8 +349,7 @@ mod tests {
 
     #[test]
     fn next_event_id_after_timestamp() {
-        let event_id =
-            next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc()).unwrap();
+        let event_id = next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc());
 
         assert_eq!(
             event_id.to_string(),
@@ -363,8 +359,7 @@ mod tests {
 
     #[test]
     fn next_event_id_is_midnight_next_day() {
-        let event_id =
-            next_announcement_after(datetime!(2021-09-23 23:40:00).assume_utc()).unwrap();
+        let event_id = next_announcement_after(datetime!(2021-09-23 23:40:00).assume_utc());
 
         assert_eq!(
             event_id.to_string(),

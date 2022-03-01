@@ -159,8 +159,7 @@ impl Actor {
             .await?;
 
         let oracle_event_id =
-            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + interval)
-                .context("Failed to calculate next BitMexPriceEventId")?;
+            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + interval);
 
         let taker_id = self.taker_id;
 
