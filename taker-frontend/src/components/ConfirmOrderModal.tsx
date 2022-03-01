@@ -17,6 +17,7 @@ import {
     Tr,
 } from "@chakra-ui/react";
 import * as React from "react";
+import { useRef } from "react";
 import { CfdOrderRequestPayload } from "../types";
 import BitcoinAmount from "./BitcoinAmount";
 import DollarAmount from "./DollarAmount";
@@ -28,7 +29,6 @@ interface Props {
     onClose: any;
     onSubmit: (req: CfdOrderRequestPayload) => void;
     isSubmitting: boolean;
-    confirmRef: any;
     quantity: number;
     askPriceAsNumber?: number;
     margin: number;
@@ -46,7 +46,6 @@ export default function ConfirmOrderModal({
     onClose,
     onSubmit,
     isSubmitting,
-    confirmRef,
     quantity,
     askPriceAsNumber,
     margin,
@@ -56,6 +55,8 @@ export default function ConfirmOrderModal({
     fundingRateHourly,
     fundingRateAnnualized,
 }: Props) {
+    const confirmRef = useRef<HTMLButtonElement | null>(null);
+
     return (
         <Modal
             isOpen={isOpen}

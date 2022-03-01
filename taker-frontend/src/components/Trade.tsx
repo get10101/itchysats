@@ -35,7 +35,7 @@ import {
 } from "@chakra-ui/react";
 import { motion } from "framer-motion";
 import * as React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 import usePostRequest from "../usePostRequest";
@@ -148,8 +148,6 @@ export default function Trade({
         }
     }
 
-    const confirmRef = useRef<HTMLButtonElement | null>(null);
-
     return (
         <VStack>
             ?<Center>
@@ -252,7 +250,6 @@ export default function Trade({
                                     }}
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
-                                    confirmRef={confirmRef}
                                     quantity={quantity}
                                     askPriceAsNumber={askPriceAsNumber}
                                     margin={margin}
@@ -273,7 +270,6 @@ export default function Trade({
                                     }}
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
-                                    confirmRef={confirmRef}
                                     quantity={quantity}
                                     askPriceAsNumber={askPriceAsNumber}
                                     margin={margin}
