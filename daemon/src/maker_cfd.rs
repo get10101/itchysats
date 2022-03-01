@@ -520,7 +520,7 @@ where
 
         let oracle_event_id = oracle::next_announcement_after(
             time::OffsetDateTime::now_utc() + self.settlement_interval,
-        )?;
+        );
 
         let order = Order::new(
             position_maker,
