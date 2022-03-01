@@ -28,7 +28,6 @@ interface Props {
     onClose: any;
     onSubmit: (req: CfdOrderRequestPayload) => void;
     isSubmitting: boolean;
-    setUserHasEdited: (value: any) => void;
     confirmRef: any;
     quantity: number;
     askPriceAsNumber?: number;
@@ -47,7 +46,6 @@ export default function ConfirmOrderModal({
     onClose,
     onSubmit,
     isSubmitting,
-    setUserHasEdited,
     confirmRef,
     quantity,
     askPriceAsNumber,
@@ -135,8 +133,6 @@ export default function ConfirmOrderModal({
                                     position,
                                 };
                                 onSubmit(payload);
-
-                                setUserHasEdited(false);
 
                                 onClose();
                             }}

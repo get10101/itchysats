@@ -246,12 +246,13 @@ export default function Trade({
                                     isOpen={isLongOpen}
                                     onClose={() => {
                                         setQuantity(minQuantity);
+                                        setUserHasEdited(false);
+
                                         onLongClose();
                                     }}
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
                                     confirmRef={confirmRef}
-                                    setUserHasEdited={setUserHasEdited}
                                     quantity={quantity}
                                     askPriceAsNumber={askPriceAsNumber}
                                     margin={margin}
@@ -266,15 +267,13 @@ export default function Trade({
                                     position="short"
                                     isOpen={isShortOpen}
                                     onClose={() => {
-                                        () => {
-                                            setQuantity(minQuantity);
-                                            onShortClose();
-                                        };
+                                        setQuantity(minQuantity);
+                                        setUserHasEdited(false);
+                                        onShortClose();
                                     }}
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
                                     confirmRef={confirmRef}
-                                    setUserHasEdited={setUserHasEdited}
                                     quantity={quantity}
                                     askPriceAsNumber={askPriceAsNumber}
                                     margin={margin}
