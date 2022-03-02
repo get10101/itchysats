@@ -303,7 +303,7 @@ impl Actor {
         self.state.monitor(
             params.lock.0,
             params.lock.1.script_pubkey(),
-            ScriptStatus::finality(),
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
             Event::LockFinality(order_id),
         )
     }
@@ -312,7 +312,7 @@ impl Actor {
         self.state.monitor(
             params.commit.0,
             params.commit.1.script_pubkey(),
-            ScriptStatus::finality(),
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
             Event::CommitFinality(order_id),
         )
     }
@@ -321,7 +321,7 @@ impl Actor {
         self.state.monitor(
             close_params.0,
             close_params.1,
-            ScriptStatus::finality(),
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
             Event::CloseFinality(order_id),
         );
     }
@@ -348,7 +348,7 @@ impl Actor {
         self.state.monitor(
             params.refund.0,
             params.refund.1.clone(),
-            ScriptStatus::finality(),
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
             Event::RefundFinality(order_id),
         );
     }
@@ -617,10 +617,6 @@ enum ScriptStatus {
 impl ScriptStatus {
     fn with_confirmations(confirmations: u32) -> Self {
         Self::Confirmed(Confirmed::with_confirmations(confirmations))
-    }
-
-    fn finality() -> Self {
-        Self::with_confirmations(FINALITY_CONFIRMATIONS)
     }
 }
 
@@ -961,7 +957,7 @@ impl Actor {
                 .context("Failed to monitor cet using script pubkey because no TxOut's in CET")?
                 .script_pubkey
                 .clone(),
-            ScriptStatus::finality(),
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
             Event::CetFinality(msg.order_id),
         );
 
@@ -1027,7 +1023,10 @@ mod tests {
         state.awaiting_status = HashMap::from_iter([(
             (txid1(), script1()),
             vec![
-                (ScriptStatus::finality(), commit_finality),
+                (
+                    ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+                    commit_finality,
+                ),
                 (
                     ScriptStatus::with_confirmations(CET_TIMELOCK),
                     refund_expired,
@@ -1072,11 +1071,17 @@ mod tests {
         state.awaiting_status = HashMap::from_iter([
             (
                 (txid1(), script1()),
-                vec![(ScriptStatus::finality(), cet_finality)],
+                vec![(
+                    ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+                    cet_finality,
+                )],
             ),
             (
                 (txid2(), script1()),
-                vec![(ScriptStatus::finality(), refund_finality)],
+                vec![(
+                    ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+                    refund_finality,
+                )],
             ),
         ]);
 
@@ -1104,7 +1109,10 @@ mod tests {
         let mut state = State::new(BlockHeight(0));
         state.awaiting_status = HashMap::from_iter([(
             (txid1(), script1()),
-            vec![(ScriptStatus::finality(), cet_finality)],
+            vec![(
+                ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+                cet_finality,
+            )],
         )]);
 
         let ready_events = state.update(
