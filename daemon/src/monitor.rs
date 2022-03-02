@@ -12,7 +12,6 @@ use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::electrum_client;
 use bdk::electrum_client::ElectrumApi;
-use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
 use model::CfdEvent;
 use model::Dlc;
@@ -25,7 +24,6 @@ use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::convert::TryInto;
 use std::fmt;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -284,13 +282,15 @@ impl Actor {
         // We do not act on this subscription after this call.
         let latest_block = client
             .block_headers_subscribe()
-            .context("Failed to subscribe to header notifications")?;
+            .context("Failed to subscribe to header notifications")?
+            .height
+            .into();
 
         Ok(Self {
             cfds: HashMap::new(),
             client,
             executor,
-            state: State::new(BlockHeight::try_from(latest_block)?),
+            state: State::new(latest_block),
             tasks: Tasks::default(),
             db,
         })
@@ -382,7 +382,8 @@ impl Actor {
             .client
             .block_headers_subscribe()
             .context("Failed to subscribe to header notifications")?
-            .try_into()?;
+            .height
+            .into();
 
         let num_transactions = self.state.num_monitoring();
 
@@ -674,22 +675,18 @@ impl fmt::Display for ScriptStatus {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 struct BlockHeight(u32);
 
-impl fmt::Display for BlockHeight {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+impl From<usize> for BlockHeight {
+    fn from(height: usize) -> Self {
+        let height = u32::try_from(height)
+            .expect("bitcoin block count exceeds u32::MAX in > 80_000 years; qed");
+
+        Self(height)
     }
 }
 
-impl TryFrom<HeaderNotification> for BlockHeight {
-    type Error = anyhow::Error;
-
-    fn try_from(value: HeaderNotification) -> Result<Self, Self::Error> {
-        Ok(Self(
-            value
-                .height
-                .try_into()
-                .context("Failed to fit usize into u32")?,
-        ))
+impl fmt::Display for BlockHeight {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
