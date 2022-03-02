@@ -135,6 +135,11 @@ impl<E> State<E> {
             awaiting_status: HashMap::default(),
         }
     }
+
+    /// Returns the number of transactions/scripts that we are currently monitoring.
+    fn num_monitoring(&self) -> usize {
+        self.awaiting_status.len()
+    }
 }
 
 /// Read-model of the CFD for the monitoring actor.
@@ -375,7 +380,7 @@ impl Actor {
             .context("Failed to subscribe to header notifications")?
             .try_into()?;
 
-        let num_transactions = self.state.awaiting_status.len();
+        let num_transactions = self.state.num_monitoring();
 
         tracing::trace!("Updating status of {num_transactions} transactions",);
 
