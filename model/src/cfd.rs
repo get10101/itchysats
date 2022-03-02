@@ -151,8 +151,8 @@ impl MakerOffers {
     /// Update the orders after one of them got taken.
     pub fn replicate(&self) -> MakerOffers {
         MakerOffers {
-            long: self.long.and_then(|order| Some(order.replicate())),
-            short: self.short.and_then(|order| Some(order.replicate())),
+            long: self.long.map(|order| order.replicate()),
+            short: self.short.map(|order| order.replicate()),
             tx_fee_rate: self.tx_fee_rate,
             funding_rate: self.funding_rate,
         }

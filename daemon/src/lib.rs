@@ -166,6 +166,7 @@ where
     /// Adjust the parameters which create offers for the connected takers.
     ///
     /// Once one offer is taken, another one with the same parameters is created.
+    #[allow(clippy::too_many_arguments)]
     pub async fn set_offer_params(
         &self,
         price_long: Option<Price>,

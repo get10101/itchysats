@@ -110,8 +110,8 @@ impl OfferParams {
     }
 
     pub fn create_long_order(&self, settlement_interval: Duration) -> Option<Order> {
-        if let Some(price_long) = self.price_long {
-            Some(Order::new(
+        self.price_long.map(|price_long| {
+            Order::new(
                 Position::Long,
                 price_long,
                 self.min_quantity,
@@ -122,15 +122,13 @@ impl OfferParams {
                 self.tx_fee_rate,
                 self.funding_rate,
                 self.opening_fee,
-            ))
-        } else {
-            None
-        }
+            )
+        })
     }
 
     pub fn create_short_order(&self, settlement_interval: Duration) -> Option<Order> {
-        if let Some(price_short) = self.price_short {
-            Some(Order::new(
+        self.price_short.map(|price_short| {
+            Order::new(
                 Position::Short,
                 price_short,
                 self.min_quantity,
@@ -141,10 +139,8 @@ impl OfferParams {
                 self.tx_fee_rate,
                 self.funding_rate,
                 self.opening_fee,
-            ))
-        } else {
-            None
-        }
+            )
+        })
     }
 }
 
@@ -244,7 +240,7 @@ where
         self.takers
             .send_async_safe(maker_inc_connections::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::CurrentOffers(self.current_offers.clone()),
+                msg: wire::MakerToTaker::CurrentOffers(self.current_offers),
             })
             .await?;
 
