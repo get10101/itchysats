@@ -1009,7 +1009,6 @@ static TRANSACTION_BROADCAST_COUNTER: conquer_once::Lazy<prometheus::IntCounterV
 #[cfg(test)]
 mod tests {
     use super::*;
-    use model::CET_TIMELOCK;
     use tracing_subscriber::prelude::*;
 
     #[tokio::test]
@@ -1030,10 +1029,7 @@ mod tests {
                     ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
                     commit_finality,
                 ),
-                (
-                    ScriptStatus::with_confirmations(CET_TIMELOCK),
-                    refund_expired,
-                ),
+                (ScriptStatus::with_confirmations(12), refund_expired),
             ],
         )]);
 
