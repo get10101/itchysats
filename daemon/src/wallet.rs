@@ -36,35 +36,48 @@ const SYNC_INTERVAL: Duration = Duration::from_secs(10);
 
 static BALANCE_GAUGE: conquer_once::Lazy<prometheus::Gauge> = conquer_once::Lazy::new(|| {
     prometheus::register_gauge!(
-        "balance",
+        "wallet_balance_satoshis",
         "The sum of available UTXOs in the wallet in satoshis."
     )
     .unwrap()
 });
 static NUM_UTXO_GAUGE: conquer_once::Lazy<prometheus::Gauge> = conquer_once::Lazy::new(|| {
-    prometheus::register_gauge!("num_utxos", "The number of available UTXOs in the wallet.")
-        .unwrap()
+    prometheus::register_gauge!(
+        "wallet_utxos_total",
+        "The number of available UTXOs in the wallet."
+    )
+    .unwrap()
 });
 static MEDIAN_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
     conquer_once::Lazy::new(|| {
-        prometheus::register_gauge!("median_utxo_value", "The median UTXO, in satoshis.").unwrap()
+        prometheus::register_gauge!(
+            "wallet_median_utxo_satoshis",
+            "The median UTXO, in satoshis."
+        )
+        .unwrap()
     });
 static MIN_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
     conquer_once::Lazy::new(|| {
-        prometheus::register_gauge!("min_utxo_value", "The smallest UTXO, in satoshis.").unwrap()
+        prometheus::register_gauge!(
+            "wallet_min_utxo_satoshis",
+            "The smallest UTXO, in satoshis."
+        )
+        .unwrap()
     });
 static MAX_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
     conquer_once::Lazy::new(|| {
-        prometheus::register_gauge!("max_utxo_value", "The largest UTXO, in satoshis.").unwrap()
+        prometheus::register_gauge!("wallet_max_utxo_satoshis", "The largest UTXO, in satoshis.")
+            .unwrap()
     });
 static MEAN_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
     conquer_once::Lazy::new(|| {
-        prometheus::register_gauge!("mean_utxo_value", "The mean UTXO, in satoshis.").unwrap()
+        prometheus::register_gauge!("wallet_mean_utxo_satoshis", "The mean UTXO, in satoshis.")
+            .unwrap()
     });
 static STD_DEV_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
     conquer_once::Lazy::new(|| {
         prometheus::register_gauge!(
-            "stddev_utxo_value",
+            "wallet_stddev_utxo_satoshis",
             "The standard deviation across all UTXOs, in satoshis."
         )
         .unwrap()
