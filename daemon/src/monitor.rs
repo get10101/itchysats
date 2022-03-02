@@ -1040,8 +1040,8 @@ mod tests {
         BazTimelockExpired,
     }
 
-    #[tokio::test]
-    async fn can_handle_multiple_subscriptions_on_the_same_transaction() {
+    #[test]
+    fn can_handle_multiple_subscriptions_on_the_same_transaction() {
         let _guard = tracing_subscriber::fmt()
             .with_env_filter("trace")
             .with_test_writer()
@@ -1083,8 +1083,8 @@ mod tests {
         assert_eq!(ready_events, vec![baz_expired]);
     }
 
-    #[tokio::test]
-    async fn update_for_a_script_only_results_in_event_for_corresponding_transaction() {
+    #[test]
+    fn update_for_a_script_only_results_in_event_for_corresponding_transaction() {
         let _guard = tracing_subscriber::fmt()
             .with_env_filter("trace")
             .with_test_writer()
@@ -1122,8 +1122,8 @@ mod tests {
         assert_eq!(ready_events, vec![bar_finality]);
     }
 
-    #[tokio::test]
-    async fn stop_monitoring_after_target_reached() {
+    #[test]
+    fn stop_monitoring_after_target_reached() {
         let _guard = tracing_subscriber::fmt()
             .with_env_filter("trace")
             .with_test_writer()
