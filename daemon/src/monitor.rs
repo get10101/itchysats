@@ -890,6 +890,10 @@ impl Actor {
 
         tracing::info!(%txid, kind = %kind.name(), "Transaction published on chain");
 
+        TRANSACTION_BROADCAST_COUNTER
+            .with(&HashMap::from([(KIND_LABEL, kind.name())]))
+            .inc();
+
         Ok(())
     }
 
@@ -981,6 +985,18 @@ impl Actor {
         }
     }
 }
+
+const KIND_LABEL: &str = "kind";
+
+static TRANSACTION_BROADCAST_COUNTER: conquer_once::Lazy<prometheus::IntCounterVec> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_int_counter_vec!(
+            "blockchain_transactions_broadcast_total",
+            "The number of transactions broadcast.",
+            &[KIND_LABEL]
+        )
+        .unwrap()
+    });
 
 #[cfg(test)]
 mod tests {
