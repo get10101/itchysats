@@ -9,6 +9,7 @@ use bdk::bitcoin::Amount;
 use bdk::bitcoin::OutPoint;
 use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Txid;
+use bdk::blockchain::Blockchain;
 use bdk::blockchain::ElectrumBlockchain;
 use bdk::blockchain::NoopProgress;
 use bdk::database::BatchDatabase;
@@ -25,10 +26,13 @@ use model::WalletInfo;
 use statrs::statistics::*;
 use std::collections::HashSet;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
+
+const SYNC_INTERVAL: Duration = Duration::from_secs(10);
 
 static BALANCE_GAUGE: conquer_once::Lazy<prometheus::Gauge> = conquer_once::Lazy::new(|| {
     prometheus::register_gauge!(
@@ -66,9 +70,9 @@ static STD_DEV_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
         .unwrap()
     });
 
-pub struct Actor {
-    wallet: bdk::Wallet<ElectrumBlockchain, bdk::database::MemoryDatabase>,
-    used_utxos: HashSet<OutPoint>,
+pub struct Actor<B> {
+    wallet: bdk::Wallet<B, bdk::database::MemoryDatabase>,
+    used_utxos: LockedUtxos,
     tasks: Tasks,
     sender: watch::Sender<Option<WalletInfo>>,
 }
@@ -77,7 +81,7 @@ pub struct Actor {
 #[error("The transaction is already in the blockchain")]
 pub struct TransactionAlreadyInBlockchain;
 
-impl Actor {
+impl Actor<ElectrumBlockchain> {
     pub fn new(
         electrum_rpc_url: &str,
         ext_priv_key: ExtendedPrivKey,
@@ -95,12 +99,20 @@ impl Actor {
             ElectrumBlockchain::from(client),
         )?;
 
+        // UTXOs chosen after coin selection will only be locked for a
+        // few wallet sync intervals. UTXOs which were actually
+        // included in published transactions should be marked as
+        // spent by the internal bdk wallet by then. UTXOs which ended
+        // up not being used are expected to be safe to be reused by
+        // then without incurring in double spend attempts.
+        let time_to_lock = SYNC_INTERVAL * 4;
+
         let (sender, receiver) = watch::channel(None);
         let actor = Self {
             wallet,
             tasks: Tasks::default(),
             sender,
-            used_utxos: HashSet::default(),
+            used_utxos: LockedUtxos::new(time_to_lock),
         };
 
         BALANCE_GAUGE.set(0.0);
@@ -113,7 +125,9 @@ impl Actor {
 
         Ok((actor, receiver))
     }
+}
 
+impl<B: Blockchain> Actor<B> {
     fn sync_internal(&mut self) -> Result<WalletInfo> {
         self.wallet
             .sync(NoopProgress, Some(1000))
@@ -150,7 +164,7 @@ impl Actor {
 }
 
 #[xtra_productivity]
-impl Actor {
+impl Actor<ElectrumBlockchain> {
     pub fn handle_sync(&mut self, _msg: Sync) {
         let wallet_info_update = match self.sync_internal() {
             Ok(wallet_info) => Some(wallet_info),
@@ -162,42 +176,6 @@ impl Actor {
         };
 
         let _ = self.sender.send(wallet_info_update);
-    }
-
-    pub fn handle_sign(&mut self, msg: Sign) -> Result<PartiallySignedTransaction> {
-        let mut psbt = msg.psbt;
-
-        self.wallet
-            .sign(
-                &mut psbt,
-                SignOptions {
-                    trust_witness_utxo: true,
-                    ..Default::default()
-                },
-            )
-            .context("could not sign transaction")?;
-
-        Ok(psbt)
-    }
-
-    pub fn build_party_params(
-        &mut self,
-        BuildPartyParams {
-            amount,
-            identity_pk,
-            fee_rate,
-        }: BuildPartyParams,
-    ) -> Result<PartyParams> {
-        let psbt = self
-            .wallet
-            .build_lock_tx(amount, &mut self.used_utxos, fee_rate.into())?;
-
-        Ok(PartyParams {
-            lock_psbt: psbt,
-            identity_pk,
-            lock_amount: amount,
-            address: self.wallet.get_address(AddressIndex::New)?.address,
-        })
     }
 
     pub fn handle_withdraw(&mut self, msg: Withdraw) -> Result<Txid> {
@@ -249,14 +227,55 @@ impl Actor {
     }
 }
 
+#[xtra_productivity]
+impl<B> Actor<B>
+where
+    Self: xtra::Actor,
+{
+    pub fn handle_sign(&mut self, msg: Sign) -> Result<PartiallySignedTransaction> {
+        let mut psbt = msg.psbt;
+
+        self.wallet
+            .sign(
+                &mut psbt,
+                SignOptions {
+                    trust_witness_utxo: true,
+                    ..Default::default()
+                },
+            )
+            .context("could not sign transaction")?;
+
+        Ok(psbt)
+    }
+
+    pub fn build_party_params(
+        &mut self,
+        BuildPartyParams {
+            amount,
+            identity_pk,
+            fee_rate,
+        }: BuildPartyParams,
+    ) -> Result<PartyParams> {
+        let psbt = self
+            .wallet
+            .build_lock_tx(amount, &mut self.used_utxos, fee_rate.into())?;
+
+        Ok(PartyParams {
+            lock_psbt: psbt,
+            identity_pk,
+            lock_amount: amount,
+            address: self.wallet.get_address(AddressIndex::New)?.address,
+        })
+    }
+}
+
 #[async_trait]
-impl xtra::Actor for Actor {
+impl xtra::Actor for Actor<ElectrumBlockchain> {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
 
-        self.tasks
-            .add(this.send_interval(Duration::from_secs(10), || Sync));
+        self.tasks.add(this.send_interval(SYNC_INTERVAL, || Sync));
     }
 
     async fn stopped(self) -> Self::Stop {}
@@ -308,7 +327,7 @@ trait BuildLockTx {
     fn build_lock_tx(
         &mut self,
         amount: Amount,
-        used_utxos: &mut HashSet<OutPoint>,
+        used_utxos: &mut LockedUtxos,
         fee_rate: FeeRate,
     ) -> Result<PartiallySignedTransaction>;
 }
@@ -320,7 +339,7 @@ where
     fn build_lock_tx(
         &mut self,
         amount: Amount,
-        used_utxos: &mut HashSet<OutPoint>,
+        used_utxos: &mut LockedUtxos,
         fee_rate: FeeRate,
     ) -> Result<PartiallySignedTransaction> {
         let mut builder = self.build_tx();
@@ -328,7 +347,7 @@ where
         builder
             .ordering(TxOrdering::Bip69Lexicographic) // TODO: I think this is pointless but we did this in maia.
             .fee_rate(fee_rate)
-            .unspendable(used_utxos.iter().copied().collect())
+            .unspendable(used_utxos.list())
             .add_2of2_multisig_recipient(amount);
 
         let (psbt, _) = builder.finish()?;
@@ -345,17 +364,95 @@ where
     }
 }
 
+struct LockedUtxos {
+    inner: HashSet<(Instant, OutPoint)>,
+    time_to_lock: Duration,
+}
+
+impl LockedUtxos {
+    fn new(time_to_lock: Duration) -> Self {
+        Self {
+            inner: HashSet::default(),
+            time_to_lock,
+        }
+    }
+
+    /// Add new elements to the set of locked UTXOs.
+    fn extend<T: IntoIterator<Item = OutPoint>>(&mut self, utxos: T) {
+        let now = Instant::now();
+        let utxos = utxos.into_iter().map(|utxo| (now, utxo));
+
+        self.inner.extend(utxos);
+    }
+
+    /// Return the list of locked UTXOs.
+    ///
+    /// Before creating the list, it removes all elements which should
+    /// no longer be part of the set of locked UTXOs.
+    fn list(&mut self) -> Vec<OutPoint> {
+        self.remove_expired();
+        self.inner.iter().map(|(_, utxo)| utxo).copied().collect()
+    }
+
+    /// Remove all elements in the set of locked UTXOs which have been
+    /// stored for longer than `time_to_lock`.
+    fn remove_expired(&mut self) {
+        let now = Instant::now();
+
+        self.inner = self
+            .inner
+            .drain()
+            .skip_while(|(locked_at, _)| now >= *locked_at + self.time_to_lock)
+            .collect();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bdk_ext::keypair;
     use bdk_ext::new_test_wallet;
+    use itertools::Itertools;
     use rand::thread_rng;
     use std::collections::HashSet;
+    use xtra::Actor as _;
+
+    impl Actor<()> {
+        pub fn new_offline(
+            utxo_amount: Amount,
+            num_utxos: u8,
+            time_to_lock: Duration,
+        ) -> Result<Self> {
+            let wallet = new_test_wallet(&mut thread_rng(), utxo_amount, num_utxos)?;
+
+            let (sender, _receiver) = watch::channel(None);
+
+            Ok(Self {
+                wallet,
+                tasks: Tasks::default(),
+                sender,
+                used_utxos: LockedUtxos {
+                    inner: HashSet::default(),
+                    time_to_lock,
+                },
+            })
+        }
+    }
+
+    #[async_trait]
+    impl xtra::Actor for Actor<()> {
+        type Stop = ();
+
+        async fn stopped(self) -> Self::Stop {}
+    }
 
     #[test]
     fn creating_two_lock_transactions_uses_different_utxos() {
         let mut wallet = new_test_wallet(&mut thread_rng(), Amount::from_sat(1000), 10).unwrap();
-        let mut used_utxos = HashSet::new();
+        let mut used_utxos = LockedUtxos {
+            inner: HashSet::default(),
+            time_to_lock: Duration::from_secs(120),
+        };
 
         let lock_tx_1 = wallet
             .build_lock_tx(
@@ -396,6 +493,99 @@ mod tests {
         let expected_num_utxos = 6;
 
         assert_eq!(utxos_in_transaction.len(), expected_num_utxos);
-        assert_eq!(utxos_in_transaction, used_utxos);
+        assert_eq!(
+            utxos_in_transaction.iter().sorted().collect::<Vec<_>>(),
+            used_utxos.list().iter().sorted().collect::<Vec<_>>(),
+        );
+    }
+
+    #[tokio::test]
+    async fn utxo_is_locked_after_building_party_params() {
+        let mut tasks = Tasks::default();
+
+        // create wallet with only one UTXO which will be locked for a
+        // long time after being used
+        let actor = Actor::new_offline(Amount::ONE_BTC, 1, Duration::from_secs(120))
+            .unwrap()
+            .create(None)
+            .spawn(&mut tasks);
+
+        let (_, identity_pk) = keypair::new(&mut thread_rng());
+
+        // building party params locks our only UTXO
+        actor
+            .send(BuildPartyParams {
+                amount: Amount::from_btc(0.2).unwrap(),
+                identity_pk,
+                fee_rate: TxFeeRate::default(),
+            })
+            .await
+            .unwrap()
+            .expect("single UTXO to be available");
+
+        // our only UTXO remains locked, so the second attempt at
+        // building party params fails
+        actor
+            .send(BuildPartyParams {
+                amount: Amount::from_btc(0.2).unwrap(),
+                identity_pk,
+                fee_rate: TxFeeRate::default(),
+            })
+            .await
+            .unwrap()
+            .expect_err("single UTXO to remain locked");
+    }
+
+    #[tokio::test]
+    async fn utxo_can_be_unlocked_after_marking_as_unspendable() {
+        let mut tasks = Tasks::default();
+
+        // create wallet with only one UTXO which will be locked for a
+        // few seconds after being used
+        let time_to_lock = Duration::from_secs(2);
+        let actor = Actor::new_offline(Amount::ONE_BTC, 1, time_to_lock)
+            .unwrap()
+            .create(None)
+            .spawn(&mut tasks);
+
+        let (_, identity_pk) = keypair::new(&mut thread_rng());
+
+        // building party params locks our only UTXO
+        actor
+            .send(BuildPartyParams {
+                amount: Amount::from_btc(0.2).unwrap(),
+                identity_pk,
+                fee_rate: TxFeeRate::default(),
+            })
+            .await
+            .unwrap()
+            .expect("single UTXO to be available");
+
+        // our only UTXO remains locked, so the second attempt at
+        // building party params fails
+        actor
+            .send(BuildPartyParams {
+                amount: Amount::from_btc(0.2).unwrap(),
+                identity_pk,
+                fee_rate: TxFeeRate::default(),
+            })
+            .await
+            .unwrap()
+            .expect_err("single UTXO to remain locked");
+
+        // wait for lock on UTXO to expire
+        tokio::time::sleep(time_to_lock).await;
+
+        // after enough time has passed, our UTXO can once again be
+        // used to build party params
+        let _party_params = actor
+            .send(BuildPartyParams {
+                amount: Amount::from_btc(0.2).unwrap(),
+                identity_pk,
+                fee_rate: TxFeeRate::default(),
+            })
+            .await
+            .unwrap()
+            .expect("single UTXO to be available after unlocking it");
     }
 }

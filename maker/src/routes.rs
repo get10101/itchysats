@@ -1,6 +1,7 @@
 use anyhow::Result;
 use daemon::bdk;
 use daemon::bdk::bitcoin::Network;
+use daemon::bdk::blockchain::ElectrumBlockchain;
 use daemon::oracle;
 use daemon::projection::Cfd;
 use daemon::projection::CfdAction;
@@ -35,7 +36,7 @@ use tokio::select;
 use tokio::sync::watch;
 use uuid::Uuid;
 
-pub type Maker = MakerActorSystem<oracle::Actor, wallet::Actor>;
+pub type Maker = MakerActorSystem<oracle::Actor, wallet::Actor<ElectrumBlockchain>>;
 
 #[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]

@@ -1,6 +1,7 @@
 use daemon::bdk;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
+use daemon::bdk::blockchain::ElectrumBlockchain;
 use daemon::connection::ConnectionStatus;
 use daemon::oracle;
 use daemon::projection;
@@ -35,7 +36,11 @@ use tokio::select;
 use tokio::sync::watch;
 use uuid::Uuid;
 
-type Taker = TakerActorSystem<oracle::Actor, wallet::Actor, xtra_bitmex_price_feed::Actor>;
+type Taker = TakerActorSystem<
+    oracle::Actor,
+    wallet::Actor<ElectrumBlockchain>,
+    xtra_bitmex_price_feed::Actor,
+>;
 
 const HEARTBEAT_INTERVAL_SECS: u64 = 5;
 
