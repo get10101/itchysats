@@ -290,15 +290,6 @@ impl Actor {
 }
 
 impl State {
-    fn monitor_all(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.monitor_lock_finality(params, order_id);
-        self.monitor_commit_finality(params, order_id);
-        self.monitor_commit_cet_timelock(params, order_id);
-        self.monitor_commit_refund_timelock(params, order_id);
-        self.monitor_refund_finality(params, order_id);
-        self.monitor_revoked_commit_transactions(params, order_id);
-    }
-
     fn monitor_lock_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
         self.monitor(
             params.lock.0,
@@ -846,7 +837,20 @@ impl Actor {
     async fn handle_start_monitoring(&mut self, msg: StartMonitoring) {
         let StartMonitoring { id, params } = msg;
 
-        self.state.monitor_all(&params, id);
+        let params_argument = &params;
+        let order_id = id;
+
+        self.state.monitor_lock_finality(params_argument, order_id);
+        self.state
+            .monitor_commit_finality(params_argument, order_id);
+        self.state
+            .monitor_commit_cet_timelock(params_argument, order_id);
+        self.state
+            .monitor_commit_refund_timelock(params_argument, order_id);
+        self.state
+            .monitor_refund_finality(params_argument, order_id);
+        self.state
+            .monitor_revoked_commit_transactions(params_argument, order_id);
         self.cfds.insert(id, params);
     }
 
