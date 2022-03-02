@@ -1011,6 +1011,13 @@ mod tests {
     use super::*;
     use tracing_subscriber::prelude::*;
 
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Event {
+        FooFinality,
+        BarFinality,
+        BazTimelockExpired,
+    }
+
     #[tokio::test]
     async fn can_handle_multiple_subscriptions_on_the_same_transaction() {
         let _guard = tracing_subscriber::fmt()
@@ -1018,8 +1025,8 @@ mod tests {
             .with_test_writer()
             .set_default();
 
-        let commit_finality = Event::CommitFinality(OrderId::default());
-        let refund_expired = Event::RefundTimelockExpired(OrderId::default());
+        let foo_finality = Event::FooFinality;
+        let baz_expired = Event::BazTimelockExpired;
 
         let mut state = State::new(BlockHeight(0));
         state.awaiting_status = HashMap::from_iter([(
@@ -1027,9 +1034,9 @@ mod tests {
             vec![
                 (
                     ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
-                    commit_finality,
+                    foo_finality,
                 ),
-                (ScriptStatus::with_confirmations(12), refund_expired),
+                (ScriptStatus::with_confirmations(12), baz_expired),
             ],
         )]);
 
@@ -1042,7 +1049,7 @@ mod tests {
             }]],
         );
 
-        assert_eq!(ready_events, vec![commit_finality]);
+        assert_eq!(ready_events, vec![foo_finality]);
 
         let ready_events = state.update(
             BlockHeight(20),
@@ -1053,7 +1060,7 @@ mod tests {
             }]],
         );
 
-        assert_eq!(ready_events, vec![refund_expired]);
+        assert_eq!(ready_events, vec![baz_expired]);
     }
 
     #[tokio::test]
@@ -1063,8 +1070,8 @@ mod tests {
             .with_test_writer()
             .set_default();
 
-        let cet_finality = Event::CetFinality(OrderId::default());
-        let refund_finality = Event::RefundFinality(OrderId::default());
+        let bar_finality = Event::BarFinality;
+        let foo_finality = Event::FooFinality;
 
         let mut state = State::new(BlockHeight(0));
         state.awaiting_status = HashMap::from_iter([
@@ -1072,14 +1079,14 @@ mod tests {
                 (txid1(), script1()),
                 vec![(
                     ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
-                    cet_finality,
+                    bar_finality,
                 )],
             ),
             (
                 (txid2(), script1()),
                 vec![(
                     ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
-                    refund_finality,
+                    foo_finality,
                 )],
             ),
         ]);
@@ -1093,7 +1100,7 @@ mod tests {
             }]],
         );
 
-        assert_eq!(ready_events, vec![cet_finality]);
+        assert_eq!(ready_events, vec![bar_finality]);
     }
 
     #[tokio::test]
@@ -1103,14 +1110,14 @@ mod tests {
             .with_test_writer()
             .set_default();
 
-        let cet_finality = Event::CetFinality(OrderId::default());
+        let foo_finality = Event::FooFinality;
 
         let mut state = State::new(BlockHeight(0));
         state.awaiting_status = HashMap::from_iter([(
             (txid1(), script1()),
             vec![(
                 ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
-                cet_finality,
+                foo_finality,
             )],
         )]);
 
@@ -1123,7 +1130,7 @@ mod tests {
             }]],
         );
 
-        assert_eq!(ready_events, vec![cet_finality]);
+        assert_eq!(ready_events, vec![foo_finality]);
         assert!(state.awaiting_status.is_empty());
     }
 
