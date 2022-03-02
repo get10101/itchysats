@@ -63,7 +63,7 @@ enum State {
 
 impl State {
     async fn send(&mut self, msg: wire::TakerToMaker) -> Result<()> {
-        let msg_str = msg.to_string();
+        let msg_str = msg.name();
 
         let write = match self {
             State::Connected { write, .. } => write,
@@ -383,7 +383,7 @@ impl Actor {
             }
             Some(unexpected_message) => {
                 bail!(
-                    "Unexpected message {unexpected_message} from maker {maker_identity}"
+                    "Unexpected message {} from maker {maker_identity}", unexpected_message.name()
                 )
             }
             None => {
@@ -426,7 +426,9 @@ impl Actor {
             }
         };
 
-        tracing::trace!(target: "wire", "Received {msg}");
+        let msg_name = msg.name();
+
+        tracing::trace!(target: "wire", "Received {msg_name}", );
 
         match msg {
             wire::MakerToTaker::Heartbeat => {
@@ -473,7 +475,6 @@ impl Actor {
                 }
             }
             wire::MakerToTaker::Protocol { order_id, msg } => {
-                let msg_name = msg.to_string();
                 // TODO: sending to the setup actor should not be fallible
                 match self
                     .setup_actors

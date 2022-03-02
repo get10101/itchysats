@@ -112,7 +112,7 @@ struct Connection {
 
 impl Connection {
     async fn send(&mut self, msg: wire::MakerToTaker) -> Result<()> {
-        let msg_str = msg.to_string();
+        let msg_str = msg.name();
         let taker_id = self.taker;
 
         tracing::trace!(target: "wire", %taker_id, "Sending {msg_str}");
@@ -406,7 +406,7 @@ impl Actor {
 #[xtra_productivity(message_impl = false)]
 impl Actor {
     async fn handle_msg_from_taker(&mut self, msg: maker_cfd::FromTaker) {
-        let msg_str = msg.msg.to_string();
+        let msg_str = msg.msg.name();
 
         tracing::trace!(target: "wire", taker_id = %msg.taker_id, "Received {msg_str}");
 
@@ -498,7 +498,10 @@ async fn upgrade(
             }
         }
         unexpected_message => {
-            bail!("Unexpected message {unexpected_message} from taker {taker_id}");
+            bail!(
+                "Unexpected message {} from taker {taker_id}",
+                unexpected_message.name()
+            );
         }
     }
 
