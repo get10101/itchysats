@@ -953,19 +953,17 @@ impl Actor {
     }
 
     async fn handle_monitor_cet_finality(&mut self, msg: MonitorCetFinality) -> Result<()> {
-        self.state
-            .awaiting_status
-            .entry((
-                msg.cet.txid(),
-                msg.cet
-                    .output
-                    .first()
-                    .context("Failed to monitor cet using script pubkey because no TxOut's in CET")?
-                    .script_pubkey
-                    .clone(),
-            ))
-            .or_default()
-            .push((ScriptStatus::finality(), Event::CetFinality(msg.order_id)));
+        self.state.monitor(
+            msg.cet.txid(),
+            msg.cet
+                .output
+                .first()
+                .context("Failed to monitor cet using script pubkey because no TxOut's in CET")?
+                .script_pubkey
+                .clone(),
+            ScriptStatus::finality(),
+            Event::CetFinality(msg.order_id),
+        );
 
         Ok(())
     }
