@@ -140,6 +140,11 @@ impl<E> State<E> {
     fn num_monitoring(&self) -> usize {
         self.awaiting_status.len()
     }
+
+    /// Returns all scripts that we are currently monitoring.
+    fn monitoring_scripts(&self) -> impl Iterator<Item = &Script> + Clone {
+        self.awaiting_status.keys().map(|(_, script)| script)
+    }
 }
 
 /// Read-model of the CFD for the monitoring actor.
@@ -386,7 +391,7 @@ impl Actor {
 
         let histories = self
             .client
-            .batch_script_get_history(self.state.awaiting_status.keys().map(|(_, script)| script))
+            .batch_script_get_history(self.state.monitoring_scripts())
             .context("Failed to get script histories")?;
 
         let mut ready_events = self.state.update(
