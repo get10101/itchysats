@@ -143,6 +143,8 @@ impl Actor {
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
     ) -> Self {
+        NUM_CONNECTIONS_GAUGE.set(0);
+
         Self {
             connections: HashMap::new(),
             taker_connected_channel: taker_connected_channel.clone_channel(),
@@ -165,6 +167,8 @@ impl Actor {
                 .send_async_safe(maker_cfd::TakerDisconnected { id: *taker_id })
                 .await;
         }
+
+        NUM_CONNECTIONS_GAUGE.set(self.connections.len() as i64);
     }
 
     async fn send_to_taker(
@@ -384,6 +388,8 @@ impl Actor {
             },
         );
 
+        NUM_CONNECTIONS_GAUGE.set(self.connections.len() as i64);
+
         tracing::info!(taker_id = %identity, "Connection is ready");
     }
 
@@ -530,3 +536,12 @@ impl xtra::Actor for Actor {
 
     async fn stopped(self) -> Self::Stop {}
 }
+
+static NUM_CONNECTIONS_GAUGE: conquer_once::Lazy<prometheus::IntGauge> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_int_gauge!(
+            "p2p_connections_total",
+            "The number of active p2p connections."
+        )
+        .unwrap()
+    });
