@@ -290,71 +290,6 @@ impl Actor {
 }
 
 impl State {
-    fn monitor_lock_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.monitor(
-            params.lock.0,
-            params.lock.1.script_pubkey(),
-            ScriptStatus::finality(),
-            Event::LockFinality(order_id),
-        )
-    }
-
-    fn monitor_commit_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.monitor(
-            params.commit.0,
-            params.commit.1.script_pubkey(),
-            ScriptStatus::finality(),
-            Event::CommitFinality(order_id),
-        )
-    }
-
-    fn monitor_close_finality(&mut self, close_params: (Txid, Script), order_id: OrderId) {
-        self.monitor(
-            close_params.0,
-            close_params.1,
-            ScriptStatus::finality(),
-            Event::CloseFinality(order_id),
-        );
-    }
-
-    fn monitor_commit_cet_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.monitor(
-            params.commit.0,
-            params.commit.1.script_pubkey(),
-            ScriptStatus::with_confirmations(CET_TIMELOCK),
-            Event::CetTimelockExpired(order_id),
-        );
-    }
-
-    fn monitor_commit_refund_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.monitor(
-            params.commit.0,
-            params.commit.1.script_pubkey(),
-            ScriptStatus::with_confirmations(params.refund.2),
-            Event::RefundTimelockExpired(order_id),
-        );
-    }
-
-    fn monitor_refund_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.monitor(
-            params.refund.0,
-            params.refund.1.clone(),
-            ScriptStatus::finality(),
-            Event::RefundFinality(order_id),
-        );
-    }
-
-    fn monitor_revoked_commit_transactions(&mut self, params: &MonitorParams, order_id: OrderId) {
-        for revoked_commit_tx in params.revoked_commits.iter() {
-            self.monitor(
-                revoked_commit_tx.0,
-                revoked_commit_tx.1.clone(),
-                ScriptStatus::InMempool,
-                Event::RevokedTransactionFound(order_id),
-            )
-        }
-    }
-
     fn monitor(&mut self, txid: Txid, script: Script, script_status: ScriptStatus, event: Event) {
         self.awaiting_status
             .entry((txid, script))
@@ -364,6 +299,71 @@ impl State {
 }
 
 impl Actor {
+    fn monitor_lock_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
+        self.state.monitor(
+            params.lock.0,
+            params.lock.1.script_pubkey(),
+            ScriptStatus::finality(),
+            Event::LockFinality(order_id),
+        )
+    }
+
+    fn monitor_commit_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
+        self.state.monitor(
+            params.commit.0,
+            params.commit.1.script_pubkey(),
+            ScriptStatus::finality(),
+            Event::CommitFinality(order_id),
+        )
+    }
+
+    fn monitor_close_finality(&mut self, close_params: (Txid, Script), order_id: OrderId) {
+        self.state.monitor(
+            close_params.0,
+            close_params.1,
+            ScriptStatus::finality(),
+            Event::CloseFinality(order_id),
+        );
+    }
+
+    fn monitor_commit_cet_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
+        self.state.monitor(
+            params.commit.0,
+            params.commit.1.script_pubkey(),
+            ScriptStatus::with_confirmations(CET_TIMELOCK),
+            Event::CetTimelockExpired(order_id),
+        );
+    }
+
+    fn monitor_commit_refund_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
+        self.state.monitor(
+            params.commit.0,
+            params.commit.1.script_pubkey(),
+            ScriptStatus::with_confirmations(params.refund.2),
+            Event::RefundTimelockExpired(order_id),
+        );
+    }
+
+    fn monitor_refund_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
+        self.state.monitor(
+            params.refund.0,
+            params.refund.1.clone(),
+            ScriptStatus::finality(),
+            Event::RefundFinality(order_id),
+        );
+    }
+
+    fn monitor_revoked_commit_transactions(&mut self, params: &MonitorParams, order_id: OrderId) {
+        for revoked_commit_tx in params.revoked_commits.iter() {
+            self.state.monitor(
+                revoked_commit_tx.0,
+                revoked_commit_tx.1.clone(),
+                ScriptStatus::InMempool,
+                Event::RevokedTransactionFound(order_id),
+            )
+        }
+    }
+
     async fn sync(&mut self) -> Result<()> {
         // Fetch the latest block for storing the height.
         // We do not act on this subscription after this call, as we cannot rely on
@@ -840,17 +840,12 @@ impl Actor {
         let params_argument = &params;
         let order_id = id;
 
-        self.state.monitor_lock_finality(params_argument, order_id);
-        self.state
-            .monitor_commit_finality(params_argument, order_id);
-        self.state
-            .monitor_commit_cet_timelock(params_argument, order_id);
-        self.state
-            .monitor_commit_refund_timelock(params_argument, order_id);
-        self.state
-            .monitor_refund_finality(params_argument, order_id);
-        self.state
-            .monitor_revoked_commit_transactions(params_argument, order_id);
+        self.monitor_lock_finality(params_argument, order_id);
+        self.monitor_commit_finality(params_argument, order_id);
+        self.monitor_commit_cet_timelock(params_argument, order_id);
+        self.monitor_commit_refund_timelock(params_argument, order_id);
+        self.monitor_refund_finality(params_argument, order_id);
+        self.monitor_revoked_commit_transactions(params_argument, order_id);
         self.cfds.insert(id, params);
     }
 
@@ -858,7 +853,7 @@ impl Actor {
         &mut self,
         collaborative_settlement: MonitorCollaborativeSettlement,
     ) {
-        self.state.monitor_close_finality(
+        self.monitor_close_finality(
             collaborative_settlement.tx,
             collaborative_settlement.order_id,
         );
@@ -929,31 +924,31 @@ impl Actor {
         self.cfds.insert(id, params.clone());
 
         if monitor_lock_finality {
-            self.state.monitor_lock_finality(&params, id);
+            self.monitor_lock_finality(&params, id);
         }
 
         if monitor_commit_finality {
-            self.state.monitor_commit_finality(&params, id)
+            self.monitor_commit_finality(&params, id)
         }
 
         if monitor_cet_timelock {
-            self.state.monitor_commit_cet_timelock(&params, id);
+            self.monitor_commit_cet_timelock(&params, id);
         }
 
         if monitor_refund_timelock {
-            self.state.monitor_commit_refund_timelock(&params, id);
+            self.monitor_commit_refund_timelock(&params, id);
         }
 
         if monitor_refund_finality {
-            self.state.monitor_refund_finality(&params, id);
+            self.monitor_refund_finality(&params, id);
         }
 
         if monitor_revoked_commit_transactions {
-            self.state.monitor_revoked_commit_transactions(&params, id);
+            self.monitor_revoked_commit_transactions(&params, id);
         }
 
         if let Some(params) = monitor_collaborative_settlement_finality {
-            self.state.monitor_close_finality(params, id);
+            self.monitor_close_finality(params, id);
         }
     }
 
