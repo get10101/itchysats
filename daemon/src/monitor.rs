@@ -117,18 +117,18 @@ pub struct Actor {
     executor: command::Executor,
     client: bdk::electrum_client::Client,
     tasks: Tasks,
-    state: State,
+    state: State<Event>,
     db: SqlitePool,
 }
 
 /// Internal data structure encapsulating the monitoring state without performing any IO.
-struct State {
+struct State<E> {
     latest_block_height: BlockHeight,
     current_status: BTreeMap<(Txid, Script), ScriptStatus>,
-    awaiting_status: HashMap<(Txid, Script), Vec<(ScriptStatus, Event)>>,
+    awaiting_status: HashMap<(Txid, Script), Vec<(ScriptStatus, E)>>,
 }
 
-impl State {
+impl<E> State<E> {
     fn new(latest_block_height: BlockHeight) -> Self {
         State {
             latest_block_height,
@@ -289,8 +289,8 @@ impl Actor {
     }
 }
 
-impl State {
-    fn monitor(&mut self, txid: Txid, script: Script, script_status: ScriptStatus, event: Event) {
+impl<E> State<E> {
+    fn monitor(&mut self, txid: Txid, script: Script, script_status: ScriptStatus, event: E) {
         self.awaiting_status
             .entry((txid, script))
             .or_default()
@@ -443,12 +443,15 @@ impl Actor {
     }
 }
 
-impl State {
+impl<E> State<E>
+where
+    E: fmt::Debug,
+{
     fn update(
         &mut self,
         latest_block_height: BlockHeight,
         response: Vec<Vec<GetHistoryRes>>,
-    ) -> Vec<Event> {
+    ) -> Vec<E> {
         let txid_to_script = self
             .awaiting_status
             .keys()
