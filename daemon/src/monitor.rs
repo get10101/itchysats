@@ -509,7 +509,7 @@ where
 
         if latest_block_height > self.latest_block_height {
             tracing::trace!(
-                block_height = u32::from(latest_block_height),
+                block_height = %latest_block_height,
                 "Got notification for new block"
             );
             self.latest_block_height = latest_block_height;
@@ -529,7 +529,7 @@ where
                             ScriptStatus::Confirmed(Confirmed::from_inclusion_and_latest_block(
                                 u32::try_from(status.height)
                                     .expect("we checked that height is > 0"),
-                                u32::from(self.latest_block_height),
+                                self.latest_block_height,
                             ))
                         }
                     }
@@ -631,8 +631,8 @@ impl Confirmed {
     /// Our information about the latest block might be outdated. To avoid an
     /// overflow, we make sure the depth is 0 in case the inclusion height
     /// exceeds our latest known block,
-    fn from_inclusion_and_latest_block(inclusion_height: u32, latest_block: u32) -> Self {
-        let depth = latest_block.saturating_sub(inclusion_height);
+    fn from_inclusion_and_latest_block(inclusion_height: u32, latest_block: BlockHeight) -> Self {
+        let depth = latest_block.0.saturating_sub(inclusion_height);
 
         Self { depth }
     }
@@ -675,9 +675,9 @@ impl fmt::Display for ScriptStatus {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 struct BlockHeight(u32);
 
-impl From<BlockHeight> for u32 {
-    fn from(height: BlockHeight) -> Self {
-        height.0
+impl fmt::Display for BlockHeight {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
