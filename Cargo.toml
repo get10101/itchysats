@@ -12,6 +12,7 @@ members = [
   "xtra-bitmex-price-feed",
   "bdk-ext",
   "model",
+  "btsieve",
 ]
 resolver = "2"
 
