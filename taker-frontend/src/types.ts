@@ -36,7 +36,7 @@ export class Position {
             case PositionKey.LONG:
                 return "green";
             case PositionKey.SHORT:
-                return "blue";
+                return "red";
         }
     }
 }
@@ -235,6 +235,7 @@ export enum StateGroupKey {
 export interface CfdOrderRequestPayload {
     order_id: string;
     quantity: number;
+    position: string;
 }
 
 export function intoOrder(key: string, value: any): any {

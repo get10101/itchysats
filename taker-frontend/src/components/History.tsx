@@ -62,6 +62,7 @@ interface CfdDetailsProps {
 }
 
 const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsProps) => {
+    const position = cfd.position;
     const initialPrice = cfd.initial_price;
     const liquidationPrice = cfd.liquidation_price;
     const closing_price = cfd.closing_price || 0;
@@ -116,6 +117,15 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
             <VStack>
                 <Table size="sm" variant={"unstyled"}>
                     <Tbody>
+                        <Tr>
+                            <Td><Text as={"b"}>Position</Text></Td>
+                            <Td
+                                textAlign="right"
+                                textColor={useColorModeValue(position.getColorScheme(), position.getColorScheme())}
+                            >
+                                {position.key.toString()}
+                            </Td>
+                        </Tr>
                         <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
                             <Td><Text as={"b"}>{profitLabel}</Text></Td>
                             <Td textAlign="right">
