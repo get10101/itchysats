@@ -37,7 +37,7 @@
     "react-refresh": "^0.11.0",
     "react-router-dom": "6.2.2",
     "react-use-websocket": "^3.0.0",
-    "typescript": "^4.5.5",
+    "typescript": "^4.6.2",
     "vite": "^2.8.4",
     "vite-jest": "^0.1.4",
     "web-vitals": "^2.1.4"
