@@ -300,63 +300,75 @@ impl State {
     }
 
     fn monitor_lock_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.awaiting_status
-            .entry((params.lock.0, params.lock.1.script_pubkey()))
-            .or_default()
-            .push((ScriptStatus::finality(), Event::LockFinality(order_id)));
+        self.monitor(
+            params.lock.0,
+            params.lock.1.script_pubkey(),
+            ScriptStatus::finality(),
+            Event::LockFinality(order_id),
+        )
     }
 
     fn monitor_commit_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.awaiting_status
-            .entry((params.commit.0, params.commit.1.script_pubkey()))
-            .or_default()
-            .push((ScriptStatus::finality(), Event::CommitFinality(order_id)));
+        self.monitor(
+            params.commit.0,
+            params.commit.1.script_pubkey(),
+            ScriptStatus::finality(),
+            Event::CommitFinality(order_id),
+        )
     }
 
     fn monitor_close_finality(&mut self, close_params: (Txid, Script), order_id: OrderId) {
-        self.awaiting_status
-            .entry(close_params)
-            .or_default()
-            .push((ScriptStatus::finality(), Event::CloseFinality(order_id)));
+        self.monitor(
+            close_params.0,
+            close_params.1,
+            ScriptStatus::finality(),
+            Event::CloseFinality(order_id),
+        );
     }
 
     fn monitor_commit_cet_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.awaiting_status
-            .entry((params.commit.0, params.commit.1.script_pubkey()))
-            .or_default()
-            .push((
-                ScriptStatus::with_confirmations(CET_TIMELOCK),
-                Event::CetTimelockExpired(order_id),
-            ));
+        self.monitor(
+            params.commit.0,
+            params.commit.1.script_pubkey(),
+            ScriptStatus::with_confirmations(CET_TIMELOCK),
+            Event::CetTimelockExpired(order_id),
+        );
     }
 
     fn monitor_commit_refund_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.awaiting_status
-            .entry((params.commit.0, params.commit.1.script_pubkey()))
-            .or_default()
-            .push((
-                ScriptStatus::with_confirmations(params.refund.2),
-                Event::RefundTimelockExpired(order_id),
-            ));
+        self.monitor(
+            params.commit.0,
+            params.commit.1.script_pubkey(),
+            ScriptStatus::with_confirmations(params.refund.2),
+            Event::RefundTimelockExpired(order_id),
+        );
     }
 
     fn monitor_refund_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.awaiting_status
-            .entry((params.refund.0, params.refund.1.clone()))
-            .or_default()
-            .push((ScriptStatus::finality(), Event::RefundFinality(order_id)));
+        self.monitor(
+            params.refund.0,
+            params.refund.1.clone(),
+            ScriptStatus::finality(),
+            Event::RefundFinality(order_id),
+        );
     }
 
     fn monitor_revoked_commit_transactions(&mut self, params: &MonitorParams, order_id: OrderId) {
         for revoked_commit_tx in params.revoked_commits.iter() {
-            self.awaiting_status
-                .entry((revoked_commit_tx.0, revoked_commit_tx.1.clone()))
-                .or_default()
-                .push((
-                    ScriptStatus::InMempool,
-                    Event::RevokedTransactionFound(order_id),
-                ));
+            self.monitor(
+                revoked_commit_tx.0,
+                revoked_commit_tx.1.clone(),
+                ScriptStatus::InMempool,
+                Event::RevokedTransactionFound(order_id),
+            )
         }
+    }
+
+    fn monitor(&mut self, txid: Txid, script: Script, script_status: ScriptStatus, event: Event) {
+        self.awaiting_status
+            .entry((txid, script))
+            .or_default()
+            .push((script_status, event));
     }
 }
 
