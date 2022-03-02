@@ -135,13 +135,11 @@ impl MakerOffers {
     pub fn take_offer_by_order_id(&self, id: OrderId) -> Option<Order> {
         if let Some(long) = self.long {
             if long.id == id {
-                self.long.expect("be still valid").replicate();
                 return Some(long);
             }
         }
         if let Some(short) = self.short {
             if short.id == id {
-                self.short.expect("be still valid").replicate();
                 return Some(short);
             }
         }

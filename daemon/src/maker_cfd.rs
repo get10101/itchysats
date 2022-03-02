@@ -144,8 +144,6 @@ impl OfferParams {
     }
 }
 
-// If I define an extension trait, can I still send the vanilla one?
-
 fn create_maker_offers(offer_params: OfferParams, settlement_interval: Duration) -> MakerOffers {
     MakerOffers {
         long: offer_params.create_long_order(settlement_interval),
