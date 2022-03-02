@@ -27,7 +27,6 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt;
-use std::ops::Add;
 use std::time::Duration;
 use tokio::time::sleep;
 use tokio_tasks::Tasks;
@@ -691,13 +690,6 @@ impl TryFrom<HeaderNotification> for BlockHeight {
                 .try_into()
                 .context("Failed to fit usize into u32")?,
         ))
-    }
-}
-
-impl Add<u32> for BlockHeight {
-    type Output = BlockHeight;
-    fn add(self, rhs: u32) -> Self::Output {
-        BlockHeight(self.0 + rhs)
     }
 }
 
