@@ -12,7 +12,6 @@ use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::electrum_client;
 use bdk::electrum_client::ElectrumApi;
-use bdk::electrum_client::GetHistoryRes;
 use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
 use model::CfdEvent;
@@ -385,7 +384,20 @@ impl Actor {
             .batch_script_get_history(self.state.awaiting_status.keys().map(|(_, script)| script))
             .context("Failed to get script histories")?;
 
-        let mut ready_events = self.state.update(latest_block_height, histories);
+        let mut ready_events = self.state.update(
+            latest_block_height,
+            histories
+                .into_iter()
+                .map(|list| {
+                    list.into_iter()
+                        .map(|response| TxStatus {
+                            height: response.height,
+                            tx_hash: response.tx_hash,
+                        })
+                        .collect()
+                })
+                .collect(),
+        );
 
         while let Some(event) = ready_events.pop() {
             match event {
@@ -443,6 +455,16 @@ impl Actor {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct TxStatus {
+    /// Confirmation height of the transaction.
+    ///
+    /// 0 if unconfirmed.
+    /// -1 if unconfirmed while some of its inputs are unconfirmed too.
+    pub height: i32,
+    pub tx_hash: Txid,
+}
+
 impl<E> State<E>
 where
     E: fmt::Debug,
@@ -450,7 +472,7 @@ where
     fn update(
         &mut self,
         latest_block_height: BlockHeight,
-        response: Vec<Vec<GetHistoryRes>>,
+        status_list_batch: Vec<Vec<TxStatus>>,
     ) -> Vec<E> {
         let txid_to_script = self
             .awaiting_status
@@ -458,10 +480,10 @@ where
             .cloned()
             .collect::<HashMap<_, _>>();
 
-        let mut histories = HashMap::new();
-        for history in response {
-            for response in history {
-                let txid = response.tx_hash;
+        let mut status_map = HashMap::new();
+        for status_list in status_list_batch {
+            for status in status_list {
+                let txid = status.tx_hash;
                 let script = match txid_to_script.get(&txid) {
                     None => {
                         tracing::trace!(
@@ -471,7 +493,7 @@ where
                     }
                     Some(script) => script,
                 };
-                histories.insert((txid, script.clone()), response);
+                status_map.insert((txid, script.clone()), status);
             }
         }
 
@@ -488,14 +510,14 @@ where
             .awaiting_status
             .iter()
             .map(|(key, _old_status)| {
-                let new_script_status = match histories.get(key) {
+                let new_script_status = match status_map.get(key) {
                     None => ScriptStatus::Unseen,
-                    Some(history_entry) => {
-                        if history_entry.height <= 0 {
+                    Some(status) => {
+                        if status.height <= 0 {
                             ScriptStatus::InMempool
                         } else {
                             ScriptStatus::Confirmed(Confirmed::from_inclusion_and_latest_block(
-                                u32::try_from(history_entry.height)
+                                u32::try_from(status.height)
                                     .expect("we checked that height is > 0"),
                                 u32::from(self.latest_block_height),
                             ))
@@ -1042,10 +1064,9 @@ mod tests {
 
         let ready_events = state.update(
             BlockHeight(10),
-            vec![vec![GetHistoryRes {
+            vec![vec![TxStatus {
                 height: 5,
                 tx_hash: txid1(),
-                fee: None,
             }]],
         );
 
@@ -1053,10 +1074,9 @@ mod tests {
 
         let ready_events = state.update(
             BlockHeight(20),
-            vec![vec![GetHistoryRes {
+            vec![vec![TxStatus {
                 height: 5,
                 tx_hash: txid1(),
-                fee: None,
             }]],
         );
 
@@ -1093,10 +1113,9 @@ mod tests {
 
         let ready_events = state.update(
             BlockHeight(0),
-            vec![vec![GetHistoryRes {
+            vec![vec![TxStatus {
                 height: 5,
                 tx_hash: txid1(),
-                fee: None,
             }]],
         );
 
@@ -1123,10 +1142,9 @@ mod tests {
 
         let ready_events = state.update(
             BlockHeight(0),
-            vec![vec![GetHistoryRes {
+            vec![vec![TxStatus {
                 height: 5,
                 tx_hash: txid1(),
-                fee: None,
             }]],
         );
 
