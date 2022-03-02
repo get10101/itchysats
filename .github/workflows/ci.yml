@@ -14,7 +14,7 @@ jobs:
   formatting:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2.4.0
+      - uses: actions/checkout@v3
       - uses: dprint/check@v2.0
 
   gather_workspace_members:
@@ -22,7 +22,7 @@ jobs:
     outputs:
       members: ${{ steps.cargo-metadata.outputs.members }}
     steps:
-      - uses: actions/checkout@v2.4.0
+      - uses: actions/checkout@v3
       - name: Setup rust toolchain
         run: rustup show
       - id: cargo-metadata
@@ -41,7 +41,7 @@ jobs:
       run:
         working-directory: ${{ matrix.crate }}
     steps:
-      - uses: actions/checkout@v2.4.0
+      - uses: actions/checkout@v3
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v1.3.0
@@ -52,7 +52,7 @@ jobs:
     if: github.event.ref != 'refs/heads/master'
 
     steps:
-      - uses: actions/checkout@v2.0.0
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
       - name: Get all commits on current master
@@ -73,7 +73,7 @@ jobs:
       run:
         working-directory: ${{ matrix.bin }}-frontend
     steps:
-      - uses: actions/checkout@v2.4.0
+      - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
         with:
           cache: 'yarn'
@@ -91,7 +91,7 @@ jobs:
         os: [ ubuntu-latest, macos-latest ]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v2.4.0
+      - uses: actions/checkout@v3
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v1.3.0
@@ -114,7 +114,7 @@ jobs:
   daemons_arm_build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2.4.0
+      - uses: actions/checkout@v3
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v1.3.0

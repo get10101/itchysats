@@ -35,7 +35,7 @@ jobs:
             os: ubuntu-latest
             docker_arch: arm64
     steps:
-      - uses: actions/checkout@v2.4.0
+      - uses: actions/checkout@v3
 
       - uses: ./.github/actions/build-release-binary
         id: build
