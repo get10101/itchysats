@@ -1,4 +1,5 @@
 use crate::cfd_actors::insert_cfd_and_update_feed;
+use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_maker;
 use crate::command;
 use crate::future_ext::FutureExt;
@@ -99,7 +100,8 @@ pub struct OfferParams {
     pub min_quantity: Usd,
     pub max_quantity: Usd,
     pub tx_fee_rate: TxFeeRate,
-    pub funding_rate: FundingRate,
+    pub funding_rate_long: FundingRate,
+    pub funding_rate_short: FundingRate,
     pub opening_fee: OpeningFee,
 }
 
@@ -119,7 +121,7 @@ impl OfferParams {
                 Self::pick_oracle_event_id(settlement_interval),
                 settlement_interval,
                 self.tx_fee_rate,
-                self.funding_rate,
+                self.funding_rate_long,
                 self.opening_fee,
             )
         })
@@ -136,7 +138,7 @@ impl OfferParams {
                 Self::pick_oracle_event_id(settlement_interval),
                 settlement_interval,
                 self.tx_fee_rate,
-                self.funding_rate,
+                self.funding_rate_short,
                 self.opening_fee,
             )
         })
@@ -148,7 +150,8 @@ fn create_maker_offers(offer_params: OfferParams, settlement_interval: Duration)
         long: offer_params.create_long_order(settlement_interval),
         short: offer_params.create_short_order(settlement_interval),
         tx_fee_rate: offer_params.tx_fee_rate,
-        funding_rate: offer_params.funding_rate,
+        funding_rate_long: offer_params.funding_rate_long,
+        funding_rate_short: offer_params.funding_rate_short,
     }
 }
 
@@ -478,13 +481,20 @@ impl<O, T, W> Actor<O, T, W> {
 
         let order_id = msg.order_id;
 
+        let mut conn = self.db.acquire().await?;
+        let cfd = load_cfd(order_id, &mut conn).await?;
+        let funding_rate = match cfd.position() {
+            Position::Long => current_offers.funding_rate_long,
+            Position::Short => current_offers.funding_rate_short,
+        };
+
         if let Err(error) = self
             .rollover_actors
             .send(
                 &order_id,
                 rollover_maker::AcceptRollover {
                     tx_fee_rate: current_offers.tx_fee_rate,
-                    funding_rate: current_offers.funding_rate,
+                    funding_rate,
                 },
             )
             .timeout(HANDLE_ACCEPT_ROLLOVER_MESSAGE_TIMEOUT)
