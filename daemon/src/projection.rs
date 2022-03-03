@@ -944,7 +944,7 @@ pub struct CfdOrder {
     pub margin_per_parcel: Amount,
 
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub initial_funding_fee_per_parcel: Amount,
+    pub initial_funding_fee_per_parcel: SignedAmount,
 
     #[serde(rename = "leverage")]
     pub leverage_taker: Leverage,
@@ -970,6 +970,22 @@ impl TryFrom<Order> for CfdOrder {
 
         let (long_leverage, short_leverage) =
             long_and_short_leverage(order.leverage_taker, order.origin.into(), own_position);
+
+        let initial_funding_fee_per_parcel = calculate_funding_fee(
+            order.price,
+            parcel_size,
+            long_leverage,
+            short_leverage,
+            order.funding_rate,
+            SETTLEMENT_INTERVAL.whole_hours(),
+        )
+        .context("unable to calculate initial funding fee")?;
+
+        // Use a temporary fee account to define the funding fee's sign
+        let temp_fee_account = FeeAccount::new(own_position, order.origin.into());
+        let initial_funding_fee_per_parcel = temp_fee_account
+            .add_funding_fee(initial_funding_fee_per_parcel)
+            .balance();
 
         Ok(Self {
             id: order.id,
@@ -997,16 +1013,7 @@ impl TryFrom<Order> for CfdOrder {
             funding_rate_annualized_percent: AnnualisedFundingPercent::from(order.funding_rate)
                 .to_string(),
             funding_rate_hourly_percent: HourlyFundingPercent::from(order.funding_rate).to_string(),
-            initial_funding_fee_per_parcel: calculate_funding_fee(
-                order.price,
-                parcel_size,
-                long_leverage,
-                short_leverage,
-                order.funding_rate,
-                SETTLEMENT_INTERVAL.whole_hours(),
-            )
-            .context("unable to calcualte initial funding fee")?
-            .to_inner(),
+            initial_funding_fee_per_parcel,
         })
     }
 }
