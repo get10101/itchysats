@@ -11,6 +11,7 @@ export function unixTimestampToDate(unixTimestamp: number): Date {
 export interface Order {
     id: string;
     trading_pair: string;
+    // this is the maker's position
     position: Position;
     price: string;
     min_quantity: string;
@@ -41,7 +42,7 @@ export class Position {
     }
 }
 
-enum PositionKey {
+export enum PositionKey {
     LONG = "Long",
     SHORT = "Short",
 }

@@ -37,6 +37,7 @@ import { motion } from "framer-motion";
 import * as React from "react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { GlobalTradeParams, SomeOrder } from "../App";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
@@ -49,53 +50,39 @@ const MotionBox = motion<BoxProps>(Box);
 // TODO: Consider inlining the Trade code in App, there is not much value in this abstraction anymore
 //  Recommendation: Inline, see how it feels and then potentially carve out some new abstraction if there is one clearly visible
 interface TradeProps {
-    // TODO: Thought about grouping these as long / short params, but probably better to first inline and see boundaries better
-    longOrderId?: string;
-    longPrice?: number;
-    longMarginPerParcel?: number;
-    longInitialFundingFeePerParcel?: number;
-
-    shortOrderId?: string;
-    shortPrice?: number;
-    shortMarginPerParcel?: number;
-    shortInitialFundingFeePerParcel?: number;
-
-    // TODO: Evaluate if this is different for long and short => outstanding decision in model
-    liquidationPrice?: number;
-
+    longOrder: SomeOrder;
+    shortOrder: SomeOrder;
+    globalTradeParams: GlobalTradeParams;
     connectedToMaker: ConnectionStatus;
-    minQuantity: number;
-    maxQuantity: number;
-    parcelSize: number;
-    leverage: number;
     walletBalance: number;
-    openingFee: number;
-    fundingRateAnnualized: string;
-    fundingRateHourly: string;
 }
 
 export default function Trade({
-    longOrderId,
-    longPrice: longPriceAsNumber,
-    longInitialFundingFeePerParcel,
-    longMarginPerParcel,
+    longOrder: {
+        id: longOrderId,
+        price: longPriceAsNumber,
+        initialFundingFeePerParcel: longInitialFundingFeePerParcel,
+        marginPerParcel: longMarginPerParcel,
+    },
+    shortOrder: {
+        id: shortOrderId,
+        price: shortPriceAsNumber,
+        initialFundingFeePerParcel: shortInitialFundingFeePerParcel,
+        marginPerParcel: shortMarginPerParcel,
+    },
 
-    shortOrderId,
-    shortPrice: shortPriceAsNumber,
-    shortInitialFundingFeePerParcel,
-    shortMarginPerParcel,
-
-    liquidationPrice: liquidationPriceAsNumber,
-
+    globalTradeParams: {
+        liquidationPrice: liquidationPriceAsNumber,
+        minQuantity,
+        maxQuantity,
+        parcelSize,
+        leverage,
+        openingFee,
+        fundingRateAnnualized,
+        fundingRateHourly,
+    },
     connectedToMaker,
-    minQuantity,
-    maxQuantity,
-    parcelSize,
-    leverage,
     walletBalance,
-    openingFee,
-    fundingRateAnnualized,
-    fundingRateHourly,
 }: TradeProps) {
     const navigate = useNavigate();
 
@@ -123,16 +110,19 @@ export default function Trade({
     const shortMargin = (quantity / parcelSize) * (shortMarginPerParcel || 0);
     const shortFeeForFirstSettlementInterval = (quantity / parcelSize) * (shortInitialFundingFeePerParcel || 0);
 
-    // TODO: We probably need to be smarter here and distinguish long and short
-    const balanceTooLow = walletBalance < longMargin || walletBalance < shortMargin;
+    const balanceTooLowForLong = walletBalance < longMargin;
+    const balanceTooLowForShort = walletBalance < shortMargin;
 
     const quantityTooHigh = maxQuantity < quantity;
     const quantityTooLow = minQuantity > quantity;
     const quantityGreaterZero = quantity > 0;
     const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(quantity, parcelSize);
 
-    const canSubmit = longOrderId && !isSubmitting && !balanceTooLow
-        && !quantityTooHigh && !quantityTooLow && quantityGreaterZero && quantityIsEvenlyDivisibleByIncrement;
+    const canSubmit = !isSubmitting && !quantityTooHigh && !quantityTooLow && quantityGreaterZero
+        && quantityIsEvenlyDivisibleByIncrement;
+
+    const canSubmitLong = longOrderId && !balanceTooLowForLong && canSubmit;
+    const canSubmitShort = shortOrderId && !balanceTooLowForShort && canSubmit;
 
     let alertBox;
 
@@ -142,10 +132,18 @@ export default function Trade({
             description={"You are not connected to any maker. Functionality may be limited"}
         />;
     } else {
-        if (balanceTooLow) {
+        if (balanceTooLowForLong) {
             alertBox = <AlertBox
-                title={"Your balance is too low!"}
+                title={"Your balance is too low for going long!"}
                 description={"Please deposit more into your wallet."}
+                status={"warning"}
+            />;
+        }
+        if (balanceTooLowForShort) {
+            alertBox = <AlertBox
+                title={"Your balance is too low for going short!"}
+                description={"Please deposit more into your wallet."}
+                status={"warning"}
             />;
         }
         if (!quantityIsEvenlyDivisibleByIncrement) {
@@ -279,7 +277,7 @@ export default function Trade({
                                 spacing="6"
                             >
                                 <Button
-                                    disabled={!canSubmit}
+                                    disabled={!canSubmitShort}
                                     colorScheme="red"
                                     size="lg"
                                     onClick={onShortOpen}
@@ -292,7 +290,7 @@ export default function Trade({
                                     </VStack>
                                 </Button>
                                 <Button
-                                    disabled={!canSubmit}
+                                    disabled={!canSubmitLong}
                                     colorScheme="green"
                                     size="lg"
                                     onClick={onLongOpen}
@@ -320,7 +318,7 @@ export default function Trade({
                                     fundingRateAnnualized={fundingRateAnnualized}
                                 />
                                 <ConfirmOrderModal
-                                    orderId={longOrderId!}
+                                    orderId={shortOrderId!}
                                     position="short"
                                     isOpen={isShortOpen}
                                     onClose={onShortClose}

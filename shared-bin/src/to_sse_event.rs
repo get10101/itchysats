@@ -3,7 +3,6 @@ use crate::ConnectionCloseReason::TakerVersionOutdated;
 use daemon::bdk::bitcoin::Amount;
 use daemon::connection;
 use daemon::projection::Cfd;
-use daemon::projection::CfdOrder;
 use daemon::projection::Quote;
 use model::Identity;
 use model::Timestamp;
@@ -23,12 +22,6 @@ impl ToSseEvent for Vec<Cfd> {
 impl ToSseEvent for Vec<Identity> {
     fn to_sse_event(&self) -> Event {
         Event::json(&self).event("takers")
-    }
-}
-
-impl ToSseEvent for Option<CfdOrder> {
-    fn to_sse_event(&self) -> Event {
-        Event::json(&self).event("order")
     }
 }
 

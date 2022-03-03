@@ -29,7 +29,7 @@ import DollarAmount from "./DollarAmount";
 interface NavProps {
     walletInfo: WalletInfo | null;
     connectedToMaker: ConnectionStatus;
-    fundingRate: string | null;
+    fundingRate: string | null | undefined;
     nextFundingEvent: string | null;
     referencePrice: number | undefined;
 }

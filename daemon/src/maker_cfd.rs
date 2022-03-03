@@ -17,7 +17,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use model::olivia::BitMexPriceEventId;
-use model::pick_single_offer;
 use model::Cfd;
 use model::FundingRate;
 use model::Identity;
@@ -318,12 +317,12 @@ where
         let mut conn = self.db.acquire().await?;
 
         // 1. Validate if order is still valid
-        let current_order = self
+        let order_to_take = self
             .current_offers
-            .and_then(|offers| offers.take_offer_by_order_id(order_id));
+            .and_then(|offers| offers.pick_order_to_take(order_id));
 
-        let current_order = if let Some(current_order) = current_order {
-            current_order
+        let order_to_take = if let Some(order_to_take) = order_to_take {
+            order_to_take
         } else {
             // An outdated order on the taker side does not require any state change on the
             // maker. notifying the taker with a specific message should be sufficient.
@@ -341,7 +340,7 @@ where
             return Ok(());
         };
 
-        let cfd = Cfd::from_order(current_order, quantity, taker_id, Role::Maker);
+        let cfd = Cfd::from_order(order_to_take, quantity, taker_id, Role::Maker);
 
         // 2. Replicate the orders in the offers with new ones to allow other takers to use
         // the same offer
@@ -353,22 +352,24 @@ where
             .send_async_safe(maker_inc_connections::BroadcastOffers(self.current_offers))
             .await?;
 
-        let order = pick_single_offer(self.current_offers);
-        self.projection.send(projection::Update(order)).await?;
+        self.projection
+            .send(projection::Update(self.current_offers))
+            .await?;
+
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection).await?;
 
         // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any
         // state
         let announcement = self
             .oracle
-            .send(oracle::GetAnnouncement(current_order.oracle_event_id))
+            .send(oracle::GetAnnouncement(order_to_take.oracle_event_id))
             .await??;
 
         // 5. Start up contract setup actor
         let addr = setup_maker::Actor::new(
             self.db.clone(),
             self.process_manager.clone(),
-            (current_order, cfd.quantity(), self.n_payouts),
+            (order_to_take, cfd.quantity(), self.n_payouts),
             (self.oracle_pk, announcement),
             &self.wallet,
             &self.wallet,
@@ -570,10 +571,10 @@ where
         self.current_offers
             .replace(create_maker_offers(msg, self.settlement_interval));
 
-        let order = pick_single_offer(self.current_offers);
-
         // 2. Notify UI via feed
-        self.projection.send(projection::Update(order)).await?;
+        self.projection
+            .send(projection::Update(self.current_offers))
+            .await?;
 
         // 3. Inform connected takers
         self.takers
