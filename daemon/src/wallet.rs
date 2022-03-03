@@ -128,14 +128,6 @@ impl Actor<ElectrumBlockchain> {
             used_utxos: LockedUtxos::new(time_to_lock),
         };
 
-        BALANCE_GAUGE.set(0.0);
-        NUM_UTXO_GAUGE.set(0.0);
-        MEDIAN_UTXO_VALUE_GAUGE.set(0.0);
-        MIN_UTXO_VALUE_GAUGE.set(0.0);
-        MAX_UTXO_VALUE_GAUGE.set(0.0);
-        MEAN_UTXO_VALUE_GAUGE.set(0.0);
-        STD_DEV_UTXO_VALUE_GAUGE.set(0.0);
-
         Ok((actor, receiver))
     }
 }
