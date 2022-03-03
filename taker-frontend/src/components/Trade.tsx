@@ -76,9 +76,14 @@ interface TradeProps {
 
 export default function Trade({
     longOrderId,
-    longPrice: askPriceAsNumber,
+    longPrice: longPriceAsNumber,
     longInitialFundingFeePerParcel,
     longMarginPerParcel,
+
+    shortOrderId,
+    shortPrice: shortPriceAsNumber,
+    shortInitialFundingFeePerParcel,
+    shortMarginPerParcel,
 
     liquidationPrice: liquidationPriceAsNumber,
 
@@ -92,6 +97,8 @@ export default function Trade({
     fundingRateAnnualized,
     fundingRateHourly,
 }: TradeProps) {
+    const navigate = useNavigate();
+
     let [quantity, setQuantity] = useState(0);
     let [userHasEdited, setUserHasEdited] = useState(false);
 
@@ -113,7 +120,12 @@ export default function Trade({
     const longMargin = (quantity / parcelSize) * (longMarginPerParcel || 0);
     const longFeeForFirstSettlementInterval = (quantity / parcelSize) * (longInitialFundingFeePerParcel || 0);
 
-    const balanceTooLow = walletBalance < longMargin;
+    const shortMargin = (quantity / parcelSize) * (shortMarginPerParcel || 0);
+    const shortFeeForFirstSettlementInterval = (quantity / parcelSize) * (shortInitialFundingFeePerParcel || 0);
+
+    // TODO: We probably need to be smarter here and distinguish long and short
+    const balanceTooLow = walletBalance < longMargin || walletBalance < shortMargin;
+
     const quantityTooHigh = maxQuantity < quantity;
     const quantityTooLow = minQuantity > quantity;
     const quantityGreaterZero = quantity > 0;
@@ -153,8 +165,16 @@ export default function Trade({
         }
         if (!longOrderId) {
             alertBox = <AlertBox
-                title={"No liquidity in maker!"}
-                description={"The maker you are connected has no active offers"}
+                title={"Limited liquidity in maker!"}
+                description={"The maker you are connected has no active long offers"}
+                status={"warning"}
+            />;
+        }
+        if (!shortOrderId) {
+            alertBox = <AlertBox
+                title={"Limited liquidity in maker!"}
+                description={"The maker you are connected has no active short offers"}
+                status={"warning"}
             />;
         }
     }
@@ -188,11 +208,18 @@ export default function Trade({
                                 <Circle size="256px" bg={outerCircleBg}>
                                     <Circle size="180px" bg={innerCircleBg}>
                                         <MotionBox>
-                                            <Skeleton isLoaded={!!askPriceAsNumber && askPriceAsNumber > 0}>
-                                                <Text fontSize={"4xl"} as="b">
-                                                    <DollarAmount amount={askPriceAsNumber || 0} />
-                                                </Text>
-                                            </Skeleton>
+                                            <VStack>
+                                                <Skeleton isLoaded={!!longPriceAsNumber && longPriceAsNumber > 0}>
+                                                    <Text fontSize={"4xl"} as="b">
+                                                        <DollarAmount amount={longPriceAsNumber || 0} />
+                                                    </Text>
+                                                </Skeleton>
+                                                <Skeleton isLoaded={!!shortPriceAsNumber && shortPriceAsNumber > 0}>
+                                                    <Text fontSize={"4xl"} as="b">
+                                                        <DollarAmount amount={shortPriceAsNumber || 0} />
+                                                    </Text>
+                                                </Skeleton>
+                                            </VStack>
                                         </MotionBox>
                                     </Circle>
                                 </Circle>
@@ -215,10 +242,34 @@ export default function Trade({
                         <Leverage leverage={leverage} />
                     </GridItem>
                     <GridItem colSpan={1}>
-                        <OpeningDetails
-                            margin={longMargin}
-                            walletBalance={walletBalance}
-                        />
+                        <Table variant="simple">
+                            <Tbody>
+                                <Tr>
+                                    <Td>Required Long Margin</Td>
+                                    <Td isNumeric><BitcoinAmount btc={longMargin} /></Td>
+                                </Tr>
+                                <Tr>
+                                    <Td>Required Short Margin</Td>
+                                    <Td isNumeric><BitcoinAmount btc={shortMargin} /></Td>
+                                </Tr>
+                                <Tr>
+                                    <Td>
+                                        <HStack>
+                                            <Text>Available Balance</Text>
+                                            <IconButton
+                                                variant={"unstyled"}
+                                                aria-label="Go to wallet"
+                                                icon={<ExternalLinkIcon />}
+                                                onClick={() => navigate("/wallet")}
+                                            />
+                                        </HStack>
+                                    </Td>
+                                    <Td isNumeric>
+                                        <BitcoinAmount btc={walletBalance} />
+                                    </Td>
+                                </Tr>
+                            </Tbody>
+                        </Table>
                     </GridItem>
                     <GridItem colSpan={1}>
                         <Center>
@@ -234,9 +285,11 @@ export default function Trade({
                                     onClick={onShortOpen}
                                     h={16}
                                     w={"40"}
-                                    fontSize={"xl"}
                                 >
-                                    Short
+                                    <VStack>
+                                        <Text fontSize={"md"}>Short</Text>
+                                        <Text fontSize={"sm"}>{`@ ${shortPriceAsNumber || "no price"}`}</Text>
+                                    </VStack>
                                 </Button>
                                 <Button
                                     disabled={!canSubmit}
@@ -245,9 +298,11 @@ export default function Trade({
                                     onClick={onLongOpen}
                                     h={16}
                                     w={"40"}
-                                    fontSize={"xl"}
                                 >
-                                    Long
+                                    <VStack>
+                                        <Text fontSize={"md"}>Long</Text>
+                                        <Text fontSize={"sm"}>{`@ ${longPriceAsNumber || "no price"}`}</Text>
+                                    </VStack>
                                 </Button>
                                 <ConfirmOrderModal
                                     orderId={longOrderId!}
@@ -272,11 +327,11 @@ export default function Trade({
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
                                     quantity={quantity}
-                                    askPriceAsNumber={askPriceAsNumber}
-                                    margin={longMargin}
+                                    askPriceAsNumber={shortPriceAsNumber}
+                                    margin={shortMargin}
                                     leverage={leverage}
                                     liquidationPriceAsNumber={liquidationPriceAsNumber}
-                                    feeForFirstSettlementInterval={longFeeForFirstSettlementInterval}
+                                    feeForFirstSettlementInterval={shortFeeForFirstSettlementInterval}
                                     fundingRateHourly={fundingRateHourly}
                                     fundingRateAnnualized={fundingRateAnnualized}
                                 />
@@ -349,41 +404,6 @@ function Leverage({ leverage }: LeverageProps) {
                 How much do you want to leverage your position?
             </FormHelperText>
         </FormControl>
-    );
-}
-
-interface OpeningDetailsProps {
-    margin: number;
-    walletBalance: number;
-}
-
-function OpeningDetails({ margin, walletBalance }: OpeningDetailsProps) {
-    const navigate = useNavigate();
-    return (
-        <Table variant="simple">
-            <Tbody>
-                <Tr>
-                    <Td>Required Margin</Td>
-                    <Td isNumeric><BitcoinAmount btc={margin} /></Td>
-                </Tr>
-                <Tr>
-                    <Td>
-                        <HStack>
-                            <Text>Available Balance</Text>
-                            <IconButton
-                                variant={"unstyled"}
-                                aria-label="Go to wallet"
-                                icon={<ExternalLinkIcon />}
-                                onClick={() => navigate("/wallet")}
-                            />
-                        </HStack>
-                    </Td>
-                    <Td isNumeric>
-                        <BitcoinAmount btc={walletBalance} />
-                    </Td>
-                </Tr>
-            </Tbody>
-        </Table>
     );
 }
 
