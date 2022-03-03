@@ -105,10 +105,8 @@ jobs:
           cargo build --bin maker --bin taker
           
           cargo dev-maker &
-          sleep 10s # Wait for maker to start\
-
           cargo dev-taker &
-          sleep 10s # Wait for taker to start
+          sleep 10s # Wait for binaries to start
 
           curl --fail http://localhost:8000/api/alive
           curl --fail http://localhost:8001/api/alive
