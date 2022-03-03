@@ -112,8 +112,12 @@ struct Connection {
 
 impl Connection {
     async fn send(&mut self, msg: wire::MakerToTaker) -> Result<()> {
-        let msg_str = msg.to_string();
+        let msg_str = msg.name();
         let taker_id = self.taker;
+
+        P2P_MESSAGES_SENT
+            .with(&HashMap::from([(MESSAGE_LABEL, msg_str)]))
+            .inc();
 
         tracing::trace!(target: "wire", %taker_id, "Sending {msg_str}");
 
@@ -406,7 +410,7 @@ impl Actor {
 #[xtra_productivity(message_impl = false)]
 impl Actor {
     async fn handle_msg_from_taker(&mut self, msg: maker_cfd::FromTaker) {
-        let msg_str = msg.msg.to_string();
+        let msg_str = msg.msg.name();
 
         tracing::trace!(target: "wire", taker_id = %msg.taker_id, "Received {msg_str}");
 
@@ -498,7 +502,10 @@ async fn upgrade(
             }
         }
         unexpected_message => {
-            bail!("Unexpected message {unexpected_message} from taker {taker_id}");
+            bail!(
+                "Unexpected message {} from taker {taker_id}",
+                unexpected_message.name()
+            );
         }
     }
 
@@ -542,6 +549,18 @@ static NUM_CONNECTIONS_GAUGE: conquer_once::Lazy<prometheus::IntGauge> =
         prometheus::register_int_gauge!(
             "p2p_connections_total",
             "The number of active p2p connections."
+        )
+        .unwrap()
+    });
+
+const MESSAGE_LABEL: &str = "message";
+
+static P2P_MESSAGES_SENT: conquer_once::Lazy<prometheus::IntCounterVec> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_int_counter_vec!(
+            "p2p_messages_sent_total",
+            "The number of messages sent over the p2p connection.",
+            &[MESSAGE_LABEL]
         )
         .unwrap()
     });
