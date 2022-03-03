@@ -1,14 +1,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use futures::SinkExt;
 use futures::TryStreamExt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::fmt;
-use std::time::Duration;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;
-use tokio_tungstenite::tungstenite;
 use xtra::Disconnected;
 use xtra_productivity::xtra_productivity;
 
@@ -30,61 +27,48 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
 
-        self.tasks.add_fallible({
-            let this = this.clone();
+        self.tasks.add_fallible(
+            {
+                let this = this.clone();
 
-            async move {
-                tracing::debug!("Connecting to BitMex realtime API");
+                async move {
+                    let mut stream = bitmex_stream::subscribe([format!(
+                        "quoteBin{QUOTE_INTERVAL_MINUTES}m:XBTUSD"
+                    )]);
 
-                let (mut connection, _) = tokio_tungstenite::connect_async(format!("wss://www.bitmex.com/realtime?subscribe=quoteBin{QUOTE_INTERVAL_MINUTES}m:XBTUSD")).await.map_err(|e| Error::FailedToConnect { source: e })?;
+                    while let Some(text) = stream
+                        .try_next()
+                        .await
+                        .map_err(|e| Error::Failed { source: e })?
+                    {
+                        let quote = Quote::from_str(&text)
+                            .map_err(|e| Error::FailedToParseQuote { source: e })?;
 
-                tracing::info!("Connected to BitMex realtime API");
+                        match quote {
+                            Some(quote) => {
+                                tracing::debug!("Received new quote: {:?}", quote);
+                                let is_our_address_disconnected =
+                                    this.send(NewQuoteReceived(quote)).await.is_err();
 
-                loop {
-                    tokio::select! {
-                        _ = tokio::time::sleep(Duration::from_secs(5)) => {
-                            tracing::trace!("No message from BitMex in the last 5 seconds, pinging");
-                            let _ = connection.send(tungstenite::Message::Ping([0u8; 32].to_vec())).await;
-                        },
-                        msg = connection.try_next() => {
-                            let msg = msg.map_err(|e| Error::Failed { source: e })?;
-                            let msg = msg.ok_or(Error::StreamEnded)?;
-
-                            match msg {
-                                tungstenite::Message::Pong(_) => {
-                                    tracing::trace!("Received pong");
-                                    continue;
-                                }
-                                tungstenite::Message::Text(text) => {
-                                    let quote = Quote::from_str(&text).map_err(|e| Error::FailedToParseQuote { source: e })?;
-
-                                    match quote {
-                                        Some(quote) => {
-                                            tracing::debug!("Received new quote: {:?}", quote);
-                                            let is_our_address_disconnected = this.send(NewQuoteReceived(quote)).await.is_err();
-
-                                            // Our task should already be dead and the actor restarted if this happens.
-                                            if is_our_address_disconnected {
-                                                return Ok(());
-                                            }
-                                        }
-                                        None => {
-                                            continue;
-                                        }
-                                    }
-                                }
-                                other => {
-                                    tracing::trace!("Unsupported message: {:?}", other);
-                                    continue;
+                                // Our task should already be dead and the actor restarted if this
+                                // happens.
+                                if is_our_address_disconnected {
+                                    return Ok(());
                                 }
                             }
-                        },
+                            None => {
+                                continue;
+                            }
+                        }
                     }
+
+                    Err(Error::StreamEnded)
                 }
-            }
-        }, |e: Error| async move {
-            let _: Result<(), Disconnected> = this.send(e).await;
-        });
+            },
+            |e: Error| async move {
+                let _: Result<(), Disconnected> = this.send(e).await;
+            },
+        );
     }
 
     async fn stopped(self) -> Self::Stop {
@@ -111,9 +95,7 @@ impl Actor {
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Connection to BitMex API failed")]
-    Failed { source: tungstenite::Error },
-    #[error("Failed to connect to BitMex API")]
-    FailedToConnect { source: tungstenite::Error },
+    Failed { source: bitmex_stream::Error },
     #[error("Websocket stream to BitMex API closed")]
     StreamEnded,
     #[error("Failed to parse quote")]

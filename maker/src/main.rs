@@ -235,7 +235,6 @@ async fn main() -> Result<()> {
         supervisor::Actor::with_policy(xtra_bitmex_price_feed::Actor::default, |e| match e {
             xtra_bitmex_price_feed::Error::FailedToParseQuote { .. }
             | xtra_bitmex_price_feed::Error::Failed { .. }
-            | xtra_bitmex_price_feed::Error::FailedToConnect { .. }
             | xtra_bitmex_price_feed::Error::Unspecified
             | xtra_bitmex_price_feed::Error::StreamEnded => true, // always restart price feed actor
         });

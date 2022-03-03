@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
+bitmex-stream = { path = "../bitmex-stream" }
 futures = "0.3"
 rust_decimal = { version = "1", features = ["serde-with-float"] }
 rust_decimal_macros = "1"
@@ -17,7 +18,6 @@ thiserror = "1"
 time = { version = "0.3", features = ["serde-well-known"] }
 tokio = "1"
 tokio-tasks = { path = "../tokio-tasks" }
-tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 tracing = "0.1"
 xtra = "0.6"
 xtra_productivity = { version = "0.1.0" }
