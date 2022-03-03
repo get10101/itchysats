@@ -42,34 +42,40 @@ export const App = () => {
 
     const [source, isConnected] = useEventSource("/api/feed");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
-    const order = useLatestEvent<Order>(source, "order", intoOrder);
+    const longOrder = useLatestEvent<Order>(source, "order", intoOrder);
+
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
     const connectedToMakerOrUndefined = useLatestEvent<ConnectionStatus>(source, "maker_status");
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
-    const minQuantity = parseOptionalNumber(order?.min_quantity) || 0;
-    const maxQuantity = parseOptionalNumber(order?.max_quantity) || 0;
-    const askPrice = parseOptionalNumber(order?.price);
-    const parcelSize = parseOptionalNumber(order?.parcel_size) || 0;
-    const liquidationPrice = parseOptionalNumber(order?.liquidation_price);
-    const marginPerParcel = order?.margin_per_parcel || 0;
-    const leverage = order?.leverage || 0;
-    const openingFee = order?.opening_fee || 0;
-
-    const fundingRateAnnualized = order?.funding_rate_annualized_percent || "0";
-    const fundingFeePerParcel = order?.initial_funding_fee_per_parcel || 0;
-
-    const fundingRateHourly = order
-        ? Number.parseFloat(order.funding_rate_hourly_percent).toFixed(5)
+    // Global, currently always taken from long order because values are expected to be the same
+    const minQuantity = parseOptionalNumber(longOrder?.min_quantity) || 0;
+    const maxQuantity = parseOptionalNumber(longOrder?.max_quantity) || 0;
+    const parcelSize = parseOptionalNumber(longOrder?.parcel_size) || 0;
+    const leverage = longOrder?.leverage || 0;
+    const openingFee = longOrder?.opening_fee || 0;
+    const fundingRateAnnualized = longOrder?.funding_rate_annualized_percent || "0";
+    const fundingRateHourly = longOrder
+        ? Number.parseFloat(longOrder.funding_rate_hourly_percent).toFixed(5)
         : null;
+    const liquidationPrice = parseOptionalNumber(longOrder?.liquidation_price);
+
+    // Long specific
+    const longOrderId = longOrder?.id;
+    const longPrice = parseOptionalNumber(longOrder?.price);
+    const longMarginPerParcel = longOrder?.margin_per_parcel;
+    const longInitialFundingFeePerParcel = longOrder?.initial_funding_fee_per_parcel;
+
+    // Short specific
+    // TODO -> Add short
 
     dayjs.extend(relativeTime);
     dayjs.extend(utc);
 
     // TODO: Eventually this should be calculated with what the maker defines in the offer, for now we assume full hour
     const nextFullHour = dayjs().utc().minute(0).add(1, "hour");
-    const nextFundingEvent = order ? dayjs().to(nextFullHour) : null;
+    const nextFundingEvent = longOrder ? dayjs().to(nextFullHour) : null;
 
     function parseOptionalNumber(val: string | undefined): number | undefined {
         if (!val) {
@@ -120,21 +126,20 @@ export const App = () => {
                             </Center>
                             <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
                                 <Trade
+                                    longOrderId={longOrderId}
+                                    longPrice={longPrice}
+                                    longMarginPerParcel={longMarginPerParcel}
+                                    longInitialFundingFeePerParcel={longInitialFundingFeePerParcel}
+                                    liquidationPrice={liquidationPrice}
                                     connectedToMaker={connectedToMaker}
-                                    orderId={order?.id}
                                     maxQuantity={maxQuantity}
                                     minQuantity={minQuantity}
-                                    referencePrice={referencePrice}
-                                    askPrice={askPrice}
                                     parcelSize={parcelSize}
-                                    marginPerParcel={marginPerParcel}
                                     leverage={leverage}
-                                    liquidationPrice={liquidationPrice}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
                                     openingFee={openingFee}
                                     fundingRateAnnualized={fundingRateAnnualized}
                                     fundingRateHourly={fundingRateHourly || "0"}
-                                    fundingFeePerParcel={fundingFeePerParcel}
                                 />
                                 <History
                                     connectedToMaker={connectedToMaker}

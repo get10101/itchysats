@@ -46,39 +46,51 @@ import DollarAmount from "./DollarAmount";
 
 const MotionBox = motion<BoxProps>(Box);
 
+// TODO: Consider inlining the Trade code in App, there is not much value in this abstraction anymore
+//  Recommendation: Inline, see how it feels and then potentially carve out some new abstraction if there is one clearly visible
 interface TradeProps {
+    // TODO: Thought about grouping these as long / short params, but probably better to first inline and see boundaries better
+    longOrderId?: string;
+    longPrice?: number;
+    longMarginPerParcel?: number;
+    longInitialFundingFeePerParcel?: number;
+
+    shortOrderId?: string;
+    shortPrice?: number;
+    shortMarginPerParcel?: number;
+    shortInitialFundingFeePerParcel?: number;
+
+    // TODO: Evaluate if this is different for long and short => outstanding decision in model
+    liquidationPrice?: number;
+
     connectedToMaker: ConnectionStatus;
-    orderId?: string;
     minQuantity: number;
     maxQuantity: number;
-    referencePrice?: number;
-    askPrice?: number;
     parcelSize: number;
-    marginPerParcel: number;
     leverage: number;
-    liquidationPrice?: number;
     walletBalance: number;
     openingFee: number;
     fundingRateAnnualized: string;
     fundingRateHourly: string;
-    fundingFeePerParcel: number;
 }
 
 export default function Trade({
+    longOrderId,
+    longPrice: askPriceAsNumber,
+    longInitialFundingFeePerParcel,
+    longMarginPerParcel,
+
+    liquidationPrice: liquidationPriceAsNumber,
+
     connectedToMaker,
     minQuantity,
     maxQuantity,
-    askPrice: askPriceAsNumber,
     parcelSize,
-    marginPerParcel,
     leverage,
-    liquidationPrice: liquidationPriceAsNumber,
-    orderId,
     walletBalance,
     openingFee,
     fundingRateAnnualized,
     fundingRateHourly,
-    fundingFeePerParcel,
 }: TradeProps) {
     let [quantity, setQuantity] = useState(0);
     let [userHasEdited, setUserHasEdited] = useState(false);
@@ -98,17 +110,16 @@ export default function Trade({
     const { isOpen: isLongOpen, onOpen: onLongOpen, onClose: onLongClose } = useDisclosure();
     const { isOpen: isShortOpen, onOpen: onShortOpen, onClose: onShortClose } = useDisclosure();
 
-    const margin = (quantity / parcelSize) * marginPerParcel;
+    const longMargin = (quantity / parcelSize) * (longMarginPerParcel || 0);
+    const longFeeForFirstSettlementInterval = (quantity / parcelSize) * (longInitialFundingFeePerParcel || 0);
 
-    const feeForFirstSettlementInterval = (quantity / parcelSize) * fundingFeePerParcel;
-
-    const balanceTooLow = walletBalance < margin;
+    const balanceTooLow = walletBalance < longMargin;
     const quantityTooHigh = maxQuantity < quantity;
     const quantityTooLow = minQuantity > quantity;
     const quantityGreaterZero = quantity > 0;
     const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(quantity, parcelSize);
 
-    const canSubmit = orderId && !isSubmitting && !balanceTooLow
+    const canSubmit = longOrderId && !isSubmitting && !balanceTooLow
         && !quantityTooHigh && !quantityTooLow && quantityGreaterZero && quantityIsEvenlyDivisibleByIncrement;
 
     let alertBox;
@@ -140,7 +151,7 @@ export default function Trade({
         if (quantityTooLow || !quantityGreaterZero) {
             alertBox = <AlertBox title={"Quantity too low!"} description={`Min quantity is ${minQuantity}`} />;
         }
-        if (!orderId) {
+        if (!longOrderId) {
             alertBox = <AlertBox
                 title={"No liquidity in maker!"}
                 description={"The maker you are connected has no active offers"}
@@ -205,7 +216,7 @@ export default function Trade({
                     </GridItem>
                     <GridItem colSpan={1}>
                         <OpeningDetails
-                            margin={margin}
+                            margin={longMargin}
                             walletBalance={walletBalance}
                         />
                     </GridItem>
@@ -239,22 +250,22 @@ export default function Trade({
                                     Long
                                 </Button>
                                 <ConfirmOrderModal
-                                    orderId={orderId!}
+                                    orderId={longOrderId!}
                                     position="long"
                                     isOpen={isLongOpen}
                                     onClose={onLongClose}
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
                                     quantity={quantity}
-                                    margin={margin}
+                                    margin={longMargin}
                                     leverage={leverage}
                                     liquidationPriceAsNumber={liquidationPriceAsNumber}
-                                    feeForFirstSettlementInterval={feeForFirstSettlementInterval}
+                                    feeForFirstSettlementInterval={longFeeForFirstSettlementInterval}
                                     fundingRateHourly={fundingRateHourly}
                                     fundingRateAnnualized={fundingRateAnnualized}
                                 />
                                 <ConfirmOrderModal
-                                    orderId={orderId!}
+                                    orderId={longOrderId!}
                                     position="short"
                                     isOpen={isShortOpen}
                                     onClose={onShortClose}
@@ -262,10 +273,10 @@ export default function Trade({
                                     onSubmit={onSubmit}
                                     quantity={quantity}
                                     askPriceAsNumber={askPriceAsNumber}
-                                    margin={margin}
+                                    margin={longMargin}
                                     leverage={leverage}
                                     liquidationPriceAsNumber={liquidationPriceAsNumber}
-                                    feeForFirstSettlementInterval={feeForFirstSettlementInterval}
+                                    feeForFirstSettlementInterval={longFeeForFirstSettlementInterval}
                                     fundingRateHourly={fundingRateHourly}
                                     fundingRateAnnualized={fundingRateAnnualized}
                                 />
