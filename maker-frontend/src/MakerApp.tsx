@@ -49,12 +49,13 @@ export default function App() {
 
     let [minQuantity, setMinQuantity] = useState<string>("100");
     let [maxQuantity, setMaxQuantity] = useState<string>("1000");
-    let [orderPrice, setOrderPrice] = useState<string>("0");
+    let [shortPrice, setShortPrice] = useState<string>("0");
+    let [longPrice, setLongPrice] = useState<string>("0");
     let [autoRefresh, setAutoRefresh] = useState(true);
 
     useEffect(() => {
         if (autoRefresh && priceInfo) {
-            setOrderPrice((priceInfo.ask * SPREAD).toFixed(2).toString());
+            setShortPrice((priceInfo.ask * SPREAD).toFixed(2).toString());
         }
     }, [priceInfo, autoRefresh]);
 
@@ -105,20 +106,36 @@ export default function App() {
                             value={format(maxQuantity)}
                         />
 
-                        <Text>Offer Price:</Text>
+                        <Text>Short Price:</Text>
                         <HStack>
                             <CurrencyInputField
                                 onChange={(valueString: string) => {
-                                    setOrderPrice(parse(valueString));
+                                    setShortPrice(parse(valueString));
                                     setAutoRefresh(false);
                                 }}
-                                value={format(orderPrice)}
+                                value={format(shortPrice)}
                             />
                             <HStack>
                                 <Switch
                                     id="auto-refresh"
                                     isChecked={autoRefresh}
                                     onChange={() => setAutoRefresh(!autoRefresh)}
+                                />
+                                <Text>Auto-refresh</Text>
+                            </HStack>
+                        </HStack>
+
+                        <Text>Long Price:</Text>
+                        <HStack>
+                            <CurrencyInputField
+                                onChange={(valueString: string) => {
+                                    setLongPrice(parse(valueString));
+                                }}
+                                value={format(longPrice)}
+                            />
+                            <HStack>
+                                <Switch
+                                    disabled={true}
                                 />
                                 <Text>Auto-refresh</Text>
                             </HStack>
@@ -137,12 +154,13 @@ export default function App() {
 
                         <GridItem colSpan={2} textAlign="center">
                             <Button
-                                disabled={isCreatingNewCfdOrder || orderPrice === "0"}
+                                disabled={isCreatingNewCfdOrder || shortPrice === "0"}
                                 variant={"solid"}
                                 colorScheme={"blue"}
                                 onClick={() => {
                                     let payload: CfdSellOrderPayload = {
-                                        price: Number.parseFloat(orderPrice),
+                                        price: Number.parseFloat(shortPrice),
+                                        price_long: Number.parseFloat(longPrice),
                                         min_quantity: Number.parseFloat(minQuantity),
                                         max_quantity: Number.parseFloat(maxQuantity),
                                         // TODO: Populate funding rate from the UI
