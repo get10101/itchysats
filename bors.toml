@@ -15,7 +15,9 @@ status = [
   "lint-commits",
   "frontend (maker)",
   "frontend (taker)",
-  "test_daemons (ubuntu-latest)",
-  "test_daemons (macos-latest)",
+  "test (ubuntu-latest)",
+  "test (macos-latest)",
+  "smoke_test (ubuntu-latest)",
+  "smoke_test (macos-latest)",
   "daemons_arm_build",
 ]

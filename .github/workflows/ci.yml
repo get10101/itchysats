@@ -85,7 +85,7 @@ jobs:
       - run: yarn run test
       - run: yarn run build
 
-  test_daemons:
+  test:
     strategy:
       matrix:
         os: [ ubuntu-latest, macos-latest ]
@@ -95,15 +95,22 @@ jobs:
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v1.3.0
-      - run: cargo build --tests --workspace
       - run: cargo test --workspace
-      # Ignored tests that should be run on the CI - reenable if there are any
-      # - run: cargo test --workspace -- --ignored
+
+  smoke_test:
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@v1.3.0
+      - run: cargo build --bin maker --bin taker
       - name: Smoke test ${{ matrix.os }} binary
         shell: bash
         run: |
-          cargo build --bin maker --bin taker
-          
           cargo dev-maker &
           cargo dev-taker &
           sleep 10s # Wait for binaries to start
