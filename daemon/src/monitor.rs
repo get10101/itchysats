@@ -76,32 +76,14 @@ pub enum TransactionKind {
     Cet,
 }
 
-/// Formats a [`TransactionKind`] for use in log messages.
-///
-/// This implementations has two main features:
-///
-/// 1. It does not duplicate the "transaction" part for CET as "t" in CET already stands for
-/// "transaction".
-/// 2. It allows the caller to use the alternate sigil (`#`), to make the first
-/// letter uppercase in case [`TransactionKind`] is used at the beginning of a log message.
-impl fmt::Display for TransactionKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            match self {
-                TransactionKind::Lock => write!(f, "Lock transaction"),
-                TransactionKind::Commit => write!(f, "Commit transaction"),
-                TransactionKind::Refund => write!(f, "Refund transaction"),
-                TransactionKind::CollaborativeClose => write!(f, "Collaborative close transaction"),
-                TransactionKind::Cet => write!(f, "CET"),
-            }
-        } else {
-            match self {
-                TransactionKind::Lock => write!(f, "lock transaction"),
-                TransactionKind::Commit => write!(f, "commit transaction"),
-                TransactionKind::Refund => write!(f, "refund transaction"),
-                TransactionKind::CollaborativeClose => write!(f, "collaborative close transaction"),
-                TransactionKind::Cet => write!(f, "CET"),
-            }
+impl TransactionKind {
+    fn name(&self) -> &'static str {
+        match self {
+            TransactionKind::Lock => "lock",
+            TransactionKind::Commit => "commit",
+            TransactionKind::Refund => "refund",
+            TransactionKind::CollaborativeClose => "collaborative-close",
+            TransactionKind::Cet => "contract-execution",
         }
     }
 }
@@ -878,7 +860,7 @@ impl Actor {
             if rpc_error.code == i64::from(RpcErrorCode::RpcVerifyAlreadyInChain) {
                 let txid = tx.txid();
                 tracing::trace!(
-                    %txid, "Attempted to broadcast {kind} that was already on-chain",
+                    %txid, kind = %kind.name(), "Attempted to broadcast transaction that was already on-chain",
                 );
 
                 return Ok(());
@@ -892,7 +874,7 @@ impl Actor {
                 if let Ok(tx) = self.client.transaction_get(&tx.txid()) {
                     let txid = tx.txid();
                     tracing::trace!(
-                        %txid, "Attempted to broadcast {kind} that was already on-chain",
+                        %txid, kind = %kind.name(), "Attempted to broadcast transaction that was already on-chain",
                     );
                     return Ok(());
                 }
@@ -903,10 +885,14 @@ impl Actor {
         result.with_context(|| {
             let tx_hex = serialize_hex(&tx);
 
-            format!("Broadcasting {kind} failed. Txid: {txid}. Raw transaction: {tx_hex}")
+            format!("Failed to broadcast transaction. Txid: {txid}. Kind: {}. Raw transaction: {tx_hex}", kind.name())
         })?;
 
-        tracing::info!(%txid, "{kind:#} published on chain");
+        tracing::info!(%txid, kind = %kind.name(), "Transaction published on chain");
+
+        TRANSACTION_BROADCAST_COUNTER
+            .with(&HashMap::from([(KIND_LABEL, kind.name())]))
+            .inc();
 
         Ok(())
     }
@@ -999,6 +985,18 @@ impl Actor {
         }
     }
 }
+
+const KIND_LABEL: &str = "kind";
+
+static TRANSACTION_BROADCAST_COUNTER: conquer_once::Lazy<prometheus::IntCounterVec> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_int_counter_vec!(
+            "blockchain_transactions_broadcast_total",
+            "The number of transactions broadcast.",
+            &[KIND_LABEL]
+        )
+        .unwrap()
+    });
 
 #[cfg(test)]
 mod tests {
