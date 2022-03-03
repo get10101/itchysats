@@ -171,9 +171,6 @@ pub struct Cfd {
 
     #[serde(skip)]
     aggregated: Aggregated,
-
-    #[serde(skip)]
-    creation_timestamp: Timestamp,
 }
 
 /// Bundle all state extracted from the events in one struct.
@@ -208,6 +205,9 @@ struct Aggregated {
     /// Negotiated states of protocols
     rollover_state: Option<ProtocolNegotiationState>,
     settlement_state: Option<ProtocolNegotiationState>,
+
+    version: u64,
+    creation_timestamp: Timestamp,
 }
 
 impl Aggregated {
@@ -224,6 +224,8 @@ impl Aggregated {
             state: CfdState::PendingSetup,
             rollover_state: None,
             settlement_state: None,
+            version: 0,
+            creation_timestamp: Timestamp::now(),
         }
     }
 
@@ -365,17 +367,19 @@ impl Cfd {
             counterparty: counterparty_network_identity,
             pending_settlement_proposal_price: None,
             aggregated: Aggregated::new(fee_account),
-            creation_timestamp: Timestamp::now(),
         }
     }
 
     fn apply(mut self, event: CfdEvent, network: Network) -> Self {
+        if self.aggregated.version == 0 {
+            self.aggregated.creation_timestamp = event.timestamp;
+        }
+
         // First, try to set state based on event.
         use EventKind::*;
         match event.event {
             ContractSetupStarted => {
                 self.aggregated.state = CfdState::ContractSetup;
-                self.creation_timestamp = event.timestamp;
             }
             ContractSetupCompleted { dlc } => {
                 self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
@@ -517,6 +521,8 @@ impl Cfd {
         if let Some(cet_url) = self.cet_url(network) {
             self.details.tx_url_list.insert(cet_url);
         }
+
+        self.aggregated.version += 1;
 
         self
     }
@@ -723,7 +729,12 @@ impl Tx {
         let cfds_with_quote = cfds
             .into_iter()
             .map(|(_, cfd)| cfd.with_current_quote(quote))
-            .sorted_by(|a, b| Ord::cmp(&b.creation_timestamp, &a.creation_timestamp))
+            .sorted_by(|a, b| {
+                Ord::cmp(
+                    &b.aggregated.creation_timestamp,
+                    &a.aggregated.creation_timestamp,
+                )
+            })
             .collect();
 
         let _ = self.cfds.send(cfds_with_quote);
