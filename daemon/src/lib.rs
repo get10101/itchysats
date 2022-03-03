@@ -14,7 +14,6 @@ use model::Identity;
 use model::OpeningFee;
 use model::Order;
 use model::OrderId;
-use model::Position;
 use model::Price;
 use model::Role;
 use model::TxFeeRate;
@@ -170,24 +169,23 @@ where
     #[allow(clippy::too_many_arguments)]
     pub async fn set_offer_params(
         &self,
-        price: Price,
+        price_long: Option<Price>,
+        price_short: Option<Price>,
         min_quantity: Usd,
         max_quantity: Usd,
         fee_rate: Option<TxFeeRate>,
         funding_rate: Option<FundingRate>,
         opening_fee: Option<OpeningFee>,
-        position_maker: Option<Position>,
     ) -> Result<()> {
         self.cfd_actor
             .send(maker_cfd::OfferParams {
-                price,
+                price_long,
+                price_short,
                 min_quantity,
                 max_quantity,
                 tx_fee_rate: fee_rate.unwrap_or_default(),
                 funding_rate: funding_rate.unwrap_or_default(),
                 opening_fee: opening_fee.unwrap_or_default(),
-                // For backwards compatibility, default to maker going short
-                position_maker: position_maker.unwrap_or(Position::Short),
             })
             .await??;
 

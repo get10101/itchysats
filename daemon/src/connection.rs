@@ -15,6 +15,7 @@ use bdk::bitcoin::Amount;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
+use model::pick_single_offer;
 use model::Identity;
 use model::OrderId;
 use model::Price;
@@ -562,10 +563,12 @@ impl Actor {
                     Err(NotConnected(_)) => tracing::warn!(%order_id, "No active rollover"),
                 }
             }
-            wire::MakerToTaker::CurrentOrder(msg) => {
+            wire::MakerToTaker::CurrentOffers(maker_offers) => {
+                let order = pick_single_offer(maker_offers);
+
                 let _ = self
                     .current_order
-                    .send(CurrentOrder(msg))
+                    .send(CurrentOrder(order))
                     .log_failure("Failed to forward current order from maker")
                     .await;
             }

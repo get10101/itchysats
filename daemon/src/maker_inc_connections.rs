@@ -17,7 +17,7 @@ use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
 use model::Identity;
-use model::Order;
+use model::MakerOffers;
 use model::OrderId;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -37,7 +37,7 @@ const HANDLE_SETTLEMENT_MESSAGE_TIMEOUT: Duration = Duration::from_secs(120);
 const HANDLE_PROTOCOL_MESSAGE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy)]
-pub struct BroadcastOrder(pub Option<Order>);
+pub struct BroadcastOffers(pub Option<MakerOffers>);
 
 /// Message sent from the `setup_maker::Actor` to the
 /// `maker_inc_connections::Actor` so that it can forward it to the
@@ -251,20 +251,20 @@ pub struct NoConnection(Identity);
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle_broadcast_order(&mut self, msg: BroadcastOrder) {
-        let order = msg.0;
+    async fn handle_broadcast_order(&mut self, msg: BroadcastOffers) {
+        let offers = msg.0;
 
         let mut broken_connections = Vec::with_capacity(self.connections.len());
 
         for (id, conn) in &mut self.connections {
-            if let Err(e) = conn.send(wire::MakerToTaker::CurrentOrder(order)).await {
+            if let Err(e) = conn.send(wire::MakerToTaker::CurrentOffers(offers)).await {
                 tracing::warn!("{:#}", e);
                 broken_connections.push(*id);
 
                 continue;
             }
 
-            tracing::trace!(taker_id = %id, "Sent new order: {:?}", order.as_ref().map(|o| o.id));
+            tracing::trace!(taker_id = %id, "Sent new offers: {:?}", offers);
         }
 
         for id in broken_connections {
