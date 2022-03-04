@@ -21,7 +21,6 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
         .add_directive("_=off".parse()?) // rocket logs headers on INFO and uses `_` as the log target for it?
         .add_directive("rocket::launch=off".parse()?) // disable rocket startup logs
         .add_directive("rocket::launch_=off".parse()?) // disable rocket startup logs
-        .add_directive("rocket::shield=off".parse()?) // not sure what rocket shield is but it seems unnecessary
         .add_directive(format!("taker={level}").parse()?)
         .add_directive(format!("maker={level}").parse()?)
         .add_directive(format!("daemon={level}").parse()?)
