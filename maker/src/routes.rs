@@ -95,9 +95,10 @@ pub async fn maker_feed(
     }
 }
 
+// TODO: Delete after upgrading automation to prefer /offer endpoint
 /// The maker POSTs this to set the offer params
 #[derive(Debug, Clone, Deserialize)]
-pub struct CfdNewOfferParamsRequest {
+pub struct CfdNewOfferParamsRequestDeprecated {
     #[serde(rename = "price")]
     // TODO: Make this Option<Price> when we don't want to create other side
     pub price_short: Price,
@@ -118,10 +119,10 @@ pub struct CfdNewOfferParamsRequest {
     pub price_long: Option<Price>,
 }
 
-// TODO: Change to `/offer` after turning off legacy maker
+// TODO: Delete after upgrading automation to prefer /offer endpoint
 #[rocket::post("/order/sell", data = "<offer_params>")]
 pub async fn post_sell_order(
-    offer_params: Json<CfdNewOfferParamsRequest>,
+    offer_params: Json<CfdNewOfferParamsRequestDeprecated>,
     maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
@@ -129,6 +130,51 @@ pub async fn post_sell_order(
         .set_offer_params(
             offer_params.price_long,
             Some(offer_params.price_short),
+            offer_params.min_quantity,
+            offer_params.max_quantity,
+            offer_params.tx_fee_rate,
+            offer_params.daily_funding_rate,
+            offer_params.opening_fee,
+        )
+        .await
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Posting offer failed")
+                .detail(format!("{e:#}"))
+        })?;
+
+    Ok(())
+}
+
+/// The maker PUTs this to set the offer params
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfdNewOfferParamsRequest {
+    pub price_long: Option<Price>,
+    pub price_short: Option<Price>,
+    pub min_quantity: Usd,
+    pub max_quantity: Usd,
+    pub tx_fee_rate: Option<TxFeeRate>,
+    /// The _daily_ funding rate as decided upon by the caller.
+    ///
+    /// The fact that this is the _daily_ funding rate is part of the API contract between this
+    /// application and its caller. Changing this would be a breaking change.
+    pub daily_funding_rate: Option<FundingRate>,
+    pub funding_rate: Option<FundingRate>,
+    // TODO: This is not inline with other parts of the API! We should not expose internal types
+    // here. We have to specify sats for here because of that.
+    pub opening_fee: Option<OpeningFee>,
+}
+
+#[rocket::put("/offer", data = "<offer_params>")]
+pub async fn put_offer_params(
+    offer_params: Json<CfdNewOfferParamsRequest>,
+    maker: &State<Maker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    maker
+        .set_offer_params(
+            offer_params.price_long,
+            offer_params.price_short,
             offer_params.min_quantity,
             offer_params.max_quantity,
             offer_params.tx_fee_rate,
