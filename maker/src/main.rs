@@ -282,6 +282,14 @@ async fn main() -> Result<()> {
                 tracing::info!(endpoint = %http_endpoint, "HTTP interface is ready");
             })
         }))
+        .attach(AdHoc::on_request(
+            "Rocket HTTP request",
+            |request, _data| {
+                Box::pin(async move {
+                    tracing::debug!(%request, "HTTP");
+                })
+            },
+        ))
         .launch()
         .await?;
 
