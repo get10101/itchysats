@@ -104,7 +104,12 @@ pub struct CfdNewOfferParamsRequest {
     pub min_quantity: Usd,
     pub max_quantity: Usd,
     pub tx_fee_rate: Option<TxFeeRate>,
-    pub funding_rate: Option<FundingRate>,
+    /// The _daily_ funding rate as decided upon by the caller.
+    ///
+    /// The fact that this is the _daily_ funding rate is part of the API contract between this
+    /// application and its caller. Changing this would be a breaking change.
+    #[serde(rename = "funding_rate")]
+    pub daily_funding_rate: Option<FundingRate>,
     // TODO: This is not inline with other parts of the API! We should not expose internal types
     // here. We have to specify sats for here because of that.
     pub opening_fee: Option<OpeningFee>,
@@ -127,7 +132,7 @@ pub async fn post_sell_order(
             offer_params.min_quantity,
             offer_params.max_quantity,
             offer_params.tx_fee_rate,
-            offer_params.funding_rate,
+            offer_params.daily_funding_rate,
             offer_params.opening_fee,
         )
         .await
