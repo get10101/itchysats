@@ -111,12 +111,7 @@ export default function Trade({
 
     let alertBox;
 
-    if (!connectedToMaker.online) {
-        alertBox = <AlertBox
-            title={"No maker!"}
-            description={"You are not connected to any maker. Functionality may be limited"}
-        />;
-    } else {
+    if (connectedToMaker.online) {
         if (balanceTooLow) {
             alertBox = <AlertBox
                 title={"Your balance is too low!"}

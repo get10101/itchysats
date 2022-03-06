@@ -154,6 +154,23 @@ export const App = () => {
         }
     }, [toast, isConnected]);
 
+    useEffect(() => {
+        const id = "maker-connection-toast";
+        if (connectedToMakerOrUndefined && !connectedToMakerOrUndefined.online && !toast.isActive(id)) {
+            toast({
+                id,
+                status: "warning",
+                isClosable: true,
+                duration: null,
+                position: "bottom",
+                title: "No maker!",
+                description: "You are not connected to any maker. Functionality may be limited",
+            });
+        } else if (connectedToMakerOrUndefined && connectedToMakerOrUndefined.online && toast.isActive(id)) {
+            toast.close(id);
+        }
+    }, [toast, connectedToMakerOrUndefined]);
+
     const [hideDisclaimer, setHideDisclaimer] = useLocalStorage<boolean>("hideDisclaimer", false);
 
     const closedPositions = cfds.filter((cfd) => isClosed(cfd));
