@@ -177,7 +177,6 @@ export const App = () => {
             </Accordion>}
     </>;
 
-
     return (
         <>
             {!hideDisclaimer && <Disclaimer setHideDisclaimer={setHideDisclaimer} />}
@@ -203,13 +202,13 @@ export const App = () => {
                                 <Route
                                     path="long"
                                     element={<VStack>
-                                        <NavigationButtons/>
+                                        <NavigationButtons />
                                         <Trade
-                                            longOrder={longOrder}
-                                            shortOrder={shortOrder}
+                                            order={longOrder}
                                             globalTradeParams={globalTradeParams}
                                             connectedToMaker={connectedToMaker}
                                             walletBalance={walletInfo ? walletInfo.balance : 0}
+                                            isLong={true}
                                         />
                                         {history}
                                     </VStack>}
@@ -217,13 +216,13 @@ export const App = () => {
                                 <Route
                                     path="short"
                                     element={<VStack>
-                                        <NavigationButtons/>
+                                        <NavigationButtons />
                                         <Trade
-                                            longOrder={longOrder}
-                                            shortOrder={shortOrder}
+                                            order={shortOrder}
                                             globalTradeParams={globalTradeParams}
                                             connectedToMaker={connectedToMaker}
                                             walletBalance={walletInfo ? walletInfo.balance : 0}
+                                            isLong={false}
                                         />
                                         {history}
                                     </VStack>}
@@ -243,7 +242,6 @@ export const App = () => {
         </>
     );
 };
-
 
 function NavigationButtons() {
     const location = useLocation();
