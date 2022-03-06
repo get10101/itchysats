@@ -11,18 +11,18 @@ import {
     HStack,
     Text,
     useColorModeValue,
+    useToast,
     VStack,
 } from "@chakra-ui/react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Link as ReachLink } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { useLocalStorage } from "usehooks-ts";
-import AlertBox from "./components/AlertBox";
 import Disclaimer from "./components/Disclaimer";
 import Footer from "./components/Footer";
 import History from "./components/History";
@@ -52,6 +52,8 @@ export interface GlobalTradeParams {
 }
 
 export const App = () => {
+    const toast = useToast();
+
     let [referencePrice, setReferencePrice] = useState<number>();
 
     useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
@@ -137,13 +139,20 @@ export const App = () => {
         return Number.parseFloat(val);
     }
 
-    let connectionStatus;
-    if (!isConnected) {
-        connectionStatus = <AlertBox
-            title={"Connection error!"}
-            description={"Please ensure taker daemon is running and refresh page"}
-        />;
-    }
+    useEffect(() => {
+        const id = "connection-toast";
+        if (!isConnected && !toast.isActive(id)) {
+            toast({
+                id,
+                status: "error",
+                isClosable: true,
+                duration: null,
+                position: "top-right",
+                title: "Connection error!",
+                description: "Please ensure your daemon is running. Then refresh the page.",
+            });
+        }
+    }, [toast, isConnected]);
 
     const [hideDisclaimer, setHideDisclaimer] = useLocalStorage<boolean>("hideDisclaimer", false);
 
@@ -189,53 +198,50 @@ export const App = () => {
             />
             <Box textAlign="center" padding={3} bg={useColorModeValue("gray.50", "gray.800")}>
                 <Center marginTop={20}>
-                    <VStack>
-                        {connectionStatus}
-                        <Routes>
-                            <Route path="/">
-                                <Route
-                                    path="wallet"
-                                    element={<>
-                                        <Wallet walletInfo={walletInfo} />
-                                    </>}
-                                />
-                                <Route
-                                    path="long"
-                                    element={<VStack>
-                                        <NavigationButtons />
-                                        <Trade
-                                            order={longOrder}
-                                            globalTradeParams={globalTradeParams}
-                                            connectedToMaker={connectedToMaker}
-                                            walletBalance={walletInfo ? walletInfo.balance : 0}
-                                            isLong={true}
-                                        />
-                                        {history}
-                                    </VStack>}
-                                />
-                                <Route
-                                    path="short"
-                                    element={<VStack>
-                                        <NavigationButtons />
-                                        <Trade
-                                            order={shortOrder}
-                                            globalTradeParams={globalTradeParams}
-                                            connectedToMaker={connectedToMaker}
-                                            walletBalance={walletInfo ? walletInfo.balance : 0}
-                                            isLong={false}
-                                        />
-                                        {history}
-                                    </VStack>}
-                                />
-                                <Route index element={<Navigate to="long" />} />
-                            </Route>
+                    <Routes>
+                        <Route path="/">
                             <Route
-                                path="/*"
+                                path="wallet"
                                 element={<>
+                                    <Wallet walletInfo={walletInfo} />
                                 </>}
                             />
-                        </Routes>
-                    </VStack>
+                            <Route
+                                path="long"
+                                element={<VStack>
+                                    <NavigationButtons />
+                                    <Trade
+                                        order={longOrder}
+                                        globalTradeParams={globalTradeParams}
+                                        connectedToMaker={connectedToMaker}
+                                        walletBalance={walletInfo ? walletInfo.balance : 0}
+                                        isLong={true}
+                                    />
+                                    {history}
+                                </VStack>}
+                            />
+                            <Route
+                                path="short"
+                                element={<VStack>
+                                    <NavigationButtons />
+                                    <Trade
+                                        order={shortOrder}
+                                        globalTradeParams={globalTradeParams}
+                                        connectedToMaker={connectedToMaker}
+                                        walletBalance={walletInfo ? walletInfo.balance : 0}
+                                        isLong={false}
+                                    />
+                                    {history}
+                                </VStack>}
+                            />
+                            <Route index element={<Navigate to="long" />} />
+                        </Route>
+                        <Route
+                            path="/*"
+                            element={<>
+                            </>}
+                        />
+                    </Routes>
                 </Center>
             </Box>
             <Footer />
