@@ -77,7 +77,6 @@ export default function Trade({
         maxQuantity,
         parcelSize,
         leverage,
-        openingFee,
         fundingRateAnnualized,
         fundingRateHourly,
     },
