@@ -5,8 +5,11 @@ import {
     AccordionItem,
     AccordionPanel,
     Box,
+    Button,
+    ButtonGroup,
     Center,
-    StackDivider,
+    HStack,
+    Text,
     useColorModeValue,
     VStack,
 } from "@chakra-ui/react";
@@ -15,7 +18,8 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
 import { useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link as ReachLink } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { useLocalStorage } from "usehooks-ts";
 import AlertBox from "./components/AlertBox";
@@ -81,6 +85,7 @@ export const App = () => {
     };
 
     const globalTradeParams = extractGlobalTradeParams(makerLong, makerShort);
+
     function extractGlobalTradeParams(long: Order | null, short: Order | null) {
         const order = long ? long : short ? short : null;
 
@@ -142,6 +147,37 @@ export const App = () => {
 
     const [hideDisclaimer, setHideDisclaimer] = useLocalStorage<boolean>("hideDisclaimer", false);
 
+    const closedPositions = cfds.filter((cfd) => isClosed(cfd));
+
+    const history = <>
+        <History
+            connectedToMaker={connectedToMaker}
+            cfds={cfds.filter((cfd) => !isClosed(cfd))}
+        />
+
+        {closedPositions.length > 0
+            && <Accordion allowToggle width={"100%"}>
+                <AccordionItem>
+                    <h2>
+                        <AccordionButton>
+                            <AccordionIcon />
+                            <Box w={"100%"} textAlign="center">
+                                Show Closed Positions
+                            </Box>
+                            <AccordionIcon />
+                        </AccordionButton>
+                    </h2>
+                    <AccordionPanel pb={4}>
+                        <History
+                            cfds={closedPositions}
+                            connectedToMaker={connectedToMaker}
+                        />
+                    </AccordionPanel>
+                </AccordionItem>
+            </Accordion>}
+    </>;
+
+
     return (
         <>
             {!hideDisclaimer && <Disclaimer setHideDisclaimer={setHideDisclaimer} />}
@@ -157,17 +193,17 @@ export const App = () => {
                     <VStack>
                         {connectionStatus}
                         <Routes>
-                            <Route
-                                path="/wallet"
-                                element={<>
-                                    <Wallet walletInfo={walletInfo} />
-                                </>}
-                            />
-
-                            <Route
-                                path="/"
-                                element={<>
-                                    <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
+                            <Route path="/">
+                                <Route
+                                    path="wallet"
+                                    element={<>
+                                        <Wallet walletInfo={walletInfo} />
+                                    </>}
+                                />
+                                <Route
+                                    path="long"
+                                    element={<VStack>
+                                        <NavigationButtons/>
                                         <Trade
                                             longOrder={longOrder}
                                             shortOrder={shortOrder}
@@ -175,31 +211,28 @@ export const App = () => {
                                             connectedToMaker={connectedToMaker}
                                             walletBalance={walletInfo ? walletInfo.balance : 0}
                                         />
-                                        <History
+                                        {history}
+                                    </VStack>}
+                                />
+                                <Route
+                                    path="short"
+                                    element={<VStack>
+                                        <NavigationButtons/>
+                                        <Trade
+                                            longOrder={longOrder}
+                                            shortOrder={shortOrder}
+                                            globalTradeParams={globalTradeParams}
                                             connectedToMaker={connectedToMaker}
-                                            cfds={cfds.filter((cfd) => !isClosed(cfd))}
+                                            walletBalance={walletInfo ? walletInfo.balance : 0}
                                         />
-
-                                        <Accordion allowToggle width={"100%"}>
-                                            <AccordionItem>
-                                                <h2>
-                                                    <AccordionButton>
-                                                        <AccordionIcon />
-                                                        <Box w={"100%"} textAlign="center">
-                                                            Show Closed Positions
-                                                        </Box>
-                                                        <AccordionIcon />
-                                                    </AccordionButton>
-                                                </h2>
-                                                <AccordionPanel pb={4}>
-                                                    <History
-                                                        cfds={cfds.filter((cfd) => isClosed(cfd))}
-                                                        connectedToMaker={connectedToMaker}
-                                                    />
-                                                </AccordionPanel>
-                                            </AccordionItem>
-                                        </Accordion>
-                                    </VStack>
+                                        {history}
+                                    </VStack>}
+                                />
+                                <Route index element={<Navigate to="long" />} />
+                            </Route>
+                            <Route
+                                path="/*"
+                                element={<>
                                 </>}
                             />
                         </Routes>
@@ -210,3 +243,51 @@ export const App = () => {
         </>
     );
 };
+
+
+function NavigationButtons() {
+    const location = useLocation();
+    const isLongSelected = location.pathname.includes("long");
+    const isShortSelected = !isLongSelected;
+
+    const unSelectedButton = "transparent";
+    const selectedButton = useColorModeValue("grey.400", "black.400");
+    const buttonBorder = useColorModeValue("grey.400", "black.400");
+    const buttonText = useColorModeValue("black", "white");
+
+    return (<HStack>
+        <Center>
+            <ButtonGroup
+                padding="3"
+                spacing="6"
+            >
+                <Button
+                    as={ReachLink}
+                    to="/long"
+                    color={isLongSelected ? selectedButton : unSelectedButton}
+                    bg={isLongSelected ? selectedButton : unSelectedButton}
+                    border={buttonBorder}
+                    isActive={isLongSelected}
+                    size="lg"
+                    h={10}
+                    w={"40"}
+                >
+                    <Text fontSize={"md"} color={buttonText}>Long BTC</Text>
+                </Button>
+                <Button
+                    as={ReachLink}
+                    to="/short"
+                    color={isShortSelected ? selectedButton : unSelectedButton}
+                    bg={isShortSelected ? selectedButton : unSelectedButton}
+                    border={buttonBorder}
+                    isActive={isShortSelected}
+                    size="lg"
+                    h={10}
+                    w={"40"}
+                >
+                    <Text fontSize={"md"} color={buttonText}>Short BTC</Text>
+                </Button>
+            </ButtonGroup>
+        </Center>
+    </HStack>);
+}

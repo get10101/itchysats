@@ -212,11 +212,6 @@ export default function Trade({
                                                         <DollarAmount amount={longPriceAsNumber || 0} />
                                                     </Text>
                                                 </Skeleton>
-                                                <Skeleton isLoaded={!!shortPriceAsNumber && shortPriceAsNumber > 0}>
-                                                    <Text fontSize={"4xl"} as="b">
-                                                        <DollarAmount amount={shortPriceAsNumber || 0} />
-                                                    </Text>
-                                                </Skeleton>
                                             </VStack>
                                         </MotionBox>
                                     </Circle>
@@ -243,12 +238,8 @@ export default function Trade({
                         <Table variant="simple">
                             <Tbody>
                                 <Tr>
-                                    <Td>Required Long Margin</Td>
+                                    <Td>Required Margin</Td>
                                     <Td isNumeric><BitcoinAmount btc={longMargin} /></Td>
-                                </Tr>
-                                <Tr>
-                                    <Td>Required Short Margin</Td>
-                                    <Td isNumeric><BitcoinAmount btc={shortMargin} /></Td>
                                 </Tr>
                                 <Tr>
                                     <Td>
