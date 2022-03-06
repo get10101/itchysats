@@ -18,7 +18,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Link as ReachLink } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
@@ -120,10 +120,7 @@ export const App = () => {
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
     const connectedToMakerOrUndefined = useLatestEvent<ConnectionStatus>(source, "maker_status");
-    const connectedToMaker = useMemo(
-        () => connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false },
-        [connectedToMakerOrUndefined],
-    );
+    const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
     dayjs.extend(relativeTime);
     dayjs.extend(utc);
@@ -159,7 +156,7 @@ export const App = () => {
 
     useEffect(() => {
         const id = "maker-connection-toast";
-        if (!connectedToMaker.online && !toast.isActive(id)) {
+        if (connectedToMakerOrUndefined && !connectedToMakerOrUndefined.online && !toast.isActive(id)) {
             toast({
                 id,
                 status: "warning",
@@ -169,8 +166,10 @@ export const App = () => {
                 title: "No maker!",
                 description: "You are not connected to any maker. Functionality may be limited",
             });
+        } else if (connectedToMakerOrUndefined && connectedToMakerOrUndefined.online && toast.isActive(id)) {
+            toast.close(id);
         }
-    }, [toast, connectedToMaker]);
+    }, [toast, connectedToMakerOrUndefined]);
 
     const [hideDisclaimer, setHideDisclaimer] = useLocalStorage<boolean>("hideDisclaimer", false);
 
