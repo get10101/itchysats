@@ -15,7 +15,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
 import { useState } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { useLocalStorage } from "usehooks-ts";
 import AlertBox from "./components/AlertBox";
@@ -153,62 +153,58 @@ export const App = () => {
                 referencePrice={referencePrice}
             />
             <Box textAlign="center" padding={3} bg={useColorModeValue("gray.50", "gray.800")}>
-                <Routes>
-                    <Route
-                        path="/wallet"
-                        element={<>
-                            <Center marginTop={20}>
-                                <VStack>
-                                    {connectionStatus}
+                <Center marginTop={20}>
+                    <VStack>
+                        {connectionStatus}
+                        <Routes>
+                            <Route
+                                path="/wallet"
+                                element={<>
                                     <Wallet walletInfo={walletInfo} />
-                                </VStack>
-                            </Center>
-                        </>}
-                    />
-                    <Route
-                        path="/"
-                        element={<>
-                            <Center marginTop={20}>
-                                <VStack>
-                                    {connectionStatus}
-                                </VStack>
-                            </Center>
-                            <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
-                                <Trade
-                                    longOrder={longOrder}
-                                    shortOrder={shortOrder}
-                                    globalTradeParams={globalTradeParams}
-                                    connectedToMaker={connectedToMaker}
-                                    walletBalance={walletInfo ? walletInfo.balance : 0}
-                                />
-                                <History
-                                    connectedToMaker={connectedToMaker}
-                                    cfds={cfds.filter((cfd) => !isClosed(cfd))}
-                                />
+                                </>}
+                            />
 
-                                <Accordion allowToggle width={"100%"}>
-                                    <AccordionItem>
-                                        <h2>
-                                            <AccordionButton>
-                                                <AccordionIcon />
-                                                <Box w={"100%"} textAlign="center">
-                                                    Show Closed Positions
-                                                </Box>
-                                                <AccordionIcon />
-                                            </AccordionButton>
-                                        </h2>
-                                        <AccordionPanel pb={4}>
-                                            <History
-                                                cfds={cfds.filter((cfd) => isClosed(cfd))}
-                                                connectedToMaker={connectedToMaker}
-                                            />
-                                        </AccordionPanel>
-                                    </AccordionItem>
-                                </Accordion>
-                            </VStack>
-                        </>}
-                    />
-                </Routes>
+                            <Route
+                                path="/"
+                                element={<>
+                                    <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
+                                        <Trade
+                                            longOrder={longOrder}
+                                            shortOrder={shortOrder}
+                                            globalTradeParams={globalTradeParams}
+                                            connectedToMaker={connectedToMaker}
+                                            walletBalance={walletInfo ? walletInfo.balance : 0}
+                                        />
+                                        <History
+                                            connectedToMaker={connectedToMaker}
+                                            cfds={cfds.filter((cfd) => !isClosed(cfd))}
+                                        />
+
+                                        <Accordion allowToggle width={"100%"}>
+                                            <AccordionItem>
+                                                <h2>
+                                                    <AccordionButton>
+                                                        <AccordionIcon />
+                                                        <Box w={"100%"} textAlign="center">
+                                                            Show Closed Positions
+                                                        </Box>
+                                                        <AccordionIcon />
+                                                    </AccordionButton>
+                                                </h2>
+                                                <AccordionPanel pb={4}>
+                                                    <History
+                                                        cfds={cfds.filter((cfd) => isClosed(cfd))}
+                                                        connectedToMaker={connectedToMaker}
+                                                    />
+                                                </AccordionPanel>
+                                            </AccordionItem>
+                                        </Accordion>
+                                    </VStack>
+                                </>}
+                            />
+                        </Routes>
+                    </VStack>
+                </Center>
             </Box>
             <Footer />
         </>
