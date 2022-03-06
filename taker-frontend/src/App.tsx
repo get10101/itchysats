@@ -17,6 +17,7 @@ import * as React from "react";
 import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
+import { useLocalStorage } from "usehooks-ts";
 import AlertBox from "./components/AlertBox";
 import Disclaimer from "./components/Disclaimer";
 import Footer from "./components/Footer";
@@ -139,9 +140,11 @@ export const App = () => {
         />;
     }
 
+    const [hideDisclaimer, setHideDisclaimer] = useLocalStorage<boolean>("hideDisclaimer", false);
+
     return (
         <>
-            <Disclaimer />
+            {!hideDisclaimer && <Disclaimer setHideDisclaimer={setHideDisclaimer} />}
             <Nav
                 walletInfo={walletInfo}
                 connectedToMaker={connectedToMaker}

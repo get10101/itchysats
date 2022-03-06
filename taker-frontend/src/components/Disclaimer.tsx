@@ -1,6 +1,8 @@
 import { ExternalLinkIcon } from "@chakra-ui/icons";
 import {
     Button,
+    Checkbox,
+    HStack,
     Link,
     Modal,
     ModalBody,
@@ -15,11 +17,16 @@ import {
 } from "@chakra-ui/react";
 import React, { useEffect, useState } from "react";
 
+export interface DisclaimerProps {
+    setHideDisclaimer: (value: boolean) => void;
+}
+
 // Disclaimer is a modal pop-up that opens up before you start using the app and
 // goes away after the user dismisses it. It displays the information we want
 // the user to know before they start using the software.
-export default function Disclaimer() {
+export default function Disclaimer({ setHideDisclaimer }: DisclaimerProps) {
     const [ack, setAck] = useState<boolean>(false);
+    const [hideDisclaimerCheckbox, setHideDisclaimerCheckbox] = useState<boolean>(true);
 
     const { isOpen, onOpen, onClose } = useDisclosure();
 
@@ -58,15 +65,26 @@ export default function Disclaimer() {
                         <Text>Additionally, CFD trading is inherently risky: so don't get rekt</Text>
                     </ModalBody>
                     <ModalFooter>
-                        <Button
-                            colorScheme="blue"
-                            mr={3}
-                            onClick={() => {
-                                setAck(true);
-                            }}
-                        >
-                            Dismiss
-                        </Button>
+                        <HStack>
+                            <Checkbox
+                                isChecked={hideDisclaimerCheckbox}
+                                onChange={(e) => {
+                                    setHideDisclaimerCheckbox(e.target.checked);
+                                }}
+                            >
+                                Don't show this dialog again.
+                            </Checkbox>
+                            <Button
+                                colorScheme="blue"
+                                mr={3}
+                                onClick={() => {
+                                    setHideDisclaimer(hideDisclaimerCheckbox);
+                                    setAck(true);
+                                }}
+                            >
+                                Dismiss
+                            </Button>
+                        </HStack>
                     </ModalFooter>
                 </ModalContent>
             </Modal>
