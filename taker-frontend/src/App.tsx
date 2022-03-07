@@ -19,7 +19,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { Link as ReachLink } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { useLocalStorage } from "usehooks-ts";
@@ -175,9 +175,93 @@ export const App = () => {
 
     const [hideDisclaimer, setHideDisclaimer] = useLocalStorage<boolean>("hideDisclaimer", false);
 
+    return (
+        <>
+            {!hideDisclaimer && <Disclaimer setHideDisclaimer={setHideDisclaimer} />}
+            <Nav
+                walletInfo={walletInfo}
+                connectedToMaker={connectedToMaker}
+                fundingRate={globalTradeParams?.fundingRateHourly}
+                nextFundingEvent={nextFundingEvent}
+                referencePrice={referencePrice}
+            />
+            <Box textAlign="center" padding={3} bg={useColorModeValue("gray.50", "gray.800")}>
+                <Center marginTop={20}>
+                    <Routes>
+                        <Route path="/">
+                            <Route
+                                path="wallet"
+                                element={<>
+                                    <Wallet walletInfo={walletInfo} />
+                                </>}
+                            />
+                            <Route
+                                element={// @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
+                                <PageLayout cfds={cfds} connectedToMaker={connectedToMaker} />}
+                            >
+                                <Route
+                                    path="long"
+                                    element={<>
+                                        <Trade
+                                            order={longOrder}
+                                            globalTradeParams={globalTradeParams}
+                                            connectedToMaker={connectedToMaker}
+                                            walletBalance={walletInfo ? walletInfo.balance : 0}
+                                            isLong={true}
+                                        />
+                                    </>}
+                                />
+                                <Route
+                                    path="short"
+                                    element={<>
+                                        <Trade
+                                            order={shortOrder}
+                                            globalTradeParams={globalTradeParams}
+                                            connectedToMaker={connectedToMaker}
+                                            walletBalance={walletInfo ? walletInfo.balance : 0}
+                                            isLong={false}
+                                        />
+                                    </>}
+                                />
+                            </Route>
+                            <Route index element={<Navigate to="long" />} />
+                        </Route>
+                        <Route
+                            path="/*"
+                            element={<>
+                            </>}
+                        />
+                    </Routes>
+                </Center>
+            </Box>
+            <Footer />
+        </>
+    );
+};
+
+interface PageLayoutProps {
+    children: JSX.Element;
+    cfds: Cfd[];
+    connectedToMaker: ConnectionStatus;
+}
+
+function PageLayout({ children, cfds, connectedToMaker }: PageLayoutProps) {
+    return (<VStack w={"100%"}>
+        <NavigationButtons />
+        <Outlet />
+        <HistoryLayout cfds={cfds} connectedToMaker={connectedToMaker} />
+    </VStack>);
+}
+
+interface HistoryLayoutProps {
+    cfds: Cfd[];
+    connectedToMaker: ConnectionStatus;
+}
+
+function HistoryLayout({ cfds, connectedToMaker }: HistoryLayoutProps) {
     const closedPositions = cfds.filter((cfd) => isClosed(cfd));
 
-    const history = <VStack padding={3} w={"100%"}>
+    return (<VStack padding={3} w={"100%"}>
         <History
             connectedToMaker={connectedToMaker}
             cfds={cfds.filter((cfd) => !isClosed(cfd))}
@@ -203,70 +287,8 @@ export const App = () => {
                     </AccordionPanel>
                 </AccordionItem>
             </Accordion>}
-    </VStack>;
-
-    return (
-        <>
-            {!hideDisclaimer && <Disclaimer setHideDisclaimer={setHideDisclaimer} />}
-            <Nav
-                walletInfo={walletInfo}
-                connectedToMaker={connectedToMaker}
-                fundingRate={globalTradeParams?.fundingRateHourly}
-                nextFundingEvent={nextFundingEvent}
-                referencePrice={referencePrice}
-            />
-            <Box textAlign="center" padding={3} bg={useColorModeValue("gray.50", "gray.800")}>
-                <Center marginTop={20}>
-                    <Routes>
-                        <Route path="/">
-                            <Route
-                                path="wallet"
-                                element={<>
-                                    <Wallet walletInfo={walletInfo} />
-                                </>}
-                            />
-                            <Route
-                                path="long"
-                                element={<VStack w={"100%"}>
-                                    <NavigationButtons />
-                                    <Trade
-                                        order={longOrder}
-                                        globalTradeParams={globalTradeParams}
-                                        connectedToMaker={connectedToMaker}
-                                        walletBalance={walletInfo ? walletInfo.balance : 0}
-                                        isLong={true}
-                                    />
-                                    {history}
-                                </VStack>}
-                            />
-                            <Route
-                                path="short"
-                                element={<VStack w={"100%"}>
-                                    <NavigationButtons />
-                                    <Trade
-                                        order={shortOrder}
-                                        globalTradeParams={globalTradeParams}
-                                        connectedToMaker={connectedToMaker}
-                                        walletBalance={walletInfo ? walletInfo.balance : 0}
-                                        isLong={false}
-                                    />
-                                    {history}
-                                </VStack>}
-                            />
-                            <Route index element={<Navigate to="long" />} />
-                        </Route>
-                        <Route
-                            path="/*"
-                            element={<>
-                            </>}
-                        />
-                    </Routes>
-                </Center>
-            </Box>
-            <Footer />
-        </>
-    );
-};
+    </VStack>);
+}
 
 function NavigationButtons() {
     const location = useLocation();
