@@ -17,7 +17,6 @@ use daemon::MakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use model::olivia;
-use model::Role;
 use model::SETTLEMENT_INTERVAL;
 use shared_bin::fairings;
 use shared_bin::logger;
@@ -244,7 +243,7 @@ async fn main() -> Result<()> {
     let _supervisor_address = supervisor.create(None).spawn(&mut tasks);
 
     let (proj_actor, projection_feeds) =
-        projection::Actor::new(db.clone(), Role::Maker, bitcoin_network, &price_feed);
+        projection::Actor::new(db.clone(), bitcoin_network, &price_feed);
     tasks.add(projection_context.run(proj_actor));
 
     rocket::custom(figment)

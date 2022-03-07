@@ -25,7 +25,6 @@ use model::OpeningFee;
 use model::OrderId;
 use model::Position;
 use model::Price;
-use model::Role;
 use model::TxFeeRate;
 use model::Usd;
 use model::SETTLEMENT_INTERVAL;
@@ -222,8 +221,7 @@ impl Maker {
             oracle_mock.unwrap(),
         );
 
-        let (proj_actor, feeds) =
-            projection::Actor::new(db, Role::Maker, Network::Testnet, &price_feed_addr);
+        let (proj_actor, feeds) = projection::Actor::new(db, Network::Testnet, &price_feed_addr);
         tasks.add(projection_context.run(proj_actor));
 
         Self {
@@ -344,7 +342,7 @@ impl Taker {
         );
 
         let (proj_actor, feeds) =
-            projection::Actor::new(db, Role::Taker, Network::Testnet, &taker.price_feed_actor);
+            projection::Actor::new(db, Network::Testnet, &taker.price_feed_actor);
         tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(

@@ -20,7 +20,6 @@ use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use model::olivia;
 use model::Identity;
-use model::Role;
 use model::SETTLEMENT_INTERVAL;
 use shared_bin::fairings;
 use shared_bin::logger;
@@ -266,12 +265,8 @@ async fn main() -> Result<()> {
         maker_identity,
     )?;
 
-    let (proj_actor, projection_feeds) = projection::Actor::new(
-        db.clone(),
-        Role::Taker,
-        bitcoin_network,
-        &taker.price_feed_actor,
-    );
+    let (proj_actor, projection_feeds) =
+        projection::Actor::new(db.clone(), bitcoin_network, &taker.price_feed_actor);
     tasks.add(projection_context.run(proj_actor));
 
     let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
