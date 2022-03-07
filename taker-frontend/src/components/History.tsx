@@ -18,7 +18,7 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { Cfd, ConnectionStatus, isClosed, StateKey, Tx, TxLabel } from "../types";
+import { Cfd, ConnectionStatus, isClosed, PositionKey, StateKey, Tx, TxLabel } from "../types";
 import usePostRequest from "../usePostRequest";
 import BitcoinAmount from "./BitcoinAmount";
 import CloseButton from "./CloseButton";
@@ -106,9 +106,23 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
         ? failedCfd ? "Missed P/L 😭" : "Realized P/L"
         : "Unrealized P/L";
 
+    const tileColorLight = "white";
+    const tileColorDark = "gray.700";
+    const positionColor = position.key === PositionKey.LONG
+        ? "green"
+        : "red";
+
+    // gradientPercentPosition * 2 + gradientPercentTile = 100%
+    const gradientPercentPosition = "2%";
+    const gradientPercentTile = "96%";
+    const gradientDirection = "to-r";
+
     return (
         <HStack
-            bg={useColorModeValue("white", "gray.700")}
+            bgGradient={useColorModeValue(
+                `linear(${gradientDirection}, ${positionColor} 0%, ${tileColorLight} ${gradientPercentPosition}, ${tileColorLight} ${gradientPercentTile})`,
+                `linear(${gradientDirection}, ${positionColor} 0%, ${tileColorDark} ${gradientPercentPosition}, ${tileColorDark} ${gradientPercentTile})`,
+            )}
             rounded={"md"}
             padding={5}
             alignItems={"stretch"}
@@ -117,15 +131,6 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
             <VStack>
                 <Table size="sm" variant={"unstyled"}>
                     <Tbody>
-                        <Tr>
-                            <Td><Text as={"b"}>Position</Text></Td>
-                            <Td
-                                textAlign="right"
-                                textColor={useColorModeValue(position.getColorScheme(), position.getColorScheme())}
-                            >
-                                {position.key.toString()}
-                            </Td>
-                        </Tr>
                         <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
                             <Td><Text as={"b"}>{profitLabel}</Text></Td>
                             <Td textAlign="right">
