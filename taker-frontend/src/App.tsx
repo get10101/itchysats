@@ -177,7 +177,7 @@ export const App = () => {
 
     const closedPositions = cfds.filter((cfd) => isClosed(cfd));
 
-    const history = <>
+    const history = <VStack padding={3} w={"100%"}>
         <History
             connectedToMaker={connectedToMaker}
             cfds={cfds.filter((cfd) => !isClosed(cfd))}
@@ -203,7 +203,7 @@ export const App = () => {
                     </AccordionPanel>
                 </AccordionItem>
             </Accordion>}
-    </>;
+    </VStack>;
 
     return (
         <>
