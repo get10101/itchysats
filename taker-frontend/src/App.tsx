@@ -182,7 +182,7 @@ export const App = () => {
         />
 
         {closedPositions.length > 0
-            && <Accordion allowToggle width={"100%"}>
+            && <Accordion allowToggle width={"80%"}>
                 <AccordionItem>
                     <h2>
                         <AccordionButton>
@@ -225,7 +225,7 @@ export const App = () => {
                             />
                             <Route
                                 path="long"
-                                element={<VStack>
+                                element={<VStack w={"100%"}>
                                     <NavigationButtons />
                                     <Trade
                                         order={longOrder}
@@ -239,7 +239,7 @@ export const App = () => {
                             />
                             <Route
                                 path="short"
-                                element={<VStack>
+                                element={<VStack w={"100%"}>
                                     <NavigationButtons />
                                     <Trade
                                         order={shortOrder}
