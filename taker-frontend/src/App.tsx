@@ -147,7 +147,7 @@ export const App = () => {
                 status: "error",
                 isClosable: true,
                 duration: null,
-                position: "top-right",
+                position: "bottom",
                 title: "Connection error!",
                 description: "Please ensure your daemon is running. Then refresh the page.",
             });
@@ -164,7 +164,7 @@ export const App = () => {
                 status: "warning",
                 isClosable: true,
                 duration: null,
-                position: "top-right",
+                position: "bottom",
                 title: "No maker!",
                 description: "You are not connected to any maker. Functionality may be limited",
             });
