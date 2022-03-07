@@ -151,6 +151,8 @@ export const App = () => {
                 title: "Connection error!",
                 description: "Please ensure your daemon is running. Then refresh the page.",
             });
+        } else if (isConnected && toast.isActive(id)) {
+            toast.close(id);
         }
     }, [toast, isConnected]);
 
