@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use model::Cfd;
 use model::Identity;
-use model::Order;
+use model::MakerOffers;
 use model::OrderId;
 use model::Origin;
 use model::Price;
@@ -24,7 +24,7 @@ use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;
 
 #[derive(Clone, Copy)]
-pub struct CurrentOrder(pub Option<Order>);
+pub struct CurrentMakerOffers(pub Option<MakerOffers>);
 
 #[derive(Clone, Copy)]
 pub struct TakeOffer {
@@ -50,7 +50,7 @@ pub struct Actor<O, W> {
     oracle_actor: xtra::Address<O>,
     n_payouts: usize,
     tasks: Tasks,
-    current_order: Option<Order>,
+    current_maker_offers: Option<MakerOffers>,
     maker_identity: Identity,
 }
 
@@ -82,7 +82,7 @@ where
             setup_actors: AddressMap::default(),
             collab_settlement_actors: AddressMap::default(),
             tasks: Tasks::default(),
-            current_order: None,
+            current_maker_offers: None,
             maker_identity,
         }
     }
@@ -90,29 +90,28 @@ where
 
 #[xtra_productivity]
 impl<O, W> Actor<O, W> {
-    async fn handle_current_order(&mut self, msg: CurrentOrder) -> Result<()> {
-        let order = msg.0;
+    async fn handle_current_offers(&mut self, msg: CurrentMakerOffers) -> Result<()> {
+        let takers_perspective_of_maker_offers = msg.0.map(|mut maker_offers| {
+            maker_offers.long = maker_offers.long.map(|mut long| {
+                long.origin = Origin::Theirs;
+                long
+            });
+            maker_offers.short = maker_offers.short.map(|mut short| {
+                short.origin = Origin::Theirs;
+                short
+            });
 
-        tracing::trace!("new order {:?}", order);
-        match order {
-            Some(mut order) => {
-                order.origin = Origin::Theirs;
+            maker_offers
+        });
 
-                self.current_order = Some(order);
+        self.current_maker_offers = takers_perspective_of_maker_offers;
 
-                self.projection_actor
-                    .send(projection::Update(Some(order)))
-                    .await?;
-            }
-            None => {
-                #[allow(unused_qualifications)]
-                // Need to fully qualify `Option` because we have more than one `Update` message
-                // that contains an `Option<T>`.
-                self.projection_actor
-                    .send(projection::Update(Option::<Order>::None))
-                    .await?;
-            }
-        }
+        tracing::trace!("new maker offers {:?}", takers_perspective_of_maker_offers);
+
+        self.projection_actor
+            .send(projection::Update(takers_perspective_of_maker_offers))
+            .await?;
+
         Ok(())
     }
 
@@ -162,28 +161,30 @@ where
 
         let mut conn = self.db.acquire().await?;
 
-        let current_order = self.current_order.context("No current order from maker")?;
+        let (order_to_take, maker_offers) = self
+            .current_maker_offers
+            .context("No maker offers available to take")?
+            .take_order(order_id);
 
-        tracing::info!("Taking current order: {:?}", &current_order);
+        let order_to_take = order_to_take.context("Order to take could not be found in current maker offers, you might have an outdated offer")?;
+        self.current_maker_offers.replace(maker_offers);
+
+        tracing::info!("Taking current order: {:?}", &order_to_take);
 
         // We create the cfd here without any events yet, only static data
         // Once the contract setup completes (rejected / accepted / failed) the first event will be
         // recorded
-        let cfd = Cfd::from_order(current_order, quantity, self.maker_identity, Role::Taker);
-
+        let cfd = Cfd::from_order(order_to_take, quantity, self.maker_identity, Role::Taker);
         insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
 
         // Cleanup own order feed, after inserting the cfd.
         // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
         // same order id.
-        #[allow(unused_qualifications)]
-        // Need to fully qualify `Option` because we have more than one `Update` message that
-        // contains an `Option<T>`.
         self.projection_actor
-            .send(projection::Update(Option::<Order>::None))
+            .send(projection::Update(self.current_maker_offers))
             .await?;
 
-        let price_event_id = current_order.oracle_event_id;
+        let price_event_id = order_to_take.oracle_event_id;
         let announcement = self
             .oracle_actor
             .send(oracle::GetAnnouncement(price_event_id))

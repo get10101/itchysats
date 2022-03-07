@@ -3,7 +3,7 @@ use crate::future_ext::FutureExt;
 use crate::noise;
 use crate::rollover_taker;
 use crate::setup_taker;
-use crate::taker_cfd::CurrentOrder;
+use crate::taker_cfd::CurrentMakerOffers;
 use crate::wire;
 use crate::wire::EncryptedJsonCodec;
 use crate::wire::Version;
@@ -15,7 +15,6 @@ use bdk::bitcoin::Amount;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
-use model::pick_single_offer;
 use model::Identity;
 use model::OrderId;
 use model::Price;
@@ -149,7 +148,7 @@ impl State {
 pub struct Actor {
     status_sender: watch::Sender<ConnectionStatus>,
     identity_sk: x25519_dalek::StaticSecret,
-    current_order: Box<dyn MessageChannel<CurrentOrder>>,
+    current_order: Box<dyn MessageChannel<CurrentMakerOffers>>,
     /// How often we check ("measure pulse") for heartbeat
     /// It should not be greater than maker's `heartbeat interval`
     heartbeat_measuring_rate: Duration,
@@ -225,7 +224,7 @@ pub struct ProposeRollover {
 impl Actor {
     pub fn new(
         status_sender: watch::Sender<ConnectionStatus>,
-        current_order: &(impl MessageChannel<CurrentOrder> + 'static),
+        current_order: &(impl MessageChannel<CurrentMakerOffers> + 'static),
         identity_sk: x25519_dalek::StaticSecret,
         maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
@@ -565,11 +564,9 @@ impl Actor {
                 }
             }
             wire::MakerToTaker::CurrentOffers(maker_offers) => {
-                let order = pick_single_offer(maker_offers);
-
                 let _ = self
                     .current_order
-                    .send(CurrentOrder(order))
+                    .send(CurrentMakerOffers(maker_offers))
                     .log_failure("Failed to forward current order from maker")
                     .await;
             }

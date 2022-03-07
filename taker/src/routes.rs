@@ -53,7 +53,7 @@ pub async fn feed(
 ) -> EventStream![] {
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
-    let mut rx_order = rx.order.clone();
+    let mut rx_offers = rx.offers.clone();
     let mut rx_quote = rx.quote.clone();
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_maker_status = rx_maker_status.inner().clone();
@@ -67,8 +67,9 @@ pub async fn feed(
         let maker_status = rx_maker_status.borrow().clone();
         yield maker_status.to_sse_event();
 
-        let order = rx_order.borrow().clone();
-        yield order.to_sse_event();
+        let offers = rx_offers.borrow().clone();
+        yield Event::json(&offers.long).event("long_offer");
+        yield Event::json(&offers.short).event("short_offer");
 
         let quote = rx_quote.borrow().clone();
         yield quote.to_sse_event();
@@ -86,9 +87,10 @@ pub async fn feed(
                     let maker_status = rx_maker_status.borrow().clone();
                     yield maker_status.to_sse_event();
                 },
-                Ok(()) = rx_order.changed() => {
-                    let order = rx_order.borrow().clone();
-                    yield order.to_sse_event();
+                Ok(()) = rx_offers.changed() => {
+                    let offers = rx_offers.borrow().clone();
+                    yield Event::json(&offers.long).event("long_offer");
+                    yield Event::json(&offers.short).event("short_offer");
                 }
                 Ok(()) = rx_cfds.changed() => {
                     let cfds = rx_cfds.borrow().clone();

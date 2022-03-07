@@ -67,7 +67,7 @@ pub struct Actor {
 
 pub struct Feeds {
     pub quote: watch::Receiver<Option<Quote>>,
-    pub order: watch::Receiver<Option<CfdOrder>>,
+    pub offers: watch::Receiver<MakerOffers>,
     pub connected_takers: watch::Receiver<Vec<model::Identity>>,
     pub cfds: watch::Receiver<Vec<Cfd>>,
 }
@@ -80,7 +80,10 @@ impl Actor {
         price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote> + 'static),
     ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(Vec::new());
-        let (tx_order, rx_order) = watch::channel(None);
+        let (tx_order, rx_order) = watch::channel(MakerOffers {
+            long: None,
+            short: None,
+        });
         let (tx_quote, rx_quote) = watch::channel(None);
         let (tx_connected_takers, rx_connected_takers) = watch::channel(Vec::new());
 
@@ -98,7 +101,7 @@ impl Actor {
         };
         let feeds = Feeds {
             cfds: rx_cfds,
-            order: rx_order,
+            offers: rx_order,
             quote: rx_quote,
             connected_takers: rx_connected_takers,
         };
@@ -713,7 +716,7 @@ impl Cfd {
 /// Internal struct to keep all the senders around in one place
 struct Tx {
     cfds: watch::Sender<Vec<Cfd>>,
-    pub order: watch::Sender<Option<CfdOrder>>,
+    pub order: watch::Sender<MakerOffers>,
     pub quote: watch::Sender<Option<Quote>>,
     // TODO: Use this channel to communicate maker status as well with generic
     // ID of connected counterparties
@@ -744,19 +747,39 @@ impl Tx {
         let _ = self.quote.send(quote.map(|q| q.into()));
     }
 
-    fn send_order_update(&self, quote: Option<Order>) {
-        let order = match quote {
-            None => None,
-            Some(order) => match TryInto::<CfdOrder>::try_into(order) {
-                Ok(order) => Some(order),
-                Err(e) => {
-                    tracing::warn!("Unable to convert order: {e:#}");
-                    None
-                }
-            },
+    fn send_order_update(&self, offers: Option<model::MakerOffers>) {
+        let (long, short) = match offers {
+            None => (None, None),
+            Some(offers) => {
+                let projection_long =
+                    offers
+                        .long
+                        .and_then(|long| match TryInto::<CfdOrder>::try_into(long) {
+                            Ok(projection_long) => Some(projection_long),
+                            Err(e) => {
+                                tracing::warn!("Unable to convert long order: {e:#}");
+                                None
+                            }
+                        });
+
+                let projection_short =
+                    offers
+                        .short
+                        .and_then(|short| match TryInto::<CfdOrder>::try_into(short) {
+                            Ok(projection_short) => Some(projection_short),
+                            Err(e) => {
+                                tracing::warn!("Unable to convert short order: {e:#}");
+                                None
+                            }
+                        });
+
+                (projection_long, projection_short)
+            }
         };
 
-        let _ = self.order.send(order);
+        let projection_offers = MakerOffers { long, short };
+
+        let _ = self.order.send(projection_offers);
     }
 }
 
@@ -811,7 +834,7 @@ impl Actor {
             .send_cfds_update(self.state.cfds.clone(), self.state.quote);
     }
 
-    fn handle(&mut self, msg: Update<Option<Order>>) {
+    fn handle(&mut self, msg: Update<Option<model::MakerOffers>>) {
         self.tx.send_order_update(msg.0);
     }
 
@@ -898,6 +921,15 @@ impl From<xtra_bitmex_price_feed::Quote> for Quote {
     }
 }
 
+/// Maker offers represents the offers as cerated by the maker
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MakerOffers {
+    /// The offer where the maker's position is long
+    pub long: Option<CfdOrder>,
+    /// The offer where the maker's position is short
+    pub short: Option<CfdOrder>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CfdOrder {
     pub id: OrderId,
@@ -940,19 +972,27 @@ pub struct CfdOrder {
     #[serde(with = "round_to_two_dp")]
     pub parcel_size: Usd,
 
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub margin_per_parcel: Amount,
-
-    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub initial_funding_fee_per_parcel: Amount,
-
     #[serde(rename = "leverage")]
-    pub leverage_taker: Leverage,
+    pub taker_leverage_choices: Leverage,
     #[serde(with = "round_to_two_dp")]
     pub liquidation_price: Price,
 
     pub creation_timestamp: Timestamp,
     pub settlement_time_interval_in_secs: u64,
+
+    /// Margin per parcel from the perspective of the role
+    ///
+    /// Since this is a calculated value that we need in the UI this value is based on the
+    /// perspective the role (i.e. taker/maker)
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub margin_per_parcel: Amount,
+
+    /// Initial funding fee per parcel from the perspective of the role
+    ///
+    /// Since this is a calculated value that we need in the UI this value is based on the
+    /// perspective the role (i.e. taker/maker)
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
+    pub initial_funding_fee_per_parcel: SignedAmount,
 }
 
 impl TryFrom<Order> for CfdOrder {
@@ -971,6 +1011,22 @@ impl TryFrom<Order> for CfdOrder {
         let (long_leverage, short_leverage) =
             long_and_short_leverage(order.leverage_taker, order.origin.into(), own_position);
 
+        let initial_funding_fee_per_parcel = calculate_funding_fee(
+            order.price,
+            parcel_size,
+            long_leverage,
+            short_leverage,
+            order.funding_rate,
+            SETTLEMENT_INTERVAL.whole_hours(),
+        )
+        .context("unable to calculate initial funding fee")?;
+
+        // Use a temporary fee account to define the funding fee's sign
+        let temp_fee_account = FeeAccount::new(own_position, order.origin.into());
+        let initial_funding_fee_per_parcel = temp_fee_account
+            .add_funding_fee(initial_funding_fee_per_parcel)
+            .balance();
+
         Ok(Self {
             id: order.id,
             trading_pair: order.trading_pair,
@@ -985,7 +1041,7 @@ impl TryFrom<Order> for CfdOrder {
                 // we are the taker
                 Origin::Theirs => calculate_margin(order.price, parcel_size, order.leverage_taker),
             },
-            leverage_taker: order.leverage_taker,
+            taker_leverage_choices: order.leverage_taker,
             liquidation_price: order.liquidation_price,
             creation_timestamp: order.creation_timestamp,
             settlement_time_interval_in_secs: order
@@ -997,16 +1053,7 @@ impl TryFrom<Order> for CfdOrder {
             funding_rate_annualized_percent: AnnualisedFundingPercent::from(order.funding_rate)
                 .to_string(),
             funding_rate_hourly_percent: HourlyFundingPercent::from(order.funding_rate).to_string(),
-            initial_funding_fee_per_parcel: calculate_funding_fee(
-                order.price,
-                parcel_size,
-                long_leverage,
-                short_leverage,
-                order.funding_rate,
-                SETTLEMENT_INTERVAL.whole_hours(),
-            )
-            .context("unable to calcualte initial funding fee")?
-            .to_inner(),
+            initial_funding_fee_per_parcel,
         })
     }
 }

@@ -21,6 +21,7 @@ use model::Usd;
 use model::WalletInfo;
 use rocket::http::ContentType;
 use rocket::http::Status;
+use rocket::response::stream::Event;
 use rocket::response::stream::EventStream;
 use rocket::response::Responder;
 use rocket::serde::json::Json;
@@ -47,7 +48,7 @@ pub async fn maker_feed(
 ) -> EventStream![] {
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
-    let mut rx_order = rx.order.clone();
+    let mut rx_offers = rx.offers.clone();
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_quote = rx.quote.clone();
     let mut rx_connected_takers = rx.connected_takers.clone();
@@ -56,8 +57,9 @@ pub async fn maker_feed(
         let wallet_info = rx_wallet.borrow().clone();
         yield wallet_info.to_sse_event();
 
-        let order = rx_order.borrow().clone();
-        yield order.to_sse_event();
+        let offers = rx_offers.borrow().clone();
+        yield Event::json(&offers.long).event("long_offer");
+        yield Event::json(&offers.short).event("short_offer");
 
         let quote = rx_quote.borrow().clone();
         yield quote.to_sse_event();
@@ -74,9 +76,10 @@ pub async fn maker_feed(
                     let wallet_info = rx_wallet.borrow().clone();
                     yield wallet_info.to_sse_event();
                 },
-                Ok(()) = rx_order.changed() => {
-                    let order = rx_order.borrow().clone();
-                    yield order.to_sse_event();
+                Ok(()) = rx_offers.changed() => {
+                    let offers = rx_offers.borrow().clone();
+                    yield Event::json(&offers.long).event("long_offer");
+                    yield Event::json(&offers.short).event("short_offer");
                 }
                 Ok(()) = rx_connected_takers.changed() => {
                     let takers = rx_connected_takers.borrow().clone();

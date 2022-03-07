@@ -1,34 +1,29 @@
 use anyhow::Context;
 use anyhow::Result;
 use daemon::projection::Cfd;
-use daemon::projection::CfdOrder;
 use daemon::projection::CfdState;
+use daemon::projection::MakerOffers;
 use std::time::Duration;
 use tokio::sync::watch;
 
 /// Waiting time for the time on the watch channel before returning error
 const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 60 } else { 30 });
 
-pub async fn next_order(
-    rx_a: &mut watch::Receiver<Option<CfdOrder>>,
-    rx_b: &mut watch::Receiver<Option<CfdOrder>>,
-) -> Result<(CfdOrder, CfdOrder)> {
-    let wait_until_a = next_with(rx_a, |order| order);
-    let wait_until_b = next_with(rx_b, |order| order);
+pub async fn next_maker_offers(
+    rx_a: &mut watch::Receiver<MakerOffers>,
+    rx_b: &mut watch::Receiver<MakerOffers>,
+) -> Result<(MakerOffers, MakerOffers)> {
+    let wait_until_a = next(rx_a);
+    let wait_until_b = next(rx_b);
 
     let (a, b) = tokio::join!(wait_until_a, wait_until_b);
 
     Ok((a?, b?))
 }
 
-/// Returns true if the next Option received on the stream is None
-///
-/// Returns false if Some is received.
-pub async fn is_next_none<T>(rx: &mut watch::Receiver<Option<T>>) -> Result<bool>
-where
-    T: Clone,
-{
-    Ok(next(rx).await?.is_none())
+pub async fn is_next_offers_none(rx: &mut watch::Receiver<MakerOffers>) -> Result<bool> {
+    let maker_offers = next(rx).await?;
+    Ok(maker_offers.long.is_none() && maker_offers.short.is_none())
 }
 
 /// Returns watch channel value upon change

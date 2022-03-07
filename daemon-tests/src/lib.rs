@@ -12,8 +12,8 @@ use daemon::db;
 use daemon::maker_cfd;
 use daemon::projection;
 use daemon::projection::Cfd;
-use daemon::projection::CfdOrder;
 use daemon::projection::Feeds;
+use daemon::projection::MakerOffers;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::MakerActorSystem;
@@ -144,8 +144,8 @@ impl Maker {
         &mut self.feeds.cfds
     }
 
-    pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<CfdOrder>> {
-        &mut self.feeds.order
+    pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
+        &mut self.feeds.offers
     }
 
     pub fn connected_takers_feed(&mut self) -> &mut watch::Receiver<Vec<Identity>> {
@@ -275,8 +275,8 @@ impl Taker {
         &mut self.feeds.cfds
     }
 
-    pub fn order_feed(&mut self) -> &mut watch::Receiver<Option<CfdOrder>> {
-        &mut self.feeds.order
+    pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
+        &mut self.feeds.offers
     }
 
     pub fn quote_feed(&mut self) -> &mut watch::Receiver<Option<projection::Quote>> {

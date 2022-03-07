@@ -28,8 +28,27 @@ import { BXBTData, Cfd, ConnectionStatus, intoCfd, intoOrder, isClosed, Order, W
 import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
 
+export interface SomeOrder {
+    id?: string;
+    price?: number;
+    marginPerParcel?: number;
+    initialFundingFeePerParcel?: number;
+}
+
+export interface GlobalTradeParams {
+    minQuantity: number;
+    maxQuantity: number;
+    parcelSize: number;
+    leverage: number;
+    openingFee: number;
+    fundingRateAnnualized: string;
+    fundingRateHourly: string;
+    liquidationPrice?: number;
+}
+
 export const App = () => {
     let [referencePrice, setReferencePrice] = useState<number>();
+
     useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
         shouldReconnect: () => true,
         onMessage: (message) => {
@@ -42,34 +61,67 @@ export const App = () => {
 
     const [source, isConnected] = useEventSource("/api/feed");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
-    const order = useLatestEvent<Order>(source, "order", intoOrder);
+
+    const makerLong = useLatestEvent<Order>(source, "long_offer", intoOrder);
+    const makerShort = useLatestEvent<Order>(source, "short_offer", intoOrder);
+
+    const shortOrder = {
+        id: makerLong?.id,
+        initialFundingFeePerParcel: makerLong?.initial_funding_fee_per_parcel,
+        marginPerParcel: makerLong?.margin_per_parcel,
+        price: parseOptionalNumber(makerLong?.price),
+    };
+
+    const longOrder = {
+        id: makerShort?.id,
+        initialFundingFeePerParcel: makerShort?.initial_funding_fee_per_parcel,
+        marginPerParcel: makerShort?.margin_per_parcel,
+        price: parseOptionalNumber(makerShort?.price),
+    };
+
+    const globalTradeParams = extractGlobalTradeParams(makerLong, makerShort);
+    function extractGlobalTradeParams(long: Order | null, short: Order | null) {
+        const order = long ? long : short ? short : null;
+
+        if (order) {
+            return {
+                minQuantity: parseOptionalNumber(order.min_quantity) || 0,
+                maxQuantity: parseOptionalNumber(order.max_quantity) || 0,
+                parcelSize: parseOptionalNumber(order.parcel_size) || 0,
+                leverage: order.leverage || 0,
+                openingFee: order.opening_fee || 0,
+                fundingRateAnnualized: order.funding_rate_annualized_percent || "0",
+                fundingRateHourly: order
+                    ? Number.parseFloat(order.funding_rate_hourly_percent).toFixed(5)
+                    : "0",
+                liquidationPrice: parseOptionalNumber(order.liquidation_price),
+            };
+        }
+
+        return {
+            minQuantity: 0,
+            maxQuantity: 0,
+            parcelSize: 100,
+            leverage: 2,
+            openingFee: 0,
+            fundingRateAnnualized: "0",
+            fundingRateHourly: "0",
+        };
+    }
+
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
     const connectedToMakerOrUndefined = useLatestEvent<ConnectionStatus>(source, "maker_status");
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
-
-    const minQuantity = parseOptionalNumber(order?.min_quantity) || 0;
-    const maxQuantity = parseOptionalNumber(order?.max_quantity) || 0;
-    const askPrice = parseOptionalNumber(order?.price);
-    const parcelSize = parseOptionalNumber(order?.parcel_size) || 0;
-    const liquidationPrice = parseOptionalNumber(order?.liquidation_price);
-    const marginPerParcel = order?.margin_per_parcel || 0;
-    const leverage = order?.leverage || 0;
-    const openingFee = order?.opening_fee || 0;
-
-    const fundingRateAnnualized = order?.funding_rate_annualized_percent || "0";
-    const fundingFeePerParcel = order?.initial_funding_fee_per_parcel || 0;
-
-    const fundingRateHourly = order
-        ? Number.parseFloat(order.funding_rate_hourly_percent).toFixed(5)
-        : null;
 
     dayjs.extend(relativeTime);
     dayjs.extend(utc);
 
     // TODO: Eventually this should be calculated with what the maker defines in the offer, for now we assume full hour
     const nextFullHour = dayjs().utc().minute(0).add(1, "hour");
-    const nextFundingEvent = order ? dayjs().to(nextFullHour) : null;
+
+    // TODO: this condition is a bit weird now
+    const nextFundingEvent = longOrder || shortOrder ? dayjs().to(nextFullHour) : null;
 
     function parseOptionalNumber(val: string | undefined): number | undefined {
         if (!val) {
@@ -93,7 +145,7 @@ export const App = () => {
             <Nav
                 walletInfo={walletInfo}
                 connectedToMaker={connectedToMaker}
-                fundingRate={fundingRateHourly}
+                fundingRate={globalTradeParams?.fundingRateHourly}
                 nextFundingEvent={nextFundingEvent}
                 referencePrice={referencePrice}
             />
@@ -120,21 +172,11 @@ export const App = () => {
                             </Center>
                             <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
                                 <Trade
+                                    longOrder={longOrder}
+                                    shortOrder={shortOrder}
+                                    globalTradeParams={globalTradeParams}
                                     connectedToMaker={connectedToMaker}
-                                    orderId={order?.id}
-                                    maxQuantity={maxQuantity}
-                                    minQuantity={minQuantity}
-                                    referencePrice={referencePrice}
-                                    askPrice={askPrice}
-                                    parcelSize={parcelSize}
-                                    marginPerParcel={marginPerParcel}
-                                    leverage={leverage}
-                                    liquidationPrice={liquidationPrice}
                                     walletBalance={walletInfo ? walletInfo.balance : 0}
-                                    openingFee={openingFee}
-                                    fundingRateAnnualized={fundingRateAnnualized}
-                                    fundingRateHourly={fundingRateHourly || "0"}
-                                    fundingFeePerParcel={fundingFeePerParcel}
                                 />
                                 <History
                                     connectedToMaker={connectedToMaker}

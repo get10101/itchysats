@@ -1,13 +1,15 @@
+use anyhow::Context;
 use daemon::bdk::bitcoin::Amount;
 use daemon::connection::ConnectionStatus;
 use daemon::connection::MAX_RECONNECT_INTERVAL_SECONDS;
 use daemon::projection::CfdOrder;
 use daemon::projection::CfdState;
+use daemon::projection::MakerOffers;
 use daemon_tests::dummy_offer_params;
 use daemon_tests::dummy_quote;
-use daemon_tests::flow::is_next_none;
+use daemon_tests::flow::is_next_offers_none;
 use daemon_tests::flow::next;
-use daemon_tests::flow::next_order;
+use daemon_tests::flow::next_maker_offers;
 use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
 use daemon_tests::init_tracing;
@@ -119,27 +121,53 @@ async fn taker_receives_order_from_maker_on_publication() {
     let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
-    assert!(is_next_none(taker.order_feed()).await.unwrap());
+    assert!(is_next_offers_none(taker.offers_feed()).await.unwrap());
 
     maker
         .set_offer_params(dummy_offer_params(Position::Short))
         .await;
 
-    let (published, received) = next_order(maker.order_feed(), taker.order_feed())
+    let (published, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
         .await
         .unwrap();
 
-    assert_eq_order(published, received);
+    assert_eq_offers(published, received);
 }
 
-fn assert_eq_order(mut published: CfdOrder, received: CfdOrder) {
+fn assert_eq_offers(published: MakerOffers, received: MakerOffers) {
+    match (published.long, received.long) {
+        (None, None) => (),
+        (Some(published), Some(received)) => assert_eq_orders(published, received),
+        (None, Some(_)) => panic!("Long orders did not match: Published None, received Some "),
+        (Some(_), None) => panic!("Long orders did not match: Published Some, received None "),
+    }
+
+    match (published.short, received.short) {
+        (None, None) => (),
+        (Some(published), Some(received)) => assert_eq_orders(published, received),
+        (None, Some(_)) => panic!("Short orders did not match: Published None, received Some "),
+        (Some(_), None) => panic!("Short orders did not match: Published Some, received None "),
+    }
+}
+
+fn assert_eq_orders(mut published: CfdOrder, received: CfdOrder) {
     // align margin_per_parcel to be the long margin_per_parcel
     let long_margin_per_parcel = calculate_margin(
         published.price,
         published.parcel_size,
-        published.leverage_taker,
+        published.taker_leverage_choices,
     );
     published.margin_per_parcel = long_margin_per_parcel;
+
+    // make sure that the initial funding fee per parcel is flipped
+    // note: we publish as maker and receive as taker, the funding fee is to be received by one
+    // party and paid by the other
+    assert_eq!(
+        published.initial_funding_fee_per_parcel,
+        received.initial_funding_fee_per_parcel * -1
+    );
+    // align initial_funding_fee_per_parcel so we can assert on the order
+    published.initial_funding_fee_per_parcel = received.initial_funding_fee_per_parcel;
 
     assert_eq!(published, received);
 
@@ -153,30 +181,31 @@ async fn taker_takes_order_and_maker_rejects() {
     let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
-    // TODO: Why is this needed? For the cfd stream it is not needed
-    is_next_none(taker.order_feed()).await.unwrap();
+    is_next_offers_none(taker.offers_feed()).await.unwrap();
 
     maker
         .set_offer_params(dummy_offer_params(Position::Short))
         .await;
 
-    let (_, received) = next_order(maker.order_feed(), taker.order_feed())
+    let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
         .await
         .unwrap();
+
+    let order_id = received.short.unwrap().id;
 
     taker.mocks.mock_oracle_announcement().await;
     maker.mocks.mock_oracle_announcement().await;
     taker
         .system
-        .take_offer(received.id, Usd::new(dec!(10)))
+        .take_offer(order_id, Usd::new(dec!(10)))
         .await
         .unwrap();
 
-    wait_next_state!(received.id, maker, taker, CfdState::PendingSetup);
+    wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
 
-    maker.system.reject_order(received.id).await.unwrap();
+    maker.system.reject_order(order_id).await.unwrap();
 
-    wait_next_state!(received.id, maker, taker, CfdState::Rejected);
+    wait_next_state!(order_id, maker, taker, CfdState::Rejected);
 }
 
 #[tokio::test]
@@ -184,32 +213,50 @@ async fn another_offer_is_automatically_created_after_taker_takes_order() {
     let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
-    // TODO: Why is this needed? For the cfd stream it is not needed
-    is_next_none(taker.order_feed()).await.unwrap();
+    is_next_offers_none(taker.offers_feed()).await.unwrap();
 
     maker
         .set_offer_params(dummy_offer_params(Position::Short))
         .await;
 
-    let (_, received) = next_order(maker.order_feed(), taker.order_feed())
+    let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
         .await
         .unwrap();
+
+    let order_id_take = received.short.unwrap().id;
 
     taker.mocks.mock_oracle_announcement().await;
     maker.mocks.mock_oracle_announcement().await;
     taker
         .system
-        .take_offer(received.id, Usd::new(dec!(10)))
+        .take_offer(order_id_take, Usd::new(dec!(10)))
         .await
         .unwrap();
 
-    let (_, received2) = next_order(maker.order_feed(), taker.order_feed())
+    // For the taker the offer is reset after taking it, so we can't take the same one twice
+    is_next_offers_none(taker.offers_feed()).await.unwrap();
+
+    let (maker_update, taker_update) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
         .await
         .unwrap();
+
+    let new_order_id_maker = maker_update.short.unwrap().id;
+    let new_order_id_taker = taker_update.short.unwrap().id;
+
     assert_ne!(
-        received.id, received2.id,
+        new_order_id_taker, order_id_take,
         "Another offer should be available, and it should have a different id than first one"
     );
+
+    assert_ne!(
+        new_order_id_maker, order_id_take,
+        "Another offer should be available, and it should have a different id than first one"
+    );
+
+    assert_eq!(
+        new_order_id_taker, new_order_id_maker,
+        "Both parties have the same new id"
+    )
 }
 
 #[tokio::test]
@@ -217,25 +264,27 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
-    is_next_none(taker.order_feed()).await.unwrap();
+    is_next_offers_none(taker.offers_feed()).await.unwrap();
 
     maker
         .set_offer_params(dummy_offer_params(Position::Short))
         .await;
 
-    let (_, received) = next_order(maker.order_feed(), taker.order_feed())
+    let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
         .await
         .unwrap();
+
+    let order_id = received.short.unwrap().id;
 
     taker.mocks.mock_oracle_announcement().await;
     maker.mocks.mock_oracle_announcement().await;
 
     taker
         .system
-        .take_offer(received.id, Usd::new(dec!(5)))
+        .take_offer(order_id, Usd::new(dec!(5)))
         .await
         .unwrap();
-    wait_next_state!(received.id, maker, taker, CfdState::PendingSetup);
+    wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
 
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
@@ -243,14 +292,14 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
-    maker.system.accept_order(received.id).await.unwrap();
-    wait_next_state!(received.id, maker, taker, CfdState::ContractSetup);
+    maker.system.accept_order(order_id).await.unwrap();
+    wait_next_state!(order_id, maker, taker, CfdState::ContractSetup);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-    wait_next_state!(received.id, maker, taker, CfdState::PendingOpen);
+    wait_next_state!(order_id, maker, taker, CfdState::PendingOpen);
 
-    confirm!(lock transaction, received.id, maker, taker);
-    wait_next_state!(received.id, maker, taker, CfdState::Open);
+    confirm!(lock transaction, order_id, maker, taker);
+    wait_next_state!(order_id, maker, taker, CfdState::Open);
 }
 
 #[tokio::test]
@@ -603,16 +652,18 @@ async fn maker_notices_lack_of_taker() {
 /// `announcement` is used during Cfd's creation.
 async fn start_from_open_cfd_state(
     announcement: olivia::Announcement,
-    position: Position,
+    position_maker: Position,
 ) -> (Maker, Taker, OrderId) {
     let mut maker = Maker::start(&MakerConfig::default()).await;
     let mut taker = Taker::start(&TakerConfig::default(), maker.listen_addr, maker.identity).await;
 
-    is_next_none(taker.order_feed()).await.unwrap();
+    is_next_offers_none(taker.offers_feed()).await.unwrap();
 
-    maker.set_offer_params(dummy_offer_params(position)).await;
+    maker
+        .set_offer_params(dummy_offer_params(position_maker))
+        .await;
 
-    let (_, received) = next_order(maker.order_feed(), taker.order_feed())
+    let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
         .await
         .unwrap();
 
@@ -625,12 +676,19 @@ async fn start_from_open_cfd_state(
         .mock_oracle_announcement_with(announcement)
         .await;
 
+    let order_to_take = match position_maker {
+        Position::Short => received.short,
+        Position::Long => received.long,
+    }
+    .context("Order for expected position not set")
+    .unwrap();
+
     taker
         .system
-        .take_offer(received.id, Usd::new(dec!(5)))
+        .take_offer(order_to_take.id, Usd::new(dec!(5)))
         .await
         .unwrap();
-    wait_next_state!(received.id, maker, taker, CfdState::PendingSetup);
+    wait_next_state!(order_to_take.id, maker, taker, CfdState::PendingSetup);
 
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
@@ -638,14 +696,14 @@ async fn start_from_open_cfd_state(
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
-    maker.system.accept_order(received.id).await.unwrap();
-    wait_next_state!(received.id, maker, taker, CfdState::ContractSetup);
+    maker.system.accept_order(order_to_take.id).await.unwrap();
+    wait_next_state!(order_to_take.id, maker, taker, CfdState::ContractSetup);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-    wait_next_state!(received.id, maker, taker, CfdState::PendingOpen);
+    wait_next_state!(order_to_take.id, maker, taker, CfdState::PendingOpen);
 
-    confirm!(lock transaction, received.id, maker, taker);
-    wait_next_state!(received.id, maker, taker, CfdState::Open);
+    confirm!(lock transaction, order_to_take.id, maker, taker);
+    wait_next_state!(order_to_take.id, maker, taker, CfdState::Open);
 
-    (maker, taker, received.id)
+    (maker, taker, order_to_take.id)
 }

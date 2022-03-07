@@ -129,7 +129,10 @@ impl fmt::Debug for MakerOffers {
 }
 
 impl MakerOffers {
-    pub fn take_offer_by_order_id(&self, id: OrderId) -> Option<Order> {
+    /// Picks the order to take if available
+    ///
+    /// Returns the order to take without removing it.
+    pub fn pick_order_to_take(&self, id: OrderId) -> Option<Order> {
         if let Some(long) = self.long {
             if long.id == id {
                 return Some(long);
@@ -143,6 +146,27 @@ impl MakerOffers {
         None
     }
 
+    /// Takes the order if available
+    ///
+    /// Resets the order that was taken to None.
+    pub fn take_order(mut self, id: OrderId) -> (Option<Order>, Self) {
+        if let Some(long) = self.long {
+            if long.id == id {
+                self.long = None;
+
+                return (Some(long), self);
+            }
+        }
+        if let Some(short) = self.short {
+            if short.id == id {
+                self.short = None;
+
+                return (Some(short), self);
+            }
+        }
+        (None, self)
+    }
+
     /// Update the orders after one of them got taken.
     pub fn replicate(&self) -> MakerOffers {
         MakerOffers {
@@ -152,12 +176,6 @@ impl MakerOffers {
             funding_rate: self.funding_rate,
         }
     }
-}
-
-// TODO: Remove this function when projection supports more orders than one
-/// This function prefers the maker going long offer if `price_long` is set.
-pub fn pick_single_offer(current_offers: Option<MakerOffers>) -> Option<Order> {
-    current_offers.and_then(|offers| offers.long.or(offers.short))
 }
 
 // TODO: Could potentially remove this and use the Role in the Order instead

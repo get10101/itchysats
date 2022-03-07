@@ -37,6 +37,7 @@ import { motion } from "framer-motion";
 import * as React from "react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { GlobalTradeParams, SomeOrder } from "../App";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
@@ -46,40 +47,45 @@ import DollarAmount from "./DollarAmount";
 
 const MotionBox = motion<BoxProps>(Box);
 
+// TODO: Consider inlining the Trade code in App, there is not much value in this abstraction anymore
+//  Recommendation: Inline, see how it feels and then potentially carve out some new abstraction if there is one clearly visible
 interface TradeProps {
+    longOrder: SomeOrder;
+    shortOrder: SomeOrder;
+    globalTradeParams: GlobalTradeParams;
     connectedToMaker: ConnectionStatus;
-    orderId?: string;
-    minQuantity: number;
-    maxQuantity: number;
-    referencePrice?: number;
-    askPrice?: number;
-    parcelSize: number;
-    marginPerParcel: number;
-    leverage: number;
-    liquidationPrice?: number;
     walletBalance: number;
-    openingFee: number;
-    fundingRateAnnualized: string;
-    fundingRateHourly: string;
-    fundingFeePerParcel: number;
 }
 
 export default function Trade({
+    longOrder: {
+        id: longOrderId,
+        price: longPriceAsNumber,
+        initialFundingFeePerParcel: longInitialFundingFeePerParcel,
+        marginPerParcel: longMarginPerParcel,
+    },
+    shortOrder: {
+        id: shortOrderId,
+        price: shortPriceAsNumber,
+        initialFundingFeePerParcel: shortInitialFundingFeePerParcel,
+        marginPerParcel: shortMarginPerParcel,
+    },
+
+    globalTradeParams: {
+        liquidationPrice: liquidationPriceAsNumber,
+        minQuantity,
+        maxQuantity,
+        parcelSize,
+        leverage,
+        openingFee,
+        fundingRateAnnualized,
+        fundingRateHourly,
+    },
     connectedToMaker,
-    minQuantity,
-    maxQuantity,
-    askPrice: askPriceAsNumber,
-    parcelSize,
-    marginPerParcel,
-    leverage,
-    liquidationPrice: liquidationPriceAsNumber,
-    orderId,
     walletBalance,
-    openingFee,
-    fundingRateAnnualized,
-    fundingRateHourly,
-    fundingFeePerParcel,
 }: TradeProps) {
+    const navigate = useNavigate();
+
     let [quantity, setQuantity] = useState(0);
     let [userHasEdited, setUserHasEdited] = useState(false);
 
@@ -98,18 +104,25 @@ export default function Trade({
     const { isOpen: isLongOpen, onOpen: onLongOpen, onClose: onLongClose } = useDisclosure();
     const { isOpen: isShortOpen, onOpen: onShortOpen, onClose: onShortClose } = useDisclosure();
 
-    const margin = (quantity / parcelSize) * marginPerParcel;
+    const longMargin = (quantity / parcelSize) * (longMarginPerParcel || 0);
+    const longFeeForFirstSettlementInterval = (quantity / parcelSize) * (longInitialFundingFeePerParcel || 0);
 
-    const feeForFirstSettlementInterval = (quantity / parcelSize) * fundingFeePerParcel;
+    const shortMargin = (quantity / parcelSize) * (shortMarginPerParcel || 0);
+    const shortFeeForFirstSettlementInterval = (quantity / parcelSize) * (shortInitialFundingFeePerParcel || 0);
 
-    const balanceTooLow = walletBalance < margin;
+    const balanceTooLowForLong = walletBalance < longMargin;
+    const balanceTooLowForShort = walletBalance < shortMargin;
+
     const quantityTooHigh = maxQuantity < quantity;
     const quantityTooLow = minQuantity > quantity;
     const quantityGreaterZero = quantity > 0;
     const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(quantity, parcelSize);
 
-    const canSubmit = orderId && !isSubmitting && !balanceTooLow
-        && !quantityTooHigh && !quantityTooLow && quantityGreaterZero && quantityIsEvenlyDivisibleByIncrement;
+    const canSubmit = !isSubmitting && !quantityTooHigh && !quantityTooLow && quantityGreaterZero
+        && quantityIsEvenlyDivisibleByIncrement;
+
+    const canSubmitLong = longOrderId && !balanceTooLowForLong && canSubmit;
+    const canSubmitShort = shortOrderId && !balanceTooLowForShort && canSubmit;
 
     let alertBox;
 
@@ -119,10 +132,18 @@ export default function Trade({
             description={"You are not connected to any maker. Functionality may be limited"}
         />;
     } else {
-        if (balanceTooLow) {
+        if (balanceTooLowForLong) {
             alertBox = <AlertBox
-                title={"Your balance is too low!"}
+                title={"Your balance is too low for going long!"}
                 description={"Please deposit more into your wallet."}
+                status={"warning"}
+            />;
+        }
+        if (balanceTooLowForShort) {
+            alertBox = <AlertBox
+                title={"Your balance is too low for going short!"}
+                description={"Please deposit more into your wallet."}
+                status={"warning"}
             />;
         }
         if (!quantityIsEvenlyDivisibleByIncrement) {
@@ -140,10 +161,18 @@ export default function Trade({
         if (quantityTooLow || !quantityGreaterZero) {
             alertBox = <AlertBox title={"Quantity too low!"} description={`Min quantity is ${minQuantity}`} />;
         }
-        if (!orderId) {
+        if (!longOrderId) {
             alertBox = <AlertBox
-                title={"No liquidity in maker!"}
-                description={"The maker you are connected has no active offers"}
+                title={"Limited liquidity in maker!"}
+                description={"The maker you are connected has no active long offers"}
+                status={"warning"}
+            />;
+        }
+        if (!shortOrderId) {
+            alertBox = <AlertBox
+                title={"Limited liquidity in maker!"}
+                description={"The maker you are connected has no active short offers"}
+                status={"warning"}
             />;
         }
     }
@@ -177,11 +206,18 @@ export default function Trade({
                                 <Circle size="256px" bg={outerCircleBg}>
                                     <Circle size="180px" bg={innerCircleBg}>
                                         <MotionBox>
-                                            <Skeleton isLoaded={!!askPriceAsNumber && askPriceAsNumber > 0}>
-                                                <Text fontSize={"4xl"} as="b">
-                                                    <DollarAmount amount={askPriceAsNumber || 0} />
-                                                </Text>
-                                            </Skeleton>
+                                            <VStack>
+                                                <Skeleton isLoaded={!!longPriceAsNumber && longPriceAsNumber > 0}>
+                                                    <Text fontSize={"4xl"} as="b">
+                                                        <DollarAmount amount={longPriceAsNumber || 0} />
+                                                    </Text>
+                                                </Skeleton>
+                                                <Skeleton isLoaded={!!shortPriceAsNumber && shortPriceAsNumber > 0}>
+                                                    <Text fontSize={"4xl"} as="b">
+                                                        <DollarAmount amount={shortPriceAsNumber || 0} />
+                                                    </Text>
+                                                </Skeleton>
+                                            </VStack>
                                         </MotionBox>
                                     </Circle>
                                 </Circle>
@@ -204,10 +240,34 @@ export default function Trade({
                         <Leverage leverage={leverage} />
                     </GridItem>
                     <GridItem colSpan={1}>
-                        <OpeningDetails
-                            margin={margin}
-                            walletBalance={walletBalance}
-                        />
+                        <Table variant="simple">
+                            <Tbody>
+                                <Tr>
+                                    <Td>Required Long Margin</Td>
+                                    <Td isNumeric><BitcoinAmount btc={longMargin} /></Td>
+                                </Tr>
+                                <Tr>
+                                    <Td>Required Short Margin</Td>
+                                    <Td isNumeric><BitcoinAmount btc={shortMargin} /></Td>
+                                </Tr>
+                                <Tr>
+                                    <Td>
+                                        <HStack>
+                                            <Text>Available Balance</Text>
+                                            <IconButton
+                                                variant={"unstyled"}
+                                                aria-label="Go to wallet"
+                                                icon={<ExternalLinkIcon />}
+                                                onClick={() => navigate("/wallet")}
+                                            />
+                                        </HStack>
+                                    </Td>
+                                    <Td isNumeric>
+                                        <BitcoinAmount btc={walletBalance} />
+                                    </Td>
+                                </Tr>
+                            </Tbody>
+                        </Table>
                     </GridItem>
                     <GridItem colSpan={1}>
                         <Center>
@@ -217,55 +277,59 @@ export default function Trade({
                                 spacing="6"
                             >
                                 <Button
-                                    disabled={!canSubmit}
+                                    disabled={!canSubmitShort}
                                     colorScheme="red"
                                     size="lg"
                                     onClick={onShortOpen}
                                     h={16}
                                     w={"40"}
-                                    fontSize={"xl"}
                                 >
-                                    Short
+                                    <VStack>
+                                        <Text fontSize={"md"}>Short</Text>
+                                        <Text fontSize={"sm"}>{`@ ${shortPriceAsNumber || "no price"}`}</Text>
+                                    </VStack>
                                 </Button>
                                 <Button
-                                    disabled={!canSubmit}
+                                    disabled={!canSubmitLong}
                                     colorScheme="green"
                                     size="lg"
                                     onClick={onLongOpen}
                                     h={16}
                                     w={"40"}
-                                    fontSize={"xl"}
                                 >
-                                    Long
+                                    <VStack>
+                                        <Text fontSize={"md"}>Long</Text>
+                                        <Text fontSize={"sm"}>{`@ ${longPriceAsNumber || "no price"}`}</Text>
+                                    </VStack>
                                 </Button>
                                 <ConfirmOrderModal
-                                    orderId={orderId!}
+                                    orderId={longOrderId!}
                                     position="long"
                                     isOpen={isLongOpen}
                                     onClose={onLongClose}
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
                                     quantity={quantity}
-                                    margin={margin}
+                                    margin={longMargin}
                                     leverage={leverage}
                                     liquidationPriceAsNumber={liquidationPriceAsNumber}
-                                    feeForFirstSettlementInterval={feeForFirstSettlementInterval}
+                                    feeForFirstSettlementInterval={longFeeForFirstSettlementInterval}
                                     fundingRateHourly={fundingRateHourly}
                                     fundingRateAnnualized={fundingRateAnnualized}
                                 />
                                 <ConfirmOrderModal
-                                    orderId={orderId!}
+                                    orderId={shortOrderId!}
                                     position="short"
                                     isOpen={isShortOpen}
                                     onClose={onShortClose}
                                     isSubmitting={isSubmitting}
                                     onSubmit={onSubmit}
                                     quantity={quantity}
-                                    askPriceAsNumber={askPriceAsNumber}
-                                    margin={margin}
+                                    askPriceAsNumber={shortPriceAsNumber}
+                                    margin={shortMargin}
                                     leverage={leverage}
                                     liquidationPriceAsNumber={liquidationPriceAsNumber}
-                                    feeForFirstSettlementInterval={feeForFirstSettlementInterval}
+                                    feeForFirstSettlementInterval={shortFeeForFirstSettlementInterval}
                                     fundingRateHourly={fundingRateHourly}
                                     fundingRateAnnualized={fundingRateAnnualized}
                                 />
@@ -338,41 +402,6 @@ function Leverage({ leverage }: LeverageProps) {
                 How much do you want to leverage your position?
             </FormHelperText>
         </FormControl>
-    );
-}
-
-interface OpeningDetailsProps {
-    margin: number;
-    walletBalance: number;
-}
-
-function OpeningDetails({ margin, walletBalance }: OpeningDetailsProps) {
-    const navigate = useNavigate();
-    return (
-        <Table variant="simple">
-            <Tbody>
-                <Tr>
-                    <Td>Required Margin</Td>
-                    <Td isNumeric><BitcoinAmount btc={margin} /></Td>
-                </Tr>
-                <Tr>
-                    <Td>
-                        <HStack>
-                            <Text>Available Balance</Text>
-                            <IconButton
-                                variant={"unstyled"}
-                                aria-label="Go to wallet"
-                                icon={<ExternalLinkIcon />}
-                                onClick={() => navigate("/wallet")}
-                            />
-                        </HStack>
-                    </Td>
-                    <Td isNumeric>
-                        <BitcoinAmount btc={walletBalance} />
-                    </Td>
-                </Tr>
-            </Tbody>
-        </Table>
     );
 }
 
