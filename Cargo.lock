@@ -350,6 +350,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "btsieve"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -692,6 +701,7 @@ dependencies = [
  "async-trait",
  "bdk",
  "bdk-ext",
+ "btsieve",
  "bytes",
  "cached",
  "conquer-once",
@@ -3938,6 +3948,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sharded-slab",
+ "smallvec",
  "thread_local",
  "time 0.3.7",
  "tracing",

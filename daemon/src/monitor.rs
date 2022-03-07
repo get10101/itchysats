@@ -12,9 +12,10 @@ use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::electrum_client;
 use bdk::electrum_client::ElectrumApi;
-use bdk::electrum_client::GetHistoryRes;
-use bdk::electrum_client::HeaderNotification;
 use bdk::miniscript::DescriptorTrait;
+use btsieve::ScriptStatus;
+use btsieve::State;
+use btsieve::TxStatus;
 use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
@@ -22,13 +23,7 @@ use model::OrderId;
 use model::CET_TIMELOCK;
 use serde_json::Value;
 use sqlx::SqlitePool;
-use std::collections::hash_map::Entry;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::convert::TryInto;
-use std::fmt;
-use std::ops::Add;
 use std::time::Duration;
 use tokio::time::sleep;
 use tokio_tasks::Tasks;
@@ -117,25 +112,8 @@ pub struct Actor {
     executor: command::Executor,
     client: bdk::electrum_client::Client,
     tasks: Tasks,
-    state: State,
+    state: State<Event>,
     db: SqlitePool,
-}
-
-/// Internal data structure encapsulating the monitoring state without performing any IO.
-struct State {
-    latest_block_height: BlockHeight,
-    current_status: BTreeMap<(Txid, Script), ScriptStatus>,
-    awaiting_status: HashMap<(Txid, Script), Vec<(ScriptStatus, Event)>>,
-}
-
-impl State {
-    fn new(latest_block_height: BlockHeight) -> Self {
-        State {
-            latest_block_height,
-            current_status: BTreeMap::default(),
-            awaiting_status: HashMap::default(),
-        }
-    }
 }
 
 /// Read-model of the CFD for the monitoring actor.
@@ -276,91 +254,87 @@ impl Actor {
         // We do not act on this subscription after this call.
         let latest_block = client
             .block_headers_subscribe()
-            .context("Failed to subscribe to header notifications")?;
+            .context("Failed to subscribe to header notifications")?
+            .height
+            .into();
 
         Ok(Self {
             cfds: HashMap::new(),
             client,
             executor,
-            state: State::new(BlockHeight::try_from(latest_block)?),
+            state: State::new(latest_block),
             tasks: Tasks::default(),
             db,
         })
     }
 }
 
-impl State {
-    fn monitor_all(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.monitor_lock_finality(params, order_id);
-        self.monitor_commit_finality(params, order_id);
-        self.monitor_commit_cet_timelock(params, order_id);
-        self.monitor_commit_refund_timelock(params, order_id);
-        self.monitor_refund_finality(params, order_id);
-        self.monitor_revoked_commit_transactions(params, order_id);
-    }
-
+impl Actor {
     fn monitor_lock_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.awaiting_status
-            .entry((params.lock.0, params.lock.1.script_pubkey()))
-            .or_default()
-            .push((ScriptStatus::finality(), Event::LockFinality(order_id)));
+        self.state.monitor(
+            params.lock.0,
+            params.lock.1.script_pubkey(),
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            Event::LockFinality(order_id),
+        )
     }
 
     fn monitor_commit_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.awaiting_status
-            .entry((params.commit.0, params.commit.1.script_pubkey()))
-            .or_default()
-            .push((ScriptStatus::finality(), Event::CommitFinality(order_id)));
+        self.state.monitor(
+            params.commit.0,
+            params.commit.1.script_pubkey(),
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            Event::CommitFinality(order_id),
+        )
     }
 
     fn monitor_close_finality(&mut self, close_params: (Txid, Script), order_id: OrderId) {
-        self.awaiting_status
-            .entry(close_params)
-            .or_default()
-            .push((ScriptStatus::finality(), Event::CloseFinality(order_id)));
+        self.state.monitor(
+            close_params.0,
+            close_params.1,
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            Event::CloseFinality(order_id),
+        );
     }
 
     fn monitor_commit_cet_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.awaiting_status
-            .entry((params.commit.0, params.commit.1.script_pubkey()))
-            .or_default()
-            .push((
-                ScriptStatus::with_confirmations(CET_TIMELOCK),
-                Event::CetTimelockExpired(order_id),
-            ));
+        self.state.monitor(
+            params.commit.0,
+            params.commit.1.script_pubkey(),
+            ScriptStatus::with_confirmations(CET_TIMELOCK),
+            Event::CetTimelockExpired(order_id),
+        );
     }
 
     fn monitor_commit_refund_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.awaiting_status
-            .entry((params.commit.0, params.commit.1.script_pubkey()))
-            .or_default()
-            .push((
-                ScriptStatus::with_confirmations(params.refund.2),
-                Event::RefundTimelockExpired(order_id),
-            ));
+        self.state.monitor(
+            params.commit.0,
+            params.commit.1.script_pubkey(),
+            ScriptStatus::with_confirmations(params.refund.2),
+            Event::RefundTimelockExpired(order_id),
+        );
     }
 
     fn monitor_refund_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
-        self.awaiting_status
-            .entry((params.refund.0, params.refund.1.clone()))
-            .or_default()
-            .push((ScriptStatus::finality(), Event::RefundFinality(order_id)));
+        self.state.monitor(
+            params.refund.0,
+            params.refund.1.clone(),
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            Event::RefundFinality(order_id),
+        );
     }
 
     fn monitor_revoked_commit_transactions(&mut self, params: &MonitorParams, order_id: OrderId) {
         for revoked_commit_tx in params.revoked_commits.iter() {
-            self.awaiting_status
-                .entry((revoked_commit_tx.0, revoked_commit_tx.1.clone()))
-                .or_default()
-                .push((
-                    ScriptStatus::InMempool,
-                    Event::RevokedTransactionFound(order_id),
-                ));
+            self.state.monitor(
+                revoked_commit_tx.0,
+                revoked_commit_tx.1.clone(),
+                ScriptStatus::InMempool,
+                Event::RevokedTransactionFound(order_id),
+            )
         }
     }
-}
 
-impl Actor {
     async fn sync(&mut self) -> Result<()> {
         // Fetch the latest block for storing the height.
         // We do not act on this subscription after this call, as we cannot rely on
@@ -371,18 +345,32 @@ impl Actor {
             .client
             .block_headers_subscribe()
             .context("Failed to subscribe to header notifications")?
-            .try_into()?;
+            .height
+            .into();
 
-        let num_transactions = self.state.awaiting_status.len();
+        let num_transactions = self.state.num_monitoring();
 
         tracing::trace!("Updating status of {num_transactions} transactions",);
 
         let histories = self
             .client
-            .batch_script_get_history(self.state.awaiting_status.keys().map(|(_, script)| script))
+            .batch_script_get_history(self.state.monitoring_scripts())
             .context("Failed to get script histories")?;
 
-        let mut ready_events = self.state.update(latest_block_height, histories);
+        let mut ready_events = self.state.update(
+            latest_block_height,
+            histories
+                .into_iter()
+                .map(|list| {
+                    list.into_iter()
+                        .map(|response| TxStatus {
+                            height: response.height,
+                            tx_hash: response.tx_hash,
+                        })
+                        .collect()
+                })
+                .collect(),
+        );
 
         while let Some(event) = ready_events.pop() {
             match event {
@@ -437,233 +425,6 @@ impl Actor {
                 tracing::warn!(order_id = %id, "Failed to update state of CFD: {e:#}");
             }
         }
-    }
-}
-
-impl State {
-    fn update(
-        &mut self,
-        latest_block_height: BlockHeight,
-        response: Vec<Vec<GetHistoryRes>>,
-    ) -> Vec<Event> {
-        let txid_to_script = self
-            .awaiting_status
-            .keys()
-            .cloned()
-            .collect::<HashMap<_, _>>();
-
-        let mut histories = HashMap::new();
-        for history in response {
-            for response in history {
-                let txid = response.tx_hash;
-                let script = match txid_to_script.get(&txid) {
-                    None => {
-                        tracing::trace!(
-                            "Could not find script in own state for txid {txid}, ignoring"
-                        );
-                        continue;
-                    }
-                    Some(script) => script,
-                };
-                histories.insert((txid, script.clone()), response);
-            }
-        }
-
-        if latest_block_height > self.latest_block_height {
-            tracing::trace!(
-                block_height = u32::from(latest_block_height),
-                "Got notification for new block"
-            );
-            self.latest_block_height = latest_block_height;
-        }
-
-        // 1. Decide new status based on script history
-        let new_status = self
-            .awaiting_status
-            .iter()
-            .map(|(key, _old_status)| {
-                let new_script_status = match histories.get(key) {
-                    None => ScriptStatus::Unseen,
-                    Some(history_entry) => {
-                        if history_entry.height <= 0 {
-                            ScriptStatus::InMempool
-                        } else {
-                            ScriptStatus::Confirmed(Confirmed::from_inclusion_and_latest_block(
-                                u32::try_from(history_entry.height)
-                                    .expect("we checked that height is > 0"),
-                                u32::from(self.latest_block_height),
-                            ))
-                        }
-                    }
-                };
-
-                (key.clone(), new_script_status)
-            })
-            .collect::<BTreeMap<_, _>>();
-
-        // 2. log any changes since our last sync
-        for ((txid, script), status) in new_status.iter() {
-            let old = self.current_status.get(&(*txid, script.clone()));
-
-            print_status_change(*txid, old, status);
-        }
-
-        // 3. update local state
-        self.current_status = new_status;
-
-        let mut ready_events = Vec::new();
-
-        // 4. check for finished monitoring tasks
-        for ((txid, script), status) in self.current_status.iter() {
-            match self.awaiting_status.entry((*txid, script.clone())) {
-                Entry::Vacant(_) => {
-                    unreachable!("we are only fetching the status of scripts we are waiting for")
-                }
-                Entry::Occupied(mut occupied) => {
-                    let targets = occupied.insert(Vec::new());
-
-                    // Split vec into two lists, all the ones for which we reached the target and
-                    // the ones which we need to still monitor
-                    let (reached_monitoring_target, remaining) = targets
-                        .into_iter()
-                        .partition::<Vec<_>, _>(|(target_status, event)| {
-                            tracing::trace!(
-                                "{event:?} requires {target_status} and we have {status}"
-                            );
-
-                            status >= target_status
-                        });
-
-                    let num_reached = reached_monitoring_target.len();
-                    let num_remaining = remaining.len();
-                    tracing::trace!("{num_reached} subscriptions reached their monitoring target, {num_remaining} remaining for this script");
-
-                    // TODO: When reaching finality of a final tx (CET, refund_tx,
-                    // collaborate_close_tx) we have to remove the remaining "competing"
-                    // transactions. This is not critical, but when fetching
-                    // `GetHistoryRes` by script we can have entries that we don't care about
-                    // anymore.
-
-                    if remaining.is_empty() {
-                        occupied.remove();
-                    } else {
-                        occupied.insert(remaining);
-                    }
-
-                    for (target_status, event) in reached_monitoring_target {
-                        tracing::info!(%txid, target = %target_status, current = %status, "Bitcoin transaction reached monitoring target");
-                        ready_events.push(event);
-                    }
-                }
-            }
-        }
-
-        ready_events
-    }
-}
-
-fn print_status_change(txid: Txid, old: Option<&ScriptStatus>, new: &ScriptStatus) {
-    match (old, new) {
-        (None, new_status) if new_status > &ScriptStatus::Unseen => {
-            tracing::debug!(%txid, status = %new_status, "Found relevant Bitcoin transaction");
-        }
-        (Some(old_status), new_status) if old_status != new_status => {
-            tracing::debug!(%txid, %new_status, %old_status, "Bitcoin transaction status changed");
-        }
-        _ => {}
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-struct Confirmed {
-    /// The depth of this transaction within the blockchain.
-    ///
-    /// Will be zero if the transaction is included in the latest block.
-    depth: u32,
-}
-
-impl Confirmed {
-    fn with_confirmations(blocks: u32) -> Self {
-        Self { depth: blocks - 1 }
-    }
-
-    /// Compute the depth of a transaction based on its inclusion height and the
-    /// latest known block.
-    ///
-    /// Our information about the latest block might be outdated. To avoid an
-    /// overflow, we make sure the depth is 0 in case the inclusion height
-    /// exceeds our latest known block,
-    fn from_inclusion_and_latest_block(inclusion_height: u32, latest_block: u32) -> Self {
-        let depth = latest_block.saturating_sub(inclusion_height);
-
-        Self { depth }
-    }
-
-    fn confirmations(&self) -> u32 {
-        self.depth + 1
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-enum ScriptStatus {
-    Unseen,
-    InMempool,
-    Confirmed(Confirmed),
-}
-
-impl ScriptStatus {
-    fn with_confirmations(confirmations: u32) -> Self {
-        Self::Confirmed(Confirmed::with_confirmations(confirmations))
-    }
-
-    fn finality() -> Self {
-        Self::with_confirmations(FINALITY_CONFIRMATIONS)
-    }
-}
-
-impl fmt::Display for ScriptStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ScriptStatus::Unseen => write!(f, "unseen"),
-            ScriptStatus::InMempool => write!(f, "in mempool"),
-            ScriptStatus::Confirmed(inner) => {
-                let num_blocks = inner.confirmations();
-
-                write!(f, "confirmed with {num_blocks} blocks",)
-            }
-        }
-    }
-}
-
-/// Represent a block height, or block number, expressed in absolute block
-/// count. E.g. The transaction was included in block #655123, 655123 block
-/// after the genesis block.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
-struct BlockHeight(u32);
-
-impl From<BlockHeight> for u32 {
-    fn from(height: BlockHeight) -> Self {
-        height.0
-    }
-}
-
-impl TryFrom<HeaderNotification> for BlockHeight {
-    type Error = anyhow::Error;
-
-    fn try_from(value: HeaderNotification) -> Result<Self, Self::Error> {
-        Ok(Self(
-            value
-                .height
-                .try_into()
-                .context("Failed to fit usize into u32")?,
-        ))
-    }
-}
-
-impl Add<u32> for BlockHeight {
-    type Output = BlockHeight;
-    fn add(self, rhs: u32) -> Self::Output {
-        BlockHeight(self.0 + rhs)
     }
 }
 
@@ -834,7 +595,15 @@ impl Actor {
     async fn handle_start_monitoring(&mut self, msg: StartMonitoring) {
         let StartMonitoring { id, params } = msg;
 
-        self.state.monitor_all(&params, id);
+        let params_argument = &params;
+        let order_id = id;
+
+        self.monitor_lock_finality(params_argument, order_id);
+        self.monitor_commit_finality(params_argument, order_id);
+        self.monitor_commit_cet_timelock(params_argument, order_id);
+        self.monitor_commit_refund_timelock(params_argument, order_id);
+        self.monitor_refund_finality(params_argument, order_id);
+        self.monitor_revoked_commit_transactions(params_argument, order_id);
         self.cfds.insert(id, params);
     }
 
@@ -842,7 +611,7 @@ impl Actor {
         &mut self,
         collaborative_settlement: MonitorCollaborativeSettlement,
     ) {
-        self.state.monitor_close_finality(
+        self.monitor_close_finality(
             collaborative_settlement.tx,
             collaborative_settlement.order_id,
         );
@@ -913,48 +682,46 @@ impl Actor {
         self.cfds.insert(id, params.clone());
 
         if monitor_lock_finality {
-            self.state.monitor_lock_finality(&params, id);
+            self.monitor_lock_finality(&params, id);
         }
 
         if monitor_commit_finality {
-            self.state.monitor_commit_finality(&params, id)
+            self.monitor_commit_finality(&params, id)
         }
 
         if monitor_cet_timelock {
-            self.state.monitor_commit_cet_timelock(&params, id);
+            self.monitor_commit_cet_timelock(&params, id);
         }
 
         if monitor_refund_timelock {
-            self.state.monitor_commit_refund_timelock(&params, id);
+            self.monitor_commit_refund_timelock(&params, id);
         }
 
         if monitor_refund_finality {
-            self.state.monitor_refund_finality(&params, id);
+            self.monitor_refund_finality(&params, id);
         }
 
         if monitor_revoked_commit_transactions {
-            self.state.monitor_revoked_commit_transactions(&params, id);
+            self.monitor_revoked_commit_transactions(&params, id);
         }
 
         if let Some(params) = monitor_collaborative_settlement_finality {
-            self.state.monitor_close_finality(params, id);
+            self.monitor_close_finality(params, id);
         }
     }
 
     async fn handle_monitor_cet_finality(&mut self, msg: MonitorCetFinality) -> Result<()> {
-        self.state
-            .awaiting_status
-            .entry((
-                msg.cet.txid(),
-                msg.cet
-                    .output
-                    .first()
-                    .context("Failed to monitor cet using script pubkey because no TxOut's in CET")?
-                    .script_pubkey
-                    .clone(),
-            ))
-            .or_default()
-            .push((ScriptStatus::finality(), Event::CetFinality(msg.order_id)));
+        self.state.monitor(
+            msg.cet.txid(),
+            msg.cet
+                .output
+                .first()
+                .context("Failed to monitor cet using script pubkey because no TxOut's in CET")?
+                .script_pubkey
+                .clone(),
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            Event::CetFinality(msg.order_id),
+        );
 
         Ok(())
     }
@@ -997,133 +764,3 @@ static TRANSACTION_BROADCAST_COUNTER: conquer_once::Lazy<prometheus::IntCounterV
         )
         .unwrap()
     });
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use model::CET_TIMELOCK;
-    use tracing_subscriber::prelude::*;
-
-    #[tokio::test]
-    async fn can_handle_multiple_subscriptions_on_the_same_transaction() {
-        let _guard = tracing_subscriber::fmt()
-            .with_env_filter("trace")
-            .with_test_writer()
-            .set_default();
-
-        let commit_finality = Event::CommitFinality(OrderId::default());
-        let refund_expired = Event::RefundTimelockExpired(OrderId::default());
-
-        let mut state = State::new(BlockHeight(0));
-        state.awaiting_status = HashMap::from_iter([(
-            (txid1(), script1()),
-            vec![
-                (ScriptStatus::finality(), commit_finality),
-                (
-                    ScriptStatus::with_confirmations(CET_TIMELOCK),
-                    refund_expired,
-                ),
-            ],
-        )]);
-
-        let ready_events = state.update(
-            BlockHeight(10),
-            vec![vec![GetHistoryRes {
-                height: 5,
-                tx_hash: txid1(),
-                fee: None,
-            }]],
-        );
-
-        assert_eq!(ready_events, vec![commit_finality]);
-
-        let ready_events = state.update(
-            BlockHeight(20),
-            vec![vec![GetHistoryRes {
-                height: 5,
-                tx_hash: txid1(),
-                fee: None,
-            }]],
-        );
-
-        assert_eq!(ready_events, vec![refund_expired]);
-    }
-
-    #[tokio::test]
-    async fn update_for_a_script_only_results_in_event_for_corresponding_transaction() {
-        let _guard = tracing_subscriber::fmt()
-            .with_env_filter("trace")
-            .with_test_writer()
-            .set_default();
-
-        let cet_finality = Event::CetFinality(OrderId::default());
-        let refund_finality = Event::RefundFinality(OrderId::default());
-
-        let mut state = State::new(BlockHeight(0));
-        state.awaiting_status = HashMap::from_iter([
-            (
-                (txid1(), script1()),
-                vec![(ScriptStatus::finality(), cet_finality)],
-            ),
-            (
-                (txid2(), script1()),
-                vec![(ScriptStatus::finality(), refund_finality)],
-            ),
-        ]);
-
-        let ready_events = state.update(
-            BlockHeight(0),
-            vec![vec![GetHistoryRes {
-                height: 5,
-                tx_hash: txid1(),
-                fee: None,
-            }]],
-        );
-
-        assert_eq!(ready_events, vec![cet_finality]);
-    }
-
-    #[tokio::test]
-    async fn stop_monitoring_after_target_reached() {
-        let _guard = tracing_subscriber::fmt()
-            .with_env_filter("trace")
-            .with_test_writer()
-            .set_default();
-
-        let cet_finality = Event::CetFinality(OrderId::default());
-
-        let mut state = State::new(BlockHeight(0));
-        state.awaiting_status = HashMap::from_iter([(
-            (txid1(), script1()),
-            vec![(ScriptStatus::finality(), cet_finality)],
-        )]);
-
-        let ready_events = state.update(
-            BlockHeight(0),
-            vec![vec![GetHistoryRes {
-                height: 5,
-                tx_hash: txid1(),
-                fee: None,
-            }]],
-        );
-
-        assert_eq!(ready_events, vec![cet_finality]);
-        assert!(state.awaiting_status.is_empty());
-    }
-
-    fn txid1() -> Txid {
-        "1278ef8104c2f63c03d4d52bace29bed28bd5e664e67543735ddc95a39bfdc0f"
-            .parse()
-            .unwrap()
-    }
-
-    fn txid2() -> Txid {
-        "07ade6a49e34ad4cc3ca3f79d78df462685f8f1fbc8a9b05af51ec503ea5b960"
-            .parse()
-            .unwrap()
-    }
-
-    fn script1() -> Script {
-        "6a4c50001d97ca0002d3829148f63cc8ee21241e3f1c5eaee58781dd45a7d814710fac571b92aadff583e85d5a295f61856f469b401efe615657bf040c32f1000065bce011a420ca9ea3657fff154d95d1a95c".parse().unwrap()
-    }
-}
