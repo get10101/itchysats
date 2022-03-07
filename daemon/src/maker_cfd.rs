@@ -44,10 +44,6 @@ use xtras::SendAsyncSafe;
 
 const HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(10);
-const HANDLE_ACCEPT_ROLLOVER_MESSAGE_TIMEOUT: std::time::Duration =
-    std::time::Duration::from_secs(10);
-const HANDLE_ACCEPT_SETTLEMENT_MESSAGE_TIMEOUT: std::time::Duration =
-    std::time::Duration::from_secs(120);
 
 #[derive(Clone, Copy)]
 pub struct NewOffers {
@@ -409,11 +405,12 @@ impl<O, T, W> Actor<O, T, W> {
 
                 bail!("Accept failed: No active contract setup for order {order_id}")
             }
-            Err(ellapsed) => {
+            Err(elapsed) => {
                 self.executor
-                    .execute(order_id, |cfd| {
-                        Ok(cfd.fail_contract_setup(anyhow!(ellapsed)))
-                    })
+                    .execute(
+                        order_id,
+                        |cfd| Ok(cfd.fail_contract_setup(anyhow!(elapsed))),
+                    )
                     .await?;
 
                 bail!("Accept failed: Contract setup stale for order {order_id}")
@@ -440,11 +437,12 @@ impl<O, T, W> Actor<O, T, W> {
 
                 bail!("Reject failed: No active contract setup for order {order_id}")
             }
-            Err(ellapsed) => {
+            Err(elapsed) => {
                 self.executor
-                    .execute(order_id, |cfd| {
-                        Ok(cfd.fail_contract_setup(anyhow!(ellapsed)))
-                    })
+                    .execute(
+                        order_id,
+                        |cfd| Ok(cfd.fail_contract_setup(anyhow!(elapsed))),
+                    )
                     .await?;
 
                 bail!("Reject failed: Contract setup stale for order {order_id}")
@@ -455,43 +453,43 @@ impl<O, T, W> Actor<O, T, W> {
     async fn handle_accept_settlement(&mut self, msg: AcceptSettlement) -> Result<()> {
         let AcceptSettlement { order_id } = msg;
 
-        if let Err(error) = self
+        match self
             .settlement_actors
-            .send(&order_id, collab_settlement_maker::Accepted)
-            .timeout(HANDLE_ACCEPT_SETTLEMENT_MESSAGE_TIMEOUT)
+            .send_async(&order_id, collab_settlement_maker::Accepted)
             .await
         {
-            self.executor
-                .execute(order_id, |cfd| {
-                    Ok(cfd.fail_collaborative_settlement(anyhow!(error)))
-                })
-                .await?;
+            Ok(_) => Ok(()),
+            Err(NotConnected(e)) => {
+                self.executor
+                    .execute(order_id, |cfd| {
+                        Ok(cfd.fail_collaborative_settlement(anyhow!(e)))
+                    })
+                    .await?;
 
-            bail!("Accept failed: No settlement in progress for order {order_id}")
+                bail!("Accept failed: No settlement in progress for order {order_id}")
+            }
         }
-
-        Ok(())
     }
 
     async fn handle_reject_settlement(&mut self, msg: RejectSettlement) -> Result<()> {
         let RejectSettlement { order_id } = msg;
 
-        if let Err(error) = self
+        match self
             .settlement_actors
-            .send(&order_id, collab_settlement_maker::Rejected)
-            .timeout(HANDLE_ACCEPT_SETTLEMENT_MESSAGE_TIMEOUT)
+            .send_async(&order_id, collab_settlement_maker::Rejected)
             .await
         {
-            self.executor
-                .execute(order_id, |cfd| {
-                    Ok(cfd.fail_collaborative_settlement(anyhow!(error)))
-                })
-                .await?;
+            Ok(_) => Ok(()),
+            Err(NotConnected(e)) => {
+                self.executor
+                    .execute(order_id, |cfd| {
+                        Ok(cfd.fail_collaborative_settlement(anyhow!(e)))
+                    })
+                    .await?;
 
-            bail!("Reject failed: No settlement in progress for order {order_id}")
+                bail!("Reject failed: No settlement in progress for order {order_id}")
+            }
         }
-
-        Ok(())
     }
 
     async fn handle_accept_rollover(&mut self, msg: AcceptRollover) -> Result<()> {
@@ -509,45 +507,45 @@ impl<O, T, W> Actor<O, T, W> {
             Position::Short => current_offers.funding_rate_short,
         };
 
-        if let Err(error) = self
+        match self
             .rollover_actors
-            .send(
+            .send_async(
                 &order_id,
                 rollover_maker::AcceptRollover {
                     tx_fee_rate: current_offers.tx_fee_rate,
                     funding_rate,
                 },
             )
-            .timeout(HANDLE_ACCEPT_ROLLOVER_MESSAGE_TIMEOUT)
             .await
         {
-            self.executor
-                .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(error))))
-                .await?;
+            Ok(_) => Ok(()),
+            Err(NotConnected(e)) => {
+                self.executor
+                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
+                    .await?;
 
-            bail!("Accept failed: No active rollover for order {order_id}")
+                bail!("Accept failed: No active rollover for order {order_id}")
+            }
         }
-
-        Ok(())
     }
 
     async fn handle_reject_rollover(&mut self, msg: RejectRollover) -> Result<()> {
         let order_id = msg.order_id;
 
-        if let Err(error) = self
+        match self
             .rollover_actors
-            .send(&order_id, rollover_maker::RejectRollover)
-            .timeout(HANDLE_ACCEPT_ROLLOVER_MESSAGE_TIMEOUT)
+            .send_async(&order_id, rollover_maker::RejectRollover)
             .await
         {
-            self.executor
-                .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(error))))
-                .await?;
+            Ok(_) => Ok(()),
+            Err(NotConnected(e)) => {
+                self.executor
+                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
+                    .await?;
 
-            bail!("Reject failed: No active rollover for order {order_id}")
+                bail!("Reject failed: No active rollover for order {order_id}")
+            }
         }
-
-        Ok(())
     }
 }
 
