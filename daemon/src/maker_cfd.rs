@@ -38,6 +38,7 @@ use time::Duration;
 use tokio_tasks::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::NotConnected;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 
@@ -394,20 +395,30 @@ impl<O, T, W> Actor<O, T, W> {
 
         tracing::debug!(%order_id, "Maker accepts order");
 
-        if let Err(error) = self
+        match self
             .setup_actors
             .send(&order_id, setup_maker::Accepted)
             .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT)
             .await
         {
-            self.executor
-                .execute(order_id, |cfd| Ok(cfd.fail_contract_setup(anyhow!(error))))
-                .await?;
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(NotConnected(e))) => {
+                self.executor
+                    .execute(order_id, |cfd| Ok(cfd.fail_contract_setup(anyhow!(e))))
+                    .await?;
 
-            bail!("Accept failed: No active contract setup for order {order_id}")
+                bail!("Accept failed: No active contract setup for order {order_id}")
+            }
+            Err(ellapsed) => {
+                self.executor
+                    .execute(order_id, |cfd| {
+                        Ok(cfd.fail_contract_setup(anyhow!(ellapsed)))
+                    })
+                    .await?;
+
+                bail!("Accept failed: Contract setup stale for order {order_id}")
+            }
         }
-
-        Ok(())
     }
 
     async fn handle_reject_order(&mut self, msg: RejectOrder) -> Result<()> {
@@ -415,20 +426,30 @@ impl<O, T, W> Actor<O, T, W> {
 
         tracing::debug!(%order_id, "Maker rejects order");
 
-        if let Err(error) = self
+        match self
             .setup_actors
             .send(&order_id, setup_maker::Rejected)
             .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT)
             .await
         {
-            self.executor
-                .execute(order_id, |cfd| Ok(cfd.fail_contract_setup(anyhow!(error))))
-                .await?;
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(NotConnected(e))) => {
+                self.executor
+                    .execute(order_id, |cfd| Ok(cfd.fail_contract_setup(anyhow!(e))))
+                    .await?;
 
-            bail!("Reject failed: No active contract setup for order {order_id}")
+                bail!("Reject failed: No active contract setup for order {order_id}")
+            }
+            Err(ellapsed) => {
+                self.executor
+                    .execute(order_id, |cfd| {
+                        Ok(cfd.fail_contract_setup(anyhow!(ellapsed)))
+                    })
+                    .await?;
+
+                bail!("Reject failed: Contract setup stale for order {order_id}")
+            }
         }
-
-        Ok(())
     }
 
     async fn handle_accept_settlement(&mut self, msg: AcceptSettlement) -> Result<()> {
