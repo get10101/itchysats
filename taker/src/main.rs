@@ -22,7 +22,7 @@ use model::olivia;
 use model::Identity;
 use model::Role;
 use model::SETTLEMENT_INTERVAL;
-use rocket::fairing::AdHoc;
+use shared_bin::fairings;
 use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
 use std::net::SocketAddr;
@@ -304,23 +304,8 @@ async fn main() -> Result<()> {
         .register("/api", rocket::catchers![rocket_basicauth::unauthorized])
         .mount("/", rocket::routes![routes::dist, routes::index])
         .register("/", rocket::catchers![rocket_basicauth::unauthorized])
-        .attach(AdHoc::on_liftoff("Log launch", |rocket| {
-            Box::pin(async move {
-                let http_endpoint = format!(
-                    "http://{}:{}",
-                    rocket.config().address,
-                    rocket.config().port
-                );
-
-                tracing::info!(endpoint = %http_endpoint, "HTTP interface is ready");
-            })
-        }))
-        .attach(AdHoc::on_request("Rocket request", |req, _data| {
-            Box::pin(async move {
-                let request = req;
-                tracing::debug!(%request,  "rocket");
-            })
-        }))
+        .attach(fairings::log_launch())
+        .attach(fairings::log_requests())
         .launch()
         .await?;
 
