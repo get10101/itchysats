@@ -114,7 +114,8 @@ pub struct MakerOffers {
     pub long: Option<Order>,
     pub short: Option<Order>,
     pub tx_fee_rate: TxFeeRate,
-    pub funding_rate: FundingRate,
+    pub funding_rate_long: FundingRate,
+    pub funding_rate_short: FundingRate,
 }
 
 impl fmt::Debug for MakerOffers {
@@ -123,7 +124,8 @@ impl fmt::Debug for MakerOffers {
             .field("long_order_id", &self.long.as_ref().map(|o| o.id))
             .field("short_order_id", &self.long.as_ref().map(|o| o.id))
             .field("tx_fee_rate", &self.tx_fee_rate)
-            .field("funding_rate", &self.funding_rate)
+            .field("funding_rate_long", &self.funding_rate_long)
+            .field("funding_rate_short", &self.funding_rate_short)
             .finish()
     }
 }
@@ -173,7 +175,8 @@ impl MakerOffers {
             long: self.long.map(|order| order.replicate()),
             short: self.short.map(|order| order.replicate()),
             tx_fee_rate: self.tx_fee_rate,
-            funding_rate: self.funding_rate,
+            funding_rate_long: self.funding_rate_long,
+            funding_rate_short: self.funding_rate_short,
         }
     }
 }
