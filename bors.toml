@@ -14,6 +14,7 @@ status = [
   "clippy (xtra-bitmex-price-feed)",
   "clippy (btsieve)",
   "clippy (bitmex-stream)",
+  "clippy (libp2p-xtra)",
   "lint-commits",
   "frontend (maker)",
   "frontend (taker)",
