@@ -182,7 +182,7 @@ export const App = () => {
         />
 
         {closedPositions.length > 0
-            && <Accordion allowToggle width={"100%"}>
+            && <Accordion allowToggle width={"80%"}>
                 <AccordionItem>
                     <h2>
                         <AccordionButton>
@@ -215,52 +215,50 @@ export const App = () => {
             />
             <Box textAlign="center" padding={3} bg={useColorModeValue("gray.50", "gray.800")}>
                 <Center marginTop={20}>
-                    <VStack>
-                        <Routes>
-                            <Route path="/">
-                                <Route
-                                    path="wallet"
-                                    element={<>
-                                        <Wallet walletInfo={walletInfo} />
-                                    </>}
-                                />
-                                <Route
-                                    path="long"
-                                    element={<VStack>
-                                        <NavigationButtons />
-                                        <Trade
-                                            order={longOrder}
-                                            globalTradeParams={globalTradeParams}
-                                            connectedToMaker={connectedToMaker}
-                                            walletBalance={walletInfo ? walletInfo.balance : 0}
-                                            isLong={true}
-                                        />
-                                        {history}
-                                    </VStack>}
-                                />
-                                <Route
-                                    path="short"
-                                    element={<VStack>
-                                        <NavigationButtons />
-                                        <Trade
-                                            order={shortOrder}
-                                            globalTradeParams={globalTradeParams}
-                                            connectedToMaker={connectedToMaker}
-                                            walletBalance={walletInfo ? walletInfo.balance : 0}
-                                            isLong={false}
-                                        />
-                                        {history}
-                                    </VStack>}
-                                />
-                                <Route index element={<Navigate to="long" />} />
-                            </Route>
+                    <Routes>
+                        <Route path="/">
                             <Route
-                                path="/*"
+                                path="wallet"
                                 element={<>
+                                    <Wallet walletInfo={walletInfo} />
                                 </>}
                             />
-                        </Routes>
-                    </VStack>
+                            <Route
+                                path="long"
+                                element={<VStack w={"100%"}>
+                                    <NavigationButtons />
+                                    <Trade
+                                        order={longOrder}
+                                        globalTradeParams={globalTradeParams}
+                                        connectedToMaker={connectedToMaker}
+                                        walletBalance={walletInfo ? walletInfo.balance : 0}
+                                        isLong={true}
+                                    />
+                                    {history}
+                                </VStack>}
+                            />
+                            <Route
+                                path="short"
+                                element={<VStack w={"100%"}>
+                                    <NavigationButtons />
+                                    <Trade
+                                        order={shortOrder}
+                                        globalTradeParams={globalTradeParams}
+                                        connectedToMaker={connectedToMaker}
+                                        walletBalance={walletInfo ? walletInfo.balance : 0}
+                                        isLong={false}
+                                    />
+                                    {history}
+                                </VStack>}
+                            />
+                            <Route index element={<Navigate to="long" />} />
+                        </Route>
+                        <Route
+                            path="/*"
+                            element={<>
+                            </>}
+                        />
+                    </Routes>
                 </Center>
             </Box>
             <Footer />
