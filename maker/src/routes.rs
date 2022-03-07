@@ -161,7 +161,6 @@ pub struct CfdNewOfferParamsRequest {
     pub daily_funding_rate_long: Option<FundingRate>,
     /// The current _daily_ funding rate for the maker's short position
     pub daily_funding_rate_short: Option<FundingRate>,
-    pub funding_rate: Option<FundingRate>,
     // TODO: This is not inline with other parts of the API! We should not expose internal types
     // here. We have to specify sats for here because of that.
     pub opening_fee: Option<OpeningFee>,
