@@ -5,19 +5,24 @@ import {
     AccordionItem,
     AccordionPanel,
     Box,
+    Button,
+    ButtonGroup,
     Center,
-    StackDivider,
+    HStack,
+    Text,
     useColorModeValue,
+    useToast,
     VStack,
 } from "@chakra-ui/react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
-import { useState } from "react";
-import { Route, Routes } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Link as ReachLink } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
-import AlertBox from "./components/AlertBox";
+import { useLocalStorage } from "usehooks-ts";
 import Disclaimer from "./components/Disclaimer";
 import Footer from "./components/Footer";
 import History from "./components/History";
@@ -47,6 +52,8 @@ export interface GlobalTradeParams {
 }
 
 export const App = () => {
+    const toast = useToast();
+
     let [referencePrice, setReferencePrice] = useState<number>();
 
     useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
@@ -80,6 +87,7 @@ export const App = () => {
     };
 
     const globalTradeParams = extractGlobalTradeParams(makerLong, makerShort);
+
     function extractGlobalTradeParams(long: Order | null, short: Order | null) {
         const order = long ? long : short ? short : null;
 
@@ -131,17 +139,45 @@ export const App = () => {
         return Number.parseFloat(val);
     }
 
-    let connectionStatus;
-    if (!isConnected) {
-        connectionStatus = <AlertBox
-            title={"Connection error!"}
-            description={"Please ensure taker daemon is running and refresh page"}
-        />;
-    }
+    useEffect(() => {
+        const id = "connection-toast";
+        if (!isConnected && !toast.isActive(id)) {
+            toast({
+                id,
+                status: "error",
+                isClosable: true,
+                duration: null,
+                position: "bottom",
+                title: "Connection error!",
+                description: "Please ensure your daemon is running. Then refresh the page.",
+            });
+        } else if (isConnected && toast.isActive(id)) {
+            toast.close(id);
+        }
+    }, [toast, isConnected]);
+
+    useEffect(() => {
+        const id = "maker-connection-toast";
+        if (connectedToMakerOrUndefined && !connectedToMakerOrUndefined.online && !toast.isActive(id)) {
+            toast({
+                id,
+                status: "warning",
+                isClosable: true,
+                duration: null,
+                position: "bottom",
+                title: "No maker!",
+                description: "You are not connected to any maker. Functionality may be limited",
+            });
+        } else if (connectedToMakerOrUndefined && connectedToMakerOrUndefined.online && toast.isActive(id)) {
+            toast.close(id);
+        }
+    }, [toast, connectedToMakerOrUndefined]);
+
+    const [hideDisclaimer, setHideDisclaimer] = useLocalStorage<boolean>("hideDisclaimer", false);
 
     return (
         <>
-            <Disclaimer />
+            {!hideDisclaimer && <Disclaimer setHideDisclaimer={setHideDisclaimer} />}
             <Nav
                 walletInfo={walletInfo}
                 connectedToMaker={connectedToMaker}
@@ -150,64 +186,153 @@ export const App = () => {
                 referencePrice={referencePrice}
             />
             <Box textAlign="center" padding={3} bg={useColorModeValue("gray.50", "gray.800")}>
-                <Routes>
-                    <Route
-                        path="/wallet"
-                        element={<>
-                            <Center marginTop={20}>
-                                <VStack>
-                                    {connectionStatus}
+                <Center marginTop={20}>
+                    <Routes>
+                        <Route path="/">
+                            <Route
+                                path="wallet"
+                                element={<>
                                     <Wallet walletInfo={walletInfo} />
-                                </VStack>
-                            </Center>
-                        </>}
-                    />
-                    <Route
-                        path="/"
-                        element={<>
-                            <Center marginTop={20}>
-                                <VStack>
-                                    {connectionStatus}
-                                </VStack>
-                            </Center>
-                            <VStack divider={<StackDivider borderColor="gray.500" />} spacing={4}>
-                                <Trade
-                                    longOrder={longOrder}
-                                    shortOrder={shortOrder}
-                                    globalTradeParams={globalTradeParams}
-                                    connectedToMaker={connectedToMaker}
-                                    walletBalance={walletInfo ? walletInfo.balance : 0}
+                                </>}
+                            />
+                            <Route
+                                element={// @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
+                                <PageLayout cfds={cfds} connectedToMaker={connectedToMaker} />}
+                            >
+                                <Route
+                                    path="long"
+                                    element={<>
+                                        <Trade
+                                            order={longOrder}
+                                            globalTradeParams={globalTradeParams}
+                                            connectedToMaker={connectedToMaker}
+                                            walletBalance={walletInfo ? walletInfo.balance : 0}
+                                            isLong={true}
+                                        />
+                                    </>}
                                 />
-                                <History
-                                    connectedToMaker={connectedToMaker}
-                                    cfds={cfds.filter((cfd) => !isClosed(cfd))}
+                                <Route
+                                    path="short"
+                                    element={<>
+                                        <Trade
+                                            order={shortOrder}
+                                            globalTradeParams={globalTradeParams}
+                                            connectedToMaker={connectedToMaker}
+                                            walletBalance={walletInfo ? walletInfo.balance : 0}
+                                            isLong={false}
+                                        />
+                                    </>}
                                 />
-
-                                <Accordion allowToggle width={"100%"}>
-                                    <AccordionItem>
-                                        <h2>
-                                            <AccordionButton>
-                                                <AccordionIcon />
-                                                <Box w={"100%"} textAlign="center">
-                                                    Show Closed Positions
-                                                </Box>
-                                                <AccordionIcon />
-                                            </AccordionButton>
-                                        </h2>
-                                        <AccordionPanel pb={4}>
-                                            <History
-                                                cfds={cfds.filter((cfd) => isClosed(cfd))}
-                                                connectedToMaker={connectedToMaker}
-                                            />
-                                        </AccordionPanel>
-                                    </AccordionItem>
-                                </Accordion>
-                            </VStack>
-                        </>}
-                    />
-                </Routes>
+                            </Route>
+                            <Route index element={<Navigate to="long" />} />
+                        </Route>
+                        <Route
+                            path="/*"
+                            element={<>
+                            </>}
+                        />
+                    </Routes>
+                </Center>
             </Box>
             <Footer />
         </>
     );
 };
+
+interface PageLayoutProps {
+    children: JSX.Element;
+    cfds: Cfd[];
+    connectedToMaker: ConnectionStatus;
+}
+
+function PageLayout({ children, cfds, connectedToMaker }: PageLayoutProps) {
+    return (<VStack w={"100%"}>
+        <NavigationButtons />
+        <Outlet />
+        <HistoryLayout cfds={cfds} connectedToMaker={connectedToMaker} />
+    </VStack>);
+}
+
+interface HistoryLayoutProps {
+    cfds: Cfd[];
+    connectedToMaker: ConnectionStatus;
+}
+
+function HistoryLayout({ cfds, connectedToMaker }: HistoryLayoutProps) {
+    const closedPositions = cfds.filter((cfd) => isClosed(cfd));
+
+    return (<VStack padding={3} w={"100%"}>
+        <History
+            connectedToMaker={connectedToMaker}
+            cfds={cfds.filter((cfd) => !isClosed(cfd))}
+        />
+
+        {closedPositions.length > 0
+            && <Accordion allowToggle width={"80%"}>
+                <AccordionItem>
+                    <h2>
+                        <AccordionButton>
+                            <AccordionIcon />
+                            <Box w={"100%"} textAlign="center">
+                                Show Closed Positions
+                            </Box>
+                            <AccordionIcon />
+                        </AccordionButton>
+                    </h2>
+                    <AccordionPanel pb={4}>
+                        <History
+                            cfds={closedPositions}
+                            connectedToMaker={connectedToMaker}
+                        />
+                    </AccordionPanel>
+                </AccordionItem>
+            </Accordion>}
+    </VStack>);
+}
+
+function NavigationButtons() {
+    const location = useLocation();
+    const isLongSelected = location.pathname.includes("long");
+    const isShortSelected = !isLongSelected;
+
+    const unSelectedButton = "transparent";
+    const selectedButton = useColorModeValue("grey.400", "black.400");
+    const buttonBorder = useColorModeValue("grey.400", "black.400");
+    const buttonText = useColorModeValue("black", "white");
+
+    return (<HStack>
+        <Center>
+            <ButtonGroup
+                padding="3"
+                spacing="6"
+            >
+                <Button
+                    as={ReachLink}
+                    to="/long"
+                    color={isLongSelected ? selectedButton : unSelectedButton}
+                    bg={isLongSelected ? selectedButton : unSelectedButton}
+                    border={buttonBorder}
+                    isActive={isLongSelected}
+                    size="lg"
+                    h={10}
+                    w={"40"}
+                >
+                    <Text fontSize={"md"} color={buttonText}>Long BTC</Text>
+                </Button>
+                <Button
+                    as={ReachLink}
+                    to="/short"
+                    color={isShortSelected ? selectedButton : unSelectedButton}
+                    bg={isShortSelected ? selectedButton : unSelectedButton}
+                    border={buttonBorder}
+                    isActive={isShortSelected}
+                    size="lg"
+                    h={10}
+                    w={"40"}
+                >
+                    <Text fontSize={"md"} color={buttonText}>Short BTC</Text>
+                </Button>
+            </ButtonGroup>
+        </Center>
+    </HStack>);
+}

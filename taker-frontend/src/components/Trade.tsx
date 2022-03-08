@@ -3,7 +3,6 @@ import { BoxProps } from "@chakra-ui/layout";
 import {
     Box,
     Button,
-    ButtonGroup,
     Center,
     Circle,
     FormControl,
@@ -50,39 +49,32 @@ const MotionBox = motion<BoxProps>(Box);
 // TODO: Consider inlining the Trade code in App, there is not much value in this abstraction anymore
 //  Recommendation: Inline, see how it feels and then potentially carve out some new abstraction if there is one clearly visible
 interface TradeProps {
-    longOrder: SomeOrder;
-    shortOrder: SomeOrder;
+    order: SomeOrder;
     globalTradeParams: GlobalTradeParams;
     connectedToMaker: ConnectionStatus;
     walletBalance: number;
+    isLong: boolean;
 }
 
 export default function Trade({
-    longOrder: {
-        id: longOrderId,
-        price: longPriceAsNumber,
-        initialFundingFeePerParcel: longInitialFundingFeePerParcel,
-        marginPerParcel: longMarginPerParcel,
+    order: {
+        id: orderId,
+        price: priceAsNumber,
+        initialFundingFeePerParcel,
+        marginPerParcel,
     },
-    shortOrder: {
-        id: shortOrderId,
-        price: shortPriceAsNumber,
-        initialFundingFeePerParcel: shortInitialFundingFeePerParcel,
-        marginPerParcel: shortMarginPerParcel,
-    },
-
     globalTradeParams: {
         liquidationPrice: liquidationPriceAsNumber,
         minQuantity,
         maxQuantity,
         parcelSize,
         leverage,
-        openingFee,
         fundingRateAnnualized,
         fundingRateHourly,
     },
     connectedToMaker,
     walletBalance,
+    isLong,
 }: TradeProps) {
     const navigate = useNavigate();
 
@@ -101,47 +93,28 @@ export default function Trade({
     let outerCircleBg = useColorModeValue("gray.100", "gray.700");
     let innerCircleBg = useColorModeValue("gray.200", "gray.600");
 
-    const { isOpen: isLongOpen, onOpen: onLongOpen, onClose: onLongClose } = useDisclosure();
-    const { isOpen: isShortOpen, onOpen: onShortOpen, onClose: onShortClose } = useDisclosure();
+    const { isOpen, onOpen, onClose } = useDisclosure();
 
-    const longMargin = (quantity / parcelSize) * (longMarginPerParcel || 0);
-    const longFeeForFirstSettlementInterval = (quantity / parcelSize) * (longInitialFundingFeePerParcel || 0);
+    const margin = (quantity / parcelSize) * (marginPerParcel || 0);
+    const feeForFirstSettlementInterval = (quantity / parcelSize) * (initialFundingFeePerParcel || 0);
 
-    const shortMargin = (quantity / parcelSize) * (shortMarginPerParcel || 0);
-    const shortFeeForFirstSettlementInterval = (quantity / parcelSize) * (shortInitialFundingFeePerParcel || 0);
-
-    const balanceTooLowForLong = walletBalance < longMargin;
-    const balanceTooLowForShort = walletBalance < shortMargin;
+    const balanceTooLow = walletBalance < margin;
 
     const quantityTooHigh = maxQuantity < quantity;
     const quantityTooLow = minQuantity > quantity;
     const quantityGreaterZero = quantity > 0;
     const quantityIsEvenlyDivisibleByIncrement = isEvenlyDivisible(quantity, parcelSize);
 
-    const canSubmit = !isSubmitting && !quantityTooHigh && !quantityTooLow && quantityGreaterZero
+    const canSubmit = orderId && !balanceTooLow && !isSubmitting && !quantityTooHigh && !quantityTooLow
+        && quantityGreaterZero
         && quantityIsEvenlyDivisibleByIncrement;
-
-    const canSubmitLong = longOrderId && !balanceTooLowForLong && canSubmit;
-    const canSubmitShort = shortOrderId && !balanceTooLowForShort && canSubmit;
 
     let alertBox;
 
-    if (!connectedToMaker.online) {
-        alertBox = <AlertBox
-            title={"No maker!"}
-            description={"You are not connected to any maker. Functionality may be limited"}
-        />;
-    } else {
-        if (balanceTooLowForLong) {
+    if (connectedToMaker.online) {
+        if (balanceTooLow) {
             alertBox = <AlertBox
-                title={"Your balance is too low for going long!"}
-                description={"Please deposit more into your wallet."}
-                status={"warning"}
-            />;
-        }
-        if (balanceTooLowForShort) {
-            alertBox = <AlertBox
-                title={"Your balance is too low for going short!"}
+                title={"Your balance is too low!"}
                 description={"Please deposit more into your wallet."}
                 status={"warning"}
             />;
@@ -161,17 +134,10 @@ export default function Trade({
         if (quantityTooLow || !quantityGreaterZero) {
             alertBox = <AlertBox title={"Quantity too low!"} description={`Min quantity is ${minQuantity}`} />;
         }
-        if (!longOrderId) {
+        if (!orderId) {
             alertBox = <AlertBox
                 title={"Limited liquidity in maker!"}
-                description={"The maker you are connected has no active long offers"}
-                status={"warning"}
-            />;
-        }
-        if (!shortOrderId) {
-            alertBox = <AlertBox
-                title={"Limited liquidity in maker!"}
-                description={"The maker you are connected has no active short offers"}
+                description={"The maker you are connected has no active offers"}
                 status={"warning"}
             />;
         }
@@ -207,14 +173,9 @@ export default function Trade({
                                     <Circle size="180px" bg={innerCircleBg}>
                                         <MotionBox>
                                             <VStack>
-                                                <Skeleton isLoaded={!!longPriceAsNumber && longPriceAsNumber > 0}>
+                                                <Skeleton isLoaded={!!priceAsNumber && priceAsNumber > 0}>
                                                     <Text fontSize={"4xl"} as="b">
-                                                        <DollarAmount amount={longPriceAsNumber || 0} />
-                                                    </Text>
-                                                </Skeleton>
-                                                <Skeleton isLoaded={!!shortPriceAsNumber && shortPriceAsNumber > 0}>
-                                                    <Text fontSize={"4xl"} as="b">
-                                                        <DollarAmount amount={shortPriceAsNumber || 0} />
+                                                        <DollarAmount amount={priceAsNumber || 0} />
                                                     </Text>
                                                 </Skeleton>
                                             </VStack>
@@ -243,12 +204,8 @@ export default function Trade({
                         <Table variant="simple">
                             <Tbody>
                                 <Tr>
-                                    <Td>Required Long Margin</Td>
-                                    <Td isNumeric><BitcoinAmount btc={longMargin} /></Td>
-                                </Tr>
-                                <Tr>
-                                    <Td>Required Short Margin</Td>
-                                    <Td isNumeric><BitcoinAmount btc={shortMargin} /></Td>
+                                    <Td>Required Margin</Td>
+                                    <Td isNumeric><BitcoinAmount btc={margin} /></Td>
                                 </Tr>
                                 <Tr>
                                     <Td>
@@ -271,69 +228,35 @@ export default function Trade({
                     </GridItem>
                     <GridItem colSpan={1}>
                         <Center>
-                            <ButtonGroup
-                                variant="solid"
-                                padding="3"
-                                spacing="6"
+                            <Button
+                                disabled={!canSubmit}
+                                colorScheme={isLong ? "green" : "red"}
+                                size="lg"
+                                onClick={onOpen}
+                                h={16}
+                                w={"80%"}
                             >
-                                <Button
-                                    disabled={!canSubmitShort}
-                                    colorScheme="red"
-                                    size="lg"
-                                    onClick={onShortOpen}
-                                    h={16}
-                                    w={"40"}
-                                >
-                                    <VStack>
-                                        <Text fontSize={"md"}>Short</Text>
-                                        <Text fontSize={"sm"}>{`@ ${shortPriceAsNumber || "no price"}`}</Text>
-                                    </VStack>
-                                </Button>
-                                <Button
-                                    disabled={!canSubmitLong}
-                                    colorScheme="green"
-                                    size="lg"
-                                    onClick={onLongOpen}
-                                    h={16}
-                                    w={"40"}
-                                >
-                                    <VStack>
-                                        <Text fontSize={"md"}>Long</Text>
-                                        <Text fontSize={"sm"}>{`@ ${longPriceAsNumber || "no price"}`}</Text>
-                                    </VStack>
-                                </Button>
-                                <ConfirmOrderModal
-                                    orderId={longOrderId!}
-                                    position="long"
-                                    isOpen={isLongOpen}
-                                    onClose={onLongClose}
-                                    isSubmitting={isSubmitting}
-                                    onSubmit={onSubmit}
-                                    quantity={quantity}
-                                    margin={longMargin}
-                                    leverage={leverage}
-                                    liquidationPriceAsNumber={liquidationPriceAsNumber}
-                                    feeForFirstSettlementInterval={longFeeForFirstSettlementInterval}
-                                    fundingRateHourly={fundingRateHourly}
-                                    fundingRateAnnualized={fundingRateAnnualized}
-                                />
-                                <ConfirmOrderModal
-                                    orderId={shortOrderId!}
-                                    position="short"
-                                    isOpen={isShortOpen}
-                                    onClose={onShortClose}
-                                    isSubmitting={isSubmitting}
-                                    onSubmit={onSubmit}
-                                    quantity={quantity}
-                                    askPriceAsNumber={shortPriceAsNumber}
-                                    margin={shortMargin}
-                                    leverage={leverage}
-                                    liquidationPriceAsNumber={liquidationPriceAsNumber}
-                                    feeForFirstSettlementInterval={shortFeeForFirstSettlementInterval}
-                                    fundingRateHourly={fundingRateHourly}
-                                    fundingRateAnnualized={fundingRateAnnualized}
-                                />
-                            </ButtonGroup>
+                                <VStack>
+                                    <Text fontSize={"md"}>{isLong ? "Long" : "Short"}</Text>
+                                    <Text fontSize={"sm"}>{`@ ${priceAsNumber || "no price"}`}</Text>
+                                </VStack>
+                            </Button>
+                            <ConfirmOrderModal
+                                orderId={orderId!}
+                                position={isLong ? "long" : "short"}
+                                price={priceAsNumber || 0}
+                                isOpen={isOpen}
+                                onClose={onClose}
+                                isSubmitting={isSubmitting}
+                                onSubmit={onSubmit}
+                                quantity={quantity}
+                                margin={margin}
+                                leverage={leverage}
+                                liquidationPriceAsNumber={liquidationPriceAsNumber}
+                                feeForFirstSettlementInterval={feeForFirstSettlementInterval}
+                                fundingRateHourly={fundingRateHourly}
+                                fundingRateAnnualized={fundingRateAnnualized}
+                            />
                         </Center>
                     </GridItem>
                 </Grid>
