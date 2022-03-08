@@ -122,7 +122,7 @@ impl fmt::Debug for MakerOffers {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("MakerOffers")
             .field("long_order_id", &self.long.as_ref().map(|o| o.id))
-            .field("short_order_id", &self.long.as_ref().map(|o| o.id))
+            .field("short_order_id", &self.short.as_ref().map(|o| o.id))
             .field("tx_fee_rate", &self.tx_fee_rate)
             .field("funding_rate_long", &self.funding_rate_long)
             .field("funding_rate_short", &self.funding_rate_short)
