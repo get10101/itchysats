@@ -204,11 +204,11 @@ export const App = () => {
                                     element={<VStack>
                                         <NavigationButtons />
                                         <Trade
-                                            longOrder={longOrder}
-                                            shortOrder={shortOrder}
+                                            order={longOrder}
                                             globalTradeParams={globalTradeParams}
                                             connectedToMaker={connectedToMaker}
                                             walletBalance={walletInfo ? walletInfo.balance : 0}
+                                            isLong={true}
                                         />
                                         {history}
                                     </VStack>}
@@ -218,11 +218,11 @@ export const App = () => {
                                     element={<VStack>
                                         <NavigationButtons />
                                         <Trade
-                                            longOrder={longOrder}
-                                            shortOrder={shortOrder}
+                                            order={shortOrder}
                                             globalTradeParams={globalTradeParams}
                                             connectedToMaker={connectedToMaker}
                                             walletBalance={walletInfo ? walletInfo.balance : 0}
+                                            isLong={false}
                                         />
                                         {history}
                                     </VStack>}

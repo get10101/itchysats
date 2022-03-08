@@ -24,13 +24,13 @@ import DollarAmount from "./DollarAmount";
 
 interface Props {
     orderId: string;
-    position: string;
+    position: "long" | "short";
     isOpen: boolean;
     onClose: any;
     onSubmit: (req: CfdOrderRequestPayload) => void;
     isSubmitting: boolean;
     quantity: number;
-    askPriceAsNumber?: number;
+    price: number;
     margin: number;
     leverage: number;
     liquidationPriceAsNumber: number | undefined;
@@ -47,7 +47,7 @@ export default function ConfirmOrderModal({
     onSubmit,
     isSubmitting,
     quantity,
-    askPriceAsNumber,
+    price,
     margin,
     leverage,
     liquidationPriceAsNumber,
@@ -57,6 +57,10 @@ export default function ConfirmOrderModal({
 }: Props) {
     const confirmRef = useRef<HTMLButtonElement | null>(null);
 
+    let buy_or_sell = "sell";
+    if (position === "long") {
+        buy_or_sell = "buy";
+    }
     return (
         <Modal
             isOpen={isOpen}
@@ -69,9 +73,10 @@ export default function ConfirmOrderModal({
                 <ModalHeader>
                     <HStack>
                         <Text>
-                            Market sell <b>{quantity}</b> of BTC/USD @
+                            Market {buy_or_sell}&nbsp;
+                            <b>{quantity}</b> of BTC/USD @
                         </Text>
-                        <DollarAmount amount={askPriceAsNumber || 0} />
+                        <DollarAmount amount={price} />
                     </HStack>
                 </ModalHeader>
                 <ModalCloseButton />
