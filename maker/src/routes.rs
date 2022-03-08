@@ -134,10 +134,10 @@ pub async fn post_sell_order(
             Some(offer_params.price_short),
             offer_params.min_quantity,
             offer_params.max_quantity,
-            offer_params.tx_fee_rate,
-            offer_params.daily_funding_rate_long,
-            offer_params.daily_funding_rate_short,
-            offer_params.opening_fee,
+            offer_params.tx_fee_rate.unwrap_or_default(),
+            offer_params.daily_funding_rate_long.unwrap_or_default(),
+            offer_params.daily_funding_rate_short.unwrap_or_default(),
+            offer_params.opening_fee.unwrap_or_default(),
         )
         .await
         .map_err(|e| {
@@ -156,14 +156,14 @@ pub struct CfdNewOfferParamsRequest {
     pub price_short: Option<Price>,
     pub min_quantity: Usd,
     pub max_quantity: Usd,
-    pub tx_fee_rate: Option<TxFeeRate>,
     /// The current _daily_ funding rate for the maker's long position
-    pub daily_funding_rate_long: Option<FundingRate>,
+    pub daily_funding_rate_long: FundingRate,
     /// The current _daily_ funding rate for the maker's short position
-    pub daily_funding_rate_short: Option<FundingRate>,
+    pub daily_funding_rate_short: FundingRate,
+    pub tx_fee_rate: TxFeeRate,
     // TODO: This is not inline with other parts of the API! We should not expose internal types
     // here. We have to specify sats for here because of that.
-    pub opening_fee: Option<OpeningFee>,
+    pub opening_fee: OpeningFee,
 }
 
 #[rocket::put("/offer", data = "<offer_params>")]

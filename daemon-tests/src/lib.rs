@@ -251,10 +251,10 @@ impl Maker {
                 price_short,
                 min_quantity,
                 max_quantity,
-                Some(tx_fee_rate),
-                Some(funding_rate_long),
-                Some(funding_rate_short),
-                Some(opening_fee),
+                tx_fee_rate,
+                funding_rate_long,
+                funding_rate_short,
+                opening_fee,
             )
             .await
             .unwrap();
