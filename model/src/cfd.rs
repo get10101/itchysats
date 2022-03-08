@@ -181,7 +181,6 @@ impl MakerOffers {
     }
 }
 
-// TODO: Could potentially remove this and use the Role in the Order instead
 /// Origin of the order
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
 pub enum Origin {

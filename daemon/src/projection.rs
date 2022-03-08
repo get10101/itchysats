@@ -75,7 +75,6 @@ pub struct Feeds {
 impl Actor {
     pub fn new(
         db: sqlx::SqlitePool,
-        _role: Role,
         network: Network,
         price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote> + 'static),
     ) -> (Self, Feeds) {
