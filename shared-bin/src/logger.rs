@@ -23,6 +23,7 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
         .add_directive("rocket::launch_=off".parse()?) // disable rocket startup logs
         .add_directive("rocket::shield=off".parse()?) // not sure what rocket shield is but it seems unnecessary
         .add_directive("rocket::server=off".parse()?) // disable rocket request logs (along with potentially other logs)
+        .add_directive(format!("shared_bin={level}").parse()?)
         .add_directive(format!("taker={level}").parse()?)
         .add_directive(format!("maker={level}").parse()?)
         .add_directive(format!("daemon={level}").parse()?)
