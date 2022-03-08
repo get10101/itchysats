@@ -173,10 +173,10 @@ where
         price_short: Option<Price>,
         min_quantity: Usd,
         max_quantity: Usd,
-        fee_rate: Option<TxFeeRate>,
-        funding_rate_long: Option<FundingRate>,
-        funding_rate_short: Option<FundingRate>,
-        opening_fee: Option<OpeningFee>,
+        tx_fee_rate: TxFeeRate,
+        funding_rate_long: FundingRate,
+        funding_rate_short: FundingRate,
+        opening_fee: OpeningFee,
     ) -> Result<()> {
         self.cfd_actor
             .send(maker_cfd::OfferParams {
@@ -184,10 +184,10 @@ where
                 price_short,
                 min_quantity,
                 max_quantity,
-                tx_fee_rate: fee_rate.unwrap_or_default(),
-                funding_rate_long: funding_rate_long.unwrap_or_default(),
-                funding_rate_short: funding_rate_short.unwrap_or_default(),
-                opening_fee: opening_fee.unwrap_or_default(),
+                tx_fee_rate,
+                funding_rate_long,
+                funding_rate_short,
+                opening_fee,
             })
             .await??;
 
