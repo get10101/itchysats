@@ -36,7 +36,7 @@ import { motion } from "framer-motion";
 import * as React from "react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GlobalTradeParams, SomeOrder } from "../App";
+import { Offer } from "../App";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
 import usePostRequest from "../usePostRequest";
 import AlertBox from "./AlertBox";
@@ -49,28 +49,25 @@ const MotionBox = motion<BoxProps>(Box);
 // TODO: Consider inlining the Trade code in App, there is not much value in this abstraction anymore
 //  Recommendation: Inline, see how it feels and then potentially carve out some new abstraction if there is one clearly visible
 interface TradeProps {
-    order: SomeOrder;
-    globalTradeParams: GlobalTradeParams;
+    offer: Offer;
     connectedToMaker: ConnectionStatus;
     walletBalance: number;
     isLong: boolean;
 }
 
 export default function Trade({
-    order: {
+    offer: {
         id: orderId,
         price: priceAsNumber,
         initialFundingFeePerParcel,
         marginPerParcel,
-    },
-    globalTradeParams: {
         liquidationPrice: liquidationPriceAsNumber,
+        fundingRateAnnualized,
+        fundingRateHourly,
         minQuantity,
         maxQuantity,
         parcelSize,
         leverage,
-        fundingRateAnnualized,
-        fundingRateHourly,
     },
     connectedToMaker,
     walletBalance,
@@ -223,6 +220,10 @@ export default function Trade({
                                         <BitcoinAmount btc={walletBalance} />
                                     </Td>
                                 </Tr>
+                                <Tr>
+                                    <Td>Funding Rate</Td>
+                                    <Td isNumeric>{fundingRateHourly ? fundingRateHourly + "%" : "not available"}</Td>
+                                </Tr>
                             </Tbody>
                         </Table>
                     </GridItem>
@@ -254,8 +255,8 @@ export default function Trade({
                                 leverage={leverage}
                                 liquidationPriceAsNumber={liquidationPriceAsNumber}
                                 feeForFirstSettlementInterval={feeForFirstSettlementInterval}
-                                fundingRateHourly={fundingRateHourly}
-                                fundingRateAnnualized={fundingRateAnnualized}
+                                fundingRateHourly={fundingRateHourly || 0}
+                                fundingRateAnnualized={fundingRateAnnualized || 0}
                             />
                         </Center>
                     </GridItem>

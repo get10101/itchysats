@@ -35,8 +35,8 @@ interface Props {
     leverage: number;
     liquidationPriceAsNumber: number | undefined;
     feeForFirstSettlementInterval: number;
-    fundingRateHourly: string;
-    fundingRateAnnualized: string;
+    fundingRateHourly: number;
+    fundingRateAnnualized: number;
 }
 
 export default function ConfirmOrderModal({

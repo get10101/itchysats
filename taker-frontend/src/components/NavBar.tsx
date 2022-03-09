@@ -29,7 +29,6 @@ import DollarAmount from "./DollarAmount";
 interface NavProps {
     walletInfo: WalletInfo | null;
     connectedToMaker: ConnectionStatus;
-    fundingRate: string | null | undefined;
     nextFundingEvent: string | null;
     referencePrice: number | undefined;
 }
@@ -40,7 +39,7 @@ function TextDivider() {
     );
 }
 
-export default function Nav({ walletInfo, connectedToMaker, fundingRate, nextFundingEvent, referencePrice }: NavProps) {
+export default function Nav({ walletInfo, connectedToMaker, nextFundingEvent, referencePrice }: NavProps) {
     const navigate = useNavigate();
 
     const { toggleColorMode } = useColorMode();
@@ -111,10 +110,8 @@ export default function Nav({ walletInfo, connectedToMaker, fundingRate, nextFun
                                 label={"The next time your CFDs will be extended and the funding fee will be collected based on the hourly rate."}
                                 hasArrow
                             >
-                                <HStack minWidth={"200px"}>
+                                <HStack minWidth={"80px"}>
                                     <Heading size={"sm"}>{nextFundingEvent}</Heading>
-                                    <Text>{"@"}</Text>
-                                    <Heading size={"sm"}>{fundingRate}%</Heading>
                                 </HStack>
                             </Tooltip>
                         </Skeleton>
