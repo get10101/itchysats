@@ -968,10 +968,10 @@ pub struct CfdOrder {
 
     /// The user can only buy contracts in multiples of this.
     ///
-    /// For example, if `parcel_size` is 100, `min_quantity` is 300 and `max_quantity`is 800, then
+    /// For example, if `lot_size` is 100, `min_quantity` is 300 and `max_quantity`is 800, then
     /// the user can buy 300, 400, 500, 600, 700 or 800 contracts.
     #[serde(with = "round_to_two_dp")]
-    pub parcel_size: Usd,
+    pub lot_size: Usd,
 
     #[serde(rename = "leverage")]
     pub taker_leverage_choices: Leverage,
@@ -981,26 +981,26 @@ pub struct CfdOrder {
     pub creation_timestamp: Timestamp,
     pub settlement_time_interval_in_secs: u64,
 
-    /// Margin per parcel from the perspective of the role
+    /// Margin per lot from the perspective of the role
     ///
     /// Since this is a calculated value that we need in the UI this value is based on the
     /// perspective the role (i.e. taker/maker)
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub margin_per_parcel: Amount,
+    pub margin_per_lot: Amount,
 
-    /// Initial funding fee per parcel from the perspective of the role
+    /// Initial funding fee per lot from the perspective of the role
     ///
     /// Since this is a calculated value that we need in the UI this value is based on the
     /// perspective the role (i.e. taker/maker)
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-    pub initial_funding_fee_per_parcel: SignedAmount,
+    pub initial_funding_fee_per_lot: SignedAmount,
 }
 
 impl TryFrom<Order> for CfdOrder {
     type Error = anyhow::Error;
 
     fn try_from(order: Order) -> std::result::Result<Self, Self::Error> {
-        let parcel_size = Usd::new(dec!(100)); // TODO: Have the maker tell us this.
+        let lot_size = Usd::new(dec!(100)); // TODO: Have the maker tell us this.
 
         let own_position = match order.origin {
             // we are the maker, the order's position is our position
@@ -1012,9 +1012,9 @@ impl TryFrom<Order> for CfdOrder {
         let (long_leverage, short_leverage) =
             long_and_short_leverage(order.leverage_taker, order.origin.into(), own_position);
 
-        let initial_funding_fee_per_parcel = calculate_funding_fee(
+        let initial_funding_fee_per_lot = calculate_funding_fee(
             order.price,
-            parcel_size,
+            lot_size,
             long_leverage,
             short_leverage,
             order.funding_rate,
@@ -1024,8 +1024,8 @@ impl TryFrom<Order> for CfdOrder {
 
         // Use a temporary fee account to define the funding fee's sign
         let temp_fee_account = FeeAccount::new(own_position, order.origin.into());
-        let initial_funding_fee_per_parcel = temp_fee_account
-            .add_funding_fee(initial_funding_fee_per_parcel)
+        let initial_funding_fee_per_lot = temp_fee_account
+            .add_funding_fee(initial_funding_fee_per_lot)
             .balance();
 
         Ok(Self {
@@ -1035,12 +1035,12 @@ impl TryFrom<Order> for CfdOrder {
             price: order.price,
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
-            parcel_size,
-            margin_per_parcel: match order.origin {
+            lot_size,
+            margin_per_lot: match order.origin {
                 // we are the maker
-                Origin::Ours => calculate_margin(order.price, parcel_size, Leverage::ONE),
+                Origin::Ours => calculate_margin(order.price, lot_size, Leverage::ONE),
                 // we are the taker
-                Origin::Theirs => calculate_margin(order.price, parcel_size, order.leverage_taker),
+                Origin::Theirs => calculate_margin(order.price, lot_size, order.leverage_taker),
             },
             taker_leverage_choices: order.leverage_taker,
             liquidation_price: order.liquidation_price,
@@ -1054,7 +1054,7 @@ impl TryFrom<Order> for CfdOrder {
             funding_rate_annualized_percent: AnnualisedFundingPercent::from(order.funding_rate)
                 .to_string(),
             funding_rate_hourly_percent: HourlyFundingPercent::from(order.funding_rate).to_string(),
-            initial_funding_fee_per_parcel,
+            initial_funding_fee_per_lot,
         })
     }
 }

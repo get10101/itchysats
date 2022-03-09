@@ -16,8 +16,8 @@ export interface MakerOffer {
     price: number;
     min_quantity: number;
     max_quantity: number;
-    parcel_size: number;
-    margin_per_parcel: number;
+    lot_size: number;
+    margin_per_lot: number;
     leverage: number;
     liquidation_price: number;
     creation_timestamp: number;
@@ -26,7 +26,7 @@ export interface MakerOffer {
     opening_fee: number;
     funding_rate_annualized_percent: number; // e.g. "18.5" (does not include % char)
     funding_rate_hourly_percent: number; // e.g. "0.002345" (does not include % char)
-    initial_funding_fee_per_parcel: number;
+    initial_funding_fee_per_lot: number;
 }
 
 export class Position {
