@@ -357,7 +357,11 @@ impl CfdEvent {
     }
 }
 
-/// CfdEvents used by the maker and taker, some events are only for one role
+/// Types of events related to a CFD which can be emitted by both
+/// maker and taker.
+///
+/// Unfortunately, despite being a shared type some of the variants
+/// are only relevant for specific roles.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(tag = "name", content = "data")]
 pub enum EventKind {
