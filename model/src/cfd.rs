@@ -918,11 +918,15 @@ impl Cfd {
         proposal: SettlementProposal,
         sig_taker: Signature,
     ) -> Result<CollaborativeSettlement> {
+        anyhow::ensure!(
+            self.role == Role::Maker,
+            "Only the maker can create complete collaborative settlement signing"
+        );
+
         let dlc = self
             .dlc
             .as_ref()
-            .context("dlc has to be available for collab settlemment")?
-            .clone();
+            .context("Collaborative close without DLC")?;
 
         let (tx, sig_maker) = dlc.close_transaction(&proposal)?;
         let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
@@ -1309,6 +1313,11 @@ impl Cfd {
         &self,
         proposal: &SettlementProposal,
     ) -> Result<(Transaction, Signature, Script)> {
+        anyhow::ensure!(
+            self.role == Role::Taker,
+            "Only the taker can start collaborative settlement signing"
+        );
+
         let dlc = self
             .dlc
             .as_ref()
