@@ -197,8 +197,6 @@ impl Actor {
                     .await?;
             }
             RolloverCompleted { dlc, .. } => {
-                tracing::info!(order_id=%event.id, "Rollover complete");
-
                 self.start_monitoring
                     .send_async_safe(StartMonitoring {
                         id: event.id,
