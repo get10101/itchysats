@@ -1209,6 +1209,8 @@ impl Cfd {
     }
 
     pub fn handle_refund_confirmed(self) -> CfdEvent {
+        tracing::info!(order_id=%self.id, "Refund transaction confirmed");
+
         self.event(EventKind::RefundConfirmed)
     }
 

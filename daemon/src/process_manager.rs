@@ -218,10 +218,8 @@ impl Actor {
                     })
                     .await?;
             }
-            RefundConfirmed => {
-                tracing::info!(order_id=%event.id, "Refund transaction confirmed");
-            }
-            CollaborativeSettlementStarted { .. }
+            RefundConfirmed
+            | CollaborativeSettlementStarted { .. }
             | ContractSetupStarted
             | ContractSetupFailed
             | OfferRejected
