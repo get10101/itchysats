@@ -74,8 +74,6 @@ impl Actor {
         use EventKind::*;
         match event.event {
             ContractSetupCompleted { dlc, .. } => {
-                tracing::info!("Setup complete, publishing on chain now");
-
                 let lock_tx = dlc.lock.0.clone();
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
