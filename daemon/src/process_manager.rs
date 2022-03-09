@@ -74,8 +74,6 @@ impl Actor {
         use EventKind::*;
         match event.event {
             ContractSetupCompleted { dlc, .. } => {
-                tracing::info!("Setup complete, publishing on chain now");
-
                 let lock_tx = dlc.lock.0.clone();
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
@@ -114,8 +112,6 @@ impl Actor {
                     Role::Taker => {
                         // TODO: Publish the tx once the collaborative settlement is symmetric,
                         // allowing the taker to publish as well.
-
-                        tracing::info!(order_id=%event.id, "Collaborative settlement completed successfully {txid}");
                     }
                 };
 
@@ -197,8 +193,6 @@ impl Actor {
                     .await?;
             }
             RolloverCompleted { dlc, .. } => {
-                tracing::info!(order_id=%event.id, "Rollover complete");
-
                 self.start_monitoring
                     .send_async_safe(StartMonitoring {
                         id: event.id,
@@ -220,10 +214,8 @@ impl Actor {
                     })
                     .await?;
             }
-            RefundConfirmed => {
-                tracing::info!(order_id=%event.id, "Refund transaction confirmed");
-            }
-            CollaborativeSettlementStarted { .. }
+            RefundConfirmed
+            | CollaborativeSettlementStarted { .. }
             | ContractSetupStarted
             | ContractSetupFailed
             | OfferRejected
