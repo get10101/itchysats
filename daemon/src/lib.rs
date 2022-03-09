@@ -429,10 +429,12 @@ where
 
         tracing::debug!(%order_id, %current_price, %quote_timestamp, "Proposing settlement of contract");
 
-        if latest_quote.is_older_than(QUOTE_INTERVAL_MINUTES.minutes() * 2) {
+        let threshold = QUOTE_INTERVAL_MINUTES.minutes() * 2;
+
+        if latest_quote.is_older_than(threshold) {
             anyhow::bail!(
                 "Latest quote is older than {} minutes. Refusing to settle with old price.",
-                QUOTE_INTERVAL_MINUTES * 2
+                threshold.whole_minutes()
             )
         }
 
