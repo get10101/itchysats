@@ -1,10 +1,12 @@
-use crate::cfd_actors::load_cfd;
+use crate::db;
 use crate::process_manager;
 use crate::OrderId;
 use anyhow::Context;
 use anyhow::Result;
 use model::Cfd;
 use model::CfdEvent;
+use sqlx::pool::PoolConnection;
+use sqlx::Sqlite;
 use xtra::Address;
 
 #[derive(Clone)]
@@ -31,6 +33,10 @@ impl Executor {
             .acquire()
             .await
             .context("Failed to acquire DB connection")?;
+
+        // We are meant to be the only user of this code but make it temporarily deprecated to
+        // signal that.
+        #[allow(deprecated)]
         let cfd = load_cfd(id, &mut connection)
             .await
             .context("Failed to load CFD")?;
@@ -49,6 +55,47 @@ impl Executor {
 
         Ok(rest)
     }
+}
+
+/// Load a CFD from the database and rehydrate as the [`model::cfd::Cfd`] aggregate.
+///
+/// This is marked as deprecated to remind developers that it should not be used directly. Make it
+/// non-deprecated once all its other usages have been cleared.
+#[deprecated(
+    note = "The model::Cfd should only be modified via the command::Executor abstraction."
+)]
+pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<Cfd> {
+    let (
+        db::Cfd {
+            id,
+            position,
+            initial_price,
+            taker_leverage: leverage,
+            settlement_interval,
+            counterparty_network_identity,
+            role,
+            quantity_usd,
+            opening_fee,
+            initial_funding_rate,
+            initial_tx_fee_rate,
+        },
+        events,
+    ) = db::load_cfd(order_id, conn).await?;
+    let cfd = Cfd::rehydrate(
+        id,
+        position,
+        initial_price,
+        leverage,
+        settlement_interval,
+        quantity_usd,
+        counterparty_network_identity,
+        role,
+        opening_fee,
+        initial_funding_rate,
+        initial_tx_fee_rate,
+        events,
+    );
+    Ok(cfd)
 }
 
 // TODO: Delete this weird thing once all our commands return only an `Event` and not other stuff as
