@@ -11,16 +11,20 @@ pub fn log_launch() -> impl Fairing {
                 rocket.config().port
             );
 
-            tracing::info!(endpoint = %http_endpoint, "HTTP interface is ready");
+            tracing::info!(target: "http", endpoint = %http_endpoint, "HTTP interface is ready");
         })
     })
 }
 
 /// Attach this fairing to enable logging Rocket HTTP requests
 pub fn log_requests() -> impl Fairing {
-    AdHoc::on_request("Rocket HTTP request", |request, _data| {
+    AdHoc::on_response("Log status code for request", |request, response| {
         Box::pin(async move {
-            tracing::debug!(%request, "HTTP");
+            let method = request.method();
+            let path = request.uri().path();
+            let status = response.status();
+
+            tracing::debug!(target: "http", %method, %path, %status, "Handled request");
         })
     })
 }

@@ -4,6 +4,7 @@ use futures::SinkExt;
 use futures::TryStreamExt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::fmt;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;
@@ -129,11 +130,26 @@ struct NewQuoteReceived(Quote);
 #[derive(Debug, Clone, Copy)]
 pub struct LatestQuote;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct Quote {
     pub timestamp: OffsetDateTime,
     pub bid: Decimal,
     pub ask: Decimal,
+}
+
+impl fmt::Debug for Quote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let rfc3339_timestamp = self
+            .timestamp
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap();
+
+        f.debug_struct("Quote")
+            .field("timestamp", &rfc3339_timestamp)
+            .field("bid", &self.bid)
+            .field("ask", &self.ask)
+            .finish()
+    }
 }
 
 impl Quote {
