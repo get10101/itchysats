@@ -442,6 +442,9 @@ enum Event {
 
 impl MonitorParams {
     pub fn new(dlc: Dlc) -> Self {
+        // this is used for the refund transaction, and we can assume
+        // that both addresses will be present since both parties
+        // should have put up coins
         let script_pubkey = dlc.maker_address.script_pubkey();
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
