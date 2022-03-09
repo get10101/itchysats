@@ -421,17 +421,25 @@ where
             .context("Price feed not available")?
             .context("No quote available")?;
 
-        if latest_quote.is_older_than(QUOTE_INTERVAL_MINUTES.minutes()) {
+        let current_price = Price::new(latest_quote.for_taker())?;
+        let quote_timestamp = latest_quote
+            .timestamp
+            .format(&time::format_description::well_known::Rfc3339)
+            .context("Failed to format timestamp")?;
+
+        tracing::debug!(%order_id, %current_price, %quote_timestamp, "Proposing settlement of contract");
+
+        if latest_quote.is_older_than(QUOTE_INTERVAL_MINUTES.minutes() * 2) {
             anyhow::bail!(
                 "Latest quote is older than {} minutes. Refusing to settle with old price.",
-                QUOTE_INTERVAL_MINUTES
+                QUOTE_INTERVAL_MINUTES * 2
             )
         }
 
         self.cfd_actor
             .send(taker_cfd::ProposeSettlement {
                 order_id,
-                current_price: Price::new(latest_quote.for_taker())?,
+                current_price,
             })
             .await?
     }
