@@ -15,7 +15,7 @@ use futures::SinkExt;
 use maia::secp256k1_zkp::schnorrsig;
 use model::olivia::Announcement;
 use model::Dlc;
-use model::OrderId;
+use model::Order;
 use model::Role;
 use model::Usd;
 use std::time::Duration;
@@ -29,7 +29,7 @@ use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
 const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct Actor {
-    order_id: OrderId,
+    order: Order,
     quantity: Usd,
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
@@ -47,14 +47,14 @@ impl Actor {
     pub fn new(
         db: sqlx::SqlitePool,
         process_manager: xtra::Address<process_manager::Actor>,
-        (order_id, quantity, n_payouts): (OrderId, Usd, usize),
+        (order, quantity, n_payouts): (Order, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
         maker: xtra::Address<connection::Actor>,
     ) -> Self {
         Self {
-            order_id,
+            order,
             quantity,
             n_payouts,
             oracle_pk,
@@ -77,7 +77,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     fn handle(&mut self, _: Accepted, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let order_id = self.order_id;
+        let order_id = self.order.id;
         tracing::info!(%order_id, "Order got accepted");
 
         let setup_params = self
@@ -99,6 +99,7 @@ impl Actor {
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
             Role::Taker,
+            self.order.position_maker.counter_position(),
             self.n_payouts,
         );
 
@@ -114,7 +115,7 @@ impl Actor {
     }
 
     fn handle(&mut self, msg: Rejected, ctx: &mut xtra::Context<Self>) -> Result<()> {
-        let order_id = self.order_id;
+        let order_id = self.order.id;
         tracing::info!(%order_id, "Order got rejected");
 
         let reason = if msg.is_invalid_order {
@@ -149,7 +150,7 @@ impl Actor {
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self
             .executor
-            .execute(self.order_id, |cfd| cfd.complete_contract_setup(msg.dlc))
+            .execute(self.order.id, |cfd| cfd.complete_contract_setup(msg.dlc))
             .await
         {
             tracing::warn!("Failed to execute `complete_contract_setup` command: {e:#}");
@@ -161,7 +162,7 @@ impl Actor {
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self
             .executor
-            .execute(self.order_id, |cfd| Ok(cfd.fail_contract_setup(msg.error)))
+            .execute(self.order.id, |cfd| Ok(cfd.fail_contract_setup(msg.error)))
             .await
         {
             tracing::warn!("Failed to execute `fail_contract_setup` command: {e:#}");
@@ -186,7 +187,7 @@ impl Actor {
         let timeout = msg.timeout.as_secs();
         if let Err(e) = self
             .executor
-            .execute(self.order_id, |cfd| {
+            .execute(self.order.id, |cfd| {
                 Ok(cfd
                     .fail_contract_setup(anyhow!("Maker did not respond within {timeout} seconds")))
             })
@@ -210,14 +211,14 @@ impl xtra::Actor for Actor {
         let res = self
             .maker
             .send(connection::TakeOrder {
-                order_id: self.order_id,
+                order_id: self.order.id,
                 quantity: self.quantity,
                 address,
             })
             .await;
 
         if let Err(e) = res {
-            tracing::warn!(id = %self.order_id, "Stopping setup_taker actor: {e}");
+            tracing::warn!(id = %self.order.id, "Stopping setup_taker actor: {e}");
             ctx.stop()
         }
 

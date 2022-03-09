@@ -194,7 +194,7 @@ where
         let addr = setup_taker::Actor::new(
             self.db.clone(),
             self.process_manager_actor.clone(),
-            (cfd.id(), cfd.quantity(), self.n_payouts),
+            (order_to_take, cfd.quantity(), self.n_payouts),
             (self.oracle_pk, announcement),
             &self.wallet,
             &self.wallet,

@@ -44,6 +44,7 @@ use model::olivia;
 use model::Cet;
 use model::Dlc;
 use model::Leverage;
+use model::Position;
 use model::RevokedCommit;
 use model::Role;
 use model::RolloverParams;
@@ -69,6 +70,7 @@ pub async fn new(
     build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
     role: Role,
+    position: Position,
     n_payouts: usize,
 ) -> Result<Dlc> {
     let (sk, pk) = keypair::new(&mut rand::thread_rng());
@@ -336,6 +338,7 @@ pub async fn new(
         revoked_commit: Vec::new(),
         settlement_event_id,
         refund_timelock: setup_params.refund_timelock,
+        own_position: position,
     })
 }
 
@@ -642,6 +645,7 @@ pub async fn roll_over(
         revoked_commit,
         settlement_event_id: announcement.id,
         refund_timelock: rollover_params.refund_timelock,
+        own_position: dlc.own_position,
     })
 }
 

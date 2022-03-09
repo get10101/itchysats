@@ -101,6 +101,7 @@ impl Actor {
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
             Role::Maker,
+            self.order.position_maker,
             self.n_payouts,
         );
 

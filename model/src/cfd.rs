@@ -1636,6 +1636,8 @@ pub struct Dlc {
     // and create an internal structure that depicts this properly and avoids duplication.
     pub settlement_event_id: BitMexPriceEventId,
     pub refund_timelock: u32,
+
+    pub own_position: Position,
 }
 
 impl Dlc {
@@ -3464,6 +3466,7 @@ mod tests {
                     None => dummy_event_id(),
                 },
                 refund_timelock: 0,
+                own_position: dummy_position(),
             }
         }
     }
@@ -3502,6 +3505,10 @@ mod tests {
 
     pub fn dummy_event_id() -> BitMexPriceEventId {
         BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc())
+    }
+
+    fn dummy_position() -> Position {
+        Position::Long
     }
 
     fn extract_payout_amount(tx: Transaction, script: Script) -> Amount {
