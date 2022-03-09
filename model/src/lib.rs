@@ -577,7 +577,9 @@ pub enum ConversionError {
     Overflow,
 }
 
-/// Opening fee is always payed from taker to maker
+/// Fee paid for the right to open a CFD.
+///
+/// This fee is paid by the taker to the maker.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(transparent)]
 pub struct OpeningFee {
