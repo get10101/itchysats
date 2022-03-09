@@ -38,7 +38,6 @@ pub mod collab_settlement_taker;
 pub mod command;
 pub mod connection;
 pub mod db;
-pub mod fan_out;
 mod future_ext;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
