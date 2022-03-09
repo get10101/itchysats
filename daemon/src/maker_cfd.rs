@@ -1,5 +1,4 @@
 use crate::cfd_actors::insert_cfd_and_update_feed;
-use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_maker;
 use crate::command;
 use crate::future_ext::FutureExt;
@@ -500,20 +499,14 @@ impl<O, T, W> Actor<O, T, W> {
 
         let order_id = msg.order_id;
 
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(order_id, &mut conn).await?;
-        let funding_rate = match cfd.position() {
-            Position::Long => current_offers.funding_rate_long,
-            Position::Short => current_offers.funding_rate_short,
-        };
-
         match self
             .rollover_actors
             .send_async(
                 &order_id,
                 rollover_maker::AcceptRollover {
                     tx_fee_rate: current_offers.tx_fee_rate,
-                    funding_rate,
+                    long_funding_rate: current_offers.funding_rate_long,
+                    short_funding_rate: current_offers.funding_rate_short,
                 },
             )
             .await
