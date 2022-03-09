@@ -1691,21 +1691,6 @@ impl Dlc {
         Ok(spend_tx)
     }
 
-    pub fn refund_amount(&self, role: Role) -> Amount {
-        let our_script_pubkey = match role {
-            Role::Taker => self.taker_address.script_pubkey(),
-            Role::Maker => self.maker_address.script_pubkey(),
-        };
-
-        self.refund
-            .0
-            .output
-            .iter()
-            .find(|output| output.script_pubkey == our_script_pubkey)
-            .map(|output| Amount::from_sat(output.value))
-            .unwrap_or_default()
-    }
-
     pub fn script_pubkey_for(&self, role: Role) -> Script {
         match role {
             Role::Maker => self.maker_address.script_pubkey(),
