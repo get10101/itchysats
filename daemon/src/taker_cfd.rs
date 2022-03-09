@@ -1,6 +1,6 @@
-use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_taker;
 use crate::connection;
+use crate::db;
 use crate::oracle;
 use crate::process_manager;
 use crate::projection;
@@ -175,7 +175,11 @@ where
         // Once the contract setup completes (rejected / accepted / failed) the first event will be
         // recorded
         let cfd = Cfd::from_order(order_to_take, quantity, self.maker_identity, Role::Taker);
-        insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection_actor).await?;
+
+        db::insert_cfd(&cfd, &mut conn).await?;
+        self.projection_actor
+            .send(projection::CfdChanged(cfd.id()))
+            .await?;
 
         // Cleanup own order feed, after inserting the cfd.
         // Due to the 1:1 relationship between order and cfd we can never create another cfd for the

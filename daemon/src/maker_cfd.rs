@@ -1,6 +1,6 @@
-use crate::cfd_actors::insert_cfd_and_update_feed;
 use crate::collab_settlement_maker;
 use crate::command;
+use crate::db;
 use crate::future_ext::FutureExt;
 use crate::maker_inc_connections;
 use crate::oracle;
@@ -355,7 +355,10 @@ where
             .send(projection::Update(self.current_offers))
             .await?;
 
-        insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection).await?;
+        db::insert_cfd(&cfd, &mut conn).await?;
+        self.projection
+            .send(projection::CfdChanged(cfd.id()))
+            .await?;
 
         // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any
         // state
