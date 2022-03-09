@@ -18,6 +18,7 @@ use model::calculate_long_liquidation_price;
 use model::calculate_margin;
 use model::calculate_profit;
 use model::calculate_profit_at_price;
+use model::calculate_short_liquidation_price;
 use model::long_and_short_leverage;
 use model::CfdEvent;
 use model::Dlc;
@@ -315,9 +316,10 @@ impl Cfd {
         let margin_counterparty =
             calculate_margin(initial_price, quantity_usd, counterparty_leverage);
 
-        // TODO: Change this to reflect that we can be short! - does this make sense for short? What
-        // should the taker UI display?
-        let liquidation_price = calculate_long_liquidation_price(our_leverage, initial_price);
+        let liquidation_price = match position {
+            Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
+            Position::Short => calculate_short_liquidation_price(our_leverage, initial_price),
+        };
 
         let (long_leverage, short_leverage) =
             long_and_short_leverage(taker_leverage, role, position);

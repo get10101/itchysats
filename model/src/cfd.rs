@@ -268,11 +268,8 @@ impl Order {
         let leverage_choices_for_taker = Leverage::TWO;
 
         let liquidation_price = match position_maker {
-            Position::Short => calculate_long_liquidation_price(leverage_choices_for_taker, price),
-            Position::Long => {
-                // TODO: Should be different
-                calculate_long_liquidation_price(leverage_choices_for_taker, price)
-            }
+            Position::Short => calculate_short_liquidation_price(leverage_choices_for_taker, price),
+            Position::Long => calculate_long_liquidation_price(leverage_choices_for_taker, price),
         };
 
         Order {
@@ -1433,6 +1430,17 @@ pub fn calculate_margin(price: Price, quantity: Usd, leverage: Leverage) -> Amou
 
 pub fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Price {
     price * leverage / (leverage + 1)
+}
+
+/// calculates short liquidation price
+///
+/// Note: if leverage == 1, then the liquidation price will go towards infinity.
+/// This is represented as Price::INFINITE
+pub fn calculate_short_liquidation_price(leverage: Leverage, price: Price) -> Price {
+    if leverage == Leverage::ONE {
+        return Price::INFINITE;
+    }
+    price * leverage / (leverage - 1)
 }
 
 pub fn calculate_profit(payout: SignedAmount, margin: SignedAmount) -> (SignedAmount, Percent) {
@@ -2884,6 +2892,39 @@ mod tests {
 
         assert_eq!(taker_payout, 119239);
         assert_eq!(maker_payout, 246306);
+    }
+
+    #[test]
+    fn test_calculate_long_liquidation_price() {
+        let leverage = Leverage::new(2).unwrap();
+        let price = Price::new(dec!(60_000)).unwrap();
+
+        let is_liquidation_price = calculate_long_liquidation_price(leverage, price);
+
+        let should_liquidation_price = Price::new(dec!(40_000)).unwrap();
+        assert_eq!(is_liquidation_price, should_liquidation_price);
+    }
+
+    #[test]
+    fn test_calculate_short_liquidation_price() {
+        let leverage = Leverage::new(2).unwrap();
+        let price = Price::new(dec!(60_000)).unwrap();
+
+        let is_liquidation_price = calculate_short_liquidation_price(leverage, price);
+
+        let should_liquidation_price = Price::new(dec!(120_000)).unwrap();
+        assert_eq!(is_liquidation_price, should_liquidation_price);
+    }
+
+    #[test]
+    fn test_calculate_infite_liquidation_price() {
+        let leverage = Leverage::new(1).unwrap();
+        let price = Price::new(dec!(60_000)).unwrap();
+
+        let is_liquidation_price = calculate_short_liquidation_price(leverage, price);
+
+        let should_liquidation_price = Price::INFINITE;
+        assert_eq!(is_liquidation_price, should_liquidation_price);
     }
 
     #[allow(clippy::too_many_arguments)]
