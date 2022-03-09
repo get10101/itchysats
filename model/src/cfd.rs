@@ -1089,7 +1089,7 @@ impl Cfd {
         settlement: CollaborativeSettlement,
     ) -> CfdEvent {
         if self.can_settle_collaboratively() {
-            tracing::info!(order_id=%self.id(), "Collaborative settlement completed");
+            tracing::info!(order_id=%self.id(), tx=%settlement.tx.txid(), "Collaborative settlement completed");
 
             self.event(EventKind::CollaborativeSettlementCompleted {
                 spend_tx: settlement.tx,

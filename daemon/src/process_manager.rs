@@ -112,8 +112,6 @@ impl Actor {
                     Role::Taker => {
                         // TODO: Publish the tx once the collaborative settlement is symmetric,
                         // allowing the taker to publish as well.
-
-                        tracing::info!(order_id=%event.id, "Collaborative settlement completed successfully {txid}");
                     }
                 };
 
