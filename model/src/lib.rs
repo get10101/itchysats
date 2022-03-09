@@ -33,16 +33,11 @@ pub use cfd::*;
 pub use contract_setup::SetupParams;
 pub use rollover::RolloverParams;
 
-/// The interval until the cfd gets settled, i.e. the attestation happens
+/// The time-to-live of a CFD after it is first created or rolled
+/// over.
 ///
-/// This variable defines at what point in time the oracle event id will be chose to settle the cfd.
-/// Hence, this constant defines how long a cfd is open (until it gets either settled or rolled
-/// over).
-///
-/// Multiple code parts align on this constant:
-/// - How the oracle event id is chosen when creating an order (maker)
-/// - The sliding window of cached oracle announcements (maker, taker)
-/// - The auto-rollover time-window (taker)
+/// This variable determines what oracle event ID will be associated
+/// with the non-collaborative settlement of the CFD.
 pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
