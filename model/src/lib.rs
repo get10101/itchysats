@@ -1105,7 +1105,7 @@ mod tests {
     }
 
     #[test]
-    fn given_positive_rate_then_negative_maker_short_balance() {
+    fn given_positive_rate_then_negative_short_maker_balance() {
         let funding_fee = FundingFee::new(
             Amount::from_sat(500),
             FundingRate::new(dec!(0.001)).unwrap(),
@@ -1135,7 +1135,7 @@ mod tests {
     }
 
     #[test]
-    fn given_negative_rate_then_positive_maker_short_balance() {
+    fn given_negative_rate_then_positive_short_maker_balance() {
         let funding_fee = FundingFee::new(
             Amount::from_sat(500),
             FundingRate::new(dec!(-0.001)).unwrap(),
