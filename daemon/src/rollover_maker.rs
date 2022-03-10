@@ -154,7 +154,7 @@ impl Actor {
 
         tracing::debug!(%order_id, "Maker accepts a rollover proposal");
 
-        let (rollover_params, dlc, interval, funding_rate) = self
+        let (rollover_params, dlc, position, interval, funding_rate) = self
             .executor
             .execute(self.order_id, |cfd| {
                 let funding_rate = match cfd.position() {
@@ -162,10 +162,10 @@ impl Actor {
                     Position::Short => short_funding_rate,
                 };
 
-                let (event, params, dlc, interval) =
+                let (event, params, dlc, position, interval) =
                     cfd.accept_rollover_proposal(tx_fee_rate, funding_rate)?;
 
-                Ok((event, params, dlc, interval, funding_rate))
+                Ok((event, params, dlc, position, interval, funding_rate))
             })
             .await?;
 
@@ -208,6 +208,7 @@ impl Actor {
             (self.oracle_pk, announcement),
             rollover_params,
             Role::Maker,
+            position,
             dlc,
             self.n_payouts,
         );

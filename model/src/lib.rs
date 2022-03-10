@@ -33,16 +33,11 @@ pub use cfd::*;
 pub use contract_setup::SetupParams;
 pub use rollover::RolloverParams;
 
-/// The interval until the cfd gets settled, i.e. the attestation happens
+/// The time-to-live of a CFD after it is first created or rolled
+/// over.
 ///
-/// This variable defines at what point in time the oracle event id will be chose to settle the cfd.
-/// Hence, this constant defines how long a cfd is open (until it gets either settled or rolled
-/// over).
-///
-/// Multiple code parts align on this constant:
-/// - How the oracle event id is chosen when creating an order (maker)
-/// - The sliding window of cached oracle announcements (maker, taker)
-/// - The auto-rollover time-window (taker)
+/// This variable determines what oracle event ID will be associated
+/// with the non-collaborative settlement of the CFD.
 pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
@@ -582,7 +577,9 @@ pub enum ConversionError {
     Overflow,
 }
 
-/// Opening fee is always payed from taker to maker
+/// Fee paid for the right to open a CFD.
+///
+/// This fee is paid by the taker to the maker.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(transparent)]
 pub struct OpeningFee {
@@ -1108,7 +1105,7 @@ mod tests {
     }
 
     #[test]
-    fn given_positive_rate_then_negative_maker_short_balance() {
+    fn given_positive_rate_then_negative_short_maker_balance() {
         let funding_fee = FundingFee::new(
             Amount::from_sat(500),
             FundingRate::new(dec!(0.001)).unwrap(),
@@ -1138,7 +1135,7 @@ mod tests {
     }
 
     #[test]
-    fn given_negative_rate_then_positive_maker_short_balance() {
+    fn given_negative_rate_then_positive_short_maker_balance() {
         let funding_fee = FundingFee::new(
             Amount::from_sat(500),
             FundingRate::new(dec!(-0.001)).unwrap(),

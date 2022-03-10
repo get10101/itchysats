@@ -64,8 +64,6 @@ use uuid::Uuid;
 
 pub const CET_TIMELOCK: u32 = 12;
 
-pub const SHORT_LEVERAGE: u8 = 1;
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct OrderId(Hyphenated);
@@ -357,7 +355,11 @@ impl CfdEvent {
     }
 }
 
-/// CfdEvents used by the maker and taker, some events are only for one role
+/// Types of events related to a CFD which can be emitted by both
+/// maker and taker.
+///
+/// Unfortunately, despite being a shared type some of the variants
+/// are only relevant for specific roles.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(tag = "name", content = "data")]
 pub enum EventKind {
@@ -793,7 +795,7 @@ impl Cfd {
             || self.is_refunded()
     }
 
-    pub fn start_contract_setup(&self) -> Result<(CfdEvent, SetupParams)> {
+    pub fn start_contract_setup(&self) -> Result<(CfdEvent, SetupParams, Position)> {
         if self.version > 0 {
             bail!("Start contract not allowed in version {}", self.version)
         }
@@ -810,10 +812,12 @@ impl Cfd {
                 self.initial_price,
                 self.quantity,
                 self.long_leverage,
+                self.short_leverage,
                 self.refund_timelock_in_blocks(),
                 self.initial_tx_fee_rate(),
                 self.fee_account,
             )?,
+            self.position,
         ))
     }
 
@@ -831,7 +835,7 @@ impl Cfd {
         self,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
-    ) -> Result<(CfdEvent, RolloverParams, Dlc, Duration)> {
+    ) -> Result<(CfdEvent, RolloverParams, Dlc, Position, Duration)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -857,12 +861,14 @@ impl Cfd {
                 self.initial_price,
                 self.quantity,
                 self.long_leverage,
+                self.short_leverage,
                 self.refund_timelock_in_blocks(),
                 tx_fee_rate,
                 self.fee_account,
                 funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
+            self.position,
             self.settlement_interval,
         ))
     }
@@ -871,7 +877,7 @@ impl Cfd {
         &self,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
-    ) -> Result<(CfdEvent, RolloverParams, Dlc)> {
+    ) -> Result<(CfdEvent, RolloverParams, Dlc, Position)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -900,12 +906,14 @@ impl Cfd {
                 self.initial_price,
                 self.quantity,
                 self.long_leverage,
+                self.short_leverage,
                 self.refund_timelock_in_blocks(),
                 tx_fee_rate,
                 self.fee_account,
                 funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
+            self.position,
         ))
     }
 
@@ -914,11 +922,16 @@ impl Cfd {
         proposal: SettlementProposal,
         sig_taker: Signature,
     ) -> Result<CollaborativeSettlement> {
+        debug_assert_eq!(
+            self.role,
+            Role::Maker,
+            "Only the maker can complete collaborative settlement signing"
+        );
+
         let dlc = self
             .dlc
             .as_ref()
-            .context("dlc has to be available for collab settlemment")?
-            .clone();
+            .context("Collaborative close without DLC")?;
 
         let (tx, sig_maker) = dlc.close_transaction(&proposal)?;
         let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
@@ -940,11 +953,13 @@ impl Cfd {
             "Failed to propose collaborative settlement"
         );
 
-        let payout_curve = calculate_payouts_long_taker(
+        let payout_curve = calculate_payouts(
+            self.position,
+            self.role,
             self.initial_price,
             self.quantity,
             self.long_leverage,
-            Leverage::new(SHORT_LEVERAGE)?,
+            self.short_leverage,
             n_payouts,
             self.fee_account.settle(),
         )?;
@@ -989,11 +1004,13 @@ impl Cfd {
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
-        let payout_curve_long = calculate_payouts_long_taker(
+        let payout_curve_long = calculate_payouts(
+            self.position,
+            self.role,
             self.initial_price,
             self.quantity,
             self.long_leverage,
-            Leverage::new(SHORT_LEVERAGE)?,
+            self.short_leverage,
             n_payouts,
             self.fee_account.settle(),
         )?;
@@ -1305,6 +1322,12 @@ impl Cfd {
         &self,
         proposal: &SettlementProposal,
     ) -> Result<(Transaction, Signature, Script)> {
+        debug_assert_eq!(
+            self.role,
+            Role::Taker,
+            "Only the taker can start collaborative settlement signing"
+        );
+
         let dlc = self
             .dlc
             .as_ref()
@@ -1676,21 +1699,6 @@ impl Dlc {
         Ok(spend_tx)
     }
 
-    pub fn refund_amount(&self, role: Role) -> Amount {
-        let our_script_pubkey = match role {
-            Role::Taker => self.taker_address.script_pubkey(),
-            Role::Maker => self.maker_address.script_pubkey(),
-        };
-
-        self.refund
-            .0
-            .output
-            .iter()
-            .find(|output| output.script_pubkey == our_script_pubkey)
-            .map(|output| Amount::from_sat(output.value))
-            .unwrap_or_default()
-    }
-
     pub fn script_pubkey_for(&self, role: Role) -> Script {
         match role {
             Role::Maker => self.maker_address.script_pubkey(),
@@ -1875,7 +1883,10 @@ impl CollaborativeSettlement {
     }
 }
 
-pub fn calculate_payouts_long_taker(
+#[allow(clippy::too_many_arguments)]
+pub fn calculate_payouts(
+    position: Position,
+    role: Role,
     price: Price,
     quantity: Usd,
     long_leverage: Leverage,
@@ -1892,35 +1903,18 @@ pub fn calculate_payouts_long_taker(
         fee,
     )?;
 
-    payouts
-        .into_iter()
-        .map(|payout| generate_payouts(payout.range, payout.short, payout.long))
-        .flatten_ok()
-        .collect()
-}
-
-pub fn calculate_payouts_short_taker(
-    price: Price,
-    quantity: Usd,
-    long_leverage: Leverage,
-    short_leverage: Leverage,
-    n_payouts: usize,
-    fee: FeeFlow,
-) -> Result<Vec<Payout>> {
-    let payouts = payout_curve::calculate(
-        price,
-        quantity,
-        long_leverage,
-        short_leverage,
-        n_payouts,
-        fee,
-    )?;
-
-    payouts
-        .into_iter()
-        .map(|payout| generate_payouts(payout.range, payout.long, payout.short))
-        .flatten_ok()
-        .collect()
+    match (position, role) {
+        (Position::Long, Role::Taker) | (Position::Short, Role::Maker) => payouts
+            .into_iter()
+            .map(|payout| generate_payouts(payout.range, payout.short, payout.long))
+            .flatten_ok()
+            .collect(),
+        (Position::Short, Role::Taker) | (Position::Long, Role::Maker) => payouts
+            .into_iter()
+            .map(|payout| generate_payouts(payout.range, payout.long, payout.short))
+            .flatten_ok()
+            .collect(),
+    }
 }
 
 #[cfg(test)]

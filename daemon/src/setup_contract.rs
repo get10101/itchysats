@@ -39,11 +39,11 @@ use maia::spending_tx_sighash;
 use maia::Announcement;
 use maia::PartyParams;
 use maia::PunishParams;
-use model::calculate_payouts_long_taker;
+use model::calculate_payouts;
 use model::olivia;
 use model::Cet;
 use model::Dlc;
-use model::Leverage;
+use model::Position;
 use model::RevokedCommit;
 use model::Role;
 use model::RolloverParams;
@@ -69,6 +69,7 @@ pub async fn new(
     build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
     role: Role,
+    position: Position,
     n_payouts: usize,
 ) -> Result<Dlc> {
     let (sk, pk) = keypair::new(&mut rand::thread_rng());
@@ -119,11 +120,13 @@ pub async fn new(
     let settlement_event_id = announcement.id;
     let payouts = HashMap::from_iter([(
         announcement.into(),
-        calculate_payouts_long_taker(
+        calculate_payouts(
+            position,
+            role,
             setup_params.price,
             setup_params.quantity,
             setup_params.long_leverage,
-            Leverage::new(model::SHORT_LEVERAGE).expect("non-zero leverage"),
+            setup_params.short_leverage,
             n_payouts,
             setup_params.fee_account.settle(),
         )?,
@@ -339,12 +342,14 @@ pub async fn new(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn roll_over(
     mut sink: impl Sink<RolloverMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = RolloverMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     rollover_params: RolloverParams,
     our_role: Role,
+    our_position: Position,
     dlc: Dlc,
     n_payouts: usize,
 ) -> Result<Dlc> {
@@ -380,11 +385,13 @@ pub async fn roll_over(
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
         },
-        calculate_payouts_long_taker(
+        calculate_payouts(
+            our_position,
+            our_role,
             rollover_params.price,
             rollover_params.quantity,
             rollover_params.long_leverage,
-            Leverage::new(model::SHORT_LEVERAGE).expect("non-zero leverage"),
+            rollover_params.short_leverage,
             n_payouts,
             rollover_params.fee_account.settle(),
         )?,

@@ -153,3 +153,13 @@ impl<TOne, TTwo, TThree, TFour> ExtractEventFromTuple for (CfdEvent, TOne, TTwo,
         (Some(self.0), (self.1, self.2, self.3, self.4))
     }
 }
+
+impl<TOne, TTwo, TThree, TFour, TFive> ExtractEventFromTuple
+    for (CfdEvent, TOne, TTwo, TThree, TFour, TFive)
+{
+    type Rest = (TOne, TTwo, TThree, TFour, TFive);
+
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
+        (Some(self.0), (self.1, self.2, self.3, self.4, self.5))
+    }
+}

@@ -81,7 +81,7 @@ impl Actor {
         // the spawned contract setup task
         self.setup_msg_sender = Some(sender);
 
-        let setup_params = self
+        let (setup_params, position) = self
             .executor
             .execute(order_id, |cfd| cfd.start_contract_setup())
             .await?;
@@ -101,6 +101,7 @@ impl Actor {
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
             Role::Maker,
+            position,
             self.n_payouts,
         );
 
