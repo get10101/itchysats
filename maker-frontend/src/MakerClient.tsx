@@ -2,9 +2,11 @@ import { HttpError } from "./components/HttpError";
 
 export interface CfdSellOrderPayload {
     price: number;
+    price_long?: number;
     min_quantity: number;
     max_quantity: number;
     funding_rate?: number;
+    daily_funding_rate_long?: number;
     opening_fee?: number;
 }
 

@@ -26,11 +26,12 @@ import CurrentPrice from "./components/CurrentPrice";
 import createErrorToast from "./components/ErrorToast";
 import useLatestEvent from "./components/Hooks";
 import OrderTile from "./components/OrderTile";
-import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
+import { Cfd, intoCfd, MakerOffer, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 
-const SPREAD = 1.01;
+const SPREAD_ASK = 1.01;
+const SPREAD_BID = 0.99;
 
 export default function App() {
     document.title = "Hermes Maker";
@@ -39,7 +40,8 @@ export default function App() {
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
-    const order = useLatestEvent<Order>(source, "order", intoOrder);
+    const makerLongOrder = useLatestEvent<MakerOffer>(source, "long_offer");
+    const makerShortOrder = useLatestEvent<MakerOffer>(source, "short_offer");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
     const takersOrUndefined = useLatestEvent<TakerId[]>(source, "takers");
@@ -49,14 +51,22 @@ export default function App() {
 
     let [minQuantity, setMinQuantity] = useState<string>("100");
     let [maxQuantity, setMaxQuantity] = useState<string>("1000");
-    let [orderPrice, setOrderPrice] = useState<string>("0");
-    let [autoRefresh, setAutoRefresh] = useState(true);
+    let [shortPrice, setShortPrice] = useState<string>("0");
+    let [longPrice, setLongPrice] = useState<string>("0");
+    let [autoRefreshShort, setAutoRefreshShort] = useState(true);
+    let [autoRefreshLong, setAutoRefreshLong] = useState(true);
 
     useEffect(() => {
-        if (autoRefresh && priceInfo) {
-            setOrderPrice((priceInfo.ask * SPREAD).toFixed(2).toString());
+        if (autoRefreshShort && priceInfo) {
+            setShortPrice((priceInfo.ask * SPREAD_ASK).toFixed(2).toString());
         }
-    }, [priceInfo, autoRefresh]);
+    }, [priceInfo, autoRefreshShort]);
+
+    useEffect(() => {
+        if (autoRefreshLong && priceInfo) {
+            setLongPrice((priceInfo.bid * SPREAD_BID).toFixed(2).toString());
+        }
+    }, [priceInfo, autoRefreshLong]);
 
     let { run: makeNewCfdSellOrder, isLoading: isCreatingNewCfdOrder } = useAsync({
         deferFn: async ([payload]: any[]) => {
@@ -105,20 +115,39 @@ export default function App() {
                             value={format(maxQuantity)}
                         />
 
-                        <Text>Offer Price:</Text>
+                        <Text>Maker Short Price:</Text>
                         <HStack>
                             <CurrencyInputField
                                 onChange={(valueString: string) => {
-                                    setOrderPrice(parse(valueString));
-                                    setAutoRefresh(false);
+                                    setShortPrice(parse(valueString));
+                                    setAutoRefreshShort(false);
                                 }}
-                                value={format(orderPrice)}
+                                value={format(shortPrice)}
                             />
                             <HStack>
                                 <Switch
-                                    id="auto-refresh"
-                                    isChecked={autoRefresh}
-                                    onChange={() => setAutoRefresh(!autoRefresh)}
+                                    id="auto-refresh-short"
+                                    isChecked={autoRefreshShort}
+                                    onChange={() => setAutoRefreshShort(!autoRefreshShort)}
+                                />
+                                <Text>Auto-refresh</Text>
+                            </HStack>
+                        </HStack>
+
+                        <Text>Maker Long Price:</Text>
+                        <HStack>
+                            <CurrencyInputField
+                                onChange={(valueString: string) => {
+                                    setLongPrice(parse(valueString));
+                                    setAutoRefreshLong(false);
+                                }}
+                                value={format(longPrice)}
+                            />
+                            <HStack>
+                                <Switch
+                                    id="auto-refresh-long"
+                                    isChecked={autoRefreshLong}
+                                    onChange={() => setAutoRefreshLong(!autoRefreshLong)}
                                 />
                                 <Text>Auto-refresh</Text>
                             </HStack>
@@ -137,30 +166,36 @@ export default function App() {
 
                         <GridItem colSpan={2} textAlign="center">
                             <Button
-                                disabled={isCreatingNewCfdOrder || orderPrice === "0"}
+                                disabled={isCreatingNewCfdOrder || shortPrice === "0"}
                                 variant={"solid"}
                                 colorScheme={"blue"}
                                 onClick={() => {
                                     let payload: CfdSellOrderPayload = {
-                                        price: Number.parseFloat(orderPrice),
+                                        price: Number.parseFloat(shortPrice),
+                                        price_long: Number.parseFloat(longPrice),
                                         min_quantity: Number.parseFloat(minQuantity),
                                         max_quantity: Number.parseFloat(maxQuantity),
                                         // TODO: Populate funding rate from the UI
                                         funding_rate: (0.00002283 * 24), // annualized 20% by default to have some values
+                                        // TODO: Populate funding rate from the UI
+                                        daily_funding_rate_long: (-0.00002283 * 24), // annualized 20% by default to have some values
                                         // TODO: This is is in sats which is not really in line with other APIs for the maker
                                         opening_fee: Number.parseFloat("100"),
                                     };
                                     makeNewCfdSellOrder(payload);
                                 }}
                             >
-                                {order ? "Update Sell Order" : "Create Sell Order"}
+                                {makerLongOrder ? "Update Offers" : "Create Offers"}
                             </Button>
                         </GridItem>
                     </Grid>
                 </VStack>
                 <VStack>
                     <ConnectedTakers takers={takers} />
-                    {order && <OrderTile order={order} />}
+                    <HStack>
+                        {makerShortOrder && <OrderTile maker_offer={makerShortOrder} />}
+                        {makerLongOrder && <OrderTile maker_offer={makerLongOrder} />}
+                    </HStack>
                 </VStack>
                 <Box width="40%" />
             </HStack>
