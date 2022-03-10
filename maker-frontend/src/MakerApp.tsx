@@ -26,7 +26,7 @@ import CurrentPrice from "./components/CurrentPrice";
 import createErrorToast from "./components/ErrorToast";
 import useLatestEvent from "./components/Hooks";
 import OrderTile from "./components/OrderTile";
-import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
+import { Cfd, intoCfd, MakerOffer, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
 import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 
@@ -40,7 +40,8 @@ export default function App() {
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
-    const order = useLatestEvent<Order>(source, "order", intoOrder);
+    const makerLongOrder = useLatestEvent<MakerOffer>(source, "long_offer");
+    const makerShortOrder = useLatestEvent<MakerOffer>(source, "short_offer");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
     const takersOrUndefined = useLatestEvent<TakerId[]>(source, "takers");
@@ -184,14 +185,17 @@ export default function App() {
                                     makeNewCfdSellOrder(payload);
                                 }}
                             >
-                                {order ? "Update Offers" : "Create Offers"}
+                                {makerLongOrder ? "Update Offers" : "Create Offers"}
                             </Button>
                         </GridItem>
                     </Grid>
                 </VStack>
                 <VStack>
                     <ConnectedTakers takers={takers} />
-                    {order && <OrderTile order={order} />}
+                    <HStack>
+                        {makerShortOrder && <OrderTile maker_offer={makerShortOrder} />}
+                        {makerLongOrder && <OrderTile maker_offer={makerLongOrder} />}
+                    </HStack>
                 </VStack>
                 <Box width="40%" />
             </HStack>

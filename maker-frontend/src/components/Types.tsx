@@ -1,16 +1,22 @@
-export interface Order {
+export interface MakerOffer {
     id: string;
     trading_pair: string;
+    // this is the maker's position
     position: Position;
     price: number;
     min_quantity: number;
     max_quantity: number;
+    parcel_size: number;
+    margin_per_parcel: number;
     leverage: number;
     liquidation_price: number;
     creation_timestamp: number;
     settlement_time_interval_in_secs: number;
-    opening_fee?: number;
-    funding_rate_hourly_percent?: number;
+
+    opening_fee: number;
+    funding_rate_annualized_percent: number; // e.g. "18.5" (does not include % char)
+    funding_rate_hourly_percent: number; // e.g. "0.002345" (does not include % char)
+    initial_funding_fee_per_parcel: number;
 }
 
 export class Position {
@@ -241,15 +247,6 @@ export function intoCfd(key: string, value: any): any {
             return new Position(value);
         case "state":
             return new State(value);
-        default:
-            return value;
-    }
-}
-
-export function intoOrder(key: string, value: any): any {
-    switch (key) {
-        case "position":
-            return new Position(value);
         default:
             return value;
     }
