@@ -9,6 +9,7 @@ use rust_decimal::Decimal;
 use serde::de::Error as _;
 use serde::Deserialize;
 use serde::Serialize;
+use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fmt;
 use std::num::NonZeroU8;
@@ -90,6 +91,8 @@ pub struct Price(Decimal);
 impl_sqlx_type_display_from_str!(Price);
 
 impl Price {
+    const INFINITE: Price = Price(rust_decimal_macros::dec!(21_000_000));
+
     pub fn new(value: Decimal) -> Result<Self, Error> {
         if value == Decimal::ZERO {
             return Result::Err(Error::ZeroPrice);
@@ -367,6 +370,14 @@ impl Add<u8> for Leverage {
     }
 }
 
+impl Sub<u8> for Leverage {
+    type Output = Leverage;
+
+    fn sub(self, rhs: u8) -> Self::Output {
+        Self(self.0 - rhs)
+    }
+}
+
 impl Add<Leverage> for u8 {
     type Output = Leverage;
 
@@ -380,6 +391,36 @@ impl Div<Leverage> for Leverage {
 
     fn div(self, rhs: Leverage) -> Self::Output {
         Decimal::from(self.0) / Decimal::from(rhs.0)
+    }
+}
+
+impl PartialEq<u8> for Leverage {
+    #[inline]
+    fn eq(&self, other: &u8) -> bool {
+        self.0.eq(other)
+    }
+}
+
+impl PartialOrd<u8> for Leverage {
+    #[inline]
+    fn partial_cmp(&self, other: &u8) -> Option<Ordering> {
+        self.0.partial_cmp(other)
+    }
+    #[inline]
+    fn lt(&self, other: &u8) -> bool {
+        self.0.lt(other)
+    }
+    #[inline]
+    fn le(&self, other: &u8) -> bool {
+        self.0.le(other)
+    }
+    #[inline]
+    fn gt(&self, other: &u8) -> bool {
+        self.0.gt(other)
+    }
+    #[inline]
+    fn ge(&self, other: &u8) -> bool {
+        self.0.ge(other)
     }
 }
 
