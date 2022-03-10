@@ -1,7 +1,6 @@
-use crate::cfd_actors::insert_cfd_and_update_feed;
-use crate::cfd_actors::load_cfd;
 use crate::collab_settlement_maker;
 use crate::command;
+use crate::db;
 use crate::future_ext::FutureExt;
 use crate::maker_inc_connections;
 use crate::oracle;
@@ -356,7 +355,10 @@ where
             .send(projection::Update(self.current_offers))
             .await?;
 
-        insert_cfd_and_update_feed(&cfd, &mut conn, &self.projection).await?;
+        db::insert_cfd(&cfd, &mut conn).await?;
+        self.projection
+            .send(projection::CfdChanged(cfd.id()))
+            .await?;
 
         // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any
         // state
@@ -500,20 +502,14 @@ impl<O, T, W> Actor<O, T, W> {
 
         let order_id = msg.order_id;
 
-        let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(order_id, &mut conn).await?;
-        let funding_rate = match cfd.position() {
-            Position::Long => current_offers.funding_rate_long,
-            Position::Short => current_offers.funding_rate_short,
-        };
-
         match self
             .rollover_actors
             .send_async(
                 &order_id,
                 rollover_maker::AcceptRollover {
                     tx_fee_rate: current_offers.tx_fee_rate,
-                    funding_rate,
+                    long_funding_rate: current_offers.funding_rate_long,
+                    short_funding_rate: current_offers.funding_rate_short,
                 },
             )
             .await

@@ -16,6 +16,7 @@ use model::FundingFee;
 use model::FundingRate;
 use model::Identity;
 use model::OrderId;
+use model::Position;
 use model::Role;
 use model::TxFeeRate;
 use tokio_tasks::Tasks;
@@ -29,7 +30,8 @@ use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
 #[derive(Clone, Copy)]
 pub struct AcceptRollover {
     pub tx_fee_rate: TxFeeRate,
-    pub funding_rate: FundingRate,
+    pub long_funding_rate: FundingRate,
+    pub short_funding_rate: FundingRate,
 }
 
 #[derive(Clone, Copy)]
@@ -137,7 +139,8 @@ impl Actor {
         let order_id = self.order_id;
         let AcceptRollover {
             tx_fee_rate,
-            funding_rate,
+            long_funding_rate,
+            short_funding_rate,
         } = msg;
 
         if self.sent_from_taker.is_some() {
@@ -151,10 +154,18 @@ impl Actor {
 
         tracing::debug!(%order_id, "Maker accepts a rollover proposal");
 
-        let (rollover_params, dlc, interval) = self
+        let (rollover_params, dlc, interval, funding_rate) = self
             .executor
             .execute(self.order_id, |cfd| {
-                cfd.accept_rollover_proposal(tx_fee_rate, funding_rate)
+                let funding_rate = match cfd.position() {
+                    Position::Long => long_funding_rate,
+                    Position::Short => short_funding_rate,
+                };
+
+                let (event, params, dlc, interval) =
+                    cfd.accept_rollover_proposal(tx_fee_rate, funding_rate)?;
+
+                Ok((event, params, dlc, interval, funding_rate))
             })
             .await?;
 

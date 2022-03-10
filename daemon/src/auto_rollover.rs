@@ -1,4 +1,3 @@
-use crate::cfd_actors::load_cfd;
 use crate::connection;
 use crate::db;
 use crate::oracle;
@@ -108,7 +107,9 @@ where
             .expect("actor to be able to give address to itself");
         for id in cfd_ids {
             try_continue!(async {
-                let cfd = load_cfd(id, &mut conn).await?;
+                #[allow(deprecated)] // This checking for rollover eligibility does not fit into the command abstraction (yet). Figure out a way for fixing it.
+                let cfd = crate::command::load_cfd(id, &mut conn).await?;
+
                 match cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
                     Ok(()) => this.send_async_safe(Rollover(id)).await?,
                     Err(reason) => {

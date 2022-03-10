@@ -1,4 +1,3 @@
-use crate::cfd_actors::load_cfd;
 use crate::command;
 use crate::connection;
 use crate::process_manager;
@@ -84,7 +83,11 @@ impl Actor {
         tracing::info!(%order_id, "Settlement proposal got accepted");
 
         let mut conn = self.db.acquire().await?;
-        let cfd = load_cfd(order_id, &mut conn).await?;
+
+        // Collaborative settlement does not fit into the command abstraction which I think roots in
+        // its asymmetric design.
+        #[allow(deprecated)]
+        let cfd = crate::command::load_cfd(order_id, &mut conn).await?;
 
         // TODO: This should happen within a dedicated state machine returned from
         // start_collaborative_settlement
