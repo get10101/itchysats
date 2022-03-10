@@ -80,7 +80,7 @@ impl Actor {
         let order_id = self.order_id;
         tracing::info!(%order_id, "Order got accepted");
 
-        let setup_params = self
+        let (setup_params, position) = self
             .executor
             .execute(order_id, |cfd| cfd.start_contract_setup())
             .await?;
@@ -99,6 +99,7 @@ impl Actor {
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
             Role::Taker,
+            position,
             self.n_payouts,
         );
 

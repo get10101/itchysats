@@ -797,7 +797,7 @@ impl Cfd {
             || self.is_refunded()
     }
 
-    pub fn start_contract_setup(&self) -> Result<(CfdEvent, SetupParams)> {
+    pub fn start_contract_setup(&self) -> Result<(CfdEvent, SetupParams, Position)> {
         if self.version > 0 {
             bail!("Start contract not allowed in version {}", self.version)
         }
@@ -818,6 +818,7 @@ impl Cfd {
                 self.initial_tx_fee_rate(),
                 self.fee_account,
             )?,
+            self.position,
         ))
     }
 
@@ -835,7 +836,7 @@ impl Cfd {
         self,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
-    ) -> Result<(CfdEvent, RolloverParams, Dlc, Duration)> {
+    ) -> Result<(CfdEvent, RolloverParams, Dlc, Position, Duration)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -867,6 +868,7 @@ impl Cfd {
                 funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
+            self.position,
             self.settlement_interval,
         ))
     }
@@ -875,7 +877,7 @@ impl Cfd {
         &self,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
-    ) -> Result<(CfdEvent, RolloverParams, Dlc)> {
+    ) -> Result<(CfdEvent, RolloverParams, Dlc, Position)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -910,6 +912,7 @@ impl Cfd {
                 funding_fee,
             ),
             self.dlc.clone().context("No DLC present")?,
+            self.position,
         ))
     }
 
@@ -949,7 +952,9 @@ impl Cfd {
             "Failed to propose collaborative settlement"
         );
 
-        let payout_curve = calculate_payouts_long_taker(
+        let payout_curve = calculate_payouts(
+            self.position,
+            self.role,
             self.initial_price,
             self.quantity,
             self.long_leverage,
@@ -998,7 +1003,9 @@ impl Cfd {
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
-        let payout_curve_long = calculate_payouts_long_taker(
+        let payout_curve_long = calculate_payouts(
+            self.position,
+            self.role,
             self.initial_price,
             self.quantity,
             self.long_leverage,
@@ -1875,7 +1882,10 @@ impl CollaborativeSettlement {
     }
 }
 
-pub fn calculate_payouts_long_taker(
+#[allow(clippy::too_many_arguments)]
+pub fn calculate_payouts(
+    position: Position,
+    role: Role,
     price: Price,
     quantity: Usd,
     long_leverage: Leverage,
@@ -1892,35 +1902,18 @@ pub fn calculate_payouts_long_taker(
         fee,
     )?;
 
-    payouts
-        .into_iter()
-        .map(|payout| generate_payouts(payout.range, payout.short, payout.long))
-        .flatten_ok()
-        .collect()
-}
-
-pub fn calculate_payouts_short_taker(
-    price: Price,
-    quantity: Usd,
-    long_leverage: Leverage,
-    short_leverage: Leverage,
-    n_payouts: usize,
-    fee: FeeFlow,
-) -> Result<Vec<Payout>> {
-    let payouts = payout_curve::calculate(
-        price,
-        quantity,
-        long_leverage,
-        short_leverage,
-        n_payouts,
-        fee,
-    )?;
-
-    payouts
-        .into_iter()
-        .map(|payout| generate_payouts(payout.range, payout.long, payout.short))
-        .flatten_ok()
-        .collect()
+    match (position, role) {
+        (Position::Long, Role::Taker) | (Position::Short, Role::Maker) => payouts
+            .into_iter()
+            .map(|payout| generate_payouts(payout.range, payout.short, payout.long))
+            .flatten_ok()
+            .collect(),
+        (Position::Short, Role::Taker) | (Position::Long, Role::Maker) => payouts
+            .into_iter()
+            .map(|payout| generate_payouts(payout.range, payout.long, payout.short))
+            .flatten_ok()
+            .collect(),
+    }
 }
 
 #[cfg(test)]

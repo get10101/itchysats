@@ -97,7 +97,7 @@ impl Actor {
         }: RolloverAccepted = msg;
         let order_id = self.id;
 
-        let (rollover_params, dlc) = self
+        let (rollover_params, dlc, position) = self
             .executor
             .execute(self.id, |cfd| {
                 cfd.handle_rollover_accepted_taker(tx_fee_rate, funding_rate)
@@ -128,6 +128,7 @@ impl Actor {
             (self.oracle_pk, announcement),
             rollover_params,
             Role::Taker,
+            position,
             dlc,
             self.n_payouts,
         );
