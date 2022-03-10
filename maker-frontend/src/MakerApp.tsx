@@ -30,7 +30,8 @@ import { Cfd, intoCfd, intoOrder, Order, PriceInfo, StateGroupKey, WalletInfo } 
 import Wallet from "./components/Wallet";
 import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
 
-const SPREAD = 1.01;
+const SPREAD_ASK = 1.01;
+const SPREAD_BID = 0.99;
 
 export default function App() {
     document.title = "Hermes Maker";
@@ -51,13 +52,20 @@ export default function App() {
     let [maxQuantity, setMaxQuantity] = useState<string>("1000");
     let [shortPrice, setShortPrice] = useState<string>("0");
     let [longPrice, setLongPrice] = useState<string>("0");
-    let [autoRefresh, setAutoRefresh] = useState(true);
+    let [autoRefreshShort, setAutoRefreshShort] = useState(true);
+    let [autoRefreshLong, setAutoRefreshLong] = useState(true);
 
     useEffect(() => {
-        if (autoRefresh && priceInfo) {
-            setShortPrice((priceInfo.ask * SPREAD).toFixed(2).toString());
+        if (autoRefreshShort && priceInfo) {
+            setShortPrice((priceInfo.ask * SPREAD_ASK).toFixed(2).toString());
         }
-    }, [priceInfo, autoRefresh]);
+    }, [priceInfo, autoRefreshShort]);
+
+    useEffect(() => {
+        if (autoRefreshLong && priceInfo) {
+            setLongPrice((priceInfo.bid * SPREAD_BID).toFixed(2).toString());
+        }
+    }, [priceInfo, autoRefreshLong]);
 
     let { run: makeNewCfdSellOrder, isLoading: isCreatingNewCfdOrder } = useAsync({
         deferFn: async ([payload]: any[]) => {
@@ -106,36 +114,39 @@ export default function App() {
                             value={format(maxQuantity)}
                         />
 
-                        <Text>Short Price:</Text>
+                        <Text>Maker Short Price:</Text>
                         <HStack>
                             <CurrencyInputField
                                 onChange={(valueString: string) => {
                                     setShortPrice(parse(valueString));
-                                    setAutoRefresh(false);
+                                    setAutoRefreshShort(false);
                                 }}
                                 value={format(shortPrice)}
                             />
                             <HStack>
                                 <Switch
-                                    id="auto-refresh"
-                                    isChecked={autoRefresh}
-                                    onChange={() => setAutoRefresh(!autoRefresh)}
+                                    id="auto-refresh-short"
+                                    isChecked={autoRefreshShort}
+                                    onChange={() => setAutoRefreshShort(!autoRefreshShort)}
                                 />
                                 <Text>Auto-refresh</Text>
                             </HStack>
                         </HStack>
 
-                        <Text>Long Price:</Text>
+                        <Text>Maker Long Price:</Text>
                         <HStack>
                             <CurrencyInputField
                                 onChange={(valueString: string) => {
                                     setLongPrice(parse(valueString));
+                                    setAutoRefreshLong(false);
                                 }}
                                 value={format(longPrice)}
                             />
                             <HStack>
                                 <Switch
-                                    disabled={true}
+                                    id="auto-refresh-long"
+                                    isChecked={autoRefreshLong}
+                                    onChange={() => setAutoRefreshLong(!autoRefreshLong)}
                                 />
                                 <Text>Auto-refresh</Text>
                             </HStack>
