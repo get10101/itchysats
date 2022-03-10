@@ -16,7 +16,6 @@ use maia::secp256k1_zkp::schnorrsig;
 use model::olivia::Announcement;
 use model::Dlc;
 use model::Order;
-use model::Role;
 use model::Usd;
 use std::time::Duration;
 use tokio_tasks::Tasks;
@@ -98,7 +97,6 @@ impl Actor {
             setup_params,
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
-            Role::Taker,
             self.order.position_maker.counter_position(),
             self.n_payouts,
         );

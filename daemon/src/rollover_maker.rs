@@ -16,7 +16,6 @@ use model::FundingFee;
 use model::FundingRate;
 use model::Identity;
 use model::OrderId;
-use model::Role;
 use model::TxFeeRate;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
@@ -196,7 +195,6 @@ impl Actor {
             receiver,
             (self.oracle_pk, announcement),
             rollover_params,
-            Role::Maker,
             dlc,
             self.n_payouts,
         );

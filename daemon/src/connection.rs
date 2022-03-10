@@ -209,8 +209,8 @@ pub struct TakeOrder {
 pub struct ProposeSettlement {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
-    pub taker: Amount,
-    pub maker: Amount,
+    pub long: Amount,
+    pub short: Amount,
     pub price: Price,
     pub address: xtra::Address<collab_settlement_taker::Actor>,
 }
@@ -272,8 +272,8 @@ impl Actor {
         let ProposeSettlement {
             order_id,
             timestamp,
-            taker,
-            maker,
+            long,
+            short,
             price,
             address,
         } = msg;
@@ -283,8 +283,8 @@ impl Actor {
                 order_id,
                 msg: wire::taker_to_maker::Settlement::Propose {
                     timestamp,
-                    taker,
-                    maker,
+                    long,
+                    short,
                     price,
                 },
             })

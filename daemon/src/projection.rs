@@ -231,7 +231,7 @@ impl Aggregated {
         }
     }
 
-    fn payout(self, role: Role) -> Option<Amount> {
+    fn payout(self) -> Option<Amount> {
         if let Some((tx, script)) = self.collab_settlement_tx {
             return Some(extract_payout_amount(tx, script));
         }
@@ -241,7 +241,7 @@ impl Aggregated {
             .latest_dlc
             .as_ref()
             .expect("dlc to be present when we have a cet");
-        let script = dlc.script_pubkey_for(role);
+        let script = dlc.script_pubkey();
 
         Some(extract_payout_amount(tx, script))
     }
@@ -531,7 +531,7 @@ impl Cfd {
 
     fn with_current_quote(self, latest_quote: Option<xtra_bitmex_price_feed::Quote>) -> Self {
         // If we have a dedicated closing price, use that one.
-        if let Some(payout) = self.aggregated.clone().payout(self.role) {
+        if let Some(payout) = self.aggregated.clone().payout() {
             let payout = payout
                 .to_signed()
                 .expect("Amount to fit into signed amount");
@@ -693,7 +693,7 @@ impl Cfd {
 
         let url = TxUrl::from_transaction(
             &dlc.refund.0,
-            &dlc.script_pubkey_for(self.role),
+            &dlc.script_pubkey(),
             network,
             TxLabel::Refund,
         );
@@ -705,8 +705,7 @@ impl Cfd {
         let tx = self.aggregated.cet.as_ref()?;
         let dlc = self.aggregated.latest_dlc.as_ref()?;
 
-        let url =
-            TxUrl::from_transaction(tx, &dlc.script_pubkey_for(self.role), network, TxLabel::Cet);
+        let url = TxUrl::from_transaction(tx, &dlc.script_pubkey(), network, TxLabel::Cet);
 
         Some(url)
     }

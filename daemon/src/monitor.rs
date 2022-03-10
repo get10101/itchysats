@@ -445,7 +445,7 @@ impl MonitorParams {
         // this is used for the refund transaction, and we can assume
         // that both addresses will be present since both parties
         // should have put up coins
-        let script_pubkey = dlc.maker_address.script_pubkey();
+        let script_pubkey = dlc.address.script_pubkey();
         MonitorParams {
             lock: (dlc.lock.0.txid(), dlc.lock.1),
             commit: (dlc.commit.0.txid(), dlc.commit.2),

@@ -16,7 +16,6 @@ use model::olivia::Announcement;
 use model::Dlc;
 use model::Identity;
 use model::Order;
-use model::Role;
 use model::Usd;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
@@ -100,7 +99,6 @@ impl Actor {
             setup_params,
             self.build_party_params.clone_channel(),
             self.sign.clone_channel(),
-            Role::Maker,
             self.order.position_maker,
             self.n_payouts,
         );

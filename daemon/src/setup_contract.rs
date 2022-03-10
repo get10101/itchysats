@@ -39,14 +39,13 @@ use maia::spending_tx_sighash;
 use maia::Announcement;
 use maia::PartyParams;
 use maia::PunishParams;
-use model::calculate_payouts_long_taker;
+use model::calculate_payouts;
 use model::olivia;
 use model::Cet;
 use model::Dlc;
 use model::Leverage;
 use model::Position;
 use model::RevokedCommit;
-use model::Role;
 use model::RolloverParams;
 use model::SetupParams;
 use model::CET_TIMELOCK;
@@ -69,7 +68,6 @@ pub async fn new(
     setup_params: SetupParams,
     build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
-    role: Role,
     position: Position,
     n_payouts: usize,
 ) -> Result<Dlc> {
@@ -107,7 +105,7 @@ pub async fn new(
 
     let (other, other_punish) = msg0.into();
 
-    let params = AllParams::new(own_params, own_punish, other, other_punish, role);
+    let params = AllParams::new(own_params, own_punish, other, other_punish, position);
 
     let expected_margin = setup_params.counterparty_margin;
     let actual_margin = params.other.lock_amount;
@@ -121,7 +119,7 @@ pub async fn new(
     let settlement_event_id = announcement.id;
     let payouts = HashMap::from_iter([(
         announcement.into(),
-        calculate_payouts_long_taker(
+        calculate_payouts(
             setup_params.price,
             setup_params.quantity,
             setup_params.long_leverage,
@@ -132,15 +130,15 @@ pub async fn new(
     )]);
 
     let own_cfd_txs = tokio::task::spawn_blocking({
-        let maker_params = params.maker().clone();
-        let taker_params = params.taker().clone();
-        let maker_punish = *params.maker_punish();
-        let taker_punish = *params.taker_punish();
+        let long_params = params.long().clone();
+        let short_params = params.short().clone();
+        let long_punish = *params.punish_short();
+        let short_punish = *params.punish_long();
 
         move || {
             create_cfd_transactions(
-                (maker_params, maker_punish),
-                (taker_params, taker_punish),
+                (long_params, long_punish),
+                (short_params, short_punish),
                 oracle_pk,
                 (CET_TIMELOCK, setup_params.refund_timelock),
                 payouts,
@@ -168,20 +166,20 @@ pub async fn new(
 
     tracing::info!("Exchanged CFD transactions");
 
-    let lock_desc = lock_descriptor(params.maker().identity_pk, params.taker().identity_pk);
+    let lock_desc = lock_descriptor(params.long().identity_pk, params.short().identity_pk);
 
-    let lock_amount = params.maker().lock_amount + params.taker().lock_amount;
+    let lock_amount = params.own.lock_amount + params.other.lock_amount;
 
     let commit_desc = commit_descriptor(
         (
-            params.maker().identity_pk,
-            params.maker_punish().revocation_pk,
-            params.maker_punish().publish_pk,
+            params.long().identity_pk,
+            params.punish_long().revocation_pk,
+            params.punish_long().publish_pk,
         ),
         (
-            params.taker().identity_pk,
-            params.taker_punish().revocation_pk,
-            params.taker_punish().publish_pk,
+            params.short().identity_pk,
+            params.punish_short().revocation_pk,
+            params.punish_short().publish_pk,
         ),
     );
 
@@ -260,8 +258,8 @@ pub async fn new(
     // need some fallback handling (after x time) to spend the outputs in a different way so the
     // other party cannot hold us hostage
 
-    let maker_script_pubkey = params.maker().address.script_pubkey();
-    let taker_script_pubkey = params.taker().address.script_pubkey();
+    let long_script_pubkey = params.long().address.script_pubkey();
+    let short_script_pubkey = params.short().address.script_pubkey();
     let cets = tokio::task::spawn_blocking(move || {
         own_cets
             .into_iter()
@@ -288,12 +286,12 @@ pub async fn new(
                                 )
                             })?;
 
-                        let maker_amount = tx.find_output_amount(&maker_script_pubkey).unwrap_or_default();
-                        let taker_amount = tx.find_output_amount(&taker_script_pubkey).unwrap_or_default();
+                        let long_amount = tx.find_output_amount(&long_script_pubkey).unwrap_or_default();
+                        let short_amount = tx.find_output_amount(&short_script_pubkey).unwrap_or_default();
 
                         Ok(Cet {
-                            maker_amount,
-                            taker_amount,
+                            long_amount,
+                            short_amount,
                             adaptor_sig: *other_encsig,
                             range: digits.range(),
                             n_bits: digits.len(),
@@ -327,14 +325,14 @@ pub async fn new(
         revocation_pk_counterparty: other_punish.revocation_pk,
         publish: publish_sk,
         publish_pk_counterparty: other_punish.publish_pk,
-        maker_address: params.maker().address.clone(),
-        taker_address: params.taker().address.clone(),
+        address: params.own.address.clone(),
+        address_counterparty: params.other.address.clone(),
         lock: (signed_lock_tx.extract_tx(), lock_desc),
         commit: (commit_tx, msg1.commit, commit_desc),
         cets,
         refund: (refund_tx, msg1.refund),
-        maker_lock_amount: params.maker().lock_amount,
-        taker_lock_amount: params.taker().lock_amount,
+        lock_amount: params.own.lock_amount,
+        lock_amount_counterparty: params.other.lock_amount,
         revoked_commit: Vec::new(),
         settlement_event_id,
         refund_timelock: setup_params.refund_timelock,
@@ -347,20 +345,11 @@ pub async fn roll_over(
     mut stream: impl FusedStream<Item = RolloverMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     rollover_params: RolloverParams,
-    our_role: Role,
     dlc: Dlc,
     n_payouts: usize,
 ) -> Result<Dlc> {
-    let sk = dlc.identity;
-    let pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk));
-
     let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
     let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
-
-    let own_punish = PunishParams {
-        revocation_pk: rev_pk,
-        publish_pk,
-    };
 
     sink.send(RolloverMsg::Msg0(RolloverMsg0 {
         revocation_pk: rev_pk,
@@ -376,14 +365,12 @@ pub async fn roll_over(
         .try_into_msg0()
         .context("Failed to read Msg0")?;
 
-    let maker_lock_amount = dlc.maker_lock_amount;
-    let taker_lock_amount = dlc.taker_lock_amount;
     let payouts = HashMap::from_iter([(
         Announcement {
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
         },
-        calculate_payouts_long_taker(
+        calculate_payouts(
             rollover_params.price,
             rollover_params.quantity,
             rollover_params.long_leverage,
@@ -405,36 +392,36 @@ pub async fn roll_over(
         revocation_pk: msg0.revocation_pk,
         publish_pk: msg0.publish_pk,
     };
-    let ((maker_identity, maker_punish_params), (taker_identity, taker_punish_params)) =
-        match our_role {
-            Role::Maker => (
-                (pk, own_punish),
-                (dlc.identity_counterparty, other_punish_params),
-            ),
-            Role::Taker => (
-                (dlc.identity_counterparty, other_punish_params),
-                (pk, own_punish),
-            ),
-        };
+
+    let long_identity = dlc.identity_long();
+    let long_punish_params = dlc.punish_params_long();
+
+    let short_identity = dlc.identity_short();
+    let short_punish_params = dlc.punish_params_short();
+
+    let lock_amount_long = dlc.lock_amount_long();
+    let lock_amount_short = dlc.lock_amount_short();
+
+    let sk = dlc.identity;
     let own_cfd_txs = tokio::task::spawn_blocking({
-        let maker_address = dlc.maker_address.clone();
-        let taker_address = dlc.taker_address.clone();
+        let long_address = dlc.address_long();
+        let short_address = dlc.address_short();
         let lock_tx = lock_tx.clone();
 
         move || {
             renew_cfd_transactions(
                 lock_tx,
                 (
-                    maker_identity,
-                    maker_lock_amount,
-                    maker_address,
-                    maker_punish_params,
+                    long_identity,
+                    lock_amount_long,
+                    long_address,
+                    long_punish_params,
                 ),
                 (
-                    taker_identity,
-                    taker_lock_amount,
-                    taker_address,
-                    taker_punish_params,
+                    short_identity,
+                    lock_amount_short,
+                    short_address,
+                    short_punish_params,
                 ),
                 oracle_pk,
                 (CET_TIMELOCK, rollover_params.refund_timelock),
@@ -459,18 +446,18 @@ pub async fn roll_over(
         .try_into_msg1()
         .context("Failed to read Msg1")?;
 
-    let lock_amount = taker_lock_amount + maker_lock_amount;
+    let lock_amount = dlc.lock_amount_short() + dlc.lock_amount_long();
 
     let commit_desc = commit_descriptor(
         (
-            maker_identity,
-            maker_punish_params.revocation_pk,
-            maker_punish_params.publish_pk,
+            long_identity,
+            long_punish_params.revocation_pk,
+            long_punish_params.publish_pk,
         ),
         (
-            taker_identity,
-            taker_punish_params.revocation_pk,
-            taker_punish_params.publish_pk,
+            short_identity,
+            short_punish_params.revocation_pk,
+            short_punish_params.publish_pk,
         ),
     );
 
@@ -489,11 +476,6 @@ pub async fn roll_over(
     )
     .context("Commit adaptor signature does not verify")?;
 
-    let other_address = match our_role {
-        Role::Maker => dlc.taker_address.clone(),
-        Role::Taker => dlc.maker_address.clone(),
-    };
-
     for own_grouped_cets in own_cets.clone() {
         let other_cets = msg1
             .cets
@@ -507,7 +489,7 @@ pub async fn roll_over(
                 lock_psbt: lock_tx.clone(),
                 identity_pk: dlc.identity_counterparty,
                 lock_amount,
-                address: other_address.clone(),
+                address: dlc.address_counterparty.clone(),
             },
             own_grouped_cets.cets,
             other_cets,
@@ -529,8 +511,8 @@ pub async fn roll_over(
     )
     .context("Refund signature does not verify")?;
 
-    let maker_script_pubkey = dlc.maker_address.script_pubkey();
-    let taker_script_pubkey = dlc.taker_address.script_pubkey();
+    let long_script_pubkey = dlc.address_long().script_pubkey();
+    let short_script_pubkey = dlc.address_short().script_pubkey();
     let cets = own_cets
         .into_iter()
         .map(|grouped_cets| {
@@ -557,16 +539,16 @@ pub async fn roll_over(
                             )
                         })?;
 
-                    let maker_amount = tx
-                        .find_output_amount(&maker_script_pubkey)
+                    let long_amount = tx
+                        .find_output_amount(&short_script_pubkey)
                         .unwrap_or_default();
-                    let taker_amount = tx
-                        .find_output_amount(&taker_script_pubkey)
+                    let short_amount = tx
+                        .find_output_amount(&long_script_pubkey)
                         .unwrap_or_default();
 
                     Ok(Cet {
-                        maker_amount,
-                        taker_amount,
+                        long_amount,
+                        short_amount,
                         adaptor_sig: *other_encsig,
                         range: digits.range(),
                         n_bits: digits.len(),
@@ -628,20 +610,20 @@ pub async fn roll_over(
         .context("Failed to read Msg3")?;
 
     Ok(Dlc {
-        identity: sk,
+        identity: dlc.identity,
         identity_counterparty: dlc.identity_counterparty,
         revocation: rev_sk,
         revocation_pk_counterparty: other_punish_params.revocation_pk,
         publish: publish_sk,
         publish_pk_counterparty: other_punish_params.publish_pk,
-        maker_address: dlc.maker_address,
-        taker_address: dlc.taker_address,
+        address: dlc.address,
+        address_counterparty: dlc.address_counterparty,
         lock: dlc.lock.clone(),
         commit: (commit_tx, msg1.commit, commit_desc),
         cets,
         refund: (refund_tx, msg1.refund),
-        maker_lock_amount,
-        taker_lock_amount,
+        lock_amount: dlc.lock_amount,
+        lock_amount_counterparty: dlc.lock_amount_counterparty,
         revoked_commit,
         settlement_event_id: announcement.id,
         refund_timelock: rollover_params.refund_timelock,
@@ -656,7 +638,7 @@ struct AllParams {
     pub own_punish: PunishParams,
     pub other: PartyParams,
     pub other_punish: PunishParams,
-    pub own_role: Role,
+    pub own_position: Position,
 }
 
 impl AllParams {
@@ -665,41 +647,41 @@ impl AllParams {
         own_punish: PunishParams,
         other: PartyParams,
         other_punish: PunishParams,
-        own_role: Role,
+        own_position: Position,
     ) -> Self {
         Self {
             own,
             own_punish,
             other,
             other_punish,
-            own_role,
+            own_position,
         }
     }
 
-    fn maker(&self) -> &PartyParams {
-        match self.own_role {
-            Role::Maker => &self.own,
-            Role::Taker => &self.other,
+    fn long(&self) -> &PartyParams {
+        match self.own_position {
+            Position::Long => &self.own,
+            Position::Short => &self.other,
         }
     }
 
-    fn taker(&self) -> &PartyParams {
-        match self.own_role {
-            Role::Maker => &self.other,
-            Role::Taker => &self.own,
+    fn short(&self) -> &PartyParams {
+        match self.own_position {
+            Position::Long => &self.other,
+            Position::Short => &self.own,
         }
     }
 
-    fn maker_punish(&self) -> &PunishParams {
-        match self.own_role {
-            Role::Maker => &self.own_punish,
-            Role::Taker => &self.other_punish,
+    fn punish_long(&self) -> &PunishParams {
+        match self.own_position {
+            Position::Long => &self.own_punish,
+            Position::Short => &self.other_punish,
         }
     }
-    fn taker_punish(&self) -> &PunishParams {
-        match self.own_role {
-            Role::Maker => &self.other_punish,
-            Role::Taker => &self.own_punish,
+    fn punish_short(&self) -> &PunishParams {
+        match self.own_position {
+            Position::Long => &self.other_punish,
+            Position::Short => &self.own_punish,
         }
     }
 }

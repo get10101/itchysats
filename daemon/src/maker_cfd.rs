@@ -633,8 +633,8 @@ where
                 msg:
                     wire::taker_to_maker::Settlement::Propose {
                         timestamp,
-                        taker,
-                        maker,
+                        long,
+                        short,
                         price,
                     },
             } => {
@@ -644,8 +644,8 @@ where
                         SettlementProposal {
                             order_id,
                             timestamp,
-                            taker,
-                            maker,
+                            long,
+                            short,
                             price,
                         },
                     )

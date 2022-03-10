@@ -18,5 +18,5 @@ resolver = "2"
 
 [patch.crates-io]
 xtra = { git = "https://github.com/comit-network/xtra" } # We need to use unreleased patches.
-maia = { git = "https://github.com/comit-network/maia" } # Unreleased
+maia = { git = "https://github.com/comit-network/maia", branch = "the-long-and-short-of-it" } # Unreleased
 xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity" } # Unreleased

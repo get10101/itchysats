@@ -65,9 +65,9 @@ pub mod taker_to_maker {
         Propose {
             timestamp: Timestamp,
             #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-            taker: Amount,
+            long: Amount,
             #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
-            maker: Amount,
+            short: Amount,
             price: Price,
         },
         Initiate {

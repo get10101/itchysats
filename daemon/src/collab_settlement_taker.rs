@@ -67,8 +67,8 @@ impl Actor {
         self.connection
             .send(connection::ProposeSettlement {
                 timestamp: proposal.timestamp,
-                taker: proposal.taker,
-                maker: proposal.maker,
+                long: proposal.long,
+                short: proposal.short,
                 price: proposal.price,
                 address: this,
                 order_id: self.order_id,

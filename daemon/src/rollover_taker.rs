@@ -18,7 +18,6 @@ use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
-use model::Role;
 use model::Timestamp;
 use model::TxFeeRate;
 use std::time::Duration;
@@ -127,7 +126,6 @@ impl Actor {
             receiver,
             (self.oracle_pk, announcement),
             rollover_params,
-            Role::Taker,
             dlc,
             self.n_payouts,
         );
