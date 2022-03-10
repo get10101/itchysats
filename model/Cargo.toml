@@ -22,7 +22,7 @@ rust_decimal_macros = "1.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = { version = "1", features = ["macros"] }
-sqlx = { version = "0.5", features = ["sqlite", "runtime-tokio-rustls"] }
+sqlx = { version = "0.5", features = ["postgres", "runtime-tokio-rustls"] }
 thiserror = "1"
 time = { version = "0.3", features = ["macros", "formatting", "parsing", "serde"] }
 tracing = "0.1"
