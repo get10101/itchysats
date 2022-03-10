@@ -28,5 +28,5 @@ xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtras = { path = "../xtras" }
 
 [build-dependencies]
-vergen = "6"
+vergen = "7"
 anyhow = "1"
