@@ -173,7 +173,7 @@ export default function App() {
                                     makeNewCfdSellOrder(payload);
                                 }}
                             >
-                                {order ? "Update Sell Order" : "Create Sell Order"}
+                                {order ? "Update Offers" : "Create Offers"}
                             </Button>
                         </GridItem>
                     </Grid>
