@@ -29,26 +29,24 @@ import History from "./components/History";
 import Nav from "./components/NavBar";
 import Trade from "./components/Trade";
 import { Wallet } from "./components/Wallet";
-import { BXBTData, Cfd, ConnectionStatus, intoCfd, intoOrder, isClosed, Order, WalletInfo } from "./types";
+import { BXBTData, Cfd, ConnectionStatus, intoCfd, intoMakerOffer, isClosed, MakerOffer, WalletInfo } from "./types";
 import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
 
-export interface SomeOrder {
+export interface Offer {
     id?: string;
     price?: number;
     marginPerParcel?: number;
     initialFundingFeePerParcel?: number;
-}
+    liquidationPrice?: number;
+    fundingRateAnnualized?: number;
+    fundingRateHourly?: number;
 
-export interface GlobalTradeParams {
+    // defaulted for display purposes
     minQuantity: number;
     maxQuantity: number;
     parcelSize: number;
     leverage: number;
-    openingFee: number;
-    fundingRateAnnualized: string;
-    fundingRateHourly: string;
-    liquidationPrice?: number;
 }
 
 export const App = () => {
@@ -69,40 +67,26 @@ export const App = () => {
     const [source, isConnected] = useEventSource("/api/feed");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
-    const makerLong = useLatestEvent<Order>(source, "long_offer", intoOrder);
-    const makerShort = useLatestEvent<Order>(source, "short_offer", intoOrder);
+    const makerLong = useLatestEvent<MakerOffer>(source, "long_offer", intoMakerOffer);
+    const makerShort = useLatestEvent<MakerOffer>(source, "short_offer", intoMakerOffer);
 
-    const shortOrder = {
-        id: makerLong?.id,
-        initialFundingFeePerParcel: makerLong?.initial_funding_fee_per_parcel,
-        marginPerParcel: makerLong?.margin_per_parcel,
-        price: parseOptionalNumber(makerLong?.price),
-    };
+    const shortOffer = makerOfferToTakerOffer(makerLong);
+    const longOffer = makerOfferToTakerOffer(makerShort);
 
-    const longOrder = {
-        id: makerShort?.id,
-        initialFundingFeePerParcel: makerShort?.initial_funding_fee_per_parcel,
-        marginPerParcel: makerShort?.margin_per_parcel,
-        price: parseOptionalNumber(makerShort?.price),
-    };
-
-    const globalTradeParams = extractGlobalTradeParams(makerLong, makerShort);
-
-    function extractGlobalTradeParams(long: Order | null, short: Order | null) {
-        const order = long ? long : short ? short : null;
-
-        if (order) {
+    function makerOfferToTakerOffer(offer: MakerOffer | null): Offer {
+        if (offer) {
             return {
-                minQuantity: parseOptionalNumber(order.min_quantity) || 0,
-                maxQuantity: parseOptionalNumber(order.max_quantity) || 0,
-                parcelSize: parseOptionalNumber(order.parcel_size) || 0,
-                leverage: order.leverage || 0,
-                openingFee: order.opening_fee || 0,
-                fundingRateAnnualized: order.funding_rate_annualized_percent || "0",
-                fundingRateHourly: order
-                    ? Number.parseFloat(order.funding_rate_hourly_percent).toFixed(5)
-                    : "0",
-                liquidationPrice: parseOptionalNumber(order.liquidation_price),
+                id: offer.id,
+                initialFundingFeePerParcel: offer.initial_funding_fee_per_parcel,
+                marginPerParcel: offer.margin_per_parcel,
+                price: offer.price,
+                liquidationPrice: offer.liquidation_price,
+                fundingRateAnnualized: offer.funding_rate_annualized_percent,
+                fundingRateHourly: toFixedNumber(offer.funding_rate_hourly_percent, 5),
+                minQuantity: offer.min_quantity,
+                maxQuantity: offer.max_quantity,
+                parcelSize: offer.parcel_size,
+                leverage: offer.leverage,
             };
         }
 
@@ -111,10 +95,12 @@ export const App = () => {
             maxQuantity: 0,
             parcelSize: 100,
             leverage: 2,
-            openingFee: 0,
-            fundingRateAnnualized: "0",
-            fundingRateHourly: "0",
         };
+    }
+
+    function toFixedNumber(n: number, digits: number): number {
+        // Conversion of the number into Number needed to avoid "toFixed is not a function" errors
+        return Number.parseFloat(Number(n).toFixed(digits));
     }
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
@@ -129,15 +115,7 @@ export const App = () => {
     const nextFullHour = dayjs().utc().minute(0).add(1, "hour");
 
     // TODO: this condition is a bit weird now
-    const nextFundingEvent = longOrder || shortOrder ? dayjs().to(nextFullHour) : null;
-
-    function parseOptionalNumber(val: string | undefined): number | undefined {
-        if (!val) {
-            return undefined;
-        }
-
-        return Number.parseFloat(val);
-    }
+    const nextFundingEvent = longOffer || shortOffer ? dayjs().to(nextFullHour) : null;
 
     useEffect(() => {
         const id = "connection-toast";
@@ -181,7 +159,6 @@ export const App = () => {
             <Nav
                 walletInfo={walletInfo}
                 connectedToMaker={connectedToMaker}
-                fundingRate={globalTradeParams?.fundingRateHourly}
                 nextFundingEvent={nextFundingEvent}
                 referencePrice={referencePrice}
             />
@@ -203,8 +180,7 @@ export const App = () => {
                                     path="long"
                                     element={<>
                                         <Trade
-                                            order={longOrder}
-                                            globalTradeParams={globalTradeParams}
+                                            offer={longOffer}
                                             connectedToMaker={connectedToMaker}
                                             walletBalance={walletInfo ? walletInfo.balance : 0}
                                             isLong={true}
@@ -215,8 +191,7 @@ export const App = () => {
                                     path="short"
                                     element={<>
                                         <Trade
-                                            order={shortOrder}
-                                            globalTradeParams={globalTradeParams}
+                                            offer={shortOffer}
                                             connectedToMaker={connectedToMaker}
                                             walletBalance={walletInfo ? walletInfo.balance : 0}
                                             isLong={false}
