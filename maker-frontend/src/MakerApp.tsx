@@ -165,6 +165,8 @@ export default function App() {
                                         max_quantity: Number.parseFloat(maxQuantity),
                                         // TODO: Populate funding rate from the UI
                                         funding_rate: (0.00002283 * 24), // annualized 20% by default to have some values
+                                        // TODO: Populate funding rate from the UI
+                                        daily_funding_rate_long: (-0.00002283 * 24), // annualized 20% by default to have some values
                                         // TODO: This is is in sats which is not really in line with other APIs for the maker
                                         opening_fee: Number.parseFloat("100"),
                                     };

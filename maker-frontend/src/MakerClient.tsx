@@ -6,6 +6,7 @@ export interface CfdSellOrderPayload {
     min_quantity: number;
     max_quantity: number;
     funding_rate?: number;
+    daily_funding_rate_long?: number;
     opening_fee?: number;
 }
 
