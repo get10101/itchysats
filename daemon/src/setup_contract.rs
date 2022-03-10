@@ -43,7 +43,6 @@ use model::calculate_payouts;
 use model::olivia;
 use model::Cet;
 use model::Dlc;
-use model::Leverage;
 use model::Position;
 use model::RevokedCommit;
 use model::Role;
@@ -127,7 +126,7 @@ pub async fn new(
             setup_params.price,
             setup_params.quantity,
             setup_params.long_leverage,
-            Leverage::new(model::SHORT_LEVERAGE).expect("non-zero leverage"),
+            setup_params.short_leverage,
             n_payouts,
             setup_params.fee_account.settle(),
         )?,
@@ -392,7 +391,7 @@ pub async fn roll_over(
             rollover_params.price,
             rollover_params.quantity,
             rollover_params.long_leverage,
-            Leverage::new(model::SHORT_LEVERAGE).expect("non-zero leverage"),
+            rollover_params.short_leverage,
             n_payouts,
             rollover_params.fee_account.settle(),
         )?,

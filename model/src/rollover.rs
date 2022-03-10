@@ -9,11 +9,8 @@ use crate::Usd;
 pub struct RolloverParams {
     pub price: Price,
     pub quantity: Usd,
-    /// The long leverage
-    ///
-    /// This is used for calculating the payout curve only, which always requires the long leverage
-    /// at the moment
     pub long_leverage: Leverage,
+    pub short_leverage: Leverage,
     pub refund_timelock: u32,
     pub fee_rate: TxFeeRate,
     pub fee_account: FeeAccount,
@@ -21,10 +18,12 @@ pub struct RolloverParams {
 }
 
 impl RolloverParams {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         price: Price,
         quantity: Usd,
         long_leverage: Leverage,
+        short_leverage: Leverage,
         refund_timelock: u32,
         fee_rate: TxFeeRate,
         fee_account: FeeAccount,
@@ -34,6 +33,7 @@ impl RolloverParams {
             price,
             quantity,
             long_leverage,
+            short_leverage,
             refund_timelock,
             fee_rate,
             fee_account,

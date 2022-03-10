@@ -64,8 +64,6 @@ use uuid::Uuid;
 
 pub const CET_TIMELOCK: u32 = 12;
 
-pub const SHORT_LEVERAGE: u8 = 1;
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct OrderId(Hyphenated);
@@ -814,6 +812,7 @@ impl Cfd {
                 self.initial_price,
                 self.quantity,
                 self.long_leverage,
+                self.short_leverage,
                 self.refund_timelock_in_blocks(),
                 self.initial_tx_fee_rate(),
                 self.fee_account,
@@ -862,6 +861,7 @@ impl Cfd {
                 self.initial_price,
                 self.quantity,
                 self.long_leverage,
+                self.short_leverage,
                 self.refund_timelock_in_blocks(),
                 tx_fee_rate,
                 self.fee_account,
@@ -906,6 +906,7 @@ impl Cfd {
                 self.initial_price,
                 self.quantity,
                 self.long_leverage,
+                self.short_leverage,
                 self.refund_timelock_in_blocks(),
                 tx_fee_rate,
                 self.fee_account,
@@ -958,7 +959,7 @@ impl Cfd {
             self.initial_price,
             self.quantity,
             self.long_leverage,
-            Leverage::new(SHORT_LEVERAGE)?,
+            self.short_leverage,
             n_payouts,
             self.fee_account.settle(),
         )?;
@@ -1009,7 +1010,7 @@ impl Cfd {
             self.initial_price,
             self.quantity,
             self.long_leverage,
-            Leverage::new(SHORT_LEVERAGE)?,
+            self.short_leverage,
             n_payouts,
             self.fee_account.settle(),
         )?;
