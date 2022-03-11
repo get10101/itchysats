@@ -27,6 +27,7 @@ use rocket::response::Responder;
 use rocket::serde::json::Json;
 use rocket::State;
 use rocket_basicauth::Authenticated;
+use rocket_deprecation::Deprecation;
 use rust_embed::RustEmbed;
 use rust_embed_rocket::EmbeddedFileExt;
 use serde::Deserialize;
@@ -301,13 +302,18 @@ pub async fn get_cfds<'r>(rx: &State<Feeds>, _auth: Authenticated) -> Json<Vec<C
 }
 
 #[rocket::get("/takers")]
-pub async fn get_takers<'r>(rx: &State<Feeds>, _auth: Authenticated) -> Json<Vec<Identity>> {
+pub async fn get_takers<'r>(
+    rx: &State<Feeds>,
+    _auth: Authenticated,
+) -> Deprecation<Json<Vec<Identity>>> {
     tracing::warn!(target: "deprecated", "The GET /takers endpoint is deprecated. Use the `p2p_connections_total` prometheus metrics instead.");
     let rx = rx.inner();
     let rx_connected_takers = rx.connected_takers.clone();
     let takers = rx_connected_takers.borrow().clone();
 
-    Json(takers)
+    Deprecation::new(Json(takers)).with_deprecation_link(rocket::uri!(
+        "https://github.com/itchysats/itchysats/issues/1609"
+    ))
 }
 
 #[rocket::get("/metrics")]

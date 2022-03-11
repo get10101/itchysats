@@ -13,6 +13,7 @@ members = [
   "bdk-ext",
   "model",
   "btsieve",
+  "rocket-deprecation",
 ]
 resolver = "2"
 

@@ -1565,6 +1565,7 @@ dependencies = [
  "prometheus",
  "rocket",
  "rocket-basicauth",
+ "rocket-deprecation",
  "rust-embed",
  "rust-embed-rocket",
  "serde",
@@ -2654,6 +2655,14 @@ dependencies = [
  "hex",
  "rocket",
  "void",
+]
+
+[[package]]
+name = "rocket-deprecation"
+version = "0.1.0"
+dependencies = [
+ "rocket",
+ "time 0.3.7",
 ]
 
 [[package]]
