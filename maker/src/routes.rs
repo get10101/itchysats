@@ -292,27 +292,21 @@ pub async fn post_withdraw_request(
 }
 
 #[rocket::get("/cfds")]
-pub async fn get_cfds<'r>(
-    rx: &State<Feeds>,
-    _auth: Authenticated,
-) -> Result<Json<Vec<Cfd>>, HttpApiProblem> {
+pub async fn get_cfds<'r>(rx: &State<Feeds>, _auth: Authenticated) -> Json<Vec<Cfd>> {
     let rx = rx.inner();
     let rx_cfds = rx.cfds.clone();
     let cfds = rx_cfds.borrow().clone();
 
-    Ok(Json(cfds))
+    Json(cfds)
 }
 
 #[rocket::get("/takers")]
-pub async fn get_takers<'r>(
-    rx: &State<Feeds>,
-    _auth: Authenticated,
-) -> Result<Json<Vec<Identity>>, HttpApiProblem> {
+pub async fn get_takers<'r>(rx: &State<Feeds>, _auth: Authenticated) -> Json<Vec<Identity>> {
     let rx = rx.inner();
     let rx_connected_takers = rx.connected_takers.clone();
     let takers = rx_connected_takers.borrow().clone();
 
-    Ok(Json(takers))
+    Json(takers)
 }
 
 #[rocket::get("/metrics")]
