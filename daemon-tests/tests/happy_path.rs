@@ -151,23 +151,23 @@ fn assert_eq_offers(published: MakerOffers, received: MakerOffers) {
 }
 
 fn assert_eq_orders(mut published: CfdOrder, received: CfdOrder) {
-    // align margin_per_parcel to be the long margin_per_parcel
-    let long_margin_per_parcel = calculate_margin(
+    // align margin_per_lot to be the long margin_per_lot
+    let long_margin_per_lot = calculate_margin(
         published.price,
-        published.parcel_size,
+        published.lot_size,
         published.taker_leverage_choices,
     );
-    published.margin_per_parcel = long_margin_per_parcel;
+    published.margin_per_lot = long_margin_per_lot;
 
-    // make sure that the initial funding fee per parcel is flipped
+    // make sure that the initial funding fee per lot is flipped
     // note: we publish as maker and receive as taker, the funding fee is to be received by one
     // party and paid by the other
     assert_eq!(
-        published.initial_funding_fee_per_parcel,
-        received.initial_funding_fee_per_parcel * -1
+        published.initial_funding_fee_per_lot,
+        received.initial_funding_fee_per_lot * -1
     );
-    // align initial_funding_fee_per_parcel so we can assert on the order
-    published.initial_funding_fee_per_parcel = received.initial_funding_fee_per_parcel;
+    // align initial_funding_fee_per_lot so we can assert on the order
+    published.initial_funding_fee_per_lot = received.initial_funding_fee_per_lot;
 
     assert_eq!(published, received);
 

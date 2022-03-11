@@ -36,8 +36,8 @@ import useLatestEvent from "./useLatestEvent";
 export interface Offer {
     id?: string;
     price?: number;
-    marginPerParcel?: number;
-    initialFundingFeePerParcel?: number;
+    marginPerLot?: number;
+    initialFundingFeePerLot?: number;
     liquidationPrice?: number;
     fundingRateAnnualized?: number;
     fundingRateHourly?: number;
@@ -45,7 +45,7 @@ export interface Offer {
     // defaulted for display purposes
     minQuantity: number;
     maxQuantity: number;
-    parcelSize: number;
+    lotSize: number;
     leverage: number;
 }
 
@@ -77,15 +77,15 @@ export const App = () => {
         if (offer) {
             return {
                 id: offer.id,
-                initialFundingFeePerParcel: offer.initial_funding_fee_per_parcel,
-                marginPerParcel: offer.margin_per_parcel,
+                initialFundingFeePerLot: offer.initial_funding_fee_per_lot,
+                marginPerLot: offer.margin_per_lot,
                 price: offer.price,
                 liquidationPrice: offer.liquidation_price,
                 fundingRateAnnualized: offer.funding_rate_annualized_percent,
                 fundingRateHourly: toFixedNumber(offer.funding_rate_hourly_percent, 5),
                 minQuantity: offer.min_quantity,
                 maxQuantity: offer.max_quantity,
-                parcelSize: offer.parcel_size,
+                lotSize: offer.lot_size,
                 leverage: offer.leverage,
             };
         }
@@ -93,7 +93,7 @@ export const App = () => {
         return {
             minQuantity: 0,
             maxQuantity: 0,
-            parcelSize: 100,
+            lotSize: 100,
             leverage: 2,
         };
     }
