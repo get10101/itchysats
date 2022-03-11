@@ -302,6 +302,7 @@ pub async fn get_cfds<'r>(rx: &State<Feeds>, _auth: Authenticated) -> Json<Vec<C
 
 #[rocket::get("/takers")]
 pub async fn get_takers<'r>(rx: &State<Feeds>, _auth: Authenticated) -> Json<Vec<Identity>> {
+    tracing::warn!(target: "deprecated", "The GET /takers endpoint is deprecated. Use the `p2p_connections_total` prometheus metrics instead.");
     let rx = rx.inner();
     let rx_connected_takers = rx.connected_takers.clone();
     let takers = rx_connected_takers.borrow().clone();
