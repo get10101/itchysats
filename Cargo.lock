@@ -1989,9 +1989,9 @@ dependencies = [
 
 [[package]]
 name = "parse-display"
-version = "0.5.4"
+version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bb10034e2db1d7ec22c3da90743505c07ab1e7483e93df8222c41dadb5937e8"
+checksum = "813e91c6232dbeb2e9deba0eb0dc5c967bd6f380676fd34419f9ddd71411faa7"
 dependencies = [
  "once_cell",
  "parse-display-derive",
@@ -2000,9 +2000,9 @@ dependencies = [
 
 [[package]]
 name = "parse-display-derive"
-version = "0.5.4"
+version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4546f47b5e547d7f9a5cc60d798798aebb013bb930df9297ada0048fd4901558"
+checksum = "007ed61a69cf7d9b95cc5dc18489dbb4f70d4adb0a0c100e2dd46f0be241711a"
 dependencies = [
  "once_cell",
  "proc-macro2",
@@ -2153,9 +2153,9 @@ dependencies = [
 
 [[package]]
 name = "pretty_assertions"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76d5b548b725018ab5496482b45cb8bef21e9fed1858a6d674e3a8a0f0bb5d50"
+checksum = "57c038cb5319b9c704bf9c227c261d275bfec0ad438118a2787ce47944fb228b"
 dependencies = [
  "ansi_term",
  "ctor",
