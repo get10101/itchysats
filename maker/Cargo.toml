@@ -12,7 +12,7 @@ daemon = { path = "../daemon" }
 hex = "0.4"
 http-api-problem = { version = "0.51.0", features = ["rocket"] }
 model = { path = "../model" }
-prometheus = "0.13"
+prometheus = { version = "0.13", default-features = false }
 rocket = { version = "0.5.0-rc.1", features = ["json", "uuid"] }
 rocket-basicauth = { path = "../rocket-basicauth" }
 rust-embed = "6.3"
