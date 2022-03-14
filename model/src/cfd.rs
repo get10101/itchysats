@@ -48,6 +48,7 @@ use maia::secp256k1_zkp::SECP256K1;
 use maia::spending_tx_sighash;
 use maia::Payout;
 use maia::TransactionExt;
+use num::Zero;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::de::Error as _;
@@ -841,15 +842,14 @@ impl Cfd {
             bail!("Can only accept proposal as a maker");
         }
 
-        let hours_to_charge = 1;
-
+        let hours_to_charge = self.hours_to_extend_in_rollover()?;
         let funding_fee = calculate_funding_fee(
             self.initial_price,
             self.quantity,
             self.long_leverage,
             self.short_leverage,
             funding_rate,
-            hours_to_charge,
+            hours_to_charge as i64,
         )?;
 
         Ok((
@@ -885,16 +885,14 @@ impl Cfd {
 
         self.can_rollover()?;
 
-        // TODO: Taker should take this from the maker, optionally calculate and verify
-        // whether they match
-        let hours_to_charge = 1;
+        let hours_to_charge = self.hours_to_extend_in_rollover()?;
         let funding_fee = calculate_funding_fee(
             self.initial_price,
             self.quantity,
             self.long_leverage,
             self.short_leverage,
             funding_rate,
-            hours_to_charge,
+            hours_to_charge as i64,
         )?;
 
         Ok((
@@ -1334,6 +1332,43 @@ impl Cfd {
         let script_pk = dlc.script_pubkey_for(Role::Taker);
 
         Ok((tx, sig, script_pk))
+    }
+
+    /// Number of hours that the time-to-live of the contract will be
+    /// extended by with the next rollover.
+    ///
+    /// During rollover the time-to-live of the contract is extended
+    /// so that the non-collaborative settlement time is set to ~24
+    /// hours in the future from now.
+    fn hours_to_extend_in_rollover(&self) -> Result<u64> {
+        let dlc = self.dlc.as_ref().context("Cannot roll over without DLC")?;
+        let settlement_time = dlc.settlement_event_id.timestamp();
+
+        let hours_left = settlement_time - OffsetDateTime::now_utc();
+
+        if !hours_left.is_positive() {
+            tracing::warn!("Rolling over a contract that can be settled non-collaboratively");
+
+            return Ok(SETTLEMENT_INTERVAL.whole_hours() as u64);
+        }
+
+        let time_to_extend = SETTLEMENT_INTERVAL
+            .checked_sub(hours_left)
+            .context("Subtraction overflow")?;
+        let hours_to_extend = time_to_extend.whole_hours();
+
+        if hours_to_extend.is_negative() {
+            bail!(
+                "Cannot rollover if time-to-live of contract is > {} hours",
+                SETTLEMENT_INTERVAL.whole_hours()
+            );
+        }
+
+        Ok(if hours_to_extend.is_zero() {
+            1
+        } else {
+            hours_to_extend as u64
+        })
     }
 
     pub fn version(&self) -> u64 {
@@ -1935,9 +1970,11 @@ mod tests {
     use bdk_ext::AddressExt;
     use bdk_ext::SecretKeyExt;
     use maia::lock_descriptor;
+    use proptest::prelude::*;
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
     use std::str::FromStr;
+    use time::ext::NumericalDuration;
     use time::macros::datetime;
 
     #[test]
@@ -2921,6 +2958,77 @@ mod tests {
         assert_eq!(is_liquidation_price, should_liquidation_price);
     }
 
+    #[test]
+    fn correctly_calculate_hours_to_extend_in_rollover() {
+        let settlement_interval = SETTLEMENT_INTERVAL.whole_hours();
+        for hour in 0..settlement_interval {
+            let event_id_in_x_hours =
+                BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() + hour.hours());
+
+            let taker = Cfd::dummy_taker_long().dummy_open(event_id_in_x_hours);
+            let maker = Cfd::dummy_maker_short().dummy_open(event_id_in_x_hours);
+
+            assert_eq!(
+                taker.hours_to_extend_in_rollover().unwrap(),
+                (settlement_interval - hour) as u64
+            );
+
+            assert_eq!(
+                maker.hours_to_extend_in_rollover().unwrap(),
+                (settlement_interval - hour) as u64
+            );
+        }
+    }
+
+    #[test]
+    fn rollover_extends_time_to_live_by_settlement_interval_if_cfd_can_be_settled() {
+        let event_id_1_hour_ago =
+            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() - 1.hours());
+
+        let taker = Cfd::dummy_taker_long().dummy_open(event_id_1_hour_ago);
+        let maker = Cfd::dummy_maker_short().dummy_open(event_id_1_hour_ago);
+
+        assert_eq!(
+            taker.hours_to_extend_in_rollover().unwrap(),
+            SETTLEMENT_INTERVAL.whole_hours() as u64
+        );
+
+        assert_eq!(
+            maker.hours_to_extend_in_rollover().unwrap(),
+            SETTLEMENT_INTERVAL.whole_hours() as u64
+        );
+    }
+
+    #[test]
+    fn cannot_rollover_if_time_to_live_is_longer_than_settlement_interval() {
+        let more_than_settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours() + 2;
+        let event_id_way_in_the_future = BitMexPriceEventId::with_20_digits(
+            OffsetDateTime::now_utc() + more_than_settlement_interval_hours.hours(),
+        );
+
+        let taker = Cfd::dummy_taker_long().dummy_open(event_id_way_in_the_future);
+        let maker = Cfd::dummy_maker_short().dummy_open(event_id_way_in_the_future);
+
+        taker.hours_to_extend_in_rollover().unwrap_err();
+        maker.hours_to_extend_in_rollover().unwrap_err();
+    }
+
+    proptest! {
+        #[test]
+        fn rollover_extended_by_one_hour_if_time_to_live_is_within_one_hour_of_settlement_interval(minutes in 0i64..=60) {
+            let close_to_settlement_interval = SETTLEMENT_INTERVAL + minutes.minutes();
+            let event_id_within_the_hour = BitMexPriceEventId::with_20_digits(
+                OffsetDateTime::now_utc() + close_to_settlement_interval,
+            );
+
+            let taker = Cfd::dummy_taker_long().dummy_open(event_id_within_the_hour);
+            let maker = Cfd::dummy_maker_short().dummy_open(event_id_within_the_hour);
+
+            prop_assert_eq!(taker.hours_to_extend_in_rollover().unwrap(), 1);
+            prop_assert_eq!(maker.hours_to_extend_in_rollover().unwrap(), 1);
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn collab_settlement_taker_long_maker_short(
         quantity: Usd,
@@ -2970,7 +3078,6 @@ mod tests {
         (taker_payout.as_sat(), maker_payout.as_sat())
     }
 
-    use proptest::prelude::*;
     use rand::thread_rng;
     proptest! {
         #[test]
