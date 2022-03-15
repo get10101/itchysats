@@ -4355,8 +4355,10 @@ dependencies = [
  "futures-sink",
  "futures-timer",
  "futures-util",
+ "lazy_static",
  "log",
  "pollster",
+ "prometheus",
 ]
 
 [[package]]
