@@ -169,6 +169,9 @@ fn assert_eq_orders(mut published: CfdOrder, received: CfdOrder) {
     // align initial_funding_fee_per_lot so we can assert on the order
     published.initial_funding_fee_per_lot = received.initial_funding_fee_per_lot;
 
+    // align liquidation price so we can assert on the order
+    published.liquidation_price = received.liquidation_price;
+
     assert_eq!(published, received);
 
     // Hard-coded to match the dummy_new_order()

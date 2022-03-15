@@ -975,6 +975,8 @@ pub struct CfdOrder {
 
     #[serde(rename = "leverage")]
     pub taker_leverage_choices: Leverage,
+
+    /// Own liquidation price according to the position
     #[serde(with = "round_to_two_dp")]
     pub liquidation_price: Price,
 
@@ -1028,6 +1030,13 @@ impl TryFrom<Order> for CfdOrder {
             .add_funding_fee(initial_funding_fee_per_lot)
             .balance();
 
+        // We cannot just send over liquidation price of the maker, but have to send the one of the
+        // own position for it to make sense for display.
+        let liquidation_price = match own_position {
+            Position::Long => calculate_long_liquidation_price(long_leverage, order.price),
+            Position::Short => calculate_short_liquidation_price(short_leverage, order.price),
+        };
+
         Ok(Self {
             id: order.id,
             trading_pair: order.trading_pair,
@@ -1043,7 +1052,7 @@ impl TryFrom<Order> for CfdOrder {
                 Origin::Theirs => calculate_margin(order.price, lot_size, order.leverage_taker),
             },
             taker_leverage_choices: order.leverage_taker,
-            liquidation_price: order.liquidation_price,
+            liquidation_price,
             creation_timestamp: order.creation_timestamp,
             settlement_time_interval_in_secs: order
                 .settlement_interval
