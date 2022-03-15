@@ -1,0 +1,24 @@
+[Unit]
+After=network.target
+Description=PostgreSQL Server
+RequiresMountsFor=/var/lib/postgresql/14
+
+[Service]
+Environment="LOCALE_ARCHIVE=/nix/store/7dq41380xvldg412hsg0s2p5xr4lh4rr-glibc-locales-2.33-62/lib/locale/locale-archive"
+Environment="PATH=/nix/store/9wgd2miv8vz85l3xlxm3r5zjkymrfbgv-postgresql-14.1/bin:/nix/store/k21halap3i7hgglxpdnpx29538g3irin-coreutil>
+Environment="PGDATA=/var/lib/postgresql/14"
+Environment="TZDIR=/nix/store/wgi19884710sxw7d5nz6aal3vnrcxwjl-tzdata-2021c/share/zoneinfo"
+
+ExecReload=/nix/store/k21halap3i7hgglxpdnpx29538g3irin-coreutils-9.0/bin/kill -HUP $MAINPID
+ExecStart=/nix/store/9wgd2miv8vz85l3xlxm3r5zjkymrfbgv-postgresql-14.1/bin/postgres
+ExecStartPost=/nix/store/3kkvrrvb125s6ssd8xi8v7ip9h849nbh-unit-script-postgresql-post-start/bin/postgresql-post-start
+ExecStartPre=/nix/store/jihwv01v8vhzk2flqg1r621lsgr631w8-unit-script-postgresql-pre-start/bin/postgresql-pre-start
+Group=postgres
+KillMode=mixed
+KillSignal=SIGINT
+RuntimeDirectory=postgresql
+StateDirectory=postgresql postgresql/14
+StateDirectoryMode=0750
+TimeoutSec=120
+Type=notify
+User=postgres
