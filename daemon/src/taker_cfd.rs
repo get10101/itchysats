@@ -39,7 +39,7 @@ pub struct ProposeSettlement {
 }
 
 pub struct Actor<O, W> {
-    db: sqlx::SqlitePool,
+    db: sqlx::PgPool,
     wallet: xtra::Address<W>,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: xtra::Address<projection::Actor>,
@@ -60,7 +60,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: sqlx::PgPool,
         wallet: xtra::Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         projection_actor: xtra::Address<projection::Actor>,

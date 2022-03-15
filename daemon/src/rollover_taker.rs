@@ -52,7 +52,7 @@ impl Actor {
         maker: xtra::Address<connection::Actor>,
         get_announcement: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
-        db: sqlx::SqlitePool,
+        db: sqlx::PgPool,
     ) -> Self {
         Self {
             id,

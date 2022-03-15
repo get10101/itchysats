@@ -21,7 +21,7 @@ use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
 pub struct Actor<O> {
-    db: sqlx::SqlitePool,
+    db: sqlx::PgPool,
     oracle_pk: schnorrsig::PublicKey,
     process_manager: Address<process_manager::Actor>,
     conn: Address<connection::Actor>,
@@ -33,7 +33,7 @@ pub struct Actor<O> {
 
 impl<O> Actor<O> {
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: sqlx::PgPool,
         oracle_pk: schnorrsig::PublicKey,
         process_manager: Address<process_manager::Actor>,
         conn: Address<connection::Actor>,

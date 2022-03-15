@@ -74,7 +74,7 @@ impl Actor {
         oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
         register: &(impl MessageChannel<maker_inc_connections::RegisterRollover> + 'static),
-        db: sqlx::SqlitePool,
+        db: sqlx::PgPool,
     ) -> Self {
         Self {
             order_id,

@@ -27,7 +27,7 @@ pub struct Actor {
     n_payouts: usize,
     connection: xtra::Address<connection::Actor>,
     executor: command::Executor,
-    db: sqlx::SqlitePool,
+    db: sqlx::PgPool,
     tasks: Tasks,
     maker_replied: bool,
 }
@@ -39,7 +39,7 @@ impl Actor {
         n_payouts: usize,
         connection: xtra::Address<connection::Actor>,
         process_manager: xtra::Address<process_manager::Actor>,
-        db: sqlx::SqlitePool,
+        db: sqlx::PgPool,
     ) -> Self {
         Self {
             proposal: None,

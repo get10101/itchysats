@@ -166,7 +166,7 @@ struct RolloverProposal {
 }
 
 pub struct Actor<O, T, W> {
-    db: sqlx::SqlitePool,
+    db: sqlx::PgPool,
     wallet: xtra::Address<W>,
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
@@ -187,7 +187,7 @@ pub struct Actor<O, T, W> {
 impl<O, T, W> Actor<O, T, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: sqlx::PgPool,
         wallet: xtra::Address<W>,
         settlement_interval: Duration,
         oracle_pk: schnorrsig::PublicKey,

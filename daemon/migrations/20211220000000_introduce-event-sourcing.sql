@@ -1,7 +1,7 @@
 DROP TABLE cfd_states;
 DROP TABLE cfds;
 CREATE TABLE IF NOT EXISTS cfds (
-    id integer PRIMARY KEY autoincrement,
+    id SERIAL PRIMARY KEY,
     uuid text UNIQUE NOT NULL,
     position text NOT NULL,
     initial_price text NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS cfds (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS cfds_uuid ON cfds (uuid);
 CREATE TABLE IF NOT EXISTS EVENTS (
-    id integer PRIMARY KEY autoincrement,
+    id SERIAL PRIMARY KEY,
     cfd_id integer NOT NULL,
     name text NOT NULL,
     data text NOT NULL,

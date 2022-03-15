@@ -58,7 +58,7 @@ pub struct Update<T>(pub T);
 pub struct CfdChanged(pub OrderId);
 
 pub struct Actor {
-    db: sqlx::SqlitePool,
+    db: sqlx::PgPool,
     tx: Tx,
     state: State,
     price_feed: Box<dyn MessageChannel<xtra_bitmex_price_feed::LatestQuote>>,
@@ -74,7 +74,7 @@ pub struct Feeds {
 
 impl Actor {
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: sqlx::PgPool,
         _role: Role,
         network: Network,
         price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote> + 'static),
@@ -777,7 +777,7 @@ impl State {
         }
     }
 
-    async fn update_cfd(&mut self, db: sqlx::SqlitePool, id: OrderId) -> Result<()> {
+    async fn update_cfd(&mut self, db: sqlx::PgPool, id: OrderId) -> Result<()> {
         let mut conn = db
             .acquire()
             .await

@@ -9,12 +9,12 @@ use xtra::Address;
 
 #[derive(Clone)]
 pub struct Executor {
-    db: sqlx::SqlitePool,
+    db: sqlx::PgPool,
     process_manager: Address<process_manager::Actor>,
 }
 
 impl Executor {
-    pub fn new(db: sqlx::SqlitePool, process_manager: Address<process_manager::Actor>) -> Self {
+    pub fn new(db: sqlx::PgPool, process_manager: Address<process_manager::Actor>) -> Self {
         Self {
             db,
             process_manager,

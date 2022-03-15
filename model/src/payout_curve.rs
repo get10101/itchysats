@@ -904,7 +904,7 @@ mod tests {
 
     prop_compose! {
         fn arb_leverage(min: u8, max: u8)(leverage in min..max) -> Leverage {
-            Leverage::new(leverage).unwrap()
+            Leverage::new(leverage.into()).unwrap()
         }
     }
 

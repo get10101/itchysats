@@ -16,32 +16,26 @@ use model::TxFeeRate;
 use model::Usd;
 use sqlx::migrate::MigrateError;
 use sqlx::pool::PoolConnection;
-use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::Sqlite;
-use sqlx::SqlitePool;
-use std::path::PathBuf;
+use sqlx::postgres::PgConnectOptions;
+use sqlx::PgPool;
+use sqlx::Postgres;
 use time::Duration;
 
-/// Connects to the SQLite database at the given path.
-///
-/// If the database does not exist, it will be created. If it does exist, we load it and apply all
-/// pending migrations. If applying migrations fails, the old database is backed up next to it and a
-/// new one is created.
-pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
+pub fn connect() -> BoxFuture<'static, Result<PgPool>> {
     async move {
-        let pool = SqlitePool::connect_with(
-            SqliteConnectOptions::new()
-                .create_if_missing(true)
-                .filename(&path),
-        )
-        .await?;
+        let pg_connection_options = PgConnectOptions::new()
+            .host("localhost")
+            //.port(5432)
+            //.password("")
+            //.ssl_mode(PgSslMode::Require)
+            .username("postgres");
 
-        let path_display = path.display();
+        let pool = PgPool::connect_with(pg_connection_options).await?;
 
         // Attempt to migrate, early return if successful
-        let error = match run_migrations(&pool).await {
+        let error = match run_migrations_pg(&pool).await {
             Ok(()) => {
-                tracing::info!("Opened database at {path_display}");
+                tracing::info!("Opened database");
 
                 return Ok(pool);
             }
@@ -54,22 +48,6 @@ pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
             error.downcast_ref::<MigrateError>()
         {
             tracing::error!("{:#}", error);
-
-            let unix_timestamp = time::OffsetDateTime::now_utc().unix_timestamp();
-
-            let new_path = PathBuf::from(format!("{path_display}-{unix_timestamp}-backup"));
-            let new_path_display = new_path.display();
-
-            tracing::info!("Backing up old database at {path_display} to {new_path_display}");
-
-            tokio::fs::rename(&path, &new_path)
-                .await
-                .context("Failed to rename database file")?;
-
-            tracing::info!("Starting with a new database!");
-
-            // recurse to reconnect (async recursion requires a `BoxFuture`)
-            return connect(path).await;
         }
 
         Err(error)
@@ -77,18 +55,18 @@ pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
     .boxed()
 }
 
-pub async fn memory() -> Result<SqlitePool> {
+pub async fn memory() -> Result<PgPool> {
     // Note: Every :memory: database is distinct from every other. So, opening two database
     // connections each with the filename ":memory:" will create two independent in-memory
     // databases. see: https://www.sqlite.org/inmemorydb.html
-    let pool = SqlitePool::connect(":memory:").await?;
+    let pool = PgPool::connect(":memory:").await?;
 
     run_migrations(&pool).await?;
 
     Ok(pool)
 }
 
-async fn run_migrations(pool: &SqlitePool) -> Result<()> {
+async fn run_migrations(pool: &PgPool) -> Result<()> {
     sqlx::migrate!("./migrations")
         .run(pool)
         .await
@@ -97,7 +75,16 @@ async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-pub async fn insert_cfd(cfd: &model::Cfd, conn: &mut PoolConnection<Sqlite>) -> Result<()> {
+async fn run_migrations_pg(pool: &PgPool) -> Result<()> {
+    sqlx::migrate!("./migrations")
+        .run(pool)
+        .await
+        .context("Failed to run migrations")?;
+
+    Ok(())
+}
+
+pub async fn insert_cfd(cfd: &model::Cfd, conn: &mut PoolConnection<Postgres>) -> Result<()> {
     let query_result = sqlx::query(
         r#"
         insert into cfds (
@@ -141,7 +128,7 @@ pub async fn insert_cfd(cfd: &model::Cfd, conn: &mut PoolConnection<Sqlite>) -> 
 /// `Into<Option>` event.
 pub async fn append_event(
     event: impl Into<Option<CfdEvent>>,
-    conn: &mut PoolConnection<Sqlite>,
+    conn: &mut PoolConnection<Postgres>,
 ) -> Result<()> {
     let event = match event.into() {
         Some(event) => event,
@@ -197,7 +184,7 @@ pub struct Cfd {
 
 pub async fn load_cfd(
     id: OrderId,
-    conn: &mut PoolConnection<Sqlite>,
+    conn: &mut PoolConnection<Postgres>,
 ) -> Result<(Cfd, Vec<CfdEvent>)> {
     let cfd_row = sqlx::query!(
         r#"
@@ -219,7 +206,7 @@ pub async fn load_cfd(
             where
                 cfds.uuid = $1
             "#,
-        id
+        &id.to_string()
     )
     .fetch_one(&mut *conn)
     .await?;
@@ -229,7 +216,7 @@ pub async fn load_cfd(
         position: cfd_row.position,
         initial_price: cfd_row.initial_price,
         taker_leverage: cfd_row.leverage,
-        settlement_interval: Duration::hours(cfd_row.settlement_time_interval_hours),
+        settlement_interval: Duration::hours(cfd_row.settlement_time_interval_hours.into()),
         quantity_usd: cfd_row.quantity_usd,
         counterparty_network_identity: cfd_row.counterparty_network_identity,
         role: cfd_row.role,
@@ -267,7 +254,7 @@ pub async fn load_cfd(
     Ok((cfd, events))
 }
 
-pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<OrderId>> {
+pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Postgres>) -> Result<Vec<OrderId>> {
     let ids = sqlx::query!(
         r#"
             select
@@ -297,7 +284,7 @@ pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<O
 ///     Cases: Collaborative settlement, CET, Refund
 /// 2. Event that fails the CFD early was recorded, meaning it becomes irrelevant for processing
 ///     Cases: Setup failed, Taker's take order rejected
-pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<OrderId>> {
+pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Postgres>) -> Result<Vec<OrderId>> {
     let ids = sqlx::query!(
         r#"
             select
@@ -348,7 +335,6 @@ mod tests {
     use model::Usd;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
-    use sqlx::SqlitePool;
 
     #[tokio::test]
     async fn test_insert_and_load_cfd() {
@@ -534,8 +520,8 @@ mod tests {
         assert_eq!(*cfd_ids.first().unwrap(), cfd_not_final.id())
     }
 
-    async fn setup_test_db() -> PoolConnection<Sqlite> {
-        let pool = SqlitePool::connect(":memory:").await.unwrap();
+    async fn setup_test_db() -> PoolConnection<Postgres> {
+        let pool = PgPool::connect(":memory:").await.unwrap();
 
         run_migrations(&pool).await.unwrap();
 
@@ -562,7 +548,7 @@ mod tests {
 
     /// Insert this [`Cfd`] into the database, returning the instance
     /// for further chaining.
-    pub async fn insert(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> Cfd {
+    pub async fn insert(cfd: Cfd, conn: &mut PoolConnection<Postgres>) -> Cfd {
         insert_cfd(&cfd, conn).await.unwrap();
         cfd
     }

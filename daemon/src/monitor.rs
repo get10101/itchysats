@@ -21,7 +21,7 @@ use model::EventKind;
 use model::OrderId;
 use model::CET_TIMELOCK;
 use serde_json::Value;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -118,7 +118,7 @@ pub struct Actor {
     client: bdk::electrum_client::Client,
     tasks: Tasks,
     state: State,
-    db: SqlitePool,
+    db: PgPool,
 }
 
 /// Internal data structure encapsulating the monitoring state without performing any IO.
@@ -264,11 +264,7 @@ impl Cfd {
 }
 
 impl Actor {
-    pub fn new(
-        db: SqlitePool,
-        electrum_rpc_url: String,
-        executor: command::Executor,
-    ) -> Result<Self> {
+    pub fn new(db: PgPool, electrum_rpc_url: String, executor: command::Executor) -> Result<Self> {
         let client = bdk::electrum_client::Client::new(&electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 

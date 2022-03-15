@@ -4,11 +4,11 @@ use anyhow::Result;
 use model::Cfd;
 use model::OrderId;
 use sqlx::pool::PoolConnection;
-use sqlx::Sqlite;
+use sqlx::Postgres;
 
 pub async fn insert_cfd_and_update_feed(
     cfd: &Cfd,
-    conn: &mut PoolConnection<Sqlite>,
+    conn: &mut PoolConnection<Postgres>,
     projection_address: &xtra::Address<projection::Actor>,
 ) -> Result<()> {
     db::insert_cfd(cfd, conn).await?;
@@ -19,7 +19,7 @@ pub async fn insert_cfd_and_update_feed(
 }
 
 /// Load a CFD from the database and rehydrate as the [`model::cfd::Cfd`] aggregate.
-pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<Cfd> {
+pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Postgres>) -> Result<Cfd> {
     let (
         db::Cfd {
             id,

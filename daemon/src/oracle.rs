@@ -8,7 +8,7 @@ use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::CfdEvent;
 use model::EventKind;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ops::Add;
@@ -26,7 +26,7 @@ pub struct Actor {
     executor: command::Executor,
     announcement_lookahead: Duration,
     tasks: Tasks,
-    db: SqlitePool,
+    db: PgPool,
 }
 
 #[derive(Clone, Copy)]
@@ -89,11 +89,7 @@ impl Cfd {
 }
 
 impl Actor {
-    pub fn new(
-        db: SqlitePool,
-        executor: command::Executor,
-        announcement_lookahead: Duration,
-    ) -> Self {
+    pub fn new(db: PgPool, executor: command::Executor, announcement_lookahead: Duration) -> Self {
         Self {
             announcements: HashMap::new(),
             pending_attestations: HashSet::new(),

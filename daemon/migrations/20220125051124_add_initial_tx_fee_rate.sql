@@ -1,4 +1,4 @@
 ALTER TABLE
     cfds
 ADD
-    COLUMN initial_tx_fee_rate NOT NULL DEFAULT '1';
+    COLUMN initial_tx_fee_rate text NOT NULL DEFAULT '1';

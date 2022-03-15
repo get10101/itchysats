@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::convert::TryInto;
 use std::fmt;
-use std::num::NonZeroU8;
+use std::num::NonZeroU32;
 use std::ops::Add;
 use std::ops::Div;
 use std::ops::Mul;
@@ -157,17 +157,18 @@ impl InversePrice {
     }
 }
 
+// Postgres does not support u8 encode/decode
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
 #[sqlx(transparent)]
-pub struct Leverage(u8);
+pub struct Leverage(u32);
 
 impl Leverage {
-    pub fn new(value: u8) -> Result<Self> {
-        let val = NonZeroU8::new(value).context("Cannot use non-positive values")?;
-        Ok(Self(u8::from(val)))
+    pub fn new(value: u32) -> Result<Self> {
+        let val = NonZeroU32::new(value).context("Cannot use non-positive values")?;
+        Ok(Self(u32::from(val)))
     }
 
-    pub fn get(&self) -> u8 {
+    pub fn get(&self) -> u32 {
         self.0
     }
 
@@ -364,15 +365,15 @@ impl Sub<InversePrice> for InversePrice {
     }
 }
 
-impl Add<u8> for Leverage {
+impl Add<u32> for Leverage {
     type Output = Leverage;
 
-    fn add(self, rhs: u8) -> Self::Output {
+    fn add(self, rhs: u32) -> Self::Output {
         Self(self.0 + rhs)
     }
 }
 
-impl Add<Leverage> for u8 {
+impl Add<Leverage> for u32 {
     type Output = Leverage;
 
     fn add(self, rhs: Leverage) -> Self::Output {

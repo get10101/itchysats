@@ -1,6 +1,6 @@
 -- todo: Decimal is had to deserialize as number so we use text
 CREATE TABLE IF NOT EXISTS orders (
-    id integer PRIMARY KEY autoincrement,
+    id SERIAL PRIMARY KEY,
     uuid text UNIQUE NOT NULL,
     trading_pair text NOT NULL,
     position text NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS orders_uuid ON orders (uuid);
 CREATE TABLE IF NOT EXISTS cfds (
-    id integer PRIMARY KEY autoincrement,
+    id SERIAL PRIMARY KEY,
     order_id integer UNIQUE NOT NULL,
     order_uuid text UNIQUE NOT NULL,
     quantity_usd text NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS cfds (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS cfd_order_uuid ON cfds (order_uuid);
 CREATE TABLE IF NOT EXISTS cfd_states (
-    id integer PRIMARY KEY autoincrement,
+    id SERIAL PRIMARY KEY,
     cfd_id integer NOT NULL,
     state text NOT NULL,
     FOREIGN KEY (cfd_id) REFERENCES cfds (id)

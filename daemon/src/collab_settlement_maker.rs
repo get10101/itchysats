@@ -21,7 +21,7 @@ pub struct Actor {
     has_accepted: bool,
     n_payouts: usize,
     executor: command::Executor,
-    db: sqlx::SqlitePool,
+    db: sqlx::PgPool,
 }
 
 #[derive(Clone, Copy)]
@@ -104,7 +104,7 @@ impl Actor {
         taker_id: Identity,
         connections: &(impl MessageChannel<maker_inc_connections::settlement::Response> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
-        db: sqlx::SqlitePool,
+        db: sqlx::PgPool,
         n_payouts: usize,
     ) -> Self {
         Self {
