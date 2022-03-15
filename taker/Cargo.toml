@@ -30,7 +30,3 @@ xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 
 [dev-dependencies]
 serde_test = "1"
-
-[build-dependencies]
-vergen = "7"
-anyhow = "1"
