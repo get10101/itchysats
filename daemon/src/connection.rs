@@ -4,6 +4,7 @@ use crate::noise;
 use crate::rollover_taker;
 use crate::setup_taker;
 use crate::taker_cfd::CurrentMakerOffers;
+use crate::version;
 use crate::wire;
 use crate::wire::EncryptedJsonCodec;
 use crate::wire::Version;
@@ -350,7 +351,10 @@ impl Actor {
 
         let our_version = Version::current();
         write
-            .send(wire::TakerToMaker::Hello(our_version.clone()))
+            .send(wire::TakerToMaker::HelloV2 {
+                wire_version: our_version.clone(),
+                daemon_version: version::version().to_string(),
+            })
             .timeout(TCP_TIMEOUT)
             .await??;
 
@@ -365,6 +369,7 @@ impl Actor {
             })?
             .with_context(|| format!("Failed to read first message from maker {maker_identity}"))? {
             Some(wire::MakerToTaker::Hello(maker_version)) => {
+                tracing::info!(%maker_identity, %maker_version, "Received Hello message from maker");
                 if our_version != maker_version {
                     self.status_sender
                         .send(ConnectionStatus::Offline {

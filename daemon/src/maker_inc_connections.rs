@@ -523,17 +523,16 @@ async fn upgrade(
         .context("Stream closed before first message")?;
 
     match first_message {
-        wire::TakerToMaker::Hello(taker_version) => {
-            let our_version = Version::current();
-            write
-                .send(wire::MakerToTaker::Hello(our_version.clone()))
-                .await?;
-
-            if our_version != taker_version {
-                bail!(
-                    "Network version mismatch, we are on version {our_version} but taker is on version {taker_version}",
-                );
-            }
+        wire::TakerToMaker::Hello(taker_wire_version) => {
+            tracing::info!(taker_id = %taker_id, %taker_wire_version, "Received Hello message from taker (version <=0.4.7");
+            handle_hello_message(&mut write, taker_wire_version).await?;
+        }
+        wire::TakerToMaker::HelloV2 {
+            wire_version: taker_wire_version,
+            daemon_version: taker_daemon_version,
+        } => {
+            tracing::info!(taker_id = %taker_id, %taker_wire_version, %taker_daemon_version, "Received HelloV2 message from taker");
+            handle_hello_message(&mut write, taker_wire_version).await?;
         }
         unexpected_message => {
             bail!(
@@ -553,6 +552,25 @@ async fn upgrade(
         })
         .await;
 
+    Ok(())
+}
+
+async fn handle_hello_message(
+    write: &mut futures::stream::SplitSink<
+        Framed<TcpStream, EncryptedJsonCodec<wire::TakerToMaker, wire::MakerToTaker>>,
+        wire::MakerToTaker,
+    >,
+    taker_wire_version: Version,
+) -> Result<()> {
+    let our_wire_version = Version::current();
+    write
+        .send(wire::MakerToTaker::Hello(our_wire_version.clone()))
+        .await?;
+    if our_wire_version != taker_wire_version {
+        bail!(
+            "Network version mismatch, we are on version {our_wire_version} but taker is on version {taker_wire_version}",
+        );
+    }
     Ok(())
 }
 

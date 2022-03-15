@@ -86,7 +86,12 @@ pub mod taker_to_maker {
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum TakerToMaker {
+    /// Deprecated, used by takers up to v0.4.7
     Hello(Version),
+    HelloV2 {
+        wire_version: Version,
+        daemon_version: String,
+    },
     TakeOrder {
         order_id: OrderId,
         quantity: Usd,
@@ -131,6 +136,7 @@ impl TakerToMaker {
                 taker_to_maker::Settlement::Initiate { .. } => "TakerToMaker::Settlement::Initiate",
             },
             TakerToMaker::Hello(_) => "TakerToMaker::Hello",
+            TakerToMaker::HelloV2 { .. } => "TakerToMaker::HelloV2",
         }
     }
 }

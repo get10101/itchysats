@@ -682,6 +682,9 @@ where
             wire::TakerToMaker::Hello(_) => {
                 unreachable!("The Hello message is not sent to the cfd actor")
             }
+            wire::TakerToMaker::HelloV2 { .. } => {
+                unreachable!("The HelloV2 message is not sent to the cfd actor")
+            }
         }
     }
 }
