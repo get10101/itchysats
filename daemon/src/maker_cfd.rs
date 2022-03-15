@@ -679,7 +679,7 @@ where
             wire::TakerToMaker::Protocol { .. } => {
                 unreachable!("This kind of message should be sent to the `setup_maker::Actor`")
             }
-            wire::TakerToMaker::Hello(_) => {
+            wire::TakerToMaker::Hello { .. } => {
                 unreachable!("The Hello message is not sent to the cfd actor")
             }
         }

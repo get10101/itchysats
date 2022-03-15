@@ -350,7 +350,9 @@ impl Actor {
 
         let our_version = Version::current();
         write
-            .send(wire::TakerToMaker::Hello(our_version.clone()))
+            .send(wire::TakerToMaker::Hello {
+                wire_version: our_version.clone(),
+            })
             .timeout(TCP_TIMEOUT)
             .await??;
 
@@ -364,19 +366,19 @@ impl Actor {
                 )
             })?
             .with_context(|| format!("Failed to read first message from maker {maker_identity}"))? {
-            Some(wire::MakerToTaker::Hello(maker_version)) => {
-                if our_version != maker_version {
+            Some(wire::MakerToTaker::Hello { wire_version : maker_wire_version }) => {
+                if our_version != maker_wire_version {
                     self.status_sender
                         .send(ConnectionStatus::Offline {
                             reason: Some(ConnectionCloseReason::VersionMismatch {
                                 taker_version: our_version.clone(),
-                                maker_version: maker_version.clone(),
+                                maker_version: maker_wire_version.clone(),
                             }),
                         })
                         .expect("receiver to outlive the actor");
 
                     bail!(
-                        "Network version mismatch, we are on version {our_version} but maker is on version {maker_version}"
+                        "Network version mismatch, we are on version {our_version} but maker is on version {maker_wire_version}"
                     )
                 }
             }
@@ -570,7 +572,7 @@ impl Actor {
                     .log_failure("Failed to forward current order from maker")
                     .await;
             }
-            wire::MakerToTaker::Hello(_) => {
+            wire::MakerToTaker::Hello { .. } => {
                 tracing::warn!("Ignoring unexpected Hello message from maker. Hello is only expected when opening a new connection.")
             }
         }

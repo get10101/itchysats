@@ -80,7 +80,9 @@ pub mod taker_to_maker {
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum TakerToMaker {
-    Hello(Version),
+    Hello {
+        wire_version: Version,
+    },
     TakeOrder {
         order_id: OrderId,
         quantity: Usd,
@@ -124,7 +126,7 @@ impl TakerToMaker {
                 taker_to_maker::Settlement::Propose { .. } => "TakerToMaker::Settlement::Propose",
                 taker_to_maker::Settlement::Initiate { .. } => "TakerToMaker::Settlement::Initiate",
             },
-            TakerToMaker::Hello(_) => "TakerToMaker::Hello",
+            TakerToMaker::Hello { .. } => "TakerToMaker::Hello",
         }
     }
 }
@@ -133,7 +135,9 @@ impl TakerToMaker {
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum MakerToTaker {
-    Hello(Version),
+    Hello {
+        wire_version: Version,
+    },
     /// Periodically broadcast message, indicating maker's presence
     Heartbeat,
     CurrentOffers(Option<MakerOffers>),
@@ -164,7 +168,7 @@ pub enum MakerToTaker {
 impl MakerToTaker {
     pub fn name(&self) -> &'static str {
         match self {
-            MakerToTaker::Hello(_) => "MakerToTaker::Hello",
+            MakerToTaker::Hello { .. } => "MakerToTaker::Hello",
             MakerToTaker::Heartbeat { .. } => "MakerToTaker::Heartbeat",
             MakerToTaker::CurrentOffers(_) => "MakerToTaker::CurrentOffers",
             MakerToTaker::ConfirmOrder(_) => "MakerToTaker::ConfirmOrder",

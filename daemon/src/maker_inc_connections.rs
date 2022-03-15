@@ -489,15 +489,19 @@ async fn upgrade(
         .context("Stream closed before first message")?;
 
     match first_message {
-        wire::TakerToMaker::Hello(taker_version) => {
-            let our_version = Version::current();
+        wire::TakerToMaker::Hello {
+            wire_version: taker_wire_version,
+        } => {
+            let our_wire_version = Version::current();
             write
-                .send(wire::MakerToTaker::Hello(our_version.clone()))
+                .send(wire::MakerToTaker::Hello {
+                    wire_version: our_wire_version.clone(),
+                })
                 .await?;
 
-            if our_version != taker_version {
+            if our_wire_version != taker_wire_version {
                 bail!(
-                    "Network version mismatch, we are on version {our_version} but taker is on version {taker_version}",
+                    "Network version mismatch, we are on version {our_wire_version} but taker is on version {taker_wire_version}",
                 );
             }
         }
