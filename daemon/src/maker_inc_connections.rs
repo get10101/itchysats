@@ -5,6 +5,7 @@ use crate::noise;
 use crate::noise::TransportStateExt;
 use crate::rollover_maker;
 use crate::setup_maker;
+use crate::version;
 use crate::wire;
 use crate::wire::taker_to_maker;
 use crate::wire::EncryptedJsonCodec;
@@ -491,11 +492,15 @@ async fn upgrade(
     match first_message {
         wire::TakerToMaker::Hello {
             wire_version: taker_wire_version,
+            daemon_version: taker_daemon_version,
         } => {
+            tracing::info!(taker_id = %taker_id, %taker_wire_version, %taker_daemon_version, "Received Hello message from taker");
+
             let our_wire_version = Version::current();
             write
                 .send(wire::MakerToTaker::Hello {
                     wire_version: our_wire_version.clone(),
+                    daemon_version: version::version().to_string(),
                 })
                 .await?;
 

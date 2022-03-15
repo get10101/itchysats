@@ -82,6 +82,7 @@ pub mod taker_to_maker {
 pub enum TakerToMaker {
     Hello {
         wire_version: Version,
+        daemon_version: String,
     },
     TakeOrder {
         order_id: OrderId,
@@ -137,6 +138,7 @@ impl TakerToMaker {
 pub enum MakerToTaker {
     Hello {
         wire_version: Version,
+        daemon_version: String,
     },
     /// Periodically broadcast message, indicating maker's presence
     Heartbeat,
