@@ -570,6 +570,9 @@ impl Actor {
                     .log_failure("Failed to forward current order from maker")
                     .await;
             }
+            wire::MakerToTaker::CurrentOrder(_) => {
+                // no-op, we support `CurrentOffers` message and can ignore this one.
+            }
             wire::MakerToTaker::Hello(_) => {
                 tracing::warn!("Ignoring unexpected Hello message from maker. Hello is only expected when opening a new connection.")
             }
