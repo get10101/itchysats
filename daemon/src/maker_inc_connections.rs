@@ -8,7 +8,6 @@ use crate::setup_maker;
 use crate::wire;
 use crate::wire::taker_to_maker;
 use crate::wire::EncryptedJsonCodec;
-use crate::wire::Version;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -107,7 +106,8 @@ pub struct Actor {
 struct Connection {
     taker: Identity,
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
-    version: Version,
+    wire_version: wire::Version,
+    daemon_version: String,
     _tasks: Tasks,
 }
 
@@ -122,13 +122,13 @@ impl Connection {
 
         tracing::trace!(target: "wire", %taker_id, "Sending {msg_str}");
 
-        let taker_version = self.version.clone();
+        let taker_version = self.wire_version.clone();
 
         // Transform messages based on version compatibility
-        let msg = if taker_version == Version::LATEST {
+        let msg = if taker_version == wire::Version::LATEST {
             // Connection is using the latest version, no transformation needed
             msg
-        } else if taker_version == Version::V2_0_0 {
+        } else if taker_version == wire::Version::V2_0_0 {
             // Connection is for version `2.0.0`. Be backwards compatible by sending `CurrentOrder`
             // instead of `CurrentOffer`
             match msg {
@@ -213,10 +213,13 @@ impl Actor {
                 .await;
 
             NUM_CONNECTIONS_GAUGE
-                .with(&HashMap::from([(
-                    VERSION_LABEL,
-                    connection.version.to_string().as_str(),
-                )]))
+                .with(&HashMap::from([
+                    (
+                        WIRE_VERSION_LABEL,
+                        connection.wire_version.to_string().as_str(),
+                    ),
+                    (DAEMON_VERSION_LABEL, connection.daemon_version.as_str()),
+                ]))
                 .dec();
         } else {
             tracing::debug!(%taker_id, "No active connection to taker");
@@ -395,7 +398,8 @@ impl Actor {
             mut read,
             write,
             identity,
-            version,
+            wire_version,
+            daemon_version,
         } = msg;
         let this = ctx.address().expect("we are alive");
 
@@ -440,19 +444,20 @@ impl Actor {
             Connection {
                 taker: identity,
                 write,
-                version: version.clone(),
+                wire_version: wire_version.clone(),
+                daemon_version: daemon_version.clone(),
                 _tasks: tasks,
             },
         );
 
         NUM_CONNECTIONS_GAUGE
-            .with(&HashMap::from([(
-                VERSION_LABEL,
-                version.to_string().as_str(),
-            )]))
+            .with(&HashMap::from([
+                (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
+                (DAEMON_VERSION_LABEL, daemon_version.as_str()),
+            ]))
             .inc();
 
-        tracing::info!(taker_id = %identity, %version, "Connection is ready");
+        tracing::info!(taker_id = %identity, %wire_version, %daemon_version, "Connection is ready");
     }
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
@@ -560,12 +565,12 @@ async fn upgrade(
         }
     };
 
-    let negotiated_wire_version = if proposed_wire_version == Version::LATEST {
-        Version::LATEST
-    } else if proposed_wire_version == Version::V2_0_0 {
-        Version::V2_0_0
+    let negotiated_wire_version = if proposed_wire_version == wire::Version::LATEST {
+        wire::Version::LATEST
+    } else if proposed_wire_version == wire::Version::V2_0_0 {
+        wire::Version::V2_0_0
     } else {
-        let our_version = Version::LATEST; // If taker is incompatible, we tell them the latest version
+        let our_version = wire::Version::LATEST; // If taker is incompatible, we tell them the latest version
 
         // write early here so we can bail afterwards
         write
@@ -588,7 +593,8 @@ async fn upgrade(
             read,
             write,
             identity: taker_id,
-            version: negotiated_wire_version,
+            wire_version: negotiated_wire_version,
+            daemon_version,
         })
         .await;
 
@@ -599,7 +605,8 @@ struct ConnectionReady {
     read: wire::Read<wire::TakerToMaker, wire::MakerToTaker>,
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
     identity: Identity,
-    version: Version,
+    wire_version: wire::Version,
+    daemon_version: String,
 }
 
 struct ReadFail(Identity);
@@ -618,14 +625,15 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-const VERSION_LABEL: &str = "version";
+const WIRE_VERSION_LABEL: &str = "wire_version";
+const DAEMON_VERSION_LABEL: &str = "daemon_version";
 
 static NUM_CONNECTIONS_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
     conquer_once::Lazy::new(|| {
         prometheus::register_int_gauge_vec!(
             "p2p_connections_total",
             "The number of active p2p connections.",
-            &[VERSION_LABEL]
+            &[WIRE_VERSION_LABEL, DAEMON_VERSION_LABEL]
         )
         .unwrap()
     });
