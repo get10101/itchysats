@@ -107,7 +107,7 @@ pub struct Actor {
 struct Connection {
     taker: Identity,
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
-    _version: Version,
+    version: Version,
     _tasks: Tasks,
 }
 
@@ -182,7 +182,7 @@ impl Actor {
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
     ) -> Self {
-        NUM_CONNECTIONS_GAUGE.set(0);
+        NUM_CONNECTIONS_GAUGE.reset();
 
         Self {
             connections: HashMap::new(),
@@ -200,14 +200,24 @@ impl Actor {
     }
 
     async fn drop_taker_connection(&mut self, taker_id: &Identity) {
-        if self.connections.remove(taker_id).is_some() {
+        if let Some(connection) = self.connections.remove(taker_id) {
             let _: Result<(), xtra::Disconnected> = self
                 .taker_disconnected_channel
                 .send_async_safe(maker_cfd::TakerDisconnected { id: *taker_id })
                 .await;
-        }
 
-        NUM_CONNECTIONS_GAUGE.set(self.connections.len() as i64);
+            NUM_CONNECTIONS_GAUGE
+                .with(&HashMap::from([(
+                    VERSION_LABEL,
+                    connection.version.to_string().as_str(),
+                )]))
+                .dec();
+        } else {
+            tracing::debug!(%taker_id, "No active connection to taker");
+
+            // TODO: Re-compute metrics here by iteration of all connections? If this happens often
+            // we might skew our metrics.
+        }
     }
 
     async fn send_to_taker(
@@ -424,12 +434,17 @@ impl Actor {
             Connection {
                 taker: identity,
                 write,
-                _version: version.clone(),
+                version: version.clone(),
                 _tasks: tasks,
             },
         );
 
-        NUM_CONNECTIONS_GAUGE.set(self.connections.len() as i64);
+        NUM_CONNECTIONS_GAUGE
+            .with(&HashMap::from([(
+                VERSION_LABEL,
+                version.to_string().as_str(),
+            )]))
+            .inc();
 
         tracing::info!(taker_id = %identity, %version, "Connection is ready");
     }
@@ -603,11 +618,14 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-static NUM_CONNECTIONS_GAUGE: conquer_once::Lazy<prometheus::IntGauge> =
+const VERSION_LABEL: &str = "version";
+
+static NUM_CONNECTIONS_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
     conquer_once::Lazy::new(|| {
-        prometheus::register_int_gauge!(
+        prometheus::register_int_gauge_vec!(
             "p2p_connections_total",
-            "The number of active p2p connections."
+            "The number of active p2p connections.",
+            &[VERSION_LABEL]
         )
         .unwrap()
     });
