@@ -122,39 +122,45 @@ impl Connection {
 
         tracing::trace!(target: "wire", %taker_id, "Sending {msg_str}");
 
-        // Be backwards compatible with older takers, send out `CurrentOrder` message
-        if let wire::MakerToTaker::CurrentOffers(offers) = &msg {
-            let current_order =
-                offers
-                    .and_then(|offers| offers.short)
-                    .map(|order| wire::DeprecatedOrder047 {
-                        id: order.id,
-                        trading_pair: order.trading_pair,
-                        position_maker: order.position_maker,
-                        price: order.price,
-                        min_quantity: order.min_quantity,
-                        max_quantity: order.max_quantity,
-                        leverage_taker: order.leverage_taker,
-                        creation_timestamp: order.creation_timestamp,
-                        settlement_interval: order.settlement_interval,
-                        liquidation_price: model::calculate_long_liquidation_price(
-                            order.leverage_taker,
-                            order.price,
-                        ),
-                        origin: order.origin,
-                        oracle_event_id: order.oracle_event_id,
-                        tx_fee_rate: order.tx_fee_rate,
-                        funding_rate: order.funding_rate,
-                        opening_fee: order.opening_fee,
-                    });
-            let msg = wire::MakerToTaker::CurrentOrder(current_order);
-            let msg_str = msg.name();
+        let taker_version = self.version.clone();
 
-            self.write
-                .send(msg)
-                .await
-                .with_context(|| format!("Failed to send msg {msg_str} to taker {taker_id}"))?;
-        }
+        // Transform messages based on version compatibility
+        let msg = if taker_version == Version::LATEST {
+            // Connection is using the latest version, no transformation needed
+            msg
+        } else if taker_version == Version::V2_0_0 {
+            // Connection is for version `2.0.0`. Be backwards compatible by sending `CurrentOrder`
+            // instead of `CurrentOffer`
+            match msg {
+                wire::MakerToTaker::CurrentOffers(offers) => {
+                    wire::MakerToTaker::CurrentOrder(offers.and_then(|offers| offers.short).map(
+                        |order| wire::DeprecatedOrder047 {
+                            id: order.id,
+                            trading_pair: order.trading_pair,
+                            position_maker: order.position_maker,
+                            price: order.price,
+                            min_quantity: order.min_quantity,
+                            max_quantity: order.max_quantity,
+                            leverage_taker: order.leverage_taker,
+                            creation_timestamp: order.creation_timestamp,
+                            settlement_interval: order.settlement_interval,
+                            liquidation_price: model::calculate_long_liquidation_price(
+                                order.leverage_taker,
+                                order.price,
+                            ),
+                            origin: order.origin,
+                            oracle_event_id: order.oracle_event_id,
+                            tx_fee_rate: order.tx_fee_rate,
+                            funding_rate: order.funding_rate,
+                            opening_fee: order.opening_fee,
+                        },
+                    ))
+                }
+                _ => msg,
+            }
+        } else {
+            bail!("Don't know how to send send {msg_str} to taker with version {taker_version}");
+        };
 
         self.write
             .send(msg)
@@ -540,18 +546,12 @@ async fn upgrade(
         .context("Failed to read first message on stream")?
         .context("Stream closed before first message")?;
 
-    let negotiated_version = match first_message {
-        wire::TakerToMaker::Hello(proposed_wire_version) => {
-            tracing::info!(%taker_id, %proposed_wire_version, "Received Hello message from taker (version <=0.4.7");
-            negotiate_wire_version(&mut write, proposed_wire_version).await?
-        }
+    let (proposed_wire_version, daemon_version) = match first_message {
+        wire::TakerToMaker::Hello(proposed_wire_version) => (proposed_wire_version, None),
         wire::TakerToMaker::HelloV2 {
             proposed_wire_version,
-            daemon_version: taker_daemon_version,
-        } => {
-            tracing::info!(%taker_id, %proposed_wire_version, %taker_daemon_version, "Received HelloV2 message from taker");
-            negotiate_wire_version(&mut write, proposed_wire_version).await?
-        }
+            daemon_version,
+        } => (proposed_wire_version, Some(daemon_version)),
         unexpected_message => {
             bail!(
                 "Unexpected message {} from taker {taker_id}",
@@ -560,39 +560,39 @@ async fn upgrade(
         }
     };
 
-    tracing::info!(%taker_id, %taker_address, "Connection upgrade successful");
+    let negotiated_wire_version = if proposed_wire_version == Version::LATEST {
+        Version::LATEST
+    } else if proposed_wire_version == Version::V2_0_0 {
+        Version::V2_0_0
+    } else {
+        let our_version = Version::LATEST; // If taker is incompatible, we tell them the latest version
+
+        // write early here so we can bail afterwards
+        write
+            .send(wire::MakerToTaker::Hello(our_version.clone()))
+            .await?;
+
+        bail!("Network version negotiation failed, taker proposed {proposed_wire_version} but are on {our_version}");
+    };
+
+    write
+        .send(wire::MakerToTaker::Hello(negotiated_wire_version.clone()))
+        .await?;
+
+    let daemon_version = daemon_version.unwrap_or_else(|| String::from("<= 0.4.7"));
+
+    tracing::info!(%taker_id, %taker_address, %negotiated_wire_version, %daemon_version, "Connection upgrade successful");
 
     let _ = this
         .send(ConnectionReady {
             read,
             write,
             identity: taker_id,
-            version: negotiated_version,
+            version: negotiated_wire_version,
         })
         .await;
 
     Ok(())
-}
-
-async fn negotiate_wire_version(
-    write: &mut futures::stream::SplitSink<
-        Framed<TcpStream, EncryptedJsonCodec<wire::TakerToMaker, wire::MakerToTaker>>,
-        wire::MakerToTaker,
-    >,
-    proposed_wire_version: Version,
-) -> Result<Version> {
-    let our_wire_version = Version::LATEST;
-    write
-        .send(wire::MakerToTaker::Hello(our_wire_version.clone()))
-        .await?;
-
-    if our_wire_version != proposed_wire_version {
-        bail!(
-            "Network version mismatch, taker proposed {proposed_wire_version} but we only support {our_wire_version}",
-        );
-    }
-
-    Ok(proposed_wire_version)
 }
 
 struct ConnectionReady {
