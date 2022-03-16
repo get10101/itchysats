@@ -70,11 +70,6 @@ impl Version {
             return false;
         }
 
-        if taker.patch > maker.patch {
-            // taker's patch version is ahead of taker, that is not allowed
-            return false;
-        }
-
         true
     }
 }
@@ -620,41 +615,9 @@ mod tests {
     }
 
     #[test]
-    fn given_maker_patch_ahead_of_taker_then_versions_compatible() {
-        let maker_version = Version(semver::Version::new(2, 0, 1));
-        let taker_version = Version(semver::Version::new(2, 0, 0));
-
-        assert!(Version::is_compatible(&taker_version, &maker_version));
-    }
-
-    #[test]
-    fn given_maker_minor_and_patch_ahead_of_taker_then_versions_compatible() {
-        let maker_version = Version(semver::Version::new(2, 1, 1));
-        let taker_version = Version(semver::Version::new(2, 0, 0));
-
-        assert!(Version::is_compatible(&taker_version, &maker_version));
-    }
-
-    #[test]
     fn given_taker_minor_ahead_of_maker_then_versions_incompatible() {
         let maker_version = Version(semver::Version::new(2, 0, 0));
         let taker_version = Version(semver::Version::new(2, 1, 0));
-
-        assert!(!Version::is_compatible(&taker_version, &maker_version));
-    }
-
-    #[test]
-    fn given_taker_patch_ahead_of_maker_then_versions_incompatible() {
-        let maker_version = Version(semver::Version::new(2, 0, 0));
-        let taker_version = Version(semver::Version::new(2, 0, 1));
-
-        assert!(!Version::is_compatible(&taker_version, &maker_version));
-    }
-
-    #[test]
-    fn given_taker_minor_and_patch_ahead_of_maker_then_versions_incompatible() {
-        let maker_version = Version(semver::Version::new(2, 0, 0));
-        let taker_version = Version(semver::Version::new(2, 1, 1));
 
         assert!(!Version::is_compatible(&taker_version, &maker_version));
     }
