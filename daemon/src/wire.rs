@@ -17,10 +17,15 @@ use maia::CfdTransactions;
 use maia::PartyParams;
 use maia::PunishParams;
 use model::FundingRate;
+use model::Leverage;
 use model::MakerOffers;
+use model::OpeningFee;
 use model::OrderId;
+use model::Origin;
+use model::Position;
 use model::Price;
 use model::Timestamp;
+use model::TradingPair;
 use model::TxFeeRate;
 use model::Usd;
 use serde::de::DeserializeOwned;
@@ -31,6 +36,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
+use time::Duration;
 use tokio::net::TcpStream;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
@@ -45,7 +51,7 @@ pub struct Version(semver::Version);
 
 impl Version {
     pub fn current() -> Self {
-        Self(semver::Version::new(3, 0, 0))
+        Self(semver::Version::new(2, 0, 0))
     }
 }
 
@@ -136,6 +142,7 @@ pub enum MakerToTaker {
     Hello(Version),
     /// Periodically broadcast message, indicating maker's presence
     Heartbeat,
+    CurrentOrder(Option<DeprecatedOrder047>),
     CurrentOffers(Option<MakerOffers>),
     ConfirmOrder(OrderId),
     RejectOrder(OrderId),
@@ -161,11 +168,34 @@ pub enum MakerToTaker {
     },
 }
 
+/// Legacy wire struct to retain backwards compatibility on the wire with version 0.4.7
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct DeprecatedOrder047 {
+    pub id: OrderId,
+    pub trading_pair: TradingPair,
+    #[serde(rename = "position")]
+    pub position_maker: Position,
+    pub price: Price,
+    pub min_quantity: Usd,
+    pub max_quantity: Usd,
+    #[serde(rename = "leverage")]
+    pub leverage_taker: Leverage,
+    pub creation_timestamp: Timestamp,
+    pub settlement_interval: Duration,
+    pub liquidation_price: Price,
+    pub origin: Origin,
+    pub oracle_event_id: BitMexPriceEventId,
+    pub tx_fee_rate: TxFeeRate,
+    pub funding_rate: FundingRate,
+    pub opening_fee: OpeningFee,
+}
+
 impl MakerToTaker {
     pub fn name(&self) -> &'static str {
         match self {
             MakerToTaker::Hello(_) => "MakerToTaker::Hello",
             MakerToTaker::Heartbeat { .. } => "MakerToTaker::Heartbeat",
+            MakerToTaker::CurrentOrder(_) => "MakerToTaker::CurrentOrder",
             MakerToTaker::CurrentOffers(_) => "MakerToTaker::CurrentOffers",
             MakerToTaker::ConfirmOrder(_) => "MakerToTaker::ConfirmOrder",
             MakerToTaker::RejectOrder(_) => "MakerToTaker::RejectOrder",

@@ -121,6 +121,40 @@ impl Connection {
 
         tracing::trace!(target: "wire", %taker_id, "Sending {msg_str}");
 
+        // Be backwards compatible with older takers, send out `CurrentOrder` message
+        if let wire::MakerToTaker::CurrentOffers(offers) = &msg {
+            let current_order =
+                offers
+                    .and_then(|offers| offers.short)
+                    .map(|order| wire::DeprecatedOrder047 {
+                        id: order.id,
+                        trading_pair: order.trading_pair,
+                        position_maker: order.position_maker,
+                        price: order.price,
+                        min_quantity: order.min_quantity,
+                        max_quantity: order.max_quantity,
+                        leverage_taker: order.leverage_taker,
+                        creation_timestamp: order.creation_timestamp,
+                        settlement_interval: order.settlement_interval,
+                        liquidation_price: model::calculate_long_liquidation_price(
+                            order.leverage_taker,
+                            order.price,
+                        ),
+                        origin: order.origin,
+                        oracle_event_id: order.oracle_event_id,
+                        tx_fee_rate: order.tx_fee_rate,
+                        funding_rate: order.funding_rate,
+                        opening_fee: order.opening_fee,
+                    });
+            let msg = wire::MakerToTaker::CurrentOrder(current_order);
+            let msg_str = msg.name();
+
+            self.write
+                .send(msg)
+                .await
+                .with_context(|| format!("Failed to send msg {msg_str} to taker {taker_id}"))?;
+        }
+
         self.write
             .send(msg)
             .await
