@@ -54,6 +54,7 @@ pub mod setup_taker;
 pub mod taker_cfd;
 mod transaction_ext;
 pub mod try_continue;
+pub mod version;
 pub mod wallet;
 pub mod wire;
 

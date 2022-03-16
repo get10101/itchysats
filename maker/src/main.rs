@@ -142,7 +142,7 @@ async fn main() -> Result<()> {
     let opts = Opts::parse();
 
     logger::init(opts.log_level, opts.json).context("initialize logger")?;
-    tracing::info!("Running version: {}", env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"));
+    tracing::info!("Running version: {}", daemon::version::version());
     let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
 
     tracing::info!(
