@@ -50,7 +50,7 @@ pub type Write<D, E> = SplitSink<Framed<TcpStream, EncryptedJsonCodec<D, E>>, E>
 pub struct Version(semver::Version);
 
 impl Version {
-    pub fn current() -> Self {
+    pub fn latest() -> Self {
         Self(semver::Version::new(2, 0, 0))
     }
 }

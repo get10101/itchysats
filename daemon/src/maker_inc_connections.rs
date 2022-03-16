@@ -581,7 +581,7 @@ async fn negotiate_wire_version(
     >,
     proposed_wire_version: Version,
 ) -> Result<Version> {
-    let our_wire_version = Version::current();
+    let our_wire_version = Version::latest();
     write
         .send(wire::MakerToTaker::Hello(our_wire_version.clone()))
         .await?;

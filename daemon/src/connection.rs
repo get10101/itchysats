@@ -349,7 +349,7 @@ impl Actor {
             Framed::new(connection, EncryptedJsonCodec::new(noise)).split()
         };
 
-        let proposed_version = Version::current();
+        let proposed_version = Version::latest();
         write
             .send(wire::TakerToMaker::HelloV2 {
                 proposed_wire_version: proposed_version.clone(),
