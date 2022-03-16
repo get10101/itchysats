@@ -230,9 +230,6 @@ pub struct Order {
     #[serde(rename = "leverage")]
     pub leverage_taker: Leverage,
 
-    // TODO: Remove from order, can be calculated
-    pub liquidation_price: Price,
-
     pub creation_timestamp: Timestamp,
 
     /// The duration that will be used for calculating the settlement timestamp
@@ -266,11 +263,6 @@ impl Order {
     ) -> Self {
         let leverage_choices_for_taker = Leverage::TWO;
 
-        let liquidation_price = match position_maker {
-            Position::Short => calculate_short_liquidation_price(leverage_choices_for_taker, price),
-            Position::Long => calculate_long_liquidation_price(leverage_choices_for_taker, price),
-        };
-
         Order {
             id: OrderId::default(),
             price,
@@ -278,7 +270,6 @@ impl Order {
             max_quantity,
             leverage_taker: leverage_choices_for_taker,
             trading_pair: TradingPair::BtcUsd,
-            liquidation_price,
             position_maker,
             creation_timestamp: Timestamp::now(),
             settlement_interval,

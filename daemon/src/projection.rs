@@ -975,6 +975,8 @@ pub struct CfdOrder {
 
     #[serde(rename = "leverage")]
     pub taker_leverage_choices: Leverage,
+
+    /// Own liquidation price according to position and leverage
     #[serde(with = "round_to_two_dp")]
     pub liquidation_price: Price,
 
@@ -1002,6 +1004,7 @@ impl TryFrom<Order> for CfdOrder {
     fn try_from(order: Order) -> std::result::Result<Self, Self::Error> {
         let lot_size = Usd::new(dec!(100)); // TODO: Have the maker tell us this.
 
+        let role = order.origin.into();
         let own_position = match order.origin {
             // we are the maker, the order's position is our position
             Origin::Ours => order.position_maker,
@@ -1010,7 +1013,7 @@ impl TryFrom<Order> for CfdOrder {
         };
 
         let (long_leverage, short_leverage) =
-            long_and_short_leverage(order.leverage_taker, order.origin.into(), own_position);
+            long_and_short_leverage(order.leverage_taker, role, own_position);
 
         let initial_funding_fee_per_lot = calculate_funding_fee(
             order.price,
@@ -1023,10 +1026,22 @@ impl TryFrom<Order> for CfdOrder {
         .context("unable to calculate initial funding fee")?;
 
         // Use a temporary fee account to define the funding fee's sign
-        let temp_fee_account = FeeAccount::new(own_position, order.origin.into());
+        let temp_fee_account = FeeAccount::new(own_position, role);
         let initial_funding_fee_per_lot = temp_fee_account
             .add_funding_fee(initial_funding_fee_per_lot)
             .balance();
+
+        // Liquidation price is dependent on one's own leverage
+        let liquidation_price = match own_position {
+            Position::Long => calculate_long_liquidation_price(long_leverage, order.price),
+            Position::Short => calculate_short_liquidation_price(short_leverage, order.price),
+        };
+
+        // Margin per lot price is dependent on one's own leverage
+        let margin_per_lot = match own_position {
+            Position::Long => calculate_margin(order.price, lot_size, long_leverage),
+            Position::Short => calculate_margin(order.price, lot_size, short_leverage),
+        };
 
         Ok(Self {
             id: order.id,
@@ -1036,14 +1051,9 @@ impl TryFrom<Order> for CfdOrder {
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
             lot_size,
-            margin_per_lot: match order.origin {
-                // we are the maker
-                Origin::Ours => calculate_margin(order.price, lot_size, Leverage::ONE),
-                // we are the taker
-                Origin::Theirs => calculate_margin(order.price, lot_size, order.leverage_taker),
-            },
+            margin_per_lot,
             taker_leverage_choices: order.leverage_taker,
-            liquidation_price: order.liquidation_price,
+            liquidation_price,
             creation_timestamp: order.creation_timestamp,
             settlement_time_interval_in_secs: order
                 .settlement_interval
