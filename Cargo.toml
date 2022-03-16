@@ -13,6 +13,7 @@ members = [
   "bdk-ext",
   "model",
   "btsieve",
+  "bitmex-stream",
 ]
 resolver = "2"
 
