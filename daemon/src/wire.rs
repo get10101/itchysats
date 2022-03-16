@@ -89,7 +89,7 @@ pub enum TakerToMaker {
     /// Deprecated, used by takers up to v0.4.7
     Hello(Version),
     HelloV2 {
-        wire_version: Version,
+        proposed_wire_version: Version,
         daemon_version: String,
     },
     TakeOrder {

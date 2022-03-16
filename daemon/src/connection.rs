@@ -188,9 +188,9 @@ pub enum ConnectionStatus {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConnectionCloseReason {
-    VersionMismatch {
-        taker_version: Version,
-        maker_version: Version,
+    VersionNegotiationFailed {
+        proposed_version: Version,
+        actual_version: Version,
     },
 }
 
@@ -349,10 +349,10 @@ impl Actor {
             Framed::new(connection, EncryptedJsonCodec::new(noise)).split()
         };
 
-        let our_version = Version::current();
+        let proposed_version = Version::current();
         write
             .send(wire::TakerToMaker::HelloV2 {
-                wire_version: our_version.clone(),
+                proposed_wire_version: proposed_version.clone(),
                 daemon_version: version::version().to_string(),
             })
             .timeout(TCP_TIMEOUT)
@@ -368,20 +368,20 @@ impl Actor {
                 )
             })?
             .with_context(|| format!("Failed to read first message from maker {maker_identity}"))? {
-            Some(wire::MakerToTaker::Hello(maker_version)) => {
-                tracing::info!(%maker_identity, %maker_version, "Received Hello message from maker");
-                if our_version != maker_version {
+            Some(wire::MakerToTaker::Hello(actual_version)) => {
+                tracing::info!(%maker_identity, %actual_version, "Received Hello message from maker");
+                if proposed_version != actual_version {
                     self.status_sender
                         .send(ConnectionStatus::Offline {
-                            reason: Some(ConnectionCloseReason::VersionMismatch {
-                                taker_version: our_version.clone(),
-                                maker_version: maker_version.clone(),
+                            reason: Some(ConnectionCloseReason::VersionNegotiationFailed {
+                                proposed_version: proposed_version.clone(),
+                                actual_version: actual_version.clone(),
                             }),
                         })
                         .expect("receiver to outlive the actor");
 
                     bail!(
-                        "Network version mismatch, we are on version {our_version} but maker is on version {maker_version}"
+                        "Network version mismatch, we proposed {proposed_version} but maker wants to use {actual_version}"
                     )
                 }
             }
