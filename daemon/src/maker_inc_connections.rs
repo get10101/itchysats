@@ -107,6 +107,7 @@ pub struct Actor {
 struct Connection {
     taker: Identity,
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
+    _version: Version,
     _tasks: Tasks,
 }
 
@@ -378,6 +379,7 @@ impl Actor {
             mut read,
             write,
             identity,
+            version,
         } = msg;
         let this = ctx.address().expect("we are alive");
 
@@ -422,13 +424,14 @@ impl Actor {
             Connection {
                 taker: identity,
                 write,
+                _version: version.clone(),
                 _tasks: tasks,
             },
         );
 
         NUM_CONNECTIONS_GAUGE.set(self.connections.len() as i64);
 
-        tracing::info!(taker_id = %identity, "Connection is ready");
+        tracing::info!(taker_id = %identity, %version, "Connection is ready");
     }
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
@@ -522,17 +525,17 @@ async fn upgrade(
         .context("Failed to read first message on stream")?
         .context("Stream closed before first message")?;
 
-    match first_message {
+    let negotiated_version = match first_message {
         wire::TakerToMaker::Hello(proposed_wire_version) => {
             tracing::info!(%taker_id, %proposed_wire_version, "Received Hello message from taker (version <=0.4.7");
-            handle_hello_message(&mut write, proposed_wire_version).await?;
+            negotiate_wire_version(&mut write, proposed_wire_version).await?
         }
         wire::TakerToMaker::HelloV2 {
             proposed_wire_version,
             daemon_version: taker_daemon_version,
         } => {
             tracing::info!(%taker_id, %proposed_wire_version, %taker_daemon_version, "Received HelloV2 message from taker");
-            handle_hello_message(&mut write, proposed_wire_version).await?;
+            negotiate_wire_version(&mut write, proposed_wire_version).await?
         }
         unexpected_message => {
             bail!(
@@ -540,7 +543,7 @@ async fn upgrade(
                 unexpected_message.name()
             );
         }
-    }
+    };
 
     tracing::info!(%taker_id, %taker_address, "Connection upgrade successful");
 
@@ -549,35 +552,39 @@ async fn upgrade(
             read,
             write,
             identity: taker_id,
+            version: negotiated_version,
         })
         .await;
 
     Ok(())
 }
 
-async fn handle_hello_message(
+async fn negotiate_wire_version(
     write: &mut futures::stream::SplitSink<
         Framed<TcpStream, EncryptedJsonCodec<wire::TakerToMaker, wire::MakerToTaker>>,
         wire::MakerToTaker,
     >,
     proposed_wire_version: Version,
-) -> Result<()> {
+) -> Result<Version> {
     let our_wire_version = Version::current();
     write
         .send(wire::MakerToTaker::Hello(our_wire_version.clone()))
         .await?;
+
     if our_wire_version != proposed_wire_version {
         bail!(
             "Network version mismatch, taker proposed {proposed_wire_version} but we only support {our_wire_version}",
         );
     }
-    Ok(())
+
+    Ok(proposed_wire_version)
 }
 
 struct ConnectionReady {
     read: wire::Read<wire::TakerToMaker, wire::MakerToTaker>,
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
     identity: Identity,
+    version: Version,
 }
 
 struct ReadFail(Identity);
