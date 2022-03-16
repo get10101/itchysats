@@ -524,14 +524,14 @@ async fn upgrade(
 
     match first_message {
         wire::TakerToMaker::Hello(taker_wire_version) => {
-            tracing::info!(taker_id = %taker_id, %taker_wire_version, "Received Hello message from taker (version <=0.4.7");
+            tracing::info!(%taker_id, %taker_wire_version, "Received Hello message from taker (version <=0.4.7");
             handle_hello_message(&mut write, taker_wire_version).await?;
         }
         wire::TakerToMaker::HelloV2 {
             wire_version: taker_wire_version,
             daemon_version: taker_daemon_version,
         } => {
-            tracing::info!(taker_id = %taker_id, %taker_wire_version, %taker_daemon_version, "Received HelloV2 message from taker");
+            tracing::info!(%taker_id, %taker_wire_version, %taker_daemon_version, "Received HelloV2 message from taker");
             handle_hello_message(&mut write, taker_wire_version).await?;
         }
         unexpected_message => {
@@ -542,7 +542,7 @@ async fn upgrade(
         }
     }
 
-    tracing::info!(taker_id = %taker_id, %taker_address, "Connection upgrade successful");
+    tracing::info!(%taker_id, %taker_address, "Connection upgrade successful");
 
     let _ = this
         .send(ConnectionReady {
