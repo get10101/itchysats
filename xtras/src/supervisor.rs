@@ -2,6 +2,7 @@ use crate::ActorName;
 use async_trait::async_trait;
 use futures::FutureExt;
 use std::any::Any;
+use std::error::Error;
 use std::fmt;
 use std::panic::AssertUnwindSafe;
 use tokio_tasks::Tasks;
@@ -16,7 +17,7 @@ pub struct Actor<T, R> {
     context: Context<T>,
     ctor: Box<dyn Fn() -> T + Send + 'static>,
     tasks: Tasks,
-    restart_policy: Box<dyn FnMut(R) -> bool + Send + 'static>,
+    restart_policy: Box<dyn FnMut(&R) -> bool + Send + 'static>,
     metrics: Metrics,
 }
 
@@ -28,6 +29,7 @@ struct Metrics {
     pub num_panics: u64,
 }
 
+#[derive(Debug)]
 struct UnitReason {}
 
 impl fmt::Display for UnitReason {
@@ -35,6 +37,8 @@ impl fmt::Display for UnitReason {
         write!(f, "()")
     }
 }
+
+impl Error for UnitReason {}
 
 impl From<()> for UnitReason {
     fn from(_: ()) -> Self {
@@ -70,7 +74,7 @@ where
 impl<T, R, S> Actor<T, R>
 where
     T: xtra::Actor<Stop = S>,
-    R: fmt::Display + Send + 'static,
+    R: Error + Send + Sync + 'static,
     S: Into<R> + Send + 'static,
 {
     /// Construct a new supervisor.
@@ -80,7 +84,7 @@ where
     /// 2. When to construct an instance of the actor.
     pub fn with_policy(
         ctor: impl (Fn() -> T) + Send + 'static,
-        restart_policy: impl (FnMut(R) -> bool) + Send + 'static,
+        restart_policy: impl (FnMut(&R) -> bool) + Send + 'static,
     ) -> (Self, Address<T>) {
         let (address, context) = Context::new(None);
 
@@ -128,7 +132,7 @@ where
 impl<T, R, S> xtra::Actor for Actor<T, R>
 where
     T: xtra::Actor<Stop = S>,
-    R: fmt::Display + Send + 'static,
+    R: Error + Send + Sync + 'static,
     S: Into<R> + Send + 'static,
 {
     type Stop = ();
@@ -144,13 +148,13 @@ where
 impl<T, R, S> Actor<T, R>
 where
     T: xtra::Actor<Stop = S>,
-    R: fmt::Display + Send + 'static,
+    R: Error + Send + Sync + 'static,
     S: Into<R> + Send + 'static,
 {
     pub fn handle(&mut self, msg: Stopped<R>, ctx: &mut Context<Self>) {
         let actor = T::name();
-        let reason_str = msg.reason.to_string();
-        let should_restart = (self.restart_policy)(msg.reason);
+        let should_restart = (self.restart_policy)(&msg.reason);
+        let reason_str = format!("{:#}", anyhow::Error::new(msg.reason)); // Anyhow will format the entire chain of errors when using `alternate` Display (`#`)
 
         tracing::info!(actor = %&actor, reason = %reason_str, restart = %should_restart, "Actor stopped");
 
@@ -164,7 +168,7 @@ where
 impl<T, R, S> Actor<T, R>
 where
     T: xtra::Actor<Stop = S>,
-    R: fmt::Display + Send + 'static,
+    R: Error + Send + Sync + 'static,
     S: Into<R>,
 {
     pub fn handle(&mut self, _: GetMetrics) -> Metrics {
@@ -176,7 +180,7 @@ where
 impl<T, R, S> xtra::Handler<Panicked> for Actor<T, R>
 where
     T: xtra::Actor<Stop = S>,
-    R: fmt::Display + Send + 'static,
+    R: Error + Send + Sync + 'static,
     S: Into<R> + Send + 'static,
 {
     async fn handle(&mut self, msg: Panicked, ctx: &mut Context<Self>) {
@@ -227,6 +231,7 @@ struct GetMetrics;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
     use tracing_subscriber::util::SubscriberInitExt;
     use xtra::Actor as _;
 
@@ -234,7 +239,7 @@ mod tests {
     async fn supervisor_tracks_spawn_metrics() {
         let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
-        let (supervisor, address) = Actor::with_policy(|| RemoteShutdown, |_: String| true);
+        let (supervisor, address) = Actor::with_policy(|| RemoteShutdown, |_: &io::Error| true);
         let (supervisor, task) = supervisor.create(None).run();
 
         #[allow(clippy::disallowed_method)]
@@ -259,7 +264,7 @@ mod tests {
     async fn restarted_actor_is_usable() {
         let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
-        let (supervisor, address) = Actor::with_policy(|| RemoteShutdown, |_: String| true);
+        let (supervisor, address) = Actor::with_policy(|| RemoteShutdown, |_: &io::Error| true);
         let (_supervisor, task) = supervisor.create(None).run();
 
         #[allow(clippy::disallowed_method)]
@@ -278,7 +283,7 @@ mod tests {
 
         std::panic::set_hook(Box::new(|_| ())); // Override hook to avoid panic printing to log.
 
-        let (supervisor, address) = Actor::with_policy(|| PanickingActor, |_: String| true);
+        let (supervisor, address) = Actor::with_policy(|| PanickingActor, |_: &io::Error| true);
         let (supervisor, task) = supervisor.create(None).run();
 
         #[allow(clippy::disallowed_method)]
@@ -312,10 +317,10 @@ mod tests {
 
     #[async_trait]
     impl xtra::Actor for RemoteShutdown {
-        type Stop = String;
+        type Stop = io::Error;
 
         async fn stopped(self) -> Self::Stop {
-            String::new()
+            io::Error::new(io::ErrorKind::Other, "unknown")
         }
     }
 
@@ -337,10 +342,10 @@ mod tests {
 
     #[async_trait]
     impl xtra::Actor for PanickingActor {
-        type Stop = String;
+        type Stop = io::Error;
 
         async fn stopped(self) -> Self::Stop {
-            String::new()
+            io::Error::new(io::ErrorKind::Other, "unknown")
         }
     }
 
