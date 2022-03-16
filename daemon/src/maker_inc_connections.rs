@@ -382,7 +382,7 @@ impl Actor {
         let this = ctx.address().expect("we are alive");
 
         if self.connections.contains_key(&identity) {
-            tracing::warn!(
+            tracing::debug!(
                 taker_id = %identity,
                 "Refusing to accept 2nd connection from already connected taker!"
             );
