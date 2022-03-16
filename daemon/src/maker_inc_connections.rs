@@ -529,7 +529,7 @@ async fn upgrade(
                 .send(wire::MakerToTaker::Hello(our_version.clone()))
                 .await?;
 
-            if our_version != taker_version {
+            if !Version::is_compatible(&taker_version, &our_version) {
                 bail!(
                     "Network version mismatch, we are on version {our_version} but taker is on version {taker_version}",
                 );

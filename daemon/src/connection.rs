@@ -365,7 +365,7 @@ impl Actor {
             })?
             .with_context(|| format!("Failed to read first message from maker {maker_identity}"))? {
             Some(wire::MakerToTaker::Hello(maker_version)) => {
-                if our_version != maker_version {
+                if !Version::is_compatible(&our_version, &maker_version) {
                     self.status_sender
                         .send(ConnectionStatus::Offline {
                             reason: Some(ConnectionCloseReason::VersionMismatch {
