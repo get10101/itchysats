@@ -581,6 +581,10 @@ impl Actor {
             wire::MakerToTaker::Hello(_) => {
                 tracing::warn!("Ignoring unexpected Hello message from maker. Hello is only expected when opening a new connection.")
             }
+            wire::MakerToTaker::Unknown => {
+                // Ignore unknown message to be forwards-compatible. We are logging it above on
+                // `trace` level already.
+            }
         }
         KeepRunning::Yes
     }
