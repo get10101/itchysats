@@ -8,7 +8,6 @@ use crate::setup_maker;
 use crate::wire;
 use crate::wire::taker_to_maker;
 use crate::wire::EncryptedJsonCodec;
-use crate::wire::Version;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -107,6 +106,8 @@ pub struct Actor {
 struct Connection {
     taker: Identity,
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
+    wire_version: wire::Version,
+    daemon_version: String,
     _tasks: Tasks,
 }
 
@@ -121,39 +122,45 @@ impl Connection {
 
         tracing::trace!(target: "wire", %taker_id, "Sending {msg_str}");
 
-        // Be backwards compatible with older takers, send out `CurrentOrder` message
-        if let wire::MakerToTaker::CurrentOffers(offers) = &msg {
-            let current_order =
-                offers
-                    .and_then(|offers| offers.short)
-                    .map(|order| wire::DeprecatedOrder047 {
-                        id: order.id,
-                        trading_pair: order.trading_pair,
-                        position_maker: order.position_maker,
-                        price: order.price,
-                        min_quantity: order.min_quantity,
-                        max_quantity: order.max_quantity,
-                        leverage_taker: order.leverage_taker,
-                        creation_timestamp: order.creation_timestamp,
-                        settlement_interval: order.settlement_interval,
-                        liquidation_price: model::calculate_long_liquidation_price(
-                            order.leverage_taker,
-                            order.price,
-                        ),
-                        origin: order.origin,
-                        oracle_event_id: order.oracle_event_id,
-                        tx_fee_rate: order.tx_fee_rate,
-                        funding_rate: order.funding_rate,
-                        opening_fee: order.opening_fee,
-                    });
-            let msg = wire::MakerToTaker::CurrentOrder(current_order);
-            let msg_str = msg.name();
+        let taker_version = self.wire_version.clone();
 
-            self.write
-                .send(msg)
-                .await
-                .with_context(|| format!("Failed to send msg {msg_str} to taker {taker_id}"))?;
-        }
+        // Transform messages based on version compatibility
+        let msg = if taker_version == wire::Version::LATEST {
+            // Connection is using the latest version, no transformation needed
+            msg
+        } else if taker_version == wire::Version::V2_0_0 {
+            // Connection is for version `2.0.0`. Be backwards compatible by sending `CurrentOrder`
+            // instead of `CurrentOffer`
+            match msg {
+                wire::MakerToTaker::CurrentOffers(offers) => {
+                    wire::MakerToTaker::CurrentOrder(offers.and_then(|offers| offers.short).map(
+                        |order| wire::DeprecatedOrder047 {
+                            id: order.id,
+                            trading_pair: order.trading_pair,
+                            position_maker: order.position_maker,
+                            price: order.price,
+                            min_quantity: order.min_quantity,
+                            max_quantity: order.max_quantity,
+                            leverage_taker: order.leverage_taker,
+                            creation_timestamp: order.creation_timestamp,
+                            settlement_interval: order.settlement_interval,
+                            liquidation_price: model::calculate_long_liquidation_price(
+                                order.leverage_taker,
+                                order.price,
+                            ),
+                            origin: order.origin,
+                            oracle_event_id: order.oracle_event_id,
+                            tx_fee_rate: order.tx_fee_rate,
+                            funding_rate: order.funding_rate,
+                            opening_fee: order.opening_fee,
+                        },
+                    ))
+                }
+                _ => msg,
+            }
+        } else {
+            bail!("Don't know how to send send {msg_str} to taker with version {taker_version}");
+        };
 
         self.write
             .send(msg)
@@ -181,7 +188,7 @@ impl Actor {
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
     ) -> Self {
-        NUM_CONNECTIONS_GAUGE.set(0);
+        NUM_CONNECTIONS_GAUGE.reset();
 
         Self {
             connections: HashMap::new(),
@@ -199,14 +206,27 @@ impl Actor {
     }
 
     async fn drop_taker_connection(&mut self, taker_id: &Identity) {
-        if self.connections.remove(taker_id).is_some() {
+        if let Some(connection) = self.connections.remove(taker_id) {
             let _: Result<(), xtra::Disconnected> = self
                 .taker_disconnected_channel
                 .send_async_safe(maker_cfd::TakerDisconnected { id: *taker_id })
                 .await;
-        }
 
-        NUM_CONNECTIONS_GAUGE.set(self.connections.len() as i64);
+            NUM_CONNECTIONS_GAUGE
+                .with(&HashMap::from([
+                    (
+                        WIRE_VERSION_LABEL,
+                        connection.wire_version.to_string().as_str(),
+                    ),
+                    (DAEMON_VERSION_LABEL, connection.daemon_version.as_str()),
+                ]))
+                .dec();
+        } else {
+            tracing::debug!(%taker_id, "No active connection to taker");
+
+            // TODO: Re-compute metrics here by iteration of all connections? If this happens often
+            // we might skew our metrics.
+        }
     }
 
     async fn send_to_taker(
@@ -378,6 +398,8 @@ impl Actor {
             mut read,
             write,
             identity,
+            wire_version,
+            daemon_version,
         } = msg;
         let this = ctx.address().expect("we are alive");
 
@@ -422,13 +444,20 @@ impl Actor {
             Connection {
                 taker: identity,
                 write,
+                wire_version: wire_version.clone(),
+                daemon_version: daemon_version.clone(),
                 _tasks: tasks,
             },
         );
 
-        NUM_CONNECTIONS_GAUGE.set(self.connections.len() as i64);
+        NUM_CONNECTIONS_GAUGE
+            .with(&HashMap::from([
+                (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
+                (DAEMON_VERSION_LABEL, daemon_version.as_str()),
+            ]))
+            .inc();
 
-        tracing::info!(taker_id = %identity, "Connection is ready");
+        tracing::info!(taker_id = %identity, %wire_version, %daemon_version, "Connection is ready");
     }
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
@@ -522,55 +551,53 @@ async fn upgrade(
         .context("Failed to read first message on stream")?
         .context("Stream closed before first message")?;
 
-    match first_message {
-        wire::TakerToMaker::Hello(taker_wire_version) => {
-            tracing::info!(%taker_id, %taker_wire_version, "Received Hello message from taker (version <=0.4.7");
-            handle_hello_message(&mut write, taker_wire_version).await?;
-        }
+    let (proposed_wire_version, daemon_version) = match first_message {
+        wire::TakerToMaker::Hello(proposed_wire_version) => (proposed_wire_version, None),
         wire::TakerToMaker::HelloV2 {
-            wire_version: taker_wire_version,
-            daemon_version: taker_daemon_version,
-        } => {
-            tracing::info!(%taker_id, %taker_wire_version, %taker_daemon_version, "Received HelloV2 message from taker");
-            handle_hello_message(&mut write, taker_wire_version).await?;
-        }
+            proposed_wire_version,
+            daemon_version,
+        } => (proposed_wire_version, Some(daemon_version)),
         unexpected_message => {
             bail!(
                 "Unexpected message {} from taker {taker_id}",
                 unexpected_message.name()
             );
         }
-    }
+    };
 
-    tracing::info!(%taker_id, %taker_address, "Connection upgrade successful");
+    let negotiated_wire_version = if proposed_wire_version == wire::Version::LATEST {
+        wire::Version::LATEST
+    } else if proposed_wire_version == wire::Version::V2_0_0 {
+        wire::Version::V2_0_0
+    } else {
+        let our_version = wire::Version::LATEST; // If taker is incompatible, we tell them the latest version
+
+        // write early here so we can bail afterwards
+        write
+            .send(wire::MakerToTaker::Hello(our_version.clone()))
+            .await?;
+
+        bail!("Network version negotiation failed, taker proposed {proposed_wire_version} but are on {our_version}");
+    };
+
+    write
+        .send(wire::MakerToTaker::Hello(negotiated_wire_version.clone()))
+        .await?;
+
+    let daemon_version = daemon_version.unwrap_or_else(|| String::from("<= 0.4.7"));
+
+    tracing::info!(%taker_id, %taker_address, %negotiated_wire_version, %daemon_version, "Connection upgrade successful");
 
     let _ = this
         .send(ConnectionReady {
             read,
             write,
             identity: taker_id,
+            wire_version: negotiated_wire_version,
+            daemon_version,
         })
         .await;
 
-    Ok(())
-}
-
-async fn handle_hello_message(
-    write: &mut futures::stream::SplitSink<
-        Framed<TcpStream, EncryptedJsonCodec<wire::TakerToMaker, wire::MakerToTaker>>,
-        wire::MakerToTaker,
-    >,
-    taker_wire_version: Version,
-) -> Result<()> {
-    let our_wire_version = Version::current();
-    write
-        .send(wire::MakerToTaker::Hello(our_wire_version.clone()))
-        .await?;
-    if our_wire_version != taker_wire_version {
-        bail!(
-            "Network version mismatch, we are on version {our_wire_version} but taker is on version {taker_wire_version}",
-        );
-    }
     Ok(())
 }
 
@@ -578,6 +605,8 @@ struct ConnectionReady {
     read: wire::Read<wire::TakerToMaker, wire::MakerToTaker>,
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
     identity: Identity,
+    wire_version: wire::Version,
+    daemon_version: String,
 }
 
 struct ReadFail(Identity);
@@ -596,11 +625,15 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-static NUM_CONNECTIONS_GAUGE: conquer_once::Lazy<prometheus::IntGauge> =
+const WIRE_VERSION_LABEL: &str = "wire_version";
+const DAEMON_VERSION_LABEL: &str = "daemon_version";
+
+static NUM_CONNECTIONS_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
     conquer_once::Lazy::new(|| {
-        prometheus::register_int_gauge!(
+        prometheus::register_int_gauge_vec!(
             "p2p_connections_total",
-            "The number of active p2p connections."
+            "The number of active p2p connections.",
+            &[WIRE_VERSION_LABEL, DAEMON_VERSION_LABEL]
         )
         .unwrap()
     });

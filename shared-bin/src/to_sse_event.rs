@@ -67,9 +67,9 @@ impl ToSseEvent for connection::ConnectionStatus {
             connection::ConnectionStatus::Offline { reason } => ConnectionStatus {
                 online: false,
                 connection_close_reason: reason.as_ref().map(|g| match g {
-                    connection::ConnectionCloseReason::VersionMismatch {
-                        maker_version,
-                        taker_version,
+                    connection::ConnectionCloseReason::VersionNegotiationFailed {
+                        actual_version: maker_version,
+                        proposed_version: taker_version,
                     } => {
                         if *maker_version < *taker_version {
                             MakerVersionOutdated
