@@ -49,6 +49,7 @@ use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
+use xtras::SendAsyncSafe;
 
 /// Store the latest state of `T` for display purposes
 /// (replaces previously stored values)
@@ -57,6 +58,10 @@ pub struct Update<T>(pub T);
 /// Indicates that the CFD with the given order ID changed.
 #[derive(Clone, Copy)]
 pub struct CfdChanged(pub OrderId);
+
+/// Perform the bulk initialisation of the CFD feed
+#[derive(Clone, Copy)]
+struct Initialize;
 
 pub struct Actor {
     db: sqlx::SqlitePool,
@@ -825,9 +830,25 @@ impl State {
 
 #[xtra_productivity]
 impl Actor {
+    async fn handle(&mut self, _: Initialize) -> Result<()> {
+        let mut conn = self.db.acquire().await?;
+        let vec = db::load_all_cfd_ids(&mut conn).await?;
+
+        for id in vec {
+            if let Err(e) = self.state.update_cfd(self.db.clone(), id).await {
+                tracing::error!("Failed to rehydrate CFD: {e:#}");
+            };
+        }
+
+        self.tx
+            .send_cfds_update(self.state.cfds.clone(), self.state.quote);
+
+        Ok(())
+    }
+
     async fn handle(&mut self, msg: CfdChanged) {
         if let Err(e) = self.state.update_cfd(self.db.clone(), msg.0).await {
-            tracing::warn!("Failed to rehydrate CFD: {e:#}");
+            tracing::error!("Failed to rehydrate CFD: {e:#}");
             return;
         };
 
@@ -858,27 +879,9 @@ impl xtra::Actor for Actor {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we just started");
-        let pool = self.db.clone();
-
-        self.tasks.add_fallible(
-            {
-                let this = this.clone();
-
-                async move {
-                    let mut conn = pool.acquire().await?;
-                    let vec = db::load_all_cfd_ids(&mut conn).await?;
-
-                    for id in vec {
-                        let _: Result<(), xtra::Disconnected> = this.send(CfdChanged(id)).await;
-                    }
-
-                    anyhow::Ok(())
-                }
-            },
-            |e| async move {
-                tracing::warn!("Failed to do initial rehydratation of CFDs: {e:#}");
-            },
-        );
+        this.send_async_safe(Initialize)
+            .await
+            .expect("we just started");
 
         self.tasks.add({
             let price_feed = self.price_feed.clone_channel();
