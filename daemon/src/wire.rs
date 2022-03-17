@@ -31,6 +31,7 @@ use model::Usd;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
+use serde_with::rust::deserialize_ignore_any;
 use snow::TransportState;
 use std::collections::HashMap;
 use std::fmt;
@@ -112,6 +113,8 @@ pub enum TakerToMaker {
         order_id: OrderId,
         msg: taker_to_maker::Settlement,
     },
+    #[serde(other, deserialize_with = "deserialize_ignore_any")]
+    Unknown,
 }
 
 impl TakerToMaker {
@@ -137,6 +140,7 @@ impl TakerToMaker {
             },
             TakerToMaker::Hello(_) => "TakerToMaker::Hello",
             TakerToMaker::HelloV2 { .. } => "TakerToMaker::HelloV2",
+            TakerToMaker::Unknown => "TakerToMaker::Unknown",
         }
     }
 }
@@ -172,6 +176,8 @@ pub enum MakerToTaker {
         order_id: OrderId,
         msg: maker_to_taker::Settlement,
     },
+    #[serde(other, deserialize_with = "deserialize_ignore_any")]
+    Unknown,
 }
 
 /// Legacy wire struct to retain backwards compatibility on the wire with version 0.4.7
@@ -224,6 +230,7 @@ impl MakerToTaker {
                 maker_to_taker::Settlement::Confirm => "MakerToTaker::Settlement::Confirm",
                 maker_to_taker::Settlement::Reject => "MakerToTaker::Settlement::Reject",
             },
+            MakerToTaker::Unknown => "MakerToTaker::Unknown",
         }
     }
 }
@@ -562,5 +569,27 @@ impl From<CfdTransactions> for RolloverMsg1 {
             cets,
             refund: txs.refund.1,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(r#"{ "type": "FooBarBaz", "payload": { "weird_message": true } }"#  ; "with payload")]
+    #[test_case(r#"{ "type": "FooBarBaz" }"#                                        ; "without payload")]
+    fn unsupported_message_taker_to_maker(json: &'static str) {
+        let message = serde_json::from_str(json).unwrap();
+
+        assert!(matches!(message, MakerToTaker::Unknown));
+    }
+
+    #[test_case(r#"{ "type": "FooBarBaz", "payload": { "weird_message": true } }"#  ; "with payload")]
+    #[test_case(r#"{ "type": "FooBarBaz" }"#                                        ; "without payload")]
+    fn unsupported_message_maker_to_taker(json: &'static str) {
+        let message = serde_json::from_str(json).unwrap();
+
+        assert!(matches!(message, TakerToMaker::Unknown));
     }
 }

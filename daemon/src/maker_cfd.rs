@@ -685,6 +685,9 @@ where
             wire::TakerToMaker::HelloV2 { .. } => {
                 unreachable!("The HelloV2 message is not sent to the cfd actor")
             }
+            wire::TakerToMaker::Unknown => {
+                // Ignore unknown message to be forwards-compatible.
+            }
         }
     }
 }
