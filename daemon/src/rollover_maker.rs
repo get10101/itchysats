@@ -18,6 +18,7 @@ use model::Identity;
 use model::OrderId;
 use model::Position;
 use model::Role;
+use model::RolloverVersion;
 use model::TxFeeRate;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
@@ -63,6 +64,7 @@ pub struct Actor {
     register: Box<dyn MessageChannel<maker_inc_connections::RegisterRollover>>,
     tasks: Tasks,
     executor: command::Executor,
+    version: RolloverVersion,
 }
 
 impl Actor {
@@ -77,6 +79,7 @@ impl Actor {
         process_manager: xtra::Address<process_manager::Actor>,
         register: &(impl MessageChannel<maker_inc_connections::RegisterRollover> + 'static),
         db: sqlx::SqlitePool,
+        version: RolloverVersion,
     ) -> Self {
         Self {
             order_id,
@@ -89,6 +92,7 @@ impl Actor {
             register: register.clone_channel(),
             executor: command::Executor::new(db, process_manager),
             tasks: Tasks::default(),
+            version,
         }
     }
 
@@ -163,7 +167,7 @@ impl Actor {
                 };
 
                 let (event, params, dlc, position, interval) =
-                    cfd.accept_rollover_proposal(tx_fee_rate, funding_rate)?;
+                    cfd.accept_rollover_proposal(tx_fee_rate, funding_rate, self.version)?;
 
                 Ok((event, params, dlc, position, interval, funding_rate))
             })
