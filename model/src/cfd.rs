@@ -836,8 +836,14 @@ impl Cfd {
         }
 
         let hours_to_charge = match version {
-            rollover::Version::V1 => 1,
-            rollover::Version::V2 => self.hours_to_extend_in_rollover()?,
+            rollover::Version::V1 => {
+                tracing::debug!("Rollover V1");
+                1
+            }
+            rollover::Version::V2 => {
+                tracing::debug!("Rollover V2");
+                self.hours_to_extend_in_rollover()?
+            }
         };
 
         let funding_fee = calculate_funding_fee(
@@ -860,6 +866,7 @@ impl Cfd {
                 tx_fee_rate,
                 self.fee_account,
                 funding_fee,
+                version,
             ),
             self.dlc.clone().context("No DLC present")?,
             self.position,
@@ -903,6 +910,7 @@ impl Cfd {
                 tx_fee_rate,
                 self.fee_account,
                 funding_fee,
+                rollover::Version::V2,
             ),
             self.dlc.clone().context("No DLC present")?,
             self.position,

@@ -30,6 +30,7 @@ pub struct RolloverParams {
     pub fee_rate: TxFeeRate,
     pub fee_account: FeeAccount,
     pub current_fee: FundingFee,
+    pub version: Version,
 }
 
 impl RolloverParams {
@@ -43,6 +44,7 @@ impl RolloverParams {
         fee_rate: TxFeeRate,
         fee_account: FeeAccount,
         current_fee: FundingFee,
+        version: Version,
     ) -> Self {
         Self {
             price,
@@ -53,6 +55,7 @@ impl RolloverParams {
             fee_rate,
             fee_account,
             current_fee,
+            version,
         }
     }
 
