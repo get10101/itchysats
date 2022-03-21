@@ -144,7 +144,7 @@ impl Actor {
         } = msg;
 
         if self.sent_from_taker.is_some() {
-            tracing::warn!(%order_id, "Rollover already active");
+            tracing::debug!(%order_id, "Rollover already active");
             return Ok(());
         }
 
