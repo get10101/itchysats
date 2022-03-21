@@ -918,8 +918,11 @@ impl Cfd {
             .as_ref()
             .context("Collaborative close without DLC")?;
 
-        let (tx, sig_maker) = dlc.close_transaction(&proposal)?;
-        let spend_tx = dlc.finalize_spend_transaction(tx, sig_maker, sig_taker)?;
+        let (tx, sig_maker, lock_amount) = dlc.close_transaction(&proposal)?;
+
+        let spend_tx = dlc
+            .finalize_spend_transaction(tx, sig_maker, sig_taker, lock_amount)
+            .context("Failed to finalize collaborative settlement transaction")?;
         let script_pk = dlc.script_pubkey_for(Role::Maker);
 
         let settlement = CollaborativeSettlement::new(spend_tx, script_pk, proposal.price)?;
@@ -1318,7 +1321,7 @@ impl Cfd {
             .as_ref()
             .context("Collaborative close without DLC")?;
 
-        let (tx, sig) = dlc.close_transaction(proposal)?;
+        let (tx, sig, _) = dlc.close_transaction(proposal)?;
         let script_pk = dlc.script_pubkey_for(Role::Taker);
 
         Ok((tx, sig, script_pk))
@@ -1686,7 +1689,7 @@ impl Dlc {
     pub fn close_transaction(
         &self,
         proposal: &SettlementProposal,
-    ) -> Result<(Transaction, Signature)> {
+    ) -> Result<(Transaction, Signature, Amount)> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {
             let outpoint = lock_tx
@@ -1708,7 +1711,7 @@ impl Dlc {
 
         let sig = SECP256K1.sign(&sighash, &self.identity);
 
-        Ok((tx, sig))
+        Ok((tx, sig, lock_amount))
     }
 
     pub fn finalize_spend_transaction(
@@ -1716,7 +1719,13 @@ impl Dlc {
         spend_tx: Transaction,
         own_sig: Signature,
         counterparty_sig: Signature,
+        lock_amount: Amount,
     ) -> Result<Transaction> {
+        let sighash = spending_tx_sighash(&spend_tx, &self.lock.1, lock_amount);
+        SECP256K1
+            .verify(&sighash, &counterparty_sig, &self.identity_counterparty.key)
+            .context("Failed to verify counterparty signature")?;
+
         let own_pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
             SECP256K1,
             &self.identity,
