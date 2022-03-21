@@ -142,7 +142,7 @@ impl Connection {
                             min_quantity: order.min_quantity,
                             max_quantity: order.max_quantity,
                             leverage_taker: order.leverage_taker,
-                            creation_timestamp: order.creation_timestamp,
+                            creation_timestamp: order.creation_timestamp_maker,
                             settlement_interval: order.settlement_interval,
                             liquidation_price: model::calculate_long_liquidation_price(
                                 order.leverage_taker,
