@@ -1704,7 +1704,7 @@ impl Dlc {
             (&self.taker_address, proposal.taker),
             1,
         )
-        .context("Unable to collaborative close transaction")?;
+        .context("Unable to build collaborative close transaction")?;
 
         let sig = SECP256K1.sign(&sighash, &self.identity);
 
