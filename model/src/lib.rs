@@ -33,6 +33,7 @@ mod rollover;
 pub use cfd::*;
 pub use contract_setup::SetupParams;
 pub use rollover::RolloverParams;
+pub use rollover::Version as RolloverVersion;
 
 /// The time-to-live of a CFD after it is first created or rolled
 /// over.

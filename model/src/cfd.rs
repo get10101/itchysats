@@ -4,6 +4,7 @@ use crate::hex_transaction;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
+use crate::rollover;
 use crate::rollover::RolloverParams;
 use crate::FeeAccount;
 use crate::FeeFlow;
@@ -860,6 +861,7 @@ impl Cfd {
         self,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
+        version: rollover::Version,
     ) -> Result<(CfdEvent, RolloverParams, Dlc, Position, Duration)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
@@ -869,7 +871,17 @@ impl Cfd {
             bail!("Can only accept proposal as a maker");
         }
 
-        let hours_to_charge = self.hours_to_extend_in_rollover()?;
+        let hours_to_charge = match version {
+            rollover::Version::V1 => {
+                tracing::debug!("Rollover V1");
+                1
+            }
+            rollover::Version::V2 => {
+                tracing::debug!("Rollover V2");
+                self.hours_to_extend_in_rollover()?
+            }
+        };
+
         let funding_fee = calculate_funding_fee(
             self.initial_price,
             self.quantity,
@@ -890,6 +902,7 @@ impl Cfd {
                 tx_fee_rate,
                 self.fee_account,
                 funding_fee,
+                version,
             ),
             self.dlc.clone().context("No DLC present")?,
             self.position,
@@ -933,6 +946,7 @@ impl Cfd {
                 tx_fee_rate,
                 self.fee_account,
                 funding_fee,
+                rollover::Version::V2,
             ),
             self.dlc.clone().context("No DLC present")?,
             self.position,

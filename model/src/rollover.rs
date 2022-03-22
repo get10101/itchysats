@@ -6,6 +6,21 @@ use crate::TxFeeRate;
 use crate::Usd;
 
 #[derive(Debug, Clone, Copy)]
+pub enum Version {
+    /// Version one of the rollover protocol
+    ///
+    /// This version cannot handle charging for "missed" rollovers yet, i.e. the hours to charge is
+    /// always set to 1 hour. This version is needed for clients that are <= daemon version
+    /// `0.4.7`.
+    V1,
+    /// Version two of the rollover protocol
+    ///
+    /// This version can handle charging for "missed" rollovers, i.e. we calculate the hours to
+    /// charge based on the oracle event timestamp of the last successful rollover.
+    V2,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct RolloverParams {
     pub price: Price,
     pub quantity: Usd,
@@ -15,6 +30,7 @@ pub struct RolloverParams {
     pub fee_rate: TxFeeRate,
     pub fee_account: FeeAccount,
     pub current_fee: FundingFee,
+    pub version: Version,
 }
 
 impl RolloverParams {
@@ -28,6 +44,7 @@ impl RolloverParams {
         fee_rate: TxFeeRate,
         fee_account: FeeAccount,
         current_fee: FundingFee,
+        version: Version,
     ) -> Self {
         Self {
             price,
@@ -38,6 +55,7 @@ impl RolloverParams {
             fee_rate,
             fee_account,
             current_fee,
+            version,
         }
     }
 

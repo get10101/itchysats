@@ -28,6 +28,7 @@ use model::Origin;
 use model::Position;
 use model::Price;
 use model::Role;
+use model::RolloverVersion;
 use model::SettlementProposal;
 use model::Timestamp;
 use model::TxFeeRate;
@@ -267,6 +268,7 @@ where
         &mut self,
         RolloverProposal { order_id, .. }: RolloverProposal,
         taker_id: Identity,
+        version: RolloverVersion,
     ) -> Result<()> {
         tracing::info!(%order_id, %taker_id,  "Received rollover proposal from taker");
 
@@ -280,6 +282,7 @@ where
             self.process_manager.clone(),
             &self.takers,
             self.db.clone(),
+            version,
         )
         .create(None)
         .spawn(&mut self.tasks);
@@ -667,10 +670,29 @@ where
                             timestamp,
                         },
                         taker_id,
+                        RolloverVersion::V1,
                     )
                     .await
                 {
                     tracing::warn!("Failed to handle rollover proposal: {:#}", e);
+                }
+            }
+            wire::TakerToMaker::ProposeRolloverV2 {
+                order_id,
+                timestamp,
+            } => {
+                if let Err(e) = self
+                    .handle_propose_rollover(
+                        RolloverProposal {
+                            order_id,
+                            timestamp,
+                        },
+                        taker_id,
+                        RolloverVersion::V2,
+                    )
+                    .await
+                {
+                    tracing::warn!("Failed to handle rollover proposal V2: {:#}", e);
                 }
             }
             wire::TakerToMaker::RolloverProtocol { .. } => {
