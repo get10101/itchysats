@@ -10,6 +10,7 @@ use anyhow::Context as _;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
+use model::closing_price;
 use model::Cfd;
 use model::Identity;
 use model::MakerOffers;
@@ -32,10 +33,12 @@ pub struct TakeOffer {
     pub quantity: Usd,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ProposeSettlement {
     pub order_id: OrderId,
-    pub current_price: Price,
+    pub bid: Price,
+    pub ask: Price,
+    pub quote_timestamp: String,
 }
 
 pub struct Actor<O, W> {
@@ -118,17 +121,30 @@ impl<O, W> Actor<O, W> {
     async fn handle_propose_settlement(&mut self, msg: ProposeSettlement) -> Result<()> {
         let ProposeSettlement {
             order_id,
-            current_price,
+            bid,
+            ask,
+            quote_timestamp,
         } = msg;
+
+        let mut conn = self.db.acquire().await?;
+
+        #[allow(deprecated)]
+        // We need the position and role to decide the price here. Consider re-modelling access to
+        // quote / where to taker the decision to avoid this call.
+        let cfd = crate::command::load_cfd(order_id, &mut conn).await?;
+
+        let proposal_closing_price = closing_price(bid, ask, Role::Taker, cfd.position());
 
         let disconnected = self
             .collab_settlement_actors
             .get_disconnected(order_id)
             .with_context(|| format!("Settlement for order {order_id} is already in progress"))?;
 
+        tracing::debug!(%order_id, %proposal_closing_price, %bid, %ask, %quote_timestamp, "Proposing settlement of contract");
+
         let addr = collab_settlement_taker::Actor::new(
             order_id,
-            current_price,
+            proposal_closing_price,
             self.n_payouts,
             self.conn_actor.clone(),
             self.process_manager_actor.clone(),
