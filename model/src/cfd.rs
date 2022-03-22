@@ -40,7 +40,6 @@ use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use cached::proc_macro::cached;
 use itertools::Itertools;
-use maia::finalize_spend_transaction;
 use maia::generate_payouts;
 use maia::secp256k1_zkp;
 use maia::secp256k1_zkp::EcdsaAdaptorSignature;
@@ -919,8 +918,11 @@ impl Cfd {
             .as_ref()
             .context("Collaborative close without DLC")?;
 
-        let (tx, sig_maker) = dlc.close_transaction(&proposal)?;
-        let spend_tx = dlc.finalize_spend_transaction((tx, sig_maker), sig_taker)?;
+        let (tx, sig_maker, lock_amount) = dlc.close_transaction(&proposal)?;
+
+        let spend_tx = dlc
+            .finalize_spend_transaction(tx, sig_maker, sig_taker, lock_amount)
+            .context("Failed to finalize collaborative settlement transaction")?;
         let script_pk = dlc.script_pubkey_for(Role::Maker);
 
         let settlement = CollaborativeSettlement::new(spend_tx, script_pk, proposal.price)?;
@@ -1319,7 +1321,7 @@ impl Cfd {
             .as_ref()
             .context("Collaborative close without DLC")?;
 
-        let (tx, sig) = dlc.close_transaction(proposal)?;
+        let (tx, sig, _) = dlc.close_transaction(proposal)?;
         let script_pk = dlc.script_pubkey_for(Role::Taker);
 
         Ok((tx, sig, script_pk))
@@ -1687,7 +1689,7 @@ impl Dlc {
     pub fn close_transaction(
         &self,
         proposal: &SettlementProposal,
-    ) -> Result<(Transaction, Signature)> {
+    ) -> Result<(Transaction, Signature, Amount)> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {
             let outpoint = lock_tx
@@ -1705,29 +1707,37 @@ impl Dlc {
             (&self.taker_address, proposal.taker),
             1,
         )
-        .context("Unable to collaborative close transaction")?;
+        .context("Unable to build collaborative close transaction")?;
 
         let sig = SECP256K1.sign(&sighash, &self.identity);
 
-        Ok((tx, sig))
+        Ok((tx, sig, lock_amount))
     }
 
     pub fn finalize_spend_transaction(
         &self,
-        (close_tx, own_sig): (Transaction, Signature),
+        spend_tx: Transaction,
+        own_sig: Signature,
         counterparty_sig: Signature,
+        lock_amount: Amount,
     ) -> Result<Transaction> {
+        let sighash = spending_tx_sighash(&spend_tx, &self.lock.1, lock_amount);
+        SECP256K1
+            .verify(&sighash, &counterparty_sig, &self.identity_counterparty.key)
+            .context("Failed to verify counterparty signature")?;
+
         let own_pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
             SECP256K1,
             &self.identity,
         ));
+        let counterparty_pk = self.identity_counterparty;
 
-        let (_, lock_desc) = &self.lock;
-        let spend_tx = finalize_spend_transaction(
-            close_tx,
+        let lock_desc = &self.lock.1;
+        let spend_tx = maia::finalize_spend_transaction(
+            spend_tx,
             lock_desc,
             (own_pk, own_sig),
-            (self.identity_counterparty, counterparty_sig),
+            (counterparty_pk, counterparty_sig),
         )?;
 
         Ok(spend_tx)
@@ -1753,7 +1763,7 @@ impl Dlc {
         ));
         let counterparty_sig = self.refund.1;
         let counterparty_pubkey = self.identity_counterparty;
-        let signed_refund_tx = finalize_spend_transaction(
+        let signed_refund_tx = maia::finalize_spend_transaction(
             self.refund.0.clone(),
             &self.commit.2,
             (our_pubkey, our_sig),
@@ -1778,7 +1788,7 @@ impl Dlc {
         let counterparty_sig = self.commit.1.decrypt(&self.publish)?;
         let counterparty_pubkey = self.identity_counterparty;
 
-        let signed_commit_tx = finalize_spend_transaction(
+        let signed_commit_tx = maia::finalize_spend_transaction(
             self.commit.0.clone(),
             &self.lock.1,
             (our_pubkey, our_sig),
@@ -1835,7 +1845,7 @@ impl Dlc {
         let counterparty_sig = encsig.decrypt(&decryption_sk)?;
         let counterparty_pubkey = self.identity_counterparty;
 
-        let signed_cet = finalize_spend_transaction(
+        let signed_cet = maia::finalize_spend_transaction(
             cet,
             &self.commit.2,
             (our_pubkey, our_sig),
@@ -1958,7 +1968,6 @@ mod tests {
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
     use bdk_ext::keypair;
-    use bdk_ext::AddressExt;
     use bdk_ext::SecretKeyExt;
     use maia::lock_descriptor;
     use proptest::prelude::*;
@@ -3523,8 +3532,9 @@ mod tests {
             self.maker_lock_amount = amount_maker;
             self.identity = identity_sk;
             self.identity_counterparty = identity_counterparty_pk;
-            self.taker_address = Address::random();
-            self.maker_address = Address::random();
+
+            self.taker_address = Address::from_str("mz3SbgvUZGHaxDdRu7FtZ8MuoLgDPhLVta").unwrap();
+            self.maker_address = Address::from_str("mzMcNcKMXQdwMpdgknDQnHZiMxnQKWZ4vh").unwrap();
 
             self
         }
