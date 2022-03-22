@@ -229,7 +229,9 @@ pub struct Order {
     #[serde(rename = "leverage")]
     pub leverage_taker: Leverage,
 
-    pub creation_timestamp: Timestamp,
+    /// The creation timestamp as set by the maker
+    #[serde(rename = "creation_timestamp")]
+    pub creation_timestamp_maker: Timestamp,
 
     /// The duration that will be used for calculating the settlement timestamp
     pub settlement_interval: Duration,
@@ -270,7 +272,7 @@ impl Order {
             leverage_taker: leverage_choices_for_taker,
             trading_pair: TradingPair::BtcUsd,
             position_maker,
-            creation_timestamp: Timestamp::now(),
+            creation_timestamp_maker: Timestamp::now(),
             settlement_interval,
             origin,
             oracle_event_id,
@@ -294,6 +296,41 @@ impl Order {
             self.funding_rate,
             self.opening_fee,
         )
+    }
+
+    /// Defines when we consider an order to be outdated
+    ///
+    /// If the maker's offer creation timestamp is older than `OUTDATED_AFTER_MINS` minutes then we
+    /// consider an order to be outdated.
+    const OUTDATED_AFTER_MINS: i64 = 10;
+
+    /// Defines when we consider the order to be outdated.
+    ///
+    /// This is used as a safety net to prevent the taker from taking an outdated order.
+    pub fn is_safe_to_take(&self, now: OffsetDateTime) -> bool {
+        !self.is_creation_timestamp_outdated(now) && self.is_oracle_event_timestamp_sane(now)
+    }
+
+    /// Check if the the maker's offer creation timestamp is outdated
+    ///
+    /// If the creation timestamp is older than `OUTDATED_AFTER_MINS` minutes the offer is
+    /// considered outdated
+    fn is_creation_timestamp_outdated(&self, now: OffsetDateTime) -> bool {
+        self.creation_timestamp_maker.seconds() + (Self::OUTDATED_AFTER_MINS * 60)
+            < now.unix_timestamp()
+    }
+
+    /// Check the oracle event's timestamp for sanity
+    ///
+    /// An id within [25h, 23h] from now is considered sane.
+    fn is_oracle_event_timestamp_sane(&self, now: OffsetDateTime) -> bool {
+        let event_id_timestamp = self.oracle_event_id.timestamp();
+
+        let settlement_interval_minus_one_hour = now + SETTLEMENT_INTERVAL - Duration::HOUR;
+        let settlement_interval_plus_one_hour = now + SETTLEMENT_INTERVAL + Duration::HOUR;
+
+        event_id_timestamp >= settlement_interval_minus_one_hour
+            && event_id_timestamp <= settlement_interval_plus_one_hour
     }
 }
 
@@ -1988,6 +2025,7 @@ mod tests {
     use bdk_ext::SecretKeyExt;
     use maia::lock_descriptor;
     use proptest::prelude::*;
+    use rand::thread_rng;
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
     use std::str::FromStr;
@@ -3095,7 +3133,6 @@ mod tests {
         (taker_payout.as_sat(), maker_payout.as_sat())
     }
 
-    use rand::thread_rng;
     proptest! {
         #[test]
         fn rollover_funding_fee_collected_incrementally_should_not_be_smaller_than_collected_once_per_settlement_interval(quantity in 1u64..100_000u64) {
@@ -3127,6 +3164,111 @@ mod tests {
             total_balance_when_collected_hourly - total_balance_when_collected_for_whole_interval < SignedAmount::from_sat(30), "we should not overcharge"
        );
     }
+    }
+
+    #[test]
+    fn given_order_creation_timestamp_outdated_then_order_outdated() {
+        let creation_timestamp = Timestamp::now();
+        let order = Order::dummy_short().with_creation_timestamp(creation_timestamp);
+
+        let now =
+            OffsetDateTime::now_utc() + Duration::seconds(Order::OUTDATED_AFTER_MINS * 60 + 1);
+
+        assert!(order.is_creation_timestamp_outdated(now))
+    }
+
+    #[test]
+    fn given_order_creation_timestamp_not_outdated_then_order_not_outdated() {
+        let creation_timestamp = Timestamp::now();
+        let order = Order::dummy_short().with_creation_timestamp(creation_timestamp);
+
+        let now =
+            OffsetDateTime::now_utc() + Duration::seconds(Order::OUTDATED_AFTER_MINS * 60 - 1);
+
+        assert!(!order.is_creation_timestamp_outdated(now))
+    }
+
+    #[test]
+    fn given_oracle_event_id_is_24h_in_the_future_then_sane_to_take() {
+        // --|---------|---------|----------------------------------|--> time
+        //   -1h       |         +1h                                24h
+        // --|---------|<--------|--------------------------------->|--
+        //             now
+
+        let order = Order::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let sane =
+            order.is_oracle_event_timestamp_sane(datetime!(2021-11-18 10:00:00).assume_utc());
+        assert!(sane)
+    }
+
+    #[test]
+    fn given_oracle_event_id_is_23h_in_the_future_then_sane_to_take() {
+        // --|---------|---------|----------------------------------|--> time
+        //   -1h       |         +1h                                24h
+        // --|---------|<--------|--------------------------------->|--
+        //                       now
+
+        let order = Order::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let sane =
+            order.is_oracle_event_timestamp_sane(datetime!(2021-11-18 11:00:00).assume_utc());
+        assert!(sane, "the oracle event id is outdated")
+    }
+
+    #[test]
+    fn given_oracle_event_id_is_25h_in_the_future_then_sane_to_take() {
+        // --|---------|---------|----------------------------------|--> time
+        //   -1h       |         +1h                                24h
+        // --|---------|<--------|--------------------------------->|--
+        //   now
+
+        let order = Order::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let sane =
+            order.is_oracle_event_timestamp_sane(datetime!(2021-11-18 09:00:00).assume_utc());
+        assert!(sane, "the oracle event id is to far in the future")
+    }
+
+    #[test]
+    fn given_oracle_event_id_is_more_than_25h_in_the_future_then_not_sane_to_take() {
+        // --|---------|---------|----------------------------------|--> time
+        //   -1h1s     |         +1h                                24h
+        // --|---------|<--------|--------------------------------->|--
+        //   now
+
+        let order = Order::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let sane =
+            order.is_oracle_event_timestamp_sane(datetime!(2021-11-18 08:59:59).assume_utc());
+        assert!(
+            !sane,
+            "an oracle event id that is too far in the future got accepted"
+        )
+    }
+
+    #[test]
+    fn given_oracle_event_id_is_less_than_23h_in_the_future_then_not_sane_to_take() {
+        // --|---------|---------|----------------------------------|--> time
+        //   -1h       |         +1h1s                              24h
+        // --|---------|<--------|--------------------------------->|--
+        //                       now
+
+        let order = Order::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+        ));
+
+        let sane =
+            order.is_oracle_event_timestamp_sane(datetime!(2021-11-18 11:00:01).assume_utc());
+        assert!(!sane, "an oracle event id that is outdated got accepted")
     }
 
     impl CfdEvent {
@@ -3481,6 +3623,16 @@ mod tests {
 
         fn with_funding_rate(mut self, funding_rate: FundingRate) -> Self {
             self.funding_rate = funding_rate;
+            self
+        }
+
+        fn with_creation_timestamp(mut self, creation_timestamp: Timestamp) -> Self {
+            self.creation_timestamp_maker = creation_timestamp;
+            self
+        }
+
+        fn with_oracle_event_id(mut self, event_id: BitMexPriceEventId) -> Self {
+            self.oracle_event_id = event_id;
             self
         }
     }

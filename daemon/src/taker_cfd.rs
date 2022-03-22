@@ -6,7 +6,8 @@ use crate::process_manager;
 use crate::projection;
 use crate::setup_taker;
 use crate::wallet;
-use anyhow::Context as _;
+use anyhow::bail;
+use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
@@ -19,6 +20,7 @@ use model::Origin;
 use model::Price;
 use model::Role;
 use model::Usd;
+use time::OffsetDateTime;
 use tokio_tasks::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
@@ -183,7 +185,18 @@ where
             .take_order(order_id);
 
         let order_to_take = order_to_take.context("Order to take could not be found in current maker offers, you might have an outdated offer")?;
+
+        // The offer we are instructed to take is removed from the
+        // set of available offers immediately so that we don't attempt
+        // to take it more than once
         self.current_maker_offers.replace(maker_offers);
+
+        if !order_to_take.is_safe_to_take(OffsetDateTime::now_utc()) {
+            bail!(
+                "The maker's offer appears to be outdated, refusing to take: {:?}",
+                &order_to_take
+            );
+        }
 
         tracing::info!("Taking current order: {:?}", &order_to_take);
 

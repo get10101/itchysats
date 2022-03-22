@@ -1056,7 +1056,7 @@ impl TryFrom<Order> for CfdOrder {
             margin_per_lot,
             taker_leverage_choices: order.leverage_taker,
             liquidation_price,
-            creation_timestamp: order.creation_timestamp,
+            creation_timestamp: order.creation_timestamp_maker,
             settlement_time_interval_in_secs: order
                 .settlement_interval
                 .whole_seconds()
