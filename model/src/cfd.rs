@@ -1958,7 +1958,6 @@ mod tests {
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
     use bdk_ext::keypair;
-    use bdk_ext::AddressExt;
     use bdk_ext::SecretKeyExt;
     use maia::lock_descriptor;
     use proptest::prelude::*;
@@ -3523,8 +3522,9 @@ mod tests {
             self.maker_lock_amount = amount_maker;
             self.identity = identity_sk;
             self.identity_counterparty = identity_counterparty_pk;
-            self.taker_address = Address::random();
-            self.maker_address = Address::random();
+
+            self.taker_address = Address::from_str("mz3SbgvUZGHaxDdRu7FtZ8MuoLgDPhLVta").unwrap();
+            self.maker_address = Address::from_str("mzMcNcKMXQdwMpdgknDQnHZiMxnQKWZ4vh").unwrap();
 
             self
         }
