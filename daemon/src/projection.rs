@@ -19,6 +19,7 @@ use model::calculate_margin;
 use model::calculate_profit;
 use model::calculate_profit_at_price;
 use model::calculate_short_liquidation_price;
+use model::closing_price;
 use model::long_and_short_leverage;
 use model::CfdEvent;
 use model::Dlc;
@@ -573,13 +574,9 @@ impl Cfd {
             }
         };
 
-        let latest_price = match self.role {
-            Role::Maker => latest_quote.for_maker(),
-            Role::Taker => latest_quote.for_taker(),
-        };
-        let latest_price = match Price::new(latest_price) {
-            Ok(latest_price) => latest_price,
-            Err(e) => {
+        let (bid, ask) = match (Price::new(latest_quote.bid), Price::new(latest_quote.ask)) {
+            (Ok(bid), Ok(ask)) => (bid, ask),
+            (Err(e), Err(_)) | (Err(e), Ok(_)) | (Ok(_), Err(e)) => {
                 tracing::warn!(
                     "Failed to compute profit/loss because latest price is invalid: {e}"
                 );
@@ -593,12 +590,14 @@ impl Cfd {
             }
         };
 
+        let closing_price = closing_price(bid, ask, self.role, self.position);
+
         let (long_leverage, short_leverage) =
             long_and_short_leverage(self.leverage_taker, self.role, self.position);
 
         let (profit_btc, profit_percent, payout) = match calculate_profit_at_price(
             self.initial_price,
-            latest_price,
+            closing_price,
             self.quantity_usd,
             long_leverage,
             short_leverage,

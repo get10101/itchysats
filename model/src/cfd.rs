@@ -1469,6 +1469,23 @@ pub fn long_and_short_leverage(
     }
 }
 
+/// Decide the closing price according to role and position
+///
+/// Depending on role and position the closing price is determined from bid and ask price of the
+/// maker.
+/// Taker is long: When closing the taker sells short to close the position, i.e. the bid price
+/// applies.
+/// Taker is short: When closing the taker buys long to close the position, i.e. the
+/// ask price applies.
+/// In order to show the same closing price for maker and taker we need to take the counter-position
+/// for the maker.
+pub fn closing_price(bid: Price, ask: Price, role: Role, position: Position) -> Price {
+    match (role, position) {
+        (Role::Taker, Position::Long) | (Role::Maker, Position::Short) => bid,
+        (Role::Taker, Position::Short) | (Role::Maker, Position::Long) => ask,
+    }
+}
+
 /// Calculates the margin in BTC
 ///
 /// The initial margin represents the collateral both parties have to come up with

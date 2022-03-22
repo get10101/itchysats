@@ -420,13 +420,10 @@ where
             .context("Price feed not available")?
             .context("No quote available")?;
 
-        let current_price = Price::new(latest_quote.for_taker())?;
         let quote_timestamp = latest_quote
             .timestamp
             .format(&time::format_description::well_known::Rfc3339)
             .context("Failed to format timestamp")?;
-
-        tracing::debug!(%order_id, %current_price, %quote_timestamp, "Proposing settlement of contract");
 
         let threshold = QUOTE_INTERVAL_MINUTES.minutes() * 2;
 
@@ -440,7 +437,9 @@ where
         self.cfd_actor
             .send(taker_cfd::ProposeSettlement {
                 order_id,
-                current_price,
+                bid: Price::new(latest_quote.bid())?,
+                ask: Price::new(latest_quote.ask())?,
+                quote_timestamp,
             })
             .await?
     }

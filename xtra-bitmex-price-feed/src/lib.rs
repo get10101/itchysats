@@ -2,7 +2,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use std::fmt;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;
@@ -153,16 +152,12 @@ impl Quote {
         }))
     }
 
-    pub fn for_maker(&self) -> Decimal {
+    pub fn bid(&self) -> Decimal {
+        self.bid
+    }
+
+    pub fn ask(&self) -> Decimal {
         self.ask
-    }
-
-    pub fn for_taker(&self) -> Decimal {
-        self.mid_range()
-    }
-
-    fn mid_range(&self) -> Decimal {
-        (self.bid + self.ask) / dec!(2)
     }
 
     pub fn is_older_than(&self, duration: time::Duration) -> bool {
@@ -201,6 +196,7 @@ mod wire {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal_macros::dec;
     use time::ext::NumericalDuration;
 
     #[test]
