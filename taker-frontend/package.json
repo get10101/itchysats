@@ -29,7 +29,7 @@
     "eslint-config-react-app": "^7.0.0",
     "framer-motion": "^6",
     "jest": "^27.5.1",
-    "npm-package-json-lint": "^6.0.3",
+    "npm-package-json-lint": "^6.3.0",
     "react": "^17.0.2",
     "react-async": "^10.0.1",
     "react-dom": "^17.0.2",
