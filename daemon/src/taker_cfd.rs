@@ -199,10 +199,7 @@ where
             .await?;
 
         if !order_to_take.is_safe_to_take(OffsetDateTime::now_utc()) {
-            bail!(
-                "The maker's offer appears to be outdated, refusing to take: {:?}",
-                &order_to_take
-            );
+            bail!("The maker's offer appears to be outdated, refusing to take offer",);
         }
 
         tracing::info!("Taking current order: {:?}", &order_to_take);
