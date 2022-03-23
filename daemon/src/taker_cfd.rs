@@ -189,14 +189,12 @@ where
         // The offer we are instructed to take is removed from the
         // set of available offers immediately so that we don't attempt
         // to take it more than once
-        self.current_maker_offers.replace(maker_offers);
-
-        // Cleanup own order feed
-        // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
-        // same order id.
-        self.projection_actor
-            .send(projection::Update(self.current_maker_offers))
-            .await?;
+        {
+            self.current_maker_offers.replace(maker_offers);
+            self.projection_actor
+                .send(projection::Update(self.current_maker_offers))
+                .await?;
+        }
 
         if !order_to_take.is_safe_to_take(OffsetDateTime::now_utc()) {
             bail!("The maker's offer appears to be outdated, refusing to take offer",);
