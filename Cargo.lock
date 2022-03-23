@@ -675,7 +675,7 @@ dependencies = [
 
 [[package]]
 name = "daemon"
-version = "0.4.7"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1569,7 +1569,7 @@ dependencies = [
 
 [[package]]
 name = "maker"
-version = "0.4.7"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3557,7 +3557,7 @@ dependencies = [
 
 [[package]]
 name = "taker"
-version = "0.4.7"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
