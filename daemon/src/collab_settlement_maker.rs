@@ -1,6 +1,7 @@
 use crate::command;
 use crate::maker_inc_connections;
 use crate::process_manager;
+use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -8,19 +9,31 @@ use maia::secp256k1_zkp::Signature;
 use model::CollaborativeSettlement;
 use model::Identity;
 use model::SettlementProposal;
+use std::time::Duration;
+use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
+
+/// Timeout for waiting for the `Initiate` message from the taker
+///
+/// This timeout is started when handling accept.
+/// If the taker does not come back with `Initiate` until the timeout is triggered we fail the
+/// settlement. If the taker does come back with `Initiate` before the timeout is reached, we don't
+/// fail the settlement even if the timeout is triggered.
+const INITIATE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct Actor {
     proposal: SettlementProposal,
     taker_id: Identity,
     connections: Box<dyn MessageChannel<maker_inc_connections::settlement::Response>>,
     has_accepted: bool,
+    is_initiated: bool,
     n_payouts: usize,
     executor: command::Executor,
     db: sqlx::SqlitePool,
+    tasks: Tasks,
 }
 
 #[derive(Clone, Copy)]
@@ -47,6 +60,8 @@ impl Actor {
     }
 
     async fn handle(&mut self, msg: Initiated, ctx: &mut xtra::Context<Self>) {
+        self.is_initiated = true;
+
         match async {
             tracing::info!(
                 order_id = %self.proposal.order_id,
@@ -71,6 +86,37 @@ impl Actor {
             Ok(settlement) => self.emit_completed(settlement, ctx).await,
             Err(e) => self.emit_failed(e, ctx).await,
         };
+    }
+
+    pub async fn handle_initiate_timeout_reached(
+        &mut self,
+        msg: InitiateTimeoutReached,
+        ctx: &mut xtra::Context<Self>,
+    ) {
+        // If the taker sent us the Initiate message we know that we will finish either by
+        // completing or by failing the protocol
+        if self.is_initiated {
+            return;
+        }
+
+        // Otherwise, fail because the taker did not Initiate the protocol
+        let timeout = msg.timeout.as_secs();
+        if let Err(e) = self
+            .executor
+            .execute(self.proposal.order_id, |cfd| {
+                Ok(cfd.fail_collaborative_settlement(anyhow!(
+                    "Taker did not initiate within {timeout} seconds"
+                )))
+            })
+            .await
+        {
+            tracing::warn!(
+                order_id=%self.proposal.order_id, "Failed to execute `fail_collaborative_settlement` command: {:#}",
+                e
+            );
+        }
+
+        ctx.stop()
     }
 }
 
@@ -118,6 +164,8 @@ impl Actor {
             n_payouts,
             executor: command::Executor::new(db.clone(), process_manager),
             db,
+            tasks: Tasks::default(),
+            is_initiated: false,
         }
     }
 
@@ -195,6 +243,20 @@ impl Actor {
             })
             .await?;
 
+        let timeout = {
+            let this = ctx.address().expect("self to be alive");
+            async move {
+                tokio::time::sleep(INITIATE_TIMEOUT).await;
+
+                let _ = this
+                    .send(InitiateTimeoutReached {
+                        timeout: INITIATE_TIMEOUT,
+                    })
+                    .await;
+            }
+        };
+        self.tasks.add(timeout);
+
         let this = ctx.address().expect("self to be alive");
         self.connections
             .send(maker_inc_connections::settlement::Response {
@@ -224,4 +286,12 @@ impl Actor {
         self.emit_rejected(anyhow::format_err!("unknown"), ctx)
             .await;
     }
+}
+
+/// Message sent from the spawned task to `collab_settlement_maker::Actor` to
+/// notify that the timeout has been reached.
+///
+/// It is up to the actor to reason whether or not the protocol has progressed since then.
+struct InitiateTimeoutReached {
+    timeout: Duration,
 }

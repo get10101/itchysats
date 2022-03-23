@@ -223,11 +223,11 @@ impl xtra::Actor for Actor {
             async move {
                 tokio::time::sleep(MAKER_RESPONSE_TIMEOUT).await;
 
-                this.send(MakerResponseTimeoutReached {
-                    timeout: MAKER_RESPONSE_TIMEOUT,
-                })
-                .await
-                .expect("can send to ourselves");
+                let _ = this
+                    .send(MakerResponseTimeoutReached {
+                        timeout: MAKER_RESPONSE_TIMEOUT,
+                    })
+                    .await;
             }
         };
 
