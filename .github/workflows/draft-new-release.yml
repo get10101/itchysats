@@ -29,15 +29,6 @@ jobs:
           git config user.name "${{ secrets.ITCHY_NAME }}"
           git config user.email ${{ secrets.ITCHY_EMAIL }}
 
-      - name: Bump version in Cargo.toml
-        uses: thomaseizinger/set-crate-version@1.0.0
-        with:
-          version: ${{ github.event.inputs.version }}
-          manifest: daemon/Cargo.toml
-
-      - name: Update Cargo.lock
-        run: cargo update --workspace
-
       - name: Update changelog
         uses: thomaseizinger/keep-a-changelog-new-release@v1
         with:
@@ -49,7 +40,7 @@ jobs:
           curl -fsSL https://dprint.dev/install.sh | sh
           /home/runner/.dprint/bin/dprint fmt
 
-          git add Cargo.lock daemon/Cargo.toml CHANGELOG.md
+          git add CHANGELOG.md
           git commit --message "Prepare release ${{ github.event.inputs.version }}"
 
           echo "::set-output name=commit::$(git rev-parse HEAD)"
