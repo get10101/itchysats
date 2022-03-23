@@ -191,6 +191,13 @@ where
         // to take it more than once
         self.current_maker_offers.replace(maker_offers);
 
+        // Cleanup own order feed
+        // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
+        // same order id.
+        self.projection_actor
+            .send(projection::Update(self.current_maker_offers))
+            .await?;
+
         if !order_to_take.is_safe_to_take(OffsetDateTime::now_utc()) {
             bail!(
                 "The maker's offer appears to be outdated, refusing to take: {:?}",
@@ -208,13 +215,6 @@ where
         db::insert_cfd(&cfd, &mut conn).await?;
         self.projection_actor
             .send(projection::CfdChanged(cfd.id()))
-            .await?;
-
-        // Cleanup own order feed, after inserting the cfd.
-        // Due to the 1:1 relationship between order and cfd we can never create another cfd for the
-        // same order id.
-        self.projection_actor
-            .send(projection::Update(self.current_maker_offers))
             .await?;
 
         let price_event_id = order_to_take.oracle_event_id;
