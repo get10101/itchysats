@@ -176,11 +176,11 @@ impl xtra::Actor for Actor {
             async move {
                 tokio::time::sleep(MAKER_RESPONSE_TIMEOUT).await;
 
-                this.send(MakerResponseTimeoutReached {
-                    timeout: MAKER_RESPONSE_TIMEOUT,
-                })
-                .await
-                .expect("can send to ourselves");
+                let _ = this
+                    .send(MakerResponseTimeoutReached {
+                        timeout: MAKER_RESPONSE_TIMEOUT,
+                    })
+                    .await;
             }
         };
 
@@ -243,7 +243,7 @@ impl Actor {
             .await
         {
             tracing::warn!(
-                "Failed to execute `fail_collaborative_settlement` command: {:#}",
+                order_id=%self.order_id, "Failed to execute `fail_collaborative_settlement` command: {:#}",
                 e
             );
         }
