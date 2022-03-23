@@ -156,7 +156,7 @@ impl Actor {
 
         self.sent_from_taker = Some(sender);
 
-        tracing::debug!(%order_id, "Maker accepts a rollover proposal");
+        tracing::debug!(%order_id, rollover_version = %self.version, "Maker accepts a rollover proposal");
 
         let (rollover_params, dlc, position, interval, funding_rate) = self
             .executor
