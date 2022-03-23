@@ -383,8 +383,9 @@ impl Actor {
     }
 
     async fn handle_read_fail(&mut self, msg: ReadFail) {
-        let taker_id = msg.0;
-        tracing::debug!(%taker_id, "Failed to read incoming messages from taker");
+        let ReadFail { taker_id, error } = msg;
+
+        tracing::debug!(%taker_id, "Failed to read incoming messages from taker: {error:#}");
 
         self.drop_taker_connection(&taker_id).await;
     }
@@ -417,26 +418,40 @@ impl Actor {
             .await;
 
         let mut tasks = Tasks::default();
-        tasks.add({
-            let this = this.clone();
+        tasks.add_fallible(
+            {
+                let this = this.clone();
 
-            async move {
-                while let Ok(Some(msg)) = read.try_next().await {
-                    let res = this
-                        .send(maker_cfd::FromTaker {
+                async move {
+                    loop {
+                        let msg = read
+                            .try_next()
+                            .await
+                            .context("Failed to read from socket")?
+                            .context("End of stream")?;
+
+                        this.send(maker_cfd::FromTaker {
                             taker_id: identity,
                             msg,
                         })
-                        .await;
-
-                    if res.is_err() {
-                        break;
+                        .await
+                        .context("`maker_cfd::Actor` is disconnected")?;
                     }
                 }
+            },
+            {
+                let this = this.clone();
 
-                let _ = this.send(ReadFail(identity)).await;
-            }
-        });
+                move |error| async move {
+                    let _ = this
+                        .send(ReadFail {
+                            taker_id: identity,
+                            error,
+                        })
+                        .await;
+                }
+            },
+        );
         tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)));
 
         self.connections.insert(
@@ -609,7 +624,10 @@ struct ConnectionReady {
     daemon_version: String,
 }
 
-struct ReadFail(Identity);
+struct ReadFail {
+    taker_id: Identity,
+    error: anyhow::Error,
+}
 
 struct ListenerFailed {
     error: anyhow::Error,
