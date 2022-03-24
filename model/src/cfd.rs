@@ -884,7 +884,13 @@ impl Cfd {
             hours_to_charge as i64,
         )?;
 
-        tracing::debug!(order_id = %self.id, rollover_version = %version, %hours_to_charge, "Accepting rollover proposal");
+        tracing::debug!(
+            order_id = %self.id,
+            rollover_version = %version,
+            %hours_to_charge,
+            funding_fee = %funding_fee.compute_relative(self.position),
+            "Accepting rollover proposal"
+        );
 
         Ok((
             CfdEvent::new(self.id, EventKind::RolloverAccepted),

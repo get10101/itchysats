@@ -728,6 +728,32 @@ impl FundingFee {
         })
     }
 
+    /// Calculate the fee paid or earned for a party in a particular
+    /// position.
+    ///
+    /// A positive sign means that the party in the `position` passed
+    /// as an argument is paying the funding fee; a negative sign
+    /// means that they are earning the funding fee.
+    fn compute_relative(&self, position: Position) -> SignedAmount {
+        let funding_rate = self.rate.0;
+        let fee = self.fee.to_signed().expect("fee to fit in SignedAmount");
+
+        // long pays short
+        if funding_rate.is_sign_positive() {
+            match position {
+                Position::Long => fee,
+                Position::Short => fee * (-1),
+            }
+        }
+        // short pays long
+        else {
+            match position {
+                Position::Long => fee * (-1),
+                Position::Short => fee,
+            }
+        }
+    }
+
     #[cfg(test)]
     fn new(fee: Amount, rate: FundingRate) -> Self {
         Self { fee, rate }
@@ -1254,6 +1280,54 @@ mod tests {
         .unwrap();
 
         assert_eq!(fee.fee, Amount::ZERO)
+    }
+
+    #[test]
+    fn given_positive_funding_rate_when_position_long_then_relative_fee_is_positive() {
+        let positive_funding_rate = FundingRate::new(dec!(0.001)).unwrap();
+        let long = Position::Long;
+
+        let funding_fee = FundingFee::new(dummy_amount(), positive_funding_rate);
+        let relative = funding_fee.compute_relative(long);
+
+        assert!(relative.is_positive())
+    }
+
+    #[test]
+    fn given_positive_funding_rate_when_position_short_then_relative_fee_is_negative() {
+        let positive_funding_rate = FundingRate::new(dec!(0.001)).unwrap();
+        let short = Position::Short;
+
+        let funding_fee = FundingFee::new(dummy_amount(), positive_funding_rate);
+        let relative = funding_fee.compute_relative(short);
+
+        assert!(relative.is_negative())
+    }
+
+    #[test]
+    fn given_negative_funding_rate_when_position_long_then_relative_fee_is_negative() {
+        let negative_funding_rate = FundingRate::new(dec!(-0.001)).unwrap();
+        let long = Position::Long;
+
+        let funding_fee = FundingFee::new(dummy_amount(), negative_funding_rate);
+        let relative = funding_fee.compute_relative(long);
+
+        assert!(relative.is_negative())
+    }
+
+    #[test]
+    fn given_negative_funding_rate_when_position_short_then_relative_fee_is_positive() {
+        let negative_funding_rate = FundingRate::new(dec!(-0.001)).unwrap();
+        let short = Position::Short;
+
+        let funding_fee = FundingFee::new(dummy_amount(), negative_funding_rate);
+        let relative = funding_fee.compute_relative(short);
+
+        assert!(relative.is_positive())
+    }
+
+    fn dummy_amount() -> Amount {
+        Amount::from_sat(500)
     }
 
     fn dummy_price() -> Price {
