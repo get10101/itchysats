@@ -270,8 +270,6 @@ where
         taker_id: Identity,
         version: RolloverVersion,
     ) -> Result<()> {
-        tracing::info!(%order_id, %taker_id,  "Received rollover proposal from taker");
-
         let rollover_actor_addr = rollover_maker::Actor::new(
             order_id,
             self.n_payouts,

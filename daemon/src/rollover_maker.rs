@@ -267,9 +267,11 @@ impl xtra::Actor for Actor {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let order_id = self.order_id;
+        let taker_id = self.taker_id;
 
         tracing::info!(
             %order_id,
+            %taker_id,
             "Received rollover proposal"
         );
 
