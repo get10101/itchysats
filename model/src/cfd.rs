@@ -886,7 +886,7 @@ impl Cfd {
         )?;
 
         tracing::debug!(order_id = %self.id, rollover_version = %version,
-            interval_in_hours = %self.settlement_interval.whole_hours(), "Maker accepting a rollover proposal");
+            interval_in_hours = %self.settlement_interval.whole_hours(), "Accepting rollover proposal");
 
         Ok((
             CfdEvent::new(self.id, EventKind::RolloverAccepted),
