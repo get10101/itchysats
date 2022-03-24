@@ -358,19 +358,19 @@ where
             .send(projection::Update(self.current_offers))
             .await?;
 
-        db::insert_cfd(&cfd, &mut conn).await?;
-        self.projection
-            .send(projection::CfdChanged(cfd.id()))
-            .await?;
-
-        // 4. Try to get the oracle announcement, if that fails we should exit prior to changing any
+        // 3. Try to get the oracle announcement, if that fails we should exit prior to changing any
         // state
         let announcement = self
             .oracle
             .send(oracle::GetAnnouncement(order_to_take.oracle_event_id))
             .await??;
 
-        // 5. Start up contract setup actor
+        db::insert_cfd(&cfd, &mut conn).await?;
+        self.projection
+            .send(projection::CfdChanged(cfd.id()))
+            .await?;
+
+        // 4. Start up contract setup actor
         let addr = setup_maker::Actor::new(
             self.db.clone(),
             self.process_manager.clone(),

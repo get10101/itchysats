@@ -207,17 +207,17 @@ where
         // recorded
         let cfd = Cfd::from_order(order_to_take, quantity, self.maker_identity, Role::Taker);
 
-        db::insert_cfd(&cfd, &mut conn).await?;
-        self.projection_actor
-            .send(projection::CfdChanged(cfd.id()))
-            .await?;
-
         let price_event_id = order_to_take.oracle_event_id;
         let announcement = self
             .oracle_actor
             .send(oracle::GetAnnouncement(price_event_id))
             .await?
             .with_context(|| format!("Announcement {price_event_id} not found"))?;
+
+        db::insert_cfd(&cfd, &mut conn).await?;
+        self.projection_actor
+            .send(projection::CfdChanged(cfd.id()))
+            .await?;
 
         let addr = setup_taker::Actor::new(
             self.db.clone(),
