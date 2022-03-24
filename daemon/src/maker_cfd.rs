@@ -366,9 +366,7 @@ where
             .await??;
 
         db::insert_cfd(&cfd, &mut conn).await?;
-        self.projection
-            .send(projection::CfdChanged(cfd.id()))
-            .await?;
+        self.projection.send(projection::NewCfd(cfd.id())).await?;
 
         // 4. Start up contract setup actor
         let addr = setup_maker::Actor::new(

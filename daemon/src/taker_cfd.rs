@@ -216,7 +216,7 @@ where
 
         db::insert_cfd(&cfd, &mut conn).await?;
         self.projection_actor
-            .send(projection::CfdChanged(cfd.id()))
+            .send(projection::NewCfd(cfd.id()))
             .await?;
 
         let addr = setup_taker::Actor::new(

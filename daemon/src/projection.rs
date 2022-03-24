@@ -60,6 +60,9 @@ pub struct Update<T>(pub T);
 #[derive(Clone, Copy)]
 pub struct CfdChanged(pub OrderId);
 
+/// Indicates that we added a new CFD to the database.
+pub struct NewCfd(pub OrderId);
+
 /// Perform the bulk initialisation of the CFD feed
 #[derive(Clone, Copy)]
 struct Initialize;
@@ -846,6 +849,21 @@ impl Actor {
     }
 
     async fn handle(&mut self, msg: CfdChanged) {
+        if let Err(e) = self.state.update_cfd(self.db.clone(), msg.0).await {
+            tracing::error!("Failed to rehydrate CFD: {e:#}");
+            return;
+        };
+
+        self.tx
+            .send_cfds_update(self.state.cfds.clone(), self.state.quote);
+    }
+
+    /// Updates the projection state with the new CFD.
+    ///
+    /// In theory, we could send freshly minted CFD over but it is a different Rust struct and
+    /// mapping it is tedious. Loading a new CFD from the DB is cheap so we just do that
+    /// instead.
+    async fn handle(&mut self, msg: NewCfd) {
         if let Err(e) = self.state.update_cfd(self.db.clone(), msg.0).await {
             tracing::error!("Failed to rehydrate CFD: {e:#}");
             return;
