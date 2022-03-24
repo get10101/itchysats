@@ -664,10 +664,18 @@ impl Default for OpeningFee {
     }
 }
 
-/// Funding fee as defined by position and rate
+/// Fee paid between takers and makers periodically.
 ///
-/// Position and rate define if the funding rate is to be added or subtracted when summing up the
-/// fees.
+/// The `fee` field represents the absolute value of this fee.
+///
+/// The sign of the `rate` field determines the direction of payment:
+///
+/// - If positive, the fee is paid from long to short.
+/// - If negative, the fee is paid from short to long.
+///
+/// The reason for the existence of this fee is so that the party that
+/// is betting against the market trend is passively rewarded for
+/// keeping the CFD open.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct FundingFee {
     #[serde(with = "bdk::bitcoin::util::amount::serde::as_sat")]
