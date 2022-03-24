@@ -262,7 +262,7 @@ impl Aggregated {
                     Role::Maker => CfdState::IncomingSettlementProposal,
                     Role::Taker => CfdState::OutgoingSettlementProposal,
                 },
-                ProtocolNegotiationState::Accepted => CfdState::PendingClose,
+                ProtocolNegotiationState::Accepted => CfdState::IncomingSettlementProposal,
             };
         };
         if let Some(rollover_state) = self.rollover_state {
