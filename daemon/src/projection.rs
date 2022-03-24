@@ -13,7 +13,6 @@ use bdk::miniscript::DescriptorTrait;
 use core::fmt;
 use itertools::Itertools;
 use maia::TransactionExt;
-use model::calculate_funding_fee;
 use model::calculate_long_liquidation_price;
 use model::calculate_margin;
 use model::calculate_profit;
@@ -25,6 +24,7 @@ use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
 use model::FeeAccount;
+use model::FundingFee;
 use model::FundingRate;
 use model::Leverage;
 use model::OrderId;
@@ -330,7 +330,7 @@ impl Cfd {
         let (long_leverage, short_leverage) =
             long_and_short_leverage(taker_leverage, role, position);
 
-        let initial_funding_fee = calculate_funding_fee(
+        let initial_funding_fee = FundingFee::calculate(
             initial_price,
             quantity_usd,
             long_leverage,
@@ -1017,7 +1017,7 @@ impl TryFrom<Order> for CfdOrder {
         let (long_leverage, short_leverage) =
             long_and_short_leverage(order.leverage_taker, role, own_position);
 
-        let initial_funding_fee_per_lot = calculate_funding_fee(
+        let initial_funding_fee_per_lot = FundingFee::calculate(
             order.price,
             lot_size,
             long_leverage,

@@ -676,6 +676,50 @@ pub struct FundingFee {
 }
 
 impl FundingFee {
+    pub fn calculate(
+        price: Price,
+        quantity: Usd,
+        long_leverage: Leverage,
+        short_leverage: Leverage,
+        funding_rate: FundingRate,
+        hours_to_charge: i64,
+    ) -> Result<Self> {
+        if funding_rate.0.is_zero() {
+            return Ok(Self {
+                fee: Amount::ZERO,
+                rate: funding_rate,
+            });
+        }
+
+        let margin = if funding_rate.short_pays_long() {
+            calculate_margin(price, quantity, long_leverage)
+        } else {
+            calculate_margin(price, quantity, short_leverage)
+        };
+
+        let fraction_of_funding_period =
+            if hours_to_charge as i64 == SETTLEMENT_INTERVAL.whole_hours() {
+                Decimal::ONE
+            } else {
+                Decimal::from(hours_to_charge)
+                    .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
+                    .context("can't establish a fraction")?
+            };
+
+        let funding_fee = Decimal::from(margin.as_sat())
+            * funding_rate.to_decimal().abs()
+            * fraction_of_funding_period;
+        let funding_fee = funding_fee
+            .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::AwayFromZero)
+            .to_u64()
+            .context("Failed to represent as u64")?;
+
+        Ok(Self {
+            fee: Amount::from_sat(funding_fee),
+            rate: funding_rate,
+        })
+    }
+
     #[cfg(test)]
     fn new(fee: Amount, rate: FundingRate) -> Self {
         Self { fee, rate }
@@ -776,50 +820,6 @@ impl FeeAccount {
             role: self.role,
         }
     }
-}
-
-pub fn calculate_funding_fee(
-    price: Price,
-    quantity: Usd,
-    long_leverage: Leverage,
-    short_leverage: Leverage,
-    funding_rate: FundingRate,
-    hours_to_charge: i64,
-) -> Result<FundingFee> {
-    if funding_rate.0.is_zero() {
-        return Ok(FundingFee {
-            fee: Amount::ZERO,
-            rate: funding_rate,
-        });
-    }
-
-    let margin = if funding_rate.short_pays_long() {
-        calculate_margin(price, quantity, long_leverage)
-    } else {
-        calculate_margin(price, quantity, short_leverage)
-    };
-
-    let fraction_of_funding_period = if hours_to_charge as i64 == SETTLEMENT_INTERVAL.whole_hours()
-    {
-        Decimal::ONE
-    } else {
-        Decimal::from(hours_to_charge)
-            .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
-            .context("can't establish a fraction")?
-    };
-
-    let funding_fee = Decimal::from(margin.as_sat())
-        * funding_rate.to_decimal().abs()
-        * fraction_of_funding_period;
-    let funding_fee = funding_fee
-        .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::AwayFromZero)
-        .to_u64()
-        .context("Failed to represent as u64")?;
-
-    Ok(FundingFee {
-        fee: Amount::from_sat(funding_fee),
-        rate: funding_rate,
-    })
 }
 
 /// Transaction fee in satoshis per vbyte
@@ -1204,7 +1204,7 @@ mod tests {
         let short_leverage = Leverage::ONE;
 
         let funding_rate_pos = FundingRate::new(dec!(0.01)).unwrap();
-        let long_pays_short_fee = calculate_funding_fee(
+        let long_pays_short_fee = FundingFee::calculate(
             dummy_price(),
             dummy_n_contracts(),
             long_leverage,
@@ -1215,7 +1215,7 @@ mod tests {
         .unwrap();
 
         let funding_rate_neg = FundingRate::new(dec!(-0.01)).unwrap();
-        let short_pays_long_fee = calculate_funding_fee(
+        let short_pays_long_fee = FundingFee::calculate(
             dummy_price(),
             dummy_n_contracts(),
             long_leverage,
@@ -1235,7 +1235,7 @@ mod tests {
         let zero_funding_rate = FundingRate::new(Decimal::ZERO).unwrap();
 
         let dummy_leverage = Leverage::new(1).unwrap();
-        let fee = calculate_funding_fee(
+        let fee = FundingFee::calculate(
             dummy_price(),
             dummy_n_contracts(),
             dummy_leverage,
