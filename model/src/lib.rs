@@ -676,7 +676,8 @@ pub struct FundingFee {
 }
 
 impl FundingFee {
-    pub fn new(fee: Amount, rate: FundingRate) -> Self {
+    #[cfg(test)]
+    fn new(fee: Amount, rate: FundingRate) -> Self {
         Self { fee, rate }
     }
 }
@@ -786,7 +787,10 @@ pub fn calculate_funding_fee(
     hours_to_charge: i64,
 ) -> Result<FundingFee> {
     if funding_rate.0.is_zero() {
-        return Ok(FundingFee::new(Amount::ZERO, funding_rate));
+        return Ok(FundingFee {
+            fee: Amount::ZERO,
+            rate: funding_rate,
+        });
     }
 
     let margin = if funding_rate.short_pays_long() {
@@ -812,7 +816,10 @@ pub fn calculate_funding_fee(
         .to_u64()
         .context("Failed to represent as u64")?;
 
-    Ok(FundingFee::new(Amount::from_sat(funding_fee), funding_rate))
+    Ok(FundingFee {
+        fee: Amount::from_sat(funding_fee),
+        rate: funding_rate,
+    })
 }
 
 /// Transaction fee in satoshis per vbyte
