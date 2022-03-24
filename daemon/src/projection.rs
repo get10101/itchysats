@@ -299,7 +299,7 @@ enum ProtocolNegotiationState {
 }
 
 impl Cfd {
-    fn new(
+    fn from_db(
         db::Cfd {
             id,
             position,
@@ -813,9 +813,9 @@ impl State {
 
         let (cfd, events) = db::load_cfd(id, &mut conn).await?;
 
-        let cfd = events
-            .into_iter()
-            .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, self.network));
+        let cfd = events.into_iter().fold(Cfd::from_db(cfd), |cfd, event| {
+            cfd.apply(event, self.network)
+        });
 
         self.cfds.insert(id, cfd);
 
