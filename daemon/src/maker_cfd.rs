@@ -218,7 +218,7 @@ impl<O, T, W> Actor<O, T, W> {
 
     async fn update_connected_takers(&mut self) -> Result<()> {
         self.projection
-            .send(projection::Update(
+            .send_async_safe(projection::Update(
                 self.connected_takers
                     .clone()
                     .into_iter()
