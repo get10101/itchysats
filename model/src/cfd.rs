@@ -872,14 +872,8 @@ impl Cfd {
         }
 
         let hours_to_charge = match version {
-            rollover::Version::V1 => {
-                tracing::debug!("Rollover V1");
-                1
-            }
-            rollover::Version::V2 => {
-                tracing::debug!("Rollover V2");
-                self.hours_to_extend_in_rollover()?
-            }
+            rollover::Version::V1 => 1,
+            rollover::Version::V2 => self.hours_to_extend_in_rollover()?,
         };
 
         let funding_fee = calculate_funding_fee(

@@ -20,6 +20,15 @@ pub enum Version {
     V2,
 }
 
+impl std::fmt::Display for Version {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            Version::V1 => write!(f, "V1"),
+            Version::V2 => write!(f, "V2"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct RolloverParams {
     pub price: Price,
