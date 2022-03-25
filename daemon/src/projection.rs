@@ -56,11 +56,12 @@ use xtras::SendAsyncSafe;
 /// (replaces previously stored values)
 pub struct Update<T>(pub T);
 
-/// Indicates that the CFD with the given order ID changed.
-#[derive(Clone, Copy)]
-pub struct CfdChanged(pub OrderId);
+/// Indicates that a new CFD event was appended to the database.
+#[derive(Clone)]
+pub struct NewCfdEvent(pub CfdEvent);
 
 /// Indicates that we added a new CFD to the database.
+#[derive(Clone, Copy)]
 pub struct NewCfd(pub OrderId);
 
 /// Perform the bulk initialisation of the CFD feed
@@ -825,6 +826,20 @@ impl State {
         Ok(())
     }
 
+    fn append_event(&mut self, event: CfdEvent) -> Result<()> {
+        let order_id = event.id;
+        let cfd = self
+            .cfds
+            .remove(&order_id)
+            .context("CFD does not exist in projection cache")?;
+
+        let cfd = cfd.apply(event, self.network);
+
+        self.cfds.insert(order_id, cfd);
+
+        Ok(())
+    }
+
     fn update_quote(&mut self, quote: Option<xtra_bitmex_price_feed::Quote>) {
         self.quote = quote;
     }
@@ -848,11 +863,13 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle(&mut self, msg: CfdChanged) {
-        if let Err(e) = self.state.update_cfd(self.db.clone(), msg.0).await {
-            tracing::error!("Failed to rehydrate CFD: {e:#}");
+    async fn handle(&mut self, msg: NewCfdEvent) {
+        let event = msg.0;
+
+        if let Err(e) = self.state.append_event(event) {
+            tracing::warn!("Failed to append CFD event: {e:#}");
             return;
-        };
+        }
 
         self.tx
             .send_cfds_update(self.state.cfds.clone(), self.state.quote);

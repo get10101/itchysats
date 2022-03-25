@@ -19,7 +19,7 @@ use xtras::SendAsyncSafe;
 pub struct Actor {
     db: sqlx::SqlitePool,
     role: Role,
-    cfds_changed: Box<dyn MessageChannel<projection::CfdChanged>>,
+    new_cfd_event: Box<dyn MessageChannel<projection::NewCfdEvent>>,
     try_broadcast_transaction: Box<dyn MessageChannel<TryBroadcastTransaction>>,
     start_monitoring: Box<dyn MessageChannel<StartMonitoring>>,
     monitor_cet_finality: Box<dyn MessageChannel<MonitorCetFinality>>,
@@ -40,7 +40,7 @@ impl Actor {
     pub fn new(
         db: sqlx::SqlitePool,
         role: Role,
-        cfds_changed: &(impl MessageChannel<projection::CfdChanged> + 'static),
+        new_cfd_event: &(impl MessageChannel<projection::NewCfdEvent> + 'static),
         try_broadcast_transaction: &(impl MessageChannel<TryBroadcastTransaction> + 'static),
         start_monitoring: &(impl MessageChannel<StartMonitoring> + 'static),
         monitor_cet: &(impl MessageChannel<MonitorCetFinality> + 'static),
@@ -51,7 +51,7 @@ impl Actor {
         Self {
             db,
             role,
-            cfds_changed: cfds_changed.clone_channel(),
+            new_cfd_event: new_cfd_event.clone_channel(),
             try_broadcast_transaction: try_broadcast_transaction.clone_channel(),
             start_monitoring: start_monitoring.clone_channel(),
             monitor_cet_finality: monitor_cet.clone_channel(),
@@ -72,7 +72,7 @@ impl Actor {
 
         // 2. Post process event
         use EventKind::*;
-        match event.event {
+        match &event.event {
             ContractSetupCompleted { dlc, .. } => {
                 let lock_tx = dlc.lock.0.clone();
                 self.try_broadcast_transaction
@@ -104,7 +104,7 @@ impl Actor {
                     Role::Maker => {
                         self.try_broadcast_transaction
                             .send_async_safe(TryBroadcastTransaction {
-                                tx: spend_tx,
+                                tx: spend_tx.clone(),
                                 kind: TransactionKind::CollaborativeClose,
                             })
                             .await?;
@@ -118,7 +118,7 @@ impl Actor {
                 self.monitor_collaborative_settlement
                     .send_async_safe(MonitorCollaborativeSettlement {
                         order_id: event.id,
-                        tx: (txid, script),
+                        tx: (txid, script.clone()),
                     })
                     .await?;
             }
@@ -132,7 +132,7 @@ impl Actor {
                     .await?;
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
-                        tx: cet,
+                        tx: cet.clone(),
                         kind: TransactionKind::Cet,
                     })
                     .await?;
@@ -147,7 +147,7 @@ impl Actor {
                     .await?;
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
-                        tx: cet,
+                        tx: cet.clone(),
                         kind: TransactionKind::Cet,
                     })
                     .await?;
@@ -161,12 +161,12 @@ impl Actor {
                     .monitor_cet_finality
                     .send_async_safe(MonitorCetFinality {
                         order_id: event.id,
-                        cet,
+                        cet: cet.clone(),
                     })
                     .await?;
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
-                        tx,
+                        tx: tx.clone(),
                         kind: TransactionKind::Cet,
                     })
                     .await?;
@@ -174,7 +174,7 @@ impl Actor {
             ManualCommit { tx } => {
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
-                        tx,
+                        tx: tx.clone(),
                         kind: TransactionKind::Commit,
                     })
                     .await?;
@@ -188,7 +188,7 @@ impl Actor {
                     .monitor_cet_finality
                     .send_async_safe(MonitorCetFinality {
                         order_id: event.id,
-                        cet,
+                        cet: cet.clone(),
                     })
                     .await?;
             }
@@ -209,7 +209,7 @@ impl Actor {
             RefundTimelockExpired { refund_tx: tx } => {
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
-                        tx,
+                        tx: tx.clone(),
                         kind: TransactionKind::Refund,
                     })
                     .await?;
@@ -236,8 +236,8 @@ impl Actor {
         }
 
         // 3. Update UI
-        self.cfds_changed
-            .send_async_safe(projection::CfdChanged(event.id))
+        self.new_cfd_event
+            .send_async_safe(projection::NewCfdEvent(event))
             .await?;
 
         Ok(())
