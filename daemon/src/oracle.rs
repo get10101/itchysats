@@ -27,6 +27,7 @@ pub struct Actor {
     announcement_lookahead: Duration,
     tasks: Tasks,
     db: SqlitePool,
+    client: reqwest::Client,
 }
 
 #[derive(Clone, Copy)]
@@ -101,6 +102,7 @@ impl Actor {
             announcement_lookahead,
             tasks: Tasks::default(),
             db,
+            client: reqwest::Client::new(),
         }
     }
 
@@ -118,6 +120,7 @@ impl Actor {
                 continue;
             }
             let this = ctx.address().expect("self to be alive");
+            let client = self.client.clone();
 
             self.tasks.add_fallible(
                 async move {
@@ -125,7 +128,9 @@ impl Actor {
 
                     tracing::debug!("Fetching announcement for {event_id}");
 
-                    let response = reqwest::get(url.clone())
+                    let response = client
+                        .get(url.clone())
+                        .send()
                         .await
                         .with_context(|| format!("Failed to GET {url}"))?;
 
@@ -164,6 +169,7 @@ impl Actor {
             }
 
             let this = ctx.address().expect("self to be alive");
+            let client = self.client.clone();
 
             self.tasks.add_fallible(
                 async move {
@@ -171,7 +177,9 @@ impl Actor {
 
                     tracing::debug!("Fetching attestation for {event_id}");
 
-                    let response = reqwest::get(url.clone())
+                    let response = client
+                        .get(url.clone())
+                        .send()
                         .await
                         .with_context(|| format!("Failed to GET {url}"))?;
 
