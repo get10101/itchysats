@@ -1,6 +1,7 @@
 use crate::impl_sqlx_type_display_from_str;
 use anyhow::Context;
 use conquer_once::Lazy;
+use maia::secp256k1_zkp;
 use maia::secp256k1_zkp::schnorrsig;
 use maia::secp256k1_zkp::SecretKey;
 use serde::Deserialize;
@@ -18,8 +19,8 @@ use url::Url;
 pub const EVENT_TIME_FORMAT: &[FormatItem] =
     format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
 
-pub static PUBLIC_KEY: Lazy<schnorrsig::PublicKey> = Lazy::new(|| {
-    "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7"
+pub static PUBLIC_KEY: Lazy<secp256k1_zkp::PublicKey> = Lazy::new(|| {
+    "02ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7"
         .parse()
         .expect("static key to be valid")
 });
@@ -33,7 +34,7 @@ pub struct Announcement {
     /// <https://h00.ooo/>{id}.
     pub id: BitMexPriceEventId,
     pub expected_outcome_time: OffsetDateTime,
-    pub nonce_pks: Vec<schnorrsig::PublicKey>,
+    pub nonce_pks: Vec<secp256k1_zkp::PublicKey>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -132,6 +133,21 @@ impl From<Announcement> for maia::Announcement {
     }
 }
 
+pub trait PublicKeyExt {
+    fn to_public_key(self) -> secp256k1_zkp::PublicKey;
+}
+
+impl PublicKeyExt for schnorrsig::PublicKey {
+    fn to_public_key(self) -> secp256k1_zkp::PublicKey {
+        let mut buf = Vec::<u8>::with_capacity(33);
+
+        buf.push(0x02); // append even byte
+        buf.extend(&self.serialize());
+
+        secp256k1_zkp::PublicKey::from_slice(&buf).expect("valid key")
+    }
+}
+
 impl_sqlx_type_display_from_str!(BitMexPriceEventId);
 
 mod olivia_api {
@@ -160,7 +176,13 @@ mod olivia_api {
             Ok(Self {
                 id: data.id,
                 expected_outcome_time: data.expected_outcome_time,
-                nonce_pks: data.schemes.olivia_v1.nonces,
+                nonce_pks: data
+                    .schemes
+                    .olivia_v1
+                    .nonces
+                    .into_iter()
+                    .map(|pk| pk.to_public_key())
+                    .collect(),
             })
         }
     }

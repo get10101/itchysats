@@ -13,7 +13,6 @@ use crate::wire::RolloverMsg3;
 use crate::wire::SetupMsg;
 use anyhow::Context;
 use anyhow::Result;
-use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::secp256k1::SECP256K1;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -36,7 +35,6 @@ use maia::renew_cfd_transactions;
 use maia::secp256k1_zkp;
 use maia::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia::spending_tx_sighash;
-use maia::Announcement;
 use maia::PartyParams;
 use maia::PunishParams;
 use model::calculate_payouts;
@@ -65,7 +63,7 @@ const MSG_TIMEOUT: Duration = Duration::from_secs(60);
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
-    (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
+    (oracle_pk, announcement): (secp256k1_zkp::PublicKey, olivia::Announcement),
     setup_params: SetupParams,
     build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
@@ -347,7 +345,7 @@ pub async fn new(
 pub async fn roll_over(
     mut sink: impl Sink<RolloverMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = RolloverMsg> + Unpin,
-    (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
+    (oracle_pk, announcement): (secp256k1_zkp::PublicKey, olivia::Announcement),
     rollover_params: RolloverParams,
     our_role: Role,
     our_position: Position,
@@ -400,7 +398,7 @@ pub async fn roll_over(
     let maker_lock_amount = dlc.maker_lock_amount;
     let taker_lock_amount = dlc.taker_lock_amount;
     let payouts = HashMap::from_iter([(
-        Announcement {
+        maia::Announcement {
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
         },
@@ -727,7 +725,7 @@ impl AllParams {
 }
 
 async fn verify_cets(
-    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),
+    (oracle_pk, nonce_pks): (secp256k1_zkp::PublicKey, Vec<secp256k1_zkp::PublicKey>),
     other: PartyParams,
     own_cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
     cets: Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>,
@@ -796,7 +794,7 @@ fn verify_cet_encsig(
     encsig: &EcdsaAdaptorSignature,
     digits: &interval::Digits,
     pk: &PublicKey,
-    (oracle_pk, nonce_pks): (&schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
+    (oracle_pk, nonce_pks): (&secp256k1_zkp::PublicKey, &[secp256k1_zkp::PublicKey]),
     spent_descriptor: &Descriptor<PublicKey>,
     spent_amount: Amount,
 ) -> Result<()> {

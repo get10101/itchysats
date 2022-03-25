@@ -3,7 +3,7 @@ use crate::db;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use maia::secp256k1_zkp::schnorrsig;
+use maia::secp256k1_zkp;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::CfdEvent;
@@ -21,7 +21,7 @@ use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
 pub struct Actor {
-    announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
+    announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<secp256k1_zkp::PublicKey>)>,
     pending_attestations: HashSet<BitMexPriceEventId>,
     executor: command::Executor,
     announcement_lookahead: Duration,
@@ -53,7 +53,7 @@ pub struct Attestation(olivia::Attestation);
 struct NewAnnouncementFetched {
     id: BitMexPriceEventId,
     expected_outcome_time: OffsetDateTime,
-    nonce_pks: Vec<schnorrsig::PublicKey>,
+    nonce_pks: Vec<secp256k1_zkp::PublicKey>,
 }
 
 /// A module-private message to allow parallelization of fetching attestations.

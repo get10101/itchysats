@@ -2,7 +2,6 @@ use crate::command;
 use crate::maker_inc_connections;
 use crate::oracle;
 use crate::process_manager;
-use crate::schnorrsig;
 use crate::setup_contract;
 use crate::wire;
 use anyhow::Context as _;
@@ -11,6 +10,7 @@ use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
+use maia::secp256k1_zkp;
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
@@ -58,7 +58,7 @@ pub struct Actor {
     send_to_taker_actor: Box<dyn MessageChannel<maker_inc_connections::TakerMessage>>,
     n_payouts: usize,
     taker_id: Identity,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: secp256k1_zkp::PublicKey,
     sent_from_taker: Option<UnboundedSender<wire::RolloverMsg>>,
     oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
     register: Box<dyn MessageChannel<maker_inc_connections::RegisterRollover>>,
@@ -74,7 +74,7 @@ impl Actor {
         n_payouts: usize,
         send_to_taker_actor: &(impl MessageChannel<maker_inc_connections::TakerMessage> + 'static),
         taker_id: Identity,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: secp256k1_zkp::PublicKey,
         oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
         register: &(impl MessageChannel<maker_inc_connections::RegisterRollover> + 'static),

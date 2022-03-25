@@ -7,7 +7,6 @@ use bdk::bitcoin;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use connection::ConnectionStatus;
-use maia::secp256k1_zkp::schnorrsig;
 use model::olivia;
 use model::FundingRate;
 use model::Identity;
@@ -30,6 +29,7 @@ use xtras::supervisor;
 
 pub use bdk;
 pub use maia;
+use maia::secp256k1_zkp;
 
 pub mod auto_rollover;
 pub mod collab_settlement_maker;
@@ -87,7 +87,7 @@ where
     pub fn new<M>(
         db: SqlitePool,
         wallet_addr: Address<W>,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: secp256k1_zkp::PublicKey,
         oracle_constructor: impl FnOnce(command::Executor) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         settlement_interval: time::Duration,
@@ -291,7 +291,7 @@ where
     pub fn new<M>(
         db: SqlitePool,
         wallet_actor_addr: Address<W>,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: secp256k1_zkp::PublicKey,
         identity_sk: x25519_dalek::StaticSecret,
         oracle_constructor: impl FnOnce(command::Executor) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,

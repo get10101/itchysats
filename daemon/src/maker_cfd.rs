@@ -15,7 +15,7 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use bdk::bitcoin::secp256k1::schnorrsig;
+use maia::secp256k1_zkp;
 use model::olivia::BitMexPriceEventId;
 use model::Cfd;
 use model::FundingRate;
@@ -168,7 +168,7 @@ pub struct Actor<O, T, W> {
     db: sqlx::SqlitePool,
     wallet: xtra::Address<W>,
     settlement_interval: Duration,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: secp256k1_zkp::PublicKey,
     projection: xtra::Address<projection::Actor>,
     process_manager: xtra::Address<process_manager::Actor>,
     executor: command::Executor,
@@ -189,7 +189,7 @@ impl<O, T, W> Actor<O, T, W> {
         db: sqlx::SqlitePool,
         wallet: xtra::Address<W>,
         settlement_interval: Duration,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: secp256k1_zkp::PublicKey,
         projection: xtra::Address<projection::Actor>,
         process_manager: xtra::Address<process_manager::Actor>,
         takers: xtra::Address<T>,

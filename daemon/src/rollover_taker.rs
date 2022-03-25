@@ -12,7 +12,7 @@ use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
-use maia::secp256k1_zkp::schnorrsig;
+use maia::secp256k1_zkp;
 use model::olivia::BitMexPriceEventId;
 use model::Dlc;
 use model::FundingFee;
@@ -35,7 +35,7 @@ const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Actor {
     id: OrderId,
     n_payouts: usize,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: secp256k1_zkp::PublicKey,
     maker: xtra::Address<connection::Actor>,
     get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
     rollover_msg_sender: Option<UnboundedSender<wire::RolloverMsg>>,
@@ -48,7 +48,7 @@ impl Actor {
     pub fn new(
         id: OrderId,
         n_payouts: usize,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: secp256k1_zkp::PublicKey,
         maker: xtra::Address<connection::Actor>,
         get_announcement: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,

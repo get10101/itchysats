@@ -1008,8 +1008,8 @@ impl Cfd {
         let proposal = SettlementProposal {
             order_id: self.id,
             timestamp: Timestamp::now(),
-            taker: *payout.taker_amount(),
-            maker: *payout.maker_amount(),
+            taker: *payout.long_amount(),
+            maker: *payout.short_amount(),
             price: current_price,
         };
 
@@ -1056,8 +1056,8 @@ impl Cfd {
                 .context("find current price on the payout curve")?
         };
 
-        if proposal.maker != *payout.maker_amount() || proposal.taker != *payout.taker_amount() {
-            bail!("The settlement amounts sent by the taker are not according to the agreed payout curve. Expected taker {} and maker {} but received taker {} and maker {}", payout.taker_amount(), payout.maker_amount(), proposal.taker, proposal.maker);
+        if proposal.maker != *payout.short_amount() || proposal.taker != *payout.long_amount() {
+            bail!("The settlement amounts sent by the taker are not according to the agreed payout curve. Expected taker {} and maker {} but received taker {} and maker {}", payout.long_amount(), payout.short_amount(), proposal.taker, proposal.maker);
         }
 
         Ok(CfdEvent::new(

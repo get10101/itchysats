@@ -12,7 +12,7 @@ use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
-use maia::secp256k1_zkp::schnorrsig;
+use maia::secp256k1_zkp;
 use model::olivia::Announcement;
 use model::Dlc;
 use model::OrderId;
@@ -32,7 +32,7 @@ pub struct Actor {
     order_id: OrderId,
     quantity: Usd,
     n_payouts: usize,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: secp256k1_zkp::PublicKey,
     announcement: Announcement,
     build_party_params: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign: Box<dyn MessageChannel<wallet::Sign>>,
@@ -48,7 +48,7 @@ impl Actor {
         db: sqlx::SqlitePool,
         process_manager: xtra::Address<process_manager::Actor>,
         (order_id, quantity, n_payouts): (OrderId, Usd, usize),
-        (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
+        (oracle_pk, announcement): (secp256k1_zkp::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
         maker: xtra::Address<connection::Actor>,

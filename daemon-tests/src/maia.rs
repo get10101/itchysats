@@ -1,15 +1,17 @@
+use daemon::maia::secp256k1_zkp;
 use daemon::maia::secp256k1_zkp::schnorrsig;
 use daemon::maia::secp256k1_zkp::SecretKey;
 use daemon::oracle;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
+use model::olivia::PublicKeyExt;
 use std::str::FromStr;
 
 #[allow(dead_code)]
 pub struct OliviaData {
     id: BitMexPriceEventId,
-    pk: schnorrsig::PublicKey,
-    nonce_pks: Vec<schnorrsig::PublicKey>,
+    pk: secp256k1_zkp::PublicKey,
+    nonce_pks: Vec<secp256k1_zkp::PublicKey>,
     price: u64,
     attestations: Vec<SecretKey>,
 }
@@ -29,13 +31,15 @@ impl OliviaData {
     /// Generate an example of all the data from `olivia` needed to test the
     /// CFD protocol end-to-end.
     fn example(id: &str, price: u64, nonce_pks: &[&str], attestations: &[&str]) -> Self {
-        let oracle_pk = schnorrsig::PublicKey::from_str(Self::OLIVIA_PK).unwrap();
+        let oracle_pk = schnorrsig::PublicKey::from_str(Self::OLIVIA_PK)
+            .unwrap()
+            .to_public_key();
 
         let id = id.parse().unwrap();
 
         let nonce_pks = nonce_pks
             .iter()
-            .map(|pk| schnorrsig::PublicKey::from_str(pk).unwrap())
+            .map(|pk| schnorrsig::PublicKey::from_str(pk).unwrap().to_public_key())
             .collect();
 
         let attestations = attestations
