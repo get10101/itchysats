@@ -22,7 +22,7 @@ use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
 /// If the taker does not come back with `Initiate` until the timeout is triggered we fail the
 /// settlement. If the taker does come back with `Initiate` before the timeout is reached, we don't
 /// fail the settlement even if the timeout is triggered.
-const INITIATE_TIMEOUT: Duration = Duration::from_secs(60);
+const INITIATE_TIMEOUT: Duration = Duration::from_secs(60 * 5);
 
 pub struct Actor {
     proposal: SettlementProposal,
