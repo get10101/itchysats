@@ -118,7 +118,7 @@ export default function ConfirmOrderModal({
                                 disabled={!fundingRateHourly}
                             >
                                 <Tr>
-                                    <Td><Text as={"b"}>Perpetual Costs</Text></Td>
+                                    <Td><Text as={"b"}>Perpetual Cost</Text></Td>
                                     <Td>Hourly @ {fundingRateHourly}%</Td>
                                 </Tr>
                             </FundingRateTooltip>
