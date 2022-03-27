@@ -27,7 +27,6 @@ import {
     Tbody,
     Td,
     Text,
-    Tooltip,
     Tr,
     useColorModeValue,
     useDisclosure,
@@ -44,6 +43,7 @@ import AlertBox from "./AlertBox";
 import BitcoinAmount from "./BitcoinAmount";
 import ConfirmOrderModal from "./ConfirmOrderModal";
 import DollarAmount from "./DollarAmount";
+import { FundingRateTooltip } from "./FundingRateTooltip";
 
 const MotionBox = motion<BoxProps>(Box);
 
@@ -221,21 +221,20 @@ export default function Trade({
                                         <BitcoinAmount btc={walletBalance} />
                                     </Td>
                                 </Tr>
+
                                 <Tr>
                                     <Td><Text>Perpetual Cost</Text></Td>
-                                    <Tooltip
-                                        label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}%, annualized that is ${fundingRateAnnualized}%. 
-                                        The funding rate can fluctuate depending on the market movements.`}
-                                        hasArrow
-                                        placement={"right"}
-                                        isDisabled={!fundingRateHourly}
+                                    <FundingRateTooltip
+                                        fundingRateHourly={fundingRateHourly}
+                                        fundingRateAnnualized={fundingRateAnnualized}
+                                        disabled={!fundingRateHourly}
                                     >
                                         <Td isNumeric>
                                             {fundingRateHourly
                                                 ? "Hourly @ " + fundingRateHourly + "%"
                                                 : "not available"}
                                         </Td>
-                                    </Tooltip>
+                                    </FundingRateTooltip>
                                 </Tr>
                             </Tbody>
                         </Table>
