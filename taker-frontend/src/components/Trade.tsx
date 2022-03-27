@@ -221,7 +221,7 @@ export default function Trade({
                                     </Td>
                                 </Tr>
                                 <Tr>
-                                    <Td>Funding Rate</Td>
+                                    <Td>Perpetual Cost</Td>
                                     <Td isNumeric>{fundingRateHourly ? fundingRateHourly + "%" : "not available"}</Td>
                                 </Tr>
                             </Tbody>
