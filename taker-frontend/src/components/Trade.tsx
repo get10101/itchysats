@@ -27,6 +27,7 @@ import {
     Tbody,
     Td,
     Text,
+    Tooltip,
     Tr,
     useColorModeValue,
     useDisclosure,
@@ -221,8 +222,20 @@ export default function Trade({
                                     </Td>
                                 </Tr>
                                 <Tr>
-                                    <Td>Perpetual Cost</Td>
-                                    <Td isNumeric>{fundingRateHourly ? fundingRateHourly + "%" : "not available"}</Td>
+                                    <Td><Text>Perpetual Cost</Text></Td>
+                                    <Tooltip
+                                        label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}%, annualized that is ${fundingRateAnnualized}%. 
+                                        The funding rate can fluctuate depending on the market movements.`}
+                                        hasArrow
+                                        placement={"right"}
+                                        isDisabled={!fundingRateHourly}
+                                    >
+                                        <Td isNumeric>
+                                            {fundingRateHourly
+                                                ? "Hourly @ " + fundingRateHourly + "%"
+                                                : "not available"}
+                                        </Td>
+                                    </Tooltip>
                                 </Tr>
                             </Tbody>
                         </Table>
