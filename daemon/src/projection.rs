@@ -271,7 +271,12 @@ impl Aggregated {
                     Role::Maker => CfdState::IncomingRolloverProposal,
                     Role::Taker => CfdState::OutgoingRolloverProposal,
                 },
-                ProtocolNegotiationState::Accepted => CfdState::ContractSetup,
+                // TODO: we should have an own state here indicating that the position is being
+                // rolled over.
+                ProtocolNegotiationState::Accepted => match role {
+                    Role::Maker => CfdState::IncomingRolloverProposal,
+                    Role::Taker => CfdState::OutgoingRolloverProposal,
+                },
             };
         };
         self.state
