@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.10] - 2022-03-28
+
+- add a banner celebrating us pitching at Bitcoin 2022 conference in Miami
+
 ## [0.4.9] - 2022-03-28
 
 ## [0.4.8] - 2022-03-24
@@ -78,7 +82,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.9...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.10...HEAD
+[0.4.10]: https://github.com/itchysats/itchysats/compare/0.4.9...0.4.10
 [0.4.9]: https://github.com/itchysats/itchysats/compare/0.4.8...0.4.9
 [0.4.8]: https://github.com/itchysats/itchysats/compare/0.4.7...0.4.8
 [0.4.7]: https://github.com/itchysats/itchysats/compare/0.4.6...0.4.7
