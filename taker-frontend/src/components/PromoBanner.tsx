@@ -9,7 +9,7 @@ export default function PromoBanner() {
         <Center>
             <Alert status="info">
                 <Link href="http://testing.itchysats.network/" isExternal>
-                    🎁Celebrating pitching at Bitcoin2022 in Miami... 🎉
+                    🎁 Celebrating pitching at Bitcoin2022 in Miami... 🎉
                     <ExternalLinkIcon mx="2px" />
                 </Link>
             </Alert>
