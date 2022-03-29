@@ -221,6 +221,12 @@ struct Aggregated {
 
     version: u32,
     creation_timestamp: Timestamp,
+
+    /// True if we have an unspent joint output on the blockchain or are about to create one (i.e.
+    /// after contract setup).
+    ///
+    /// This is sometimes referred to as a CFD being "open".
+    has_unspent_joint_output: bool,
 }
 
 impl Aggregated {
@@ -239,6 +245,7 @@ impl Aggregated {
             settlement_state: None,
             version: 0,
             creation_timestamp: Timestamp::now(),
+            has_unspent_joint_output: false,
         }
     }
 
@@ -402,6 +409,7 @@ impl Cfd {
                 self.aggregated.latest_dlc = Some(dlc);
 
                 self.aggregated.state = CfdState::PendingOpen;
+                self.aggregated.has_unspent_joint_output = true;
             }
             ContractSetupFailed => {
                 self.aggregated.state = CfdState::SetupFailed;
@@ -445,6 +453,7 @@ impl Cfd {
                 self.closing_price = Some(price);
 
                 self.aggregated.state = CfdState::PendingClose;
+                self.aggregated.has_unspent_joint_output = false;
             }
             CollaborativeSettlementRejected => {
                 self.aggregated.settlement_state = None;
@@ -466,12 +475,15 @@ impl Cfd {
             }
             CetConfirmed => {
                 self.aggregated.state = CfdState::Closed;
+                self.aggregated.has_unspent_joint_output = false;
             }
             RefundConfirmed => {
                 self.aggregated.state = CfdState::Refunded;
+                self.aggregated.has_unspent_joint_output = false;
             }
             LockConfirmedAfterFinality | CollaborativeSettlementConfirmed => {
                 self.aggregated.state = CfdState::Closed;
+                self.aggregated.has_unspent_joint_output = false;
             }
             CetTimelockExpiredPriorOracleAttestation => {
                 self.aggregated.state = CfdState::OpenCommitted;
@@ -480,11 +492,13 @@ impl Cfd {
                 self.aggregated.cet = Some(cet);
 
                 self.aggregated.state = CfdState::PendingCet;
+                self.aggregated.has_unspent_joint_output = false;
             }
             RefundTimelockExpired { .. } => {
                 self.aggregated.refund_published = true;
 
                 self.aggregated.state = CfdState::PendingRefund;
+                self.aggregated.has_unspent_joint_output = false;
             }
             OracleAttestedPriorCetTimelock {
                 timelocked_cet,
@@ -501,6 +515,7 @@ impl Cfd {
                 self.closing_price = Some(price);
 
                 self.aggregated.state = CfdState::PendingCet;
+                self.aggregated.has_unspent_joint_output = false;
             }
             ManualCommit { .. } => {
                 self.aggregated.commit_published = true;
@@ -510,6 +525,7 @@ impl Cfd {
             RevokeConfirmed => {
                 tracing::error!(order_id = %self.order_id, "Revoked logic not implemented");
                 self.aggregated.state = CfdState::OpenCommitted;
+                self.aggregated.has_unspent_joint_output = false;
             }
             RolloverStarted { .. } => {
                 self.aggregated.rollover_state = Some(ProtocolNegotiationState::Started);
@@ -721,6 +737,10 @@ impl Cfd {
             TxUrl::from_transaction(tx, &dlc.script_pubkey_for(self.role), network, TxLabel::Cet);
 
         Some(url)
+    }
+
+    pub fn has_unspent_joint_output(&self) -> bool {
+        self.aggregated.has_unspent_joint_output
     }
 }
 

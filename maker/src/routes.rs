@@ -312,6 +312,27 @@ pub async fn get_cfds<'r>(
     }
 }
 
+#[rocket::get("/open_cfds")]
+pub async fn get_open_cfds<'r>(
+    rx: &State<Feeds>,
+    _auth: Authenticated,
+) -> Result<Json<Vec<Cfd>>, HttpApiProblem> {
+    let rx = rx.inner();
+    let rx_cfds = rx.cfds.clone();
+    let cfds = rx_cfds.borrow().clone();
+
+    match cfds {
+        Some(cfds) => Ok(Json(
+            cfds.into_iter()
+                .filter(|cfd| cfd.has_unspent_joint_output())
+                .collect(),
+        )),
+        None => Err(HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("CFDs not yet available")
+            .detail("CFDs are still being loaded from the database. Please retry later.")),
+    }
+}
+
 #[rocket::get("/takers")]
 pub async fn get_takers<'r>(
     rx: &State<Feeds>,

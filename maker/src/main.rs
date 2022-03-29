@@ -262,6 +262,7 @@ async fn main() -> Result<()> {
                 routes::get_health_check,
                 routes::post_withdraw_request,
                 routes::get_cfds,
+                routes::get_open_cfds,
                 routes::get_takers,
                 routes::get_metrics,
             ],
