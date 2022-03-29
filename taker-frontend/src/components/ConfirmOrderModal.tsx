@@ -13,7 +13,6 @@ import {
     Tbody,
     Td,
     Text,
-    Tooltip,
     Tr,
 } from "@chakra-ui/react";
 import * as React from "react";
@@ -21,6 +20,7 @@ import { useRef } from "react";
 import { CfdOrderRequestPayload } from "../types";
 import BitcoinAmount from "./BitcoinAmount";
 import DollarAmount from "./DollarAmount";
+import { FundingRateTooltip } from "./FundingRateTooltip";
 
 interface Props {
     orderId: string;
@@ -112,16 +112,16 @@ export default function ConfirmOrderModal({
                                 <Td><Text as={"b"}>Funding for first 24h</Text></Td>
                                 <Td><BitcoinAmount btc={feeForFirstSettlementInterval} /></Td>
                             </Tr>
-                            <Tooltip
-                                label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}%, annualized that is ${fundingRateAnnualized}%. The funding rate can fluctuate depending on the market movements.`}
-                                hasArrow
-                                placement={"right"}
+                            <FundingRateTooltip
+                                fundingRateHourly={fundingRateHourly}
+                                fundingRateAnnualized={fundingRateAnnualized}
+                                disabled={!fundingRateHourly}
                             >
                                 <Tr>
-                                    <Td><Text as={"b"}>Perpetual Costs</Text></Td>
+                                    <Td><Text as={"b"}>Perpetual Cost</Text></Td>
                                     <Td>Hourly @ {fundingRateHourly}%</Td>
                                 </Tr>
-                            </Tooltip>
+                            </FundingRateTooltip>
                         </Tbody>
                     </Table>
                 </ModalBody>

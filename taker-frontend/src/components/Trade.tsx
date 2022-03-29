@@ -43,6 +43,7 @@ import AlertBox from "./AlertBox";
 import BitcoinAmount from "./BitcoinAmount";
 import ConfirmOrderModal from "./ConfirmOrderModal";
 import DollarAmount from "./DollarAmount";
+import { FundingRateTooltip } from "./FundingRateTooltip";
 
 const MotionBox = motion<BoxProps>(Box);
 
@@ -220,9 +221,20 @@ export default function Trade({
                                         <BitcoinAmount btc={walletBalance} />
                                     </Td>
                                 </Tr>
+
                                 <Tr>
-                                    <Td>Funding Rate</Td>
-                                    <Td isNumeric>{fundingRateHourly ? fundingRateHourly + "%" : "not available"}</Td>
+                                    <Td><Text>Perpetual Cost</Text></Td>
+                                    <FundingRateTooltip
+                                        fundingRateHourly={fundingRateHourly}
+                                        fundingRateAnnualized={fundingRateAnnualized}
+                                        disabled={!fundingRateHourly}
+                                    >
+                                        <Td isNumeric>
+                                            <Skeleton isLoaded={!!fundingRateHourly}>
+                                                Hourly @ {fundingRateHourly}%
+                                            </Skeleton>
+                                        </Td>
+                                    </FundingRateTooltip>
                                 </Tr>
                             </Tbody>
                         </Table>
