@@ -63,7 +63,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        bin: [ maker, taker ]
+        bin: [maker, taker]
     steps:
       - name: Login into github registry
         uses: docker/login-action@v1.14.1
@@ -72,7 +72,7 @@ jobs:
           username: ${{ github.repository }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - run: |    
+      - run: |
           docker manifest create --amend ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }} ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }}-amd64 ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }}-arm64
           docker manifest annotate ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }} ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }}-amd64 --os linux --arch amd64
           docker manifest annotate ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }} ghcr.io/${{ github.repository }}/${{matrix.bin}}:${{ inputs.tag }}-arm64 --os linux --arch arm64 --variant v8
