@@ -16,7 +16,7 @@ mockall_derive = "0.11"
 model = { path = "../model" }
 rand = "0.6"
 rust_decimal = "1.23"
-rust_decimal_macros = "1.22"
+rust_decimal_macros = "1.23"
 time = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
