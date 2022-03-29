@@ -664,10 +664,18 @@ impl Default for OpeningFee {
     }
 }
 
-/// Funding fee as defined by position and rate
+/// Fee paid between takers and makers periodically.
 ///
-/// Position and rate define if the funding rate is to be added or subtracted when summing up the
-/// fees.
+/// The `fee` field represents the absolute value of this fee.
+///
+/// The sign of the `rate` field determines the direction of payment:
+///
+/// - If positive, the fee is paid from long to short.
+/// - If negative, the fee is paid from short to long.
+///
+/// The reason for the existence of this fee is so that the party that
+/// is betting against the market trend is passively rewarded for
+/// keeping the CFD open.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct FundingFee {
     #[serde(with = "bdk::bitcoin::util::amount::serde::as_sat")]
@@ -676,7 +684,78 @@ pub struct FundingFee {
 }
 
 impl FundingFee {
-    pub fn new(fee: Amount, rate: FundingRate) -> Self {
+    pub fn calculate(
+        price: Price,
+        quantity: Usd,
+        long_leverage: Leverage,
+        short_leverage: Leverage,
+        funding_rate: FundingRate,
+        hours_to_charge: i64,
+    ) -> Result<Self> {
+        if funding_rate.0.is_zero() {
+            return Ok(Self {
+                fee: Amount::ZERO,
+                rate: funding_rate,
+            });
+        }
+
+        let margin = if funding_rate.short_pays_long() {
+            calculate_margin(price, quantity, long_leverage)
+        } else {
+            calculate_margin(price, quantity, short_leverage)
+        };
+
+        let fraction_of_funding_period =
+            if hours_to_charge as i64 == SETTLEMENT_INTERVAL.whole_hours() {
+                Decimal::ONE
+            } else {
+                Decimal::from(hours_to_charge)
+                    .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
+                    .context("can't establish a fraction")?
+            };
+
+        let funding_fee = Decimal::from(margin.as_sat())
+            * funding_rate.to_decimal().abs()
+            * fraction_of_funding_period;
+        let funding_fee = funding_fee
+            .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::AwayFromZero)
+            .to_u64()
+            .context("Failed to represent as u64")?;
+
+        Ok(Self {
+            fee: Amount::from_sat(funding_fee),
+            rate: funding_rate,
+        })
+    }
+
+    /// Calculate the fee paid or earned for a party in a particular
+    /// position.
+    ///
+    /// A positive sign means that the party in the `position` passed
+    /// as an argument is paying the funding fee; a negative sign
+    /// means that they are earning the funding fee.
+    fn compute_relative(&self, position: Position) -> SignedAmount {
+        let funding_rate = self.rate.0;
+        let fee = self.fee.to_signed().expect("fee to fit in SignedAmount");
+
+        // long pays short
+        if funding_rate.is_sign_positive() {
+            match position {
+                Position::Long => fee,
+                Position::Short => fee * (-1),
+            }
+        }
+        // short pays long
+        else {
+            match position {
+                Position::Long => fee * (-1),
+                Position::Short => fee,
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn new(fee: Amount, rate: FundingRate) -> Self {
         Self { fee, rate }
     }
 }
@@ -775,44 +854,6 @@ impl FeeAccount {
             role: self.role,
         }
     }
-}
-
-pub fn calculate_funding_fee(
-    price: Price,
-    quantity: Usd,
-    long_leverage: Leverage,
-    short_leverage: Leverage,
-    funding_rate: FundingRate,
-    hours_to_charge: i64,
-) -> Result<FundingFee> {
-    if funding_rate.0.is_zero() {
-        return Ok(FundingFee::new(Amount::ZERO, funding_rate));
-    }
-
-    let margin = if funding_rate.short_pays_long() {
-        calculate_margin(price, quantity, long_leverage)
-    } else {
-        calculate_margin(price, quantity, short_leverage)
-    };
-
-    let fraction_of_funding_period = if hours_to_charge as i64 == SETTLEMENT_INTERVAL.whole_hours()
-    {
-        Decimal::ONE
-    } else {
-        Decimal::from(hours_to_charge)
-            .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
-            .context("can't establish a fraction")?
-    };
-
-    let funding_fee = Decimal::from(margin.as_sat())
-        * funding_rate.to_decimal().abs()
-        * fraction_of_funding_period;
-    let funding_fee = funding_fee
-        .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::AwayFromZero)
-        .to_u64()
-        .context("Failed to represent as u64")?;
-
-    Ok(FundingFee::new(Amount::from_sat(funding_fee), funding_rate))
 }
 
 /// Transaction fee in satoshis per vbyte
@@ -1197,7 +1238,7 @@ mod tests {
         let short_leverage = Leverage::ONE;
 
         let funding_rate_pos = FundingRate::new(dec!(0.01)).unwrap();
-        let long_pays_short_fee = calculate_funding_fee(
+        let long_pays_short_fee = FundingFee::calculate(
             dummy_price(),
             dummy_n_contracts(),
             long_leverage,
@@ -1208,7 +1249,7 @@ mod tests {
         .unwrap();
 
         let funding_rate_neg = FundingRate::new(dec!(-0.01)).unwrap();
-        let short_pays_long_fee = calculate_funding_fee(
+        let short_pays_long_fee = FundingFee::calculate(
             dummy_price(),
             dummy_n_contracts(),
             long_leverage,
@@ -1228,7 +1269,7 @@ mod tests {
         let zero_funding_rate = FundingRate::new(Decimal::ZERO).unwrap();
 
         let dummy_leverage = Leverage::new(1).unwrap();
-        let fee = calculate_funding_fee(
+        let fee = FundingFee::calculate(
             dummy_price(),
             dummy_n_contracts(),
             dummy_leverage,
@@ -1239,6 +1280,54 @@ mod tests {
         .unwrap();
 
         assert_eq!(fee.fee, Amount::ZERO)
+    }
+
+    #[test]
+    fn given_positive_funding_rate_when_position_long_then_relative_fee_is_positive() {
+        let positive_funding_rate = FundingRate::new(dec!(0.001)).unwrap();
+        let long = Position::Long;
+
+        let funding_fee = FundingFee::new(dummy_amount(), positive_funding_rate);
+        let relative = funding_fee.compute_relative(long);
+
+        assert!(relative.is_positive())
+    }
+
+    #[test]
+    fn given_positive_funding_rate_when_position_short_then_relative_fee_is_negative() {
+        let positive_funding_rate = FundingRate::new(dec!(0.001)).unwrap();
+        let short = Position::Short;
+
+        let funding_fee = FundingFee::new(dummy_amount(), positive_funding_rate);
+        let relative = funding_fee.compute_relative(short);
+
+        assert!(relative.is_negative())
+    }
+
+    #[test]
+    fn given_negative_funding_rate_when_position_long_then_relative_fee_is_negative() {
+        let negative_funding_rate = FundingRate::new(dec!(-0.001)).unwrap();
+        let long = Position::Long;
+
+        let funding_fee = FundingFee::new(dummy_amount(), negative_funding_rate);
+        let relative = funding_fee.compute_relative(long);
+
+        assert!(relative.is_negative())
+    }
+
+    #[test]
+    fn given_negative_funding_rate_when_position_short_then_relative_fee_is_positive() {
+        let negative_funding_rate = FundingRate::new(dec!(-0.001)).unwrap();
+        let short = Position::Short;
+
+        let funding_fee = FundingFee::new(dummy_amount(), negative_funding_rate);
+        let relative = funding_fee.compute_relative(short);
+
+        assert!(relative.is_positive())
+    }
+
+    fn dummy_amount() -> Amount {
+        Amount::from_sat(500)
     }
 
     fn dummy_price() -> Price {

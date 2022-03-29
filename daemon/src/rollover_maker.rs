@@ -171,9 +171,6 @@ impl Actor {
             })
             .await?;
 
-        tracing::debug!(%order_id, rollover_version = %self.version,
-            interval_in_hours = %interval.whole_hours(), "Maker accepting a rollover proposal");
-
         let oracle_event_id =
             oracle::next_announcement_after(time::OffsetDateTime::now_utc() + interval);
 

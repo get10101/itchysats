@@ -1,4 +1,3 @@
-use crate::calculate_funding_fee;
 use crate::contract_setup::SetupParams;
 use crate::hex_transaction;
 use crate::olivia;
@@ -603,7 +602,7 @@ impl Cfd {
         let (long_leverage, short_leverage) =
             long_and_short_leverage(taker_leverage, role, position);
 
-        let initial_funding_fee = calculate_funding_fee(
+        let initial_funding_fee = FundingFee::calculate(
             initial_price,
             quantity,
             long_leverage,
@@ -876,7 +875,7 @@ impl Cfd {
             rollover::Version::V2 => self.hours_to_extend_in_rollover()?,
         };
 
-        let funding_fee = calculate_funding_fee(
+        let funding_fee = FundingFee::calculate(
             self.initial_price,
             self.quantity,
             self.long_leverage,
@@ -884,6 +883,14 @@ impl Cfd {
             funding_rate,
             hours_to_charge as i64,
         )?;
+
+        tracing::debug!(
+            order_id = %self.id,
+            rollover_version = %version,
+            %hours_to_charge,
+            funding_fee = %funding_fee.compute_relative(self.position),
+            "Accepting rollover proposal"
+        );
 
         Ok((
             CfdEvent::new(self.id, EventKind::RolloverAccepted),
@@ -920,7 +927,7 @@ impl Cfd {
         self.can_rollover()?;
 
         let hours_to_charge = self.hours_to_extend_in_rollover()?;
-        let funding_fee = calculate_funding_fee(
+        let funding_fee = FundingFee::calculate(
             self.initial_price,
             self.quantity,
             self.long_leverage,
@@ -2575,7 +2582,7 @@ mod tests {
     #[test]
     fn can_calculate_funding_fee_with_negative_funding_rate() {
         let funding_rate = FundingRate::new(Decimal::NEGATIVE_ONE).unwrap();
-        let funding_fee = calculate_funding_fee(
+        let funding_fee = FundingFee::calculate(
             Price::new(dec!(1)).unwrap(),
             Usd::new(dec!(1)),
             Leverage::ONE,
@@ -3150,11 +3157,11 @@ mod tests {
             let leverage = Leverage::ONE;
 
             let funding_fee_for_whole_interval =
-                calculate_funding_fee(
+                FundingFee::calculate(
                     price,
                     quantity, leverage , leverage, funding_rate, SETTLEMENT_INTERVAL.whole_hours()).unwrap();
             let funding_fee_for_one_hour =
-                calculate_funding_fee(price, quantity, leverage, leverage, funding_rate, 1).unwrap();
+                FundingFee::calculate(price, quantity, leverage, leverage, funding_rate, 1).unwrap();
             let fee_account = FeeAccount::new(Position::Long, Role::Taker);
 
             let fee_account_whole_interval = fee_account.add_funding_fee(funding_fee_for_whole_interval);
