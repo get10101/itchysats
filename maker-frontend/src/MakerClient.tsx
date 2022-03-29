@@ -1,18 +1,19 @@
 import { HttpError } from "./components/HttpError";
 
-export interface CfdSellOrderPayload {
-    price: number;
+export interface CfdNewOfferParamsPayload {
+    price_short?: number;
     price_long?: number;
     min_quantity: number;
     max_quantity: number;
-    funding_rate?: number;
-    daily_funding_rate_long?: number;
+    daily_funding_rate_long: number;
+    daily_funding_rate_short: number;
+    tx_fee_rate: number;
     opening_fee?: number;
 }
 
-export async function postCfdSellOrderRequest(payload: CfdSellOrderPayload) {
-    let res = await fetch(`/api/order/sell`, {
-        method: "POST",
+export async function putCfdNewOfferParamsRequest(payload: CfdNewOfferParamsPayload) {
+    let res = await fetch(`/api/offer`, {
+        method: "PUT",
         body: JSON.stringify(payload),
         headers: {
             "Content-Type": "application/json",
