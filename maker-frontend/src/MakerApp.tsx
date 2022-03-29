@@ -28,7 +28,7 @@ import useLatestEvent from "./components/Hooks";
 import OrderTile from "./components/OrderTile";
 import { Cfd, intoCfd, MakerOffer, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
-import { CfdSellOrderPayload, postCfdSellOrderRequest } from "./MakerClient";
+import { CfdNewOfferParamsPayload, putCfdNewOfferParamsRequest } from "./MakerClient";
 
 const SPREAD_ASK = 1.01;
 const SPREAD_BID = 0.99;
@@ -71,7 +71,7 @@ export default function App() {
     let { run: makeNewCfdSellOrder, isLoading: isCreatingNewCfdOrder } = useAsync({
         deferFn: async ([payload]: any[]) => {
             try {
-                await postCfdSellOrderRequest(payload as CfdSellOrderPayload);
+                await putCfdNewOfferParamsRequest(payload as CfdNewOfferParamsPayload);
             } catch (e) {
                 createErrorToast(toast, e);
             }
@@ -170,15 +170,16 @@ export default function App() {
                                 variant={"solid"}
                                 colorScheme={"blue"}
                                 onClick={() => {
-                                    let payload: CfdSellOrderPayload = {
-                                        price: Number.parseFloat(shortPrice),
+                                    let payload: CfdNewOfferParamsPayload = {
+                                        price_short: Number.parseFloat(shortPrice),
                                         price_long: Number.parseFloat(longPrice),
                                         min_quantity: Number.parseFloat(minQuantity),
                                         max_quantity: Number.parseFloat(maxQuantity),
                                         // TODO: Populate funding rate from the UI
-                                        funding_rate: (0.00002283 * 24), // annualized 20% by default to have some values
+                                        daily_funding_rate_short: (0.00002283 * 24), // annualized 20% by default to have some values
                                         // TODO: Populate funding rate from the UI
                                         daily_funding_rate_long: (-0.00002283 * 24), // annualized 20% by default to have some values
+                                        tx_fee_rate: Number.parseFloat("0"),
                                         // TODO: This is is in sats which is not really in line with other APIs for the maker
                                         opening_fee: Number.parseFloat("100"),
                                     };
