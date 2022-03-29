@@ -230,9 +230,9 @@ export default function Trade({
                                         disabled={!fundingRateHourly}
                                     >
                                         <Td isNumeric>
-                                            {fundingRateHourly
-                                                ? "Hourly @ " + fundingRateHourly + "%"
-                                                : "not available"}
+                                            <Skeleton isLoaded={!!fundingRateHourly}>
+                                                Hourly @ {fundingRateHourly}%
+                                            </Skeleton>
                                         </Td>
                                     </FundingRateTooltip>
                                 </Tr>
