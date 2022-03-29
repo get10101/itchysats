@@ -65,7 +65,9 @@ pub async fn maker_feed(
         yield quote.to_sse_event();
 
         let cfds = rx_cfds.borrow().clone();
-        yield cfds.to_sse_event();
+        if let Some(cfds) = cfds {
+            yield cfds.to_sse_event()
+        }
 
         let takers = rx_connected_takers.borrow().clone();
         yield takers.to_sse_event();
@@ -87,7 +89,9 @@ pub async fn maker_feed(
                 }
                 Ok(()) = rx_cfds.changed() => {
                     let cfds = rx_cfds.borrow().clone();
-                    yield cfds.to_sse_event();
+                    if let Some(cfds) = cfds {
+                        yield cfds.to_sse_event()
+                    }
                 }
                 Ok(()) = rx_quote.changed() => {
                     let quote = rx_quote.borrow().clone();
@@ -300,7 +304,12 @@ pub async fn get_cfds<'r>(
     let rx_cfds = rx.cfds.clone();
     let cfds = rx_cfds.borrow().clone();
 
-    Ok(Json(cfds))
+    match cfds {
+        Some(cfds) => Ok(Json(cfds)),
+        None => Err(HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("CFDs not yet available")
+            .detail("CFDs are still being loaded from the database. Please retry later.")),
+    }
 }
 
 #[rocket::get("/takers")]
