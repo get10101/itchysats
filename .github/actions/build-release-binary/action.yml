@@ -2,14 +2,14 @@ name: Build release binary
 description: Builds a release binary including the embedded frontend
 inputs:
   target:
-    description: 'The Rust target to build for.'
+    description: "The Rust target to build for."
     required: true
   binary:
-    description: 'The binary to build (maker | taker).'
+    description: "The binary to build (maker | taker)."
     required: true
 outputs:
   path:
-    description: 'The path to the built binary.'
+    description: "The path to the built binary."
     value: target/${{ inputs.target }}/release/${{ inputs.binary }}
 runs:
   using: "composite"
@@ -31,9 +31,9 @@ runs:
 
     - uses: actions/setup-node@v2
       with:
-        node-version: '16'
+        node-version: "16"
         cache: yarn
-        cache-dependency-path: '${{ inputs.binary }}-frontend/yarn.lock'
+        cache-dependency-path: "${{ inputs.binary }}-frontend/yarn.lock"
 
     - name: Build ${{ inputs.binary }} frontend
       working-directory: ${{ inputs.binary }}-frontend
