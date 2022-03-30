@@ -807,7 +807,6 @@ dependencies = [
  "bdk-ext",
  "btsieve",
  "bytes",
- "cached",
  "chashmap-async",
  "conquer-once",
  "derivative",
