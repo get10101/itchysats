@@ -531,7 +531,7 @@ fn from_json_inner(name: String, data: String) -> Result<EventKind> {
 #[derive(Debug, PartialEq)]
 #[cfg_attr(test, derive(Clone))]
 pub struct Cfd {
-    version: u64,
+    version: u32,
 
     // static
     id: OrderId,
@@ -1416,7 +1416,7 @@ impl Cfd {
         })
     }
 
-    pub fn version(&self) -> u64 {
+    pub fn version(&self) -> u32 {
         self.version
     }
 

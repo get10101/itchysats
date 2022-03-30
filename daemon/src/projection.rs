@@ -215,7 +215,7 @@ struct Aggregated {
     rollover_state: Option<ProtocolNegotiationState>,
     settlement_state: Option<ProtocolNegotiationState>,
 
-    version: u64,
+    version: u32,
     creation_timestamp: Timestamp,
 }
 
