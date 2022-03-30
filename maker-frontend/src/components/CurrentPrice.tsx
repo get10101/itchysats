@@ -15,7 +15,14 @@ export default function CurrentPrice(
     const { ask, bid, last_updated_at } = priceInfo || {};
 
     return (
-        <Tooltip label={<><Text align={"left"}>Updated:</Text><Timestamp timestamp={last_updated_at!} /></>}>
+        <Tooltip
+            label={
+                <>
+                    <Text align={"left"}>Updated:</Text>
+                    <Timestamp timestamp={last_updated_at!} />
+                </>
+            }
+        >
             <HStack>
                 <Text align={"left"} fontWeight={"bold"}>Bid:</Text>
                 <Skeleton isLoaded={bid != null}>

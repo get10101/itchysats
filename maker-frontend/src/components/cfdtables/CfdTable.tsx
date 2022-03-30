@@ -68,20 +68,24 @@ export function CfdTable(
                 Cell: ({ row }: any) => (
                     <span>
                         {row.isExpanded
-                            ? <IconButton
-                                aria-label="Reduce"
-                                icon={<ChevronUpIcon />}
-                                onClick={() => {
-                                    row.toggleRowExpanded();
-                                }}
-                            />
-                            : <IconButton
-                                aria-label="Expand"
-                                icon={<ChevronRightIcon />}
-                                onClick={() => {
-                                    row.toggleRowExpanded();
-                                }}
-                            />}
+                            ? (
+                                <IconButton
+                                    aria-label="Reduce"
+                                    icon={<ChevronUpIcon />}
+                                    onClick={() => {
+                                        row.toggleRowExpanded();
+                                    }}
+                                />
+                            )
+                            : (
+                                <IconButton
+                                    aria-label="Expand"
+                                    icon={<ChevronRightIcon />}
+                                    onClick={() => {
+                                        row.toggleRowExpanded();
+                                    }}
+                                />
+                            )}
                     </span>
                 ),
             },
@@ -93,20 +97,24 @@ export function CfdTable(
                 Header: "Details",
                 accessor: ({ details, expiry_timestamp }) => {
                     const txs = details.tx_url_list.map((tx) => {
-                        return (<Link href={tx.url} key={tx.url} isExternal>
-                            {tx.label + " transaction"}
-                            <ExternalLinkIcon mx="2px" />
-                        </Link>);
+                        return (
+                            <Link href={tx.url} key={tx.url} isExternal>
+                                {tx.label + " transaction"}
+                                <ExternalLinkIcon mx="2px" />
+                            </Link>
+                        );
                     });
 
                     return (
                         <Box>
                             <VStack>
                                 {txs}
-                                {expiry_timestamp && <HStack>
-                                    <Text>Expires on:</Text>
-                                    <Timestamp timestamp={expiry_timestamp} />
-                                </HStack>}
+                                {expiry_timestamp && (
+                                    <HStack>
+                                        <Text>Expires on:</Text>
+                                        <Timestamp timestamp={expiry_timestamp} />
+                                    </HStack>
+                                )}
                             </VStack>
                         </Box>
                     );
@@ -115,9 +123,7 @@ export function CfdTable(
             {
                 Header: "Position",
                 accessor: ({ position }) => {
-                    return (
-                        <Badge colorScheme={position.getColorScheme()}>{position.key}</Badge>
-                    );
+                    return <Badge colorScheme={position.getColorScheme()}>{position.key}</Badge>;
                 },
                 isNumeric: true,
             },
@@ -125,7 +131,7 @@ export function CfdTable(
             {
                 Header: "Quantity",
                 accessor: ({ quantity_usd }) => {
-                    return (<Dollars amount={quantity_usd} />);
+                    return <Dollars amount={quantity_usd} />;
                 },
                 isNumeric: true,
             },
@@ -142,7 +148,7 @@ export function CfdTable(
             {
                 Header: "Initial Price",
                 accessor: ({ initial_price }) => {
-                    return (<Dollars amount={initial_price} />);
+                    return <Dollars amount={initial_price} />;
                 },
                 isNumeric: true,
             },
@@ -150,14 +156,14 @@ export function CfdTable(
                 Header: "Liquidation Price",
                 isNumeric: true,
                 accessor: ({ liquidation_price }) => {
-                    return (<Dollars amount={liquidation_price} />);
+                    return <Dollars amount={liquidation_price} />;
                 },
             },
             {
                 Header: "Closing Price",
                 isNumeric: true,
                 accessor: ({ closing_price }) => {
-                    return (<Dollars amount={closing_price || 0} />);
+                    return <Dollars amount={closing_price || 0} />;
                 },
             },
             {
@@ -178,24 +184,24 @@ export function CfdTable(
             {
                 Header: "State",
                 accessor: ({ state }) => {
-                    return (
-                        <Badge colorScheme={state.getColorScheme()}>{state.getLabel()}</Badge>
-                    );
+                    return <Badge colorScheme={state.getColorScheme()}>{state.getLabel()}</Badge>;
                 },
             },
             {
                 Header: "Action",
                 accessor: ({ actions, order_id }) => {
                     const actionIcons = actions.map((action) => {
-                        return (<Tooltip label={action} key={action}>
-                            <IconButton
-                                colorScheme={colorSchemaForAction(action)}
-                                aria-label={action}
-                                icon={iconForAction(action)}
-                                onClick={() => postAction(order_id, action)}
-                                isLoading={isActioning}
-                            />
-                        </Tooltip>);
+                        return (
+                            <Tooltip label={action} key={action}>
+                                <IconButton
+                                    colorScheme={colorSchemaForAction(action)}
+                                    aria-label={action}
+                                    icon={iconForAction(action)}
+                                    onClick={() => postAction(order_id, action)}
+                                    isLoading={isActioning}
+                                />
+                            </Tooltip>
+                        );
                     });
 
                     return <HStack>{actionIcons}</HStack>;
@@ -336,27 +342,25 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
                         <Tr {...headerGroup.getHeaderGroupProps()}>
                             {headerGroup.headers.map((column) => (
                                 <Th
-                                    // @ts-ignore
-                                    {...column.getHeaderProps(column.getSortByToggleProps())}
+                                    {// @ts-ignore
+                                    ...column.getHeaderProps(column.getSortByToggleProps())}
                                     // @ts-ignore
                                     isNumeric={column.isNumeric}
                                     textAlign={"right"}
                                 >
                                     {column.render("Header")}
                                     <chakra.span>
-                                        {// @ts-ignore
-                                        column.isSorted
-                                            ? (
-                                                // @ts-ignore
-                                                column.isSortedDesc
-                                                    ? (
-                                                        <TriangleDownIcon aria-label="sorted descending" />
-                                                    )
-                                                    : (
-                                                        <TriangleUpIcon aria-label="sorted ascending" />
-                                                    )
-                                            )
-                                            : null}
+                                        {
+                                            // @ts-ignore
+                                            column.isSorted
+                                                ? (
+                                                    // @ts-ignore
+                                                    column.isSortedDesc
+                                                        ? <TriangleDownIcon aria-label="sorted descending" />
+                                                        : <TriangleUpIcon aria-label="sorted ascending" />
+                                                )
+                                                : null
+                                        }
                                     </chakra.span>
                                 </Th>
                             ))}
@@ -379,18 +383,20 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
                                     ))}
                                 </Tr>
 
-                                {// @ts-ignore
-                                row.isExpanded
-                                    ? (
-                                        <Tr>
-                                            <Td>
-                                            </Td>
-                                            <Td colSpan={visibleColumns.length - 1}>
-                                                {renderDetails(row)}
-                                            </Td>
-                                        </Tr>
-                                    )
-                                    : null}
+                                {
+                                    // @ts-ignore
+                                    row.isExpanded
+                                        ? (
+                                            <Tr>
+                                                <Td>
+                                                </Td>
+                                                <Td colSpan={visibleColumns.length - 1}>
+                                                    {renderDetails(row)}
+                                                </Td>
+                                            </Tr>
+                                        )
+                                        : null
+                                }
                             </React.Fragment>
                         );
                     })}

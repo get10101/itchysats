@@ -5,11 +5,9 @@ import { defineConfig } from "vite";
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [
-        (
-            process.env.NODE_ENV !== "test"
-                ? [reactRefresh()]
-                : []
-        ),
+        process.env.NODE_ENV !== "test"
+            ? [reactRefresh()]
+            : [],
     ],
     build: {
         rollupOptions: {

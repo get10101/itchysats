@@ -40,13 +40,15 @@ const History = ({ cfds, title, connectedToMaker }: HistoryProps) => {
                 gap={6}
             >
                 {cfds.map((cfd) => {
-                    return (<GridItem rowSpan={1} colSpan={2} key={cfd.order_id}>
-                        <CfdDetails
-                            cfd={cfd}
-                            connectedToMaker={connectedToMaker}
-                            displayCloseButton={!isClosed(cfd)}
-                        />
-                    </GridItem>);
+                    return (
+                        <GridItem rowSpan={1} colSpan={2} key={cfd.order_id}>
+                            <CfdDetails
+                                cfd={cfd}
+                                connectedToMaker={connectedToMaker}
+                                displayCloseButton={!isClosed(cfd)}
+                            />
+                        </GridItem>
+                    );
                 })}
             </SimpleGrid>
         </VStack>
@@ -78,20 +80,24 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
     let [commit, isCommiting] = usePostRequest(`/api/cfd/${cfd.order_id}/commit`);
 
     const closeButton = connectedToMaker.online
-        ? <CloseButton
-            request={settle}
-            status={isSettling}
-            cfd={cfd}
-            buttonTitle="Close"
-            isForceCloseButton={false}
-        />
-        : <CloseButton
-            request={commit}
-            status={isCommiting}
-            cfd={cfd}
-            buttonTitle="Force-close"
-            isForceCloseButton={true}
-        />;
+        ? (
+            <CloseButton
+                request={settle}
+                status={isSettling}
+                cfd={cfd}
+                buttonTitle="Close"
+                isForceCloseButton={false}
+            />
+        )
+        : (
+            <CloseButton
+                request={commit}
+                status={isCommiting}
+                cfd={cfd}
+                buttonTitle="Force-close"
+                isForceCloseButton={true}
+            />
+        );
 
     let failedCfd = [StateKey.REJECTED, StateKey.SETUP_FAILED].includes(cfd.state.key);
 
@@ -118,7 +124,9 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                 <Table size="sm" variant={"unstyled"}>
                     <Tbody>
                         <Tr>
-                            <Td><Text as={"b"}>Position</Text></Td>
+                            <Td>
+                                <Text as={"b"}>Position</Text>
+                            </Td>
                             <Td
                                 textAlign="right"
                                 textColor={useColorModeValue(position.getColorScheme(), position.getColorScheme())}
@@ -127,7 +135,9 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                             </Td>
                         </Tr>
                         <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
-                            <Td><Text as={"b"}>{profitLabel}</Text></Td>
+                            <Td>
+                                <Text as={"b"}>{profitLabel}</Text>
+                            </Td>
                             <Td textAlign="right">
                                 <Tooltip label={`${cfd.profit_btc}`} placement={"right"}>
                                     <Skeleton isLoaded={cfd.profit_btc != null}>
@@ -138,7 +148,9 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                             </Td>
                         </Tr>
                         <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
-                            <Td><Text as={"b"}>Payout</Text></Td>
+                            <Td>
+                                <Text as={"b"}>Payout</Text>
+                            </Td>
                             <Td textAlign="right">
                                 <Skeleton isLoaded={cfd.payout != null}>
                                     <BitcoinAmount btc={cfd.payout ? cfd.payout : 0} />
@@ -146,32 +158,56 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                             </Td>
                         </Tr>
                         <Tr>
-                            <Td><Text as={"b"}>Margin</Text></Td>
-                            <Td textAlign="right"><BitcoinAmount btc={cfd.margin} /></Td>
+                            <Td>
+                                <Text as={"b"}>Margin</Text>
+                            </Td>
+                            <Td textAlign="right">
+                                <BitcoinAmount btc={cfd.margin} />
+                            </Td>
                         </Tr>
                         <Tr>
-                            <Td><Text as={"b"}>Contracts</Text></Td>
+                            <Td>
+                                <Text as={"b"}>Contracts</Text>
+                            </Td>
                             <Td textAlign="right">{contracts}</Td>
                         </Tr>
                         <Tr>
-                            <Td><Text as={"b"}>Opening price</Text></Td>
-                            <Td textAlign="right"><DollarAmount amount={initialPrice} /></Td>
+                            <Td>
+                                <Text as={"b"}>Opening price</Text>
+                            </Td>
+                            <Td textAlign="right">
+                                <DollarAmount amount={initialPrice} />
+                            </Td>
                         </Tr>
                         {cfd.closing_price
-                            ? <Tr>
-                                <Td><Text as={"b"}>Closing Price</Text></Td>
-                                <Td textAlign="right"><DollarAmount amount={closing_price} /></Td>
-                            </Tr>
-                            : <Tr>
-                                <Td><Text as={"b"}>Liquidation</Text></Td>
-                                <Td textAlign="right"><DollarAmount amount={liquidationPrice} /></Td>
-                            </Tr>}
+                            ? (
+                                <Tr>
+                                    <Td>
+                                        <Text as={"b"}>Closing Price</Text>
+                                    </Td>
+                                    <Td textAlign="right">
+                                        <DollarAmount amount={closing_price} />
+                                    </Td>
+                                </Tr>
+                            )
+                            : (
+                                <Tr>
+                                    <Td>
+                                        <Text as={"b"}>Liquidation</Text>
+                                    </Td>
+                                    <Td textAlign="right">
+                                        <DollarAmount amount={liquidationPrice} />
+                                    </Td>
+                                </Tr>
+                            )}
                     </Tbody>
                 </Table>
                 <Table size="sm" variant={"unstyled"}>
                     <Tbody>
                         <Tr>
-                            <Td><Text as={"b"}>Estimated fees</Text></Td>
+                            <Td>
+                                <Text as={"b"}>Estimated fees</Text>
+                            </Td>
                             <Td textAlign="right">
                                 <BitcoinAmount btc={cfd.accumulated_fees} />
                             </Td>
@@ -186,35 +222,63 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                 <Table size="sm" variant={"unstyled"}>
                     <Tbody>
                         <Tr>
-                            <Td><Text>Lock</Text></Td>
-                            <Td><TxIcon tx={txLock} /></Td>
+                            <Td>
+                                <Text>Lock</Text>
+                            </Td>
+                            <Td>
+                                <TxIcon tx={txLock} />
+                            </Td>
                         </Tr>
                         {txRefund
-                            ? <Tr>
-                                <Td><Text>Refund</Text></Td>
-                                <Td><TxIcon tx={txRefund} /></Td>
-                            </Tr>
+                            ? (
+                                <Tr>
+                                    <Td>
+                                        <Text>Refund</Text>
+                                    </Td>
+                                    <Td>
+                                        <TxIcon tx={txRefund} />
+                                    </Td>
+                                </Tr>
+                            )
                             : txCommit || (cfd.state.key === StateKey.OPEN && !connectedToMaker.online)
-                            ? <>
+                            ? (
+                                <>
+                                    <Tr>
+                                        <Td>
+                                            <Text>Force</Text>
+                                        </Td>
+                                        <Td>
+                                            <TxIcon tx={txCommit} />
+                                        </Td>
+                                    </Tr>
+                                    <Tr>
+                                        <Td>
+                                            <Text>Payout</Text>
+                                        </Td>
+                                        <Td>
+                                            <TxIcon tx={txCet} />
+                                        </Td>
+                                    </Tr>
+                                </>
+                            )
+                            : (
                                 <Tr>
-                                    <Td><Text>Force</Text></Td>
-                                    <Td><TxIcon tx={txCommit} /></Td>
+                                    <Td>
+                                        <Text>Payout</Text>
+                                    </Td>
+                                    <Td>
+                                        <TxIcon tx={txSettled} />
+                                    </Td>
                                 </Tr>
-                                <Tr>
-                                    <Td><Text>Payout</Text></Td>
-                                    <Td><TxIcon tx={txCet} /></Td>
-                                </Tr>
-                            </>
-                            : <Tr>
-                                <Td><Text>Payout</Text></Td>
-                                <Td><TxIcon tx={txSettled} /></Td>
-                            </Tr>}
+                            )}
                     </Tbody>
                 </Table>
                 {displayCloseButton
-                    ? <HStack width={"100%"} paddingBottom={2} justifyContent={"flex-end"}>
-                        {closeButton}
-                    </HStack>
+                    ? (
+                        <HStack width={"100%"} paddingBottom={2} justifyContent={"flex-end"}>
+                            {closeButton}
+                        </HStack>
+                    )
                     : <></>}
             </VStack>
         </HStack>
@@ -235,12 +299,14 @@ const TxIcon = ({ tx }: TxIconProps) => {
     const color = useColorModeValue(colors.light, colors.dark);
 
     if (!tx) {
-        return (<ExternalLinkIcon boxSize={5} color={color} />);
+        return <ExternalLinkIcon boxSize={5} color={color} />;
     } else if (tx && !tx.url) {
-        return (<Spinner mx="2px" color={color} speed="1.65s" />);
+        return <Spinner mx="2px" color={color} speed="1.65s" />;
     } else {
-        return (<Link href={tx.url!} isExternal>
-            <ExternalLinkIcon boxSize={5} color={color} />
-        </Link>);
+        return (
+            <Link href={tx.url!} isExternal>
+                <ExternalLinkIcon boxSize={5} color={color} />
+            </Link>
+        );
     }
 };

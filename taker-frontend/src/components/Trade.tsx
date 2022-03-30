@@ -111,33 +111,41 @@ export default function Trade({
 
     if (connectedToMaker.online) {
         if (balanceTooLow) {
-            alertBox = <AlertBox
-                title={"Your balance is too low!"}
-                description={"Please deposit more into your wallet."}
-                status={"warning"}
-            />;
+            alertBox = (
+                <AlertBox
+                    title={"Your balance is too low!"}
+                    description={"Please deposit more into your wallet."}
+                    status={"warning"}
+                />
+            );
         }
         if (!quantityIsEvenlyDivisibleByIncrement) {
-            alertBox = <AlertBox
-                title={`Quantity is not in increments of ${lotSize}!`}
-                description={`Increment is ${lotSize}`}
-            />;
+            alertBox = (
+                <AlertBox
+                    title={`Quantity is not in increments of ${lotSize}!`}
+                    description={`Increment is ${lotSize}`}
+                />
+            );
         }
         if (quantityTooHigh) {
-            alertBox = <AlertBox
-                title={"Quantity too high!"}
-                description={`Max available liquidity is ${maxQuantity}`}
-            />;
+            alertBox = (
+                <AlertBox
+                    title={"Quantity too high!"}
+                    description={`Max available liquidity is ${maxQuantity}`}
+                />
+            );
         }
         if (quantityTooLow || !quantityGreaterZero) {
             alertBox = <AlertBox title={"Quantity too low!"} description={`Min quantity is ${minQuantity}`} />;
         }
         if (!orderId) {
-            alertBox = <AlertBox
-                title={"Limited liquidity in maker!"}
-                description={"The maker you are connected has no active offers"}
-                status={"warning"}
-            />;
+            alertBox = (
+                <AlertBox
+                    title={"Limited liquidity in maker!"}
+                    description={"The maker you are connected has no active offers"}
+                    status={"warning"}
+                />
+            );
         }
     }
 
@@ -203,7 +211,9 @@ export default function Trade({
                             <Tbody>
                                 <Tr>
                                     <Td>Required Margin</Td>
-                                    <Td isNumeric><BitcoinAmount btc={margin} /></Td>
+                                    <Td isNumeric>
+                                        <BitcoinAmount btc={margin} />
+                                    </Td>
                                 </Tr>
                                 <Tr>
                                     <Td>
@@ -223,7 +233,9 @@ export default function Trade({
                                 </Tr>
 
                                 <Tr>
-                                    <Td><Text>Perpetual Cost</Text></Td>
+                                    <Td>
+                                        <Text>Perpetual Cost</Text>
+                                    </Td>
                                     <FundingRateTooltip
                                         fundingRateHourly={fundingRateHourly}
                                         fundingRateAnnualized={fundingRateAnnualized}

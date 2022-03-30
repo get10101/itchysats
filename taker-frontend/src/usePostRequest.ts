@@ -2,10 +2,10 @@ import { useToast } from "@chakra-ui/react";
 import { useAsync } from "react-async";
 
 /**
-  * A React hook for sending a POST request to a certain endpoint.
-  *
-  * You can pass a callback (`onSuccess`) to process the response. By default, we extract the HTTP body as JSON
-  */
+ * A React hook for sending a POST request to a certain endpoint.
+ *
+ * You can pass a callback (`onSuccess`) to process the response. By default, we extract the HTTP body as JSON
+ */
 export default function usePostRequest<Req = any, Res = any>(
     url: string,
     onSuccess: (response: Res) => void = () => {},
