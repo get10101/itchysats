@@ -11,13 +11,15 @@ type FundingRateTooltipProps = PropsWithChildren<{
 export function FundingRateTooltip(
     { children, fundingRateHourly, fundingRateAnnualized, disabled }: FundingRateTooltipProps,
 ) {
-    return (<Tooltip
-        label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}% (${fundingRateAnnualized}% p.a.). 
+    return (
+        <Tooltip
+            label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}% (${fundingRateAnnualized}% p.a.). 
         The cost can fluctuate depending on the market movements.`}
-        hasArrow
-        placement={"right"}
-        isDisabled={disabled}
-    >
-        {children}
-    </Tooltip>);
+            hasArrow
+            placement={"right"}
+            isDisabled={disabled}
+        >
+            {children}
+        </Tooltip>
+    );
 }

@@ -175,47 +175,60 @@ export const App = () => {
                         <Route path="/">
                             <Route
                                 path="wallet"
-                                element={<>
-                                    <Wallet walletInfo={walletInfo} />
-                                </>}
+                                element={
+                                    <>
+                                        <Wallet walletInfo={walletInfo} />
+                                    </>
+                                }
                             />
                             <Route
-                                element={// @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
-                                <PageLayout
-                                    cfds={cfds}
-                                    connectedToMaker={connectedToMaker}
-                                    showPromoBanner={isWithinPromoPeriod}
-                                />}
+                                element={
+                                    // @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
+
+
+                                        <PageLayout
+                                            cfds={cfds}
+                                            connectedToMaker={connectedToMaker}
+                                            showPromoBanner={isWithinPromoPeriod}
+                                        />
+
+                                }
                             >
                                 <Route
                                     path="long"
-                                    element={<>
-                                        <Trade
-                                            offer={longOffer}
-                                            connectedToMaker={connectedToMaker}
-                                            walletBalance={walletInfo ? walletInfo.balance : 0}
-                                            isLong={true}
-                                        />
-                                    </>}
+                                    element={
+                                        <>
+                                            <Trade
+                                                offer={longOffer}
+                                                connectedToMaker={connectedToMaker}
+                                                walletBalance={walletInfo ? walletInfo.balance : 0}
+                                                isLong={true}
+                                            />
+                                        </>
+                                    }
                                 />
                                 <Route
                                     path="short"
-                                    element={<>
-                                        <Trade
-                                            offer={shortOffer}
-                                            connectedToMaker={connectedToMaker}
-                                            walletBalance={walletInfo ? walletInfo.balance : 0}
-                                            isLong={false}
-                                        />
-                                    </>}
+                                    element={
+                                        <>
+                                            <Trade
+                                                offer={shortOffer}
+                                                connectedToMaker={connectedToMaker}
+                                                walletBalance={walletInfo ? walletInfo.balance : 0}
+                                                isLong={false}
+                                            />
+                                        </>
+                                    }
                                 />
                             </Route>
                             <Route index element={<Navigate to="long" />} />
                         </Route>
                         <Route
                             path="/*"
-                            element={<>
-                            </>}
+                            element={
+                                <>
+                                </>
+                            }
                         />
                     </Routes>
                 </Center>
@@ -233,12 +246,14 @@ interface PageLayoutProps {
 }
 
 function PageLayout({ children, cfds, connectedToMaker, showPromoBanner }: PageLayoutProps) {
-    return (<VStack w={"100%"}>
-        {showPromoBanner && <PromoBanner />}
-        <NavigationButtons />
-        <Outlet />
-        <HistoryLayout cfds={cfds} connectedToMaker={connectedToMaker} />
-    </VStack>);
+    return (
+        <VStack w={"100%"}>
+            {showPromoBanner && <PromoBanner />}
+            <NavigationButtons />
+            <Outlet />
+            <HistoryLayout cfds={cfds} connectedToMaker={connectedToMaker} />
+        </VStack>
+    );
 }
 
 interface HistoryLayoutProps {
@@ -249,33 +264,37 @@ interface HistoryLayoutProps {
 function HistoryLayout({ cfds, connectedToMaker }: HistoryLayoutProps) {
     const closedPositions = cfds.filter((cfd) => isClosed(cfd));
 
-    return (<VStack padding={3} w={"100%"}>
-        <History
-            connectedToMaker={connectedToMaker}
-            cfds={cfds.filter((cfd) => !isClosed(cfd))}
-        />
+    return (
+        <VStack padding={3} w={"100%"}>
+            <History
+                connectedToMaker={connectedToMaker}
+                cfds={cfds.filter((cfd) => !isClosed(cfd))}
+            />
 
-        {closedPositions.length > 0
-            && <Accordion allowToggle width={"80%"}>
-                <AccordionItem>
-                    <h2>
-                        <AccordionButton>
-                            <AccordionIcon />
-                            <Box w={"100%"} textAlign="center">
-                                Show Closed Positions
-                            </Box>
-                            <AccordionIcon />
-                        </AccordionButton>
-                    </h2>
-                    <AccordionPanel pb={4}>
-                        <History
-                            cfds={closedPositions}
-                            connectedToMaker={connectedToMaker}
-                        />
-                    </AccordionPanel>
-                </AccordionItem>
-            </Accordion>}
-    </VStack>);
+            {closedPositions.length > 0
+                && (
+                    <Accordion allowToggle width={"80%"}>
+                        <AccordionItem>
+                            <h2>
+                                <AccordionButton>
+                                    <AccordionIcon />
+                                    <Box w={"100%"} textAlign="center">
+                                        Show Closed Positions
+                                    </Box>
+                                    <AccordionIcon />
+                                </AccordionButton>
+                            </h2>
+                            <AccordionPanel pb={4}>
+                                <History
+                                    cfds={closedPositions}
+                                    connectedToMaker={connectedToMaker}
+                                />
+                            </AccordionPanel>
+                        </AccordionItem>
+                    </Accordion>
+                )}
+        </VStack>
+    );
 }
 
 function NavigationButtons() {
@@ -288,39 +307,41 @@ function NavigationButtons() {
     const buttonBorder = useColorModeValue("grey.400", "black.400");
     const buttonText = useColorModeValue("black", "white");
 
-    return (<HStack>
-        <Center>
-            <ButtonGroup
-                padding="3"
-                spacing="6"
-            >
-                <Button
-                    as={ReachLink}
-                    to="/long"
-                    color={isLongSelected ? selectedButton : unSelectedButton}
-                    bg={isLongSelected ? selectedButton : unSelectedButton}
-                    border={buttonBorder}
-                    isActive={isLongSelected}
-                    size="lg"
-                    h={10}
-                    w={"40"}
+    return (
+        <HStack>
+            <Center>
+                <ButtonGroup
+                    padding="3"
+                    spacing="6"
                 >
-                    <Text fontSize={"md"} color={buttonText}>Long BTC</Text>
-                </Button>
-                <Button
-                    as={ReachLink}
-                    to="/short"
-                    color={isShortSelected ? selectedButton : unSelectedButton}
-                    bg={isShortSelected ? selectedButton : unSelectedButton}
-                    border={buttonBorder}
-                    isActive={isShortSelected}
-                    size="lg"
-                    h={10}
-                    w={"40"}
-                >
-                    <Text fontSize={"md"} color={buttonText}>Short BTC</Text>
-                </Button>
-            </ButtonGroup>
-        </Center>
-    </HStack>);
+                    <Button
+                        as={ReachLink}
+                        to="/long"
+                        color={isLongSelected ? selectedButton : unSelectedButton}
+                        bg={isLongSelected ? selectedButton : unSelectedButton}
+                        border={buttonBorder}
+                        isActive={isLongSelected}
+                        size="lg"
+                        h={10}
+                        w={"40"}
+                    >
+                        <Text fontSize={"md"} color={buttonText}>Long BTC</Text>
+                    </Button>
+                    <Button
+                        as={ReachLink}
+                        to="/short"
+                        color={isShortSelected ? selectedButton : unSelectedButton}
+                        bg={isShortSelected ? selectedButton : unSelectedButton}
+                        border={buttonBorder}
+                        isActive={isShortSelected}
+                        size="lg"
+                        h={10}
+                        w={"40"}
+                    >
+                        <Text fontSize={"md"} color={buttonText}>Short BTC</Text>
+                    </Button>
+                </ButtonGroup>
+            </Center>
+        </HStack>
+    );
 }

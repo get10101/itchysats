@@ -18,7 +18,9 @@ export default function Wallet(
 
     return (
         <Box shadow={"md"} marginBottom={5} padding={5}>
-            <Center><Text fontWeight={"bold"}>Your wallet</Text></Center>
+            <Center>
+                <Text fontWeight={"bold"}>Your wallet</Text>
+            </Center>
             <HStack>
                 <Text align={"left"}>Balance:</Text>
                 <Skeleton isLoaded={balance != null}>

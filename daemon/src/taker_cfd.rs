@@ -11,7 +11,7 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use model::closing_price;
+use model::market_closing_price;
 use model::Cfd;
 use model::Identity;
 use model::MakerOffers;
@@ -135,7 +135,7 @@ impl<O, W> Actor<O, W> {
         // quote / where to taker the decision to avoid this call.
         let cfd = crate::command::load_cfd(order_id, &mut conn).await?;
 
-        let proposal_closing_price = closing_price(bid, ask, Role::Taker, cfd.position());
+        let proposal_closing_price = market_closing_price(bid, ask, Role::Taker, cfd.position());
 
         let disconnected = self
             .collab_settlement_actors

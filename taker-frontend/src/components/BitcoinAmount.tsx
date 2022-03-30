@@ -9,7 +9,9 @@ interface Props {
 export default function BitcoinAmount({ btc }: Props) {
     const formatted = btc.toFixed(8);
 
-    return <Skeleton isLoaded={Number.isFinite(btc)}>
-        <Text>₿{formatted}</Text>
-    </Skeleton>;
+    return (
+        <Skeleton isLoaded={Number.isFinite(btc)}>
+            <Text>₿{formatted}</Text>
+        </Skeleton>
+    );
 }

@@ -8,9 +8,11 @@ interface AlertBoxProps {
 }
 
 export default function AlertBox({ title, description, status = "error" }: AlertBoxProps) {
-    return (<Alert status={status}>
-        <AlertIcon />
-        <AlertTitle mr={2}>{title}</AlertTitle>
-        <AlertDescription>{description}</AlertDescription>
-    </Alert>);
+    return (
+        <Alert status={status}>
+            <AlertIcon />
+            <AlertTitle mr={2}>{title}</AlertTitle>
+            <AlertDescription>{description}</AlertDescription>
+        </Alert>
+    );
 }

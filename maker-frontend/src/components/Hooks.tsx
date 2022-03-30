@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useEventSourceListener } from "react-sse-hooks";
 
-export default function useLatestEvent<T>(
+export default function useLatestEvent<T,>(
     source: EventSource,
     event_name: string,
     mapping: (key: string, value: any) => any = (key, value) => value,

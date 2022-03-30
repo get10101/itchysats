@@ -97,20 +97,34 @@ export default function ConfirmOrderModal({
                         </TableCaption>
                         <Tbody>
                             <Tr>
-                                <Td><Text as={"b"}>Leverage</Text></Td>
+                                <Td>
+                                    <Text as={"b"}>Leverage</Text>
+                                </Td>
                                 <Td>{leverage}</Td>
                             </Tr>
                             <Tr>
-                                <Td><Text as={"b"}>Liquidation Price</Text></Td>
-                                <Td><DollarAmount amount={liquidationPriceAsNumber || 0} /></Td>
+                                <Td>
+                                    <Text as={"b"}>Liquidation Price</Text>
+                                </Td>
+                                <Td>
+                                    <DollarAmount amount={liquidationPriceAsNumber || 0} />
+                                </Td>
                             </Tr>
                             <Tr>
-                                <Td><Text as={"b"}>Margin</Text></Td>
-                                <Td><BitcoinAmount btc={margin} /></Td>
+                                <Td>
+                                    <Text as={"b"}>Margin</Text>
+                                </Td>
+                                <Td>
+                                    <BitcoinAmount btc={margin} />
+                                </Td>
                             </Tr>
                             <Tr>
-                                <Td><Text as={"b"}>Funding for first 24h</Text></Td>
-                                <Td><BitcoinAmount btc={feeForFirstSettlementInterval} /></Td>
+                                <Td>
+                                    <Text as={"b"}>Funding for first 24h</Text>
+                                </Td>
+                                <Td>
+                                    <BitcoinAmount btc={feeForFirstSettlementInterval} />
+                                </Td>
                             </Tr>
                             <FundingRateTooltip
                                 fundingRateHourly={fundingRateHourly}
@@ -118,7 +132,9 @@ export default function ConfirmOrderModal({
                                 disabled={!fundingRateHourly}
                             >
                                 <Tr>
-                                    <Td><Text as={"b"}>Perpetual Cost</Text></Td>
+                                    <Td>
+                                        <Text as={"b"}>Perpetual Cost</Text>
+                                    </Td>
                                     <Td>Hourly @ {fundingRateHourly}%</Td>
                                 </Tr>
                             </FundingRateTooltip>

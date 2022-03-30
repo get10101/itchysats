@@ -50,9 +50,11 @@ export default function Wallet(
         window.open(url, "_blank");
         toast({
             title: "Withdraw successful",
-            description: <Link href={url} isExternal>
-                {url}
-            </Link>,
+            description: (
+                <Link href={url} isExternal>
+                    {url}
+                </Link>
+            ),
             status: "info",
             duration: 10000,
             isClosable: true,

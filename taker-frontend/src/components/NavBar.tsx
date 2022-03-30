@@ -34,9 +34,7 @@ interface NavProps {
 }
 
 function TextDivider() {
-    return (
-        <Divider orientation={"vertical"} borderColor={useColorModeValue("black", "white")} height={"20px"} />
-    );
+    return <Divider orientation={"vertical"} borderColor={useColorModeValue("black", "white")} height={"20px"} />;
 }
 
 export default function Nav({ walletInfo, connectedToMaker, nextFundingEvent, referencePrice }: NavProps) {

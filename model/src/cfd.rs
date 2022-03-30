@@ -1523,20 +1523,26 @@ pub fn long_and_short_leverage(
     }
 }
 
-/// Decide the closing price according to role and position
+/// Calculate the closing price used to collaboratively settle a CFD.
+/// This value is akin to the one used for a market close order in a
+/// centralised exchange.
 ///
-/// Depending on role and position the closing price is determined from bid and ask price of the
-/// maker.
-/// Taker is long: When closing the taker sells short to close the position, i.e. the bid price
-/// applies.
-/// Taker is short: When closing the taker buys long to close the position, i.e. the
-/// ask price applies.
-/// In order to show the same closing price for maker and taker we need to take the counter-position
-/// for the maker.
-pub fn closing_price(bid: Price, ask: Price, role: Role, position: Position) -> Price {
-    match (role, position) {
-        (Role::Taker, Position::Long) | (Role::Maker, Position::Short) => bid,
-        (Role::Taker, Position::Short) | (Role::Maker, Position::Long) => ask,
+/// We calculate it from the perspective of the maker (i.e. the market).
+///
+/// If the maker has gone long, when closing their position they sell
+/// short. Therefore, in that case we use the ask price.
+///
+/// If the maker has gone short, when closing their position they buy
+/// long. Therefore, in that case we use the bid price.
+pub fn market_closing_price(bid: Price, ask: Price, role: Role, position: Position) -> Price {
+    let maker_position = match (role, position) {
+        (Role::Maker, maker_position) => maker_position,
+        (Role::Taker, taker_position) => taker_position.counter_position(),
+    };
+
+    match maker_position {
+        Position::Long => ask,
+        Position::Short => bid,
     }
 }
 
