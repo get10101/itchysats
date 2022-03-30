@@ -855,13 +855,21 @@ impl Actor {
         let mut conn = self.db.acquire().await?;
         let vec = db::load_all_cfd_ids(&mut conn).await?;
 
-        self.state.cfds = Some(HashMap::with_capacity(vec.len()));
+        let mut cfds = HashMap::with_capacity(vec.len());
 
         for id in vec {
-            if let Err(e) = self.state.update_cfd(self.db.clone(), id).await {
-                tracing::error!("Failed to rehydrate CFD: {e:#}");
+            let cfd = match db::load_cfd(id, &mut conn, self.state.network).await {
+                Ok(cfd) => cfd,
+                Err(e) => {
+                    tracing::error!("Failed to rehydrate CFD: {e:#}");
+                    continue;
+                }
             };
+
+            cfds.insert(id, cfd);
         }
+
+        self.state.cfds = Some(cfds);
 
         self.tx.send_cfds_update(
             self.state
