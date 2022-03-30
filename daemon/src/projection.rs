@@ -18,8 +18,8 @@ use model::calculate_margin;
 use model::calculate_profit;
 use model::calculate_profit_at_price;
 use model::calculate_short_liquidation_price;
-use model::closing_price;
 use model::long_and_short_leverage;
+use model::market_closing_price;
 use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
@@ -590,7 +590,7 @@ impl Cfd {
             }
         };
 
-        let closing_price = closing_price(bid, ask, self.role, self.position);
+        let closing_price = market_closing_price(bid, ask, self.role, self.position);
 
         let (long_leverage, short_leverage) =
             long_and_short_leverage(self.leverage_taker, self.role, self.position);
