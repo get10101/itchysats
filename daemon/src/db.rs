@@ -180,36 +180,6 @@ pub async fn append_event(
     Ok(())
 }
 
-// TODO: Make sqlx directly instantiate this struct instead of mapping manually. Need to create
-// newtype for `settlement_interval`.
-#[derive(Clone, Copy)]
-pub struct Cfd {
-    pub id: OrderId,
-    pub position: Position,
-    pub initial_price: Price,
-    pub taker_leverage: Leverage,
-    pub settlement_interval: Duration,
-    pub quantity_usd: Usd,
-    pub counterparty_network_identity: Identity,
-    pub role: Role,
-    pub opening_fee: OpeningFee,
-    pub initial_funding_rate: FundingRate,
-    pub initial_tx_fee_rate: TxFeeRate,
-}
-
-/// A trait for abstracting over an aggregate.
-///
-/// Aggregating all available events differs based on the module. Thus, to provide a single
-/// interface we ask the caller to provide us with the bare minimum API so we can build the
-/// aggregate for them.
-pub trait CfdAggregate: Clone + Send + Sync + 'static {
-    type CtorArgs;
-
-    fn new(args: Self::CtorArgs, cfd: Cfd) -> Self;
-    fn apply(self, event: CfdEvent) -> Self;
-    fn version(&self) -> u32;
-}
-
 /// Load a CFD in its latest version from the database.
 pub async fn load_cfd<C>(
     conn: &mut PoolConnection<Sqlite>,
@@ -228,89 +198,6 @@ where
         .fold(cfd, C::apply);
 
     Ok(cfd)
-}
-
-async fn load_cfd_row(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Cfd> {
-    let cfd_row = sqlx::query!(
-        r#"
-            select
-                id as cfd_id,
-                uuid as "uuid: model::OrderId",
-                position as "position: model::Position",
-                initial_price as "initial_price: model::Price",
-                leverage as "leverage: model::Leverage",
-                settlement_time_interval_hours,
-                quantity_usd as "quantity_usd: model::Usd",
-                counterparty_network_identity as "counterparty_network_identity: model::Identity",
-                role as "role: model::Role",
-                opening_fee as "opening_fee: model::OpeningFee",
-                initial_funding_rate as "initial_funding_rate: model::FundingRate",
-                initial_tx_fee_rate as "initial_tx_fee_rate: model::TxFeeRate"
-            from
-                cfds
-            where
-                cfds.uuid = $1
-            "#,
-        id
-    )
-    .fetch_one(&mut *conn)
-    .await?;
-
-    Ok(Cfd {
-        id: cfd_row.uuid,
-        position: cfd_row.position,
-        initial_price: cfd_row.initial_price,
-        taker_leverage: cfd_row.leverage,
-        settlement_interval: Duration::hours(cfd_row.settlement_time_interval_hours),
-        quantity_usd: cfd_row.quantity_usd,
-        counterparty_network_identity: cfd_row.counterparty_network_identity,
-        role: cfd_row.role,
-        opening_fee: cfd_row.opening_fee,
-        initial_funding_rate: cfd_row.initial_funding_rate,
-        initial_tx_fee_rate: cfd_row.initial_tx_fee_rate,
-    })
-}
-
-/// Load events for a given CFD but only onwards from the specified version.
-///
-/// The version of a CFD is the number of events that have been applied. If we have an aggregate
-/// instance in version 3, we can avoid loading the first 3 events and only apply the ones after.
-async fn load_cfd_events(
-    conn: &mut PoolConnection<Sqlite>,
-    id: OrderId,
-    from_version: u32,
-) -> Result<Vec<CfdEvent>> {
-    let events = sqlx::query!(
-        r#"
-
-        select
-            name,
-            data,
-            created_at as "created_at: model::Timestamp"
-        from
-            events
-        join
-            cfds c on c.id = events.cfd_id
-        where
-            uuid = $1
-        limit $2,-1
-            "#,
-        id,
-        from_version
-    )
-    .fetch_all(&mut *conn)
-    .await?
-    .into_iter()
-    .map(|row| {
-        Ok(CfdEvent {
-            timestamp: row.created_at,
-            id,
-            event: EventKind::from_json(row.name, row.data)?,
-        })
-    })
-    .collect::<Result<Vec<_>>>()?;
-
-    Ok(events)
 }
 
 pub fn load_all_cfds<C>(
@@ -410,6 +297,119 @@ pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<
     .collect();
 
     Ok(ids)
+}
+
+// TODO: Make sqlx directly instantiate this struct instead of mapping manually. Need to create
+// newtype for `settlement_interval`.
+#[derive(Clone, Copy)]
+pub struct Cfd {
+    pub id: OrderId,
+    pub position: Position,
+    pub initial_price: Price,
+    pub taker_leverage: Leverage,
+    pub settlement_interval: Duration,
+    pub quantity_usd: Usd,
+    pub counterparty_network_identity: Identity,
+    pub role: Role,
+    pub opening_fee: OpeningFee,
+    pub initial_funding_rate: FundingRate,
+    pub initial_tx_fee_rate: TxFeeRate,
+}
+
+/// A trait for abstracting over an aggregate.
+///
+/// Aggregating all available events differs based on the module. Thus, to provide a single
+/// interface we ask the caller to provide us with the bare minimum API so we can build the
+/// aggregate for them.
+pub trait CfdAggregate: Clone + Send + Sync + 'static {
+    type CtorArgs;
+
+    fn new(args: Self::CtorArgs, cfd: Cfd) -> Self;
+    fn apply(self, event: CfdEvent) -> Self;
+    fn version(&self) -> u32;
+}
+
+async fn load_cfd_row(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Cfd> {
+    let cfd_row = sqlx::query!(
+        r#"
+            select
+                id as cfd_id,
+                uuid as "uuid: model::OrderId",
+                position as "position: model::Position",
+                initial_price as "initial_price: model::Price",
+                leverage as "leverage: model::Leverage",
+                settlement_time_interval_hours,
+                quantity_usd as "quantity_usd: model::Usd",
+                counterparty_network_identity as "counterparty_network_identity: model::Identity",
+                role as "role: model::Role",
+                opening_fee as "opening_fee: model::OpeningFee",
+                initial_funding_rate as "initial_funding_rate: model::FundingRate",
+                initial_tx_fee_rate as "initial_tx_fee_rate: model::TxFeeRate"
+            from
+                cfds
+            where
+                cfds.uuid = $1
+            "#,
+        id
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+
+    Ok(Cfd {
+        id: cfd_row.uuid,
+        position: cfd_row.position,
+        initial_price: cfd_row.initial_price,
+        taker_leverage: cfd_row.leverage,
+        settlement_interval: Duration::hours(cfd_row.settlement_time_interval_hours),
+        quantity_usd: cfd_row.quantity_usd,
+        counterparty_network_identity: cfd_row.counterparty_network_identity,
+        role: cfd_row.role,
+        opening_fee: cfd_row.opening_fee,
+        initial_funding_rate: cfd_row.initial_funding_rate,
+        initial_tx_fee_rate: cfd_row.initial_tx_fee_rate,
+    })
+}
+
+/// Load events for a given CFD but only onwards from the specified version.
+///
+/// The version of a CFD is the number of events that have been applied. If we have an aggregate
+/// instance in version 3, we can avoid loading the first 3 events and only apply the ones after.
+async fn load_cfd_events(
+    conn: &mut PoolConnection<Sqlite>,
+    id: OrderId,
+    from_version: u32,
+) -> Result<Vec<CfdEvent>> {
+    let events = sqlx::query!(
+        r#"
+
+        select
+            name,
+            data,
+            created_at as "created_at: model::Timestamp"
+        from
+            events
+        join
+            cfds c on c.id = events.cfd_id
+        where
+            uuid = $1
+        limit $2,-1
+            "#,
+        id,
+        from_version
+    )
+    .fetch_all(&mut *conn)
+    .await?
+    .into_iter()
+    .map(|row| {
+        Ok(CfdEvent {
+            timestamp: row.created_at,
+            id,
+            event: EventKind::from_json(row.name, row.data)?,
+        })
+    })
+    .collect::<Result<Vec<_>>>()?;
+
+    Ok(events)
 }
 
 #[cfg(test)]
