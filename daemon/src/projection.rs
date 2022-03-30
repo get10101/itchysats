@@ -11,6 +11,7 @@ use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
 use bdk::miniscript::DescriptorTrait;
 use core::fmt;
+use futures::StreamExt;
 use itertools::Itertools;
 use maia::TransactionExt;
 use model::calculate_long_liquidation_price;
@@ -853,12 +854,12 @@ impl State {
 impl Actor {
     async fn handle(&mut self, _: Initialize) -> Result<()> {
         let mut conn = self.db.acquire().await?;
-        let vec = db::load_all_cfd_ids(&mut conn).await?;
+        let mut stream = db::load_all_cfds::<Cfd>(&mut conn, self.state.network);
 
-        let mut cfds = HashMap::with_capacity(vec.len());
+        let mut cfds = HashMap::new();
 
-        for id in vec {
-            let cfd = match db::load_cfd(id, &mut conn, self.state.network).await {
+        while let Some(cfd) = stream.next().await {
+            let cfd = match cfd {
                 Ok(cfd) => cfd,
                 Err(e) => {
                     tracing::error!("Failed to rehydrate CFD: {e:#}");
@@ -866,7 +867,7 @@ impl Actor {
                 }
             };
 
-            cfds.insert(id, cfd);
+            cfds.insert(cfd.order_id, cfd);
         }
 
         self.state.cfds = Some(cfds);

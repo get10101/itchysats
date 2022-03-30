@@ -2,6 +2,8 @@ use anyhow::Context;
 use anyhow::Result;
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::Stream;
+use futures::StreamExt;
 use model::CfdEvent;
 use model::EventKind;
 use model::FundingRate;
@@ -311,23 +313,37 @@ async fn load_cfd_events(
     Ok(events)
 }
 
-pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<OrderId>> {
-    let ids = sqlx::query!(
-        r#"
+pub fn load_all_cfds<C>(
+    conn: &mut PoolConnection<Sqlite>,
+    args: C::CtorArgs,
+) -> impl Stream<Item = Result<C>> + Unpin + '_
+where
+    C: CfdAggregate + Unpin,
+    C::CtorArgs: Clone + Send + Sync,
+{
+    let stream = async_stream::try_stream! {
+        let ids = sqlx::query!(
+            r#"
             select
                 id as cfd_id,
                 uuid as "uuid: model::OrderId"
             from
                 cfds
             "#
-    )
-    .fetch_all(&mut *conn)
-    .await?
-    .into_iter()
-    .map(|r| r.uuid)
-    .collect();
+        )
+        .fetch_all(&mut *conn)
+        .await?
+        .into_iter()
+        .map(|r| r.uuid);
 
-    Ok(ids)
+        for id in ids {
+            let cfd = load_cfd(id, conn, args.clone()).await?;
+
+            yield cfd;
+        }
+    };
+
+    stream.boxed()
 }
 
 /// Loads all CFDs where we are still able to append events

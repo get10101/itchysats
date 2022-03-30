@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 anyhow = "1"
+async-stream = "0.3"
 async-trait = "0.1.53"
 bdk = { version = "0.16", default-features = false, features = ["electrum"] }
 bdk-ext = { path = "../bdk-ext" }
