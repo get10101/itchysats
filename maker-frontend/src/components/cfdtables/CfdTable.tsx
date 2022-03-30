@@ -342,8 +342,10 @@ export function Table({ columns, tableData, hiddenColumns, renderDetails }: Tabl
                         <Tr {...headerGroup.getHeaderGroupProps()}>
                             {headerGroup.headers.map((column) => (
                                 <Th
-                                    {// @ts-ignore
-                                    ...column.getHeaderProps(column.getSortByToggleProps())}
+                                    {
+                                        // @ts-ignore
+                                        ...column.getHeaderProps(column.getSortByToggleProps())
+                                    }
                                     // @ts-ignore
                                     isNumeric={column.isNumeric}
                                     textAlign={"right"}

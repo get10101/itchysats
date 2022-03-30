@@ -185,6 +185,7 @@ export const App = () => {
                                 element={
                                     // @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
 
+
                                         <PageLayout
                                             cfds={cfds}
                                             connectedToMaker={connectedToMaker}
