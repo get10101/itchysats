@@ -3,6 +3,7 @@ use crate::db;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::TryStreamExt;
 use maia::secp256k1_zkp::schnorrsig;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
@@ -320,11 +321,17 @@ impl xtra::Actor for Actor {
 
                 async move {
                     let mut conn = db.acquire().await?;
+                    let mut stream = db::load_all_open_cfds::<Cfd>(&mut conn, ());
 
-                    for id in db::load_open_cfd_ids(&mut conn).await? {
-                        let cfd = db::load_cfd::<Cfd>(id, &mut conn, ()).await?;
-
-                        if let Some(pending_attestation) = cfd.pending_attestation {
+                    while let Some(Cfd {
+                        pending_attestation,
+                        ..
+                    }) = stream
+                        .try_next()
+                        .await
+                        .context("Failed to load CFD from database")?
+                    {
+                        if let Some(pending_attestation) = pending_attestation {
                             let _: Result<(), xtra::Disconnected> = this
                                 .send(MonitorAttestation {
                                     event_id: pending_attestation,

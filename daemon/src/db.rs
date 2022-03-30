@@ -356,6 +356,27 @@ where
 ///     Cases: Collaborative settlement, CET, Refund
 /// 2. Event that fails the CFD early was recorded, meaning it becomes irrelevant for processing
 ///     Cases: Setup failed, Taker's take order rejected
+pub fn load_all_open_cfds<C>(
+    conn: &mut PoolConnection<Sqlite>,
+    args: C::CtorArgs,
+) -> impl Stream<Item = Result<C>> + Unpin + '_
+where
+    C: CfdAggregate + Unpin,
+    C::CtorArgs: Clone + Send + Sync,
+{
+    let stream = async_stream::try_stream! {
+        let ids = load_open_cfd_ids(conn).await?;
+
+        for id in ids {
+            let cfd = load_cfd(id, conn, args.clone()).await?;
+
+            yield cfd;
+        }
+    };
+
+    stream.boxed()
+}
+
 pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<OrderId>> {
     let ids = sqlx::query!(
         r#"

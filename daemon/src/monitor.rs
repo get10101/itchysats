@@ -16,6 +16,7 @@ use bdk::miniscript::DescriptorTrait;
 use btsieve::ScriptStatus;
 use btsieve::State;
 use btsieve::TxStatus;
+use futures::TryStreamExt;
 use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
@@ -119,6 +120,7 @@ pub struct Actor {
 /// Read-model of the CFD for the monitoring actor.
 #[derive(Clone)]
 struct Cfd {
+    id: OrderId,
     params: Option<MonitorParams>,
 
     monitor_lock_finality: bool,
@@ -142,8 +144,9 @@ struct Cfd {
 impl db::CfdAggregate for Cfd {
     type CtorArgs = ();
 
-    fn new(_: Self::CtorArgs, _: db::Cfd) -> Self {
+    fn new(_: Self::CtorArgs, cfd: db::Cfd) -> Self {
         Self {
+            id: cfd.id,
             params: None,
             monitor_lock_finality: false,
             monitor_commit_finality: false,
@@ -531,15 +534,18 @@ impl xtra::Actor for Actor {
 
                 async move {
                     let mut conn = db.acquire().await?;
+                    let mut stream = db::load_all_open_cfds::<Cfd>(&mut conn, ());
 
-                    for id in db::load_open_cfd_ids(&mut conn).await? {
-                        let Cfd {
-                            cet,
-                            commit_tx,
-                            lock_tx,
-                            ..
-                        } = db::load_cfd(id, &mut conn, ()).await?;
-
+                    while let Some(Cfd {
+                        cet,
+                        commit_tx,
+                        lock_tx,
+                        ..
+                    }) = stream
+                        .try_next()
+                        .await
+                        .context("Failed to load CFD from database")?
+                    {
                         if let Some(tx) = commit_tx {
                             if let Err(e) = this
                                 .send(TryBroadcastTransaction {
@@ -591,20 +597,24 @@ impl xtra::Actor for Actor {
 
                 async move {
                     let mut conn = db.acquire().await?;
+                    let mut stream = db::load_all_open_cfds::<Cfd>(&mut conn, ());
 
-                    for id in db::load_open_cfd_ids(&mut conn).await? {
-                        let Cfd {
-                            params,
-                            monitor_lock_finality,
-                            monitor_commit_finality,
-                            monitor_cet_timelock,
-                            monitor_refund_timelock,
-                            monitor_refund_finality,
-                            monitor_revoked_commit_transactions,
-                            monitor_collaborative_settlement_finality,
-                            ..
-                        } = db::load_cfd(id, &mut conn, ()).await?;
-
+                    while let Some(Cfd {
+                        id,
+                        params,
+                        monitor_lock_finality,
+                        monitor_commit_finality,
+                        monitor_cet_timelock,
+                        monitor_refund_timelock,
+                        monitor_refund_finality,
+                        monitor_revoked_commit_transactions,
+                        monitor_collaborative_settlement_finality,
+                        ..
+                    }) = stream
+                        .try_next()
+                        .await
+                        .context("Failed to load CFD from database")?
+                    {
                         let params = match params {
                             None => continue,
                             Some(params) => params,
