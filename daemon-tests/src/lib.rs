@@ -139,7 +139,7 @@ pub struct Maker {
 }
 
 impl Maker {
-    pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Vec<Cfd>> {
+    pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Option<Vec<Cfd>>> {
         &mut self.feeds.cfds
     }
 
@@ -271,7 +271,7 @@ pub struct Taker {
 }
 
 impl Taker {
-    pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Vec<Cfd>> {
+    pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Option<Vec<Cfd>>> {
         &mut self.feeds.cfds
     }
 
@@ -396,8 +396,12 @@ macro_rules! simulate_attestation {
 #[macro_export]
 macro_rules! wait_next_state {
     ($id:expr, $maker:expr, $taker:expr, $maker_state:expr, $taker_state:expr) => {
-        let wait_until_taker = next_with($taker.cfd_feed(), one_cfd_with_state($taker_state));
-        let wait_until_maker = next_with($maker.cfd_feed(), one_cfd_with_state($maker_state));
+        let wait_until_taker = next_with($taker.cfd_feed(), |maybe_cfds| {
+            maybe_cfds.and_then(one_cfd_with_state($taker_state))
+        });
+        let wait_until_maker = next_with($maker.cfd_feed(), |maybe_cfds| {
+            maybe_cfds.and_then(one_cfd_with_state($maker_state))
+        });
 
         let (taker_cfd, maker_cfd) = tokio::join!(wait_until_taker, wait_until_maker);
         let taker_cfd = taker_cfd.unwrap();

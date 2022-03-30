@@ -76,7 +76,7 @@ pub struct Feeds {
     pub quote: watch::Receiver<Option<Quote>>,
     pub offers: watch::Receiver<MakerOffers>,
     pub connected_takers: watch::Receiver<Vec<model::Identity>>,
-    pub cfds: watch::Receiver<Vec<Cfd>>,
+    pub cfds: watch::Receiver<Option<Vec<Cfd>>>,
 }
 
 impl Actor {
@@ -85,7 +85,7 @@ impl Actor {
         network: Network,
         price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote> + 'static),
     ) -> (Self, Feeds) {
-        let (tx_cfds, rx_cfds) = watch::channel(Vec::new());
+        let (tx_cfds, rx_cfds) = watch::channel(None);
         let (tx_order, rx_order) = watch::channel(MakerOffers {
             long: None,
             short: None,
@@ -720,7 +720,7 @@ impl Cfd {
 
 /// Internal struct to keep all the senders around in one place
 struct Tx {
-    cfds: watch::Sender<Vec<Cfd>>,
+    cfds: watch::Sender<Option<Vec<Cfd>>>,
     pub order: watch::Sender<MakerOffers>,
     pub quote: watch::Sender<Option<Quote>>,
     // TODO: Use this channel to communicate maker status as well with generic
@@ -745,7 +745,7 @@ impl Tx {
             })
             .collect();
 
-        let _ = self.cfds.send(cfds_with_quote);
+        let _ = self.cfds.send(Some(cfds_with_quote));
     }
 
     fn send_quote_update(&self, quote: Option<xtra_bitmex_price_feed::Quote>) {
@@ -793,7 +793,7 @@ struct State {
     network: Network,
     quote: Option<xtra_bitmex_price_feed::Quote>,
     /// All hydrated CFDs.
-    cfds: HashMap<OrderId, Cfd>,
+    cfds: Option<HashMap<OrderId, Cfd>>,
 }
 
 impl State {
@@ -801,7 +801,7 @@ impl State {
         Self {
             network,
             quote: None,
-            cfds: HashMap::new(),
+            cfds: None,
         }
     }
 
@@ -817,7 +817,12 @@ impl State {
             .into_iter()
             .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, self.network));
 
-        self.cfds.insert(id, cfd);
+        let cfds = self
+            .cfds
+            .as_mut()
+            .context("CFD list has not been initialized yet")?;
+
+        cfds.insert(id, cfd);
 
         Ok(())
     }
@@ -833,14 +838,21 @@ impl Actor {
         let mut conn = self.db.acquire().await?;
         let vec = db::load_all_cfd_ids(&mut conn).await?;
 
+        self.state.cfds = Some(HashMap::with_capacity(vec.len()));
+
         for id in vec {
             if let Err(e) = self.state.update_cfd(self.db.clone(), id).await {
                 tracing::error!("Failed to rehydrate CFD: {e:#}");
             };
         }
 
-        self.tx
-            .send_cfds_update(self.state.cfds.clone(), self.state.quote);
+        self.tx.send_cfds_update(
+            self.state
+                .cfds
+                .clone()
+                .expect("we initialized the state above; qed"),
+            self.state.quote,
+        );
 
         Ok(())
     }
@@ -851,8 +863,13 @@ impl Actor {
             return;
         };
 
-        self.tx
-            .send_cfds_update(self.state.cfds.clone(), self.state.quote);
+        self.tx.send_cfds_update(
+            self.state
+                .cfds
+                .clone()
+                .expect("update_cfd fails if the CFDs have not been initialized yet"),
+            self.state.quote,
+        );
     }
 
     fn handle(&mut self, msg: Update<Option<model::MakerOffers>>) {
@@ -861,10 +878,16 @@ impl Actor {
 
     fn handle(&mut self, msg: Update<Option<xtra_bitmex_price_feed::Quote>>) {
         self.state.update_quote(msg.0);
-
-        let hydrated_cfds = self.state.cfds.clone();
-
         self.tx.send_quote_update(msg.0);
+
+        let hydrated_cfds = match self.state.cfds.clone() {
+            None => {
+                tracing::debug!("Cannot update CFDs with new quote until they are initialized.");
+                return;
+            }
+            Some(cfds) => cfds,
+        };
+
         self.tx.send_cfds_update(hydrated_cfds, msg.0);
     }
 

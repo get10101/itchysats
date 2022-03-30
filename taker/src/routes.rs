@@ -75,7 +75,9 @@ pub async fn feed(
         yield quote.to_sse_event();
 
         let cfds = rx_cfds.borrow().clone();
-        yield cfds.to_sse_event();
+        if let Some(cfds) = cfds {
+            yield cfds.to_sse_event()
+        }
 
         loop{
             select! {
@@ -94,7 +96,9 @@ pub async fn feed(
                 }
                 Ok(()) = rx_cfds.changed() => {
                     let cfds = rx_cfds.borrow().clone();
-                    yield cfds.to_sse_event();
+                    if let Some(cfds) = cfds {
+                        yield cfds.to_sse_event()
+                    }
                 }
                 Ok(()) = rx_quote.changed() => {
                     let quote = rx_quote.borrow().clone();
