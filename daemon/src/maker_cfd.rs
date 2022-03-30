@@ -356,7 +356,7 @@ where
             .send(projection::Update(self.current_offers))
             .await?;
 
-        db::insert_cfd(&cfd, &mut conn).await?;
+        db::insert_cfd(&mut conn, &cfd).await?;
         self.projection
             .send(projection::CfdChanged(cfd.id()))
             .await?;

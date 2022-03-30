@@ -32,7 +32,7 @@ impl Executor {
             .await
             .context("Failed to acquire DB connection")?;
 
-        let cfd = db::load_cfd(id, &mut connection, ())
+        let cfd = db::load_cfd(&mut connection, id, ())
             .await
             .context("Failed to load CFD")?;
 

@@ -72,7 +72,7 @@ impl Actor {
 
             let mut conn = self.db.acquire().await?;
 
-            let cfd = db::load_cfd::<model::Cfd>(self.proposal.order_id, &mut conn, ()).await?;
+            let cfd = db::load_cfd::<model::Cfd>(&mut conn, self.proposal.order_id, ()).await?;
 
             let settlement =
                 cfd.sign_collaborative_settlement_maker(self.proposal, msg.sig_taker)?;

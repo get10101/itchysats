@@ -833,7 +833,7 @@ impl State {
             .await
             .context("Failed to acquire DB connection")?;
 
-        let cfd = db::load_cfd(id, &mut conn, self.network).await?;
+        let cfd = db::load_cfd(&mut conn, id, self.network).await?;
 
         let cfds = self
             .cfds

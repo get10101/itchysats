@@ -84,7 +84,7 @@ impl Actor {
 
         let mut conn = self.db.acquire().await?;
 
-        let cfd = crate::db::load_cfd::<model::Cfd>(order_id, &mut conn, ()).await?;
+        let cfd = crate::db::load_cfd::<model::Cfd>(&mut conn, order_id, ()).await?;
 
         // TODO: This should happen within a dedicated state machine returned from
         // start_collaborative_settlement

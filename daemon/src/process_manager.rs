@@ -68,7 +68,7 @@ impl Actor {
 
         // 1. Safe in DB
         let mut conn = self.db.acquire().await?;
-        append_event(event.clone(), &mut conn).await?;
+        append_event(&mut conn, event.clone()).await?;
 
         // 2. Post process event
         use EventKind::*;

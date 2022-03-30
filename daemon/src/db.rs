@@ -99,7 +99,7 @@ async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-pub async fn insert_cfd(cfd: &model::Cfd, conn: &mut PoolConnection<Sqlite>) -> Result<()> {
+pub async fn insert_cfd(conn: &mut PoolConnection<Sqlite>, cfd: &model::Cfd) -> Result<()> {
     let query_result = sqlx::query(
         r#"
         insert into cfds (
@@ -142,8 +142,8 @@ pub async fn insert_cfd(cfd: &model::Cfd, conn: &mut PoolConnection<Sqlite>) -> 
 /// To make handling of `None` events more ergonomic, you can pass anything in here that implements
 /// `Into<Option>` event.
 pub async fn append_event(
-    event: impl Into<Option<CfdEvent>>,
     conn: &mut PoolConnection<Sqlite>,
+    event: impl Into<Option<CfdEvent>>,
 ) -> Result<()> {
     let event = match event.into() {
         Some(event) => event,
@@ -212,17 +212,17 @@ pub trait CfdAggregate: Clone + Send + Sync + 'static {
 
 /// Load a CFD in its latest version from the database.
 pub async fn load_cfd<C>(
-    id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
+    id: OrderId,
     args: C::CtorArgs,
 ) -> Result<C>
 where
     C: CfdAggregate,
 {
-    let row = load_cfd_row(id, conn).await?;
+    let row = load_cfd_row(conn, id).await?;
     let cfd = C::new(args, row);
 
-    let cfd = load_cfd_events(id, conn, 0)
+    let cfd = load_cfd_events(conn, id, 0)
         .await?
         .into_iter()
         .fold(cfd, C::apply);
@@ -230,7 +230,7 @@ where
     Ok(cfd)
 }
 
-async fn load_cfd_row(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<Cfd> {
+async fn load_cfd_row(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Cfd> {
     let cfd_row = sqlx::query!(
         r#"
             select
@@ -276,8 +276,8 @@ async fn load_cfd_row(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<
 /// The version of a CFD is the number of events that have been applied. If we have an aggregate
 /// instance in version 3, we can avoid loading the first 3 events and only apply the ones after.
 async fn load_cfd_events(
-    id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
+    id: OrderId,
     from_version: u32,
 ) -> Result<Vec<CfdEvent>> {
     let events = sqlx::query!(
@@ -337,7 +337,7 @@ where
         .map(|r| r.uuid);
 
         for id in ids {
-            let cfd = load_cfd(id, conn, args.clone()).await?;
+            let cfd = load_cfd(conn, id, args.clone()).await?;
 
             yield cfd;
         }
@@ -368,7 +368,7 @@ where
         let ids = load_open_cfd_ids(conn).await?;
 
         for id in ids {
-            let cfd = load_cfd(id, conn, args.clone()).await?;
+            let cfd = load_cfd(conn, id, args.clone()).await?;
 
             yield cfd;
         }
@@ -446,7 +446,7 @@ mod tests {
             opening_fee,
             initial_funding_rate,
             initial_tx_fee_rate,
-        } = load_cfd_row(cfd.id(), &mut conn).await.unwrap();
+        } = load_cfd_row(&mut conn, cfd.id()).await.unwrap();
 
         assert_eq!(cfd.id(), id);
         assert_eq!(cfd.position(), position);
@@ -478,8 +478,8 @@ mod tests {
             event: EventKind::OfferRejected,
         };
 
-        append_event(event1.clone(), &mut conn).await.unwrap();
-        let events = load_cfd_events(cfd.id(), &mut conn, 0).await.unwrap();
+        append_event(&mut conn, event1.clone()).await.unwrap();
+        let events = load_cfd_events(&mut conn, cfd.id(), 0).await.unwrap();
         assert_eq!(events, vec![event1.clone()]);
 
         let event2 = CfdEvent {
@@ -488,8 +488,8 @@ mod tests {
             event: EventKind::RevokeConfirmed,
         };
 
-        append_event(event2.clone(), &mut conn).await.unwrap();
-        let events = load_cfd_events(cfd.id(), &mut conn, 0).await.unwrap();
+        append_event(&mut conn, event2.clone()).await.unwrap();
+        let events = load_cfd_events(&mut conn, cfd.id(), 0).await.unwrap();
         assert_eq!(events, vec![event1, event2])
     }
 
@@ -498,10 +498,10 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
-        append_event(lock_confirmed(&cfd_final), &mut conn)
+        append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
-        append_event(collab_settlement_confirmed(&cfd_final), &mut conn)
+        append_event(&mut conn, collab_settlement_confirmed(&cfd_final))
             .await
             .unwrap();
 
@@ -515,10 +515,10 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
-        append_event(lock_confirmed(&cfd_final), &mut conn)
+        append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
-        append_event(cet_confirmed(&cfd_final), &mut conn)
+        append_event(&mut conn, cet_confirmed(&cfd_final))
             .await
             .unwrap();
 
@@ -531,10 +531,10 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
-        append_event(lock_confirmed(&cfd_final), &mut conn)
+        append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
-        append_event(refund_confirmed(&cfd_final), &mut conn)
+        append_event(&mut conn, refund_confirmed(&cfd_final))
             .await
             .unwrap();
 
@@ -547,10 +547,10 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
-        append_event(lock_confirmed(&cfd_final), &mut conn)
+        append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
-        append_event(setup_failed(&cfd_final), &mut conn)
+        append_event(&mut conn, setup_failed(&cfd_final))
             .await
             .unwrap();
 
@@ -563,10 +563,10 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
-        append_event(lock_confirmed(&cfd_final), &mut conn)
+        append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
-        append_event(order_rejected(&cfd_final), &mut conn)
+        append_event(&mut conn, order_rejected(&cfd_final))
             .await
             .unwrap();
 
@@ -579,15 +579,15 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         let cfd_not_final = insert(dummy_cfd(), &mut conn).await;
-        append_event(lock_confirmed(&cfd_not_final), &mut conn)
+        append_event(&mut conn, lock_confirmed(&cfd_not_final))
             .await
             .unwrap();
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
-        append_event(lock_confirmed(&cfd_final), &mut conn)
+        append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
-        append_event(order_rejected(&cfd_final), &mut conn)
+        append_event(&mut conn, order_rejected(&cfd_final))
             .await
             .unwrap();
 
@@ -626,7 +626,7 @@ mod tests {
     /// Insert this [`Cfd`] into the database, returning the instance
     /// for further chaining.
     pub async fn insert(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> Cfd {
-        insert_cfd(&cfd, conn).await.unwrap();
+        insert_cfd(conn, &cfd).await.unwrap();
         cfd
     }
 

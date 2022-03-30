@@ -130,7 +130,7 @@ impl<O, W> Actor<O, W> {
 
         let mut conn = self.db.acquire().await?;
 
-        let cfd = db::load_cfd::<Cfd>(order_id, &mut conn, ()).await?;
+        let cfd = db::load_cfd::<Cfd>(&mut conn, order_id, ()).await?;
 
         let proposal_closing_price = market_closing_price(bid, ask, Role::Taker, cfd.position());
 
@@ -204,7 +204,7 @@ where
         // recorded
         let cfd = Cfd::from_order(order_to_take, quantity, self.maker_identity, Role::Taker);
 
-        db::insert_cfd(&cfd, &mut conn).await?;
+        db::insert_cfd(&mut conn, &cfd).await?;
         self.projection_actor
             .send(projection::CfdChanged(cfd.id()))
             .await?;
