@@ -1,5 +1,6 @@
 use anyhow::Context;
 use anyhow::Result;
+use chashmap_async::CHashMap;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use futures::Stream;
@@ -21,15 +22,26 @@ use sqlx::pool::PoolConnection;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;
+use std::any::Any;
+use std::any::TypeId;
 use std::path::PathBuf;
+use std::sync::Arc;
 use time::Duration;
 
 #[derive(Clone)]
 pub struct Connection {
     inner: SqlitePool,
+    aggregate_cache: Arc<CHashMap<(TypeId, OrderId), Box<dyn Any + Send + Sync + 'static>>>,
 }
 
 impl Connection {
+    fn new(pool: SqlitePool) -> Self {
+        Self {
+            inner: pool,
+            aggregate_cache: Arc::new(CHashMap::new()),
+        }
+    }
+
     pub async fn close(self) {
         self.inner.close().await;
     }
@@ -56,7 +68,7 @@ pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<Connection>> {
             Ok(()) => {
                 tracing::info!("Opened database at {path_display}");
 
-                return Ok(Connection { inner: pool });
+                return Ok(Connection::new(pool));
             }
             Err(e) => e,
         };
@@ -98,7 +110,7 @@ pub async fn memory() -> Result<Connection> {
 
     run_migrations(&pool).await?;
 
-    Ok(Connection { inner: pool })
+    Ok(Connection::new(pool))
 }
 
 async fn run_migrations(pool: &SqlitePool) -> Result<()> {
@@ -200,13 +212,33 @@ impl Connection {
     {
         let mut conn = self.inner.acquire().await?;
 
-        let row = load_cfd_row(&mut conn, id).await?;
-        let cfd = C::new(args, row);
+        let cache_key = (TypeId::of::<C>(), id);
 
-        let cfd = load_cfd_events(&mut conn, id, 0)
+        let cfd = match self.aggregate_cache.remove(&cache_key).await {
+            None => {
+                // No cache entry? Load the CFD row. Version will be 0 because we haven't applied
+                // any events, thus all events will be loaded.
+                let cfd = load_cfd_row(&mut conn, id).await?;
+
+                C::new(args, cfd)
+            }
+            Some(cfd) => {
+                // Got a cache entry: Downcast it to the type at hand.
+
+                *cfd.downcast::<C>()
+                    .expect("we index by type id, must be able to downcast")
+            }
+        };
+        let last_version = cfd.version();
+
+        let cfd = load_cfd_events(&mut conn, id, last_version)
             .await?
             .into_iter()
             .fold(cfd, C::apply);
+
+        self.aggregate_cache
+            .insert(cache_key, Box::new(cfd.clone()))
+            .await;
 
         Ok(cfd)
     }
@@ -335,8 +367,8 @@ pub struct Cfd {
 /// A trait for abstracting over an aggregate.
 ///
 /// Aggregating all available events differs based on the module. Thus, to provide a single
-/// interface we ask the caller to provide us with the bare minimum API so we can build the
-/// aggregate for them.
+/// interface we ask the caller to provide us with the bare minimum API so we can build (and
+/// therefore cache) the aggregate for them.
 pub trait CfdAggregate: Clone + Send + Sync + 'static {
     type CtorArgs;
 
