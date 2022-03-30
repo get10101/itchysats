@@ -84,8 +84,8 @@
       ]
     }
   },
-  "b15ee697209deb50569172bbf4a67bde5d9936525e4937119ba88447cec52a4e": {
-    "query": "\n\n        select\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        where\n            cfd_id = $1\n            ",
+  "ad1226a1cd097ba070294b41e818228e4a9ed07ce8b69bd1583eb854c4c84f0e": {
+    "query": "\n\n        select\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        limit $2,-1\n            ",
     "describe": {
       "columns": [
         {
@@ -105,7 +105,7 @@
         }
       ],
       "parameters": {
-        "Right": 1
+        "Right": 2
       },
       "nullable": [
         false,

@@ -195,10 +195,40 @@ pub struct Cfd {
     pub initial_tx_fee_rate: TxFeeRate,
 }
 
-pub async fn load_cfd(
+/// A trait for abstracting over an aggregate.
+///
+/// Aggregating all available events differs based on the module. Thus, to provide a single
+/// interface we ask the caller to provide us with the bare minimum API so we can build the
+/// aggregate for them.
+pub trait CfdAggregate: Clone + Send + Sync + 'static {
+    type CtorArgs;
+
+    fn new(args: Self::CtorArgs, cfd: Cfd) -> Self;
+    fn apply(self, event: CfdEvent) -> Self;
+    fn version(&self) -> u32;
+}
+
+/// Load a CFD in its latest version from the database.
+pub async fn load_cfd<C>(
     id: OrderId,
     conn: &mut PoolConnection<Sqlite>,
-) -> Result<(Cfd, Vec<CfdEvent>)> {
+    args: C::CtorArgs,
+) -> Result<C>
+where
+    C: CfdAggregate,
+{
+    let row = load_cfd_row(id, conn).await?;
+    let cfd = C::new(args, row);
+
+    let cfd = load_cfd_events(id, conn, 0)
+        .await?
+        .into_iter()
+        .fold(cfd, C::apply);
+
+    Ok(cfd)
+}
+
+async fn load_cfd_row(id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<Cfd> {
     let cfd_row = sqlx::query!(
         r#"
             select
@@ -224,7 +254,7 @@ pub async fn load_cfd(
     .fetch_one(&mut *conn)
     .await?;
 
-    let cfd = Cfd {
+    Ok(Cfd {
         id: cfd_row.uuid,
         position: cfd_row.position,
         initial_price: cfd_row.initial_price,
@@ -236,8 +266,18 @@ pub async fn load_cfd(
         opening_fee: cfd_row.opening_fee,
         initial_funding_rate: cfd_row.initial_funding_rate,
         initial_tx_fee_rate: cfd_row.initial_tx_fee_rate,
-    };
+    })
+}
 
+/// Load events for a given CFD but only onwards from the specified version.
+///
+/// The version of a CFD is the number of events that have been applied. If we have an aggregate
+/// instance in version 3, we can avoid loading the first 3 events and only apply the ones after.
+async fn load_cfd_events(
+    id: OrderId,
+    conn: &mut PoolConnection<Sqlite>,
+    from_version: u32,
+) -> Result<Vec<CfdEvent>> {
     let events = sqlx::query!(
         r#"
 
@@ -247,10 +287,14 @@ pub async fn load_cfd(
             created_at as "created_at: model::Timestamp"
         from
             events
+        join
+            cfds c on c.id = events.cfd_id
         where
-            cfd_id = $1
+            uuid = $1
+        limit $2,-1
             "#,
-        cfd_row.cfd_id
+        id,
+        from_version
     )
     .fetch_all(&mut *conn)
     .await?
@@ -264,7 +308,7 @@ pub async fn load_cfd(
     })
     .collect::<Result<Vec<_>>>()?;
 
-    Ok((cfd, events))
+    Ok(events)
 }
 
 pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<OrderId>> {
@@ -355,22 +399,19 @@ mod tests {
         let mut conn = setup_test_db().await;
 
         let cfd = insert(dummy_cfd(), &mut conn).await;
-        let (
-            super::Cfd {
-                id,
-                position,
-                initial_price,
-                taker_leverage: leverage,
-                settlement_interval,
-                quantity_usd,
-                counterparty_network_identity,
-                role,
-                opening_fee,
-                initial_funding_rate,
-                initial_tx_fee_rate,
-            },
-            _,
-        ) = load_cfd(cfd.id(), &mut conn).await.unwrap();
+        let super::Cfd {
+            id,
+            position,
+            initial_price,
+            taker_leverage: leverage,
+            settlement_interval,
+            quantity_usd,
+            counterparty_network_identity,
+            role,
+            opening_fee,
+            initial_funding_rate,
+            initial_tx_fee_rate,
+        } = load_cfd_row(cfd.id(), &mut conn).await.unwrap();
 
         assert_eq!(cfd.id(), id);
         assert_eq!(cfd.position(), position);
@@ -416,7 +457,7 @@ mod tests {
         };
 
         append_event(event1.clone(), &mut conn).await.unwrap();
-        let (_, events) = load_cfd(cfd.id(), &mut conn).await.unwrap();
+        let events = load_cfd_events(cfd.id(), &mut conn, 0).await.unwrap();
         assert_eq!(events, vec![event1.clone()]);
 
         let event2 = CfdEvent {
@@ -426,7 +467,7 @@ mod tests {
         };
 
         append_event(event2.clone(), &mut conn).await.unwrap();
-        let (_, events) = load_cfd(cfd.id(), &mut conn).await.unwrap();
+        let events = load_cfd_events(cfd.id(), &mut conn, 0).await.unwrap();
         assert_eq!(events, vec![event1, event2])
     }
 

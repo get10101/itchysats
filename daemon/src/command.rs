@@ -65,7 +65,16 @@ impl Executor {
     note = "The model::Cfd should only be modified via the command::Executor abstraction."
 )]
 pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<Cfd> {
-    let (
+    let cfd = db::load_cfd(order_id, conn, ()).await?;
+
+    Ok(cfd)
+}
+
+impl db::CfdAggregate for Cfd {
+    type CtorArgs = ();
+
+    fn new(
+        _: Self::CtorArgs,
         db::Cfd {
             id,
             position,
@@ -78,24 +87,30 @@ pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> R
             opening_fee,
             initial_funding_rate,
             initial_tx_fee_rate,
-        },
-        events,
-    ) = db::load_cfd(order_id, conn).await?;
-    let cfd = Cfd::rehydrate(
-        id,
-        position,
-        initial_price,
-        leverage,
-        settlement_interval,
-        role,
-        quantity_usd,
-        counterparty_network_identity,
-        opening_fee,
-        initial_funding_rate,
-        initial_tx_fee_rate,
-        events,
-    );
-    Ok(cfd)
+        }: db::Cfd,
+    ) -> Self {
+        Cfd::new(
+            id,
+            position,
+            initial_price,
+            leverage,
+            settlement_interval,
+            role,
+            quantity_usd,
+            counterparty_network_identity,
+            opening_fee,
+            initial_funding_rate,
+            initial_tx_fee_rate,
+        )
+    }
+
+    fn apply(self, event: CfdEvent) -> Self {
+        self.apply(event)
+    }
+
+    fn version(&self) -> u32 {
+        self.version()
+    }
 }
 
 // TODO: Delete this weird thing once all our commands return only an `Event` and not other stuff as

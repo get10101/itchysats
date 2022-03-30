@@ -180,6 +180,9 @@ pub struct Cfd {
 
     #[serde(skip)]
     aggregated: Aggregated,
+
+    #[serde(skip)]
+    network: Network,
 }
 
 /// Bundle all state extracted from the events in one struct.
@@ -312,6 +315,7 @@ impl Cfd {
             initial_funding_rate,
             ..
         }: db::Cfd,
+        network: Network,
     ) -> Self {
         let (our_leverage, counterparty_leverage) = match role {
             Role::Maker => (Leverage::ONE, taker_leverage),
@@ -377,10 +381,11 @@ impl Cfd {
             counterparty: counterparty_network_identity,
             pending_settlement_proposal_price: None,
             aggregated: Aggregated::new(fee_account),
+            network,
         }
     }
 
-    fn apply(mut self, event: CfdEvent, network: Network) -> Self {
+    fn apply(mut self, event: CfdEvent) -> Self {
         if self.aggregated.version == 0 {
             self.aggregated.creation_timestamp = event.timestamp;
         }
@@ -516,19 +521,19 @@ impl Cfd {
         self.state = self.aggregated.derive_cfd_state(self.role);
         self.actions = self.derive_actions();
 
-        if let Some(lock_tx_url) = self.lock_tx_url(network) {
+        if let Some(lock_tx_url) = self.lock_tx_url(self.network) {
             self.details.tx_url_list.insert(lock_tx_url);
         }
-        if let Some(commit_tx_url) = self.commit_tx_url(network) {
+        if let Some(commit_tx_url) = self.commit_tx_url(self.network) {
             self.details.tx_url_list.insert(commit_tx_url);
         }
-        if let Some(collab_settlement_tx_url) = self.collab_settlement_tx_url(network) {
+        if let Some(collab_settlement_tx_url) = self.collab_settlement_tx_url(self.network) {
             self.details.tx_url_list.insert(collab_settlement_tx_url);
         }
-        if let Some(refund_tx_url) = self.refund_tx_url(network) {
+        if let Some(refund_tx_url) = self.refund_tx_url(self.network) {
             self.details.tx_url_list.insert(refund_tx_url);
         }
-        if let Some(cet_url) = self.cet_url(network) {
+        if let Some(cet_url) = self.cet_url(self.network) {
             self.details.tx_url_list.insert(cet_url);
         }
 
@@ -796,6 +801,22 @@ struct State {
     cfds: Option<HashMap<OrderId, Cfd>>,
 }
 
+impl db::CfdAggregate for Cfd {
+    type CtorArgs = Network;
+
+    fn new(args: Self::CtorArgs, cfd: db::Cfd) -> Self {
+        Cfd::new(cfd, args)
+    }
+
+    fn apply(self, event: CfdEvent) -> Self {
+        self.apply(event)
+    }
+
+    fn version(&self) -> u32 {
+        self.aggregated.version
+    }
+}
+
 impl State {
     fn new(network: Network) -> Self {
         Self {
@@ -811,11 +832,7 @@ impl State {
             .await
             .context("Failed to acquire DB connection")?;
 
-        let (cfd, events) = db::load_cfd(id, &mut conn).await?;
-
-        let cfd = events
-            .into_iter()
-            .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, self.network));
+        let cfd = db::load_cfd(id, &mut conn, self.network).await?;
 
         let cfds = self
             .cfds

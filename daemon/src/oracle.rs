@@ -64,13 +64,16 @@ struct NewAttestationFetched {
     attestation: Attestation,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Cfd {
     pending_attestation: Option<BitMexPriceEventId>,
+    version: u32,
 }
 
 impl Cfd {
-    fn apply(self, event: CfdEvent) -> Self {
+    fn apply(mut self, event: CfdEvent) -> Self {
+        self.version += 1;
+
         let settlement_event_id = match event.event {
             EventKind::ContractSetupCompleted { dlc, .. } => dlc.settlement_event_id,
             EventKind::RolloverCompleted { dlc, .. } => dlc.settlement_event_id,
@@ -85,7 +88,24 @@ impl Cfd {
         // old attestations don't matter.
         Self {
             pending_attestation: Some(settlement_event_id),
+            ..self
         }
+    }
+}
+
+impl db::CfdAggregate for Cfd {
+    type CtorArgs = ();
+
+    fn new(_: Self::CtorArgs, _: db::Cfd) -> Self {
+        Self::default()
+    }
+
+    fn apply(self, event: CfdEvent) -> Self {
+        self.apply(event)
+    }
+
+    fn version(&self) -> u32 {
+        self.version
     }
 }
 
@@ -302,10 +322,7 @@ impl xtra::Actor for Actor {
                     let mut conn = db.acquire().await?;
 
                     for id in db::load_open_cfd_ids(&mut conn).await? {
-                        let (_, events) = db::load_cfd(id, &mut conn).await?;
-                        let cfd = events
-                            .into_iter()
-                            .fold(Cfd::default(), |cfd, event| cfd.apply(event));
+                        let cfd = db::load_cfd::<Cfd>(id, &mut conn, ()).await?;
 
                         if let Some(pending_attestation) = cfd.pending_attestation {
                             let _: Result<(), xtra::Disconnected> = this

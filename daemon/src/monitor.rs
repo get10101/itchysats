@@ -117,7 +117,7 @@ pub struct Actor {
 }
 
 /// Read-model of the CFD for the monitoring actor.
-#[derive(Default)]
+#[derive(Clone)]
 struct Cfd {
     params: Option<MonitorParams>,
 
@@ -135,6 +135,37 @@ struct Cfd {
     lock_tx: Option<Transaction>,
     cet: Option<Transaction>,
     commit_tx: Option<Transaction>,
+
+    version: u32,
+}
+
+impl db::CfdAggregate for Cfd {
+    type CtorArgs = ();
+
+    fn new(_: Self::CtorArgs, _: db::Cfd) -> Self {
+        Self {
+            params: None,
+            monitor_lock_finality: false,
+            monitor_commit_finality: false,
+            monitor_cet_timelock: false,
+            monitor_refund_timelock: false,
+            monitor_refund_finality: false,
+            monitor_revoked_commit_transactions: false,
+            monitor_collaborative_settlement_finality: None,
+            lock_tx: None,
+            cet: None,
+            commit_tx: None,
+            version: 0,
+        }
+    }
+
+    fn apply(self, event: CfdEvent) -> Self {
+        self.apply(event)
+    }
+
+    fn version(&self) -> u32 {
+        self.version
+    }
 }
 
 impl Cfd {
@@ -146,7 +177,9 @@ impl Cfd {
     //
     // At the moment, neither of those two is the case which is why we set everything to true that
     // might become relevant. See also https://github.com/itchysats/itchysats/issues/605 and https://github.com/itchysats/itchysats/issues/236.
-    fn apply(self, event: CfdEvent) -> Self {
+    fn apply(mut self, event: CfdEvent) -> Self {
+        self.version += 1;
+
         use EventKind::*;
         match event.event {
             ContractSetupCompleted { dlc, .. } => Self {
@@ -161,6 +194,7 @@ impl Cfd {
                 lock_tx: Some(dlc.lock.0),
                 cet: None,
                 commit_tx: None,
+                ..self
             },
             RolloverCompleted { dlc, .. } => {
                 Self {
@@ -176,6 +210,7 @@ impl Cfd {
                     lock_tx: None,
                     cet: self.cet,
                     commit_tx: self.commit_tx,
+                    ..self
                 }
             }
             CollaborativeSettlementCompleted {
@@ -189,9 +224,19 @@ impl Cfd {
                     ..self
                 }
             }
-            ContractSetupStarted | ContractSetupFailed | OfferRejected | RolloverRejected => {
-                Self::default() // all false / empty
-            }
+            ContractSetupStarted | ContractSetupFailed | OfferRejected | RolloverRejected => Self {
+                monitor_lock_finality: false,
+                monitor_commit_finality: false,
+                monitor_cet_timelock: false,
+                monitor_refund_timelock: false,
+                monitor_refund_finality: false,
+                monitor_revoked_commit_transactions: false,
+                monitor_collaborative_settlement_finality: None,
+                lock_tx: None,
+                cet: None,
+                commit_tx: None,
+                ..self
+            },
             LockConfirmed => Self {
                 monitor_lock_finality: false,
                 lock_tx: None,
@@ -206,7 +251,19 @@ impl Cfd {
             CetConfirmed
             | RefundConfirmed
             | CollaborativeSettlementConfirmed
-            | LockConfirmedAfterFinality => Self::default(),
+            | LockConfirmedAfterFinality => Self {
+                monitor_lock_finality: false,
+                monitor_commit_finality: false,
+                monitor_cet_timelock: false,
+                monitor_refund_timelock: false,
+                monitor_refund_finality: false,
+                monitor_revoked_commit_transactions: false,
+                monitor_collaborative_settlement_finality: None,
+                lock_tx: None,
+                cet: None,
+                commit_tx: None,
+                ..self
+            },
             CetTimelockExpiredPriorOracleAttestation => Self {
                 monitor_cet_timelock: false,
                 ..self
@@ -476,14 +533,12 @@ impl xtra::Actor for Actor {
                     let mut conn = db.acquire().await?;
 
                     for id in db::load_open_cfd_ids(&mut conn).await? {
-                        let (_, events) = db::load_cfd(id, &mut conn).await?;
-
                         let Cfd {
                             cet,
                             commit_tx,
                             lock_tx,
                             ..
-                        } = events.into_iter().fold(Cfd::default(), Cfd::apply);
+                        } = db::load_cfd(id, &mut conn, ()).await?;
 
                         if let Some(tx) = commit_tx {
                             if let Err(e) = this
@@ -538,8 +593,6 @@ impl xtra::Actor for Actor {
                     let mut conn = db.acquire().await?;
 
                     for id in db::load_open_cfd_ids(&mut conn).await? {
-                        let (_, events) = db::load_cfd(id, &mut conn).await?;
-
                         let Cfd {
                             params,
                             monitor_lock_finality,
@@ -550,7 +603,7 @@ impl xtra::Actor for Actor {
                             monitor_revoked_commit_transactions,
                             monitor_collaborative_settlement_finality,
                             ..
-                        } = events.into_iter().fold(Cfd::default(), Cfd::apply);
+                        } = db::load_cfd(id, &mut conn, ()).await?;
 
                         let params = match params {
                             None => continue,
