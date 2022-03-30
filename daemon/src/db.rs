@@ -319,7 +319,6 @@ pub async fn load_all_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<O
                 uuid as "uuid: model::OrderId"
             from
                 cfds
-            order by cfd_id desc
             "#
     )
     .fetch_all(&mut *conn)
@@ -360,7 +359,6 @@ pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<
                     events.name= $5
                 )
             )
-            order by cfd_id desc
             "#,
         EventKind::COLLABORATIVE_SETTLEMENT_CONFIRMED,
         EventKind::CET_CONFIRMED,
@@ -427,19 +425,6 @@ mod tests {
         assert_eq!(cfd.opening_fee(), opening_fee);
         assert_eq!(cfd.initial_funding_rate(), initial_funding_rate);
         assert_eq!(cfd.initial_tx_fee_rate(), initial_tx_fee_rate);
-    }
-
-    #[tokio::test]
-    async fn test_insert_and_load_cfd_ids_order_desc() {
-        let mut conn = setup_test_db().await;
-
-        let cfd_1 = insert(dummy_cfd(), &mut conn).await;
-        let cfd_2 = insert(dummy_cfd(), &mut conn).await;
-        let cfd_3 = insert(dummy_cfd(), &mut conn).await;
-
-        let ids = load_all_cfd_ids(&mut conn).await.unwrap();
-
-        assert_eq!(vec![cfd_3.id(), cfd_2.id(), cfd_1.id()], ids)
     }
 
     #[tokio::test]

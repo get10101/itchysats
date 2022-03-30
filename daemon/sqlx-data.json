@@ -1,5 +1,53 @@
 {
   "db": "SQLite",
+  "3dbe4b1d5168f93ec74583422ce9f689237ef513dc8f517eb705bd4ccb4a510c": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "uuid: model::OrderId",
+          "ordinal": 1,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 0
+      },
+      "nullable": [
+        true,
+        false
+      ]
+    }
+  },
+  "82c5430890ac56c2391d74fc69528cc3e56ea05c780446fcc5d13e8c1254b610": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            where not exists (\n                select id from EVENTS as events\n                where cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2 or\n                    events.name= $3 or\n                    events.name= $4 or\n                    events.name= $5\n                )\n            )\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "uuid: model::OrderId",
+          "ordinal": 1,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 5
+      },
+      "nullable": [
+        true,
+        false
+      ]
+    }
+  },
   "a97c0728390b1d1bd516874a60f00fbd0f5d7cbd33fea156b760e42544710d71": {
     "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\",\n                position as \"position: model::Position\",\n                initial_price as \"initial_price: model::Price\",\n                leverage as \"leverage: model::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: model::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: model::Identity\",\n                role as \"role: model::Role\",\n                opening_fee as \"opening_fee: model::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: model::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: model::TxFeeRate\"\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            ",
     "describe": {
@@ -109,54 +157,6 @@
       },
       "nullable": [
         false,
-        false,
-        false
-      ]
-    }
-  },
-  "e31b25bf2582607b64a7398492b1b309a56374c74e3629c1708b01571ed6cfe5": {
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            order by cfd_id desc\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "cfd_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "uuid: model::OrderId",
-          "ordinal": 1,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 0
-      },
-      "nullable": [
-        false,
-        false
-      ]
-    }
-  },
-  "f973f9be330bf489884d54fa1b83982a2fe298c266ae745b7c3dd91ffda2e0f8": {
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            where not exists (\n                select id from EVENTS as events\n                where cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2 or\n                    events.name= $3 or\n                    events.name= $4 or\n                    events.name= $5\n                )\n            )\n            order by cfd_id desc\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "cfd_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "uuid: model::OrderId",
-          "ordinal": 1,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 5
-      },
-      "nullable": [
         false,
         false
       ]
