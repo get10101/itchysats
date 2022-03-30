@@ -5,8 +5,6 @@ use anyhow::Context;
 use anyhow::Result;
 use model::Cfd;
 use model::CfdEvent;
-use sqlx::pool::PoolConnection;
-use sqlx::Sqlite;
 use xtra::Address;
 
 #[derive(Clone)]
@@ -34,10 +32,7 @@ impl Executor {
             .await
             .context("Failed to acquire DB connection")?;
 
-        // We are meant to be the only user of this code but make it temporarily deprecated to
-        // signal that.
-        #[allow(deprecated)]
-        let cfd = load_cfd(id, &mut connection)
+        let cfd = db::load_cfd(id, &mut connection, ())
             .await
             .context("Failed to load CFD")?;
 
@@ -55,19 +50,6 @@ impl Executor {
 
         Ok(rest)
     }
-}
-
-/// Load a CFD from the database and rehydrate as the [`model::cfd::Cfd`] aggregate.
-///
-/// This is marked as deprecated to remind developers that it should not be used directly. Make it
-/// non-deprecated once all its other usages have been cleared.
-#[deprecated(
-    note = "The model::Cfd should only be modified via the command::Executor abstraction."
-)]
-pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<Cfd> {
-    let cfd = db::load_cfd(order_id, conn, ()).await?;
-
-    Ok(cfd)
 }
 
 impl db::CfdAggregate for Cfd {

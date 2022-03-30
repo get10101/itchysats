@@ -84,10 +84,7 @@ impl Actor {
 
         let mut conn = self.db.acquire().await?;
 
-        // Collaborative settlement does not fit into the command abstraction which I think roots in
-        // its asymmetric design.
-        #[allow(deprecated)]
-        let cfd = crate::command::load_cfd(order_id, &mut conn).await?;
+        let cfd = crate::db::load_cfd::<model::Cfd>(order_id, &mut conn, ()).await?;
 
         // TODO: This should happen within a dedicated state machine returned from
         // start_collaborative_settlement

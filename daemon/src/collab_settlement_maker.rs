@@ -1,4 +1,5 @@
 use crate::command;
+use crate::db;
 use crate::maker_inc_connections;
 use crate::process_manager;
 use anyhow::anyhow;
@@ -71,10 +72,7 @@ impl Actor {
 
             let mut conn = self.db.acquire().await?;
 
-            // Collaborative settlement does not fit into the command abstraction which I think
-            // roots in its asymmetric design.
-            #[allow(deprecated)]
-            let cfd = crate::command::load_cfd(self.proposal.order_id, &mut conn).await?;
+            let cfd = db::load_cfd::<model::Cfd>(self.proposal.order_id, &mut conn, ()).await?;
 
             let settlement =
                 cfd.sign_collaborative_settlement_maker(self.proposal, msg.sig_taker)?;

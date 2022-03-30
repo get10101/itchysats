@@ -130,10 +130,7 @@ impl<O, W> Actor<O, W> {
 
         let mut conn = self.db.acquire().await?;
 
-        #[allow(deprecated)]
-        // We need the position and role to decide the price here. Consider re-modelling access to
-        // quote / where to taker the decision to avoid this call.
-        let cfd = crate::command::load_cfd(order_id, &mut conn).await?;
+        let cfd = db::load_cfd::<Cfd>(order_id, &mut conn, ()).await?;
 
         let proposal_closing_price = market_closing_price(bid, ask, Role::Taker, cfd.position());
 
