@@ -23,7 +23,6 @@ use model::EventKind;
 use model::OrderId;
 use model::CET_TIMELOCK;
 use serde_json::Value;
-use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -114,7 +113,7 @@ pub struct Actor {
     client: bdk::electrum_client::Client,
     tasks: Tasks,
     state: State<Event>,
-    db: SqlitePool,
+    db: db::Connection,
 }
 
 /// Read-model of the CFD for the monitoring actor.
@@ -303,7 +302,7 @@ impl Cfd {
 
 impl Actor {
     pub fn new(
-        db: SqlitePool,
+        db: db::Connection,
         electrum_rpc_url: String,
         executor: command::Executor,
     ) -> Result<Self> {
@@ -533,8 +532,7 @@ impl xtra::Actor for Actor {
                 let this = this.clone();
 
                 async move {
-                    let mut conn = db.acquire().await?;
-                    let mut stream = db::load_all_open_cfds::<Cfd>(&mut conn, ());
+                    let mut stream = db.load_all_open_cfds::<Cfd>(());
 
                     while let Some(Cfd {
                         cet,
@@ -596,8 +594,7 @@ impl xtra::Actor for Actor {
                 let db = self.db.clone();
 
                 async move {
-                    let mut conn = db.acquire().await?;
-                    let mut stream = db::load_all_open_cfds::<Cfd>(&mut conn, ());
+                    let mut stream = db.load_all_open_cfds::<Cfd>(());
 
                     while let Some(Cfd {
                         id,

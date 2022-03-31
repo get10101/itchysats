@@ -66,7 +66,7 @@ pub struct CfdChanged(pub OrderId);
 struct Initialize;
 
 pub struct Actor {
-    db: sqlx::SqlitePool,
+    db: db::Connection,
     tx: Tx,
     state: State,
     price_feed: Box<dyn MessageChannel<xtra_bitmex_price_feed::LatestQuote>>,
@@ -82,7 +82,7 @@ pub struct Feeds {
 
 impl Actor {
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: db::Connection,
         network: Network,
         price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote> + 'static),
     ) -> (Self, Feeds) {
@@ -827,13 +827,8 @@ impl State {
         }
     }
 
-    async fn update_cfd(&mut self, db: sqlx::SqlitePool, id: OrderId) -> Result<()> {
-        let mut conn = db
-            .acquire()
-            .await
-            .context("Failed to acquire DB connection")?;
-
-        let cfd = db::load_cfd(&mut conn, id, self.network).await?;
+    async fn update_cfd(&mut self, db: db::Connection, id: OrderId) -> Result<()> {
+        let cfd = db.load_cfd(id, self.network).await?;
 
         let cfds = self
             .cfds
@@ -853,8 +848,7 @@ impl State {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, _: Initialize) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let mut stream = db::load_all_cfds::<Cfd>(&mut conn, self.state.network);
+        let mut stream = self.db.load_all_cfds::<Cfd>(self.state.network);
 
         let mut cfds = HashMap::new();
 

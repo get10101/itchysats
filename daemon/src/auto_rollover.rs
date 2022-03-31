@@ -19,7 +19,7 @@ use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
 pub struct Actor<O> {
-    db: sqlx::SqlitePool,
+    db: db::Connection,
     oracle_pk: schnorrsig::PublicKey,
     process_manager: Address<process_manager::Actor>,
     conn: Address<connection::Actor>,
@@ -31,7 +31,7 @@ pub struct Actor<O> {
 
 impl<O> Actor<O> {
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: db::Connection,
         oracle_pk: schnorrsig::PublicKey,
         process_manager: Address<process_manager::Actor>,
         conn: Address<connection::Actor>,
@@ -103,8 +103,7 @@ where
             .address()
             .expect("actor to be able to give address to itself");
 
-        let mut conn = self.db.acquire().await?;
-        let mut stream = db::load_all_open_cfds::<model::Cfd>(&mut conn, ());
+        let mut stream = self.db.load_all_open_cfds::<model::Cfd>(());
 
         while let Some(cfd) = stream.next().await {
             let cfd = match cfd {

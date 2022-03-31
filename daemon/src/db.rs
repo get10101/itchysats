@@ -24,12 +24,23 @@ use sqlx::SqlitePool;
 use std::path::PathBuf;
 use time::Duration;
 
+#[derive(Clone)]
+pub struct Connection {
+    inner: SqlitePool,
+}
+
+impl Connection {
+    pub async fn close(self) {
+        self.inner.close().await;
+    }
+}
+
 /// Connects to the SQLite database at the given path.
 ///
 /// If the database does not exist, it will be created. If it does exist, we load it and apply all
 /// pending migrations. If applying migrations fails, the old database is backed up next to it and a
 /// new one is created.
-pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
+pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<Connection>> {
     async move {
         let pool = SqlitePool::connect_with(
             SqliteConnectOptions::new()
@@ -45,7 +56,7 @@ pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
             Ok(()) => {
                 tracing::info!("Opened database at {path_display}");
 
-                return Ok(pool);
+                return Ok(Connection { inner: pool });
             }
             Err(e) => e,
         };
@@ -79,7 +90,7 @@ pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<SqlitePool>> {
     .boxed()
 }
 
-pub async fn memory() -> Result<SqlitePool> {
+pub async fn memory() -> Result<Connection> {
     // Note: Every :memory: database is distinct from every other. So, opening two database
     // connections each with the filename ":memory:" will create two independent in-memory
     // databases. see: https://www.sqlite.org/inmemorydb.html
@@ -87,7 +98,7 @@ pub async fn memory() -> Result<SqlitePool> {
 
     run_migrations(&pool).await?;
 
-    Ok(pool)
+    Ok(Connection { inner: pool })
 }
 
 async fn run_migrations(pool: &SqlitePool) -> Result<()> {
@@ -99,9 +110,12 @@ async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-pub async fn insert_cfd(conn: &mut PoolConnection<Sqlite>, cfd: &model::Cfd) -> Result<()> {
-    let query_result = sqlx::query(
-        r#"
+impl Connection {
+    pub async fn insert_cfd(&self, cfd: &model::Cfd) -> Result<()> {
+        let mut conn = self.inner.acquire().await?;
+
+        let query_result = sqlx::query(
+            r#"
         insert into cfds (
             uuid,
             position,
@@ -115,45 +129,44 @@ pub async fn insert_cfd(conn: &mut PoolConnection<Sqlite>, cfd: &model::Cfd) -> 
             initial_funding_rate,
             initial_tx_fee_rate
         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
-    )
-    .bind(&cfd.id())
-    .bind(&cfd.position())
-    .bind(&cfd.initial_price())
-    .bind(&cfd.taker_leverage())
-    .bind(&cfd.settlement_time_interval_hours().whole_hours())
-    .bind(&cfd.quantity())
-    .bind(&cfd.counterparty_network_identity())
-    .bind(&cfd.role())
-    .bind(&cfd.opening_fee())
-    .bind(&cfd.initial_funding_rate())
-    .bind(&cfd.initial_tx_fee_rate())
-    .execute(conn)
-    .await?;
+        )
+        .bind(&cfd.id())
+        .bind(&cfd.position())
+        .bind(&cfd.initial_price())
+        .bind(&cfd.taker_leverage())
+        .bind(&cfd.settlement_time_interval_hours().whole_hours())
+        .bind(&cfd.quantity())
+        .bind(&cfd.counterparty_network_identity())
+        .bind(&cfd.role())
+        .bind(&cfd.opening_fee())
+        .bind(&cfd.initial_funding_rate())
+        .bind(&cfd.initial_tx_fee_rate())
+        .execute(&mut conn)
+        .await?;
 
-    if query_result.rows_affected() != 1 {
-        anyhow::bail!("failed to insert cfd");
+        if query_result.rows_affected() != 1 {
+            anyhow::bail!("failed to insert cfd");
+        }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    /// Appends an event to the `events` table.
+    ///
+    /// To make handling of `None` events more ergonomic, you can pass anything in here that
+    /// implements `Into<Option>` event.
+    pub async fn append_event(&self, event: impl Into<Option<CfdEvent>>) -> Result<()> {
+        let mut conn = self.inner.acquire().await?;
 
-/// Appends an event to the `events` table.
-///
-/// To make handling of `None` events more ergonomic, you can pass anything in here that implements
-/// `Into<Option>` event.
-pub async fn append_event(
-    conn: &mut PoolConnection<Sqlite>,
-    event: impl Into<Option<CfdEvent>>,
-) -> Result<()> {
-    let event = match event.into() {
-        Some(event) => event,
-        None => return Ok(()),
-    };
+        let event = match event.into() {
+            Some(event) => event,
+            None => return Ok(()),
+        };
 
-    let (event_name, event_data) = event.event.to_json();
+        let (event_name, event_data) = event.event.to_json();
 
-    let query_result = sqlx::query(
-        r##"
+        let query_result = sqlx::query(
+            r##"
         insert into events (
             cfd_id,
             name,
@@ -163,110 +176,112 @@ pub async fn append_event(
             (select id from cfds where cfds.uuid = $1),
             $2, $3, $4
         )"##,
-    )
-    .bind(&event.id)
-    .bind(&event_name)
-    .bind(&event_data)
-    .bind(&event.timestamp)
-    .execute(conn)
-    .await?;
+        )
+        .bind(&event.id)
+        .bind(&event_name)
+        .bind(&event_data)
+        .bind(&event.timestamp)
+        .execute(&mut conn)
+        .await?;
 
-    if query_result.rows_affected() != 1 {
-        anyhow::bail!("failed to insert event");
+        if query_result.rows_affected() != 1 {
+            anyhow::bail!("failed to insert event");
+        }
+
+        tracing::info!(event = %event_name, order_id = %event.id, "Appended event to database");
+
+        Ok(())
     }
 
-    tracing::info!(event = %event_name, order_id = %event.id, "Appended event to database");
+    /// Load a CFD in its latest version from the database.
+    pub async fn load_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
+    where
+        C: CfdAggregate,
+    {
+        let mut conn = self.inner.acquire().await?;
 
-    Ok(())
-}
+        let row = load_cfd_row(&mut conn, id).await?;
+        let cfd = C::new(args, row);
 
-/// Load a CFD in its latest version from the database.
-pub async fn load_cfd<C>(
-    conn: &mut PoolConnection<Sqlite>,
-    id: OrderId,
-    args: C::CtorArgs,
-) -> Result<C>
-where
-    C: CfdAggregate,
-{
-    let row = load_cfd_row(conn, id).await?;
-    let cfd = C::new(args, row);
+        let cfd = load_cfd_events(&mut conn, id, 0)
+            .await?
+            .into_iter()
+            .fold(cfd, C::apply);
 
-    let cfd = load_cfd_events(conn, id, 0)
-        .await?
-        .into_iter()
-        .fold(cfd, C::apply);
+        Ok(cfd)
+    }
 
-    Ok(cfd)
-}
+    pub fn load_all_cfds<C>(&self, args: C::CtorArgs) -> impl Stream<Item = Result<C>> + Unpin + '_
+    where
+        C: CfdAggregate + Unpin,
+        C::CtorArgs: Clone + Send + Sync,
+    {
+        let stream = async_stream::try_stream! {
+            let mut conn = self.inner.acquire().await?;
 
-pub fn load_all_cfds<C>(
-    conn: &mut PoolConnection<Sqlite>,
-    args: C::CtorArgs,
-) -> impl Stream<Item = Result<C>> + Unpin + '_
-where
-    C: CfdAggregate + Unpin,
-    C::CtorArgs: Clone + Send + Sync,
-{
-    let stream = async_stream::try_stream! {
+            let ids = sqlx::query!(
+                r#"
+                select
+                    id as cfd_id,
+                    uuid as "uuid: model::OrderId"
+                from
+                    cfds
+
+                "#
+            )
+            .fetch_all(&mut *conn)
+            .await?
+            .into_iter()
+            .map(|r| r.uuid);
+
+            drop(conn);
+
+            for id in ids {
+                let cfd = self.load_cfd(id, args.clone()).await?;
+
+                yield cfd;
+            }
+        };
+
+        stream.boxed()
+    }
+
+    /// Loads all CFDs where we are still able to append events
+    ///
+    /// This function is to be called when we only want to process CFDs where events can still be
+    /// appended, but ignore all other CFDs.
+    /// Open in this context means that the CFD is not final yet, i.e. we can still append events.
+    /// In this context a CFD is not open anymore if one of the following happened:
+    /// 1. Event of the confirmation of a payout (spend) transaction on the blockchain was recorded
+    ///     Cases: Collaborative settlement, CET, Refund
+    /// 2. Event that fails the CFD early was recorded, meaning it becomes irrelevant for processing
+    ///     Cases: Setup failed, Taker's take order rejected
+    pub fn load_all_open_cfds<C>(
+        &self,
+        args: C::CtorArgs,
+    ) -> impl Stream<Item = Result<C>> + Unpin + '_
+    where
+        C: CfdAggregate + Unpin,
+        C::CtorArgs: Clone + Send + Sync,
+    {
+        let stream = async_stream::try_stream! {
+            let ids = self.load_open_cfd_ids().await?;
+
+            for id in ids {
+                let cfd = self.load_cfd(id, args.clone()).await?;
+
+                yield cfd;
+            }
+        };
+
+        stream.boxed()
+    }
+
+    pub async fn load_open_cfd_ids(&self) -> Result<Vec<OrderId>> {
+        let mut conn = self.inner.acquire().await?;
+
         let ids = sqlx::query!(
             r#"
-            select
-                id as cfd_id,
-                uuid as "uuid: model::OrderId"
-            from
-                cfds
-            "#
-        )
-        .fetch_all(&mut *conn)
-        .await?
-        .into_iter()
-        .map(|r| r.uuid);
-
-        for id in ids {
-            let cfd = load_cfd(conn, id, args.clone()).await?;
-
-            yield cfd;
-        }
-    };
-
-    stream.boxed()
-}
-
-/// Loads all CFDs where we are still able to append events
-///
-/// This function is to be called when we only want to process CFDs where events can still be
-/// appended, but ignore all other CFDs.
-/// Open in this context means that the CFD is not final yet, i.e. we can still append events.
-/// In this context a CFD is not open anymore if one of the following happened:
-/// 1. Event of the confirmation of a payout (spend) transaction on the blockchain was recorded
-///     Cases: Collaborative settlement, CET, Refund
-/// 2. Event that fails the CFD early was recorded, meaning it becomes irrelevant for processing
-///     Cases: Setup failed, Taker's take order rejected
-pub fn load_all_open_cfds<C>(
-    conn: &mut PoolConnection<Sqlite>,
-    args: C::CtorArgs,
-) -> impl Stream<Item = Result<C>> + Unpin + '_
-where
-    C: CfdAggregate + Unpin,
-    C::CtorArgs: Clone + Send + Sync,
-{
-    let stream = async_stream::try_stream! {
-        let ids = load_open_cfd_ids(conn).await?;
-
-        for id in ids {
-            let cfd = load_cfd(conn, id, args.clone()).await?;
-
-            yield cfd;
-        }
-    };
-
-    stream.boxed()
-}
-
-pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<OrderId>> {
-    let ids = sqlx::query!(
-        r#"
             select
                 id as cfd_id,
                 uuid as "uuid: model::OrderId"
@@ -284,19 +299,20 @@ pub async fn load_open_cfd_ids(conn: &mut PoolConnection<Sqlite>) -> Result<Vec<
                 )
             )
             "#,
-        EventKind::COLLABORATIVE_SETTLEMENT_CONFIRMED,
-        EventKind::CET_CONFIRMED,
-        EventKind::REFUND_CONFIRMED,
-        EventKind::CONTRACT_SETUP_FAILED,
-        EventKind::OFFER_REJECTED
-    )
-    .fetch_all(&mut *conn)
-    .await?
-    .into_iter()
-    .map(|r| r.uuid)
-    .collect();
+            EventKind::COLLABORATIVE_SETTLEMENT_CONFIRMED,
+            EventKind::CET_CONFIRMED,
+            EventKind::REFUND_CONFIRMED,
+            EventKind::CONTRACT_SETUP_FAILED,
+            EventKind::OFFER_REJECTED
+        )
+        .fetch_all(&mut *conn)
+        .await?
+        .into_iter()
+        .map(|r| r.uuid)
+        .collect();
 
-    Ok(ids)
+        Ok(ids)
+    }
 }
 
 // TODO: Make sqlx directly instantiate this struct instead of mapping manually. Need to create
@@ -430,10 +446,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_load_cfd() {
-        let mut conn = memory().await.unwrap().acquire().await.unwrap();
+        let db = memory().await.unwrap();
 
         let cfd = dummy_cfd();
-        insert_cfd(&mut conn, &cfd).await.unwrap();
+        db.insert_cfd(&cfd).await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let super::Cfd {
             id,
@@ -467,10 +484,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_append_events() {
-        let mut conn = memory().await.unwrap().acquire().await.unwrap();
+        let db = memory().await.unwrap();
 
         let cfd = dummy_cfd();
-        insert_cfd(&mut conn, &cfd).await.unwrap();
+        db.insert_cfd(&cfd).await.unwrap();
 
         let timestamp = Timestamp::now();
 
@@ -480,7 +497,9 @@ mod tests {
             event: EventKind::OfferRejected,
         };
 
-        append_event(&mut conn, event1.clone()).await.unwrap();
+        db.append_event(event1.clone()).await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
+
         let events = load_cfd_events(&mut conn, cfd.id(), 0).await.unwrap();
         assert_eq!(events, vec![event1.clone()]);
 
@@ -490,123 +509,101 @@ mod tests {
             event: EventKind::RevokeConfirmed,
         };
 
-        append_event(&mut conn, event2.clone()).await.unwrap();
+        db.append_event(event2.clone()).await.unwrap();
         let events = load_cfd_events(&mut conn, cfd.id(), 0).await.unwrap();
         assert_eq!(events, vec![event1, event2])
     }
 
     #[tokio::test]
     async fn given_collaborative_close_confirmed_then_do_not_load_non_final_cfd() {
-        let mut conn = memory().await.unwrap().acquire().await.unwrap();
+        let db = memory().await.unwrap();
 
         let cfd_final = dummy_cfd();
-        insert_cfd(&mut conn, &cfd_final).await.unwrap();
+        db.insert_cfd(&cfd_final).await.unwrap();
 
-        append_event(&mut conn, lock_confirmed(&cfd_final))
-            .await
-            .unwrap();
-        append_event(&mut conn, collab_settlement_confirmed(&cfd_final))
+        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
+        db.append_event(collab_settlement_confirmed(&cfd_final))
             .await
             .unwrap();
 
-        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
 
         assert!(cfd_ids.is_empty());
     }
 
     #[tokio::test]
     async fn given_cet_confirmed_then_do_not_load_non_final_cfd() {
-        let mut conn = memory().await.unwrap().acquire().await.unwrap();
+        let db = memory().await.unwrap();
 
         let cfd_final = dummy_cfd();
-        insert_cfd(&mut conn, &cfd_final).await.unwrap();
-        append_event(&mut conn, lock_confirmed(&cfd_final))
-            .await
-            .unwrap();
-        append_event(&mut conn, cet_confirmed(&cfd_final))
-            .await
-            .unwrap();
+        db.insert_cfd(&cfd_final).await.unwrap();
+        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
+        db.append_event(cet_confirmed(&cfd_final)).await.unwrap();
 
-        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
         assert!(cfd_ids.is_empty());
     }
 
     #[tokio::test]
     async fn given_refund_confirmed_then_do_not_load_non_final_cfd() {
-        let mut conn = memory().await.unwrap().acquire().await.unwrap();
+        let db = memory().await.unwrap();
 
         let cfd_final = dummy_cfd();
-        insert_cfd(&mut conn, &cfd_final).await.unwrap();
+        db.insert_cfd(&cfd_final).await.unwrap();
 
-        append_event(&mut conn, lock_confirmed(&cfd_final))
-            .await
-            .unwrap();
-        append_event(&mut conn, refund_confirmed(&cfd_final))
-            .await
-            .unwrap();
+        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
+        db.append_event(refund_confirmed(&cfd_final)).await.unwrap();
 
-        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
         assert!(cfd_ids.is_empty());
     }
 
     #[tokio::test]
     async fn given_setup_failed_then_do_not_load_non_final_cfd() {
-        let mut conn = memory().await.unwrap().acquire().await.unwrap();
+        let db = memory().await.unwrap();
 
         let cfd_final = dummy_cfd();
-        insert_cfd(&mut conn, &cfd_final).await.unwrap();
+        db.insert_cfd(&cfd_final).await.unwrap();
 
-        append_event(&mut conn, lock_confirmed(&cfd_final))
-            .await
-            .unwrap();
-        append_event(&mut conn, setup_failed(&cfd_final))
-            .await
-            .unwrap();
+        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
+        db.append_event(setup_failed(&cfd_final)).await.unwrap();
 
-        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
         assert!(cfd_ids.is_empty());
     }
 
     #[tokio::test]
     async fn given_order_rejected_then_do_not_load_non_final_cfd() {
-        let mut conn = memory().await.unwrap().acquire().await.unwrap();
+        let db = memory().await.unwrap();
 
         let cfd_final = dummy_cfd();
-        insert_cfd(&mut conn, &cfd_final).await.unwrap();
+        db.insert_cfd(&cfd_final).await.unwrap();
 
-        append_event(&mut conn, lock_confirmed(&cfd_final))
-            .await
-            .unwrap();
-        append_event(&mut conn, order_rejected(&cfd_final))
-            .await
-            .unwrap();
+        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
+        db.append_event(order_rejected(&cfd_final)).await.unwrap();
 
-        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
         assert!(cfd_ids.is_empty());
     }
 
     #[tokio::test]
     async fn given_final_and_non_final_cfd_then_non_final_one_still_loaded() {
-        let mut conn = memory().await.unwrap().acquire().await.unwrap();
+        let db = memory().await.unwrap();
 
         let cfd_not_final = dummy_cfd();
-        insert_cfd(&mut conn, &cfd_not_final).await.unwrap();
+        db.insert_cfd(&cfd_not_final).await.unwrap();
 
-        append_event(&mut conn, lock_confirmed(&cfd_not_final))
+        db.append_event(lock_confirmed(&cfd_not_final))
             .await
             .unwrap();
 
         let cfd_final = dummy_cfd();
-        insert_cfd(&mut conn, &cfd_final).await.unwrap();
+        db.insert_cfd(&cfd_final).await.unwrap();
 
-        append_event(&mut conn, lock_confirmed(&cfd_final))
-            .await
-            .unwrap();
-        append_event(&mut conn, order_rejected(&cfd_final))
-            .await
-            .unwrap();
+        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
+        db.append_event(order_rejected(&cfd_final)).await.unwrap();
 
-        let cfd_ids = load_open_cfd_ids(&mut conn).await.unwrap();
+        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
 
         assert_eq!(cfd_ids.len(), 1);
         assert_eq!(*cfd_ids.first().unwrap(), cfd_not_final.id())

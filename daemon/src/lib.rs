@@ -18,7 +18,6 @@ use model::Price;
 use model::Role;
 use model::TxFeeRate;
 use model::Usd;
-use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use std::time::Duration;
 use time::ext::NumericalDuration;
@@ -85,7 +84,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
-        db: SqlitePool,
+        db: db::Connection,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         oracle_constructor: impl FnOnce(command::Executor) -> O,
@@ -289,7 +288,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
-        db: SqlitePool,
+        db: db::Connection,
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         identity_sk: x25519_dalek::StaticSecret,

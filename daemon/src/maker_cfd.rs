@@ -165,7 +165,7 @@ struct RolloverProposal {
 }
 
 pub struct Actor<O, T, W> {
-    db: sqlx::SqlitePool,
+    db: db::Connection,
     wallet: xtra::Address<W>,
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
@@ -186,7 +186,7 @@ pub struct Actor<O, T, W> {
 impl<O, T, W> Actor<O, T, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: db::Connection,
         wallet: xtra::Address<W>,
         settlement_interval: Duration,
         oracle_pk: schnorrsig::PublicKey,
@@ -314,8 +314,6 @@ where
                 format!("Contract setup for order {order_id} is already in progress")
             })?;
 
-        let mut conn = self.db.acquire().await?;
-
         // 1. Validate if order is still valid
         let order_to_take = self
             .current_offers
@@ -356,7 +354,7 @@ where
             .send(projection::Update(self.current_offers))
             .await?;
 
-        db::insert_cfd(&mut conn, &cfd).await?;
+        self.db.insert_cfd(&cfd).await?;
         self.projection
             .send(projection::CfdChanged(cfd.id()))
             .await?;

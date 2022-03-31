@@ -9,7 +9,6 @@ use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::CfdEvent;
 use model::EventKind;
-use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ops::Add;
@@ -27,7 +26,7 @@ pub struct Actor {
     executor: command::Executor,
     announcement_lookahead: Duration,
     tasks: Tasks,
-    db: SqlitePool,
+    db: db::Connection,
     client: reqwest::Client,
 }
 
@@ -112,7 +111,7 @@ impl db::CfdAggregate for Cfd {
 
 impl Actor {
     pub fn new(
-        db: SqlitePool,
+        db: db::Connection,
         executor: command::Executor,
         announcement_lookahead: Duration,
     ) -> Self {
@@ -269,9 +268,7 @@ impl Actor {
 
         tracing::info!("Fetched new attestation for {id}");
 
-        let mut conn = self.db.acquire().await?;
-
-        for id in db::load_open_cfd_ids(&mut conn).await? {
+        for id in self.db.load_open_cfd_ids().await? {
             if let Err(err) = self
                 .executor
                 .execute(id, |cfd| cfd.decrypt_cet(&attestation.0))
@@ -320,8 +317,7 @@ impl xtra::Actor for Actor {
                 let db = self.db.clone();
 
                 async move {
-                    let mut conn = db.acquire().await?;
-                    let mut stream = db::load_all_open_cfds::<Cfd>(&mut conn, ());
+                    let mut stream = db.load_all_open_cfds::<Cfd>(());
 
                     while let Some(Cfd {
                         pending_attestation,

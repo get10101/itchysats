@@ -1,7 +1,7 @@
 {
   "db": "SQLite",
-  "3dbe4b1d5168f93ec74583422ce9f689237ef513dc8f517eb705bd4ccb4a510c": {
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            ",
+  "14404fcb29ac5fa2ea7eaac342c84fb935abafe33fc194c726a143e22690346e": {
+    "query": "\n                select\n                    id as cfd_id,\n                    uuid as \"uuid: model::OrderId\"\n                from\n                    cfds\n\n                ",
     "describe": {
       "columns": [
         {

@@ -44,7 +44,7 @@ pub struct ProposeSettlement {
 }
 
 pub struct Actor<O, W> {
-    db: sqlx::SqlitePool,
+    db: db::Connection,
     wallet: xtra::Address<W>,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: xtra::Address<projection::Actor>,
@@ -65,7 +65,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: db::Connection,
         wallet: xtra::Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         projection_actor: xtra::Address<projection::Actor>,
@@ -128,9 +128,7 @@ impl<O, W> Actor<O, W> {
             quote_timestamp,
         } = msg;
 
-        let mut conn = self.db.acquire().await?;
-
-        let cfd = db::load_cfd::<Cfd>(&mut conn, order_id, ()).await?;
+        let cfd = self.db.load_cfd::<Cfd>(order_id, ()).await?;
 
         let proposal_closing_price = market_closing_price(bid, ask, Role::Taker, cfd.position());
 
@@ -174,8 +172,6 @@ where
                 format!("Contract setup for order {order_id} is already in progress")
             })?;
 
-        let mut conn = self.db.acquire().await?;
-
         let (order_to_take, maker_offers) = self
             .current_maker_offers
             .context("No maker offers available to take")?
@@ -204,7 +200,7 @@ where
         // recorded
         let cfd = Cfd::from_order(order_to_take, quantity, self.maker_identity, Role::Taker);
 
-        db::insert_cfd(&mut conn, &cfd).await?;
+        self.db.insert_cfd(&cfd).await?;
         self.projection_actor
             .send(projection::CfdChanged(cfd.id()))
             .await?;

@@ -9,12 +9,12 @@ use xtra::Address;
 
 #[derive(Clone)]
 pub struct Executor {
-    db: sqlx::SqlitePool,
+    db: db::Connection,
     process_manager: Address<process_manager::Actor>,
 }
 
 impl Executor {
-    pub fn new(db: sqlx::SqlitePool, process_manager: Address<process_manager::Actor>) -> Self {
+    pub fn new(db: db::Connection, process_manager: Address<process_manager::Actor>) -> Self {
         Self {
             db,
             process_manager,
@@ -26,13 +26,9 @@ impl Executor {
         id: OrderId,
         command: impl FnOnce(Cfd) -> Result<T>,
     ) -> Result<T::Rest> {
-        let mut connection = self
+        let cfd = self
             .db
-            .acquire()
-            .await
-            .context("Failed to acquire DB connection")?;
-
-        let cfd = db::load_cfd(&mut connection, id, ())
+            .load_cfd(id, ())
             .await
             .context("Failed to load CFD")?;
 
