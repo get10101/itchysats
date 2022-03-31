@@ -15,7 +15,7 @@ pub fn new_test_wallet(
     rng: &mut (impl RngCore + CryptoRng),
     utxo_amount: Amount,
     num_utxos: u8,
-) -> Result<bdk::Wallet<(), bdk::database::MemoryDatabase>> {
+) -> Result<bdk::Wallet<bdk::database::MemoryDatabase>> {
     use bdk::populate_test_db;
     use bdk::testutils;
 
@@ -37,7 +37,7 @@ pub fn new_test_wallet(
         );
     }
 
-    let wallet = bdk::Wallet::new_offline(&descriptors.0, None, Network::Regtest, database)?;
+    let wallet = bdk::Wallet::new(&descriptors.0, None, Network::Regtest, database)?;
 
     Ok(wallet)
 }
