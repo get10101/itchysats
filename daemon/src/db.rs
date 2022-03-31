@@ -432,7 +432,9 @@ mod tests {
     async fn test_insert_and_load_cfd() {
         let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
-        let cfd = insert(dummy_cfd(), &mut conn).await;
+        let cfd = dummy_cfd();
+        insert_cfd(&mut conn, &cfd).await.unwrap();
+
         let super::Cfd {
             id,
             position,
@@ -467,7 +469,8 @@ mod tests {
     async fn test_append_events() {
         let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
-        let cfd = insert(dummy_cfd(), &mut conn).await;
+        let cfd = dummy_cfd();
+        insert_cfd(&mut conn, &cfd).await.unwrap();
 
         let timestamp = Timestamp::now();
 
@@ -496,7 +499,9 @@ mod tests {
     async fn given_collaborative_close_confirmed_then_do_not_load_non_final_cfd() {
         let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
-        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        let cfd_final = dummy_cfd();
+        insert_cfd(&mut conn, &cfd_final).await.unwrap();
+
         append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
@@ -513,7 +518,8 @@ mod tests {
     async fn given_cet_confirmed_then_do_not_load_non_final_cfd() {
         let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
-        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        let cfd_final = dummy_cfd();
+        insert_cfd(&mut conn, &cfd_final).await.unwrap();
         append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
@@ -529,7 +535,9 @@ mod tests {
     async fn given_refund_confirmed_then_do_not_load_non_final_cfd() {
         let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
-        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        let cfd_final = dummy_cfd();
+        insert_cfd(&mut conn, &cfd_final).await.unwrap();
+
         append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
@@ -545,7 +553,9 @@ mod tests {
     async fn given_setup_failed_then_do_not_load_non_final_cfd() {
         let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
-        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        let cfd_final = dummy_cfd();
+        insert_cfd(&mut conn, &cfd_final).await.unwrap();
+
         append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
@@ -561,7 +571,9 @@ mod tests {
     async fn given_order_rejected_then_do_not_load_non_final_cfd() {
         let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
-        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        let cfd_final = dummy_cfd();
+        insert_cfd(&mut conn, &cfd_final).await.unwrap();
+
         append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
@@ -577,12 +589,16 @@ mod tests {
     async fn given_final_and_non_final_cfd_then_non_final_one_still_loaded() {
         let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
-        let cfd_not_final = insert(dummy_cfd(), &mut conn).await;
+        let cfd_not_final = dummy_cfd();
+        insert_cfd(&mut conn, &cfd_not_final).await.unwrap();
+
         append_event(&mut conn, lock_confirmed(&cfd_not_final))
             .await
             .unwrap();
 
-        let cfd_final = insert(dummy_cfd(), &mut conn).await;
+        let cfd_final = dummy_cfd();
+        insert_cfd(&mut conn, &cfd_final).await.unwrap();
+
         append_event(&mut conn, lock_confirmed(&cfd_final))
             .await
             .unwrap();
@@ -612,13 +628,6 @@ mod tests {
             FundingRate::default(),
             TxFeeRate::default(),
         )
-    }
-
-    /// Insert this [`Cfd`] into the database, returning the instance
-    /// for further chaining.
-    pub async fn insert(cfd: Cfd, conn: &mut PoolConnection<Sqlite>) -> Cfd {
-        insert_cfd(conn, &cfd).await.unwrap();
-        cfd
     }
 
     fn lock_confirmed(cfd: &Cfd) -> CfdEvent {
