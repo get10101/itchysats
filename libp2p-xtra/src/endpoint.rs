@@ -296,7 +296,7 @@ impl Endpoint {
                 }
             },
             move |error| async move {
-                let _ = this.send(ConnectionFailed { peer, error }).await;
+                let _ = this.send(ExistingConnectionFailed { peer, error }).await;
             },
         );
         self.controls.insert(peer, (control, tasks));
@@ -316,7 +316,7 @@ impl Endpoint {
         self.drop_connection(&peer);
     }
 
-    async fn handle(&mut self, msg: ConnectionFailed) {
+    async fn handle(&mut self, msg: ExistingConnectionFailed) {
         tracing::debug!("Connection failed: {:#}", msg.error);
         let peer = msg.peer;
 
@@ -488,7 +488,7 @@ struct FailedToConnect {
 }
 
 #[derive(Debug)]
-struct ConnectionFailed {
+struct ExistingConnectionFailed {
     peer: PeerId,
     error: anyhow::Error,
 }
