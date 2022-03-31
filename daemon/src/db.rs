@@ -427,11 +427,10 @@ mod tests {
     use model::Usd;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
-    use sqlx::SqlitePool;
 
     #[tokio::test]
     async fn test_insert_and_load_cfd() {
-        let mut conn = setup_test_db().await;
+        let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
         let cfd = insert(dummy_cfd(), &mut conn).await;
         let super::Cfd {
@@ -466,7 +465,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_append_events() {
-        let mut conn = setup_test_db().await;
+        let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
         let cfd = insert(dummy_cfd(), &mut conn).await;
 
@@ -495,7 +494,7 @@ mod tests {
 
     #[tokio::test]
     async fn given_collaborative_close_confirmed_then_do_not_load_non_final_cfd() {
-        let mut conn = setup_test_db().await;
+        let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
         append_event(&mut conn, lock_confirmed(&cfd_final))
@@ -512,7 +511,7 @@ mod tests {
 
     #[tokio::test]
     async fn given_cet_confirmed_then_do_not_load_non_final_cfd() {
-        let mut conn = setup_test_db().await;
+        let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
         append_event(&mut conn, lock_confirmed(&cfd_final))
@@ -528,7 +527,7 @@ mod tests {
 
     #[tokio::test]
     async fn given_refund_confirmed_then_do_not_load_non_final_cfd() {
-        let mut conn = setup_test_db().await;
+        let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
         append_event(&mut conn, lock_confirmed(&cfd_final))
@@ -544,7 +543,7 @@ mod tests {
 
     #[tokio::test]
     async fn given_setup_failed_then_do_not_load_non_final_cfd() {
-        let mut conn = setup_test_db().await;
+        let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
         append_event(&mut conn, lock_confirmed(&cfd_final))
@@ -560,7 +559,7 @@ mod tests {
 
     #[tokio::test]
     async fn given_order_rejected_then_do_not_load_non_final_cfd() {
-        let mut conn = setup_test_db().await;
+        let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
         let cfd_final = insert(dummy_cfd(), &mut conn).await;
         append_event(&mut conn, lock_confirmed(&cfd_final))
@@ -576,7 +575,7 @@ mod tests {
 
     #[tokio::test]
     async fn given_final_and_non_final_cfd_then_non_final_one_still_loaded() {
-        let mut conn = setup_test_db().await;
+        let mut conn = memory().await.unwrap().acquire().await.unwrap();
 
         let cfd_not_final = insert(dummy_cfd(), &mut conn).await;
         append_event(&mut conn, lock_confirmed(&cfd_not_final))
@@ -595,14 +594,6 @@ mod tests {
 
         assert_eq!(cfd_ids.len(), 1);
         assert_eq!(*cfd_ids.first().unwrap(), cfd_not_final.id())
-    }
-
-    async fn setup_test_db() -> PoolConnection<Sqlite> {
-        let pool = SqlitePool::connect(":memory:").await.unwrap();
-
-        run_migrations(&pool).await.unwrap();
-
-        pool.acquire().await.unwrap()
     }
 
     fn dummy_cfd() -> Cfd {
