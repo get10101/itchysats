@@ -1,4 +1,5 @@
 use crate::command;
+use crate::db;
 use crate::maker_inc_connections;
 use crate::process_manager;
 use anyhow::anyhow;
@@ -32,7 +33,7 @@ pub struct Actor {
     is_initiated: bool,
     n_payouts: usize,
     executor: command::Executor,
-    db: sqlx::SqlitePool,
+    db: db::Connection,
     tasks: Tasks,
 }
 
@@ -69,12 +70,10 @@ impl Actor {
                 "Received signature for collaborative settlement"
             );
 
-            let mut conn = self.db.acquire().await?;
-
-            // Collaborative settlement does not fit into the command abstraction which I think
-            // roots in its asymmetric design.
-            #[allow(deprecated)]
-            let cfd = crate::command::load_cfd(self.proposal.order_id, &mut conn).await?;
+            let cfd = self
+                .db
+                .load_cfd::<model::Cfd>(self.proposal.order_id, ())
+                .await?;
 
             let settlement =
                 cfd.sign_collaborative_settlement_maker(self.proposal, msg.sig_taker)?;
@@ -153,7 +152,7 @@ impl Actor {
         taker_id: Identity,
         connections: &(impl MessageChannel<maker_inc_connections::settlement::Response> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
-        db: sqlx::SqlitePool,
+        db: db::Connection,
         n_payouts: usize,
     ) -> Self {
         Self {

@@ -6,12 +6,14 @@ publish = false
 
 [dependencies]
 anyhow = "1"
+async-stream = "0.3"
 async-trait = "0.1.53"
 bdk = { version = "0.16", default-features = false, features = ["electrum"] }
 bdk-ext = { path = "../bdk-ext" }
 btsieve = { path = "../btsieve" }
 bytes = "1"
 cached = { version = "0.34.0", default-features = false, features = ["proc_macro"] }
+chashmap-async = "0.1"
 conquer-once = "0.3"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 hkdf = "0.12"

@@ -5,18 +5,16 @@ use anyhow::Context;
 use anyhow::Result;
 use model::Cfd;
 use model::CfdEvent;
-use sqlx::pool::PoolConnection;
-use sqlx::Sqlite;
 use xtra::Address;
 
 #[derive(Clone)]
 pub struct Executor {
-    db: sqlx::SqlitePool,
+    db: db::Connection,
     process_manager: Address<process_manager::Actor>,
 }
 
 impl Executor {
-    pub fn new(db: sqlx::SqlitePool, process_manager: Address<process_manager::Actor>) -> Self {
+    pub fn new(db: db::Connection, process_manager: Address<process_manager::Actor>) -> Self {
         Self {
             db,
             process_manager,
@@ -28,16 +26,9 @@ impl Executor {
         id: OrderId,
         command: impl FnOnce(Cfd) -> Result<T>,
     ) -> Result<T::Rest> {
-        let mut connection = self
+        let cfd = self
             .db
-            .acquire()
-            .await
-            .context("Failed to acquire DB connection")?;
-
-        // We are meant to be the only user of this code but make it temporarily deprecated to
-        // signal that.
-        #[allow(deprecated)]
-        let cfd = load_cfd(id, &mut connection)
+            .load_cfd(id, ())
             .await
             .context("Failed to load CFD")?;
 
@@ -57,15 +48,11 @@ impl Executor {
     }
 }
 
-/// Load a CFD from the database and rehydrate as the [`model::cfd::Cfd`] aggregate.
-///
-/// This is marked as deprecated to remind developers that it should not be used directly. Make it
-/// non-deprecated once all its other usages have been cleared.
-#[deprecated(
-    note = "The model::Cfd should only be modified via the command::Executor abstraction."
-)]
-pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> Result<Cfd> {
-    let (
+impl db::CfdAggregate for Cfd {
+    type CtorArgs = ();
+
+    fn new(
+        _: Self::CtorArgs,
         db::Cfd {
             id,
             position,
@@ -78,24 +65,30 @@ pub async fn load_cfd(order_id: OrderId, conn: &mut PoolConnection<Sqlite>) -> R
             opening_fee,
             initial_funding_rate,
             initial_tx_fee_rate,
-        },
-        events,
-    ) = db::load_cfd(order_id, conn).await?;
-    let cfd = Cfd::rehydrate(
-        id,
-        position,
-        initial_price,
-        leverage,
-        settlement_interval,
-        quantity_usd,
-        counterparty_network_identity,
-        role,
-        opening_fee,
-        initial_funding_rate,
-        initial_tx_fee_rate,
-        events,
-    );
-    Ok(cfd)
+        }: db::Cfd,
+    ) -> Self {
+        Cfd::new(
+            id,
+            position,
+            initial_price,
+            leverage,
+            settlement_interval,
+            role,
+            quantity_usd,
+            counterparty_network_identity,
+            opening_fee,
+            initial_funding_rate,
+            initial_tx_fee_rate,
+        )
+    }
+
+    fn apply(self, event: CfdEvent) -> Self {
+        self.apply(event)
+    }
+
+    fn version(&self) -> u32 {
+        self.version()
+    }
 }
 
 // TODO: Delete this weird thing once all our commands return only an `Event` and not other stuff as

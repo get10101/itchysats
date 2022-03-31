@@ -528,10 +528,9 @@ fn from_json_inner(name: String, data: String) -> Result<EventKind> {
 /// we apply the event to the aggregate producing a new aggregate (representing the latest state
 /// `version`). To bring a cfd into a certain state version we load all events from the
 /// database and apply them in order (order by version).
-#[derive(Debug, PartialEq)]
-#[cfg_attr(test, derive(Clone))]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Cfd {
-    version: u64,
+    version: u32,
 
     // static
     id: OrderId,
@@ -672,38 +671,6 @@ impl Cfd {
             order.funding_rate,
             order.tx_fee_rate,
         )
-    }
-
-    /// Creates a new [`Cfd`] and rehydrates it from the given list of events.
-    #[allow(clippy::too_many_arguments)]
-    pub fn rehydrate(
-        id: OrderId,
-        position: Position,
-        initial_price: Price,
-        taker_leverage: Leverage,
-        settlement_interval: Duration,
-        quantity: Usd,
-        counterparty_network_identity: Identity,
-        role: Role,
-        opening_fee: OpeningFee,
-        initial_funding_rate: FundingRate,
-        initial_tx_fee_rate: TxFeeRate,
-        events: Vec<CfdEvent>,
-    ) -> Self {
-        let cfd = Self::new(
-            id,
-            position,
-            initial_price,
-            taker_leverage,
-            settlement_interval,
-            role,
-            quantity,
-            counterparty_network_identity,
-            opening_fee,
-            initial_funding_rate,
-            initial_tx_fee_rate,
-        );
-        events.into_iter().fold(cfd, Cfd::apply)
     }
 
     fn expiry_timestamp(&self) -> Option<OffsetDateTime> {
@@ -1416,7 +1383,7 @@ impl Cfd {
         })
     }
 
-    pub fn version(&self) -> u64 {
+    pub fn version(&self) -> u32 {
         self.version
     }
 

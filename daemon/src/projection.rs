@@ -11,6 +11,7 @@ use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
 use bdk::miniscript::DescriptorTrait;
 use core::fmt;
+use futures::StreamExt;
 use itertools::Itertools;
 use maia::TransactionExt;
 use model::calculate_long_liquidation_price;
@@ -65,7 +66,7 @@ pub struct CfdChanged(pub OrderId);
 struct Initialize;
 
 pub struct Actor {
-    db: sqlx::SqlitePool,
+    db: db::Connection,
     tx: Tx,
     state: State,
     price_feed: Box<dyn MessageChannel<xtra_bitmex_price_feed::LatestQuote>>,
@@ -81,7 +82,7 @@ pub struct Feeds {
 
 impl Actor {
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: db::Connection,
         network: Network,
         price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote> + 'static),
     ) -> (Self, Feeds) {
@@ -180,6 +181,9 @@ pub struct Cfd {
 
     #[serde(skip)]
     aggregated: Aggregated,
+
+    #[serde(skip)]
+    network: Network,
 }
 
 /// Bundle all state extracted from the events in one struct.
@@ -215,7 +219,7 @@ struct Aggregated {
     rollover_state: Option<ProtocolNegotiationState>,
     settlement_state: Option<ProtocolNegotiationState>,
 
-    version: u64,
+    version: u32,
     creation_timestamp: Timestamp,
 }
 
@@ -312,6 +316,7 @@ impl Cfd {
             initial_funding_rate,
             ..
         }: db::Cfd,
+        network: Network,
     ) -> Self {
         let (our_leverage, counterparty_leverage) = match role {
             Role::Maker => (Leverage::ONE, taker_leverage),
@@ -377,10 +382,11 @@ impl Cfd {
             counterparty: counterparty_network_identity,
             pending_settlement_proposal_price: None,
             aggregated: Aggregated::new(fee_account),
+            network,
         }
     }
 
-    fn apply(mut self, event: CfdEvent, network: Network) -> Self {
+    fn apply(mut self, event: CfdEvent) -> Self {
         if self.aggregated.version == 0 {
             self.aggregated.creation_timestamp = event.timestamp;
         }
@@ -516,19 +522,19 @@ impl Cfd {
         self.state = self.aggregated.derive_cfd_state(self.role);
         self.actions = self.derive_actions();
 
-        if let Some(lock_tx_url) = self.lock_tx_url(network) {
+        if let Some(lock_tx_url) = self.lock_tx_url(self.network) {
             self.details.tx_url_list.insert(lock_tx_url);
         }
-        if let Some(commit_tx_url) = self.commit_tx_url(network) {
+        if let Some(commit_tx_url) = self.commit_tx_url(self.network) {
             self.details.tx_url_list.insert(commit_tx_url);
         }
-        if let Some(collab_settlement_tx_url) = self.collab_settlement_tx_url(network) {
+        if let Some(collab_settlement_tx_url) = self.collab_settlement_tx_url(self.network) {
             self.details.tx_url_list.insert(collab_settlement_tx_url);
         }
-        if let Some(refund_tx_url) = self.refund_tx_url(network) {
+        if let Some(refund_tx_url) = self.refund_tx_url(self.network) {
             self.details.tx_url_list.insert(refund_tx_url);
         }
-        if let Some(cet_url) = self.cet_url(network) {
+        if let Some(cet_url) = self.cet_url(self.network) {
             self.details.tx_url_list.insert(cet_url);
         }
 
@@ -796,6 +802,22 @@ struct State {
     cfds: Option<HashMap<OrderId, Cfd>>,
 }
 
+impl db::CfdAggregate for Cfd {
+    type CtorArgs = Network;
+
+    fn new(args: Self::CtorArgs, cfd: db::Cfd) -> Self {
+        Cfd::new(cfd, args)
+    }
+
+    fn apply(self, event: CfdEvent) -> Self {
+        self.apply(event)
+    }
+
+    fn version(&self) -> u32 {
+        self.aggregated.version
+    }
+}
+
 impl State {
     fn new(network: Network) -> Self {
         Self {
@@ -805,17 +827,8 @@ impl State {
         }
     }
 
-    async fn update_cfd(&mut self, db: sqlx::SqlitePool, id: OrderId) -> Result<()> {
-        let mut conn = db
-            .acquire()
-            .await
-            .context("Failed to acquire DB connection")?;
-
-        let (cfd, events) = db::load_cfd(id, &mut conn).await?;
-
-        let cfd = events
-            .into_iter()
-            .fold(Cfd::new(cfd), |cfd, event| cfd.apply(event, self.network));
+    async fn update_cfd(&mut self, db: db::Connection, id: OrderId) -> Result<()> {
+        let cfd = db.load_cfd(id, self.network).await?;
 
         let cfds = self
             .cfds
@@ -835,16 +848,23 @@ impl State {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, _: Initialize) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
-        let vec = db::load_all_cfd_ids(&mut conn).await?;
+        let mut stream = self.db.load_all_cfds::<Cfd>(self.state.network);
 
-        self.state.cfds = Some(HashMap::with_capacity(vec.len()));
+        let mut cfds = HashMap::new();
 
-        for id in vec {
-            if let Err(e) = self.state.update_cfd(self.db.clone(), id).await {
-                tracing::error!("Failed to rehydrate CFD: {e:#}");
+        while let Some(cfd) = stream.next().await {
+            let cfd = match cfd {
+                Ok(cfd) => cfd,
+                Err(e) => {
+                    tracing::error!("Failed to rehydrate CFD: {e:#}");
+                    continue;
+                }
             };
+
+            cfds.insert(cfd.order_id, cfd);
         }
+
+        self.state.cfds = Some(cfds);
 
         self.tx.send_cfds_update(
             self.state

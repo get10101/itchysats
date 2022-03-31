@@ -1,4 +1,4 @@
-use crate::db::append_event;
+use crate::db;
 use crate::monitor::MonitorCetFinality;
 use crate::monitor::MonitorCollaborativeSettlement;
 use crate::monitor::MonitorParams;
@@ -17,7 +17,7 @@ use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
 
 pub struct Actor {
-    db: sqlx::SqlitePool,
+    db: db::Connection,
     role: Role,
     cfds_changed: Box<dyn MessageChannel<projection::CfdChanged>>,
     try_broadcast_transaction: Box<dyn MessageChannel<TryBroadcastTransaction>>,
@@ -38,7 +38,7 @@ impl Event {
 impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: db::Connection,
         role: Role,
         cfds_changed: &(impl MessageChannel<projection::CfdChanged> + 'static),
         try_broadcast_transaction: &(impl MessageChannel<TryBroadcastTransaction> + 'static),
@@ -67,8 +67,7 @@ impl Actor {
         let event = msg.0;
 
         // 1. Safe in DB
-        let mut conn = self.db.acquire().await?;
-        append_event(event.clone(), &mut conn).await?;
+        self.db.append_event(event.clone()).await?;
 
         // 2. Post process event
         use EventKind::*;

@@ -3,10 +3,9 @@ use crate::db;
 use crate::oracle;
 use crate::process_manager;
 use crate::rollover_taker;
-use crate::try_continue;
-use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::StreamExt;
 use maia::secp256k1_zkp::schnorrsig;
 use model::OrderId;
 use std::time::Duration;
@@ -20,7 +19,7 @@ use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
 pub struct Actor<O> {
-    db: sqlx::SqlitePool,
+    db: db::Connection,
     oracle_pk: schnorrsig::PublicKey,
     process_manager: Address<process_manager::Actor>,
     conn: Address<connection::Actor>,
@@ -32,7 +31,7 @@ pub struct Actor<O> {
 
 impl<O> Actor<O> {
     pub fn new(
-        db: sqlx::SqlitePool,
+        db: db::Connection,
         oracle_pk: schnorrsig::PublicKey,
         process_manager: Address<process_manager::Actor>,
         conn: Address<connection::Actor>,
@@ -100,27 +99,33 @@ where
         &mut self,
         ctx: &mut xtra::Context<Actor<O>>,
     ) -> Result<(), anyhow::Error> {
-        let mut conn = self.db.acquire().await?;
-        let cfd_ids = db::load_open_cfd_ids(&mut conn).await?;
         let this = ctx
             .address()
             .expect("actor to be able to give address to itself");
-        for id in cfd_ids {
-            try_continue!(async {
-                #[allow(deprecated)] // This checking for rollover eligibility does not fit into the command abstraction (yet). Figure out a way for fixing it.
-                let cfd = crate::command::load_cfd(id, &mut conn).await?;
 
-                match cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
-                    Ok(()) => this.send_async_safe(Rollover(id)).await?,
-                    Err(reason) => {
-                        tracing::trace!(order_id = %id, %reason, "CFD is not eligible for auto-rollover");
-                    }
+        let mut stream = self.db.load_all_open_cfds::<model::Cfd>(());
+
+        while let Some(cfd) = stream.next().await {
+            let cfd = match cfd {
+                Ok(cfd) => cfd,
+                Err(e) => {
+                    tracing::warn!("Failed to load CFD from database: {e:#}");
+                    continue;
                 }
-                anyhow::Ok(())
+            };
+            let id = cfd.id();
+
+            match cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
+                Ok(()) => {
+                    let _ = this.send_async_safe(Rollover(id)).await; // If we disconnect, we don't
+                                                                      // care.
+                }
+                Err(reason) => {
+                    tracing::trace!(order_id = %id, %reason, "CFD is not eligible for auto-rollover");
+                }
             }
-            .await
-            .context("Cannot roll over"));
         }
+
         Ok(())
     }
 }

@@ -16,13 +16,13 @@ use bdk::miniscript::DescriptorTrait;
 use btsieve::ScriptStatus;
 use btsieve::State;
 use btsieve::TxStatus;
+use futures::TryStreamExt;
 use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
 use model::OrderId;
 use model::CET_TIMELOCK;
 use serde_json::Value;
-use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -113,12 +113,13 @@ pub struct Actor {
     client: bdk::electrum_client::Client,
     tasks: Tasks,
     state: State<Event>,
-    db: SqlitePool,
+    db: db::Connection,
 }
 
 /// Read-model of the CFD for the monitoring actor.
-#[derive(Default)]
+#[derive(Clone)]
 struct Cfd {
+    id: OrderId,
     params: Option<MonitorParams>,
 
     monitor_lock_finality: bool,
@@ -135,6 +136,38 @@ struct Cfd {
     lock_tx: Option<Transaction>,
     cet: Option<Transaction>,
     commit_tx: Option<Transaction>,
+
+    version: u32,
+}
+
+impl db::CfdAggregate for Cfd {
+    type CtorArgs = ();
+
+    fn new(_: Self::CtorArgs, cfd: db::Cfd) -> Self {
+        Self {
+            id: cfd.id,
+            params: None,
+            monitor_lock_finality: false,
+            monitor_commit_finality: false,
+            monitor_cet_timelock: false,
+            monitor_refund_timelock: false,
+            monitor_refund_finality: false,
+            monitor_revoked_commit_transactions: false,
+            monitor_collaborative_settlement_finality: None,
+            lock_tx: None,
+            cet: None,
+            commit_tx: None,
+            version: 0,
+        }
+    }
+
+    fn apply(self, event: CfdEvent) -> Self {
+        self.apply(event)
+    }
+
+    fn version(&self) -> u32 {
+        self.version
+    }
 }
 
 impl Cfd {
@@ -146,7 +179,9 @@ impl Cfd {
     //
     // At the moment, neither of those two is the case which is why we set everything to true that
     // might become relevant. See also https://github.com/itchysats/itchysats/issues/605 and https://github.com/itchysats/itchysats/issues/236.
-    fn apply(self, event: CfdEvent) -> Self {
+    fn apply(mut self, event: CfdEvent) -> Self {
+        self.version += 1;
+
         use EventKind::*;
         match event.event {
             ContractSetupCompleted { dlc, .. } => Self {
@@ -161,6 +196,7 @@ impl Cfd {
                 lock_tx: Some(dlc.lock.0),
                 cet: None,
                 commit_tx: None,
+                ..self
             },
             RolloverCompleted { dlc, .. } => {
                 Self {
@@ -176,6 +212,7 @@ impl Cfd {
                     lock_tx: None,
                     cet: self.cet,
                     commit_tx: self.commit_tx,
+                    ..self
                 }
             }
             CollaborativeSettlementCompleted {
@@ -189,9 +226,19 @@ impl Cfd {
                     ..self
                 }
             }
-            ContractSetupStarted | ContractSetupFailed | OfferRejected | RolloverRejected => {
-                Self::default() // all false / empty
-            }
+            ContractSetupStarted | ContractSetupFailed | OfferRejected | RolloverRejected => Self {
+                monitor_lock_finality: false,
+                monitor_commit_finality: false,
+                monitor_cet_timelock: false,
+                monitor_refund_timelock: false,
+                monitor_refund_finality: false,
+                monitor_revoked_commit_transactions: false,
+                monitor_collaborative_settlement_finality: None,
+                lock_tx: None,
+                cet: None,
+                commit_tx: None,
+                ..self
+            },
             LockConfirmed => Self {
                 monitor_lock_finality: false,
                 lock_tx: None,
@@ -206,7 +253,19 @@ impl Cfd {
             CetConfirmed
             | RefundConfirmed
             | CollaborativeSettlementConfirmed
-            | LockConfirmedAfterFinality => Self::default(),
+            | LockConfirmedAfterFinality => Self {
+                monitor_lock_finality: false,
+                monitor_commit_finality: false,
+                monitor_cet_timelock: false,
+                monitor_refund_timelock: false,
+                monitor_refund_finality: false,
+                monitor_revoked_commit_transactions: false,
+                monitor_collaborative_settlement_finality: None,
+                lock_tx: None,
+                cet: None,
+                commit_tx: None,
+                ..self
+            },
             CetTimelockExpiredPriorOracleAttestation => Self {
                 monitor_cet_timelock: false,
                 ..self
@@ -243,7 +302,7 @@ impl Cfd {
 
 impl Actor {
     pub fn new(
-        db: SqlitePool,
+        db: db::Connection,
         electrum_rpc_url: String,
         executor: command::Executor,
     ) -> Result<Self> {
@@ -473,18 +532,18 @@ impl xtra::Actor for Actor {
                 let this = this.clone();
 
                 async move {
-                    let mut conn = db.acquire().await?;
+                    let mut stream = db.load_all_open_cfds::<Cfd>(());
 
-                    for id in db::load_open_cfd_ids(&mut conn).await? {
-                        let (_, events) = db::load_cfd(id, &mut conn).await?;
-
-                        let Cfd {
-                            cet,
-                            commit_tx,
-                            lock_tx,
-                            ..
-                        } = events.into_iter().fold(Cfd::default(), Cfd::apply);
-
+                    while let Some(Cfd {
+                        cet,
+                        commit_tx,
+                        lock_tx,
+                        ..
+                    }) = stream
+                        .try_next()
+                        .await
+                        .context("Failed to load CFD from database")?
+                    {
                         if let Some(tx) = commit_tx {
                             if let Err(e) = this
                                 .send(TryBroadcastTransaction {
@@ -535,23 +594,24 @@ impl xtra::Actor for Actor {
                 let db = self.db.clone();
 
                 async move {
-                    let mut conn = db.acquire().await?;
+                    let mut stream = db.load_all_open_cfds::<Cfd>(());
 
-                    for id in db::load_open_cfd_ids(&mut conn).await? {
-                        let (_, events) = db::load_cfd(id, &mut conn).await?;
-
-                        let Cfd {
-                            params,
-                            monitor_lock_finality,
-                            monitor_commit_finality,
-                            monitor_cet_timelock,
-                            monitor_refund_timelock,
-                            monitor_refund_finality,
-                            monitor_revoked_commit_transactions,
-                            monitor_collaborative_settlement_finality,
-                            ..
-                        } = events.into_iter().fold(Cfd::default(), Cfd::apply);
-
+                    while let Some(Cfd {
+                        id,
+                        params,
+                        monitor_lock_finality,
+                        monitor_commit_finality,
+                        monitor_cet_timelock,
+                        monitor_refund_timelock,
+                        monitor_refund_finality,
+                        monitor_revoked_commit_transactions,
+                        monitor_collaborative_settlement_finality,
+                        ..
+                    }) = stream
+                        .try_next()
+                        .await
+                        .context("Failed to load CFD from database")?
+                    {
                         let params = match params {
                             None => continue,
                             Some(params) => params,
