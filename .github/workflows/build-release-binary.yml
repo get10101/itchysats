@@ -39,6 +39,7 @@ jobs:
       - name: Checkout tagged commit
         uses: actions/checkout@v3
         with:
+          fetch-depth: 0
           ref: ${{ github.event.release.target_commitish }}
           token: ${{ secrets.ITCHY_GITHUB_TOKEN }}
 
