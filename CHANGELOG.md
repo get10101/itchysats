@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Return a 500 Internal Server Error for `/api/cfds` whilst doing the initial load from the database.
+  Previously, an empty list was returned, making clients think the database is empty.
+  [PR 1717](https://github.com/itchysats/itchysats/pull/1717)
+
+### Fixed
+
+- Severe performance issues caused by redundant re-creation of aggregates.
+  Aggregates will now be cached and only new events will be applied.
+  This makes anything database related much more performant.
+  [PR 1722](https://github.com/itchysats/itchysats/pull/1722)
+
 ## [0.4.10] - 2022-03-28
 
-- add a banner celebrating us pitching at Bitcoin 2022 conference in Miami
+- Add a banner celebrating us pitching at Bitcoin 2022 conference in Miami.
 
 ## [0.4.9] - 2022-03-28
 
