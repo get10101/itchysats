@@ -31,10 +31,10 @@ use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
 const LOCK_FINALITY_CONFIRMATIONS: u32 = 1;
-const CLOSE_FINALITY_CONFIRMATIONS: u32 = 1;
+const CLOSE_FINALITY_CONFIRMATIONS: u32 = 3;
 const COMMIT_FINALITY_CONFIRMATIONS: u32 = 1;
-const CET_FINALITY_CONFIRMATIONS: u32 = 1;
-const REFUND_FINALITY_CONFIRMATIONS: u32 = 1;
+const CET_FINALITY_CONFIRMATIONS: u32 = 3;
+const REFUND_FINALITY_CONFIRMATIONS: u32 = 3;
 
 pub struct StartMonitoring {
     pub id: OrderId,
