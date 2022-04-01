@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.10] - 2022-03-28
 
-- add a banner celebrating us pitching at Bitcoin 2022 conference in Miami
+- Add a banner celebrating us pitching at Bitcoin 2022 conference in Miami.
 
 ## [0.4.9] - 2022-03-28
 
