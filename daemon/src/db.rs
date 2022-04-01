@@ -213,6 +213,7 @@ impl Connection {
         let mut conn = self.inner.acquire().await?;
 
         let cache_key = (TypeId::of::<C>(), id);
+        let aggregate = std::any::type_name::<C>();
 
         let cfd = match self.aggregate_cache.remove(&cache_key).await {
             None => {
@@ -229,12 +230,14 @@ impl Connection {
                     .expect("we index by type id, must be able to downcast")
             }
         };
-        let last_version = cfd.version();
+        let cfd_version = cfd.version();
 
-        let cfd = load_cfd_events(&mut conn, id, last_version)
-            .await?
-            .into_iter()
-            .fold(cfd, C::apply);
+        let events = load_cfd_events(&mut conn, id, cfd_version).await?;
+        let num_events = events.len();
+
+        tracing::debug!(order_id = %id, %aggregate, %cfd_version, %num_events, "Applying new events to CFD");
+
+        let cfd = events.into_iter().fold(cfd, C::apply);
 
         self.aggregate_cache
             .insert(cache_key, Box::new(cfd.clone()))
