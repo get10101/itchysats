@@ -242,7 +242,7 @@ export default function Trade({
                                         disabled={!fundingRateHourly}
                                     >
                                         <Td isNumeric>
-                                            <Skeleton isLoaded={!!fundingRateHourly}>
+                                            <Skeleton isLoaded={fundingRateHourly != null}>
                                                 Hourly @ {fundingRateHourly}%
                                             </Skeleton>
                                         </Td>
