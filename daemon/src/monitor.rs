@@ -131,6 +131,7 @@ struct Cfd {
 
     // Ideally, all of the above would be like this.
     monitor_collaborative_settlement_finality: Option<(Txid, Script)>,
+    monitor_cet_finality: Option<(Txid, Script)>,
 
     // Rebroadcast transactions upon startup
     lock_tx: Option<Transaction>,
@@ -154,6 +155,7 @@ impl db::CfdAggregate for Cfd {
             monitor_refund_finality: false,
             monitor_revoked_commit_transactions: false,
             monitor_collaborative_settlement_finality: None,
+            monitor_cet_finality: None,
             lock_tx: None,
             cet: None,
             commit_tx: None,
@@ -261,6 +263,7 @@ impl Cfd {
                 monitor_refund_finality: false,
                 monitor_revoked_commit_transactions: false,
                 monitor_collaborative_settlement_finality: None,
+                monitor_cet_finality: None,
                 lock_tx: None,
                 cet: None,
                 commit_tx: None,
@@ -271,7 +274,8 @@ impl Cfd {
                 ..self
             },
             CetTimelockExpiredPostOracleAttestation { cet, .. } => Self {
-                cet: Some(cet),
+                cet: Some(cet.clone()),
+                monitor_cet_finality: cet_txid_and_script(cet),
                 monitor_cet_timelock: false,
                 ..self
             },
@@ -280,7 +284,8 @@ impl Cfd {
                 ..self
             },
             OracleAttestedPostCetTimelock { cet, .. } => Self {
-                cet: Some(cet),
+                cet: Some(cet.clone()),
+                monitor_cet_finality: cet_txid_and_script(cet),
                 ..self
             },
             RolloverStarted { .. }
@@ -296,6 +301,16 @@ impl Cfd {
                 tracing::error!("Revoked logic not implemented");
                 self
             }
+        }
+    }
+}
+
+fn cet_txid_and_script(cet: Transaction) -> Option<(Txid, Script)> {
+    match cet.output.first() {
+        Some(output) => Some((cet.txid(), output.script_pubkey.clone())),
+        None => {
+            tracing::error!("Failed to monitor cet using script pubkey because no TxOut's in CET");
+            None
         }
     }
 }
@@ -353,6 +368,15 @@ impl Actor {
             close_params.1,
             ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
             Event::CloseFinality(order_id),
+        );
+    }
+
+    fn monitor_cet_finality(&mut self, close_params: (Txid, Script), order_id: OrderId) {
+        self.state.monitor(
+            close_params.0,
+            close_params.1,
+            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            Event::CetFinality(order_id),
         );
     }
 
@@ -606,6 +630,7 @@ impl xtra::Actor for Actor {
                         monitor_refund_finality,
                         monitor_revoked_commit_transactions,
                         monitor_collaborative_settlement_finality,
+                        monitor_cet_finality,
                         ..
                     }) = stream
                         .try_next()
@@ -637,6 +662,7 @@ impl xtra::Actor for Actor {
                             monitor_refund_finality,
                             monitor_revoked_commit_transactions,
                             monitor_collaborative_settlement_finality,
+                            monitor_cet_finality,
                         })
                         .await?;
                     }
@@ -740,6 +766,7 @@ impl Actor {
             monitor_refund_finality,
             monitor_revoked_commit_transactions,
             monitor_collaborative_settlement_finality,
+            monitor_cet_finality,
         } = msg;
 
         self.cfds.insert(id, params.clone());
@@ -771,20 +798,23 @@ impl Actor {
         if let Some(params) = monitor_collaborative_settlement_finality {
             self.monitor_close_finality(params, id);
         }
+
+        if let Some(params) = monitor_cet_finality {
+            self.monitor_cet_finality(params, id);
+        }
     }
 
     async fn handle_monitor_cet_finality(&mut self, msg: MonitorCetFinality) -> Result<()> {
-        self.state.monitor(
-            msg.cet.txid(),
-            msg.cet
-                .output
-                .first()
-                .context("Failed to monitor cet using script pubkey because no TxOut's in CET")?
-                .script_pubkey
-                .clone(),
-            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
-            Event::CetFinality(msg.order_id),
-        );
+        let txid = msg.cet.txid();
+        let script = msg
+            .cet
+            .output
+            .first()
+            .context("Failed to monitor cet using script pubkey because no TxOut's in CET")?
+            .script_pubkey
+            .clone();
+
+        self.monitor_cet_finality((txid, script), msg.order_id);
 
         Ok(())
     }
@@ -805,6 +835,7 @@ struct ReinitMonitoring {
 
     // Ideally, all of the above would be like this.
     monitor_collaborative_settlement_finality: Option<(Txid, Script)>,
+    monitor_cet_finality: Option<(Txid, Script)>,
 }
 
 #[xtra_productivity]

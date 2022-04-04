@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An issue where CET finality was not monitored if we restarted the daemon before the CET was confirmed.
+  This was fixed by adding CET monitoring to the restart behaviour of the monitor actor.
+
 ## [0.4.11] - 2022-04-04
 
 ### Changed
