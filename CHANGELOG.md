@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.11] - 2022-04-04
+
 ### Changed
 
 - Return a 500 Internal Server Error for `/api/cfds` whilst doing the initial load from the database.
@@ -95,7 +97,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.10...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.11...HEAD
+[0.4.11]: https://github.com/itchysats/itchysats/compare/0.4.10...0.4.11
 [0.4.10]: https://github.com/itchysats/itchysats/compare/0.4.9...0.4.10
 [0.4.9]: https://github.com/itchysats/itchysats/compare/0.4.8...0.4.9
 [0.4.8]: https://github.com/itchysats/itchysats/compare/0.4.7...0.4.8
