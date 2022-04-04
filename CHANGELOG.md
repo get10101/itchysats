@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Allow to run the `taker` binary without parameters: Default the bitcoin-network subcommand to `mainnet` and apply defaults for the `mainnet` and `testnet` maker.
+
 ### Fixed
 
 - An issue where CET finality was not monitored if we restarted the daemon before the CET was confirmed.

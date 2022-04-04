@@ -1,3 +1,4 @@
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use clap::Parser;
@@ -34,15 +35,27 @@ mod routes;
 
 pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 
+const MAINNET_ELECTRUM: &str = "ssl://blockstream.info:700";
+const MAINNET_MAKER: &str = "mainnet.itchysats.network:10000";
+const MAINNET_MAKER_ID: &str = "7e35e34801e766a6a29ecb9e22810ea4e3476c2b37bf75882edf94a68b1d9607";
+
+const TESTNET_ELECTRUM: &str = "ssl://blockstream.info:993";
+const TESTNET_MAKER: &str = "testnet.itchysats.network:9999";
+const TESTNET_MAKER_ID: &str = "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e";
+
 #[derive(Parser)]
 struct Opts {
     /// The IP address or hostname of the other party (i.e. the maker).
+    ///
+    /// If not specified it defaults to the itchysats maker for the mainnet or testnet.
     #[clap(long)]
-    maker: String,
+    maker: Option<String>,
 
     /// The public key of the maker as a 32 byte hex string.
+    ///
+    /// If not specified it defaults to the itchysats maker-id for mainnet or testnet.
     #[clap(long, parse(try_from_str = parse_x25519_pubkey))]
-    maker_id: x25519_dalek::PublicKey,
+    maker_id: Option<x25519_dalek::PublicKey>,
 
     /// The IP address to listen on for the HTTP API.
     #[clap(long, default_value = "127.0.0.1:8000")]
@@ -67,10 +80,45 @@ struct Opts {
     password: Option<rocket_basicauth::Password>,
 
     #[clap(subcommand)]
-    network: Network,
+    network: Option<Network>,
 
     #[clap(short, long, parse(try_from_str = parse_umbrel_seed))]
     umbrel_seed: Option<[u8; 32]>,
+}
+
+impl Opts {
+    fn network(&self) -> Network {
+        self.network.clone().unwrap_or_else(|| Network::Mainnet {
+            electrum: MAINNET_ELECTRUM.to_string(),
+            withdraw: None,
+        })
+    }
+
+    fn maker(&self) -> Result<(String, x25519_dalek::PublicKey)> {
+        let network = self.network();
+
+        let maker_url = match self.maker.clone() {
+            Some(maker) => maker,
+            None => match network {
+                Network::Mainnet { .. } => MAINNET_MAKER.to_string(),
+                Network::Testnet { .. } => TESTNET_MAKER.to_string(),
+                Network::Signet { .. } => bail!("No maker default URL configured for signet"),
+            },
+        };
+
+        let maker_id = match self.maker_id {
+            Some(maker_id) => maker_id,
+            None => match network {
+                Network::Mainnet { .. } => parse_x25519_pubkey(MAINNET_MAKER_ID)?,
+                Network::Testnet { .. } => parse_x25519_pubkey(TESTNET_MAKER_ID)?,
+                Network::Signet { .. } => {
+                    bail!("No maker default public key configured for signet")
+                }
+            },
+        };
+
+        Ok((maker_url, maker_id))
+    }
 }
 
 fn parse_x25519_pubkey(s: &str) -> Result<x25519_dalek::PublicKey> {
@@ -85,19 +133,21 @@ fn parse_umbrel_seed(s: &str) -> Result<[u8; 32]> {
     Ok(bytes)
 }
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 enum Network {
+    /// Run on mainnet (default)
     Mainnet {
         /// URL to the electrum backend to use for the wallet.
-        #[clap(long, default_value = "ssl://blockstream.info:700")]
+        #[clap(long, default_value = MAINNET_ELECTRUM)]
         electrum: String,
 
         #[clap(subcommand)]
         withdraw: Option<Withdraw>,
     },
+    /// Run on testnet
     Testnet {
         /// URL to the electrum backend to use for the wallet.
-        #[clap(long, default_value = "ssl://blockstream.info:993")]
+        #[clap(long, default_value = TESTNET_ELECTRUM)]
         electrum: String,
 
         #[clap(subcommand)]
@@ -114,7 +164,7 @@ enum Network {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone)]
 enum Withdraw {
     Withdraw {
         /// Optionally specify the amount of Bitcoin to be withdrawn. If not specified the wallet
@@ -169,6 +219,9 @@ impl Network {
 async fn main() -> Result<()> {
     let opts = Opts::parse();
 
+    let network = opts.network();
+    let (maker_url, maker_id) = opts.maker()?;
+
     logger::init(opts.log_level, opts.json).context("initialize logger")?;
     tracing::info!("Running version: {}", daemon::version::version());
     let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
@@ -182,15 +235,15 @@ async fn main() -> Result<()> {
         .clone()
         .unwrap_or_else(|| std::env::current_dir().expect("unable to get cwd"));
 
-    let data_dir = opts.network.data_dir(data_dir);
+    let data_dir = network.data_dir(data_dir);
 
     if !data_dir.exists() {
         tokio::fs::create_dir_all(&data_dir).await?;
     }
 
-    let maker_identity = Identity::new(opts.maker_id);
+    let maker_identity = Identity::new(maker_id);
 
-    let bitcoin_network = opts.network.bitcoin_network();
+    let bitcoin_network = network.bitcoin_network();
     let (ext_priv_key, identity_sk, web_password) = match opts.umbrel_seed {
         Some(seed_bytes) => {
             let seed = UmbrelSeed::from(seed_bytes);
@@ -210,7 +263,7 @@ async fn main() -> Result<()> {
 
     let mut tasks = Tasks::default();
 
-    let (wallet, wallet_feed_receiver) = wallet::Actor::new(opts.network.electrum(), ext_priv_key)?;
+    let (wallet, wallet_feed_receiver) = wallet::Actor::new(network.electrum(), ext_priv_key)?;
 
     let wallet = wallet.create(None).spawn(&mut tasks);
 
@@ -218,7 +271,7 @@ async fn main() -> Result<()> {
         amount,
         address,
         fee,
-    }) = opts.network.withdraw()
+    }) = network.withdraw()
     {
         wallet
             .send(wallet::Withdraw {
@@ -253,7 +306,7 @@ async fn main() -> Result<()> {
         |executor| oracle::Actor::new(db.clone(), executor, SETTLEMENT_INTERVAL),
         {
             |executor| {
-                let electrum = opts.network.electrum().to_string();
+                let electrum = network.electrum().to_string();
                 monitor::Actor::new(db.clone(), electrum, executor)
             }
         },
@@ -269,7 +322,7 @@ async fn main() -> Result<()> {
         projection::Actor::new(db.clone(), bitcoin_network, &taker.price_feed_actor);
     tasks.add(projection_context.run(proj_actor));
 
-    let possible_addresses = resolve_maker_addresses(&opts.maker).await?;
+    let possible_addresses = resolve_maker_addresses(maker_url.as_str()).await?;
 
     tasks.add(connect(
         taker.maker_online_status_feed_receiver.clone(),
