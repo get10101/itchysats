@@ -1587,9 +1587,9 @@ checksum = "33a33a362ce288760ec6a508b94caaec573ae7d3bbbd91b87aa0bad4456839db"
 
 [[package]]
 name = "libp2p-core"
-version = "0.32.0"
+version = "0.32.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9164ec41455856e8187addc870bb4fe1ea2ee28e1a9244831d449a2429b32c1a"
+checksum = "db5b02602099fb75cb2d16f9ea860a320d6eb82ce41e95ab680912c454805cd5"
 dependencies = [
  "asn1_der",
  "bs58",
