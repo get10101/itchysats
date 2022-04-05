@@ -750,6 +750,8 @@ dependencies = [
  "futures",
  "hkdf",
  "itertools",
+ "libp2p-core",
+ "libp2p-noise",
  "maia",
  "model",
  "parse-display",

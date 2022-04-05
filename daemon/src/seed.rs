@@ -1,12 +1,25 @@
 use anyhow::anyhow;
+use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::Network;
 use hkdf::Hkdf;
+use libp2p_core::identity::ed25519;
 use rand::Rng;
 use sha2::Sha256;
 use std::convert::TryInto;
 use std::path::Path;
+
+// TODO: find a better name / encapsulate
+/// Struct containing compatible secrets both
+///
+/// It is located here as it is derived from the seed.
+#[derive(Clone)]
+pub struct Keypair {
+    pub identity_sk: x25519_dalek::StaticSecret,
+    pub identity_pk: x25519_dalek::PublicKey,
+    pub libp2p: ed25519::Keypair,
+}
 
 pub trait Seed {
     fn seed(&self) -> Vec<u8>;
@@ -42,6 +55,29 @@ pub trait Seed {
 
         let identity_sk = x25519_dalek::StaticSecret::from(secret);
         (x25519_dalek::PublicKey::from(&identity_sk), identity_sk)
+    }
+
+    fn derive_ed25519_keypair(&self) -> Result<ed25519::Keypair> {
+        let (pk, sk) = &self.derive_identity();
+
+        let bytes = [sk.to_bytes(), pk.to_bytes()].concat();
+
+        let mut byte_array: [u8; 64] = bytes.try_into().expect("to fit, as the size is known");
+
+        ed25519::Keypair::decode(&mut byte_array).context("can't decode the byte array")
+    }
+
+    fn derive_keypair(&self) -> Keypair {
+        let (identity_pk, identity_sk) = self.derive_identity();
+        let keypair_libp2p = self
+            .derive_ed25519_keypair()
+            .expect("to be able to derive keypair from a static secret");
+
+        Keypair {
+            identity_sk,
+            identity_pk,
+            libp2p: keypair_libp2p,
+        }
     }
 }
 

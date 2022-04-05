@@ -191,20 +191,20 @@ async fn main() -> Result<()> {
     let maker_identity = Identity::new(opts.maker_id);
 
     let bitcoin_network = opts.network.bitcoin_network();
-    let (ext_priv_key, identity_sk, web_password) = match opts.umbrel_seed {
+    let (ext_priv_key, keypair, web_password) = match opts.umbrel_seed {
         Some(seed_bytes) => {
             let seed = UmbrelSeed::from(seed_bytes);
             let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
-            let (_, identity_sk) = seed.derive_identity();
+            let keypair = seed.derive_keypair();
             let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
-            (ext_priv_key, identity_sk, web_password)
+            (ext_priv_key, keypair, web_password)
         }
         None => {
             let seed = RandomSeed::initialize(&data_dir.join("taker_seed")).await?;
             let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
-            let (_, identity_sk) = seed.derive_identity();
+            let keypair = seed.derive_keypair();
             let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
-            (ext_priv_key, identity_sk, web_password)
+            (ext_priv_key, keypair, web_password)
         }
     };
 
@@ -249,7 +249,7 @@ async fn main() -> Result<()> {
         db.clone(),
         wallet.clone(),
         *olivia::PUBLIC_KEY,
-        identity_sk,
+        keypair,
         |executor| oracle::Actor::new(db.clone(), executor, SETTLEMENT_INTERVAL),
         {
             |executor| {

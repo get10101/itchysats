@@ -14,6 +14,7 @@ use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::Feeds;
 use daemon::projection::MakerOffers;
+use daemon::seed::Keypair;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::MakerActorSystem;
@@ -182,7 +183,7 @@ impl Maker {
 
         let settlement_interval = SETTLEMENT_INTERVAL;
 
-        let (identity_pk, identity_sk) = config.seed.derive_identity();
+        let keypair = config.seed.derive_keypair();
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
@@ -208,7 +209,7 @@ impl Maker {
             settlement_interval,
             config.n_payouts,
             projection_actor,
-            identity_sk,
+            keypair.clone(),
             config.heartbeat_interval,
             address,
         )
@@ -227,7 +228,7 @@ impl Maker {
         Self {
             system: maker,
             feeds,
-            identity: model::Identity::new(identity_pk),
+            identity: model::Identity::new(keypair.identity_pk),
             listen_addr: address,
             mocks,
             _tasks: tasks,
@@ -293,6 +294,15 @@ impl Taker {
         maker_identity: Identity,
     ) -> Self {
         let (identity_pk, identity_sk) = config.seed.derive_identity();
+        let keypair_libp2p = config
+            .seed
+            .derive_ed25519_keypair()
+            .expect("to be able to derive keypair from a static secret");
+
+        let keypair = Keypair {
+            legacy: identity_sk,
+            libp2p: keypair_libp2p,
+        };
 
         let db = db::memory().await.unwrap();
 
@@ -312,7 +322,7 @@ impl Taker {
             db.clone(),
             wallet_addr,
             config.oracle_pk,
-            identity_sk,
+            keypair,
             |executor| {
                 let (oracle, mock) = OracleActor::new(executor);
                 oracle_mock = Some(mock);
