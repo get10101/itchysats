@@ -509,6 +509,9 @@ impl Cfd {
                 self.closing_price = Some(price);
 
                 self.aggregated.state = CfdState::PendingCommit;
+
+                // We argue that a decrypted CET being available will eventually lead to the joint output being spent.
+                self.aggregated.has_unspent_joint_output = false;
             }
             OracleAttestedPostCetTimelock { cet, price, .. } => {
                 self.aggregated.cet = Some(cet);
