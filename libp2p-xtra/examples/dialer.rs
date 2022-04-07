@@ -32,6 +32,10 @@ struct Opts {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter("debug")
+        .init();
+
     let opts = Opts::parse();
 
     let id = Keypair::generate_ed25519();
@@ -46,7 +50,7 @@ async fn main() -> Result<()> {
         .unwrap()
         .unwrap();
 
-    sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(5)).await;
 
     let stream = endpoint_addr
         .send(OpenSubstream::single_protocol(
@@ -57,7 +61,9 @@ async fn main() -> Result<()> {
         .unwrap()
         .unwrap();
 
-    let string = hello_world_dialer(stream, opts.name).await.unwrap();
+    let message = hello_world_dialer(stream, opts.name).await.unwrap();
+
+    println!("{message}");
 
     Ok(())
 }

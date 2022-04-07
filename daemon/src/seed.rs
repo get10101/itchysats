@@ -4,6 +4,7 @@ use anyhow::Result;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::Network;
 use hkdf::Hkdf;
+use libp2p_core::identity;
 use libp2p_core::identity::ed25519;
 use libp2p_core::identity::Keypair;
 use libp2p_core::PeerId;
@@ -66,13 +67,18 @@ pub trait Seed {
     }
 
     fn derive_ed25519_keypair(&self) -> Result<ed25519::Keypair> {
-        let (pk, sk) = &self.derive_identity();
+        let mut secret = [0u8; 32];
 
-        let bytes = [sk.to_bytes(), pk.to_bytes()].concat();
+        Hkdf::<Sha256>::new(None, &self.seed())
+            .expand(b"LIBP2P_IDENTITY", &mut secret)
+            .expect("okm array is of correct length");
 
-        let mut byte_array: [u8; 64] = bytes.try_into().expect("to fit, as the size is known");
+        let keypair = ed25519::Keypair::from(
+            ed25519::SecretKey::from_bytes(secret)
+                .context("Failed to create secret key from random bytes")?,
+        );
 
-        ed25519::Keypair::decode(&mut byte_array).context("can't decode the byte array")
+        Ok(keypair)
     }
 
     fn derive_keypair(&self) -> Identities {
@@ -84,7 +90,7 @@ pub trait Seed {
         Identities {
             identity_sk,
             identity_pk,
-            libp2p: libp2p_core::identity::Keypair::Ed25519(keypair_libp2p),
+            libp2p: Keypair::Ed25519(keypair_libp2p),
         }
     }
 }

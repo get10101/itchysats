@@ -2,7 +2,6 @@ use crate::multiaddress_ext::MultiaddrExt as _;
 use crate::upgrade;
 use crate::Connection;
 use crate::Substream;
-use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Result;
@@ -195,6 +194,8 @@ impl Endpoint {
             connection_timeout,
         );
 
+        tracing::info!("{}", identity.public().to_peer_id());
+
         Self {
             transport,
             tasks: Tasks::default(),
@@ -311,7 +312,7 @@ impl Endpoint {
     }
 
     async fn handle(&mut self, msg: FailedToConnect) {
-        tracing::debug!("Failed to connect: {:#}", msg.error);
+        tracing::debug!("Failed to connect: {:#} {}", msg.error, msg.error.backtrace());
         let peer = msg.peer;
 
         self.inflight_connections.remove(&peer);
