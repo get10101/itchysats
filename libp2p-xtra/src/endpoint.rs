@@ -194,8 +194,6 @@ impl Endpoint {
             connection_timeout,
         );
 
-        tracing::info!("{}", identity.public().to_peer_id());
-
         Self {
             transport,
             tasks: Tasks::default(),
