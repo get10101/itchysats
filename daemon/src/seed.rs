@@ -4,10 +4,8 @@ use anyhow::Result;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::Network;
 use hkdf::Hkdf;
-use libp2p_core::identity;
 use libp2p_core::identity::ed25519;
 use libp2p_core::identity::Keypair;
-use libp2p_core::PeerId;
 use rand::Rng;
 use sha2::Sha256;
 use std::convert::TryInto;
@@ -22,12 +20,6 @@ pub struct Identities {
     pub identity_sk: x25519_dalek::StaticSecret,
     pub identity_pk: x25519_dalek::PublicKey,
     pub libp2p: Keypair,
-}
-
-impl Identities {
-    fn to_peer_id(&self) -> PeerId {
-        self.libp2p.public().to_peer_id()
-    }
 }
 
 pub trait Seed {

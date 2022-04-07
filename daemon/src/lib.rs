@@ -1,8 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use crate::bitcoin::Txid;
-use crate::libp2p::hello_world_listener;
-use crate::libp2p::HelloWorld;
 use anyhow::Context as _;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -30,7 +28,6 @@ use std::time::Duration;
 use time::ext::NumericalDuration;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
-use xtra::message_channel::StrongMessageChannel;
 use xtra::prelude::*;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use xtras::supervisor;
@@ -45,7 +42,7 @@ pub mod command;
 pub mod connection;
 pub mod db;
 mod future_ext;
-pub mod libp2p;
+pub mod hello_world;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
 pub mod monitor;
@@ -75,7 +72,7 @@ pub struct MakerActorSystem<O, W> {
     pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
     wallet_actor: Address<W>,
     executor: command::Executor,
-    endpoint: Address<Endpoint>,
+    _endpoint: Address<Endpoint>,
     _tasks: Tasks,
 }
 
@@ -146,7 +143,7 @@ where
         .create(None)
         .spawn(&mut tasks);
 
-        let hello_world_addr = HelloWorld::default().create(None).spawn(&mut tasks);
+        let hello_world_addr = hello_world::Actor::default().create(None).spawn(&mut tasks);
 
         // TODO: Wrap with a supervisor
         let endpoint_addr = Endpoint::new(
@@ -197,7 +194,7 @@ where
             cfd_actor: cfd_actor_addr,
             wallet_actor: wallet_addr,
             executor,
-            endpoint: endpoint_addr,
+            _endpoint: endpoint_addr,
             _tasks: tasks,
         })
     }

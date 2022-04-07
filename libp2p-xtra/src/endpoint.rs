@@ -312,7 +312,11 @@ impl Endpoint {
     }
 
     async fn handle(&mut self, msg: FailedToConnect) {
-        tracing::debug!("Failed to connect: {:#} {}", msg.error, msg.error.backtrace());
+        tracing::debug!(
+            "Failed to connect: {:#} {}",
+            msg.error,
+            msg.error.backtrace()
+        );
         let peer = msg.peer;
 
         self.inflight_connections.remove(&peer);

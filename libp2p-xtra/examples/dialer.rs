@@ -2,11 +2,15 @@ use anyhow::Context;
 use anyhow::Result;
 use asynchronous_codec::Bytes;
 use clap::Parser;
-use futures::{SinkExt, StreamExt};
+use futures::SinkExt;
+use futures::StreamExt;
 use libp2p_core::identity::Keypair;
-use libp2p_core::{Multiaddr, PeerId};
+use libp2p_core::Multiaddr;
+use libp2p_core::PeerId;
 use libp2p_tcp::TokioTcpConfig;
-use libp2p_xtra::{Connect, Endpoint, OpenSubstream};
+use libp2p_xtra::Connect;
+use libp2p_xtra::Endpoint;
+use libp2p_xtra::OpenSubstream;
 use std::time::Duration;
 use tokio::time::sleep;
 use xtra::prelude::*;
@@ -32,9 +36,7 @@ struct Opts {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("debug")
-        .init();
+    tracing_subscriber::fmt().with_env_filter("debug").init();
 
     let opts = Opts::parse();
 
