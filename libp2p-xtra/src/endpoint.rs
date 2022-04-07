@@ -15,6 +15,7 @@ use libp2p_core::identity::Keypair;
 use libp2p_core::transport::Boxed;
 use libp2p_core::transport::ListenerEvent;
 use libp2p_core::Multiaddr;
+use libp2p_core::Negotiated;
 use libp2p_core::PeerId;
 use libp2p_core::Transport;
 use multistream_select::NegotiationError;
@@ -237,7 +238,10 @@ impl Endpoint {
         .map_err(|_timeout| Error::NegotiationTimeoutReached)?
         .map_err(Error::NegotiationFailed)?;
 
-        Ok((protocol, stream))
+        Ok((
+            protocol,
+            Substream::new(stream, protocol, libp2p_core::Endpoint::Dialer),
+        ))
     }
 }
 
@@ -288,6 +292,9 @@ impl Endpoint {
                         let channel = inbound_substream_channels
                             .get(&protocol)
                             .expect("Cannot negotiate a protocol that we don't support");
+
+                        let stream =
+                            Substream::new(stream, protocol, libp2p_core::Endpoint::Listener);
 
                         let _ = channel
                             .send_async_safe(NewInboundSubstream { peer, stream })
@@ -499,7 +506,10 @@ struct NewConnection {
     #[allow(clippy::type_complexity)]
     incoming_substreams: BoxStream<
         'static,
-        Result<Result<(Substream, &'static str), upgrade::Error>, yamux::ConnectionError>,
+        Result<
+            Result<(Negotiated<yamux::Stream>, &'static str), upgrade::Error>,
+            yamux::ConnectionError,
+        >,
     >,
     worker: BoxFuture<'static, ()>,
 }
