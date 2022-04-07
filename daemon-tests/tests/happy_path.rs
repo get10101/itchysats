@@ -422,7 +422,7 @@ async fn rollover_an_open_cfd(maker_position: Position) {
 
     maker.system.accept_rollover(order_id).await.unwrap();
 
-    wait_next_state!(order_id, maker, taker, CfdState::ContractSetup);
+    wait_next_state!(order_id, maker, taker, CfdState::RolloverSetup);
     wait_next_state!(order_id, maker, taker, CfdState::Open);
 }
 
@@ -509,7 +509,7 @@ async fn maker_accepts_rollover_after_commit_finality() {
         maker,
         taker,
         // FIXME: Maker wrongly changes state even when rollover does not happen
-        CfdState::ContractSetup,
+        CfdState::RolloverSetup,
         CfdState::OpenCommitted
     );
 }
