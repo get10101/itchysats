@@ -5,20 +5,28 @@ use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::Network;
 use hkdf::Hkdf;
 use libp2p_core::identity::ed25519;
+use libp2p_core::identity::Keypair;
+use libp2p_core::PeerId;
 use rand::Rng;
 use sha2::Sha256;
 use std::convert::TryInto;
 use std::path::Path;
 
-// TODO: find a better name / encapsulate
-/// Struct containing compatible secrets both
+// TODO: find a better name / encapsulate / move
+/// Struct containing secrets for both legacy and libp2p connections.
 ///
 /// It is located here as it is derived from the seed.
 #[derive(Clone)]
-pub struct Keypair {
+pub struct Identities {
     pub identity_sk: x25519_dalek::StaticSecret,
     pub identity_pk: x25519_dalek::PublicKey,
-    pub libp2p: ed25519::Keypair,
+    pub libp2p: Keypair,
+}
+
+impl Identities {
+    fn to_peer_id(&self) -> PeerId {
+        self.libp2p.public().to_peer_id()
+    }
 }
 
 pub trait Seed {
@@ -67,16 +75,16 @@ pub trait Seed {
         ed25519::Keypair::decode(&mut byte_array).context("can't decode the byte array")
     }
 
-    fn derive_keypair(&self) -> Keypair {
+    fn derive_keypair(&self) -> Identities {
         let (identity_pk, identity_sk) = self.derive_identity();
         let keypair_libp2p = self
             .derive_ed25519_keypair()
             .expect("to be able to derive keypair from a static secret");
 
-        Keypair {
+        Identities {
             identity_sk,
             identity_pk,
-            libp2p: keypair_libp2p,
+            libp2p: libp2p_core::identity::Keypair::Ed25519(keypair_libp2p),
         }
     }
 }

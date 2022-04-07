@@ -611,9 +611,9 @@ dependencies = [
 
 [[package]]
 name = "core-foundation"
-version = "0.9.1"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a89e2ae426ea83155dccf10c0fa6b1463ef6d5fcb44cee0b224a408fa640a62"
+checksum = "194a7a9e6de53fa55116934067c844d9d749312f75c6f6d0980e8c252f8c2146"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -621,9 +621,9 @@ dependencies = [
 
 [[package]]
 name = "core-foundation-sys"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea221b5284a47e40033bf9b66f35f984ec0ea2931eb03505246cd27a963f981b"
+checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
 
 [[package]]
 name = "core2"
@@ -740,6 +740,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
+ "asynchronous-codec",
  "bdk",
  "bdk-ext",
  "btsieve",
@@ -752,6 +753,8 @@ dependencies = [
  "itertools",
  "libp2p-core",
  "libp2p-noise",
+ "libp2p-tcp",
+ "libp2p-xtra",
  "maia",
  "model",
  "parse-display",
@@ -1487,6 +1490,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "if-addrs"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbc0fa01ffc752e9dbc72818cdb072cd028b86be5e09dd04c5a643704fe101a9"
+dependencies = [
+ "libc",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1644,15 +1657,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "libp2p-tcp"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "193447aa729c85aac2376828df76d171c1a589c9e6b58fcc7f9d9a020734122c"
+dependencies = [
+ "futures",
+ "futures-timer",
+ "if-addrs",
+ "ipnet",
+ "libc",
+ "libp2p-core",
+ "log",
+ "socket2",
+ "tokio",
+]
+
+[[package]]
 name = "libp2p-xtra"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "asynchronous-codec",
+ "clap",
  "futures",
  "libp2p-core",
  "libp2p-noise",
+ "libp2p-tcp",
  "multistream-select",
  "rand 0.8.4",
  "thiserror",

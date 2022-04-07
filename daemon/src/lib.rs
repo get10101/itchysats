@@ -1,12 +1,18 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use crate::bitcoin::Txid;
+use crate::libp2p::hello_world_listener;
+use crate::libp2p::HelloWorld;
 use anyhow::Context as _;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use connection::ConnectionStatus;
+use libp2p_core::Multiaddr;
+use libp2p_tcp::TokioTcpConfig;
+use libp2p_xtra::Endpoint;
+use libp2p_xtra::ListenOn;
 use maia::secp256k1_zkp::schnorrsig;
 use model::olivia;
 use model::FundingRate;
@@ -18,12 +24,13 @@ use model::Price;
 use model::Role;
 use model::TxFeeRate;
 use model::Usd;
-use seed::Keypair;
+use seed::Identities;
 use std::net::SocketAddr;
 use std::time::Duration;
 use time::ext::NumericalDuration;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
+use xtra::message_channel::StrongMessageChannel;
 use xtra::prelude::*;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use xtras::supervisor;
@@ -38,6 +45,7 @@ pub mod command;
 pub mod connection;
 pub mod db;
 mod future_ext;
+pub mod libp2p;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
 pub mod monitor;
@@ -67,7 +75,7 @@ pub struct MakerActorSystem<O, W> {
     pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
     wallet_actor: Address<W>,
     executor: command::Executor,
-
+    endpoint: Address<Endpoint>,
     _tasks: Tasks,
 }
 
@@ -92,7 +100,7 @@ where
         settlement_interval: time::Duration,
         n_payouts: usize,
         projection_actor: Address<projection::Actor>,
-        identity: Keypair,
+        identity: Identities,
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
     ) -> Result<Self>
@@ -138,6 +146,38 @@ where
         .create(None)
         .spawn(&mut tasks);
 
+        let hello_world_addr = HelloWorld::default().create(None).spawn(&mut tasks);
+
+        // TODO: Wrap with a supervisor
+        let endpoint_addr = Endpoint::new(
+            TokioTcpConfig::new(),
+            identity.libp2p,
+            Duration::from_secs(20),
+            [(
+                "/hello-world/1.0.0",
+                xtra::message_channel::StrongMessageChannel::clone_channel(&hello_world_addr),
+            )],
+        )
+        .create(None)
+        .spawn(&mut tasks);
+
+        let port = p2p_socket.port() + 1;
+        let ip = p2p_socket.ip();
+        assert!(p2p_socket.is_ipv4());
+
+        // TODO: support both ipv4 and ipv6
+
+        let endpoint_listen = format!("/ip4/{ip}/tcp/{port}")
+            .parse::<Multiaddr>()
+            .expect("to parse properly");
+
+        tasks.add_fallible(
+            endpoint_addr.send(ListenOn(endpoint_listen)),
+            move |_| async move {
+                tracing::error!("can't listen on the endpoint");
+            },
+        );
+
         tasks.add(inc_conn_ctx.run(maker_inc_connections::Actor::new(
             Box::new(cfd_actor_addr.clone()),
             Box::new(cfd_actor_addr.clone()),
@@ -157,6 +197,7 @@ where
             cfd_actor: cfd_actor_addr,
             wallet_actor: wallet_addr,
             executor,
+            endpoint: endpoint_addr,
             _tasks: tasks,
         })
     }
@@ -291,7 +332,7 @@ where
         db: db::Connection,
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        identity: Keypair,
+        identity: Identities,
         oracle_constructor: impl FnOnce(command::Executor) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         price_feed_constructor: impl (Fn() -> P) + Send + 'static,

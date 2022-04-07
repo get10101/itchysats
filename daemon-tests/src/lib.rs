@@ -14,7 +14,6 @@ use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::Feeds;
 use daemon::projection::MakerOffers;
-use daemon::seed::Keypair;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::MakerActorSystem;
@@ -293,16 +292,7 @@ impl Taker {
         maker_address: SocketAddr,
         maker_identity: Identity,
     ) -> Self {
-        let (identity_pk, identity_sk) = config.seed.derive_identity();
-        let keypair_libp2p = config
-            .seed
-            .derive_ed25519_keypair()
-            .expect("to be able to derive keypair from a static secret");
-
-        let keypair = Keypair {
-            legacy: identity_sk,
-            libp2p: keypair_libp2p,
-        };
+        let keypair = config.seed.derive_keypair();
 
         let db = db::memory().await.unwrap();
 
@@ -322,7 +312,7 @@ impl Taker {
             db.clone(),
             wallet_addr,
             config.oracle_pk,
-            keypair,
+            keypair.clone(),
             |executor| {
                 let (oracle, mock) = OracleActor::new(executor);
                 oracle_mock = Some(mock);
@@ -363,7 +353,7 @@ impl Taker {
         ));
 
         Self {
-            id: model::Identity::new(identity_pk),
+            id: model::Identity::new(keypair.identity_pk),
             system: taker,
             feeds,
             mocks,

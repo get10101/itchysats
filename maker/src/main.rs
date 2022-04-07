@@ -193,9 +193,11 @@ async fn main() -> Result<()> {
 
     let keypair = seed.derive_keypair();
 
+    let peer_id = keypair.libp2p.public().to_peer_id();
+
     let hex_pk = hex::encode(keypair.identity_pk.to_bytes());
     tracing::info!(
-        "Authentication details: username='{auth_username}' password='{auth_password}', noise_public_key='{hex_pk}'",
+        "Authentication details: username='{auth_username}' password='{auth_password}', noise_public_key='{hex_pk}', peer_id='{peer_id}'",
     );
 
     let figment = rocket::Config::figment()
