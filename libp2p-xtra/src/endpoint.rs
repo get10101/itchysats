@@ -10,6 +10,7 @@ use futures::future::BoxFuture;
 use futures::stream::BoxStream;
 use futures::AsyncRead;
 use futures::AsyncWrite;
+use futures::StreamExt;
 use futures::TryStreamExt;
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::Boxed;
@@ -396,22 +397,42 @@ impl Endpoint {
                 let this = this.clone();
 
                 async move {
-                    let mut stream = transport.listen_on(msg.0)?;
+                    let mut stream = transport
+                        .listen_on(msg.0)
+                        .context("cannot establish transport stream")?;
+
+                    let mut tasks = Tasks::default();
 
                     loop {
-                        let event = stream.try_next().await?.context("Listener closed")?;
-                        let (peer, control, incoming_substreams, worker) = match event {
-                            ListenerEvent::Upgrade { upgrade, .. } => upgrade.await?,
+                        let event = stream.next().await.context("Listener closed")?;
+                        match event {
+                            Ok(ListenerEvent::Upgrade { upgrade, .. }) => {
+                                let this = this.clone();
+                                tasks.add_fallible(
+                                    async move {
+                                        let (peer, control, incoming_substreams, worker) =
+                                            upgrade.await?;
+                                        this.send_async_safe(NewConnection {
+                                            peer,
+                                            control,
+                                            incoming_substreams,
+                                            worker,
+                                        })
+                                        .await
+                                        .context("can't send new connection message")?;
+                                        Ok(())
+                                    },
+                                    move |e: anyhow::Error| async move {
+                                        tracing::error!("Cannot upgrade connection {e:#}");
+                                    },
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!("Listener emitted error: {e:#}");
+                                continue;
+                            }
                             _ => continue,
-                        };
-
-                        this.send_async_safe(NewConnection {
-                            peer,
-                            control,
-                            incoming_substreams,
-                            worker,
-                        })
-                        .await?;
+                        }
                     }
                 }
             },
