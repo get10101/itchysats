@@ -1,4 +1,3 @@
-use regex::Regex;
 use xtra::Actor;
 
 pub trait ActorName {
@@ -11,14 +10,8 @@ where
 {
     /// Devise the name of an actor from its type on a best-effort
     /// basis.
-    ///
-    /// To reduce some noise, we strip the crate name out of all
-    /// module names contained in the type.
     fn name() -> String {
-        let name = std::any::type_name::<T>();
-
-        let regex = Regex::new("^.+?::").expect("valid regex");
-        regex.replace(name, "").to_string()
+        std::any::type_name::<T>().to_string()
     }
 }
 
@@ -30,7 +23,7 @@ mod tests {
     fn actor_name_from_type() {
         let name = Dummy::name();
 
-        assert_eq!(name, "actor_name::tests::Dummy")
+        assert_eq!(name, "xtras::actor_name::tests::Dummy")
     }
 
     struct Dummy;
