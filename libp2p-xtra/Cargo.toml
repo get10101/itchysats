@@ -7,7 +7,7 @@ description = "Networking with xtra made easy. Backed by libp2p-core."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = { version = "1", features = ["backtrace"] }
+anyhow = "1"
 async-trait = "0.1"
 futures = "0.3"
 libp2p-core = { version = "0.32", default-features = false }
