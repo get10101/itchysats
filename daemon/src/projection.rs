@@ -275,7 +275,7 @@ impl Aggregated {
                     Role::Maker => CfdState::IncomingRolloverProposal,
                     Role::Taker => CfdState::OutgoingRolloverProposal,
                 },
-                ProtocolNegotiationState::Accepted => CfdState::ContractSetup,
+                ProtocolNegotiationState::Accepted => CfdState::RolloverSetup,
             };
         };
         self.state
@@ -656,6 +656,7 @@ impl Cfd {
             }
             (CfdState::IncomingRolloverProposal, Role::Taker) => HashSet::new(),
             (CfdState::OutgoingRolloverProposal, _) => HashSet::new(),
+            (CfdState::RolloverSetup, _) => HashSet::new(),
             (CfdState::Closed, _) => HashSet::new(),
             (CfdState::PendingRefund, _) => HashSet::new(),
             (CfdState::Refunded, _) => HashSet::new(),
@@ -1129,6 +1130,7 @@ pub enum CfdState {
     OutgoingSettlementProposal,
     IncomingRolloverProposal,
     OutgoingRolloverProposal,
+    RolloverSetup,
     Closed,
     PendingRefund,
     Refunded,

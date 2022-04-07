@@ -99,6 +99,8 @@ export class State {
                 return "Rollover Proposed";
             case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
                 return "Rollover Proposed";
+            case StateKey.ROLLOVER_SETUP:
+                return "Rollover Setup";
             case StateKey.PENDING_REFUND:
                 return "Pending Refund";
             case StateKey.REFUNDED:
@@ -139,6 +141,7 @@ export class State {
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
             case StateKey.INCOMING_ROLLOVER_PROPOSAL:
             case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
+            case StateKey.ROLLOVER_SETUP:
             case StateKey.PENDING_OPEN:
             case StateKey.REFUNDED:
             case StateKey.SETUP_FAILED:
@@ -170,6 +173,7 @@ export class State {
                 return StateGroupKey.PENDING_SETTLEMENT;
 
             case StateKey.INCOMING_ROLLOVER_PROPOSAL:
+            case StateKey.ROLLOVER_SETUP:
                 return StateGroupKey.PENDING_ROLLOVER;
 
             case StateKey.REJECTED:
@@ -207,6 +211,7 @@ const enum StateKey {
     INCOMING_SETTLEMENT_PROPOSAL = "IncomingSettlementProposal",
     OUTGOING_ROLLOVER_PROPOSAL = "OutgoingRolloverProposal",
     INCOMING_ROLLOVER_PROPOSAL = "IncomingRolloverProposal",
+    ROLLOVER_SETUP = "RolloverSetup",
     PENDING_REFUND = "PendingRefund",
     REFUNDED = "Refunded",
     SETUP_FAILED = "SetupFailed",
