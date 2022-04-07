@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
         .unwrap()
         .unwrap();
 
-    sleep(Duration::from_secs(5)).await;
+    sleep(Duration::from_secs(1)).await;
 
     let stream = endpoint_addr
         .send(OpenSubstream::single_protocol(
