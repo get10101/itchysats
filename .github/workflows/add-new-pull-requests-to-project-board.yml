@@ -9,9 +9,7 @@ jobs:
   add_pull_request_to_project:
     runs-on: ubuntu-latest
     steps:
-      - uses: itchysats/actions/add-project-item@main
+      - uses: actions/add-to-project@v0.0.3
         with:
-          board_id: ${{ secrets.PROJECT_BOARD_ID }}
-          item_id: ${{ github.event.pull_request.node_id }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.ITCHY_PROJECT_AUTOMATION_TOKEN }}
+          project-url: https://github.com/orgs/itchysats/projects/1
+          github-token: ${{ secrets.ITCHY_PROJECT_AUTOMATION_TOKEN }}
