@@ -9,10 +9,9 @@ pub use crate::endpoint::Multiple;
 pub use crate::endpoint::NewInboundSubstream;
 pub use crate::endpoint::OpenSubstream;
 pub use crate::endpoint::Single;
+pub use crate::substream::Substream;
 pub use libp2p_core as libp2p;
 pub use multistream_select::NegotiationError;
-
-pub type Substream = Negotiated<yamux::Stream>;
 
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
@@ -21,6 +20,7 @@ use libp2p_core::PeerId;
 
 mod endpoint;
 mod multiaddress_ext;
+mod substream;
 mod upgrade;
 mod verify_peer_id;
 
@@ -29,7 +29,10 @@ type Connection = (
     yamux::Control,
     BoxStream<
         'static,
-        Result<Result<(Substream, &'static str), upgrade::Error>, yamux::ConnectionError>,
+        Result<
+            Result<(Negotiated<yamux::Stream>, &'static str), upgrade::Error>,
+            yamux::ConnectionError,
+        >,
     >,
     BoxFuture<'static, ()>,
 );
