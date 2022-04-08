@@ -4909,6 +4909,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "xtra-libp2p-ping"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "conquer-once",
+ "futures",
+ "libp2p-xtra",
+ "prometheus",
+ "rand 0.8.4",
+ "tokio",
+ "tokio-tasks",
+ "tracing",
+ "tracing-subscriber",
+ "xtra",
+ "xtra_productivity",
+ "xtras",
+]
+
+[[package]]
 name = "xtra_productivity"
 version = "0.1.0"
 source = "git+https://github.com/comit-network/xtra-productivity#52492681bb260a5789162e70cb5067994f051360"
