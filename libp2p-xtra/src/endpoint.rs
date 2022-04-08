@@ -70,9 +70,11 @@ pub struct OpenSubstream<P> {
     marker_num_protocols: PhantomData<P>,
 }
 
+/// Marker type denominating a single protocol.
 #[derive(Clone, Copy, Debug)]
 pub enum Single {}
 
+/// Marker type denominating multiple protocols.
 #[derive(Clone, Copy, Debug)]
 pub enum Multiple {}
 
