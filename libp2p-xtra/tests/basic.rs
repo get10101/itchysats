@@ -76,6 +76,18 @@ async fn disconnect_is_reflected_in_stats() {
 }
 
 #[tokio::test]
+async fn listen_address_is_reflected_in_stats() {
+    let (_, _, alice, _, listen_address) = alice_and_bob([], []).await;
+
+    let alice_stats = alice.send(GetConnectionStats).await.unwrap();
+
+    assert_eq!(
+        alice_stats.listen_addresses,
+        HashSet::from([listen_address])
+    );
+}
+
+#[tokio::test]
 async fn cannot_open_substream_for_unhandled_protocol() {
     let (_, bob_peer_id, alice, _bob, _) = alice_and_bob([], []).await;
 
