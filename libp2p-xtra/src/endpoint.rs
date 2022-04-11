@@ -10,6 +10,7 @@ use futures::future::BoxFuture;
 use futures::stream::BoxStream;
 use futures::AsyncRead;
 use futures::AsyncWrite;
+use futures::StreamExt;
 use futures::TryStreamExt;
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::Boxed;
@@ -69,9 +70,11 @@ pub struct OpenSubstream<P> {
     marker_num_protocols: PhantomData<P>,
 }
 
+/// Marker type denominating a single protocol.
 #[derive(Clone, Copy, Debug)]
 pub enum Single {}
 
+/// Marker type denominating multiple protocols.
 #[derive(Clone, Copy, Debug)]
 pub enum Multiple {}
 
@@ -388,30 +391,54 @@ impl Endpoint {
         let this = ctx.address().expect("we are alive");
         let listen_address = msg.0.clone();
 
-        self.listen_addresses.insert(listen_address.clone()); // FIXME: This address could be a "catch-all" like "0.0.0.0" which actually results in
-                                                              // listening on multiple interfaces.
         self.tasks.add_fallible(
             {
                 let transport = self.transport.clone();
                 let this = this.clone();
+                let listen_address = listen_address.clone();
 
                 async move {
-                    let mut stream = transport.listen_on(msg.0)?;
+                    let mut stream = transport
+                        .listen_on(msg.0)
+                        .context("cannot establish transport stream")?;
+
+                    let mut tasks = Tasks::default();
+
+                    this.send(NewListenAddress {
+                        listen_address: listen_address.clone(),
+                    })
+                    .await?;
 
                     loop {
-                        let event = stream.try_next().await?.context("Listener closed")?;
-                        let (peer, control, incoming_substreams, worker) = match event {
-                            ListenerEvent::Upgrade { upgrade, .. } => upgrade.await?,
+                        let event = stream.next().await.context("Listener closed")?;
+                        match event {
+                            Ok(ListenerEvent::Upgrade { upgrade, .. }) => {
+                                let this = this.clone();
+                                tasks.add_fallible(
+                                    async move {
+                                        let (peer, control, incoming_substreams, worker) =
+                                            upgrade.await?;
+                                        this.send_async_safe(NewConnection {
+                                            peer,
+                                            control,
+                                            incoming_substreams,
+                                            worker,
+                                        })
+                                        .await
+                                        .context("can't send new connection message")?;
+                                        Ok(())
+                                    },
+                                    move |e: anyhow::Error| async move {
+                                        tracing::error!("Cannot upgrade connection {e:#}");
+                                    },
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!("Listener emitted error: {e:#}");
+                                continue;
+                            }
                             _ => continue,
-                        };
-
-                        this.send_async_safe(NewConnection {
-                            peer,
-                            control,
-                            incoming_substreams,
-                            worker,
-                        })
-                        .await?;
+                        }
                     }
                 }
             },
@@ -456,6 +483,12 @@ impl Endpoint {
 
         Ok((protocol, stream))
     }
+
+    async fn handle(&mut self, msg: NewListenAddress) {
+        // FIXME: This address could be a "catch-all" like "0.0.0.0" which actually results in
+        // listening on multiple interfaces.
+        self.listen_addresses.insert(msg.listen_address);
+    }
 }
 
 fn verify_unique_handlers<const N: usize>(
@@ -498,6 +531,10 @@ struct FailedToConnect {
 struct ExistingConnectionFailed {
     peer: PeerId,
     error: anyhow::Error,
+}
+
+struct NewListenAddress {
+    listen_address: Multiaddr,
 }
 
 struct NewConnection {

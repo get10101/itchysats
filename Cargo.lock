@@ -1485,6 +1485,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "if-addrs"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbc0fa01ffc752e9dbc72818cdb072cd028b86be5e09dd04c5a643704fe101a9"
+dependencies = [
+ "libc",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1642,16 +1652,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "libp2p-tcp"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "193447aa729c85aac2376828df76d171c1a589c9e6b58fcc7f9d9a020734122c"
+dependencies = [
+ "futures",
+ "futures-timer",
+ "if-addrs",
+ "ipnet",
+ "libc",
+ "libp2p-core",
+ "log",
+ "socket2",
+ "tokio",
+]
+
+[[package]]
 name = "libp2p-xtra"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "asynchronous-codec",
+ "clap",
  "conquer-once",
  "futures",
  "libp2p-core",
  "libp2p-noise",
+ "libp2p-tcp",
  "multistream-select",
  "pin-project 1.0.8",
  "prometheus",
@@ -1660,6 +1689,7 @@ dependencies = [
  "tokio",
  "tokio-tasks",
  "tracing",
+ "tracing-subscriber",
  "void",
  "xtra",
  "xtra_productivity",
