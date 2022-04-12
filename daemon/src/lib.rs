@@ -31,6 +31,7 @@ pub use bdk;
 pub use maia;
 
 pub mod auto_rollover;
+mod close_cfds;
 pub mod collab_settlement_maker;
 pub mod collab_settlement_taker;
 pub mod command;
@@ -65,6 +66,7 @@ pub const N_PAYOUTS: usize = 200;
 pub struct MakerActorSystem<O, W> {
     pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
     wallet_actor: Address<W>,
+    _close_cfds_actor: Address<close_cfds::Actor>,
     executor: command::Executor,
 
     _tasks: Tasks,
@@ -124,7 +126,7 @@ where
         )));
 
         let cfd_actor_addr = maker_cfd::Actor::new(
-            db,
+            db.clone(),
             wallet_addr.clone(),
             settlement_interval,
             oracle_pk,
@@ -150,11 +152,14 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
+        let close_cfds_actor = close_cfds::Actor::new(db).create(None).spawn(&mut tasks);
+
         tracing::debug!("Maker actor system ready");
 
         Ok(Self {
             cfd_actor: cfd_actor_addr,
             wallet_actor: wallet_addr,
+            _close_cfds_actor: close_cfds_actor,
             executor,
             _tasks: tasks,
         })
@@ -267,6 +272,7 @@ pub struct TakerActorSystem<O, W, P> {
     /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
     /// address.
     _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
+    _close_cfds_actor: Address<close_cfds::Actor>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
@@ -346,7 +352,7 @@ where
         .spawn(&mut tasks);
 
         let auto_rollover_addr = auto_rollover::Actor::new(
-            db,
+            db.clone(),
             oracle_pk,
             process_manager_addr,
             connection_actor_addr.clone(),
@@ -380,6 +386,8 @@ where
 
         let price_feed_supervisor = supervisor.create(None).spawn(&mut tasks);
 
+        let close_cfds_actor = close_cfds::Actor::new(db).create(None).spawn(&mut tasks);
+
         tracing::debug!("Taker actor system ready");
 
         Ok(Self {
@@ -390,6 +398,7 @@ where
             price_feed_actor,
             executor,
             _price_feed_supervisor: price_feed_supervisor,
+            _close_cfds_actor: close_cfds_actor,
             _tasks: tasks,
             maker_online_status_feed_receiver,
         })

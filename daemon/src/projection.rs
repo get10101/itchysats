@@ -1,4 +1,5 @@
 use crate::db;
+use crate::db::Settlement;
 use crate::Order;
 use anyhow::Context;
 use anyhow::Result;
@@ -11,6 +12,7 @@ use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
 use bdk::miniscript::DescriptorTrait;
 use core::fmt;
+use derivative::Derivative;
 use futures::StreamExt;
 use itertools::Itertools;
 use maia::TransactionExt;
@@ -39,6 +41,7 @@ use model::Usd;
 use model::SETTLEMENT_INTERVAL;
 use parse_display::Display;
 use parse_display::FromStr;
+use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
@@ -117,7 +120,8 @@ impl Actor {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Derivative, Clone, Debug, Serialize)]
+#[derivative(PartialEq)]
 pub struct Cfd {
     pub order_id: OrderId,
     #[serde(with = "round_to_two_dp")]
@@ -180,6 +184,7 @@ pub struct Cfd {
     pub pending_settlement_proposal_price: Option<Price>,
 
     #[serde(skip)]
+    #[derivative(PartialEq = "ignore")]
     aggregated: Aggregated,
 
     #[serde(skip)]
@@ -544,7 +549,7 @@ impl Cfd {
         self
     }
 
-    fn with_current_quote(self, latest_quote: Option<xtra_bitmex_price_feed::Quote>) -> Self {
+    pub fn with_current_quote(self, latest_quote: Option<xtra_bitmex_price_feed::Quote>) -> Self {
         // If we have a dedicated closing price, use that one.
         if let Some(payout) = self.aggregated.clone().payout(self.role) {
             let payout = payout
@@ -817,6 +822,147 @@ impl db::CfdAggregate for Cfd {
 
     fn version(&self) -> u32 {
         self.aggregated.version
+    }
+}
+
+impl db::ClosedCfdAggregate for Cfd {
+    fn new_closed(network: Self::CtorArgs, closed_cfd: db::ClosedCfd) -> Self {
+        let db::ClosedCfd {
+            id,
+            position,
+            initial_price,
+            taker_leverage,
+            n_contracts,
+            counterparty_network_identity,
+            role,
+            fees,
+            expiry_timestamp,
+            lock,
+            settlement,
+        } = closed_cfd;
+
+        let quantity_usd =
+            Usd::new(Decimal::from_u64(u64::from(n_contracts)).expect("u64 to fit into Decimal"));
+
+        let (our_leverage, counterparty_leverage) = match role {
+            Role::Maker => (Leverage::ONE, taker_leverage),
+            Role::Taker => (taker_leverage, Leverage::ONE),
+        };
+
+        let margin = calculate_margin(initial_price, quantity_usd, our_leverage);
+        let margin_counterparty =
+            calculate_margin(initial_price, quantity_usd, counterparty_leverage);
+
+        let liquidation_price = match position {
+            Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
+            Position::Short => calculate_short_liquidation_price(our_leverage, initial_price),
+        };
+
+        let (details, closing_price, payout, state) = {
+            let mut tx_url_list = HashSet::default();
+
+            tx_url_list.insert(
+                TxUrl::new(lock.txid.into(), network, TxLabel::Lock)
+                    .with_output_index(lock.dlc_vout.into()),
+            );
+
+            let (price, payout, state) = match settlement {
+                Settlement::Collaborative {
+                    txid,
+                    vout,
+                    payout,
+                    price,
+                } => {
+                    tx_url_list.insert(
+                        TxUrl::new(txid.into(), network, TxLabel::Collaborative)
+                            .with_output_index(vout.into()),
+                    );
+                    (Some(price), payout, CfdState::Closed)
+                }
+                Settlement::Cet {
+                    commit_txid,
+                    txid,
+                    vout,
+                    payout,
+                    price,
+                } => {
+                    tx_url_list.insert(
+                        TxUrl::new(commit_txid.into(), network, TxLabel::Commit)
+                            .with_output_index(0),
+                    );
+
+                    tx_url_list.insert(
+                        TxUrl::new(txid.into(), network, TxLabel::Cet)
+                            .with_output_index(vout.into()),
+                    );
+                    (Some(price), payout, CfdState::Closed)
+                }
+                Settlement::Refund {
+                    commit_txid,
+                    txid,
+                    vout,
+                    payout,
+                } => {
+                    tx_url_list.insert(
+                        TxUrl::new(commit_txid.into(), network, TxLabel::Commit)
+                            .with_output_index(0),
+                    );
+
+                    tx_url_list.insert(
+                        TxUrl::new(txid.into(), network, TxLabel::Refund)
+                            .with_output_index(vout.into()),
+                    );
+                    (None, payout, CfdState::Refunded)
+                }
+            };
+
+            (
+                CfdDetails { tx_url_list },
+                price,
+                SignedAmount::from(payout),
+                state,
+            )
+        };
+
+        let (profit_btc, profit_percent) = calculate_profit(
+            payout,
+            margin
+                .to_signed()
+                .expect("Amount to fit into signed amount"),
+        );
+
+        // we don't need the aggregate of the events to know all the
+        // information about a closed CFD. This is why the information
+        // in this struct is not updated
+        let empty_aggregated = Aggregated::new(FeeAccount::new(position, role));
+
+        Self {
+            order_id: id,
+            initial_price,
+            accumulated_fees: fees.into(),
+            leverage_taker: taker_leverage,
+            trading_pair: TradingPair::BtcUsd,
+            position,
+            liquidation_price,
+            quantity_usd,
+            margin,
+            margin_counterparty,
+            role,
+
+            profit_btc: Some(profit_btc),
+            profit_percent: Some(profit_percent.to_string()),
+            payout: Some(payout),
+            closing_price,
+
+            state,
+            actions: HashSet::default(),
+            details,
+            expiry_timestamp: Some(expiry_timestamp),
+            counterparty: counterparty_network_identity,
+            pending_settlement_proposal_price: None,
+            aggregated: empty_aggregated,
+            network,
+        }
     }
 }
 
@@ -1138,7 +1284,7 @@ pub enum CfdState {
     SetupFailed,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct CfdDetails {
     tx_url_list: HashSet<TxUrl>,
 }

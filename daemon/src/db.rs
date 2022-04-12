@@ -1,32 +1,50 @@
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use bdk::bitcoin::Amount;
+use bdk::bitcoin::OutPoint;
+use bdk::bitcoin::Script;
+use bdk::miniscript::DescriptorTrait;
 use chashmap_async::CHashMap;
 use futures::future::BoxFuture;
+use futures::stream::FuturesUnordered;
 use futures::FutureExt;
 use futures::Stream;
 use futures::StreamExt;
+use futures::TryStreamExt;
+use maia::TransactionExt;
 use model::CfdEvent;
+use model::Contracts;
 use model::EventKind;
+use model::FeeAccount;
+use model::Fees;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
 use model::OpeningFee;
 use model::OrderId;
+use model::Payout;
 use model::Position;
 use model::Price;
 use model::Role;
+use model::Timestamp;
 use model::TxFeeRate;
+use model::Txid;
 use model::Usd;
+use model::Vout;
 use sqlx::migrate::MigrateError;
 use sqlx::pool::PoolConnection;
 use sqlx::sqlite::SqliteConnectOptions;
+use sqlx::Connection as _;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;
+use sqlx::Transaction;
 use std::any::Any;
 use std::any::TypeId;
 use std::path::PathBuf;
 use std::sync::Arc;
 use time::Duration;
+use time::OffsetDateTime;
 
 #[derive(Clone)]
 pub struct Connection {
@@ -211,6 +229,7 @@ impl Connection {
         C: CfdAggregate,
     {
         let mut conn = self.inner.acquire().await?;
+        let mut db_tx = conn.begin().await?;
 
         let cache_key = (TypeId::of::<C>(), id);
         let aggregate = std::any::type_name::<C>();
@@ -219,7 +238,7 @@ impl Connection {
             None => {
                 // No cache entry? Load the CFD row. Version will be 0 because we haven't applied
                 // any events, thus all events will be loaded.
-                let cfd = load_cfd_row(&mut conn, id).await?;
+                let cfd = load_cfd_row(&mut db_tx, id).await?;
 
                 C::new(args, cfd)
             }
@@ -232,7 +251,7 @@ impl Connection {
         };
         let cfd_version = cfd.version();
 
-        let events = load_cfd_events(&mut conn, id, cfd_version).await?;
+        let events = load_cfd_events(&mut db_tx, id, cfd_version).await?;
         let num_events = events.len();
 
         tracing::debug!(order_id = %id, %aggregate, %cfd_version, %num_events, "Applying new events to CFD");
@@ -243,12 +262,14 @@ impl Connection {
             .insert(cache_key, Box::new(cfd.clone()))
             .await;
 
+        db_tx.commit().await?;
+
         Ok(cfd)
     }
 
     pub fn load_all_cfds<C>(&self, args: C::CtorArgs) -> impl Stream<Item = Result<C>> + Unpin + '_
     where
-        C: CfdAggregate + Unpin,
+        C: ClosedCfdAggregate + Unpin,
         C::CtorArgs: Clone + Send + Sync,
     {
         let stream = async_stream::try_stream! {
@@ -256,12 +277,10 @@ impl Connection {
 
             let ids = sqlx::query!(
                 r#"
-                select
-                    id as cfd_id,
+                SELECT
                     uuid as "uuid: model::OrderId"
-                from
+                FROM
                     cfds
-
                 "#
             )
             .fetch_all(&mut *conn)
@@ -275,6 +294,29 @@ impl Connection {
                 let cfd = self.load_open_cfd(id, args.clone()).await?;
 
                 yield cfd;
+            }
+
+            let mut conn = self.inner.acquire().await?;
+
+            let ids = sqlx::query!(
+                r#"
+                SELECT
+                    uuid as "uuid: model::OrderId"
+                FROM
+                    closed_cfds
+                "#
+            )
+            .fetch_all(&mut *conn)
+            .await?
+            .into_iter()
+            .map(|r| r.uuid);
+
+            drop(conn);
+
+            for id in ids {
+                let closed_cfd = self.load_closed_cfd(id, args.clone()).await?;
+
+                yield closed_cfd;
             }
         };
 
@@ -324,21 +366,235 @@ impl Connection {
                 cfds
             where not exists (
                 select id from EVENTS as events
-                where cfd_id = cfds.id and
+                where events.cfd_id = cfds.id and
+                (
+                    events.name = $1 or
+                    events.name = $2
+                )
+            )
+            "#,
+            EventKind::CONTRACT_SETUP_FAILED,
+            EventKind::OFFER_REJECTED
+        )
+        .fetch_all(&mut *conn)
+        .await?
+        .into_iter()
+        .map(|r| r.uuid)
+        .collect();
+
+        Ok(ids)
+    }
+
+    pub async fn move_to_closed_cfds(&self) -> Result<()> {
+        let ids = self.closed_cfd_ids_according_to_the_blockchain().await?;
+
+        ids.into_iter()
+            .map(|id| {
+                let pool = self.inner.clone();
+                async move {
+                    let mut conn = pool.acquire().await?;
+                    let mut db_tx = conn.begin().await?;
+
+                    let cfd = load_cfd_row(&mut db_tx, id).await?;
+                    let events = load_cfd_events(&mut db_tx, id, 0).await?;
+                    let event_log = EventLog::new(&events);
+
+                    let closed_cfd = ClosedCfdInputAggregate::new(cfd);
+                    let closed_cfd = events
+                        .into_iter()
+                        .try_fold(closed_cfd, ClosedCfdInputAggregate::apply)?
+                        .build()?;
+
+                    insert_closed_cfd(&mut db_tx, closed_cfd).await?;
+                    insert_event_log(&mut db_tx, id, event_log).await?;
+
+                    if let Some(collaborative_settlement) = closed_cfd.collaborative_settlement {
+                        insert_collaborative_settlement_tx(
+                            &mut db_tx,
+                            id,
+                            collaborative_settlement,
+                        )
+                        .await?;
+                    }
+
+                    if let Some(txid) = closed_cfd.commit {
+                        insert_commit_tx(&mut db_tx, id, txid).await?;
+                    }
+
+                    if let Some(non_collaborative_settlement) =
+                        closed_cfd.non_collaborative_settlement
+                    {
+                        insert_cet(&mut db_tx, id, non_collaborative_settlement).await?;
+                    }
+
+                    if let Some(refund) = closed_cfd.refund {
+                        insert_refund_tx(&mut db_tx, id, refund).await?;
+                    }
+
+                    delete_from_events_table(&mut db_tx, id).await?;
+                    delete_from_cfds_table(&mut db_tx, id).await?;
+
+                    db_tx.commit().await?;
+
+                    anyhow::Ok(())
+                }
+            })
+            .collect::<FuturesUnordered<_>>()
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        Ok(())
+    }
+
+    /// Load a closed CFD from the database.
+    async fn load_closed_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
+    where
+        C: ClosedCfdAggregate,
+    {
+        let mut conn = self.inner.acquire().await?;
+
+        let cfd = sqlx::query!(
+            r#"
+            SELECT
+                uuid as "uuid: model::OrderId",
+                position as "position: model::Position",
+                initial_price as "initial_price: model::Price",
+                taker_leverage as "taker_leverage: model::Leverage",
+                n_contracts as "n_contracts: model::Contracts",
+                counterparty_network_identity as "counterparty_network_identity: model::Identity",
+                role as "role: model::Role",
+                fees as "fees: model::Fees",
+                expiry_timestamp,
+                lock_txid as "lock_txid: model::Txid",
+                lock_dlc_vout as "lock_dlc_vout: model::Vout"
+            FROM
+                closed_cfds
+            WHERE
+                closed_cfds.uuid = $1
+            "#,
+            id
+        )
+        .fetch_one(&mut conn)
+        .await?;
+
+        let expiry_timestamp = OffsetDateTime::from_unix_timestamp(cfd.expiry_timestamp)?;
+
+        let collaborative_settlement = load_collaborative_settlement_tx(&mut conn, id).await?;
+
+        let commit = load_commit_tx(&mut conn, id).await?;
+
+        let non_collaborative_settlement = load_cet(&mut conn, id).await?;
+
+        let refund = load_refund_tx(&mut conn, id).await?;
+
+        let settlement = match (
+            collaborative_settlement,
+            commit,
+            non_collaborative_settlement,
+            refund,
+        ) {
+            (
+                Some(CollaborativeSettlement {
+                    txid,
+                    vout,
+                    payout,
+                    price,
+                    ..
+                }),
+                None,
+                None,
+                None,
+            ) => Settlement::Collaborative {
+                txid,
+                vout,
+                payout,
+                price,
+            },
+            (
+                None,
+                Some(commit_txid),
+                Some(Cet {
+                    txid,
+                    vout,
+                    payout,
+                    price,
+                    ..
+                }),
+                None,
+            ) => Settlement::Cet {
+                commit_txid,
+                txid,
+                vout,
+                payout,
+                price,
+            },
+            (
+                None,
+                Some(commit_txid),
+                None,
+                Some(Refund {
+                    txid, vout, payout, ..
+                }),
+            ) => Settlement::Refund {
+                commit_txid,
+                txid,
+                vout,
+                payout,
+            },
+            _ => {
+                bail!(
+                    "Closed CFD has insane combination of transactions:
+                       {collaborative_settlement:?},
+                       {commit:?},
+                       {non_collaborative_settlement:?},
+                       {refund:?}"
+                )
+            }
+        };
+
+        let cfd = ClosedCfd {
+            id,
+            position: cfd.position,
+            initial_price: cfd.initial_price,
+            taker_leverage: cfd.taker_leverage,
+            n_contracts: cfd.n_contracts,
+            counterparty_network_identity: cfd.counterparty_network_identity,
+            role: cfd.role,
+            fees: cfd.fees,
+            expiry_timestamp,
+            lock: Lock {
+                txid: cfd.lock_txid,
+                dlc_vout: cfd.lock_dlc_vout,
+            },
+            settlement,
+        };
+
+        Ok(C::new_closed(args, cfd))
+    }
+
+    async fn closed_cfd_ids_according_to_the_blockchain(&self) -> Result<Vec<OrderId>> {
+        let mut conn = self.inner.acquire().await?;
+
+        let ids = sqlx::query!(
+            r#"
+            select
+                id as cfd_id,
+                uuid as "uuid: model::OrderId"
+            from
+                cfds
+            where exists (
+                select id from EVENTS as events
+                where events.cfd_id = cfds.id and
                 (
                     events.name = $1 or
                     events.name = $2 or
-                    events.name= $3 or
-                    events.name= $4 or
-                    events.name= $5
+                    events.name= $3
                 )
             )
             "#,
             EventKind::COLLABORATIVE_SETTLEMENT_CONFIRMED,
             EventKind::CET_CONFIRMED,
             EventKind::REFUND_CONFIRMED,
-            EventKind::CONTRACT_SETUP_FAILED,
-            EventKind::OFFER_REJECTED
         )
         .fetch_all(&mut *conn)
         .await?
@@ -367,6 +623,409 @@ pub struct Cfd {
     pub initial_tx_fee_rate: TxFeeRate,
 }
 
+/// Data loaded from the database about a closed CFD.
+#[derive(Debug, Clone, Copy)]
+pub struct ClosedCfd {
+    pub id: OrderId,
+    pub position: Position,
+    pub initial_price: Price,
+    pub taker_leverage: Leverage,
+    pub n_contracts: Contracts,
+    pub counterparty_network_identity: Identity,
+    pub role: Role,
+    pub fees: Fees,
+    pub expiry_timestamp: OffsetDateTime,
+    pub lock: Lock,
+    pub settlement: Settlement,
+}
+
+/// Data loaded from the database about the lock transaction of a
+/// closed CFD.
+#[derive(Debug, Clone, Copy)]
+pub struct Lock {
+    pub txid: Txid,
+    pub dlc_vout: Vout,
+}
+
+/// Data loaded from the database about the way in which a closed CFD
+/// was settled.
+///
+/// It is represented using an `enum` rather than a series of optional
+/// fields so that only sane combinations of transactions can be
+/// loaded from the database.
+#[derive(Debug, Clone, Copy)]
+pub enum Settlement {
+    Collaborative {
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+        price: Price,
+    },
+    Cet {
+        commit_txid: Txid,
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+        price: Price,
+    },
+    Refund {
+        commit_txid: Txid,
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+    },
+}
+
+/// All the data related to a closed CFD that we want to store in the
+/// database.
+#[derive(Debug, Clone, Copy)]
+struct ClosedCfdInput {
+    id: OrderId,
+    position: Position,
+    initial_price: Price,
+    taker_leverage: Leverage,
+    n_contracts: Contracts,
+    counterparty_network_identity: Identity,
+    role: Role,
+    fees: Fees,
+    expiry_timestamp: OffsetDateTime,
+    lock: LockInput,
+    collaborative_settlement: Option<CollaborativeSettlement>,
+    commit: Option<Txid>,
+    non_collaborative_settlement: Option<Cet>,
+    refund: Option<Refund>,
+}
+
+/// Auxiliary type used to gradually combine a `Cfd` with its list of
+/// `CfdEvent`s.
+///
+/// Once all the `CfdEvent`s have been applied, we can build a
+/// `ClosedCfdInput` which is used for database insertion.
+#[derive(Debug, Clone)]
+struct ClosedCfdInputAggregate {
+    id: OrderId,
+    position: Position,
+    initial_price: Price,
+    taker_leverage: Leverage,
+    n_contracts: Contracts,
+    counterparty_network_identity: Identity,
+    role: Role,
+    fee_account: FeeAccount,
+    own_script_pubkey: Option<Script>,
+    expiry_timestamp: Option<OffsetDateTime>,
+    lock: Option<LockInput>,
+    commit: Option<Txid>,
+    collaborative_settlement: Option<CollaborativeSettlement>,
+    cet: Option<Cet>,
+    refund: Option<Refund>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LockInput {
+    txid: Txid,
+    dlc_vout: Vout,
+    timestamp: Timestamp,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CollaborativeSettlement {
+    txid: Txid,
+    vout: Vout,
+    payout: Payout,
+    price: Price,
+    timestamp: Timestamp,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Cet {
+    txid: Txid,
+    vout: Vout,
+    payout: Payout,
+    price: Price,
+    timestamp: Timestamp,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Refund {
+    txid: Txid,
+    vout: Vout,
+    payout: Payout,
+    timestamp: Timestamp,
+}
+
+impl ClosedCfdInputAggregate {
+    fn new(cfd: Cfd) -> Self {
+        let Cfd {
+            id,
+            position,
+            initial_price,
+            taker_leverage,
+            settlement_interval: _,
+            quantity_usd,
+            counterparty_network_identity,
+            role,
+            opening_fee,
+            ..
+        } = cfd;
+        let n_contracts = quantity_usd
+            .try_into_u64()
+            .expect("number of contracts to fit into a u64");
+        let n_contracts = Contracts::new(n_contracts);
+
+        Self {
+            id,
+            position,
+            initial_price,
+            taker_leverage,
+            n_contracts,
+            counterparty_network_identity,
+            role,
+            fee_account: FeeAccount::new(position, role).add_opening_fee(opening_fee),
+            own_script_pubkey: None,
+            expiry_timestamp: None,
+            lock: None,
+            commit: None,
+            collaborative_settlement: None,
+            cet: None,
+            refund: None,
+        }
+    }
+
+    fn apply(mut self, event: CfdEvent) -> Result<Self> {
+        use model::EventKind::*;
+        match event.event {
+            ContractSetupStarted => {}
+            ContractSetupCompleted { dlc } => {
+                let script_pubkey = dlc.lock.1.script_pubkey();
+                let OutPoint { txid, vout } = dlc
+                    .lock
+                    .0
+                    .outpoint(&script_pubkey)
+                    .context("Missing DLC in lock TX")?;
+
+                let txid = Txid::new(txid);
+                let dlc_vout = Vout::new(vout);
+
+                self.lock = Some(LockInput {
+                    txid,
+                    dlc_vout,
+                    timestamp: event.timestamp,
+                });
+
+                self.own_script_pubkey = Some(dlc.script_pubkey_for(self.role));
+
+                self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
+            }
+            ContractSetupFailed => {}
+            OfferRejected => {}
+            RolloverStarted => {}
+            RolloverAccepted => {}
+            RolloverRejected => {}
+            RolloverCompleted { dlc, funding_fee } => {
+                self.own_script_pubkey = Some(dlc.script_pubkey_for(self.role));
+
+                self.fee_account.add_funding_fee(funding_fee);
+
+                self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
+            }
+            RolloverFailed => {}
+            CollaborativeSettlementStarted { .. } => {}
+            CollaborativeSettlementProposalAccepted => {}
+            CollaborativeSettlementCompleted {
+                spend_tx,
+                script,
+                price,
+            } => {
+                let OutPoint { txid, vout } = spend_tx
+                    .outpoint(&script)
+                    .context("Missing spend script in collaborative settlement TX")?;
+
+                let payout = &spend_tx
+                    .output
+                    .get(vout as usize)
+                    .with_context(|| format!("No output at vout {vout}"))?;
+                let payout = Payout::new(Amount::from_sat(payout.value));
+
+                let txid = Txid::new(txid);
+                let vout = Vout::new(vout);
+
+                self.collaborative_settlement = Some(CollaborativeSettlement {
+                    txid,
+                    vout,
+                    payout,
+                    price,
+                    timestamp: event.timestamp,
+                })
+            }
+            CollaborativeSettlementRejected => {}
+            CollaborativeSettlementFailed => {}
+            LockConfirmed => {}
+            LockConfirmedAfterFinality => {}
+            CommitConfirmed => {}
+            CetConfirmed => {}
+            RefundConfirmed => {}
+            RevokeConfirmed => {}
+            CollaborativeSettlementConfirmed => {}
+            CetTimelockExpiredPriorOracleAttestation => {}
+            CetTimelockExpiredPostOracleAttestation { cet: _ } => {
+                // if we have an attestation we have already updated
+                // the `self.non_collaborative_settlement` field in
+                // the `OracleAttestedPriorCetTimelock` branch.
+                //
+                // We could repeat that work here just in case, but we
+                // don't have the closing price, so the
+                // `NonCollaborativeSettlement` struct would be
+                // incomplete
+            }
+            RefundTimelockExpired { refund_tx } => {
+                let own_script_pubkey = self
+                    .own_script_pubkey
+                    .as_ref()
+                    .context("Missing DLC after refund timelock has expired")?;
+                let OutPoint { txid, vout } = refund_tx
+                    .outpoint(own_script_pubkey)
+                    .context("Missing spend script in refund TX")?;
+
+                let payout = &refund_tx
+                    .output
+                    .get(vout as usize)
+                    .with_context(|| format!("No output at vout {vout}"))?;
+                let payout = Payout::new(Amount::from_sat(payout.value));
+
+                let txid = Txid::new(txid);
+                let vout = Vout::new(vout);
+
+                self.refund = Some(Refund {
+                    txid,
+                    vout,
+                    payout,
+                    timestamp: event.timestamp,
+                })
+            }
+            OracleAttestedPriorCetTimelock {
+                timelocked_cet,
+                commit_tx,
+                price,
+            } => {
+                self.commit = commit_tx.map(|tx| Txid::new(tx.txid()));
+
+                let own_script_pubkey = self
+                    .own_script_pubkey
+                    .as_ref()
+                    .context("Missing DLC after CET was chosen")?;
+                let OutPoint { txid, vout } = timelocked_cet
+                    .outpoint(own_script_pubkey)
+                    .context("Missing spend script in CET")?;
+
+                let payout = &timelocked_cet
+                    .output
+                    .get(vout as usize)
+                    .with_context(|| format!("No output at vout {vout}"))?;
+                let payout = Payout::new(Amount::from_sat(payout.value));
+
+                let txid = Txid::new(txid);
+                let vout = Vout::new(vout);
+
+                self.cet = Some(Cet {
+                    txid,
+                    vout,
+                    payout,
+                    price,
+                    timestamp: event.timestamp,
+                })
+            }
+            OracleAttestedPostCetTimelock { cet, price } => {
+                let own_script_pubkey = self
+                    .own_script_pubkey
+                    .as_ref()
+                    .context("Missing DLC after CET was chosen")?;
+                let OutPoint { txid, vout } = cet
+                    .outpoint(own_script_pubkey)
+                    .context("Missing spend script in CET")?;
+
+                let payout = &cet
+                    .output
+                    .get(vout as usize)
+                    .with_context(|| format!("No output at vout {vout}"))?;
+                let payout = Payout::new(Amount::from_sat(payout.value));
+
+                let txid = Txid::new(txid);
+                let vout = Vout::new(vout);
+
+                self.cet = Some(Cet {
+                    txid,
+                    vout,
+                    payout,
+                    price,
+                    timestamp: event.timestamp,
+                })
+            }
+            ManualCommit { tx } => self.commit = Some(Txid::new(tx.txid())),
+        }
+
+        Ok(self)
+    }
+
+    fn build(self) -> Result<ClosedCfdInput> {
+        let Self {
+            id,
+            position,
+            initial_price,
+            taker_leverage,
+            n_contracts,
+            counterparty_network_identity,
+            role,
+            fee_account,
+            expiry_timestamp,
+            lock,
+            commit,
+            collaborative_settlement,
+            cet: non_collaborative_settlement,
+            refund,
+            ..
+        } = self;
+
+        Ok(ClosedCfdInput {
+            id,
+            position,
+            initial_price,
+            taker_leverage,
+            n_contracts,
+            counterparty_network_identity,
+            role,
+            fees: Fees::new(fee_account.balance()),
+            expiry_timestamp: expiry_timestamp.context("missing expiry timestamp")?,
+            lock: lock.context("missing lock")?,
+            collaborative_settlement,
+            commit,
+            non_collaborative_settlement,
+            refund,
+        })
+    }
+}
+
+struct EventLog(Vec<EventLogEntry>);
+
+impl EventLog {
+    fn new(events: &[CfdEvent]) -> Self {
+        Self(events.iter().map(EventLogEntry::from).collect())
+    }
+}
+
+struct EventLogEntry {
+    name: String,
+    created_at: i64,
+}
+
+impl From<&CfdEvent> for EventLogEntry {
+    fn from(event: &CfdEvent) -> Self {
+        let name = event.event.to_string();
+        let created_at = event.timestamp.seconds();
+
+        Self { name, created_at }
+    }
+}
+
 /// A trait for abstracting over an aggregate.
 ///
 /// Aggregating all available events differs based on the module. Thus, to provide a single
@@ -380,7 +1039,12 @@ pub trait CfdAggregate: Clone + Send + Sync + 'static {
     fn version(&self) -> u32;
 }
 
-async fn load_cfd_row(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Cfd> {
+/// A trait for building an aggregate based on a `ClosedCfd`.
+pub trait ClosedCfdAggregate: CfdAggregate {
+    fn new_closed(args: Self::CtorArgs, cfd: ClosedCfd) -> Self;
+}
+
+async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<Cfd> {
     let cfd_row = sqlx::query!(
         r#"
             select
@@ -426,7 +1090,7 @@ async fn load_cfd_row(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<
 /// The version of a CFD is the number of events that have been applied. If we have an aggregate
 /// instance in version 3, we can avoid loading the first 3 events and only apply the ones after.
 async fn load_cfd_events(
-    conn: &mut PoolConnection<Sqlite>,
+    conn: &mut Transaction<'_, Sqlite>, // TODO: I failed to use the sqlx::Executor trait
     id: OrderId,
     from_version: u32,
 ) -> Result<Vec<CfdEvent>> {
@@ -463,6 +1127,386 @@ async fn load_cfd_events(
     Ok(events)
 }
 
+async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInput) -> Result<()> {
+    let expiry_timestamp = cfd.expiry_timestamp.unix_timestamp();
+
+    let query_result = sqlx::query!(
+        r#"
+        INSERT INTO closed_cfds
+        (
+            uuid,
+            position,
+            initial_price,
+            taker_leverage,
+            n_contracts,
+            counterparty_network_identity,
+            role,
+            fees,
+            expiry_timestamp,
+            lock_txid,
+            lock_dlc_vout,
+            lock_timestamp
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        "#,
+        cfd.id,
+        cfd.position,
+        cfd.initial_price,
+        cfd.taker_leverage,
+        cfd.n_contracts,
+        cfd.counterparty_network_identity,
+        cfd.role,
+        cfd.fees,
+        expiry_timestamp,
+        cfd.lock.txid,
+        cfd.lock.dlc_vout,
+        cfd.lock.timestamp
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    if query_result.rows_affected() != 1 {
+        anyhow::bail!("failed to insert into closed_cfds");
+    }
+
+    Ok(())
+}
+
+async fn insert_collaborative_settlement_tx(
+    conn: &mut Transaction<'_, Sqlite>,
+    id: OrderId,
+    CollaborativeSettlement {
+        txid,
+        vout,
+        payout,
+        price,
+        timestamp,
+    }: CollaborativeSettlement,
+) -> Result<()> {
+    let query_result = sqlx::query!(
+        r#"
+        INSERT INTO collaborative_settlement_txs
+        (
+            cfd_id,
+            txid,
+            vout,
+            payout,
+            price,
+            timestamp
+        )
+        VALUES
+        (
+            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
+            $2, $3, $4, $5, $6
+        )
+        "#,
+        id,
+        txid,
+        vout,
+        payout,
+        price,
+        timestamp
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    if query_result.rows_affected() != 1 {
+        anyhow::bail!("failed to insert into collaborative_settlement_txs");
+    }
+
+    Ok(())
+}
+
+async fn insert_commit_tx(
+    conn: &mut Transaction<'_, Sqlite>,
+    id: OrderId,
+    txid: Txid,
+) -> Result<()> {
+    let query_result = sqlx::query!(
+        r#"
+        INSERT INTO commit_txs
+        (
+            cfd_id,
+            txid
+        )
+        VALUES
+        (
+            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
+            $2
+        )
+        "#,
+        id,
+        txid,
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    if query_result.rows_affected() != 1 {
+        anyhow::bail!("failed to insert into commit_txs");
+    }
+
+    Ok(())
+}
+
+async fn insert_cet(
+    conn: &mut Transaction<'_, Sqlite>,
+    id: OrderId,
+    Cet {
+        txid,
+        vout,
+        payout,
+        price,
+        timestamp,
+    }: Cet,
+) -> Result<()> {
+    let query_result = sqlx::query!(
+        r#"
+        INSERT INTO cets
+        (
+            cfd_id,
+            txid,
+            vout,
+            payout,
+            price,
+            timestamp
+        )
+        VALUES
+        (
+            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
+            $2, $3, $4, $5, $6
+        )
+        "#,
+        id,
+        txid,
+        payout,
+        vout,
+        price,
+        timestamp
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    if query_result.rows_affected() != 1 {
+        anyhow::bail!("failed to insert into cets");
+    }
+
+    Ok(())
+}
+
+async fn insert_refund_tx(
+    conn: &mut Transaction<'_, Sqlite>,
+    id: OrderId,
+    Refund {
+        txid,
+        vout,
+        payout,
+        timestamp,
+    }: Refund,
+) -> Result<()> {
+    let query_result = sqlx::query!(
+        r#"
+        INSERT INTO refund_txs
+        (
+            cfd_id,
+            txid,
+            vout,
+            payout,
+            timestamp
+        )
+        VALUES
+        (
+            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
+            $2, $3, $4, $5
+        )
+        "#,
+        id,
+        txid,
+        vout,
+        payout,
+        timestamp
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    if query_result.rows_affected() != 1 {
+        anyhow::bail!("failed to insert into refund_txs");
+    }
+
+    Ok(())
+}
+
+async fn insert_event_log(
+    conn: &mut Transaction<'_, Sqlite>,
+    id: OrderId,
+    event_log: EventLog,
+) -> Result<()> {
+    for EventLogEntry { name, created_at } in event_log.0.iter() {
+        let query_result = sqlx::query!(
+            r#"
+            INSERT INTO event_log (
+                cfd_id,
+                name,
+                created_at
+            )
+            VALUES
+            (
+                (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
+                $2, $3
+            )
+            "#,
+            id,
+            name,
+            created_at
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        if query_result.rows_affected() != 1 {
+            anyhow::bail!("failed to insert into event_log");
+        }
+    }
+
+    Ok(())
+}
+
+async fn load_collaborative_settlement_tx(
+    conn: &mut PoolConnection<Sqlite>,
+    id: OrderId,
+) -> Result<Option<CollaborativeSettlement>> {
+    let row = sqlx::query_as!(
+        CollaborativeSettlement,
+        r#"
+        SELECT
+            txid as "txid: model::Txid",
+            vout as "vout: model::Vout",
+            payout as "payout: model::Payout",
+            price as "price: model::Price",
+            timestamp as "timestamp: model::Timestamp"
+        FROM
+            collaborative_settlement_txs
+        JOIN
+            closed_cfds c on c.id = collaborative_settlement_txs.cfd_id
+        WHERE
+            c.uuid = $1
+        "#,
+        id
+    )
+    .fetch_optional(&mut *conn)
+    .await?;
+
+    Ok(row)
+}
+
+async fn load_commit_tx(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Option<Txid>> {
+    let txid = sqlx::query!(
+        r#"
+        SELECT
+            txid as "txid: model::Txid"
+        FROM
+            commit_txs
+        JOIN
+            closed_cfds c on c.id = commit_txs.cfd_id
+        WHERE
+            c.uuid = $1
+        "#,
+        id
+    )
+    .fetch_optional(&mut *conn)
+    .await?
+    .map(|row| row.txid);
+
+    Ok(txid)
+}
+
+async fn load_cet(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Option<Cet>> {
+    let row = sqlx::query_as!(
+        Cet,
+        r#"
+        SELECT
+            txid as "txid: model::Txid",
+            vout as "vout: model::Vout",
+            payout as "payout: model::Payout",
+            price as "price: model::Price",
+            timestamp as "timestamp: model::Timestamp"
+        FROM
+            cets
+        JOIN
+            closed_cfds c on c.id = cets.cfd_id
+        WHERE
+            c.uuid = $1
+        "#,
+        id
+    )
+    .fetch_optional(&mut *conn)
+    .await?;
+
+    Ok(row)
+}
+
+async fn load_refund_tx(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Option<Refund>> {
+    let row = sqlx::query_as!(
+        Refund,
+        r#"
+        SELECT
+            txid as "txid: model::Txid",
+            vout as "vout: model::Vout",
+            payout as "payout: model::Payout",
+            timestamp as "timestamp: model::Timestamp"
+        FROM
+            refund_txs
+        JOIN
+            closed_cfds c on c.id = refund_txs.cfd_id
+        WHERE
+            c.uuid = $1
+        "#,
+        id
+    )
+    .fetch_optional(&mut *conn)
+    .await?;
+
+    Ok(row)
+}
+
+async fn delete_from_cfds_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<()> {
+    let query_result = sqlx::query!(
+        r#"
+        DELETE FROM
+            cfds
+        WHERE
+            cfds.uuid = $1
+        "#,
+        id,
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    if query_result.rows_affected() != 1 {
+        anyhow::bail!("failed to delete from cfds");
+    }
+
+    Ok(())
+}
+
+async fn delete_from_events_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<()> {
+    let query_result = sqlx::query!(
+        r#"
+        DELETE FROM
+            events
+        WHERE events.cfd_id IN
+            (SELECT id FROM cfds WHERE cfds.uuid = $1)
+        "#,
+        id,
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    if query_result.rows_affected() < 1 {
+        anyhow::bail!("failed to delete from events");
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,6 +1530,7 @@ mod tests {
         let cfd = dummy_cfd();
         db.insert_cfd(&cfd).await.unwrap();
         let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
 
         let super::Cfd {
             id,
@@ -499,7 +1544,9 @@ mod tests {
             opening_fee,
             initial_funding_rate,
             initial_tx_fee_rate,
-        } = load_cfd_row(&mut conn, cfd.id()).await.unwrap();
+        } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
+
+        db_tx.commit().await.unwrap();
 
         assert_eq!(cfd.id(), id);
         assert_eq!(cfd.position(), position);
@@ -533,9 +1580,12 @@ mod tests {
         };
 
         db.append_event(event1.clone()).await.unwrap();
+
         let mut conn = db.inner.acquire().await.unwrap();
 
-        let events = load_cfd_events(&mut conn, cfd.id(), 0).await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+        let events = load_cfd_events(&mut db_tx, cfd.id(), 0).await.unwrap();
+        db_tx.commit().await.unwrap();
         assert_eq!(events, vec![event1.clone()]);
 
         let event2 = CfdEvent {
@@ -545,52 +1595,12 @@ mod tests {
         };
 
         db.append_event(event2.clone()).await.unwrap();
-        let events = load_cfd_events(&mut conn, cfd.id(), 0).await.unwrap();
+
+        // let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+        let events = load_cfd_events(&mut db_tx, cfd.id(), 0).await.unwrap();
+        db_tx.commit().await.unwrap();
         assert_eq!(events, vec![event1, event2])
-    }
-
-    #[tokio::test]
-    async fn given_collaborative_close_confirmed_then_do_not_load_non_final_cfd() {
-        let db = memory().await.unwrap();
-
-        let cfd_final = dummy_cfd();
-        db.insert_cfd(&cfd_final).await.unwrap();
-
-        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
-        db.append_event(collab_settlement_confirmed(&cfd_final))
-            .await
-            .unwrap();
-
-        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
-
-        assert!(cfd_ids.is_empty());
-    }
-
-    #[tokio::test]
-    async fn given_cet_confirmed_then_do_not_load_non_final_cfd() {
-        let db = memory().await.unwrap();
-
-        let cfd_final = dummy_cfd();
-        db.insert_cfd(&cfd_final).await.unwrap();
-        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
-        db.append_event(cet_confirmed(&cfd_final)).await.unwrap();
-
-        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
-        assert!(cfd_ids.is_empty());
-    }
-
-    #[tokio::test]
-    async fn given_refund_confirmed_then_do_not_load_non_final_cfd() {
-        let db = memory().await.unwrap();
-
-        let cfd_final = dummy_cfd();
-        db.insert_cfd(&cfd_final).await.unwrap();
-
-        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
-        db.append_event(refund_confirmed(&cfd_final)).await.unwrap();
-
-        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
-        assert!(cfd_ids.is_empty());
     }
 
     #[tokio::test]
@@ -644,6 +1654,98 @@ mod tests {
         assert_eq!(*cfd_ids.first().unwrap(), cfd_not_final.id())
     }
 
+    #[tokio::test]
+    async fn given_confirmed_settlement_when_move_cfds_to_closed_table_then_can_load_cfd_as_closed()
+    {
+        let db = memory().await.unwrap();
+
+        let (cfd, contract_setup_completed, collaborative_settlement_completed) =
+            cfd_collaboratively_settled();
+        let order_id = cfd.id();
+
+        db.insert_cfd(&cfd).await.unwrap();
+
+        db.append_event(contract_setup_completed).await.unwrap();
+        db.append_event(collaborative_settlement_completed)
+            .await
+            .unwrap();
+        db.append_event(collab_settlement_confirmed(&cfd))
+            .await
+            .unwrap();
+
+        db.move_to_closed_cfds().await.unwrap();
+
+        let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
+        let load_from_closed = db.load_closed_cfd::<DummyAggregate>(order_id, ()).await;
+
+        assert!(load_from_open.is_err());
+        assert!(load_from_closed.is_ok());
+    }
+
+    #[tokio::test]
+    async fn given_settlement_not_confirmed_when_move_cfds_to_closed_table_then_cannot_load_cfd_as_closed(
+    ) {
+        let db = memory().await.unwrap();
+
+        let (cfd, contract_setup_completed, collaborative_settlement_completed) =
+            cfd_collaboratively_settled();
+        let order_id = cfd.id();
+
+        db.insert_cfd(&cfd).await.unwrap();
+
+        db.append_event(contract_setup_completed).await.unwrap();
+        db.append_event(collaborative_settlement_completed)
+            .await
+            .unwrap();
+
+        db.move_to_closed_cfds().await.unwrap();
+
+        let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
+        let load_from_closed = db.load_closed_cfd::<DummyAggregate>(order_id, ()).await;
+
+        assert!(load_from_open.is_ok());
+        assert!(load_from_closed.is_err());
+    }
+
+    #[tokio::test]
+    async fn given_confirmed_settlement_when_move_cfds_to_closed_table_then_projection_aggregate_stays_the_same(
+    ) {
+        let db = memory().await.unwrap();
+
+        let (cfd, contract_setup_completed, collaborative_settlement_completed) =
+            cfd_collaboratively_settled();
+        let order_id = cfd.id();
+
+        db.insert_cfd(&cfd).await.unwrap();
+
+        db.append_event(contract_setup_completed).await.unwrap();
+        db.append_event(collaborative_settlement_completed)
+            .await
+            .unwrap();
+
+        db.append_event(collab_settlement_confirmed(&cfd))
+            .await
+            .unwrap();
+
+        let projection_open = db
+            .load_open_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+            .await
+            .unwrap();
+        let projection_open = projection_open.with_current_quote(None); // to update payout-related fields
+
+        db.move_to_closed_cfds().await.unwrap();
+
+        let projection_closed = db
+            .load_closed_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+            .await
+            .unwrap();
+
+        // this comparison actually omits the `aggregated` field on
+        // `projection::Cfd` because it is not used when aggregating
+        // from a closed CFD
+        assert_eq!(projection_open, projection_closed);
+    }
+
     fn dummy_cfd() -> Cfd {
         Cfd::new(
             OrderId::default(),
@@ -659,6 +1761,54 @@ mod tests {
             OpeningFee::new(Amount::from_sat(2000)),
             FundingRate::default(),
             TxFeeRate::default(),
+        )
+    }
+
+    fn cfd_collaboratively_settled() -> (Cfd, CfdEvent, CfdEvent) {
+        // 1|<RANDOM-ORDER-ID>|Long|41772.8325|2|24|100|
+        // 69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e|Taker|0|0|1
+        let order_id = OrderId::default();
+        let cfd = Cfd::new(
+            order_id,
+            Position::Long,
+            Price::new(dec!(41_772.8325)).unwrap(),
+            Leverage::TWO,
+            Duration::hours(24),
+            Role::Taker,
+            Usd::new(dec!(100)),
+            "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e"
+                .parse()
+                .unwrap(),
+            OpeningFee::new(Amount::ZERO),
+            FundingRate::default(),
+            TxFeeRate::default(),
+        );
+
+        let contract_setup_completed =
+            std::fs::read_to_string("./src/test_events/contract_setup_completed.json").unwrap();
+        let contract_setup_completed =
+            serde_json::from_str::<EventKind>(&contract_setup_completed).unwrap();
+        let contract_setup_completed = CfdEvent {
+            timestamp: Timestamp::now(),
+            id: order_id,
+            event: contract_setup_completed,
+        };
+
+        let collaborative_settlement_completed =
+            std::fs::read_to_string("./src/test_events/collaborative_settlement_completed.json")
+                .unwrap();
+        let collaborative_settlement_completed =
+            serde_json::from_str::<EventKind>(&collaborative_settlement_completed).unwrap();
+        let collaborative_settlement_completed = CfdEvent {
+            timestamp: Timestamp::now(),
+            id: order_id,
+            event: collaborative_settlement_completed,
+        };
+
+        (
+            cfd,
+            contract_setup_completed,
+            collaborative_settlement_completed,
         )
     }
 
@@ -678,22 +1828,6 @@ mod tests {
         }
     }
 
-    fn cet_confirmed(cfd: &Cfd) -> CfdEvent {
-        CfdEvent {
-            timestamp: Timestamp::now(),
-            id: cfd.id(),
-            event: EventKind::CetConfirmed,
-        }
-    }
-
-    fn refund_confirmed(cfd: &Cfd) -> CfdEvent {
-        CfdEvent {
-            timestamp: Timestamp::now(),
-            id: cfd.id(),
-            event: EventKind::RefundConfirmed,
-        }
-    }
-
     fn setup_failed(cfd: &Cfd) -> CfdEvent {
         CfdEvent {
             timestamp: Timestamp::now(),
@@ -707,6 +1841,31 @@ mod tests {
             timestamp: Timestamp::now(),
             id: cfd.id(),
             event: EventKind::OfferRejected,
+        }
+    }
+
+    #[derive(Clone)]
+    struct DummyAggregate;
+
+    impl CfdAggregate for DummyAggregate {
+        type CtorArgs = ();
+
+        fn new(_: Self::CtorArgs, _: crate::db::Cfd) -> Self {
+            Self
+        }
+
+        fn apply(self, _: CfdEvent) -> Self {
+            Self
+        }
+
+        fn version(&self) -> u32 {
+            0
+        }
+    }
+
+    impl ClosedCfdAggregate for DummyAggregate {
+        fn new_closed(_: Self::CtorArgs, _: ClosedCfd) -> Self {
+            Self
         }
     }
 }
