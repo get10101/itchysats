@@ -494,6 +494,7 @@ impl Cfd {
                 self.aggregated.timelocked_cet = Some(timelocked_cet);
                 self.closing_price = Some(price);
 
+                self.aggregated.commit_published = true;
                 self.aggregated.state = CfdState::PendingCommit;
             }
             OracleAttestedPostCetTimelock { cet, price, .. } => {
