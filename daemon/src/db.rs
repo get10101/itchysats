@@ -206,7 +206,7 @@ impl Connection {
     }
 
     /// Load a CFD in its latest version from the database.
-    pub async fn load_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
+    pub async fn load_open_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
     where
         C: CfdAggregate,
     {
@@ -272,7 +272,7 @@ impl Connection {
             drop(conn);
 
             for id in ids {
-                let cfd = self.load_cfd(id, args.clone()).await?;
+                let cfd = self.load_open_cfd(id, args.clone()).await?;
 
                 yield cfd;
             }
@@ -303,7 +303,7 @@ impl Connection {
             let ids = self.load_open_cfd_ids().await?;
 
             for id in ids {
-                let cfd = self.load_cfd(id, args.clone()).await?;
+                let cfd = self.load_open_cfd(id, args.clone()).await?;
 
                 yield cfd;
             }

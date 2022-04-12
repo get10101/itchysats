@@ -830,7 +830,7 @@ impl State {
     }
 
     async fn update_cfd(&mut self, db: db::Connection, id: OrderId) -> Result<()> {
-        let cfd = db.load_cfd(id, self.network).await?;
+        let cfd = db.load_open_cfd(id, self.network).await?;
 
         let cfds = self
             .cfds

@@ -83,7 +83,7 @@ impl Actor {
 
         tracing::info!(%order_id, "Settlement proposal got accepted");
 
-        let cfd = self.db.load_cfd::<model::Cfd>(order_id, ()).await?;
+        let cfd = self.db.load_open_cfd::<model::Cfd>(order_id, ()).await?;
 
         // TODO: This should happen within a dedicated state machine returned from
         // start_collaborative_settlement

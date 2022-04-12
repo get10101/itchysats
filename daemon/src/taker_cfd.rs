@@ -128,7 +128,7 @@ impl<O, W> Actor<O, W> {
             quote_timestamp,
         } = msg;
 
-        let cfd = self.db.load_cfd::<Cfd>(order_id, ()).await?;
+        let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
 
         let proposal_closing_price = market_closing_price(bid, ask, Role::Taker, cfd.position());
 

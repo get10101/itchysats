@@ -72,7 +72,7 @@ impl Actor {
 
             let cfd = self
                 .db
-                .load_cfd::<model::Cfd>(self.proposal.order_id, ())
+                .load_open_cfd::<model::Cfd>(self.proposal.order_id, ())
                 .await?;
 
             let settlement =
