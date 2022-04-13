@@ -151,6 +151,16 @@ impl Actor {
 
         ctx.stop();
     }
+
+    async fn forward_protocol_msg(&self, msg: wire::SetupMsg) -> Result<()> {
+        let mut sender = self
+            .setup_msg_sender
+            .clone()
+            .context("Cannot forward message to contract setup task")?;
+        sender.send(msg).await?;
+
+        Ok(())
+    }
 }
 
 #[xtra_productivity]
@@ -219,14 +229,10 @@ impl Actor {
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    fn handle(&mut self, msg: wire::SetupMsg) -> Result<()> {
-        let mut sender = self
-            .setup_msg_sender
-            .clone()
-            .context("Cannot forward message to contract setup task")?;
-        sender.send(msg).await?;
-
-        Ok(())
+    fn handle(&mut self, msg: wire::SetupMsg) {
+        if let Err(e) = self.forward_protocol_msg(msg).await {
+            tracing::error!("Failed to forward protocol message: {e:#}")
+        }
     }
 }
 

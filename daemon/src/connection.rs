@@ -44,9 +44,6 @@ pub const MAX_RECONNECT_INTERVAL_SECONDS: u64 = 60;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
-const HANDLE_CONTRACT_SETUP_TIMEOUT: Duration = Duration::from_secs(10);
-const HANDLE_PROTOCOL_MESSAGE_TIMEOUT: Duration = Duration::from_secs(60);
-
 /// The "Connected" state of our connection with the maker.
 #[allow(clippy::large_enum_variant)]
 enum State {
@@ -439,95 +436,44 @@ impl Actor {
                 self.state.handle_incoming_heartbeat();
             }
             wire::MakerToTaker::ConfirmOrder(order_id) => {
-                // TODO: sending to the setup actor should not be fallible
-                match self
+                if let Err(NotConnected(_)) = self
                     .setup_actors
-                    .send_fallible(&order_id, setup_taker::Accepted)
-                    .timeout(HANDLE_CONTRACT_SETUP_TIMEOUT)
+                    .send_async(&order_id, setup_taker::Accepted)
                     .await
                 {
-                    Ok(Ok(Ok(()))) => (),
-                    Ok(Ok(Err(e))) => {
-                        tracing::warn!(%order_id, "Contract setup not started: Accepting contract setup encountered an error {e:#}")
-                    }
-                    Ok(Err(NotConnected(_))) => {
-                        tracing::warn!(%order_id, "No active contract setup")
-                    }
-                    Err(_elapsed) => {
-                        tracing::warn!(%order_id, "Contract setup not started: Contract setup took too long to process Accept")
-                    }
+                    tracing::warn!(%order_id, "No active setup actor");
                 }
             }
             wire::MakerToTaker::RejectOrder(order_id) => {
-                // TODO: sending to the setup actor should not be fallible
-                match self
+                if let Err(NotConnected(_)) = self
                     .setup_actors
-                    .send_fallible(&order_id, setup_taker::Rejected::without_reason())
-                    .timeout(HANDLE_CONTRACT_SETUP_TIMEOUT)
+                    .send_async(&order_id, setup_taker::Rejected::without_reason())
                     .await
                 {
-                    Ok(Ok(Ok(()))) => (),
-                    Ok(Ok(Err(e))) => {
-                        tracing::warn!(%order_id, "Contract setup not started: Reject contract setup encountered an error {e:#}")
-                    }
-                    Ok(Err(NotConnected(_))) => {
-                        tracing::warn!(%order_id, "No active contract setup")
-                    }
-                    Err(_elapsed) => {
-                        tracing::warn!(%order_id, "Contract setup not started: Contract setup took too long to process Reject")
-                    }
+                    tracing::warn!(%order_id, "No active setup actor");
                 }
             }
             wire::MakerToTaker::Protocol { order_id, msg } => {
-                // TODO: sending to the setup actor should not be fallible
-                match self
-                    .setup_actors
-                    .send_fallible(&order_id, msg)
-                    .timeout(HANDLE_PROTOCOL_MESSAGE_TIMEOUT)
-                    .await
-                {
-                    Ok(Ok(Ok(()))) => (),
-                    Ok(Ok(Err(e))) => {
-                        tracing::warn!(%order_id, "Contract setup stale: Protocol message encountered an error {e:#}")
-                    }
-                    Ok(Err(NotConnected(_))) => {
-                        tracing::warn!(%order_id, "No active contract setup")
-                    }
-                    Err(_elapsed) => {
-                        tracing::warn!(%order_id, "Contract setup stale: Contract setup took too long to process {}", msg_name)
-                    }
+                if let Err(NotConnected(_)) = self.setup_actors.send_async(&order_id, msg).await {
+                    tracing::warn!(%order_id, "No active setup actor");
                 }
             }
             wire::MakerToTaker::InvalidOrderId(order_id) => {
-                // TODO: sending to the setup actor should not be fallible
-                match self
+                if let Err(NotConnected(_)) = self
                     .setup_actors
-                    .send_fallible(&order_id, setup_taker::Rejected::invalid_order_id())
-                    .timeout(HANDLE_CONTRACT_SETUP_TIMEOUT)
+                    .send_async(&order_id, setup_taker::Rejected::invalid_order_id())
                     .await
                 {
-                    Ok(Ok(Ok(()))) => (),
-                    Ok(Ok(Err(e))) => {
-                        tracing::warn!(%order_id, "Contract setup not started: Reject due to invalid order id encountered an error {e:#}")
-                    }
-                    Ok(Err(NotConnected(_))) => {
-                        tracing::warn!(%order_id, "No active contract setup")
-                    }
-                    Err(_elapsed) => {
-                        tracing::warn!(%order_id, "Contract setup not started: Contract setup took too long to process Reject due to invalid order id")
-                    }
+                    tracing::warn!(%order_id, "No active setup actor");
                 }
             }
             wire::MakerToTaker::Settlement { order_id, msg } => {
-                match self
+                if let Err(NotConnected(_)) = self
                     .collab_settlement_actors
                     .send_async(&order_id, msg)
                     .await
                 {
-                    Ok(_) => (),
-                    Err(NotConnected(_)) => {
-                        tracing::warn!(%order_id, "No active collaborative settlement")
-                    }
+                    tracing::warn!(%order_id, "No active collaborative settlement")
                 }
             }
             wire::MakerToTaker::ConfirmRollover {
@@ -536,7 +482,7 @@ impl Actor {
                 tx_fee_rate,
                 funding_rate,
             } => {
-                match self
+                if let Err(NotConnected(_)) = self
                     .rollover_actors
                     .send_async(
                         &order_id,
@@ -548,24 +494,22 @@ impl Actor {
                     )
                     .await
                 {
-                    Ok(_) => (),
-                    Err(NotConnected(_)) => tracing::warn!(%order_id, "No active rollover"),
+                    tracing::warn!(%order_id, "No active rollover");
                 }
             }
             wire::MakerToTaker::RejectRollover(order_id) => {
-                match self
+                if let Err(NotConnected(_)) = self
                     .rollover_actors
                     .send_async(&order_id, rollover_taker::RolloverRejected)
                     .await
                 {
-                    Ok(_) => (),
-                    Err(NotConnected(_)) => tracing::warn!(%order_id, "No active rollover"),
+                    tracing::warn!(%order_id, "No active rollover");
                 }
             }
             wire::MakerToTaker::RolloverProtocol { order_id, msg } => {
-                match self.rollover_actors.send_async(&order_id, msg).await {
-                    Ok(_) => (),
-                    Err(NotConnected(_)) => tracing::warn!(%order_id, "No active rollover"),
+                if let Err(NotConnected(_)) = self.rollover_actors.send_async(&order_id, msg).await
+                {
+                    tracing::warn!(%order_id, "No active rollover");
                 }
             }
             wire::MakerToTaker::CurrentOffers(maker_offers) => {

@@ -27,13 +27,10 @@ use tokio_tasks::Tasks;
 use tokio_util::codec::Framed;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
+use xtras::address_map::NotConnected;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
-
-const HANDLE_ROLLOVER_MESSAGE_TIMEOUT: Duration = Duration::from_secs(10);
-const HANDLE_SETTLEMENT_MESSAGE_TIMEOUT: Duration = Duration::from_secs(120);
-const HANDLE_PROTOCOL_MESSAGE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy)]
 pub struct BroadcastOffers(pub Option<MakerOffers>);
@@ -435,7 +432,9 @@ impl Actor {
                             msg,
                         })
                         .await
-                        .context("`maker_cfd::Actor` is disconnected")?;
+                        .context(
+                            "we are not connected to ourselves, this should really not happen",
+                        )?;
                     }
                 }
             },
@@ -494,40 +493,30 @@ impl Actor {
 
         use wire::TakerToMaker::*;
         match msg.msg {
-            Protocol { order_id, msg } => match self.setup_actors.get_connected(&order_id) {
-                Some(addr) => {
-                    let _ = addr
-                        .send(msg)
-                        .timeout(HANDLE_PROTOCOL_MESSAGE_TIMEOUT)
-                        .await;
+            Protocol { order_id, msg } => {
+                if let Err(NotConnected(_)) = self.setup_actors.send_async(&order_id, msg).await {
+                    tracing::warn!(%order_id, "No active setup actor");
                 }
-                None => {
-                    tracing::error!(%order_id, "No active contract setup");
-                }
-            },
+            }
             RolloverProtocol { order_id, msg } => {
-                if self
+                if let Err(NotConnected(_)) = self
                     .rollover_actors
-                    .send(&order_id, rollover_maker::ProtocolMsg(msg))
-                    .timeout(HANDLE_ROLLOVER_MESSAGE_TIMEOUT)
+                    .send_async(&order_id, rollover_maker::ProtocolMsg(msg))
                     .await
-                    .is_err()
                 {
-                    tracing::warn!(%order_id, "No active rollover actor")
+                    tracing::warn!(%order_id, "No active rollover actor");
                 }
             }
             Settlement {
                 order_id,
                 msg: taker_to_maker::Settlement::Initiate { sig_taker },
             } => {
-                if self
+                if let Err(NotConnected(_)) = self
                     .settlement_actors
-                    .send(&order_id, collab_settlement_maker::Initiated { sig_taker })
-                    .timeout(HANDLE_SETTLEMENT_MESSAGE_TIMEOUT)
+                    .send_async(&order_id, collab_settlement_maker::Initiated { sig_taker })
                     .await
-                    .is_err()
                 {
-                    tracing::warn!(%order_id, "No active settlement");
+                    tracing::warn!(%order_id, "No active settlement actor");
                 }
             }
             TakeOrder { .. }
