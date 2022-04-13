@@ -691,20 +691,14 @@ where
                     tracing::warn!("Failed to handle rollover proposal V2: {:#}", e);
                 }
             }
-            wire::TakerToMaker::RolloverProtocol { .. } => {
-                unreachable!("This kind of message should be sent to the rollover_maker::Actor`")
-            }
-            wire::TakerToMaker::Protocol { .. } => {
-                unreachable!("This kind of message should be sent to the `setup_maker::Actor`")
-            }
-            wire::TakerToMaker::Hello(_) => {
-                unreachable!("The Hello message is not sent to the cfd actor")
-            }
-            wire::TakerToMaker::HelloV2 { .. } => {
-                unreachable!("The HelloV2 message is not sent to the cfd actor")
-            }
-            wire::TakerToMaker::Unknown => {
-                // Ignore unknown message to be forwards-compatible.
+            wire::TakerToMaker::RolloverProtocol { .. }
+            | wire::TakerToMaker::Protocol { .. }
+            | wire::TakerToMaker::Hello(_)
+            | wire::TakerToMaker::HelloV2 { .. }
+            | wire::TakerToMaker::Unknown => {
+                if cfg!(debug_assertions) {
+                    unreachable!("Message {} is not dispatched to this actor", msg.name())
+                }
             }
         }
     }

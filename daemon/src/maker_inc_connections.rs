@@ -530,8 +530,23 @@ impl Actor {
                     tracing::warn!(%order_id, "No active settlement");
                 }
             }
-            _ => {
-                let _ = self.taker_msg_channel.send(msg);
+            TakeOrder { .. }
+            | ProposeRollover { .. }
+            | ProposeRolloverV2 { .. }
+            | Settlement {
+                order_id: _,
+                msg: taker_to_maker::Settlement::Propose { .. },
+            } => {
+                // dispatch to the maker cfd actor
+                let _ = self.taker_msg_channel.send_async_safe(msg).await;
+            }
+            Hello(_) | HelloV2 { .. } => {
+                if cfg!(debug_assertions) {
+                    unreachable!("Message {} is not dispatched to this actor", msg.msg.name())
+                }
+            }
+            Unknown => {
+                // Ignore unknown messages to be forwards-compatible.
             }
         }
     }
