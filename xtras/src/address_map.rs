@@ -51,13 +51,6 @@ where
         Ok(Disconnected { entry })
     }
 
-    pub fn get_connected(&self, key: &K) -> Option<&Address<A>> {
-        match self.inner.get(key) {
-            Some(addr) if addr.is_connected() => Some(addr),
-            _ => None,
-        }
-    }
-
     /// Garbage-collect addresses that are no longer active.
     fn gc(&mut self) {
         self.inner.retain(|_, candidate| candidate.is_connected());
@@ -93,21 +86,6 @@ where
             .map_err(|_| NotConnected::new::<A>())?;
 
         Ok(())
-    }
-
-    /// Sends a message to the actor stored with the given key.
-    pub async fn send_fallible<M>(&self, key: &K, msg: M) -> Result<Result<()>, NotConnected>
-    where
-        M: Message<Result = Result<()>>,
-        A: Handler<M> + ActorName,
-    {
-        let result = self
-            .get(key)?
-            .send(msg)
-            .await
-            .map_err(|_| NotConnected::new::<A>())?;
-
-        Ok(result)
     }
 
     fn get(&self, key: &K) -> Result<&Address<A>, NotConnected>

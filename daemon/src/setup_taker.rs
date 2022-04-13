@@ -73,18 +73,35 @@ impl Actor {
     fn is_accepted(&self) -> bool {
         self.setup_msg_sender.is_some()
     }
+
+    async fn forward_protocol_msg(&self, msg: wire::SetupMsg) -> Result<()> {
+        let mut sender = self
+            .setup_msg_sender
+            .clone()
+            .context("Cannot forward message to contract setup task")?;
+        sender.send(msg).await?;
+
+        Ok(())
+    }
 }
 
 #[xtra_productivity]
 impl Actor {
-    fn handle(&mut self, _: Accepted, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    fn handle(&mut self, _: Accepted, ctx: &mut xtra::Context<Self>) {
         let order_id = self.order_id;
         tracing::info!(%order_id, "Order got accepted");
 
-        let (setup_params, position) = self
+        let (setup_params, position) = match self
             .executor
             .execute(order_id, |cfd| cfd.start_contract_setup())
-            .await?;
+            .await
+        {
+            Ok(contract_setup) => contract_setup,
+            Err(e) => {
+                tracing::error!("Failed to handle accepting contract setup: {e}");
+                return;
+            }
+        };
 
         let (sender, receiver) = mpsc::unbounded();
         // store the writing end to forward messages from the maker to
@@ -111,11 +128,9 @@ impl Actor {
                 Err(error) => this.send(SetupFailed { error }).await,
             };
         });
-
-        Ok(())
     }
 
-    fn handle(&mut self, msg: Rejected, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    fn handle(&mut self, msg: Rejected, ctx: &mut xtra::Context<Self>) {
         let order_id = self.order_id;
         tracing::info!(%order_id, "Order got rejected");
 
@@ -134,18 +149,12 @@ impl Actor {
         }
 
         ctx.stop();
-
-        Ok(())
     }
 
-    fn handle(&mut self, msg: wire::SetupMsg) -> Result<()> {
-        let mut sender = self
-            .setup_msg_sender
-            .clone()
-            .context("Cannot forward message to contract setup task")?;
-        sender.send(msg).await?;
-
-        Ok(())
+    fn handle(&mut self, msg: wire::SetupMsg) {
+        if let Err(e) = self.forward_protocol_msg(msg).await {
+            tracing::error!("Failed to forward protocol message: {e:#}")
+        }
     }
 
     fn handle(&mut self, msg: SetupSucceeded, ctx: &mut xtra::Context<Self>) {
