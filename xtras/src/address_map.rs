@@ -51,13 +51,6 @@ where
         Ok(Disconnected { entry })
     }
 
-    pub fn get_connected(&self, key: &K) -> Option<&Address<A>> {
-        match self.inner.get(key) {
-            Some(addr) if addr.is_connected() => Some(addr),
-            _ => None,
-        }
-    }
-
     /// Garbage-collect addresses that are no longer active.
     fn gc(&mut self) {
         self.inner.retain(|_, candidate| candidate.is_connected());
