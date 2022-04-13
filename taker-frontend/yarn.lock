@@ -3623,10 +3623,10 @@ escodegen@^2.0.0:
   optionalDependencies:
     source-map "~0.6.1"
 
-eslint-config-react-app@^7.0.0:
-  version "7.0.0"
-  resolved "https://registry.yarnpkg.com/eslint-config-react-app/-/eslint-config-react-app-7.0.0.tgz#0fa96d5ec1dfb99c029b1554362ab3fa1c3757df"
-  integrity sha512-xyymoxtIt1EOsSaGag+/jmcywRuieQoA2JbPCjnw9HukFj9/97aGPoZVFioaotzk1K5Qt9sHO5EutZbkrAXS0g==
+eslint-config-react-app@^7.0.1:
+  version "7.0.1"
+  resolved "https://registry.yarnpkg.com/eslint-config-react-app/-/eslint-config-react-app-7.0.1.tgz#73ba3929978001c5c86274c017ea57eb5fa644b4"
+  integrity sha512-K6rNzvkIeHaTd8m/QEh1Zko0KI7BACWkkneSs6s9cKZC/J27X3eZR6Upt1jkmZ/4FK+XUOPPxMEN7+lbUXfSlA==
   dependencies:
     "@babel/core" "^7.16.0"
     "@babel/eslint-parser" "^7.16.3"
@@ -4000,9 +4000,9 @@ form-data@^3.0.0:
     mime-types "^2.1.12"
 
 framer-motion@^6:
-  version "6.2.9"
-  resolved "https://registry.yarnpkg.com/framer-motion/-/framer-motion-6.2.9.tgz#7de11140f57141ebaad4c99d6a492f00cb733d04"
-  integrity sha512-XMP4Z5j9KlGw8aeo7n8BXTJFbt1Vv5XRzHVOKiAna1yBG4SPwTdk/8bJRfztYb0Jmw90hzBTC/3Q2dhfdtXisQ==
+  version "6.2.10"
+  resolved "https://registry.yarnpkg.com/framer-motion/-/framer-motion-6.2.10.tgz#7fb300d4c559f0991be5499f99d055a04851fcb3"
+  integrity sha512-nfkpA5r3leVOYJH0YXV1cMOLNJuAoznR3Cswet5wCIDi7AZwS62N+u0EmGSNG1JHtglDo5erqyamc55M2XICvA==
   dependencies:
     framesync "6.0.1"
     hey-listen "^1.0.8"
