@@ -751,6 +751,18 @@ impl Cfd {
 
         in_open_state && not_expired
     }
+
+    fn is_closed(&self) -> bool {
+        if self.is_failed() {
+            // a failed position is not closed
+            return false;
+        }
+        !self.is_open()
+    }
+
+    fn is_failed(&self) -> bool {
+        self.state == CfdState::SetupFailed
+    }
 }
 
 /// Internal struct to keep all the senders around in one place
@@ -1607,6 +1619,8 @@ mod tests {
                 | CfdState::OutgoingRolloverProposal
                 | CfdState::RolloverSetup => {
                     assert!(cfd.is_open(), "CFD with state {:?} was not open", state);
+                    assert!(!cfd.is_closed(), "CFD with state {:?} was closed", state);
+                    assert!(!cfd.is_failed(), "CFD with state {:?} failed", state);
                 }
                 CfdState::PendingSetup
                 | CfdState::ContractSetup
@@ -1617,9 +1631,13 @@ mod tests {
                 | CfdState::PendingRefund
                 | CfdState::Refunded => {
                     assert!(!cfd.is_open(), "CFD with state {:?} was open", state);
+                    assert!(cfd.is_closed(), "CFD with state {:?} was not closed", state);
+                    assert!(!cfd.is_failed(), "CFD with state {:?} was failed", state);
                 }
                 CfdState::SetupFailed => {
                     assert!(!cfd.is_open(), "A failed CFD was open",);
+                    assert!(!cfd.is_closed(), "A failed CFD was closed");
+                    assert!(cfd.is_failed(), "A failed CFD was not failed");
                 }
             }
         }
@@ -1635,8 +1653,15 @@ mod tests {
                 OffsetDateTime::now_utc() - Duration::from_secs(5 * 60),
             );
             match state {
+                CfdState::SetupFailed => {
+                    assert!(!cfd.is_open(), "A failed but expired CFD was open",);
+                    assert!(!cfd.is_closed(), "A failed but expired CFD was closed");
+                    assert!(cfd.is_failed(), "A failed but expired CFD was not failed");
+                }
                 _ => {
                     assert!(!cfd.is_open(), "CFD with state {:?} was open", state);
+                    assert!(cfd.is_closed(), "CFD with state {:?} was not closed", state);
+                    assert!(!cfd.is_failed(), "CFD with state {:?} was failed", state);
                 }
             }
         }
