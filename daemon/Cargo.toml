@@ -35,6 +35,8 @@ sha2 = "0.10"
 snow = "0.9"
 sqlx = { version = "0.5", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
 statrs = "0.15"
+strum = "0.24"
+strum_macros = "0.24"
 thiserror = "1"
 time = { version = "0.3", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }

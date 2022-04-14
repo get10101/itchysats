@@ -729,6 +729,28 @@ impl Cfd {
 
         Some(url)
     }
+
+    fn is_open(&self) -> bool {
+        let in_open_state = vec![
+            CfdState::PendingOpen,
+            CfdState::Open,
+            CfdState::PendingCommit,
+            CfdState::OpenCommitted,
+            CfdState::IncomingRolloverProposal,
+            CfdState::IncomingSettlementProposal,
+            CfdState::OutgoingRolloverProposal,
+            CfdState::OutgoingSettlementProposal,
+            CfdState::RolloverSetup,
+        ]
+        .contains(&self.state);
+
+        let not_expired = match self.expiry_timestamp {
+            None => true,
+            Some(expiry_timestamp) => expiry_timestamp > OffsetDateTime::now_utc(),
+        };
+
+        in_open_state && not_expired
+    }
 }
 
 /// Internal struct to keep all the senders around in one place
@@ -1262,7 +1284,7 @@ impl TryFrom<Order> for CfdOrder {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(strum_macros::EnumIter, Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum CfdState {
     PendingSetup,
     ContractSetup,
@@ -1492,6 +1514,8 @@ impl fmt::Display for HourlyFundingPercent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
+    use strum::IntoEnumIterator;
 
     #[test]
     fn state_snapshot_test() {
@@ -1515,5 +1539,106 @@ mod tests {
         assert_eq!(json, "\"Refunded\"");
         let json = serde_json::to_string(&CfdState::SetupFailed).unwrap();
         assert_eq!(json, "\"SetupFailed\"");
+    }
+
+    fn new_cfd(state: CfdState, date: OffsetDateTime) -> Cfd {
+        Cfd {
+            order_id: Default::default(),
+            initial_price: Price::new(dec!(50_000)).expect("To be a valid price"),
+            accumulated_fees: SignedAmount::from_sat(10_000_000),
+            trading_pair: TradingPair::BtcUsd,
+            position: Position::Long,
+            liquidation_price: Price::new(dec!(50_000)).expect("To be a valid price"),
+            quantity_usd: Usd::new(dec!(100)),
+            margin: Default::default(),
+            margin_counterparty: Default::default(),
+            role: Role::Maker,
+            profit_btc: Default::default(),
+            profit_percent: None,
+            actions: HashSet::new(),
+            payout: None,
+            closing_price: None,
+            state,
+            details: CfdDetails {
+                tx_url_list: HashSet::new(),
+            },
+            expiry_timestamp: Some(date),
+            counterparty: model::Identity::from_str(
+                "f10142ad845f2b894df8fee088d1951e7da61cb75f142aca3e5fe77de1c8054a",
+            )
+            .expect("To be a valid identity"),
+            pending_settlement_proposal_price: None,
+            aggregated: Aggregated {
+                fee_account: FeeAccount::new(Position::Short, Role::Maker),
+                latest_dlc: None,
+                collab_settlement_tx: None,
+                cet: None,
+                timelocked_cet: None,
+                commit_published: false,
+                refund_published: false,
+                state,
+                rollover_state: None,
+                settlement_state: None,
+                version: 0,
+                creation_timestamp: Timestamp::new(1),
+            },
+            leverage_taker: Leverage::new(2).expect("To be a valid leverage"),
+            network: Network::Bitcoin,
+        }
+    }
+
+    #[test]
+    fn assert_non_expired_states() {
+        // we are doing this weird iterator because we want to ensure we are going through all
+        // possible cfd states
+        for state in CfdState::iter() {
+            let cfd = new_cfd(
+                state,
+                OffsetDateTime::now_utc() + Duration::from_secs(5 * 60),
+            );
+            match state {
+                CfdState::PendingOpen
+                | CfdState::Open
+                | CfdState::PendingCommit
+                | CfdState::OpenCommitted
+                | CfdState::IncomingSettlementProposal
+                | CfdState::OutgoingSettlementProposal
+                | CfdState::IncomingRolloverProposal
+                | CfdState::OutgoingRolloverProposal
+                | CfdState::RolloverSetup => {
+                    assert!(cfd.is_open(), "CFD with state {:?} was not open", state);
+                }
+                CfdState::PendingSetup
+                | CfdState::ContractSetup
+                | CfdState::Rejected
+                | CfdState::PendingCet
+                | CfdState::PendingClose
+                | CfdState::Closed
+                | CfdState::PendingRefund
+                | CfdState::Refunded => {
+                    assert!(!cfd.is_open(), "CFD with state {:?} was open", state);
+                }
+                CfdState::SetupFailed => {
+                    assert!(!cfd.is_open(), "A failed CFD was open",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn assert_with_expired_states() {
+        // we are doing this weird iterator because we want to ensure we are going through all
+        // possible cfd states
+        for state in CfdState::iter() {
+            let cfd = new_cfd(
+                state,
+                OffsetDateTime::now_utc() - Duration::from_secs(5 * 60),
+            );
+            match state {
+                _ => {
+                    assert!(!cfd.is_open(), "CFD with state {:?} was open", state);
+                }
+            }
+        }
     }
 }
