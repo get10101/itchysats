@@ -28,7 +28,6 @@ CREATE TABLE IF NOT EXISTS commit_txs (
     id integer PRIMARY KEY autoincrement,
     cfd_id integer NOT NULL,
     txid text NOT NULL,
-    vout integer NOT NULL,
     timestamp text NOT NULL,
     FOREIGN KEY (cfd_id) REFERENCES closed_cfds (id)
 );
