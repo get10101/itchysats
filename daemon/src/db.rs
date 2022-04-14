@@ -394,6 +394,10 @@ impl Connection {
     pub async fn move_to_closed_cfds(&self) -> Result<()> {
         let ids = self.closed_cfd_ids_according_to_the_blockchain().await?;
 
+        if !ids.is_empty() {
+            tracing::debug!("Moving CFDs to closed_cfds table: {ids:?}");
+        }
+
         ids.into_iter()
             .map(|id| {
                 let pool = self.inner.clone();
