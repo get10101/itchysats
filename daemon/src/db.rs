@@ -291,9 +291,12 @@ impl Connection {
             drop(conn);
 
             for id in ids {
-                let cfd = self.load_open_cfd(id, args.clone()).await?;
+                let open_cfd = self
+                    .load_open_cfd(id, args.clone())
+                    .await
+                    .with_context(|| format!("Failed to load open CFD {id}"))?;
 
-                yield cfd;
+                yield open_cfd;
             }
 
             let mut conn = self.inner.acquire().await?;
@@ -314,7 +317,10 @@ impl Connection {
             drop(conn);
 
             for id in ids {
-                let closed_cfd = self.load_closed_cfd(id, args.clone()).await?;
+                let closed_cfd = self
+                    .load_closed_cfd(id, args.clone())
+                    .await
+                    .with_context(|| format!("Failed to load closed CFD {id}"))?;
 
                 yield closed_cfd;
             }
