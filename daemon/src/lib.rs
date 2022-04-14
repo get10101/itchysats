@@ -31,6 +31,7 @@ pub use bdk;
 pub use maia;
 
 pub mod auto_rollover;
+pub mod cfd_metrics;
 mod close_cfds;
 pub mod collab_settlement_maker;
 pub mod collab_settlement_taker;

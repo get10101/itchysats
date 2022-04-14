@@ -1,3 +1,4 @@
+use crate::cfd_metrics::update_position_metrics;
 use crate::db;
 use crate::db::Settlement;
 use crate::Order;
@@ -730,7 +731,7 @@ impl Cfd {
         Some(url)
     }
 
-    fn is_open(&self) -> bool {
+    pub fn is_open(&self) -> bool {
         let in_open_state = vec![
             CfdState::PendingOpen,
             CfdState::Open,
@@ -752,7 +753,7 @@ impl Cfd {
         in_open_state && not_expired
     }
 
-    fn is_closed(&self) -> bool {
+    pub fn is_closed(&self) -> bool {
         if self.is_failed() {
             // a failed position is not closed
             return false;
@@ -760,7 +761,7 @@ impl Cfd {
         !self.is_open()
     }
 
-    fn is_failed(&self) -> bool {
+    pub fn is_failed(&self) -> bool {
         self.state == CfdState::SetupFailed
     }
 }
@@ -790,8 +791,9 @@ impl Tx {
                     &a.aggregated.creation_timestamp,
                 )
             })
-            .collect();
+            .collect::<Vec<_>>();
 
+        update_position_metrics(cfds_with_quote.as_slice());
         let _ = self.cfds.send(Some(cfds_with_quote));
     }
 
