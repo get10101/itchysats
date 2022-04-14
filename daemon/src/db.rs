@@ -7,11 +7,9 @@ use bdk::bitcoin::Script;
 use bdk::miniscript::DescriptorTrait;
 use chashmap_async::CHashMap;
 use futures::future::BoxFuture;
-use futures::stream::FuturesUnordered;
 use futures::FutureExt;
 use futures::Stream;
 use futures::StreamExt;
-use futures::TryStreamExt;
 use maia::TransactionExt;
 use model::CfdEvent;
 use model::Contracts;
@@ -394,60 +392,59 @@ impl Connection {
     pub async fn move_to_closed_cfds(&self) -> Result<()> {
         let ids = self.closed_cfd_ids_according_to_the_blockchain().await?;
 
-        ids.into_iter()
-            .map(|id| {
-                let pool = self.inner.clone();
-                async move {
-                    let mut conn = pool.acquire().await?;
-                    let mut db_tx = conn.begin().await?;
+        if !ids.is_empty() {
+            tracing::debug!("Moving CFDs to closed_cfds table: {ids:?}");
+        }
 
-                    let cfd = load_cfd_row(&mut db_tx, id).await?;
-                    let events = load_cfd_events(&mut db_tx, id, 0).await?;
-                    let event_log = EventLog::new(&events);
+        for id in ids.into_iter() {
+            let pool = self.inner.clone();
+            let fut = async move {
+                let mut conn = pool.acquire().await?;
+                let mut db_tx = conn.begin().await?;
 
-                    let closed_cfd = ClosedCfdInputAggregate::new(cfd);
-                    let closed_cfd = events
-                        .into_iter()
-                        .try_fold(closed_cfd, ClosedCfdInputAggregate::apply)?
-                        .build()?;
+                let cfd = load_cfd_row(&mut db_tx, id).await?;
+                let events = load_cfd_events(&mut db_tx, id, 0).await?;
+                let event_log = EventLog::new(&events);
 
-                    insert_closed_cfd(&mut db_tx, closed_cfd).await?;
-                    insert_event_log(&mut db_tx, id, event_log).await?;
+                let closed_cfd = ClosedCfdInputAggregate::new(cfd);
+                let closed_cfd = events
+                    .into_iter()
+                    .try_fold(closed_cfd, ClosedCfdInputAggregate::apply)?
+                    .build()?;
 
-                    if let Some(collaborative_settlement) = closed_cfd.collaborative_settlement {
-                        insert_collaborative_settlement_tx(
-                            &mut db_tx,
-                            id,
-                            collaborative_settlement,
-                        )
+                insert_closed_cfd(&mut db_tx, closed_cfd).await?;
+                insert_event_log(&mut db_tx, id, event_log).await?;
+
+                if let Some(collaborative_settlement) = closed_cfd.collaborative_settlement {
+                    insert_collaborative_settlement_tx(&mut db_tx, id, collaborative_settlement)
                         .await?;
-                    }
-
-                    if let Some(txid) = closed_cfd.commit {
-                        insert_commit_tx(&mut db_tx, id, txid).await?;
-                    }
-
-                    if let Some(non_collaborative_settlement) =
-                        closed_cfd.non_collaborative_settlement
-                    {
-                        insert_cet(&mut db_tx, id, non_collaborative_settlement).await?;
-                    }
-
-                    if let Some(refund) = closed_cfd.refund {
-                        insert_refund_tx(&mut db_tx, id, refund).await?;
-                    }
-
-                    delete_from_events_table(&mut db_tx, id).await?;
-                    delete_from_cfds_table(&mut db_tx, id).await?;
-
-                    db_tx.commit().await?;
-
-                    anyhow::Ok(())
                 }
-            })
-            .collect::<FuturesUnordered<_>>()
-            .try_collect::<Vec<_>>()
-            .await?;
+
+                if let Some(txid) = closed_cfd.commit {
+                    insert_commit_tx(&mut db_tx, id, txid).await?;
+                }
+
+                if let Some(non_collaborative_settlement) = closed_cfd.non_collaborative_settlement
+                {
+                    insert_cet(&mut db_tx, id, non_collaborative_settlement).await?;
+                }
+
+                if let Some(refund) = closed_cfd.refund {
+                    insert_refund_tx(&mut db_tx, id, refund).await?;
+                }
+
+                delete_from_events_table(&mut db_tx, id).await?;
+                delete_from_cfds_table(&mut db_tx, id).await?;
+
+                db_tx.commit().await?;
+
+                anyhow::Ok(())
+            };
+
+            if let Err(e) = fut.await {
+                tracing::warn!(order_id = %id, "Failed to move closed CFD: {e:#}");
+            }
+        }
 
         Ok(())
     }
