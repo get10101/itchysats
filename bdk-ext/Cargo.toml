@@ -7,4 +7,4 @@ edition = "2021"
 anyhow = "1"
 bdk = { version = "0.16", default-features = false }
 rand = "0.6"
-secp256k1 = { version = "0.20", features = ["rand", "global-context-less-secure"] }
+secp256k1 = { version = "0.22", features = ["rand", "global-context-less-secure"] }
