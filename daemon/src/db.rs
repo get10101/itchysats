@@ -291,9 +291,12 @@ impl Connection {
             drop(conn);
 
             for id in ids {
-                let cfd = self.load_open_cfd(id, args.clone()).await?;
+                let open_cfd = self
+                    .load_open_cfd(id, args.clone())
+                    .await
+                    .with_context(|| format!("Failed to load open CFD {id}"))?;
 
-                yield cfd;
+                yield open_cfd;
             }
 
             let mut conn = self.inner.acquire().await?;
@@ -314,7 +317,10 @@ impl Connection {
             drop(conn);
 
             for id in ids {
-                let closed_cfd = self.load_closed_cfd(id, args.clone()).await?;
+                let closed_cfd = self
+                    .load_closed_cfd(id, args.clone())
+                    .await
+                    .with_context(|| format!("Failed to load closed CFD {id}"))?;
 
                 yield closed_cfd;
             }
@@ -1090,7 +1096,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
 /// The version of a CFD is the number of events that have been applied. If we have an aggregate
 /// instance in version 3, we can avoid loading the first 3 events and only apply the ones after.
 async fn load_cfd_events(
-    conn: &mut Transaction<'_, Sqlite>, // TODO: I failed to use the sqlx::Executor trait
+    conn: &mut Transaction<'_, Sqlite>,
     id: OrderId,
     from_version: u32,
 ) -> Result<Vec<CfdEvent>> {
