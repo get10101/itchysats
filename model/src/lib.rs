@@ -899,6 +899,152 @@ impl str::FromStr for TxFeeRate {
 
 impl_sqlx_type_display_from_str!(TxFeeRate);
 
+#[derive(Debug, Clone, Copy)]
+pub struct Txid(bdk::bitcoin::Txid);
+
+impl Txid {
+    pub fn new(txid: bdk::bitcoin::Txid) -> Self {
+        Self(txid)
+    }
+}
+
+impl fmt::Display for Txid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl str::FromStr for Txid {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let txid = bdk::bitcoin::Txid::from_str(s)?;
+        Ok(Self(txid))
+    }
+}
+
+impl From<Txid> for bdk::bitcoin::Txid {
+    fn from(txid: Txid) -> Self {
+        txid.0
+    }
+}
+
+impl_sqlx_type_display_from_str!(Txid);
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct Vout(u32);
+
+impl Vout {
+    pub fn new(vout: u32) -> Self {
+        Self(vout)
+    }
+}
+
+impl From<Vout> for u32 {
+    fn from(vout: Vout) -> Self {
+        vout.0
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Fees(SignedAmount);
+
+impl Fees {
+    pub fn new(fees: SignedAmount) -> Self {
+        Self(fees)
+    }
+}
+
+impl From<Fees> for SignedAmount {
+    fn from(fees: Fees) -> Self {
+        fees.0
+    }
+}
+
+impl TryFrom<i64> for Fees {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        Ok(Self::new(SignedAmount::from_sat(value)))
+    }
+}
+
+impl From<&Fees> for i64 {
+    fn from(fees: &Fees) -> Self {
+        fees.0.as_sat() as i64
+    }
+}
+
+impl_sqlx_type_integer!(Fees);
+
+/// The number of contracts per position.
+#[derive(Debug, Clone, Copy)]
+pub struct Contracts(u64);
+
+impl Contracts {
+    pub fn new(contracts: u64) -> Self {
+        Self(contracts)
+    }
+}
+
+impl From<Contracts> for u64 {
+    fn from(contracts: Contracts) -> Self {
+        contracts.0
+    }
+}
+
+impl TryFrom<i64> for Contracts {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        let contracts = u64::try_from(value)?;
+
+        Ok(Self::new(contracts))
+    }
+}
+
+impl From<&Contracts> for i64 {
+    fn from(contracts: &Contracts) -> Self {
+        contracts.0 as i64
+    }
+}
+
+impl_sqlx_type_integer!(Contracts);
+
+#[derive(Debug, Clone, Copy)]
+pub struct Payout(Amount);
+
+impl Payout {
+    pub fn new(payout: Amount) -> Self {
+        Self(payout)
+    }
+}
+
+impl From<Payout> for SignedAmount {
+    fn from(payout: Payout) -> Self {
+        payout.0.to_signed().expect("Amount to fit in SignedAmount")
+    }
+}
+
+impl TryFrom<i64> for Payout {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        let sats = u64::try_from(value)?;
+
+        Ok(Self::new(Amount::from_sat(sats)))
+    }
+}
+
+impl From<&Payout> for i64 {
+    fn from(payout: &Payout) -> Self {
+        payout.0.as_sat() as i64
+    }
+}
+
+impl_sqlx_type_integer!(Payout);
+
 #[cfg(test)]
 mod tests {
     use super::*;

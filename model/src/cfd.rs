@@ -501,6 +501,45 @@ impl EventKind {
     }
 }
 
+impl fmt::Display for EventKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use EventKind::*;
+        let s = match self {
+            ContractSetupStarted => "ContractSetupStarted",
+            ContractSetupCompleted { .. } => "ContractSetupCompleted",
+            ContractSetupFailed => "ContractSetupFailed",
+            OfferRejected => "OfferRejected",
+            RolloverStarted => "RolloverStarted",
+            RolloverAccepted => "RolloverAccepted",
+            RolloverRejected => "RolloverRejected",
+            RolloverCompleted { .. } => "RolloverCompleted",
+            RolloverFailed => "RolloverFailed",
+            CollaborativeSettlementStarted { .. } => "CollaborativeSettlementStarted",
+            CollaborativeSettlementProposalAccepted => "CollaborativeSettlementProposalAccepted",
+            CollaborativeSettlementCompleted { .. } => "CollaborativeSettlementCompleted",
+            CollaborativeSettlementRejected => "CollaborativeSettlementRejected",
+            CollaborativeSettlementFailed => "CollaborativeSettlementFailed",
+            LockConfirmed => "LockConfirmed",
+            LockConfirmedAfterFinality => "LockConfirmedAfterFinality",
+            CommitConfirmed => "CommitConfirmed",
+            CetConfirmed => "CetConfirmed",
+            RefundConfirmed => "RefundConfirmed",
+            RevokeConfirmed => "RevokeConfirmed",
+            CollaborativeSettlementConfirmed => "CollaborativeSettlementConfirmed",
+            CetTimelockExpiredPriorOracleAttestation => "CetTimelockExpiredPriorOracleAttestation",
+            CetTimelockExpiredPostOracleAttestation { .. } => {
+                "CetTimelockExpiredPostOracleAttestation"
+            }
+            RefundTimelockExpired { .. } => "RefundTimelockExpired",
+            OracleAttestedPriorCetTimelock { .. } => "OracleAttestedPriorCetTimelock",
+            OracleAttestedPostCetTimelock { .. } => "OracleAttestedPostCetTimelock",
+            ManualCommit { .. } => "ManualCommit",
+        };
+
+        s.fmt(f)
+    }
+}
+
 // Deserialisation of events has been proved to use substantial amount of the CPU.
 // Cache the events.
 #[cached(size = 500, result = true)]

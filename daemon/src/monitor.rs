@@ -30,7 +30,11 @@ use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
-const FINALITY_CONFIRMATIONS: u32 = 1;
+const LOCK_FINALITY_CONFIRMATIONS: u32 = 1;
+const CLOSE_FINALITY_CONFIRMATIONS: u32 = 3;
+const COMMIT_FINALITY_CONFIRMATIONS: u32 = 1;
+const CET_FINALITY_CONFIRMATIONS: u32 = 3;
+const REFUND_FINALITY_CONFIRMATIONS: u32 = 3;
 
 pub struct StartMonitoring {
     pub id: OrderId,
@@ -348,7 +352,7 @@ impl Actor {
         self.state.monitor(
             params.lock.0,
             params.lock.1.script_pubkey(),
-            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            ScriptStatus::with_confirmations(LOCK_FINALITY_CONFIRMATIONS),
             Event::LockFinality(order_id),
         )
     }
@@ -357,7 +361,7 @@ impl Actor {
         self.state.monitor(
             params.commit.0,
             params.commit.1.script_pubkey(),
-            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            ScriptStatus::with_confirmations(COMMIT_FINALITY_CONFIRMATIONS),
             Event::CommitFinality(order_id),
         )
     }
@@ -366,7 +370,7 @@ impl Actor {
         self.state.monitor(
             close_params.0,
             close_params.1,
-            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            ScriptStatus::with_confirmations(CLOSE_FINALITY_CONFIRMATIONS),
             Event::CloseFinality(order_id),
         );
     }
@@ -375,7 +379,7 @@ impl Actor {
         self.state.monitor(
             close_params.0,
             close_params.1,
-            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            ScriptStatus::with_confirmations(CET_FINALITY_CONFIRMATIONS),
             Event::CetFinality(order_id),
         );
     }
@@ -402,7 +406,7 @@ impl Actor {
         self.state.monitor(
             params.refund.0,
             params.refund.1.clone(),
-            ScriptStatus::with_confirmations(FINALITY_CONFIRMATIONS),
+            ScriptStatus::with_confirmations(REFUND_FINALITY_CONFIRMATIONS),
             Event::RefundFinality(order_id),
         );
     }

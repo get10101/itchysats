@@ -28,7 +28,7 @@ impl Executor {
     ) -> Result<T::Rest> {
         let cfd = self
             .db
-            .load_cfd(id, ())
+            .load_open_cfd(id, ())
             .await
             .context("Failed to load CFD")?;
 
