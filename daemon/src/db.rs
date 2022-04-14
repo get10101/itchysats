@@ -1090,7 +1090,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
 /// The version of a CFD is the number of events that have been applied. If we have an aggregate
 /// instance in version 3, we can avoid loading the first 3 events and only apply the ones after.
 async fn load_cfd_events(
-    conn: &mut Transaction<'_, Sqlite>, // TODO: I failed to use the sqlx::Executor trait
+    conn: &mut Transaction<'_, Sqlite>,
     id: OrderId,
     from_version: u32,
 ) -> Result<Vec<CfdEvent>> {
