@@ -8,13 +8,14 @@ use libp2p_core::identity::Keypair;
 use libp2p_core::Multiaddr;
 use libp2p_core::PeerId;
 use libp2p_tcp::TokioTcpConfig;
-use libp2p_xtra::Connect;
+use libp2p_xtra::dialer;
 use libp2p_xtra::Endpoint;
 use libp2p_xtra::OpenSubstream;
 use std::time::Duration;
 use tokio::time::sleep;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
+use xtras::supervisor;
 
 #[derive(Parser)]
 struct Opts {
@@ -37,11 +38,17 @@ async fn main() -> Result<()> {
         .create(None)
         .spawn_global();
 
-    endpoint_addr
-        .send(Connect(opts.multiaddr.clone()))
-        .await
-        .unwrap()
-        .unwrap();
+    let dialer_constructor = {
+        let connect_addr = opts.multiaddr.clone();
+        let endpoint_addr = endpoint_addr.clone();
+        move || dialer::Actor::new(endpoint_addr.clone(), connect_addr.clone())
+    };
+
+    let (supervisor, _dialer_actor) = supervisor::Actor::with_policy(
+        dialer_constructor,
+        |_: &dialer::Error| true, // always restart dialer actor
+    );
+    let _dialer_supervisor = supervisor.create(None).spawn_global();
 
     sleep(Duration::from_secs(1)).await;
 
