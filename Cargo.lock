@@ -254,6 +254,24 @@ dependencies = [
  "async-trait",
  "bdk-macros",
  "bitcoin",
+ "js-sys",
+ "log",
+ "miniscript",
+ "rand 0.7.3",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "bdk"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00fa2bcfe9debe57f32285ef56cb218b2e0dbf91e476ad22f61a745d4c032a18"
+dependencies = [
+ "async-trait",
+ "bdk-macros",
+ "bitcoin",
  "electrum-client",
  "js-sys",
  "log",
@@ -269,7 +287,7 @@ name = "bdk-ext"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bdk",
+ "bdk 0.17.0",
  "rand 0.6.5",
  "secp256k1",
 ]
@@ -740,7 +758,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
- "bdk",
+ "bdk 0.17.0",
  "bdk-ext",
  "btsieve",
  "bytes",
@@ -1782,7 +1800,7 @@ version = "0.1.0"
 source = "git+https://github.com/comit-network/maia#896d49ee340fc57f0ae441b979abf8aa45249085"
 dependencies = [
  "anyhow",
- "bdk",
+ "bdk 0.16.1",
  "bit-vec",
  "itertools",
  "rand 0.6.5",
@@ -1922,7 +1940,7 @@ name = "model"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bdk",
+ "bdk 0.17.0",
  "bdk-ext",
  "cached",
  "conquer-once",
