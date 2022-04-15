@@ -18,6 +18,7 @@ use model::Price;
 use model::Role;
 use model::TxFeeRate;
 use model::Usd;
+use seed::Identities;
 use std::net::SocketAddr;
 use std::time::Duration;
 use time::ext::NumericalDuration;
@@ -93,7 +94,7 @@ where
         settlement_interval: time::Duration,
         n_payouts: usize,
         projection_actor: Address<projection::Actor>,
-        identity: x25519_dalek::StaticSecret,
+        identity: Identities,
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
     ) -> Result<Self>
@@ -143,7 +144,7 @@ where
             Box::new(cfd_actor_addr.clone()),
             Box::new(cfd_actor_addr.clone()),
             Box::new(cfd_actor_addr.clone()),
-            identity,
+            identity.identity_sk,
             heartbeat_interval,
             p2p_socket,
         )));
@@ -296,7 +297,7 @@ where
         db: db::Connection,
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
-        identity_sk: x25519_dalek::StaticSecret,
+        identity: Identities,
         oracle_constructor: impl FnOnce(command::Executor) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         price_feed_constructor: impl (Fn() -> P) + Send + 'static,
@@ -370,7 +371,7 @@ where
         tasks.add(connection_actor_ctx.run(connection::Actor::new(
             maker_online_status_feed_sender,
             &cfd_actor_addr,
-            identity_sk,
+            identity.identity_sk,
             taker_heartbeat_timeout,
             connect_timeout,
         )));

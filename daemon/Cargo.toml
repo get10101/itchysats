@@ -19,6 +19,8 @@ derivative = "2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 hkdf = "0.12"
 itertools = "0.10"
+libp2p-core = { version = "0.32", default-features = false }
+libp2p-noise = "0.35"
 maia = "0.1.0"
 model = { path = "../model" }
 parse-display = "0.5.5"
