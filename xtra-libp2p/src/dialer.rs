@@ -46,6 +46,9 @@ impl Actor {
             .await
             .map_err(|_| Error::NoEndpoint)?;
 
+        dbg!(&listen_addresses);
+        dbg!(&self.connect_address);
+
         listen_addresses
             .contains(&self.connect_address)
             .then(|| ())

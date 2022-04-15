@@ -45,6 +45,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use xtra::Actor;
 use xtra_bitmex_price_feed::Quote;
+use xtra_libp2p::create_connect_tcp_multiaddr;
+use xtra_libp2p::libp2p::PeerId;
 
 pub mod flow;
 pub mod maia;
@@ -59,7 +61,13 @@ fn oracle_pk() -> schnorrsig::PublicKey {
 
 pub async fn start_both() -> (Maker, Taker) {
     let maker = Maker::start(&MakerConfig::default()).await;
-    let taker = Taker::start(&TakerConfig::default(), maker.listen_addr, maker.identity).await;
+    let taker = Taker::start(
+        &TakerConfig::default(),
+        maker.listen_addr,
+        maker.identity,
+        maker.peer_id,
+    )
+    .await;
     (maker, taker)
 }
 
@@ -135,6 +143,7 @@ pub struct Maker {
     pub feeds: Feeds,
     pub listen_addr: SocketAddr,
     pub identity: Identity,
+    pub peer_id: PeerId,
     _tasks: Tasks,
 }
 
@@ -231,6 +240,7 @@ impl Maker {
             listen_addr: address,
             mocks,
             _tasks: tasks,
+            peer_id: identities.peer_id(),
         }
     }
 
@@ -291,6 +301,7 @@ impl Taker {
         config: &TakerConfig,
         maker_address: SocketAddr,
         maker_identity: Identity,
+        maker_peer_id: PeerId,
     ) -> Self {
         let identities = config.seed.derive_identities();
 
@@ -307,6 +318,9 @@ impl Taker {
 
         let mut oracle_mock = None;
         let mut monitor_mock = None;
+
+        let maker_multiaddr = create_connect_tcp_multiaddr(&maker_address, maker_peer_id)
+            .expect("to be able to construct Multiaddr");
 
         let taker = daemon::TakerActorSystem::new(
             db.clone(),
@@ -331,6 +345,7 @@ impl Taker {
             Duration::from_secs(10),
             projection_actor,
             maker_identity,
+            maker_multiaddr,
         )
         .unwrap();
 
