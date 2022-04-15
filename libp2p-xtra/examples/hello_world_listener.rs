@@ -7,8 +7,8 @@ use futures::StreamExt;
 use libp2p_core::identity::Keypair;
 use libp2p_core::Multiaddr;
 use libp2p_tcp::TokioTcpConfig;
+use libp2p_xtra::listener;
 use libp2p_xtra::Endpoint;
-use libp2p_xtra::ListenOn;
 use libp2p_xtra::NewInboundSubstream;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -17,6 +17,7 @@ use tracing::Level;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra_productivity::xtra_productivity;
+use xtras::supervisor;
 
 // Listen on TCP
 
@@ -63,14 +64,16 @@ async fn main() -> Result<()> {
 
     let endpoint_listen = multiaddr_str.parse::<Multiaddr>().unwrap();
 
-    // TODO: Use Listener actor to ensure continuous listening for dialers
-    #[allow(clippy::disallowed_method)]
-    tokio::spawn(async move {
-        endpoint_addr
-            .send(ListenOn(endpoint_listen.clone()))
-            .await
-            .unwrap()
-    });
+    let listener_constructor = move || {
+        let endpoint_listen = endpoint_listen.clone();
+        let endpoint_addr = endpoint_addr.clone();
+        listener::Actor::new(endpoint_addr, endpoint_listen)
+    };
+    let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
+        listener_constructor,
+        |_: &listener::Error| true, // always restart listener actor
+    );
+    let _listener_supervisor = supervisor.create(None).spawn_global();
 
     sleep(Duration::from_secs(opts.duration_secs)).await;
 
