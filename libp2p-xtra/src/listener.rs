@@ -3,7 +3,6 @@ use crate::Endpoint;
 use crate::GetConnectionStats;
 use crate::ListenOn;
 use anyhow::anyhow;
-use anyhow::Result;
 use async_trait::async_trait;
 use libp2p_core::Multiaddr;
 use std::time::Duration;
@@ -37,7 +36,9 @@ impl Actor {
         }
     }
 
-    async fn check_connection_active_in_endpoint(&self) -> Result<()> {
+    /// Returns error if we cannot access Endpoint or the listener address is not
+    /// present inside Endpoint.
+    async fn check_connection_active_in_endpoint(&self) -> Result<(), Error> {
         let ConnectionStats {
             listen_addresses, ..
         } = self
@@ -49,7 +50,7 @@ impl Actor {
         listen_addresses
             .contains(&self.listen_address)
             .then(|| ())
-            .ok_or_else(|| anyhow!("Listener address not active in Endpoint"))
+            .ok_or(Error::ConnectionDropped)
     }
 }
 
@@ -88,8 +89,8 @@ impl Actor {
     }
 
     async fn handle(&mut self, _msg: CheckConnection, ctx: &mut xtra::Context<Self>) {
-        if self.check_connection_active_in_endpoint().await.is_err() {
-            self.stop_reason = Some(Error::ConnectionDropped);
+        if let Err(e) = self.check_connection_active_in_endpoint().await {
+            self.stop_reason = Some(e);
             ctx.stop();
         }
     }
