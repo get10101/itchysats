@@ -182,7 +182,7 @@ impl Maker {
 
         let settlement_interval = SETTLEMENT_INTERVAL;
 
-        let (identity_pk, identity_sk) = config.seed.derive_identity();
+        let identities = config.seed.derive_identities();
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
@@ -208,7 +208,7 @@ impl Maker {
             settlement_interval,
             config.n_payouts,
             projection_actor,
-            identity_sk,
+            identities.clone(),
             config.heartbeat_interval,
             address,
         )
@@ -227,7 +227,7 @@ impl Maker {
         Self {
             system: maker,
             feeds,
-            identity: model::Identity::new(identity_pk),
+            identity: model::Identity::new(identities.identity_pk),
             listen_addr: address,
             mocks,
             _tasks: tasks,
@@ -292,7 +292,7 @@ impl Taker {
         maker_address: SocketAddr,
         maker_identity: Identity,
     ) -> Self {
-        let (identity_pk, identity_sk) = config.seed.derive_identity();
+        let identities = config.seed.derive_identities();
 
         let db = db::memory().await.unwrap();
 
@@ -312,7 +312,7 @@ impl Taker {
             db.clone(),
             wallet_addr,
             config.oracle_pk,
-            identity_sk,
+            identities.clone(),
             |executor| {
                 let (oracle, mock) = OracleActor::new(executor);
                 oracle_mock = Some(mock);
@@ -353,7 +353,7 @@ impl Taker {
         ));
 
         Self {
-            id: model::Identity::new(identity_pk),
+            id: model::Identity::new(identities.identity_pk),
             system: taker,
             feeds,
             mocks,

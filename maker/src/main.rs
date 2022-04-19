@@ -191,11 +191,12 @@ async fn main() -> Result<()> {
     let auth_username = rocket_basicauth::Username("itchysats");
     let auth_password = seed.derive_auth_password::<rocket_basicauth::Password>();
 
-    let (identity_pk, identity_sk) = seed.derive_identity();
+    let identities = seed.derive_identities();
 
-    let hex_pk = hex::encode(identity_pk.to_bytes());
+    let peer_id = identities.peer_id();
+    let hex_pk = hex::encode(identities.identity_pk.to_bytes());
     tracing::info!(
-        "Authentication details: username='{auth_username}' password='{auth_password}', noise_public_key='{hex_pk}'",
+        "Authentication details: username='{auth_username}' password='{auth_password}', noise_public_key='{hex_pk}', peer_id='{peer_id}'",
     );
 
     let figment = rocket::Config::figment()
@@ -226,7 +227,7 @@ async fn main() -> Result<()> {
         SETTLEMENT_INTERVAL,
         N_PAYOUTS,
         projection_actor.clone(),
-        identity_sk,
+        identities,
         HEARTBEAT_INTERVAL,
         p2p_socket,
     )?;
