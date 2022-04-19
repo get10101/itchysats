@@ -1679,9 +1679,18 @@ mod tests {
         db.move_to_closed_cfds().await.unwrap();
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
+        let load_from_events = {
+            let mut conn = db.inner.acquire().await.unwrap();
+            let mut db_tx = conn.begin().await.unwrap();
+            let res = load_cfd_events(&mut db_tx, order_id, 0).await.unwrap();
+            db_tx.commit().await.unwrap();
+
+            res
+        };
         let load_from_closed = db.load_closed_cfd::<DummyAggregate>(order_id, ()).await;
 
         assert!(load_from_open.is_err());
+        assert!(load_from_events.is_empty());
         assert!(load_from_closed.is_ok());
     }
 
@@ -1704,9 +1713,18 @@ mod tests {
         db.move_to_closed_cfds().await.unwrap();
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
+        let load_from_events = {
+            let mut conn = db.inner.acquire().await.unwrap();
+            let mut db_tx = conn.begin().await.unwrap();
+            let res = load_cfd_events(&mut db_tx, order_id, 0).await.unwrap();
+            db_tx.commit().await.unwrap();
+
+            res
+        };
         let load_from_closed = db.load_closed_cfd::<DummyAggregate>(order_id, ()).await;
 
         assert!(load_from_open.is_ok());
+        assert_eq!(load_from_events.len(), 2);
         assert!(load_from_closed.is_err());
     }
 
