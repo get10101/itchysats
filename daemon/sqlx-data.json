@@ -42,16 +42,6 @@
     },
     "query": "\n        SELECT\n            txid as \"txid: model::Txid\",\n            vout as \"vout: model::Vout\",\n            payout as \"payout: model::Payout\",\n            price as \"price: model::Price\",\n            timestamp as \"timestamp: model::Timestamp\"\n        FROM\n            cets\n        JOIN\n            closed_cfds c on c.id = cets.cfd_id\n        WHERE\n            c.uuid = $1\n        "
   },
-  "16d1dd8c374c41c479594214f1bc927759195f743d17f489d328040bb2a66b5f": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 2
-      }
-    },
-    "query": "\n        INSERT INTO commit_txs\n        (\n            cfd_id,\n            txid\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2\n        )\n        "
-  },
   "1d4eb923917f299cba01fcdbb9c2a4b976432168fea82dc5e5d33d36dcddb5f0": {
     "describe": {
       "columns": [
@@ -359,6 +349,16 @@
       }
     },
     "query": "\n        SELECT\n            txid as \"txid: model::Txid\"\n        FROM\n            commit_txs\n        JOIN\n            closed_cfds c on c.id = commit_txs.cfd_id\n        WHERE\n            c.uuid = $1\n        "
+  },
+  "d3a51f7762c6fbff6ca6d8d29664a2bfd3b66386226b20e289ebe625f8383551": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 3
+      }
+    },
+    "query": "\n        INSERT INTO commit_txs\n        (\n            cfd_id,\n            txid,\n            timestamp\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2,\n            $3\n        )\n        "
   },
   "da7431dcc9aa5d799bf29bef7fb6a8b31469fb2deb4eab99a518f03f79eabbf4": {
     "describe": {
