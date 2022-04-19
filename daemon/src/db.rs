@@ -420,8 +420,8 @@ impl Connection {
                         .await?;
                 }
 
-                if let Some(txid) = closed_cfd.commit {
-                    insert_commit_tx(&mut db_tx, id, txid).await?;
+                if let Some(commit) = closed_cfd.commit {
+                    insert_commit_tx(&mut db_tx, id, commit).await?;
                 }
 
                 if let Some(non_collaborative_settlement) = closed_cfd.non_collaborative_settlement
@@ -694,7 +694,7 @@ struct ClosedCfdInput {
     expiry_timestamp: OffsetDateTime,
     lock: LockInput,
     collaborative_settlement: Option<CollaborativeSettlement>,
-    commit: Option<Txid>,
+    commit: Option<Commit>,
     non_collaborative_settlement: Option<Cet>,
     refund: Option<Refund>,
 }
@@ -717,7 +717,7 @@ struct ClosedCfdInputAggregate {
     own_script_pubkey: Option<Script>,
     expiry_timestamp: Option<OffsetDateTime>,
     lock: Option<LockInput>,
-    commit: Option<Txid>,
+    commit: Option<Commit>,
     collaborative_settlement: Option<CollaborativeSettlement>,
     cet: Option<Cet>,
     refund: Option<Refund>,
@@ -736,6 +736,12 @@ struct CollaborativeSettlement {
     vout: Vout,
     payout: Payout,
     price: Price,
+    timestamp: Timestamp,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Commit {
+    txid: Txid,
     timestamp: Timestamp,
 }
 
@@ -910,7 +916,10 @@ impl ClosedCfdInputAggregate {
                 commit_tx,
                 price,
             } => {
-                self.commit = commit_tx.map(|tx| Txid::new(tx.txid()));
+                self.commit = commit_tx.map(|tx| Commit {
+                    txid: Txid::new(tx.txid()),
+                    timestamp: event.timestamp,
+                });
 
                 let own_script_pubkey = self
                     .own_script_pubkey
@@ -963,7 +972,12 @@ impl ClosedCfdInputAggregate {
                     timestamp: event.timestamp,
                 })
             }
-            ManualCommit { tx } => self.commit = Some(Txid::new(tx.txid())),
+            ManualCommit { tx } => {
+                self.commit = Some(Commit {
+                    txid: Txid::new(tx.txid()),
+                    timestamp: event.timestamp,
+                });
+            }
         }
 
         Ok(self)
@@ -1223,23 +1237,26 @@ async fn insert_collaborative_settlement_tx(
 async fn insert_commit_tx(
     conn: &mut Transaction<'_, Sqlite>,
     id: OrderId,
-    txid: Txid,
+    Commit { txid, timestamp }: Commit,
 ) -> Result<()> {
     let query_result = sqlx::query!(
         r#"
         INSERT INTO commit_txs
         (
             cfd_id,
-            txid
+            txid,
+            timestamp
         )
         VALUES
         (
             (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
-            $2
+            $2,
+            $3
         )
         "#,
         id,
         txid,
+        timestamp
     )
     .execute(&mut *conn)
     .await?;
