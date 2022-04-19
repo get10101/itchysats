@@ -14,7 +14,6 @@ use model::FundingRate;
 use model::Identity;
 use model::OpeningFee;
 use model::OrderId;
-use model::Position;
 use model::Price;
 use model::TxFeeRate;
 use model::Usd;
@@ -100,57 +99,6 @@ pub async fn maker_feed(
             }
         }
     }
-}
-
-// TODO: Delete after upgrading automation to prefer /offer endpoint
-/// The maker POSTs this to set the offer params
-#[derive(Debug, Clone, Deserialize)]
-pub struct CfdNewOfferParamsRequestDeprecated {
-    #[serde(rename = "price")]
-    // TODO: Make this Option<Price> when we don't want to create other side
-    pub price_short: Price,
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
-    pub tx_fee_rate: Option<TxFeeRate>,
-    /// The current _daily_ funding rate for the maker's long position
-    pub daily_funding_rate_long: Option<FundingRate>,
-    /// The current _daily_ funding rate for the maker's short position
-    #[serde(rename = "funding_rate")]
-    pub daily_funding_rate_short: Option<FundingRate>,
-    // TODO: This is not inline with other parts of the API! We should not expose internal types
-    // here. We have to specify sats for here because of that.
-    pub opening_fee: Option<OpeningFee>,
-    // TODO: Remove this after turning off legacy maker
-    pub position: Option<Position>,
-    pub price_long: Option<Price>,
-}
-
-// TODO: Delete after upgrading automation to prefer /offer endpoint
-#[rocket::post("/order/sell", data = "<offer_params>")]
-pub async fn post_sell_order(
-    offer_params: Json<CfdNewOfferParamsRequestDeprecated>,
-    maker: &State<Maker>,
-    _auth: Authenticated,
-) -> Result<(), HttpApiProblem> {
-    maker
-        .set_offer_params(
-            offer_params.price_long,
-            Some(offer_params.price_short),
-            offer_params.min_quantity,
-            offer_params.max_quantity,
-            offer_params.tx_fee_rate.unwrap_or_default(),
-            offer_params.daily_funding_rate_long.unwrap_or_default(),
-            offer_params.daily_funding_rate_short.unwrap_or_default(),
-            offer_params.opening_fee.unwrap_or_default(),
-        )
-        .await
-        .map_err(|e| {
-            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .title("Posting offer failed")
-                .detail(format!("{e:#}"))
-        })?;
-
-    Ok(())
 }
 
 /// The maker PUTs this to set the offer params
