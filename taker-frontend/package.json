@@ -39,7 +39,7 @@
     "react-use-websocket": "^3.0.0",
     "typescript": "^4.6.3",
     "usehooks-ts": "^2.5.1",
-    "vite": "^2.9.1",
+    "vite": "^2.9.5",
     "vite-jest": "^0.1.4",
     "web-vitals": "^2.1.4"
   },
