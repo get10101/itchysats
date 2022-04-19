@@ -65,7 +65,7 @@ struct NewAttestationFetched {
 }
 
 #[derive(Default, Clone)]
-struct Cfd {
+pub struct Cfd {
     pending_attestation: Option<BitMexPriceEventId>,
     version: u32,
 }

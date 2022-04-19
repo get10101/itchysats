@@ -122,7 +122,7 @@ pub struct Actor {
 
 /// Read-model of the CFD for the monitoring actor.
 #[derive(Clone)]
-struct Cfd {
+pub struct Cfd {
     id: OrderId,
     params: Option<MonitorParams>,
 

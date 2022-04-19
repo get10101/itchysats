@@ -438,6 +438,8 @@ impl Connection {
 
                 db_tx.commit().await?;
 
+                self.remove_from_all_aggregate_caches(id).await;
+
                 anyhow::Ok(())
             };
 
@@ -606,6 +608,27 @@ impl Connection {
         .collect();
 
         Ok(ids)
+    }
+
+    /// Remove a CFD from all the aggregate caches it could be in.
+    ///
+    /// Since Rust doesn't support reflection it is not possible to
+    /// programmatically remove from the aggregate cache based on all
+    /// the types that implement `CfdAggregate`. This means that we
+    /// have to _remember_ to amend this method as new types implement
+    /// the trait.
+    async fn remove_from_all_aggregate_caches(&self, id: OrderId) {
+        let cache_key = (TypeId::of::<model::Cfd>(), id);
+        let _ = self.aggregate_cache.remove(&cache_key).await;
+
+        let cache_key = (TypeId::of::<crate::projection::Cfd>(), id);
+        let _ = self.aggregate_cache.remove(&cache_key).await;
+
+        let cache_key = (TypeId::of::<crate::oracle::Cfd>(), id);
+        let _ = self.aggregate_cache.remove(&cache_key).await;
+
+        let cache_key = (TypeId::of::<crate::monitor::Cfd>(), id);
+        let _ = self.aggregate_cache.remove(&cache_key).await;
     }
 }
 
@@ -1725,6 +1748,41 @@ mod tests {
 
         assert!(load_from_open.is_ok());
         assert!(load_from_closed.is_err());
+    }
+
+    #[tokio::test]
+    async fn given_cached_closed_cfd_when_move_cfds_to_closed_table_then_cannot_load_cfd_as_open() {
+        let db = memory().await.unwrap();
+
+        let (cfd, contract_setup_completed, collaborative_settlement_completed) =
+            cfd_collaboratively_settled();
+        let order_id = cfd.id();
+
+        db.insert_cfd(&cfd).await.unwrap();
+
+        db.append_event(contract_setup_completed).await.unwrap();
+        db.append_event(collaborative_settlement_completed)
+            .await
+            .unwrap();
+        db.append_event(collab_settlement_confirmed(&cfd))
+            .await
+            .unwrap();
+
+        // loading once will populate the corresponding entry in the
+        // `aggregate_cache`
+        let _ = db
+            .load_open_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+            .await;
+
+        db.move_to_closed_cfds().await.unwrap();
+
+        // it is important to note that only aggregate types which are
+        // explicitly removed from the `aggregate_cache` (such as
+        // `crate::projection::Cfd`) will pass this test
+        let cache_key = (TypeId::of::<crate::projection::Cfd>(), order_id);
+        let load_from_cache = db.aggregate_cache.get(&cache_key).await;
+
+        assert!(load_from_cache.is_none());
     }
 
     #[tokio::test]
