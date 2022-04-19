@@ -1692,35 +1692,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libp2p-xtra"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "asynchronous-codec",
- "clap",
- "conquer-once",
- "futures",
- "libp2p-core",
- "libp2p-noise",
- "libp2p-tcp",
- "multistream-select",
- "pin-project 1.0.10",
- "prometheus",
- "rand 0.8.4",
- "thiserror",
- "tokio",
- "tokio-tasks",
- "tracing",
- "tracing-subscriber",
- "void",
- "xtra",
- "xtra_productivity",
- "xtras",
- "yamux",
-]
-
-[[package]]
 name = "libsqlite3-sys"
 version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4929,6 +4900,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "xtra-libp2p"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "asynchronous-codec",
+ "clap",
+ "conquer-once",
+ "futures",
+ "libp2p-core",
+ "libp2p-noise",
+ "libp2p-tcp",
+ "multistream-select",
+ "pin-project 1.0.10",
+ "prometheus",
+ "rand 0.8.4",
+ "thiserror",
+ "tokio",
+ "tokio-tasks",
+ "tracing",
+ "tracing-subscriber",
+ "void",
+ "xtra",
+ "xtra_productivity",
+ "xtras",
+ "yamux",
+]
+
+[[package]]
 name = "xtra-libp2p-ping"
 version = "0.1.0"
 dependencies = [
@@ -4936,7 +4936,6 @@ dependencies = [
  "async-trait",
  "conquer-once",
  "futures",
- "libp2p-xtra",
  "prometheus",
  "rand 0.8.4",
  "tokio",
@@ -4944,6 +4943,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "xtra",
+ "xtra-libp2p",
  "xtra_productivity",
  "xtras",
 ]

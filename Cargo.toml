@@ -14,7 +14,7 @@ members = [
   "model",
   "btsieve",
   "bitmex-stream",
-  "libp2p-xtra",
+  "xtra-libp2p",
   "xtra-libp2p-ping",
 ]
 resolver = "2"

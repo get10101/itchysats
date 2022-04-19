@@ -1,9 +1,4 @@
 use conquer_once::Lazy;
-use libp2p_xtra::libp2p::PeerId;
-use libp2p_xtra::Endpoint;
-use libp2p_xtra::GetConnectionStats;
-use libp2p_xtra::NewInboundSubstream;
-use libp2p_xtra::OpenSubstream;
 use prometheus::register_histogram;
 use prometheus::Histogram;
 use std::collections::HashMap;
@@ -12,6 +7,11 @@ use tokio_tasks::Tasks;
 use xtra::async_trait;
 use xtra::Address;
 use xtra::Context;
+use xtra_libp2p::libp2p::PeerId;
+use xtra_libp2p::Endpoint;
+use xtra_libp2p::GetConnectionStats;
+use xtra_libp2p::NewInboundSubstream;
+use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -179,13 +179,13 @@ mod ping {
 
     use futures::AsyncReadExt;
     use futures::AsyncWriteExt;
-    use libp2p_xtra::Substream;
     use rand::distributions;
     use rand::thread_rng;
     use rand::Rng;
     use std::io;
     use std::time::Duration;
     use std::time::Instant;
+    use xtra_libp2p::Substream;
 
     /// Sends a ping and waits for the pong.
     pub async fn send(mut stream: Substream) -> io::Result<Duration> {
@@ -222,15 +222,15 @@ mod ping {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libp2p_xtra::libp2p::identity::Keypair;
-    use libp2p_xtra::libp2p::multiaddr::Protocol;
-    use libp2p_xtra::libp2p::transport::MemoryTransport;
-    use libp2p_xtra::libp2p::Multiaddr;
-    use libp2p_xtra::Connect;
-    use libp2p_xtra::ListenOn;
     use xtra::message_channel::StrongMessageChannel;
     use xtra::spawn::TokioGlobalSpawnExt;
     use xtra::Actor as _;
+    use xtra_libp2p::libp2p::identity::Keypair;
+    use xtra_libp2p::libp2p::multiaddr::Protocol;
+    use xtra_libp2p::libp2p::transport::MemoryTransport;
+    use xtra_libp2p::libp2p::Multiaddr;
+    use xtra_libp2p::Connect;
+    use xtra_libp2p::ListenOn;
 
     #[tokio::test]
     async fn latency_to_peer_is_recorded() {
