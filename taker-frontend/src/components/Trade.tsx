@@ -27,6 +27,7 @@ import {
     Tbody,
     Td,
     Text,
+    Tooltip,
     Tr,
     useColorModeValue,
     useDisclosure,
@@ -113,9 +114,10 @@ export default function Trade({
         if (balanceTooLow) {
             alertBox = (
                 <AlertBox
-                    title={"Your balance is too low!"}
-                    description={"Please deposit more into your wallet."}
+                    title={"Not enough balance to open a new position!"}
+                    description={"Deposit more into your wallet."}
                     status={"warning"}
+                    reachLinkTo={"/wallet"}
                 />
             );
         }
@@ -219,12 +221,14 @@ export default function Trade({
                                     <Td>
                                         <HStack>
                                             <Text>Available Balance</Text>
-                                            <IconButton
-                                                variant={"unstyled"}
-                                                aria-label="Go to wallet"
-                                                icon={<ExternalLinkIcon />}
-                                                onClick={() => navigate("/wallet")}
-                                            />
+                                            <Tooltip label={"Jump to wallet"} hasArrow>
+                                                <IconButton
+                                                    variant={"unstyled"}
+                                                    aria-label="Go to wallet"
+                                                    icon={<ExternalLinkIcon marginBottom={1} />}
+                                                    onClick={() => navigate("/wallet")}
+                                                />
+                                            </Tooltip>
                                         </HStack>
                                     </Td>
                                     <Td isNumeric>
