@@ -1,7 +1,7 @@
+use crate::Connect;
 use crate::ConnectionStats;
 use crate::Endpoint;
 use crate::GetConnectionStats;
-use crate::ListenOn;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use libp2p_core::Multiaddr;
@@ -14,29 +14,28 @@ use xtras::SendInterval;
 /// How often we check whether we are still connected
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
-/// xtra actor that taker care of listening for incoming connections to the Endpoint.
+/// xtra actor that takes care of dialing (connecting) to an Endpoint.
 ///
 /// Periodically polls Endpoint to check whether connection is still active.
-/// Should be used in conjunction with supervisor for continuous and resilient listening.
+/// Should be used in conjunction with supervisor maintaining resilient connection.
 pub struct Actor {
     tasks: Tasks,
     endpoint: Address<Endpoint>,
-    listen_address: Multiaddr,
-    /// Contains the reason we are stopping.
+    connect_address: Multiaddr,
     stop_reason: Option<Error>,
 }
 
 impl Actor {
-    pub fn new(endpoint: Address<Endpoint>, listen_address: Multiaddr) -> Self {
+    pub fn new(endpoint: Address<Endpoint>, connect_address: Multiaddr) -> Self {
         Self {
             tasks: Tasks::default(),
             endpoint,
-            listen_address,
+            connect_address,
             stop_reason: None,
         }
     }
 
-    /// Returns error if we cannot access Endpoint or the listener address is not
+    /// Returns error if we cannot access Endpoint or the connect address is not
     /// present inside Endpoint.
     async fn check_connection_active_in_endpoint(&self) -> Result<(), Error> {
         let ConnectionStats {
@@ -48,9 +47,17 @@ impl Actor {
             .map_err(|_| Error::NoEndpoint)?;
 
         listen_addresses
-            .contains(&self.listen_address)
+            .contains(&self.connect_address)
             .then(|| ())
             .ok_or(Error::ConnectionDropped)
+    }
+
+    async fn connect(&self) -> Result<(), Error> {
+        self.endpoint
+            .send(Connect(self.connect_address.clone()))
+            .await
+            .map_err(|_| Error::NoEndpoint)?
+            .map_err(|e| Error::Failed { source: anyhow!(e) })
     }
 }
 
@@ -61,17 +68,13 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
 
-        let endpoint = self.endpoint.clone();
-        let listen_address = self.listen_address.clone();
+        if let Err(e) = self.connect().await {
+            self.stop_reason = Some(e);
+            ctx.stop();
+        }
 
-        if let Err(e) = endpoint.send(ListenOn(listen_address)).await {
-            self.stop_reason = Some(Error::Failed { source: anyhow!(e) });
-            ctx.stop()
-        };
-
-        // Only start checking the connection after it had enough time to be registered
+        // Only start checking the connection after it had enough time to be established
         tokio::time::sleep(CHECK_INTERVAL).await;
-
         self.tasks
             .add(this.send_interval(CHECK_INTERVAL, || CheckConnection));
     }
@@ -98,7 +101,7 @@ impl Actor {
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("Listener failed")]
+    #[error("Dialer failed")]
     Failed { source: anyhow::Error },
     #[error("Endpoint actor is disconnected")]
     NoEndpoint,
@@ -109,4 +112,4 @@ pub enum Error {
 }
 
 #[derive(Clone, Copy)]
-struct CheckConnection;
+pub struct CheckConnection;

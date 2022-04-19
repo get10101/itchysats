@@ -18,6 +18,7 @@ use futures::stream::BoxStream;
 use libp2p_core::Negotiated;
 use libp2p_core::PeerId;
 
+pub mod dialer;
 mod endpoint;
 pub mod listener;
 mod multiaddress_ext;
