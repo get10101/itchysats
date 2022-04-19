@@ -114,9 +114,10 @@ export default function Trade({
         if (balanceTooLow) {
             alertBox = (
                 <AlertBox
-                    title={"Your balance is too low!"}
-                    description={"Please deposit more into your wallet."}
+                    title={"Not enough balance to open a new position!"}
+                    description={"Deposit more into your wallet."}
                     status={"warning"}
+                    reachLinkTo={"/wallet"}
                 />
             );
         }
