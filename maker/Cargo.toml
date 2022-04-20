@@ -23,7 +23,7 @@ shared-bin = { path = "../shared-bin" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
 tracing = { version = "0.1" }
-uuid = "0.8"
+uuid = "1.0"
 xtra = { version = "0.6" }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtras = { path = "../xtras" }

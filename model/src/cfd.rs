@@ -59,7 +59,7 @@ use std::ops::RangeInclusive;
 use std::str;
 use time::Duration;
 use time::OffsetDateTime;
-use uuid::adapter::Hyphenated;
+use uuid::fmt::*;
 use uuid::Uuid;
 
 pub const CET_TIMELOCK: u32 = 12;
@@ -85,13 +85,13 @@ impl<'de> Deserialize<'de> for OrderId {
         let uuid = String::deserialize(deserializer)?;
         let uuid = uuid.parse::<Uuid>().map_err(D::Error::custom)?;
 
-        Ok(Self(uuid.to_hyphenated()))
+        Ok(Self(uuid.hyphenated()))
     }
 }
 
 impl Default for OrderId {
     fn default() -> Self {
-        Self(Uuid::new_v4().to_hyphenated())
+        Self(Uuid::new_v4().hyphenated())
     }
 }
 
@@ -103,7 +103,7 @@ impl fmt::Display for OrderId {
 
 impl From<Uuid> for OrderId {
     fn from(id: Uuid) -> Self {
-        OrderId(id.to_hyphenated())
+        OrderId(id.hyphenated())
     }
 }
 
