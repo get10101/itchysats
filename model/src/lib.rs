@@ -807,6 +807,7 @@ impl FeeAccount {
         self.balance
     }
 
+    #[must_use]
     pub fn add_opening_fee(self, opening_fee: OpeningFee) -> Self {
         let fee: i64 = opening_fee
             .fee
@@ -829,6 +830,7 @@ impl FeeAccount {
         }
     }
 
+    #[must_use]
     pub fn add_funding_fee(self, funding_fee: FundingFee) -> Self {
         let fee: i64 = funding_fee
             .fee

@@ -864,7 +864,7 @@ impl ClosedCfdInputAggregate {
             RolloverCompleted { dlc, funding_fee } => {
                 self.own_script_pubkey = Some(dlc.script_pubkey_for(self.role));
 
-                self.fee_account.add_funding_fee(funding_fee);
+                self.fee_account = self.fee_account.add_funding_fee(funding_fee);
 
                 self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
             }
