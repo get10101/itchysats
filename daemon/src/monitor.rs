@@ -25,7 +25,6 @@ use model::CET_TIMELOCK;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::time::sleep;
 use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
@@ -557,7 +556,6 @@ impl xtra::Actor for Actor {
         self.tasks.add_fallible(
             {
                 let db = self.db.clone();
-                let this = this.clone();
 
                 async move {
                     let mut stream = db.load_all_open_cfds::<Cfd>(());
@@ -566,6 +564,16 @@ impl xtra::Actor for Actor {
                         cet,
                         commit_tx,
                         lock_tx,
+                        id,
+                        params,
+                        monitor_lock_finality,
+                        monitor_commit_finality,
+                        monitor_cet_timelock,
+                        monitor_refund_timelock,
+                        monitor_refund_finality,
+                        monitor_revoked_commit_transactions,
+                        monitor_collaborative_settlement_finality,
+                        monitor_cet_finality,
                         ..
                     }) = stream
                         .try_next()
@@ -607,54 +615,11 @@ impl xtra::Actor for Actor {
                                 tracing::warn!("{e:#}")
                             }
                         }
-                    }
 
-                    anyhow::Ok(())
-                }
-            },
-            |e| async move {
-                tracing::warn!("Failed to re-broadcast transactions: {e:#}");
-            },
-        );
-
-        self.tasks.add_fallible(
-            {
-                let db = self.db.clone();
-
-                async move {
-                    let mut stream = db.load_all_open_cfds::<Cfd>(());
-
-                    while let Some(Cfd {
-                        id,
-                        params,
-                        monitor_lock_finality,
-                        monitor_commit_finality,
-                        monitor_cet_timelock,
-                        monitor_refund_timelock,
-                        monitor_refund_finality,
-                        monitor_revoked_commit_transactions,
-                        monitor_collaborative_settlement_finality,
-                        monitor_cet_finality,
-                        ..
-                    }) = stream
-                        .try_next()
-                        .await
-                        .context("Failed to load CFD from database")?
-                    {
                         let params = match params {
                             None => continue,
                             Some(params) => params,
                         };
-
-                        // NOTE: this is a band-aid fix.
-                        // It is possible for an attestation to be available when the refund
-                        // timelock has expired, for example, when the daemon goes down and is
-                        // restarted. In this case we want to prioritise
-                        // broadcasting the cet over the refund transaction.
-                        // We wait at least 30 seconds after the monitor actor is initialised before
-                        // reinitialising monitoring to give the daemon time to fetch and decrypt
-                        // the cet from the oracle if it is available.
-                        sleep(Duration::from_secs(30)).await;
 
                         this.send(ReinitMonitoring {
                             id,
