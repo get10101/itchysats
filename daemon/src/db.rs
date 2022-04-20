@@ -222,7 +222,7 @@ impl Connection {
     }
 
     /// Load a CFD in its latest version from the database.
-    pub async fn load_open_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
+    pub async fn load_open_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C, Error>
     where
         C: CfdAggregate,
     {
@@ -349,7 +349,16 @@ impl Connection {
             let ids = self.load_open_cfd_ids().await?;
 
             for id in ids {
-                let cfd = self.load_open_cfd(id, args.clone()).await?;
+                let cfd = match self.load_open_cfd(id, args.clone()).await {
+                    Ok(cfd) => Ok(cfd),
+                    Err(Error::OpenCfdNotFound) => {
+                        tracing::trace!(order_id=%id, target="db", "Ignoring open CFD not found because it was likely moved to the closed table");
+                        continue;
+                    },
+                    Err(e) => {
+                        Err(e)
+                    }
+                }?;
 
                 yield cfd;
             }
@@ -624,6 +633,28 @@ pub struct Cfd {
     pub opening_fee: OpeningFee,
     pub initial_funding_rate: FundingRate,
     pub initial_tx_fee_rate: TxFeeRate,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("The CFD requested was not found in the open CFDs")]
+    OpenCfdNotFound,
+    #[error("{0:#}")]
+    Sqlx(#[source] sqlx::Error),
+    #[error("{0:#}")]
+    Other(#[source] anyhow::Error),
+}
+
+impl From<sqlx::Error> for Error {
+    fn from(e: sqlx::Error) -> Self {
+        Error::Sqlx(e)
+    }
+}
+
+impl From<anyhow::Error> for Error {
+    fn from(e: anyhow::Error) -> Self {
+        Error::Other(e)
+    }
 }
 
 /// Data loaded from the database about a closed CFD.
@@ -1061,7 +1092,7 @@ pub trait ClosedCfdAggregate: CfdAggregate {
     fn new_closed(args: Self::CtorArgs, cfd: ClosedCfd) -> Self;
 }
 
-async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<Cfd> {
+async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<Cfd, Error> {
     let cfd_row = sqlx::query!(
         r#"
             select
@@ -1084,8 +1115,9 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
             "#,
         id
     )
-    .fetch_one(&mut *conn)
-    .await?;
+    .fetch_optional(&mut *conn)
+    .await?
+    .ok_or(Error::OpenCfdNotFound)?;
 
     Ok(Cfd {
         id: cfd_row.uuid,
