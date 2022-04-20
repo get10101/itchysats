@@ -10,6 +10,7 @@ pub use crate::endpoint::NewInboundSubstream;
 pub use crate::endpoint::OpenSubstream;
 pub use crate::endpoint::Single;
 pub use crate::substream::Substream;
+pub use crate::utils::*;
 pub use libp2p_core as libp2p;
 pub use multistream_select::NegotiationError;
 
@@ -24,6 +25,7 @@ pub mod listener;
 mod multiaddress_ext;
 mod substream;
 mod upgrade;
+mod utils;
 mod verify_peer_id;
 
 type Connection = (
