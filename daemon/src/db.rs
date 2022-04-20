@@ -424,22 +424,54 @@ impl Connection {
                 insert_closed_cfd(&mut db_tx, closed_cfd).await?;
                 insert_event_log(&mut db_tx, id, event_log).await?;
 
-                if let Some(collaborative_settlement) = closed_cfd.collaborative_settlement {
-                    insert_collaborative_settlement_tx(&mut db_tx, id, collaborative_settlement)
+                match closed_cfd {
+                    ClosedCfdInput {
+                        collaborative_settlement: Some(collaborative_settlement),
+                        commit: None,
+                        non_collaborative_settlement: None,
+                        refund: None,
+                        ..
+                    } => {
+                        insert_collaborative_settlement_tx(
+                            &mut db_tx,
+                            id,
+                            collaborative_settlement,
+                        )
                         .await?;
-                }
-
-                if let Some(commit) = closed_cfd.commit {
-                    insert_commit_tx(&mut db_tx, id, commit).await?;
-                }
-
-                if let Some(non_collaborative_settlement) = closed_cfd.non_collaborative_settlement
-                {
-                    insert_cet(&mut db_tx, id, non_collaborative_settlement).await?;
-                }
-
-                if let Some(refund) = closed_cfd.refund {
-                    insert_refund_tx(&mut db_tx, id, refund).await?;
+                    }
+                    ClosedCfdInput {
+                        collaborative_settlement: None,
+                        commit: Some(commit),
+                        non_collaborative_settlement: Some(cet),
+                        refund: None,
+                        ..
+                    } => {
+                        insert_commit_tx(&mut db_tx, id, commit).await?;
+                        insert_cet(&mut db_tx, id, cet).await?;
+                    }
+                    ClosedCfdInput {
+                        collaborative_settlement: None,
+                        commit: Some(commit),
+                        non_collaborative_settlement: None,
+                        refund: Some(refund),
+                        ..
+                    } => {
+                        insert_commit_tx(&mut db_tx, id, commit).await?;
+                        insert_refund_tx(&mut db_tx, id, refund).await?;
+                    }
+                    ClosedCfdInput {
+                        collaborative_settlement,
+                        commit,
+                        non_collaborative_settlement,
+                        refund,
+                        ..
+                    } => bail!(
+                        "CFD to be closed has insane combination of transactions:
+                          {collaborative_settlement:?},
+                          {commit:?},
+                          {non_collaborative_settlement:?},
+                          {refund:?}"
+                    ),
                 }
 
                 delete_from_events_table(&mut db_tx, id).await?;
