@@ -557,7 +557,6 @@ impl xtra::Actor for Actor {
         self.tasks.add_fallible(
             {
                 let db = self.db.clone();
-                let this = this.clone();
 
                 async move {
                     let mut stream = db.load_all_open_cfds::<Cfd>(());
@@ -566,6 +565,16 @@ impl xtra::Actor for Actor {
                         cet,
                         commit_tx,
                         lock_tx,
+                        id,
+                        params,
+                        monitor_lock_finality,
+                        monitor_commit_finality,
+                        monitor_cet_timelock,
+                        monitor_refund_timelock,
+                        monitor_refund_finality,
+                        monitor_revoked_commit_transactions,
+                        monitor_collaborative_settlement_finality,
+                        monitor_cet_finality,
                         ..
                     }) = stream
                         .try_next()
@@ -607,40 +616,7 @@ impl xtra::Actor for Actor {
                                 tracing::warn!("{e:#}")
                             }
                         }
-                    }
 
-                    anyhow::Ok(())
-                }
-            },
-            |e| async move {
-                tracing::warn!("Failed to re-broadcast transactions: {e:#}");
-            },
-        );
-
-        self.tasks.add_fallible(
-            {
-                let db = self.db.clone();
-
-                async move {
-                    let mut stream = db.load_all_open_cfds::<Cfd>(());
-
-                    while let Some(Cfd {
-                        id,
-                        params,
-                        monitor_lock_finality,
-                        monitor_commit_finality,
-                        monitor_cet_timelock,
-                        monitor_refund_timelock,
-                        monitor_refund_finality,
-                        monitor_revoked_commit_transactions,
-                        monitor_collaborative_settlement_finality,
-                        monitor_cet_finality,
-                        ..
-                    }) = stream
-                        .try_next()
-                        .await
-                        .context("Failed to load CFD from database")?
-                    {
                         let params = match params {
                             None => continue,
                             Some(params) => params,
