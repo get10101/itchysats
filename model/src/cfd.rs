@@ -1438,8 +1438,15 @@ impl Cfd {
                 self.during_contract_setup = false;
             }
             OracleAttestedPostCetTimelock { cet, .. } => self.cet = Some(cet),
-            OracleAttestedPriorCetTimelock { timelocked_cet, .. } => {
+            OracleAttestedPriorCetTimelock {
+                timelocked_cet,
+                commit_tx,
+                ..
+            } => {
                 self.cet = Some(timelocked_cet);
+                if self.commit_tx.is_none() {
+                    self.commit_tx = commit_tx;
+                }
             }
             ContractSetupFailed { .. } => {
                 self.during_contract_setup = false;
