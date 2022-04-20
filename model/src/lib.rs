@@ -899,7 +899,7 @@ impl str::FromStr for TxFeeRate {
 
 impl_sqlx_type_display_from_str!(TxFeeRate);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Txid(bdk::bitcoin::Txid);
 
 impl Txid {
@@ -931,7 +931,7 @@ impl From<Txid> for bdk::bitcoin::Txid {
 
 impl_sqlx_type_display_from_str!(Txid);
 
-#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[derive(Debug, Clone, Copy, sqlx::Type, PartialEq)]
 #[sqlx(transparent)]
 pub struct Vout(u32);
 
@@ -1012,7 +1012,7 @@ impl From<&Contracts> for i64 {
 
 impl_sqlx_type_integer!(Contracts);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Payout(Amount);
 
 impl Payout {
