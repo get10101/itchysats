@@ -8,13 +8,13 @@ use libp2p_core::identity::Keypair;
 use libp2p_core::Multiaddr;
 use libp2p_core::PeerId;
 use libp2p_tcp::TokioTcpConfig;
-use libp2p_xtra::dialer;
-use libp2p_xtra::Endpoint;
-use libp2p_xtra::OpenSubstream;
 use std::time::Duration;
 use tokio::time::sleep;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
+use xtra_libp2p::dialer;
+use xtra_libp2p::Endpoint;
+use xtra_libp2p::OpenSubstream;
 use xtras::supervisor;
 
 #[derive(Parser)]
@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn hello_world_dialer(stream: libp2p_xtra::Substream, name: String) -> Result<String> {
+async fn hello_world_dialer(stream: xtra_libp2p::Substream, name: String) -> Result<String> {
     let mut stream = asynchronous_codec::Framed::new(stream, asynchronous_codec::LengthCodec);
 
     stream.send(Bytes::from(name)).await?;

@@ -1,5 +1,5 @@
 [package]
-name = "libp2p-xtra"
+name = "xtra-libp2p"
 version = "0.1.0"
 edition = "2021"
 description = "Networking with xtra made easy. Backed by libp2p-core."

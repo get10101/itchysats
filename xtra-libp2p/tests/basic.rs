@@ -6,16 +6,6 @@ use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::multiaddr::Protocol;
 use libp2p_core::Multiaddr;
-use libp2p_xtra::libp2p::identity::Keypair;
-use libp2p_xtra::libp2p::transport::MemoryTransport;
-use libp2p_xtra::libp2p::PeerId;
-use libp2p_xtra::Connect;
-use libp2p_xtra::Disconnect;
-use libp2p_xtra::Endpoint;
-use libp2p_xtra::GetConnectionStats;
-use libp2p_xtra::ListenOn;
-use libp2p_xtra::NewInboundSubstream;
-use libp2p_xtra::OpenSubstream;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_tasks::Tasks;
@@ -23,6 +13,16 @@ use xtra::message_channel::StrongMessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra::Address;
+use xtra_libp2p::libp2p::identity::Keypair;
+use xtra_libp2p::libp2p::transport::MemoryTransport;
+use xtra_libp2p::libp2p::PeerId;
+use xtra_libp2p::Connect;
+use xtra_libp2p::Disconnect;
+use xtra_libp2p::Endpoint;
+use xtra_libp2p::GetConnectionStats;
+use xtra_libp2p::ListenOn;
+use xtra_libp2p::NewInboundSubstream;
+use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
 
 #[tokio::test]
@@ -102,7 +102,7 @@ async fn cannot_open_substream_for_unhandled_protocol() {
 
     assert!(matches!(
         error,
-        libp2p_xtra::Error::NegotiationFailed(libp2p_xtra::NegotiationError::Failed)
+        xtra_libp2p::Error::NegotiationFailed(xtra_libp2p::NegotiationError::Failed)
     ))
 }
 
@@ -120,7 +120,7 @@ async fn cannot_connect_twice() {
 
     assert!(matches!(
         error,
-        libp2p_xtra::Error::AlreadyConnected(twin) if twin == alice_peer_id
+        xtra_libp2p::Error::AlreadyConnected(twin) if twin == alice_peer_id
     ))
 }
 
@@ -271,7 +271,7 @@ impl Actor for HelloWorld {
     async fn stopped(self) -> Self::Stop {}
 }
 
-async fn hello_world_dialer(stream: libp2p_xtra::Substream, name: &'static str) -> Result<String> {
+async fn hello_world_dialer(stream: xtra_libp2p::Substream, name: &'static str) -> Result<String> {
     let mut stream = asynchronous_codec::Framed::new(stream, asynchronous_codec::LengthCodec);
 
     stream.send(Bytes::from(name)).await?;
@@ -281,7 +281,7 @@ async fn hello_world_dialer(stream: libp2p_xtra::Substream, name: &'static str) 
     Ok(message)
 }
 
-async fn hello_world_listener(stream: libp2p_xtra::Substream) -> Result<()> {
+async fn hello_world_listener(stream: xtra_libp2p::Substream) -> Result<()> {
     let mut stream =
         asynchronous_codec::Framed::new(stream, asynchronous_codec::LengthCodec).fuse();
 

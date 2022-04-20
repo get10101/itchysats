@@ -7,15 +7,15 @@ use futures::StreamExt;
 use libp2p_core::identity::Keypair;
 use libp2p_core::Multiaddr;
 use libp2p_tcp::TokioTcpConfig;
-use libp2p_xtra::listener;
-use libp2p_xtra::Endpoint;
-use libp2p_xtra::NewInboundSubstream;
 use std::time::Duration;
 use tokio::time::sleep;
 use tokio_tasks::Tasks;
 use tracing::Level;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
+use xtra_libp2p::listener;
+use xtra_libp2p::Endpoint;
+use xtra_libp2p::NewInboundSubstream;
 use xtra_productivity::xtra_productivity;
 use xtras::supervisor;
 
@@ -104,7 +104,7 @@ impl Actor for HelloWorld {
     async fn stopped(self) -> Self::Stop {}
 }
 
-pub async fn hello_world_listener(stream: libp2p_xtra::Substream) -> Result<()> {
+pub async fn hello_world_listener(stream: xtra_libp2p::Substream) -> Result<()> {
     let mut stream =
         asynchronous_codec::Framed::new(stream, asynchronous_codec::LengthCodec).fuse();
 
