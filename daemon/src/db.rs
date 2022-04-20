@@ -761,7 +761,7 @@ pub struct LockInput {
     timestamp: Timestamp,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct CollaborativeSettlement {
     txid: Txid,
     vout: Vout,
@@ -776,7 +776,7 @@ struct Commit {
     timestamp: Timestamp,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Cet {
     txid: Txid,
     vout: Vout,
@@ -785,7 +785,7 @@ struct Cet {
     timestamp: Timestamp,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Refund {
     txid: Txid,
     vout: Vout,
@@ -1330,8 +1330,8 @@ async fn insert_cet(
         "#,
         id,
         txid,
-        payout,
         vout,
+        payout,
         price,
         timestamp
     )
@@ -1563,6 +1563,7 @@ async fn delete_from_events_table(conn: &mut Transaction<'_, Sqlite>, id: OrderI
 mod tests {
     use super::*;
     use bdk::bitcoin::Amount;
+    use bdk::bitcoin::SignedAmount;
     use model::Cfd;
     use model::Leverage;
     use model::OpeningFee;
@@ -1573,6 +1574,7 @@ mod tests {
     use model::TxFeeRate;
     use model::Usd;
     use pretty_assertions::assert_eq;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     #[tokio::test]
@@ -1816,6 +1818,145 @@ mod tests {
         assert_eq!(projection_open, projection_closed);
     }
 
+    #[tokio::test]
+    async fn insert_cet_roundtrip() {
+        let db = memory().await.unwrap();
+
+        let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+
+        let id = OrderId::default();
+
+        insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
+
+        let inserted = Cet {
+            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            vout: Vout::new(0),
+            payout: Payout::new(Amount::ONE_BTC),
+            price: Price::new(dec!(40_000)).unwrap(),
+            timestamp: Timestamp::new(10_000),
+        };
+
+        insert_cet(&mut db_tx, id, inserted).await.unwrap();
+        db_tx.commit().await.unwrap();
+
+        let loaded = load_cet(&mut conn, id).await.unwrap().unwrap();
+
+        assert_eq!(inserted, loaded);
+    }
+
+    #[tokio::test]
+    async fn insert_collaborative_settlement_tx_roundtrip() {
+        let db = memory().await.unwrap();
+
+        let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+
+        let id = OrderId::default();
+
+        insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
+
+        let inserted = CollaborativeSettlement {
+            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            vout: Vout::new(0),
+            payout: Payout::new(Amount::ONE_BTC),
+            price: Price::new(dec!(40_000)).unwrap(),
+            timestamp: Timestamp::new(10_000),
+        };
+
+        insert_collaborative_settlement_tx(&mut db_tx, id, inserted)
+            .await
+            .unwrap();
+        db_tx.commit().await.unwrap();
+
+        let loaded = load_collaborative_settlement_tx(&mut conn, id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(loaded, inserted);
+    }
+
+    #[tokio::test]
+    async fn insert_commit_tx_roundtrip() {
+        let db = memory().await.unwrap();
+
+        let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+
+        let id = OrderId::default();
+
+        insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
+
+        let inserted = Commit {
+            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            timestamp: Timestamp::new(10_000),
+        };
+
+        insert_commit_tx(&mut db_tx, id, inserted).await.unwrap();
+        db_tx.commit().await.unwrap();
+
+        let loaded = load_commit_tx(&mut conn, id).await.unwrap().unwrap();
+
+        assert_eq!(loaded, inserted.txid);
+    }
+
+    #[tokio::test]
+    async fn insert_refund_tx_roundtrip() {
+        let db = memory().await.unwrap();
+
+        let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+
+        let id = OrderId::default();
+
+        insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
+
+        let inserted = Refund {
+            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            vout: Vout::new(0),
+            payout: Payout::new(Amount::ONE_BTC),
+            timestamp: Timestamp::new(10_000),
+        };
+
+        insert_refund_tx(&mut db_tx, id, inserted).await.unwrap();
+        db_tx.commit().await.unwrap();
+
+        let loaded = load_refund_tx(&mut conn, id).await.unwrap().unwrap();
+
+        assert_eq!(loaded, inserted);
+    }
+
+    async fn insert_dummy_closed_cfd(
+        conn: &mut Transaction<'_, Sqlite>,
+        id: OrderId,
+    ) -> Result<()> {
+        let cfd = ClosedCfdInput {
+            id,
+            position: Position::Long,
+            initial_price: Price::new(Decimal::ONE).unwrap(),
+            taker_leverage: Leverage::TWO,
+            n_contracts: Contracts::new(100),
+            counterparty_network_identity: dummy_identity(),
+            role: Role::Maker,
+            fees: Fees::new(SignedAmount::ONE_BTC),
+            expiry_timestamp: OffsetDateTime::now_utc(),
+            lock: LockInput {
+                txid: Txid::new(bdk::bitcoin::Txid::default()),
+                dlc_vout: Vout::new(0),
+                timestamp: Timestamp::new(4_000),
+            },
+            collaborative_settlement: None,
+            commit: None,
+            non_collaborative_settlement: None,
+            refund: None,
+        };
+
+        insert_closed_cfd(conn, cfd).await?;
+
+        Ok(())
+    }
+
     fn dummy_cfd() -> Cfd {
         Cfd::new(
             OrderId::default(),
@@ -1832,6 +1973,12 @@ mod tests {
             FundingRate::default(),
             TxFeeRate::default(),
         )
+    }
+
+    fn dummy_identity() -> Identity {
+        Identity::new(x25519_dalek::PublicKey::from(
+            *b"hello world, oh what a beautiful",
+        ))
     }
 
     fn cfd_collaboratively_settled() -> (Cfd, CfdEvent, CfdEvent) {
