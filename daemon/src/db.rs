@@ -979,10 +979,12 @@ impl ClosedCfdInputAggregate {
                 commit_tx,
                 price,
             } => {
-                self.commit = commit_tx.map(|tx| Commit {
-                    txid: Txid::new(tx.txid()),
-                    timestamp: event.timestamp,
-                });
+                if self.commit.is_none() {
+                    self.commit = commit_tx.map(|tx| Commit {
+                        txid: Txid::new(tx.txid()),
+                        timestamp: event.timestamp,
+                    });
+                }
 
                 let own_script_pubkey = self
                     .own_script_pubkey
