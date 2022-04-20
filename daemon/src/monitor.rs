@@ -25,7 +25,6 @@ use model::CET_TIMELOCK;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::time::sleep;
 use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
@@ -621,16 +620,6 @@ impl xtra::Actor for Actor {
                             None => continue,
                             Some(params) => params,
                         };
-
-                        // NOTE: this is a band-aid fix.
-                        // It is possible for an attestation to be available when the refund
-                        // timelock has expired, for example, when the daemon goes down and is
-                        // restarted. In this case we want to prioritise
-                        // broadcasting the cet over the refund transaction.
-                        // We wait at least 30 seconds after the monitor actor is initialised before
-                        // reinitialising monitoring to give the daemon time to fetch and decrypt
-                        // the cet from the oracle if it is available.
-                        sleep(Duration::from_secs(30)).await;
 
                         this.send(ReinitMonitoring {
                             id,
