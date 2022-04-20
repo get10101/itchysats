@@ -152,7 +152,7 @@ impl Actor {
                     .await?;
             }
             OracleAttestedPriorCetTimelock {
-                commit_tx: Some(tx),
+                commit_tx: Some(commit_tx),
                 timelocked_cet: cet,
                 ..
             } => {
@@ -163,10 +163,11 @@ impl Actor {
                         cet,
                     })
                     .await?;
+
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
-                        tx,
-                        kind: TransactionKind::Cet,
+                        tx: commit_tx,
+                        kind: TransactionKind::Commit,
                     })
                     .await?;
             }
