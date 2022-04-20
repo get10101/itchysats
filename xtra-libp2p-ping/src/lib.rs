@@ -287,7 +287,7 @@ mod tests {
             [(PROTOCOL_NAME, ping_address.clone_channel())],
         );
 
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         tokio::spawn(endpoint_context.run(endpoint));
 
         (id.public().to_peer_id(), ping_address, endpoint_address)

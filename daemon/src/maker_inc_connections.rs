@@ -234,7 +234,7 @@ impl Actor {
         let conn = self
             .connections
             .get_mut(taker_id)
-            .ok_or_else(|| NoConnection(*taker_id))?;
+            .ok_or(NoConnection(*taker_id))?;
 
         if conn.send(msg).await.is_err() {
             self.drop_taker_connection(taker_id).await;

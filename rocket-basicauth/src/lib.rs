@@ -122,7 +122,7 @@ fn decode_header(header_value: &str) -> Result<(String, String), Error> {
     let decoded = base64::decode(base64).map_err(Error::NotBase64)?;
     let decoded = String::from_utf8(decoded).map_err(Error::NotUtf8)?;
     let (username, password) = decoded
-        .split_once(":")
+        .split_once(':')
         .ok_or(Error::InvalidBasicAuthFormat)?;
 
     Ok((username.to_owned(), password.to_owned()))

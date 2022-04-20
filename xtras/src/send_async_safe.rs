@@ -23,7 +23,7 @@ where
     M: xtra::Message<Result = ()>,
 {
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         self.do_send_async(msg).await
     }
 }
@@ -42,7 +42,7 @@ where
 
         let send_fut = self.send(msg);
 
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         tokio::spawn(async {
             let e = match send_fut.await {
                 Ok(Err(e)) => format!("{e:#}"),
@@ -63,7 +63,7 @@ where
     M: xtra::Message<Result = ()>,
 {
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         self.do_send(msg)
     }
 }
@@ -74,7 +74,7 @@ where
     M: xtra::Message<Result = ()>,
 {
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         self.do_send(msg)
     }
 }
@@ -92,7 +92,7 @@ where
 
         let send_fut = self.send(msg);
 
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         tokio::spawn(async {
             let e = match send_fut.await {
                 Ok(Err(e)) => format!("{e:#}"),

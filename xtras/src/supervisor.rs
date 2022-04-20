@@ -242,7 +242,7 @@ mod tests {
         let (supervisor, address) = Actor::with_policy(|| RemoteShutdown, |_: &io::Error| true);
         let (supervisor, task) = supervisor.create(None).run();
 
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         tokio::spawn(task);
 
         let metrics = supervisor.send(GetMetrics).await.unwrap();
@@ -267,7 +267,7 @@ mod tests {
         let (supervisor, address) = Actor::with_policy(|| RemoteShutdown, |_: &io::Error| true);
         let (_supervisor, task) = supervisor.create(None).run();
 
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         tokio::spawn(task);
 
         address.send(Shutdown).await.unwrap();
@@ -286,7 +286,7 @@ mod tests {
         let (supervisor, address) = Actor::with_policy(|| PanickingActor, |_: &io::Error| true);
         let (supervisor, task) = supervisor.create(None).run();
 
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         tokio::spawn(task);
 
         address.send(Panic).await.unwrap_err(); // Actor will be dead by the end of the function call because it panicked.
@@ -303,7 +303,7 @@ mod tests {
         let (supervisor, _address) = Actor::new(|| UnitActor);
         let (_supervisor, task) = supervisor.create(None).run();
 
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         tokio::spawn(task);
     }
 

@@ -243,7 +243,7 @@ impl SplineObject {
 
             // delete the last column; some faffing about required to maintain
             // C-contiguous ordering. Probably a much better way to do this...
-            let res_shape = &result.shape().iter().copied().collect::<Vec<_>>();
+            let res_shape = &result.shape().to_vec();
             let mut n_res: usize = res_shape[..axis_r].iter().product();
             n_res *= idx_r;
             let idx = (0..axis_r).collect::<Vec<_>>();
@@ -386,14 +386,13 @@ impl SplineObject {
         let mut new_arr = Array1::<f64>::zeros(0);
 
         for i in (0..raveled.len()).step_by(n) {
-            let new_row;
-            if axis < -1 {
+            let new_row = if axis < -1 {
                 let front = raveled.slice(s![i..i + step]).clone().to_owned();
                 let tail = raveled.slice(s![i + step + 1..i + n]).clone().to_owned();
-                new_row = concatenate(Axis(0), &[front.view(), tail.view()])?;
+                concatenate(Axis(0), &[front.view(), tail.view()])?
             } else {
-                new_row = raveled.slice(s![i..i + step]).clone().to_owned();
-            }
+                raveled.slice(s![i..i + step]).clone().to_owned()
+            };
             new_arr = concatenate(Axis(0), &[new_arr.view(), new_row.view()])?;
         }
 
@@ -412,13 +411,12 @@ impl SplineObject {
     /// ### parameters
     ///  * direction: Direction in which to get the order.
     pub fn order(&self, direction: isize) -> Result<Vec<usize>, Error> {
-        let out;
-        if direction < 0 {
-            out = self.bases.iter().map(|e| e.order).collect::<Vec<_>>();
+        let out = if direction < 0 {
+            self.bases.iter().map(|e| e.order).collect::<Vec<_>>()
         } else {
             let p = direction as usize;
-            out = (&[self.bases[p].order]).to_vec();
-        }
+            (&[self.bases[p].order]).to_vec()
+        };
 
         Ok(out)
     }

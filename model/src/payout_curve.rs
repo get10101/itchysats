@@ -279,23 +279,17 @@ impl PayoutCurve {
     }
 
     pub fn generate_payout_scheme(&self, n_segments: usize) -> Result<Array2<f64>, Error> {
-        let n_min;
-        if self.has_upper_limit {
-            n_min = 3;
-        } else {
-            n_min = 2;
-        }
+        let n_min = if self.has_upper_limit { 3 } else { 2 };
 
         if n_segments < n_min {
             return Result::Err(Error::InvalidSegmentation);
         }
 
-        let t;
-        if self.has_upper_limit {
-            t = self.build_sampling_vector_upper_bounded(n_segments);
+        let t = if self.has_upper_limit {
+            self.build_sampling_vector_upper_bounded(n_segments)
         } else {
-            t = self.build_sampling_vector_upper_unbounded(n_segments)
-        }
+            self.build_sampling_vector_upper_unbounded(n_segments)
+        };
 
         let mut z_arr = self.curve.evaluate(&mut &[t][..])?;
         if self.has_upper_limit {
