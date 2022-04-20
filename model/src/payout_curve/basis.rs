@@ -134,8 +134,7 @@ impl BSplineBasis {
 
             let knots_arr = Array1::<f64>::from_vec(knots_vec);
 
-            let new_knot;
-            if self.periodic > -1 {
+            let new_knot = if self.periodic > -1 {
                 let n_0 = bisect_left(&knots_arr, &self.start(), knots_arr.len());
                 let n_1 =
                     knot_spans.len() - bisect_left(&knots_arr, &self.end(), knots_arr.len()) - 1;
@@ -144,10 +143,10 @@ impl BSplineBasis {
                     .map(|e| **e)
                     .collect::<Vec<_>>();
                 new_knot_vec.sort_by(cmp_f64);
-                new_knot = Array1::<f64>::from_vec(new_knot_vec);
+                Array1::<f64>::from_vec(new_knot_vec)
             } else {
-                new_knot = knots_arr;
-            }
+                knots_arr
+            };
 
             self.order += amount;
             self.knots = new_knot;

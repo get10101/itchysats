@@ -158,11 +158,9 @@ fn symmetric_weights(arr: &Array1<f64>) -> Array1<f64> {
 }
 
 fn fdim(a: &f64, b: &f64) -> f64 {
-    let res;
     if a - b > 0f64 {
-        res = a - b;
+        a - b
     } else {
-        res = 0f64;
+        0f64
     }
-    res
 }

@@ -146,12 +146,11 @@ pub fn fit(
 /// * a, b: start and end points (resp.)
 /// * relative: whether `b` is relative to `a` or absolute
 pub fn line(a: (f64, f64), b: (f64, f64), relative: bool) -> Result<Curve, Error> {
-    let vec;
-    if relative {
-        vec = vec![[a.0, a.1], [a.0 + b.0, a.1 + b.1]];
+    let vec = if relative {
+        vec![[a.0, a.1], [a.0 + b.0, a.1 + b.1]]
     } else {
-        vec = vec![[a.0, a.1], [b.0, b.1]];
-    }
+        vec![[a.0, a.1], [b.0, b.1]]
+    };
     let controlpoints = Array2::<f64>::from(vec);
 
     Curve::new(None, Some(controlpoints), None)

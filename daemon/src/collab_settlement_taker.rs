@@ -97,11 +97,7 @@ impl Actor {
             })
             .await?;
 
-        Ok(CollaborativeSettlement::new(
-            tx,
-            payout_script_pubkey,
-            self.current_price,
-        )?)
+        CollaborativeSettlement::new(tx, payout_script_pubkey, self.current_price)
     }
 
     async fn emit_completed(

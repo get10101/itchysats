@@ -30,7 +30,7 @@ where
 
         let (future, handle) = self.remote_handle();
         // we want to disallow calls to tokio::spawn outside FutureExt
-        #[allow(clippy::disallowed_method)]
+        #[allow(clippy::disallowed_methods)]
         tokio::spawn(future);
         handle
     }
