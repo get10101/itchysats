@@ -25,7 +25,6 @@ use model::Payout;
 use model::Position;
 use model::Price;
 use model::Role;
-use model::Timestamp;
 use model::TxFeeRate;
 use model::Txid;
 use model::Usd;
@@ -755,7 +754,7 @@ struct ClosedCfdInput {
     role: Role,
     fees: Fees,
     expiry_timestamp: OffsetDateTime,
-    lock: LockInput,
+    lock: Lock,
     collaborative_settlement: Option<CollaborativeSettlement>,
     commit: Option<Commit>,
     non_collaborative_settlement: Option<Cet>,
@@ -779,18 +778,11 @@ struct ClosedCfdInputAggregate {
     fee_account: FeeAccount,
     own_script_pubkey: Option<Script>,
     expiry_timestamp: Option<OffsetDateTime>,
-    lock: Option<LockInput>,
+    lock: Option<Lock>,
     commit: Option<Commit>,
     collaborative_settlement: Option<CollaborativeSettlement>,
     cet: Option<Cet>,
     refund: Option<Refund>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct LockInput {
-    txid: Txid,
-    dlc_vout: Vout,
-    timestamp: Timestamp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -799,13 +791,11 @@ struct CollaborativeSettlement {
     vout: Vout,
     payout: Payout,
     price: Price,
-    timestamp: Timestamp,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct Commit {
     txid: Txid,
-    timestamp: Timestamp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -814,7 +804,6 @@ struct Cet {
     vout: Vout,
     payout: Payout,
     price: Price,
-    timestamp: Timestamp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -822,7 +811,6 @@ struct Refund {
     txid: Txid,
     vout: Vout,
     payout: Payout,
-    timestamp: Timestamp,
 }
 
 impl ClosedCfdInputAggregate {
@@ -878,11 +866,7 @@ impl ClosedCfdInputAggregate {
                 let txid = Txid::new(txid);
                 let dlc_vout = Vout::new(vout);
 
-                self.lock = Some(LockInput {
-                    txid,
-                    dlc_vout,
-                    timestamp: event.timestamp,
-                });
+                self.lock = Some(Lock { txid, dlc_vout });
 
                 self.own_script_pubkey = Some(dlc.script_pubkey_for(self.role));
 
@@ -926,7 +910,6 @@ impl ClosedCfdInputAggregate {
                     vout,
                     payout,
                     price,
-                    timestamp: event.timestamp,
                 })
             }
             CollaborativeSettlementRejected => {}
@@ -967,12 +950,7 @@ impl ClosedCfdInputAggregate {
                 let txid = Txid::new(txid);
                 let vout = Vout::new(vout);
 
-                self.refund = Some(Refund {
-                    txid,
-                    vout,
-                    payout,
-                    timestamp: event.timestamp,
-                })
+                self.refund = Some(Refund { txid, vout, payout })
             }
             OracleAttestedPriorCetTimelock {
                 timelocked_cet,
@@ -982,7 +960,6 @@ impl ClosedCfdInputAggregate {
                 if self.commit.is_none() {
                     self.commit = commit_tx.map(|tx| Commit {
                         txid: Txid::new(tx.txid()),
-                        timestamp: event.timestamp,
                     });
                 }
 
@@ -1008,7 +985,6 @@ impl ClosedCfdInputAggregate {
                     vout,
                     payout,
                     price,
-                    timestamp: event.timestamp,
                 })
             }
             OracleAttestedPostCetTimelock { cet, price } => {
@@ -1034,13 +1010,11 @@ impl ClosedCfdInputAggregate {
                     vout,
                     payout,
                     price,
-                    timestamp: event.timestamp,
                 })
             }
             ManualCommit { tx } => {
                 self.commit = Some(Commit {
                     txid: Txid::new(tx.txid()),
-                    timestamp: event.timestamp,
                 });
             }
         }
@@ -1227,10 +1201,9 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
             fees,
             expiry_timestamp,
             lock_txid,
-            lock_dlc_vout,
-            lock_timestamp
+            lock_dlc_vout
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
         cfd.id,
         cfd.position,
@@ -1243,7 +1216,6 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         expiry_timestamp,
         cfd.lock.txid,
         cfd.lock.dlc_vout,
-        cfd.lock.timestamp
     )
     .execute(&mut *conn)
     .await?;
@@ -1263,7 +1235,6 @@ async fn insert_collaborative_settlement_tx(
         vout,
         payout,
         price,
-        timestamp,
     }: CollaborativeSettlement,
 ) -> Result<()> {
     let query_result = sqlx::query!(
@@ -1274,13 +1245,12 @@ async fn insert_collaborative_settlement_tx(
             txid,
             vout,
             payout,
-            price,
-            timestamp
+            price
         )
         VALUES
         (
             (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
-            $2, $3, $4, $5, $6
+            $2, $3, $4, $5
         )
         "#,
         id,
@@ -1288,7 +1258,6 @@ async fn insert_collaborative_settlement_tx(
         vout,
         payout,
         price,
-        timestamp
     )
     .execute(&mut *conn)
     .await?;
@@ -1303,26 +1272,23 @@ async fn insert_collaborative_settlement_tx(
 async fn insert_commit_tx(
     conn: &mut Transaction<'_, Sqlite>,
     id: OrderId,
-    Commit { txid, timestamp }: Commit,
+    Commit { txid }: Commit,
 ) -> Result<()> {
     let query_result = sqlx::query!(
         r#"
         INSERT INTO commit_txs
         (
             cfd_id,
-            txid,
-            timestamp
+            txid
         )
         VALUES
         (
             (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
-            $2,
-            $3
+            $2
         )
         "#,
         id,
-        txid,
-        timestamp
+        txid
     )
     .execute(&mut *conn)
     .await?;
@@ -1342,7 +1308,6 @@ async fn insert_cet(
         vout,
         payout,
         price,
-        timestamp,
     }: Cet,
 ) -> Result<()> {
     let query_result = sqlx::query!(
@@ -1353,21 +1318,19 @@ async fn insert_cet(
             txid,
             vout,
             payout,
-            price,
-            timestamp
+            price
         )
         VALUES
         (
             (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
-            $2, $3, $4, $5, $6
+            $2, $3, $4, $5
         )
         "#,
         id,
         txid,
         vout,
         payout,
-        price,
-        timestamp
+        price
     )
     .execute(&mut *conn)
     .await?;
@@ -1382,12 +1345,7 @@ async fn insert_cet(
 async fn insert_refund_tx(
     conn: &mut Transaction<'_, Sqlite>,
     id: OrderId,
-    Refund {
-        txid,
-        vout,
-        payout,
-        timestamp,
-    }: Refund,
+    Refund { txid, vout, payout }: Refund,
 ) -> Result<()> {
     let query_result = sqlx::query!(
         r#"
@@ -1396,20 +1354,18 @@ async fn insert_refund_tx(
             cfd_id,
             txid,
             vout,
-            payout,
-            timestamp
+            payout
         )
         VALUES
         (
             (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
-            $2, $3, $4, $5
+            $2, $3, $4
         )
         "#,
         id,
         txid,
         vout,
         payout,
-        timestamp
     )
     .execute(&mut *conn)
     .await?;
@@ -1466,8 +1422,7 @@ async fn load_collaborative_settlement_tx(
             txid as "txid: model::Txid",
             vout as "vout: model::Vout",
             payout as "payout: model::Payout",
-            price as "price: model::Price",
-            timestamp as "timestamp: model::Timestamp"
+            price as "price: model::Price"
         FROM
             collaborative_settlement_txs
         JOIN
@@ -1512,8 +1467,7 @@ async fn load_cet(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Opti
             txid as "txid: model::Txid",
             vout as "vout: model::Vout",
             payout as "payout: model::Payout",
-            price as "price: model::Price",
-            timestamp as "timestamp: model::Timestamp"
+            price as "price: model::Price"
         FROM
             cets
         JOIN
@@ -1536,8 +1490,7 @@ async fn load_refund_tx(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Resul
         SELECT
             txid as "txid: model::Txid",
             vout as "vout: model::Vout",
-            payout as "payout: model::Payout",
-            timestamp as "timestamp: model::Timestamp"
+            payout as "payout: model::Payout"
         FROM
             refund_txs
         JOIN
@@ -1868,7 +1821,6 @@ mod tests {
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
             price: Price::new(dec!(40_000)).unwrap(),
-            timestamp: Timestamp::new(10_000),
         };
 
         insert_cet(&mut db_tx, id, inserted).await.unwrap();
@@ -1895,7 +1847,6 @@ mod tests {
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
             price: Price::new(dec!(40_000)).unwrap(),
-            timestamp: Timestamp::new(10_000),
         };
 
         insert_collaborative_settlement_tx(&mut db_tx, id, inserted)
@@ -1924,7 +1875,6 @@ mod tests {
 
         let inserted = Commit {
             txid: Txid::new(bdk::bitcoin::Txid::default()),
-            timestamp: Timestamp::new(10_000),
         };
 
         insert_commit_tx(&mut db_tx, id, inserted).await.unwrap();
@@ -1950,7 +1900,6 @@ mod tests {
             txid: Txid::new(bdk::bitcoin::Txid::default()),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            timestamp: Timestamp::new(10_000),
         };
 
         insert_refund_tx(&mut db_tx, id, inserted).await.unwrap();
@@ -1975,10 +1924,9 @@ mod tests {
             role: Role::Maker,
             fees: Fees::new(SignedAmount::ONE_BTC),
             expiry_timestamp: OffsetDateTime::now_utc(),
-            lock: LockInput {
+            lock: Lock {
                 txid: Txid::new(bdk::bitcoin::Txid::default()),
                 dlc_vout: Vout::new(0),
-                timestamp: Timestamp::new(4_000),
             },
             collaborative_settlement: None,
             commit: None,

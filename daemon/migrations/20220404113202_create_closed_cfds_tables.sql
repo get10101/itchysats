@@ -10,8 +10,7 @@ CREATE TABLE IF NOT EXISTS closed_cfds (
     fees integer NOT NULL,
     expiry_timestamp integer NOT NULL,
     lock_txid text NOT NULL,
-    lock_dlc_vout integer NOT NULL,
-    lock_timestamp text NOT NULL
+    lock_dlc_vout integer NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS closed_cfds_uuid ON closed_cfds (uuid);
 CREATE TABLE IF NOT EXISTS collaborative_settlement_txs (
@@ -21,14 +20,12 @@ CREATE TABLE IF NOT EXISTS collaborative_settlement_txs (
     vout integer NOT NULL,
     payout integer NOT NULL,
     price text NOT NULL,
-    timestamp text NOT NULL,
     FOREIGN KEY (cfd_id) REFERENCES closed_cfds (id)
 );
 CREATE TABLE IF NOT EXISTS commit_txs (
     id integer PRIMARY KEY autoincrement,
     cfd_id integer NOT NULL,
     txid text NOT NULL,
-    timestamp text NOT NULL,
     FOREIGN KEY (cfd_id) REFERENCES closed_cfds (id)
 );
 CREATE TABLE IF NOT EXISTS cets (
@@ -38,7 +35,6 @@ CREATE TABLE IF NOT EXISTS cets (
     vout integer NOT NULL,
     payout integer NOT NULL,
     price text NOT NULL,
-    timestamp text NOT NULL,
     FOREIGN KEY (cfd_id) REFERENCES closed_cfds (id)
 );
 CREATE TABLE IF NOT EXISTS refund_txs (
@@ -47,7 +43,6 @@ CREATE TABLE IF NOT EXISTS refund_txs (
     txid text NOT NULL,
     vout integer NOT NULL,
     payout integer NOT NULL,
-    timestamp text NOT NULL,
     FOREIGN KEY (cfd_id) REFERENCES closed_cfds (id)
 );
 CREATE TABLE IF NOT EXISTS event_log (
