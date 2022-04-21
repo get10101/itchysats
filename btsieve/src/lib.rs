@@ -162,7 +162,7 @@ where
                     }
 
                     for (target_status, event) in reached_monitoring_target {
-                        tracing::info!(%txid, target = %target_status, current = %status, "Bitcoin transaction reached monitoring target");
+                        tracing::debug!(%txid, target = %target_status, current = %status, "Bitcoin transaction reached monitoring target");
                         ready_events.push(event);
                     }
                 }
