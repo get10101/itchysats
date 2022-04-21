@@ -117,7 +117,7 @@ impl Connection {
             .with(&HashMap::from([(MESSAGE_LABEL, msg_str)]))
             .inc();
 
-        tracing::trace!(target: "wire", %taker_id, "Sending {msg_str}");
+        tracing::trace!(target: "wire", %taker_id, msg_name = msg_str, "Sending");
 
         let taker_version = self.wire_version.clone();
 
@@ -489,7 +489,7 @@ impl Actor {
     async fn handle_msg_from_taker(&mut self, msg: maker_cfd::FromTaker) {
         let msg_str = msg.msg.name();
 
-        tracing::trace!(target: "wire", taker_id = %msg.taker_id, "Received {msg_str}");
+        tracing::trace!(target: "wire", taker_id = %msg.taker_id, msg_name = msg_str, "Received");
 
         use wire::TakerToMaker::*;
         match msg.msg {
