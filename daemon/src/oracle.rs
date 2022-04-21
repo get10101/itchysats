@@ -146,7 +146,7 @@ impl Actor {
                 async move {
                     let url = event_id.to_olivia_url();
 
-                    tracing::debug!("Fetching announcement for {event_id}");
+                    tracing::debug!(event_id = %event_id, "Fetching announcement");
 
                     let response = client
                         .get(url.clone())
