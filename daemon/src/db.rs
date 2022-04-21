@@ -11,11 +11,13 @@ use futures::FutureExt;
 use futures::Stream;
 use futures::StreamExt;
 use maia::TransactionExt;
+use model::long_and_short_leverage;
 use model::CfdEvent;
 use model::Contracts;
 use model::EventKind;
 use model::FeeAccount;
 use model::Fees;
+use model::FundingFee;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
@@ -29,6 +31,7 @@ use model::TxFeeRate;
 use model::Txid;
 use model::Usd;
 use model::Vout;
+use model::SETTLEMENT_INTERVAL;
 use sqlx::migrate::MigrateError;
 use sqlx::pool::PoolConnection;
 use sqlx::sqlite::SqliteConnectOptions;
@@ -776,6 +779,7 @@ struct ClosedCfdInputAggregate {
     counterparty_network_identity: Identity,
     role: Role,
     fee_account: FeeAccount,
+    initial_funding_fee: FundingFee,
     own_script_pubkey: Option<Script>,
     expiry_timestamp: Option<OffsetDateTime>,
     lock: Option<Lock>,
@@ -825,12 +829,28 @@ impl ClosedCfdInputAggregate {
             counterparty_network_identity,
             role,
             opening_fee,
+            initial_funding_rate,
             ..
         } = cfd;
         let n_contracts = quantity_usd
             .try_into_u64()
             .expect("number of contracts to fit into a u64");
         let n_contracts = Contracts::new(n_contracts);
+
+        let initial_funding_fee = {
+            let (long_leverage, short_leverage) =
+                long_and_short_leverage(taker_leverage, role, position);
+
+            FundingFee::calculate(
+                initial_price,
+                quantity_usd,
+                long_leverage,
+                short_leverage,
+                initial_funding_rate,
+                SETTLEMENT_INTERVAL.whole_hours(),
+            )
+            .expect("values from db to be sane")
+        };
 
         Self {
             id,
@@ -840,6 +860,7 @@ impl ClosedCfdInputAggregate {
             n_contracts,
             counterparty_network_identity,
             role,
+            initial_funding_fee,
             fee_account: FeeAccount::new(position, role).add_opening_fee(opening_fee),
             own_script_pubkey: None,
             expiry_timestamp: None,
@@ -856,6 +877,8 @@ impl ClosedCfdInputAggregate {
         match event.event {
             ContractSetupStarted => {}
             ContractSetupCompleted { dlc } => {
+                self.fee_account = self.fee_account.add_funding_fee(self.initial_funding_fee);
+
                 let script_pubkey = dlc.lock.1.script_pubkey();
                 let OutPoint { txid, vout } = dlc
                     .lock
