@@ -172,7 +172,7 @@ impl Drop for Connection {
     fn drop(&mut self) {
         let taker_id = self.taker;
 
-        tracing::info!(%taker_id, "Connection got dropped");
+        tracing::debug!(%taker_id, "Connection got dropped");
     }
 }
 
@@ -471,7 +471,7 @@ impl Actor {
             ]))
             .inc();
 
-        tracing::info!(taker_id = %identity, %wire_version, %daemon_version, "Connection is ready");
+        tracing::debug!(taker_id = %identity, %wire_version, %daemon_version, "Connection is ready");
     }
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
@@ -551,7 +551,7 @@ async fn upgrade(
 ) -> Result<()> {
     let taker_address = stream.peer_addr().context("Failed to get peer address")?;
 
-    tracing::info!(%taker_address, "Upgrade new connection");
+    tracing::debug!(%taker_address, "Upgrade new connection");
 
     let transport_state = noise::responder_handshake(&mut stream, &noise_priv_key)
         .timeout(Duration::from_secs(20))
@@ -605,7 +605,7 @@ async fn upgrade(
 
     let daemon_version = daemon_version.unwrap_or_else(|| String::from("<= 0.4.7"));
 
-    tracing::info!(%taker_id, %taker_address, %negotiated_wire_version, %daemon_version, "Connection upgrade successful");
+    tracing::debug!(%taker_id, %taker_address, %negotiated_wire_version, %daemon_version, "Connection upgrade successful");
 
     let _ = this
         .send(ConnectionReady {
