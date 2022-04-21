@@ -45,7 +45,7 @@ impl xtra::Actor for Actor {
 
                         match quote {
                             Some(quote) => {
-                                tracing::debug!("Received new quote: {:?}", quote);
+                                tracing::debug!(bid = %quote.bid, ask = %quote.ask, timestamp = %quote.timestamp, "Received new quote");
                                 let is_our_address_disconnected =
                                     this.send(NewQuoteReceived(quote)).await.is_err();
 
