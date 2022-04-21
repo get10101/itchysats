@@ -13,6 +13,7 @@ use futures::StreamExt;
 use maia::TransactionExt;
 use model::CfdEvent;
 use model::Contracts;
+use model::Dlc;
 use model::EventKind;
 use model::FeeAccount;
 use model::Fees;
@@ -784,6 +785,7 @@ struct ClosedCfdInputAggregate {
     collaborative_settlement: Option<CollaborativeSettlement>,
     cet: Option<Cet>,
     refund: Option<Refund>,
+    latest_dlc: Option<Dlc>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -860,6 +862,7 @@ impl ClosedCfdInputAggregate {
             collaborative_settlement: None,
             cet: None,
             refund: None,
+            latest_dlc: None,
         }
     }
 
@@ -887,6 +890,7 @@ impl ClosedCfdInputAggregate {
                 self.own_script_pubkey = Some(dlc.script_pubkey_for(self.role));
 
                 self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
+                self.latest_dlc = Some(dlc);
             }
             ContractSetupFailed => {}
             OfferRejected => {}
@@ -899,6 +903,7 @@ impl ClosedCfdInputAggregate {
                 self.fee_account = self.fee_account.add_funding_fee(funding_fee);
 
                 self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
+                self.latest_dlc = Some(dlc);
             }
             RolloverFailed => {}
             CollaborativeSettlementStarted { .. } => {}
@@ -933,7 +938,26 @@ impl ClosedCfdInputAggregate {
             CollaborativeSettlementFailed => {}
             LockConfirmed => {}
             LockConfirmedAfterFinality => {}
-            CommitConfirmed => {}
+            CommitConfirmed => {
+                self.commit = match self.latest_dlc {
+                    None => {
+                        bail!("No DLC after commit confirmed");
+                    }
+                    Some(ref dlc) => {
+                        let script_pubkey = dlc.commit.2.script_pubkey();
+                        let OutPoint { txid, .. } = dlc
+                            .commit
+                            .0
+                            .outpoint(&script_pubkey)
+                            .context("Missing DLC in commit TX")?;
+
+                        Some(Commit {
+                            txid: Txid::new(txid),
+                            timestamp: event.timestamp,
+                        })
+                    }
+                };
+            }
             CetConfirmed => {}
             RefundConfirmed => {}
             RevokeConfirmed => {}
