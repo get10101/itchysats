@@ -754,7 +754,7 @@ struct ClosedCfdInput {
     role: Role,
     fees: Fees,
     expiry_timestamp: OffsetDateTime,
-    lock: LockInput,
+    lock: Lock,
     collaborative_settlement: Option<CollaborativeSettlement>,
     commit: Option<Commit>,
     non_collaborative_settlement: Option<Cet>,
@@ -778,17 +778,11 @@ struct ClosedCfdInputAggregate {
     fee_account: FeeAccount,
     own_script_pubkey: Option<Script>,
     expiry_timestamp: Option<OffsetDateTime>,
-    lock: Option<LockInput>,
+    lock: Option<Lock>,
     commit: Option<Commit>,
     collaborative_settlement: Option<CollaborativeSettlement>,
     cet: Option<Cet>,
     refund: Option<Refund>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct LockInput {
-    txid: Txid,
-    dlc_vout: Vout,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -872,7 +866,7 @@ impl ClosedCfdInputAggregate {
                 let txid = Txid::new(txid);
                 let dlc_vout = Vout::new(vout);
 
-                self.lock = Some(LockInput { txid, dlc_vout });
+                self.lock = Some(Lock { txid, dlc_vout });
 
                 self.own_script_pubkey = Some(dlc.script_pubkey_for(self.role));
 
@@ -1930,7 +1924,7 @@ mod tests {
             role: Role::Maker,
             fees: Fees::new(SignedAmount::ONE_BTC),
             expiry_timestamp: OffsetDateTime::now_utc(),
-            lock: LockInput {
+            lock: Lock {
                 txid: Txid::new(bdk::bitcoin::Txid::default()),
                 dlc_vout: Vout::new(0),
             },
