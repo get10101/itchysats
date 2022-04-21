@@ -14,6 +14,7 @@ use maia::TransactionExt;
 use model::long_and_short_leverage;
 use model::CfdEvent;
 use model::Contracts;
+use model::Dlc;
 use model::EventKind;
 use model::FeeAccount;
 use model::Fees;
@@ -426,55 +427,7 @@ impl Connection {
                 insert_closed_cfd(&mut db_tx, closed_cfd).await?;
                 insert_event_log(&mut db_tx, id, event_log).await?;
 
-                match closed_cfd {
-                    ClosedCfdInput {
-                        collaborative_settlement: Some(collaborative_settlement),
-                        commit: None,
-                        non_collaborative_settlement: None,
-                        refund: None,
-                        ..
-                    } => {
-                        insert_collaborative_settlement_tx(
-                            &mut db_tx,
-                            id,
-                            collaborative_settlement,
-                        )
-                        .await?;
-                    }
-                    ClosedCfdInput {
-                        collaborative_settlement: None,
-                        commit: Some(commit),
-                        non_collaborative_settlement: Some(cet),
-                        refund: None,
-                        ..
-                    } => {
-                        insert_commit_tx(&mut db_tx, id, commit).await?;
-                        insert_cet(&mut db_tx, id, cet).await?;
-                    }
-                    ClosedCfdInput {
-                        collaborative_settlement: None,
-                        commit: Some(commit),
-                        non_collaborative_settlement: None,
-                        refund: Some(refund),
-                        ..
-                    } => {
-                        insert_commit_tx(&mut db_tx, id, commit).await?;
-                        insert_refund_tx(&mut db_tx, id, refund).await?;
-                    }
-                    ClosedCfdInput {
-                        collaborative_settlement,
-                        commit,
-                        non_collaborative_settlement,
-                        refund,
-                        ..
-                    } => bail!(
-                        "CFD to be closed has insane combination of transactions:
-                          {collaborative_settlement:?},
-                          {commit:?},
-                          {non_collaborative_settlement:?},
-                          {refund:?}"
-                    ),
-                }
+                insert_settlement(&mut db_tx, id, closed_cfd.settlement).await?;
 
                 delete_from_events_table(&mut db_tx, id).await?;
                 delete_from_cfds_table(&mut db_tx, id).await?;
@@ -525,75 +478,20 @@ impl Connection {
 
         let expiry_timestamp = OffsetDateTime::from_unix_timestamp(cfd.expiry_timestamp)?;
 
-        let collaborative_settlement = load_collaborative_settlement_tx(&mut conn, id).await?;
+        let collaborative_settlement = load_collaborative_settlement(&mut conn, id).await?;
+        let cet_settlement = load_cet_settlement(&mut conn, id).await?;
+        let refund_settlement = load_refund_settlement(&mut conn, id).await?;
 
-        let commit = load_commit_tx(&mut conn, id).await?;
-
-        let non_collaborative_settlement = load_cet(&mut conn, id).await?;
-
-        let refund = load_refund_tx(&mut conn, id).await?;
-
-        let settlement = match (
-            collaborative_settlement,
-            commit,
-            non_collaborative_settlement,
-            refund,
-        ) {
-            (
-                Some(CollaborativeSettlement {
-                    txid,
-                    vout,
-                    payout,
-                    price,
-                    ..
-                }),
-                None,
-                None,
-                None,
-            ) => Settlement::Collaborative {
-                txid,
-                vout,
-                payout,
-                price,
-            },
-            (
-                None,
-                Some(commit_txid),
-                Some(Cet {
-                    txid,
-                    vout,
-                    payout,
-                    price,
-                    ..
-                }),
-                None,
-            ) => Settlement::Cet {
-                commit_txid,
-                txid,
-                vout,
-                payout,
-                price,
-            },
-            (
-                None,
-                Some(commit_txid),
-                None,
-                Some(Refund {
-                    txid, vout, payout, ..
-                }),
-            ) => Settlement::Refund {
-                commit_txid,
-                txid,
-                vout,
-                payout,
-            },
+        let settlement = match (collaborative_settlement, cet_settlement, refund_settlement) {
+            (Some(collaborative_settlement), None, None) => collaborative_settlement,
+            (None, Some(cet), None) => cet,
+            (None, None, Some(refund)) => refund,
             _ => {
                 bail!(
                     "Closed CFD has insane combination of transactions:
                        {collaborative_settlement:?},
-                       {commit:?},
-                       {non_collaborative_settlement:?},
-                       {refund:?}"
+                       {cet_settlement:?},
+                       {refund_settlement:?}"
                 )
             }
         };
@@ -650,6 +548,36 @@ impl Connection {
 
         Ok(ids)
     }
+}
+
+async fn insert_settlement(
+    conn: &mut Transaction<'_, Sqlite>,
+    id: OrderId,
+    settlement: Settlement,
+) -> Result<()> {
+    match settlement {
+        Settlement::Collaborative {
+            txid,
+            vout,
+            payout,
+            price,
+        } => insert_collaborative_settlement(conn, id, txid, vout, payout, price).await?,
+        Settlement::Cet {
+            commit_txid,
+            txid,
+            vout,
+            payout,
+            price,
+        } => insert_cet_settlement(conn, id, commit_txid, txid, vout, payout, price).await?,
+        Settlement::Refund {
+            commit_txid,
+            txid,
+            vout,
+            payout,
+        } => insert_refund_settlement(conn, id, commit_txid, txid, vout, payout).await?,
+    };
+
+    Ok(())
 }
 
 // TODO: Make sqlx directly instantiate this struct instead of mapping manually. Need to create
@@ -715,13 +643,12 @@ pub struct Lock {
     pub dlc_vout: Vout,
 }
 
-/// Data loaded from the database about the way in which a closed CFD
-/// was settled.
+/// Representation of how a closed CFD was settled.
 ///
 /// It is represented using an `enum` rather than a series of optional
 /// fields so that only sane combinations of transactions can be
 /// loaded from the database.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Settlement {
     Collaborative {
         txid: Txid,
@@ -758,10 +685,7 @@ struct ClosedCfdInput {
     fees: Fees,
     expiry_timestamp: OffsetDateTime,
     lock: Lock,
-    collaborative_settlement: Option<CollaborativeSettlement>,
-    commit: Option<Commit>,
-    non_collaborative_settlement: Option<Cet>,
-    refund: Option<Refund>,
+    settlement: Settlement,
 }
 
 /// Auxiliary type used to gradually combine a `Cfd` with its list of
@@ -780,41 +704,12 @@ struct ClosedCfdInputAggregate {
     role: Role,
     fee_account: FeeAccount,
     initial_funding_fee: FundingFee,
-    own_script_pubkey: Option<Script>,
-    expiry_timestamp: Option<OffsetDateTime>,
-    lock: Option<Lock>,
-    commit: Option<Commit>,
-    collaborative_settlement: Option<CollaborativeSettlement>,
-    cet: Option<Cet>,
-    refund: Option<Refund>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct CollaborativeSettlement {
-    txid: Txid,
-    vout: Vout,
-    payout: Payout,
-    price: Price,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Commit {
-    txid: Txid,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Cet {
-    txid: Txid,
-    vout: Vout,
-    payout: Payout,
-    price: Price,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Refund {
-    txid: Txid,
-    vout: Vout,
-    payout: Payout,
+    latest_dlc: Option<Dlc>,
+    collaborative_settlement: Option<(bdk::bitcoin::Transaction, Script, Price)>,
+    cet: Option<(bdk::bitcoin::Transaction, Price)>,
+    cet_confirmed: bool,
+    collaborative_settlement_confirmed: bool,
+    refund_confirmed: bool,
 }
 
 impl ClosedCfdInputAggregate {
@@ -860,15 +755,14 @@ impl ClosedCfdInputAggregate {
             n_contracts,
             counterparty_network_identity,
             role,
-            initial_funding_fee,
             fee_account: FeeAccount::new(position, role).add_opening_fee(opening_fee),
-            own_script_pubkey: None,
-            expiry_timestamp: None,
-            lock: None,
-            commit: None,
+            initial_funding_fee,
+            latest_dlc: None,
             collaborative_settlement: None,
             cet: None,
-            refund: None,
+            cet_confirmed: false,
+            collaborative_settlement_confirmed: false,
+            refund_confirmed: false,
         }
     }
 
@@ -878,22 +772,7 @@ impl ClosedCfdInputAggregate {
             ContractSetupStarted => {}
             ContractSetupCompleted { dlc } => {
                 self.fee_account = self.fee_account.add_funding_fee(self.initial_funding_fee);
-
-                let script_pubkey = dlc.lock.1.script_pubkey();
-                let OutPoint { txid, vout } = dlc
-                    .lock
-                    .0
-                    .outpoint(&script_pubkey)
-                    .context("Missing DLC in lock TX")?;
-
-                let txid = Txid::new(txid);
-                let dlc_vout = Vout::new(vout);
-
-                self.lock = Some(Lock { txid, dlc_vout });
-
-                self.own_script_pubkey = Some(dlc.script_pubkey_for(self.role));
-
-                self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
+                self.latest_dlc = Some(dlc);
             }
             ContractSetupFailed => {}
             OfferRejected => {}
@@ -901,11 +780,8 @@ impl ClosedCfdInputAggregate {
             RolloverAccepted => {}
             RolloverRejected => {}
             RolloverCompleted { dlc, funding_fee } => {
-                self.own_script_pubkey = Some(dlc.script_pubkey_for(self.role));
-
                 self.fee_account = self.fee_account.add_funding_fee(funding_fee);
-
-                self.expiry_timestamp = Some(dlc.settlement_event_id.timestamp());
+                self.latest_dlc = Some(dlc);
             }
             RolloverFailed => {}
             CollaborativeSettlementStarted { .. } => {}
@@ -915,134 +791,156 @@ impl ClosedCfdInputAggregate {
                 script,
                 price,
             } => {
-                let OutPoint { txid, vout } = spend_tx
-                    .outpoint(&script)
-                    .context("Missing spend script in collaborative settlement TX")?;
-
-                let payout = &spend_tx
-                    .output
-                    .get(vout as usize)
-                    .with_context(|| format!("No output at vout {vout}"))?;
-                let payout = Payout::new(Amount::from_sat(payout.value));
-
-                let txid = Txid::new(txid);
-                let vout = Vout::new(vout);
-
-                self.collaborative_settlement = Some(CollaborativeSettlement {
-                    txid,
-                    vout,
-                    payout,
-                    price,
-                })
+                self.collaborative_settlement = Some((spend_tx, script, price));
             }
             CollaborativeSettlementRejected => {}
             CollaborativeSettlementFailed => {}
             LockConfirmed => {}
             LockConfirmedAfterFinality => {}
             CommitConfirmed => {}
-            CetConfirmed => {}
-            RefundConfirmed => {}
+            CetConfirmed => {
+                self.cet_confirmed = true;
+            }
+            RefundConfirmed => {
+                self.refund_confirmed = true;
+            }
             RevokeConfirmed => {}
-            CollaborativeSettlementConfirmed => {}
+            CollaborativeSettlementConfirmed => {
+                self.collaborative_settlement_confirmed = true;
+            }
             CetTimelockExpiredPriorOracleAttestation => {}
             CetTimelockExpiredPostOracleAttestation { cet: _ } => {
                 // if we have an attestation we have already updated
-                // the `self.non_collaborative_settlement` field in
-                // the `OracleAttestedPriorCetTimelock` branch.
+                // the `self.cet` field in the
+                // `OracleAttestedPriorCetTimelock` branch.
                 //
                 // We could repeat that work here just in case, but we
-                // don't have the closing price, so the
-                // `NonCollaborativeSettlement` struct would be
-                // incomplete
+                // don't have the closing price, so the `Cet` struct
+                // would be incomplete
             }
-            RefundTimelockExpired { refund_tx } => {
-                let own_script_pubkey = self
-                    .own_script_pubkey
-                    .as_ref()
-                    .context("Missing DLC after refund timelock has expired")?;
-                let OutPoint { txid, vout } = refund_tx
-                    .outpoint(own_script_pubkey)
-                    .context("Missing spend script in refund TX")?;
-
-                let payout = &refund_tx
-                    .output
-                    .get(vout as usize)
-                    .with_context(|| format!("No output at vout {vout}"))?;
-                let payout = Payout::new(Amount::from_sat(payout.value));
-
-                let txid = Txid::new(txid);
-                let vout = Vout::new(vout);
-
-                self.refund = Some(Refund { txid, vout, payout })
-            }
+            RefundTimelockExpired { .. } => {}
             OracleAttestedPriorCetTimelock {
                 timelocked_cet,
-                commit_tx,
                 price,
+                ..
             } => {
-                if self.commit.is_none() {
-                    self.commit = commit_tx.map(|tx| Commit {
-                        txid: Txid::new(tx.txid()),
-                    });
-                }
-
-                let own_script_pubkey = self
-                    .own_script_pubkey
-                    .as_ref()
-                    .context("Missing DLC after CET was chosen")?;
-                let OutPoint { txid, vout } = timelocked_cet
-                    .outpoint(own_script_pubkey)
-                    .context("Missing spend script in CET")?;
-
-                let payout = &timelocked_cet
-                    .output
-                    .get(vout as usize)
-                    .with_context(|| format!("No output at vout {vout}"))?;
-                let payout = Payout::new(Amount::from_sat(payout.value));
-
-                let txid = Txid::new(txid);
-                let vout = Vout::new(vout);
-
-                self.cet = Some(Cet {
-                    txid,
-                    vout,
-                    payout,
-                    price,
-                })
+                self.cet = Some((timelocked_cet, price));
             }
             OracleAttestedPostCetTimelock { cet, price } => {
-                let own_script_pubkey = self
-                    .own_script_pubkey
-                    .as_ref()
-                    .context("Missing DLC after CET was chosen")?;
-                let OutPoint { txid, vout } = cet
-                    .outpoint(own_script_pubkey)
-                    .context("Missing spend script in CET")?;
-
-                let payout = &cet
-                    .output
-                    .get(vout as usize)
-                    .with_context(|| format!("No output at vout {vout}"))?;
-                let payout = Payout::new(Amount::from_sat(payout.value));
-
-                let txid = Txid::new(txid);
-                let vout = Vout::new(vout);
-
-                self.cet = Some(Cet {
-                    txid,
-                    vout,
-                    payout,
-                    price,
-                })
+                self.cet = Some((cet, price));
             }
-            ManualCommit { tx } => {
-                self.commit = Some(Commit {
-                    txid: Txid::new(tx.txid()),
-                });
-            }
+            ManualCommit { .. } => {}
         }
 
         Ok(self)
+    }
+
+    fn latest_dlc(&self) -> Result<&Dlc> {
+        match self.latest_dlc {
+            None => {
+                bail!("No DLC after commit confirmed");
+            }
+            Some(ref dlc) => Ok(dlc),
+        }
+    }
+
+    fn lock(&self) -> Result<Lock> {
+        let script_pubkey = self.latest_dlc()?.lock.1.script_pubkey();
+        let OutPoint { txid, vout } = self
+            .latest_dlc()?
+            .lock
+            .0
+            .outpoint(&script_pubkey)
+            .context("Missing DLC in lock TX")?;
+
+        let txid = Txid::new(txid);
+        let dlc_vout = Vout::new(vout);
+
+        Ok(Lock { txid, dlc_vout })
+    }
+
+    fn collaborative_settlement(&self) -> Result<Settlement> {
+        let (spend_tx, script, price) = self
+            .collaborative_settlement
+            .as_ref()
+            .context("Collaborative settlement not set")?;
+
+        let OutPoint { txid, vout } = spend_tx
+            .outpoint(script)
+            .context("Missing spend script in collaborative settlement TX")?;
+
+        let payout = &spend_tx
+            .output
+            .get(vout as usize)
+            .with_context(|| format!("No output at vout {vout}"))?;
+        let payout = Payout::new(Amount::from_sat(payout.value));
+
+        let txid = Txid::new(txid);
+        let vout = Vout::new(vout);
+
+        Ok(Settlement::Collaborative {
+            txid,
+            vout,
+            payout,
+            price: *price,
+        })
+    }
+
+    fn cet(&self) -> Result<Settlement> {
+        let (cet, price) = self.cet.as_ref().context("Cet not set")?;
+
+        let commit_txid = Txid::new(self.latest_dlc()?.commit.0.txid());
+
+        let own_script_pubkey = self.latest_dlc()?.script_pubkey_for(self.role);
+
+        let OutPoint { txid, vout } = cet
+            .outpoint(&own_script_pubkey)
+            .context("Missing spend script in CET")?;
+
+        let payout = &cet
+            .output
+            .get(vout as usize)
+            .with_context(|| format!("No output at vout {vout}"))?;
+        let payout = Payout::new(Amount::from_sat(payout.value));
+
+        let txid = Txid::new(txid);
+        let vout = Vout::new(vout);
+
+        Ok(Settlement::Cet {
+            commit_txid,
+            txid,
+            vout,
+            payout,
+            price: *price,
+        })
+    }
+
+    fn refund(&self) -> Result<Settlement> {
+        let dlc = self.latest_dlc()?;
+
+        let own_script_pubkey = dlc.script_pubkey_for(self.role);
+        let refund_tx = &dlc.refund.0;
+
+        let OutPoint { txid, vout } = refund_tx
+            .outpoint(&own_script_pubkey)
+            .context("Missing spend script in refund TX")?;
+
+        let payout = &refund_tx
+            .output
+            .get(vout as usize)
+            .with_context(|| format!("No output at vout {vout}"))?;
+        let payout = Payout::new(Amount::from_sat(payout.value));
+
+        let commit_txid = Txid::new(dlc.commit.0.txid());
+        let txid = Txid::new(txid);
+        let vout = Vout::new(vout);
+
+        Ok(Settlement::Refund {
+            commit_txid,
+            txid,
+            vout,
+            payout,
+        })
     }
 
     fn build(self) -> Result<ClosedCfdInput> {
@@ -1055,14 +953,27 @@ impl ClosedCfdInputAggregate {
             counterparty_network_identity,
             role,
             fee_account,
-            expiry_timestamp,
-            lock,
-            commit,
-            collaborative_settlement,
-            cet: non_collaborative_settlement,
-            refund,
             ..
         } = self;
+
+        let lock = self.lock()?;
+        let dlc = self.latest_dlc()?;
+
+        let settlement = match (
+            self.collaborative_settlement_confirmed,
+            self.cet_confirmed,
+            self.refund_confirmed,
+        ) {
+            (true, false, false) => self.collaborative_settlement()?,
+            (false, true, false) => self.cet()?,
+            (false, false, true) => self.refund()?,
+            (collaborative_settlement, cet, refund) => bail!(
+                "Insane transaction combination:
+                    Collaborative settlement: {collaborative_settlement:?},
+                    CET: {cet:?},
+                    Refund: {refund:?},"
+            ),
+        };
 
         Ok(ClosedCfdInput {
             id,
@@ -1073,12 +984,9 @@ impl ClosedCfdInputAggregate {
             counterparty_network_identity,
             role,
             fees: Fees::new(fee_account.balance()),
-            expiry_timestamp: expiry_timestamp.context("missing expiry timestamp")?,
-            lock: lock.context("missing lock")?,
-            collaborative_settlement,
-            commit,
-            non_collaborative_settlement,
-            refund,
+            expiry_timestamp: dlc.settlement_event_id.timestamp(),
+            lock,
+            settlement,
         })
     }
 }
@@ -1250,15 +1158,13 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
     Ok(())
 }
 
-async fn insert_collaborative_settlement_tx(
+async fn insert_collaborative_settlement(
     conn: &mut Transaction<'_, Sqlite>,
     id: OrderId,
-    CollaborativeSettlement {
-        txid,
-        vout,
-        payout,
-        price,
-    }: CollaborativeSettlement,
+    txid: Txid,
+    vout: Vout,
+    payout: Payout,
+    price: Price,
 ) -> Result<()> {
     let query_result = sqlx::query!(
         r#"
@@ -1295,7 +1201,7 @@ async fn insert_collaborative_settlement_tx(
 async fn insert_commit_tx(
     conn: &mut Transaction<'_, Sqlite>,
     id: OrderId,
-    Commit { txid }: Commit,
+    txid: Txid,
 ) -> Result<()> {
     let query_result = sqlx::query!(
         r#"
@@ -1323,16 +1229,17 @@ async fn insert_commit_tx(
     Ok(())
 }
 
-async fn insert_cet(
+async fn insert_cet_settlement(
     conn: &mut Transaction<'_, Sqlite>,
     id: OrderId,
-    Cet {
-        txid,
-        vout,
-        payout,
-        price,
-    }: Cet,
+    commit_txid: Txid,
+    txid: Txid,
+    vout: Vout,
+    payout: Payout,
+    price: Price,
 ) -> Result<()> {
+    insert_commit_tx(conn, id, commit_txid).await?;
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO cets
@@ -1365,11 +1272,16 @@ async fn insert_cet(
     Ok(())
 }
 
-async fn insert_refund_tx(
+async fn insert_refund_settlement(
     conn: &mut Transaction<'_, Sqlite>,
     id: OrderId,
-    Refund { txid, vout, payout }: Refund,
+    commit_txid: Txid,
+    txid: Txid,
+    vout: Vout,
+    payout: Payout,
 ) -> Result<()> {
+    insert_commit_tx(conn, id, commit_txid).await?;
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO refund_txs
@@ -1434,24 +1346,24 @@ async fn insert_event_log(
     Ok(())
 }
 
-async fn load_collaborative_settlement_tx(
+async fn load_collaborative_settlement(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
-) -> Result<Option<CollaborativeSettlement>> {
+) -> Result<Option<Settlement>> {
     let row = sqlx::query_as!(
-        CollaborativeSettlement,
+        Settlement::Collaborative,
         r#"
         SELECT
-            txid as "txid: model::Txid",
-            vout as "vout: model::Vout",
-            payout as "payout: model::Payout",
-            price as "price: model::Price"
+            collaborative_settlement_txs.txid as "txid: model::Txid",
+            collaborative_settlement_txs.vout as "vout: model::Vout",
+            collaborative_settlement_txs.payout as "payout: model::Payout",
+            collaborative_settlement_txs.price as "price: model::Price"
         FROM
             collaborative_settlement_txs
         JOIN
-            closed_cfds c on c.id = collaborative_settlement_txs.cfd_id
+            closed_cfds on closed_cfds.id = collaborative_settlement_txs.cfd_id
         WHERE
-            c.uuid = $1
+            closed_cfds.uuid = $1
         "#,
         id
     )
@@ -1461,42 +1373,27 @@ async fn load_collaborative_settlement_tx(
     Ok(row)
 }
 
-async fn load_commit_tx(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Option<Txid>> {
-    let txid = sqlx::query!(
-        r#"
-        SELECT
-            txid as "txid: model::Txid"
-        FROM
-            commit_txs
-        JOIN
-            closed_cfds c on c.id = commit_txs.cfd_id
-        WHERE
-            c.uuid = $1
-        "#,
-        id
-    )
-    .fetch_optional(&mut *conn)
-    .await?
-    .map(|row| row.txid);
-
-    Ok(txid)
-}
-
-async fn load_cet(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Option<Cet>> {
+async fn load_cet_settlement(
+    conn: &mut PoolConnection<Sqlite>,
+    id: OrderId,
+) -> Result<Option<Settlement>> {
     let row = sqlx::query_as!(
-        Cet,
+        Settlement::Cet,
         r#"
         SELECT
-            txid as "txid: model::Txid",
-            vout as "vout: model::Vout",
-            payout as "payout: model::Payout",
-            price as "price: model::Price"
+            commit_txs.txid as "commit_txid: model::Txid",
+            cets.txid as "txid: model::Txid",
+            cets.vout as "vout: model::Vout",
+            cets.payout as "payout: model::Payout",
+            cets.price as "price: model::Price"
         FROM
             cets
         JOIN
-            closed_cfds c on c.id = cets.cfd_id
+            commit_txs on commit_txs.id = cets.cfd_id
+        JOIN
+            closed_cfds on closed_cfds.id = cets.cfd_id
         WHERE
-            c.uuid = $1
+            closed_cfds.uuid = $1
         "#,
         id
     )
@@ -1506,20 +1403,26 @@ async fn load_cet(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Opti
     Ok(row)
 }
 
-async fn load_refund_tx(conn: &mut PoolConnection<Sqlite>, id: OrderId) -> Result<Option<Refund>> {
+async fn load_refund_settlement(
+    conn: &mut PoolConnection<Sqlite>,
+    id: OrderId,
+) -> Result<Option<Settlement>> {
     let row = sqlx::query_as!(
-        Refund,
+        Settlement::Refund,
         r#"
         SELECT
-            txid as "txid: model::Txid",
-            vout as "vout: model::Vout",
-            payout as "payout: model::Payout"
+            commit_txs.txid as "commit_txid: model::Txid",
+            refund_txs.txid as "txid: model::Txid",
+            refund_txs.vout as "vout: model::Vout",
+            refund_txs.payout as "payout: model::Payout"
         FROM
             refund_txs
         JOIN
-            closed_cfds c on c.id = refund_txs.cfd_id
+            commit_txs on commit_txs.id = refund_txs.cfd_id
+        JOIN
+            closed_cfds on closed_cfds.id = refund_txs.cfd_id
         WHERE
-            c.uuid = $1
+            closed_cfds.uuid = $1
         "#,
         id
     )
@@ -1839,17 +1742,18 @@ mod tests {
 
         insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
 
-        let inserted = Cet {
+        let inserted = Settlement::Cet {
+            commit_txid: Txid::new(bdk::bitcoin::Txid::default()),
             txid: Txid::new(bdk::bitcoin::Txid::default()),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
             price: Price::new(dec!(40_000)).unwrap(),
         };
 
-        insert_cet(&mut db_tx, id, inserted).await.unwrap();
+        insert_settlement(&mut db_tx, id, inserted).await.unwrap();
         db_tx.commit().await.unwrap();
 
-        let loaded = load_cet(&mut conn, id).await.unwrap().unwrap();
+        let loaded = load_cet_settlement(&mut conn, id).await.unwrap().unwrap();
 
         assert_eq!(inserted, loaded);
     }
@@ -1865,47 +1769,22 @@ mod tests {
 
         insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
 
-        let inserted = CollaborativeSettlement {
+        let inserted = Settlement::Collaborative {
             txid: Txid::new(bdk::bitcoin::Txid::default()),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
             price: Price::new(dec!(40_000)).unwrap(),
         };
 
-        insert_collaborative_settlement_tx(&mut db_tx, id, inserted)
-            .await
-            .unwrap();
+        insert_settlement(&mut db_tx, id, inserted).await.unwrap();
         db_tx.commit().await.unwrap();
 
-        let loaded = load_collaborative_settlement_tx(&mut conn, id)
+        let loaded = load_collaborative_settlement(&mut conn, id)
             .await
             .unwrap()
             .unwrap();
 
-        assert_eq!(loaded, inserted);
-    }
-
-    #[tokio::test]
-    async fn insert_commit_tx_roundtrip() {
-        let db = memory().await.unwrap();
-
-        let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
-
-        let id = OrderId::default();
-
-        insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
-
-        let inserted = Commit {
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
-        };
-
-        insert_commit_tx(&mut db_tx, id, inserted).await.unwrap();
-        db_tx.commit().await.unwrap();
-
-        let loaded = load_commit_tx(&mut conn, id).await.unwrap().unwrap();
-
-        assert_eq!(loaded, inserted.txid);
+        assert_eq!(inserted, loaded);
     }
 
     #[tokio::test]
@@ -1919,18 +1798,22 @@ mod tests {
 
         insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
 
-        let inserted = Refund {
+        let inserted = Settlement::Refund {
+            commit_txid: Txid::new(bdk::bitcoin::Txid::default()),
             txid: Txid::new(bdk::bitcoin::Txid::default()),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
         };
 
-        insert_refund_tx(&mut db_tx, id, inserted).await.unwrap();
+        insert_settlement(&mut db_tx, id, inserted).await.unwrap();
         db_tx.commit().await.unwrap();
 
-        let loaded = load_refund_tx(&mut conn, id).await.unwrap().unwrap();
+        let loaded = load_refund_settlement(&mut conn, id)
+            .await
+            .unwrap()
+            .unwrap();
 
-        assert_eq!(loaded, inserted);
+        assert_eq!(inserted, loaded);
     }
 
     async fn insert_dummy_closed_cfd(
@@ -1951,10 +1834,12 @@ mod tests {
                 txid: Txid::new(bdk::bitcoin::Txid::default()),
                 dlc_vout: Vout::new(0),
             },
-            collaborative_settlement: None,
-            commit: None,
-            non_collaborative_settlement: None,
-            refund: None,
+            settlement: Settlement::Collaborative {
+                txid: Txid::new(bdk::bitcoin::Txid::default()),
+                vout: Vout::new(0),
+                payout: Payout::new(Amount::ONE_BTC),
+                price: Price::new(Decimal::ONE_HUNDRED).unwrap(),
+            },
         };
 
         insert_closed_cfd(conn, cfd).await?;
