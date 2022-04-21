@@ -3,7 +3,7 @@ use crate::db;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use futures::TryStreamExt;
+use futures::StreamExt;
 use maia::secp256k1_zkp::schnorrsig;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
@@ -312,37 +312,33 @@ impl xtra::Actor for Actor {
                 .send_interval(std::time::Duration::from_secs(5), || Sync),
         );
 
-        self.tasks.add_fallible(
-            {
-                let db = self.db.clone();
+        self.tasks.add({
+            let db = self.db.clone();
 
-                async move {
-                    let mut stream = db.load_all_open_cfds::<Cfd>(());
+            async move {
+                let mut stream = db.load_all_open_cfds::<Cfd>(());
 
-                    while let Some(Cfd {
+                while let Some(cfd) = stream.next().await {
+                    let Cfd {
                         pending_attestation,
                         ..
-                    }) = stream
-                        .try_next()
-                        .await
-                        .context("Failed to load CFD from database")?
-                    {
-                        if let Some(pending_attestation) = pending_attestation {
-                            let _: Result<(), xtra::Disconnected> = this
-                                .send(MonitorAttestation {
-                                    event_id: pending_attestation,
-                                })
-                                .await;
+                    } = match cfd {
+                        Ok(cfd) => cfd,
+                        Err(e) => {
+                            tracing::warn!("Failed to load CFD from database: {e:#}");
+                            continue;
                         }
+                    };
+                    if let Some(pending_attestation) = pending_attestation {
+                        let _: Result<(), xtra::Disconnected> = this
+                            .send(MonitorAttestation {
+                                event_id: pending_attestation,
+                            })
+                            .await;
                     }
-
-                    anyhow::Ok(())
                 }
-            },
-            |e| async move {
-                tracing::debug!("Failed to re-initialize pending attestations from DB: {e:#}");
-            },
-        );
+            }
+        });
     }
 
     async fn stopped(self) -> Self::Stop {}

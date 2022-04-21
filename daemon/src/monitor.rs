@@ -16,7 +16,7 @@ use bdk::miniscript::DescriptorTrait;
 use btsieve::ScriptStatus;
 use btsieve::State;
 use btsieve::TxStatus;
-use futures::TryStreamExt;
+use futures::StreamExt;
 use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
@@ -560,26 +560,29 @@ impl xtra::Actor for Actor {
                 async move {
                     let mut stream = db.load_all_open_cfds::<Cfd>(());
 
-                    while let Some(Cfd {
-                        cet,
-                        commit_tx,
-                        lock_tx,
-                        id,
-                        params,
-                        monitor_lock_finality,
-                        monitor_commit_finality,
-                        monitor_cet_timelock,
-                        monitor_refund_timelock,
-                        monitor_refund_finality,
-                        monitor_revoked_commit_transactions,
-                        monitor_collaborative_settlement_finality,
-                        monitor_cet_finality,
-                        ..
-                    }) = stream
-                        .try_next()
-                        .await
-                        .context("Failed to load CFD from database")?
-                    {
+                    while let Some(cfd) = stream.next().await {
+                        let Cfd {
+                            cet,
+                            commit_tx,
+                            lock_tx,
+                            id,
+                            params,
+                            monitor_lock_finality,
+                            monitor_commit_finality,
+                            monitor_cet_timelock,
+                            monitor_refund_timelock,
+                            monitor_refund_finality,
+                            monitor_revoked_commit_transactions,
+                            monitor_collaborative_settlement_finality,
+                            monitor_cet_finality,
+                            ..
+                        } = match cfd {
+                            Ok(cfd) => cfd,
+                            Err(e) => {
+                                tracing::warn!("Failed to load CFD from database: {e:#}");
+                                continue;
+                            }
+                        };
                         if let Some(tx) = commit_tx {
                             if let Err(e) = this
                                 .send(TryBroadcastTransaction {
