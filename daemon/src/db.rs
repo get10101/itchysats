@@ -1395,7 +1395,7 @@ async fn load_cet_settlement(
         FROM
             cets
         JOIN
-            commit_txs on commit_txs.id = cets.cfd_id
+            commit_txs on commit_txs.cfd_id = cets.cfd_id
         JOIN
             closed_cfds on closed_cfds.id = cets.cfd_id
         WHERE
@@ -1424,7 +1424,7 @@ async fn load_refund_settlement(
         FROM
             refund_txs
         JOIN
-            commit_txs on commit_txs.id = refund_txs.cfd_id
+            commit_txs on commit_txs.cfd_id = refund_txs.cfd_id
         JOIN
             closed_cfds on closed_cfds.id = refund_txs.cfd_id
         WHERE
@@ -1495,6 +1495,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use std::str::FromStr;
 
     #[tokio::test]
     async fn test_insert_and_load_cfd() {
@@ -1762,6 +1763,90 @@ mod tests {
         let loaded = load_cet_settlement(&mut conn, id).await.unwrap().unwrap();
 
         assert_eq!(inserted, loaded);
+    }
+
+    #[tokio::test]
+    async fn given_inserting_different_settlements_then_we_can_load_them_again_correctly() {
+        let db = memory().await.unwrap();
+
+        let mut conn = db.inner.acquire().await.unwrap();
+
+        let id_cet = OrderId::default();
+        let id_refund = OrderId::default();
+        let id_collab = OrderId::default();
+
+        let commit_txid_cet = bdk::bitcoin::Txid::from_str(
+            "684443dd37119031701f2a8caaaae8af5f1c7d7e7d55c3866d51b26609ae841f",
+        )
+        .unwrap();
+        let commit_txid_refund = bdk::bitcoin::Txid::from_str(
+            "9721ca44bdab8b0d9dd550b59efe6334554c7e8e242b019119b85107aac55a83",
+        )
+        .unwrap();
+
+        let inserted_cet = Settlement::Cet {
+            commit_txid: Txid::new(commit_txid_cet),
+            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            vout: Vout::new(0),
+            payout: Payout::new(Amount::ONE_BTC),
+            price: Price::new(dec!(40_000)).unwrap(),
+        };
+
+        let inserted_collab_settlement = Settlement::Collaborative {
+            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            vout: Vout::new(0),
+            payout: Payout::new(Amount::ONE_BTC),
+            price: Price::new(Decimal::ONE_HUNDRED).unwrap(),
+        };
+
+        let inserted_refund_settlement = Settlement::Refund {
+            commit_txid: Txid::new(commit_txid_refund),
+            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            vout: Vout::new(0),
+            payout: Payout::new(Amount::ONE_BTC),
+        };
+
+        let mut db_tx = conn.begin().await.unwrap();
+        insert_dummy_closed_cfd(&mut db_tx, id_cet).await.unwrap();
+        insert_settlement(&mut db_tx, id_cet, inserted_cet)
+            .await
+            .unwrap();
+        db_tx.commit().await.unwrap();
+
+        let mut db_tx = conn.begin().await.unwrap();
+        insert_dummy_closed_cfd(&mut db_tx, id_collab)
+            .await
+            .unwrap();
+        insert_settlement(&mut db_tx, id_collab, inserted_collab_settlement)
+            .await
+            .unwrap();
+        db_tx.commit().await.unwrap();
+
+        let mut db_tx = conn.begin().await.unwrap();
+        insert_dummy_closed_cfd(&mut db_tx, id_refund)
+            .await
+            .unwrap();
+        insert_settlement(&mut db_tx, id_refund, inserted_refund_settlement)
+            .await
+            .unwrap();
+        db_tx.commit().await.unwrap();
+
+        let loaded_cet = load_cet_settlement(&mut conn, id_cet)
+            .await
+            .unwrap()
+            .unwrap();
+        let loaded_collab = load_collaborative_settlement(&mut conn, id_collab)
+            .await
+            .unwrap()
+            .unwrap();
+        let loaded_refund = load_refund_settlement(&mut conn, id_refund)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(inserted_cet, loaded_cet);
+        assert_eq!(inserted_collab_settlement, loaded_collab);
+        assert_eq!(inserted_refund_settlement, loaded_refund);
     }
 
     #[tokio::test]

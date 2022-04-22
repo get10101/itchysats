@@ -1,41 +1,5 @@
 {
   "db": "SQLite",
-  "14144da0cf79fcc6fa955b05b10ecad32375d4c74cba2a1dcd608703a7b3d1a0": {
-    "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            refund_txs.txid as \"txid: model::Txid\",\n            refund_txs.vout as \"vout: model::Vout\",\n            refund_txs.payout as \"payout: model::Payout\"\n        FROM\n            refund_txs\n        JOIN\n            commit_txs on commit_txs.id = refund_txs.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = refund_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
-    "describe": {
-      "columns": [
-        {
-          "name": "commit_txid: model::Txid",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "txid: model::Txid",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "vout: model::Vout",
-          "ordinal": 2,
-          "type_info": "Int64"
-        },
-        {
-          "name": "payout: model::Payout",
-          "ordinal": 3,
-          "type_info": "Int64"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
   "16d1dd8c374c41c479594214f1bc927759195f743d17f489d328040bb2a66b5f": {
     "query": "\n        INSERT INTO commit_txs\n        (\n            cfd_id,\n            txid\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2\n        )\n        ",
     "describe": {
@@ -116,48 +80,6 @@
         "Right": 3
       },
       "nullable": []
-    }
-  },
-  "84874628e39ec1e5817555f4241fbb6925e19fccdcea20030249e01f159aab11": {
-    "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            cets.txid as \"txid: model::Txid\",\n            cets.vout as \"vout: model::Vout\",\n            cets.payout as \"payout: model::Payout\",\n            cets.price as \"price: model::Price\"\n        FROM\n            cets\n        JOIN\n            commit_txs on commit_txs.id = cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
-    "describe": {
-      "columns": [
-        {
-          "name": "commit_txid: model::Txid",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "txid: model::Txid",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "vout: model::Vout",
-          "ordinal": 2,
-          "type_info": "Int64"
-        },
-        {
-          "name": "payout: model::Payout",
-          "ordinal": 3,
-          "type_info": "Int64"
-        },
-        {
-          "name": "price: model::Price",
-          "ordinal": 4,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false
-      ]
     }
   },
   "8be24a7ddeb039a60c0600232d742f9ba75c02cde7bf536bb190525be07f0d5b": {
@@ -382,6 +304,48 @@
       "nullable": []
     }
   },
+  "d34c71aabe47b87cc7de4c7da4f923544721264e4be976634a3f989d40278211": {
+    "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            cets.txid as \"txid: model::Txid\",\n            cets.vout as \"vout: model::Vout\",\n            cets.payout as \"payout: model::Payout\",\n            cets.price as \"price: model::Price\"\n        FROM\n            cets\n        JOIN\n            commit_txs on commit_txs.cfd_id = cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "commit_txid: model::Txid",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "txid: model::Txid",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "vout: model::Vout",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "payout: model::Payout",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "price: model::Price",
+          "ordinal": 4,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "da7431dcc9aa5d799bf29bef7fb6a8b31469fb2deb4eab99a518f03f79eabbf4": {
     "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\",\n                position as \"position: model::Position\",\n                initial_price as \"initial_price: model::Price\",\n                taker_leverage as \"taker_leverage: model::Leverage\",\n                n_contracts as \"n_contracts: model::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: model::Identity\",\n                role as \"role: model::Role\",\n                fees as \"fees: model::Fees\",\n                expiry_timestamp,\n                lock_txid as \"lock_txid: model::Txid\",\n                lock_dlc_vout as \"lock_dlc_vout: model::Vout\"\n            FROM\n                closed_cfds\n            WHERE\n                closed_cfds.uuid = $1\n            ",
     "describe": {
@@ -453,6 +417,42 @@
         false,
         false,
         false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "e3bddc86b453b35f2c4232bca0bb17caf42b763c6f30a585a5ee2ce78081b63a": {
+    "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            refund_txs.txid as \"txid: model::Txid\",\n            refund_txs.vout as \"vout: model::Vout\",\n            refund_txs.payout as \"payout: model::Payout\"\n        FROM\n            refund_txs\n        JOIN\n            commit_txs on commit_txs.cfd_id = refund_txs.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = refund_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "commit_txid: model::Txid",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "txid: model::Txid",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "vout: model::Vout",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "payout: model::Payout",
+          "ordinal": 3,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
         false,
         false,
         false,
