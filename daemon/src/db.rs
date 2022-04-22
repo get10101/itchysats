@@ -292,8 +292,19 @@ impl Connection {
             drop(conn);
 
             for id in ids {
-                yield self.load_open_cfd(id, args.clone()).await
-                    .with_context(|| format!("Failed to load open CFD {id}"));
+                let res = match self.load_open_cfd(id, args.clone()).await {
+                    Err(Error::OpenCfdNotFound) => {
+                        tracing::trace!(
+                            order_id=%id,
+                            target="db",
+                            "Ignoring OpenCfdNotFound"
+                        );
+                        continue;
+                    }
+                    res => res.with_context(|| "Could not load open CFD {id}"),
+                };
+
+                yield res;
             }
 
             let mut conn = self.inner.acquire().await?;
