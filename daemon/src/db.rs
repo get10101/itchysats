@@ -385,10 +385,16 @@ impl Connection {
                 where events.cfd_id = cfds.id and
                 (
                     events.name = $1 or
-                    events.name = $2
+                    events.name = $2 or
+                    events.name= $3 or
+                    events.name= $4 or
+                    events.name= $5
                 )
             )
             "#,
+            EventKind::COLLABORATIVE_SETTLEMENT_CONFIRMED,
+            EventKind::CET_CONFIRMED,
+            EventKind::REFUND_CONFIRMED,
             EventKind::CONTRACT_SETUP_FAILED,
             EventKind::OFFER_REJECTED
         )
