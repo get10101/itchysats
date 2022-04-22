@@ -389,16 +389,16 @@ impl Actor {
 
     async fn handle_connection_ready(
         &mut self,
-        msg: ConnectionReady,
-        ctx: &mut xtra::Context<Self>,
-    ) {
-        let ConnectionReady {
+        ConnectionReady {
             mut read,
             write,
             identity,
+            address,
             wire_version,
             daemon_version,
-        } = msg;
+        }: ConnectionReady,
+        ctx: &mut xtra::Context<Self>,
+    ) {
         let this = ctx.address().expect("we are alive");
 
         if self.connections.contains_key(&identity) {
@@ -471,7 +471,7 @@ impl Actor {
             ]))
             .inc();
 
-        tracing::debug!(taker_id = %identity, %wire_version, %daemon_version, "Connection is ready");
+        tracing::debug!(taker_id = %identity, taker_addres = %address, %wire_version, %daemon_version, "Connection is ready");
     }
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
@@ -605,13 +605,14 @@ async fn upgrade(
 
     let daemon_version = daemon_version.unwrap_or_else(|| String::from("<= 0.4.7"));
 
-    tracing::debug!(%taker_id, %taker_address, %negotiated_wire_version, %daemon_version, "Connection upgrade successful");
+    tracing::trace!(%taker_id, %taker_address, %negotiated_wire_version, %daemon_version, "Connection upgrade successful");
 
     let _ = this
         .send(ConnectionReady {
             read,
             write,
             identity: taker_id,
+            address: taker_address,
             wire_version: negotiated_wire_version,
             daemon_version,
         })
@@ -624,6 +625,7 @@ struct ConnectionReady {
     read: wire::Read<wire::TakerToMaker, wire::MakerToTaker>,
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
     identity: Identity,
+    address: SocketAddr,
     wire_version: wire::Version,
     daemon_version: String,
 }
