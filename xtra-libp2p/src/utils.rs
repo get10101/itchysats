@@ -20,7 +20,7 @@ pub fn create_connect_tcp_multiaddr(
         .with_context(|| "failed to construct multiaddr")
 }
 
-/// Creates MultiAddr from SocketAddr and PeerId
+/// Creates MultiAddr from SocketAddr
 pub fn create_listen_tcp_multiaddr(socket_addr: &SocketAddr) -> Result<Multiaddr> {
     let ip = socket_addr.ip();
     let port = socket_addr.port();

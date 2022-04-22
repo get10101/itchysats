@@ -36,7 +36,8 @@ impl Actor {
         }
     }
 
-    /// Returns error if we cannot access Endpoint or the peer is not connected Endpoint.
+    /// Returns error if we cannot access the Endpoint or if the peer is not
+    /// connected to the Endpoint.
     async fn check_connection_active_in_endpoint(&self) -> Result<(), Error> {
         let ConnectionStats {
             connected_peers, ..

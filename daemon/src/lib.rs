@@ -68,7 +68,7 @@ pub mod wire;
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
 pub const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
-pub const PING_INTERVAL: Option<Duration> = Some(Duration::from_secs(1));
+pub const PING_INTERVAL: Option<Duration> = Some(Duration::from_secs(5));
 
 pub const N_PAYOUTS: usize = 200;
 
