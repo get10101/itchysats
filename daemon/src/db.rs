@@ -349,11 +349,11 @@ impl Connection {
                         tracing::trace!(
                             order_id=%id,
                             target="db",
-                            "Ignoring open CFD not found because it was likely moved to the closed table"
+                            "Ignoring OpenCfdNotFound"
                         );
                         continue;
                     }
-                    res => res.with_context(|| "Could not load open CFD, likely because it was moved to closed cfd table"),
+                    res => res.with_context(|| "Could not load open CFD {id}"),
                 };
 
                 yield res;
