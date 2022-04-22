@@ -273,7 +273,7 @@ impl Connection {
         C: ClosedCfdAggregate + Unpin,
         C::CtorArgs: Clone + Send + Sync,
     {
-        let stream = async_stream::try_stream! {
+        let stream = async_stream::stream! {
             let mut conn = self.inner.acquire().await?;
 
             let ids = sqlx::query!(
@@ -292,12 +292,19 @@ impl Connection {
             drop(conn);
 
             for id in ids {
-                let open_cfd = self
-                    .load_open_cfd(id, args.clone())
-                    .await
-                    .with_context(|| format!("Failed to load open CFD {id}"))?;
+                let res = match self.load_open_cfd(id, args.clone()).await {
+                    Err(Error::OpenCfdNotFound) => {
+                        tracing::trace!(
+                            order_id=%id,
+                            target="db",
+                            "Ignoring OpenCfdNotFound"
+                        );
+                        continue;
+                    }
+                    res => res.with_context(|| "Could not load open CFD {id}"),
+                };
 
-                yield open_cfd;
+                yield res;
             }
 
             let mut conn = self.inner.acquire().await?;
@@ -318,12 +325,8 @@ impl Connection {
             drop(conn);
 
             for id in ids {
-                let closed_cfd = self
-                    .load_closed_cfd(id, args.clone())
-                    .await
-                    .with_context(|| format!("Failed to load closed CFD {id}"))?;
-
-                yield closed_cfd;
+                yield self.load_closed_cfd(id, args.clone()).await
+                    .with_context(|| format!("Failed to load closed CFD {id}"));
             }
         };
 
@@ -348,22 +351,23 @@ impl Connection {
         C: CfdAggregate + Unpin,
         C::CtorArgs: Clone + Send + Sync,
     {
-        let stream = async_stream::try_stream! {
+        let stream = async_stream::stream! {
             let ids = self.load_open_cfd_ids().await?;
 
             for id in ids {
-                let cfd = match self.load_open_cfd(id, args.clone()).await {
-                    Ok(cfd) => Ok(cfd),
+                let res = match self.load_open_cfd(id, args.clone()).await {
                     Err(Error::OpenCfdNotFound) => {
-                        tracing::trace!(order_id=%id, target="db", "Ignoring open CFD not found because it was likely moved to the closed table");
+                        tracing::trace!(
+                            order_id=%id,
+                            target="db",
+                            "Ignoring OpenCfdNotFound"
+                        );
                         continue;
-                    },
-                    Err(e) => {
-                        Err(e)
                     }
-                }?;
+                    res => res.with_context(|| "Could not load open CFD {id}"),
+                };
 
-                yield cfd;
+                yield res;
             }
         };
 
