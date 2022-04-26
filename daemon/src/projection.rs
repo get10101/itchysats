@@ -261,11 +261,7 @@ impl Aggregated {
         }
 
         let tx = self.cet.or(self.timelocked_cet)?;
-        let dlc = self
-            .latest_dlc
-            .as_ref()
-            .expect("dlc to be present when we have a cet");
-        let script = dlc.script_pubkey_for(role);
+        let script = self.latest_dlc?.script_pubkey_for(role);
 
         Some(extract_payout_amount(tx, script))
     }
