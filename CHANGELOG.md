@@ -7,14 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.12] - 2022-04-26
+
 ### Changed
 
 - Allow to run the `taker` binary without parameters: Default the bitcoin-network subcommand to `mainnet` and apply defaults for the `mainnet` and `testnet` maker.
+- Change the finality confirmations for spend transactions to `3` confirmations instead of `1`.
+- Move `Closed` CFDs to a separate database table freeing up space.
+  This is a performance improvement for the startup of the application.
+  Note that the database file will not change in size, but the space will be re-used internally.
+- Performance improvements with adding cache and optimized loading for different actors.
+- Add link to the internal wallet when there is not enough balance to open a new position.
+- Improve wire log messages for better context for connection logs.
 
 ### Fixed
 
 - An issue where CET finality was not monitored if we restarted the daemon before the CET was confirmed.
   This was fixed by adding CET monitoring to the restart behaviour of the monitor actor.
+- An issue where the taker daemon lost connection to the maker because the maker did not send heartbeats due to the maker's connection actor being blocked.
+  This was fixed by removing all blocking calls from the connection actors in both taker and maker which should result in a more stable connection handling overall.
+- An issue where the `commit_tx` URL was not displayed for a `force` close scenario.
 
 ## [0.4.11] - 2022-04-04
 
@@ -106,7 +118,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.11...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.12...HEAD
+[0.4.12]: https://github.com/itchysats/itchysats/compare/0.4.11...0.4.12
 [0.4.11]: https://github.com/itchysats/itchysats/compare/0.4.10...0.4.11
 [0.4.10]: https://github.com/itchysats/itchysats/compare/0.4.9...0.4.10
 [0.4.9]: https://github.com/itchysats/itchysats/compare/0.4.8...0.4.9
