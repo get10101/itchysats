@@ -22,6 +22,12 @@ jobs:
 
           print(f"::set-output name=version::{version}")
 
+      - name: Extract changelog section for release
+        id: changelog
+        uses: coditory/changelog-parser@v1
+        with:
+          version: ${{ steps.extract-version.outputs.version }}
+
       - name: Create release
         uses: actions/create-release@v1
         env:
