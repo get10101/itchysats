@@ -209,6 +209,8 @@ struct Aggregated {
     collab_settlement_tx: Option<(Transaction, Script)>,
     /// If this is present, it should have been published.
     cet: Option<Transaction>,
+    /// If this is present, it should have been published.
+    refund_tx: Option<Transaction>,
 
     /// If this is present the cet has not been published
     timelocked_cet: Option<Transaction>,
@@ -236,6 +238,7 @@ impl Aggregated {
             latest_dlc: None,
             collab_settlement_tx: None,
             cet: None,
+            refund_tx: None,
             timelocked_cet: None,
             commit_published: false,
             refund_published: false,
@@ -249,6 +252,11 @@ impl Aggregated {
 
     fn payout(self, role: Role) -> Option<Amount> {
         if let Some((tx, script)) = self.collab_settlement_tx {
+            return Some(extract_payout_amount(tx, script));
+        }
+
+        if let Some(tx) = self.refund_tx {
+            let script = self.latest_dlc?.script_pubkey_for(role);
             return Some(extract_payout_amount(tx, script));
         }
 
@@ -486,7 +494,9 @@ impl Cfd {
 
                 self.aggregated.state = CfdState::PendingCet;
             }
-            RefundTimelockExpired { .. } => {
+            RefundTimelockExpired { refund_tx } => {
+                self.aggregated.refund_tx = Some(refund_tx);
+
                 self.aggregated.refund_published = true;
 
                 self.aggregated.state = CfdState::PendingRefund;
