@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.12] - 2022-04-26
+
 ### Changed
 
 - Allow to run the `taker` binary without parameters: Default the bitcoin-network subcommand to `mainnet` and apply defaults for the `mainnet` and `testnet` maker.
@@ -106,7 +108,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.11...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.12...HEAD
+[0.4.12]: https://github.com/itchysats/itchysats/compare/0.4.11...0.4.12
 [0.4.11]: https://github.com/itchysats/itchysats/compare/0.4.10...0.4.11
 [0.4.10]: https://github.com/itchysats/itchysats/compare/0.4.9...0.4.10
 [0.4.9]: https://github.com/itchysats/itchysats/compare/0.4.8...0.4.9
