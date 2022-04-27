@@ -7,6 +7,8 @@ use bdk::bitcoin;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use connection::ConnectionStatus;
+use libp2p_core::Multiaddr;
+use libp2p_tcp::TokioTcpConfig;
 use maia::secp256k1_zkp::schnorrsig;
 use model::olivia;
 use model::FundingRate;
@@ -26,6 +28,9 @@ use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use xtra::prelude::*;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
+use xtra_libp2p::dialer;
+use xtra_libp2p::listener;
+use xtra_libp2p::Endpoint;
 use xtras::supervisor;
 
 pub use bdk;
@@ -62,6 +67,9 @@ pub mod wire;
 /// determine whether the maker is online.
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
+pub const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
+pub const PING_INTERVAL: Option<Duration> = Some(Duration::from_secs(5));
+
 pub const N_PAYOUTS: usize = 200;
 
 pub struct MakerActorSystem<O, W> {
@@ -69,8 +77,8 @@ pub struct MakerActorSystem<O, W> {
     wallet_actor: Address<W>,
     _close_cfds_actor: Address<close_cfds::Actor>,
     executor: command::Executor,
-
     _tasks: Tasks,
+    _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
 }
 
 impl<O, W> MakerActorSystem<O, W>
@@ -140,6 +148,38 @@ where
         .create(None)
         .spawn(&mut tasks);
 
+        let (endpoint_addr, endpoint_context) = Context::new(None);
+
+        let ping_address = xtra_libp2p_ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
+            .create(None)
+            .spawn(&mut tasks);
+
+        let endpoint = Endpoint::new(
+            TokioTcpConfig::new(),
+            identity.libp2p,
+            ENDPOINT_CONNECTION_TIMEOUT,
+            [(
+                xtra_libp2p_ping::PROTOCOL_NAME,
+                xtra::message_channel::StrongMessageChannel::clone_channel(&ping_address),
+            )],
+        );
+
+        tasks.add(endpoint_context.run(endpoint));
+
+        let libp2p_socket = libp2p_socket_from_legacy_networking(&p2p_socket);
+        let endpoint_listen =
+            xtra_libp2p::create_listen_tcp_multiaddr(&libp2p_socket).expect("to parse properly");
+
+        let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
+            move || {
+                let endpoint_addr = endpoint_addr.clone();
+                let endpoint_listen = endpoint_listen.clone();
+                listener::Actor::new(endpoint_addr, endpoint_listen)
+            },
+            |_: &listener::Error| true, // always restart listener actor
+        );
+        let listener_supervisor = supervisor.create(None).spawn(&mut tasks);
+
         tasks.add(inc_conn_ctx.run(maker_inc_connections::Actor::new(
             Box::new(cfd_actor_addr.clone()),
             Box::new(cfd_actor_addr.clone()),
@@ -163,6 +203,7 @@ where
             _close_cfds_actor: close_cfds_actor,
             executor,
             _tasks: tasks,
+            _listener_supervisor: listener_supervisor,
         })
     }
 
@@ -273,6 +314,8 @@ pub struct TakerActorSystem<O, W, P> {
     /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
     /// address.
     _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
+    _dialer_actor: Address<dialer::Actor>,
+    _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
     _close_cfds_actor: Address<close_cfds::Actor>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
@@ -306,6 +349,7 @@ where
         connect_timeout: Duration,
         projection_actor: Address<projection::Actor>,
         maker_identity: Identity,
+        maker_multiaddr: Multiaddr,
     ) -> Result<Self>
     where
         M: Handler<monitor::StartMonitoring>
@@ -380,6 +424,33 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
+        let (endpoint_addr, endpoint_context) = Context::new(None);
+
+        let ping_address = xtra_libp2p_ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
+            .create(None)
+            .spawn(&mut tasks);
+
+        let endpoint = Endpoint::new(
+            TokioTcpConfig::new(),
+            identity.libp2p,
+            ENDPOINT_CONNECTION_TIMEOUT,
+            [(
+                xtra_libp2p_ping::PROTOCOL_NAME,
+                xtra::message_channel::StrongMessageChannel::clone_channel(&ping_address),
+            )],
+        );
+
+        tasks.add(endpoint_context.run(endpoint));
+
+        let dialer_constructor =
+            { move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone()) };
+
+        let (supervisor, dialer_actor) = supervisor::Actor::with_policy(
+            dialer_constructor,
+            |_: &dialer::Error| true, // always restart dialer actor
+        );
+        let dialer_supervisor = supervisor.create(None).spawn(&mut tasks);
+
         let (supervisor, price_feed_actor) = supervisor::Actor::with_policy(
             price_feed_constructor,
             |_| true, // always restart price feed actor
@@ -399,6 +470,8 @@ where
             price_feed_actor,
             executor,
             _price_feed_supervisor: price_feed_supervisor,
+            _dialer_actor: dialer_actor,
+            _dialer_supervisor: dialer_supervisor,
             _close_cfds_actor: close_cfds_actor,
             _tasks: tasks,
             maker_online_status_feed_receiver,
@@ -466,4 +539,12 @@ where
             })
             .await?
     }
+}
+
+/// By convention we increment the port by 1 for libp2p-based connections.
+///
+/// The obvious drawback is that when doing blue/green deployment, we need to
+/// increment/decrement ports by 2.
+pub fn libp2p_socket_from_legacy_networking(legacy_addr: &SocketAddr) -> SocketAddr {
+    SocketAddr::new(legacy_addr.ip(), legacy_addr.port() + 1)
 }

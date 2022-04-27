@@ -604,7 +604,13 @@ async fn taker_notices_lack_of_maker() {
     let maker = Maker::start(&maker_config).await;
 
     let taker_config = TakerConfig::default().with_heartbeat_interval(short_interval);
-    let mut taker = Taker::start(&taker_config, maker.listen_addr, maker.identity).await;
+    let mut taker = Taker::start(
+        &taker_config,
+        maker.listen_addr,
+        maker.identity,
+        maker.peer_id,
+    )
+    .await;
 
     assert_eq!(
         ConnectionStatus::Online,
@@ -658,7 +664,13 @@ async fn start_from_open_cfd_state(
     position_maker: Position,
 ) -> (Maker, Taker, OrderId) {
     let mut maker = Maker::start(&MakerConfig::default()).await;
-    let mut taker = Taker::start(&TakerConfig::default(), maker.listen_addr, maker.identity).await;
+    let mut taker = Taker::start(
+        &TakerConfig::default(),
+        maker.listen_addr,
+        maker.identity,
+        maker.peer_id,
+    )
+    .await;
 
     is_next_offers_none(taker.offers_feed()).await.unwrap();
 

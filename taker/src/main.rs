@@ -9,6 +9,7 @@ use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
 use daemon::connection::connect;
 use daemon::db;
+use daemon::libp2p_socket_from_legacy_networking;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
@@ -19,6 +20,7 @@ use daemon::wallet;
 use daemon::TakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
+use libp2p_core::PeerId;
 use model::olivia;
 use model::Identity;
 use model::SETTLEMENT_INTERVAL;
@@ -32,6 +34,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::Actor;
+use xtra_libp2p::create_connect_tcp_multiaddr;
 
 mod routes;
 
@@ -58,6 +61,12 @@ struct Opts {
     /// If not specified it defaults to the itchysats maker-id for mainnet or testnet.
     #[clap(long, parse(try_from_str = parse_x25519_pubkey))]
     maker_id: Option<x25519_dalek::PublicKey>,
+
+    /// Maker's peer id, required for establishing libp2p encrypted connection.
+    ///
+    /// If not specified it defaults to the itchysats maker-peer-id for mainnet or testnet.
+    #[clap(long)]
+    maker_peer_id: Option<PeerId>,
 
     /// The IP address to listen on for the HTTP API.
     #[clap(long, default_value = "127.0.0.1:8000")]
@@ -96,7 +105,7 @@ impl Opts {
         })
     }
 
-    fn maker(&self) -> Result<(String, x25519_dalek::PublicKey)> {
+    fn maker(&self) -> Result<(String, x25519_dalek::PublicKey, PeerId)> {
         let network = self.network();
 
         let maker_url = match self.maker.clone() {
@@ -119,7 +128,19 @@ impl Opts {
             },
         };
 
-        Ok((maker_url, maker_id))
+        let maker_peer_id = match self.maker_peer_id {
+            Some(maker_peer_id) => maker_peer_id,
+            None => match network {
+                // TODO: Add defaults for mainnet and testnet
+                Network::Mainnet { .. } => bail!("No maker default peer id configured for mainnet"),
+                Network::Testnet { .. } => bail!("No maker default peer id configured for testnet"),
+                Network::Signet { .. } => {
+                    bail!("No maker default peer id configured for signet")
+                }
+            },
+        };
+
+        Ok((maker_url, maker_id, maker_peer_id))
     }
 }
 
@@ -222,7 +243,7 @@ async fn main() -> Result<()> {
     let opts = Opts::parse();
 
     let network = opts.network();
-    let (maker_url, maker_id) = opts.maker()?;
+    let (maker_url, maker_id, maker_peer_id) = opts.maker()?;
 
     logger::init(opts.log_level, opts.json).context("initialize logger")?;
     tracing::info!("Running version: {}", daemon::version::version());
@@ -300,6 +321,17 @@ async fn main() -> Result<()> {
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
+    let possible_addresses = resolve_maker_addresses(maker_url.as_str()).await?;
+
+    // Assume that the first resolved ipv4 address is good enough for libp2p.
+    let first_maker_address = possible_addresses
+        .iter()
+        .find(|x| x.is_ipv4())
+        .context("Could not resolve maker URL")?;
+
+    let maker_libp2p_address = libp2p_socket_from_legacy_networking(first_maker_address);
+    let maker_multiaddr = create_connect_tcp_multiaddr(&maker_libp2p_address, maker_peer_id)?;
+
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
@@ -317,14 +349,13 @@ async fn main() -> Result<()> {
         HEARTBEAT_INTERVAL,
         Duration::from_secs(10),
         projection_actor.clone(),
-        maker_identity,
+        Identity::new(maker_id),
+        maker_multiaddr,
     )?;
 
     let (proj_actor, projection_feeds) =
         projection::Actor::new(db.clone(), bitcoin_network, &taker.price_feed_actor);
     tasks.add(projection_context.run(proj_actor));
-
-    let possible_addresses = resolve_maker_addresses(maker_url.as_str()).await?;
 
     tasks.add(connect(
         taker.maker_online_status_feed_receiver.clone(),

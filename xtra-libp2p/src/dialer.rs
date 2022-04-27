@@ -1,3 +1,4 @@
+use crate::multiaddress_ext::MultiaddrExt;
 use crate::Connect;
 use crate::ConnectionStats;
 use crate::Endpoint;
@@ -35,19 +36,25 @@ impl Actor {
         }
     }
 
-    /// Returns error if we cannot access Endpoint or the connect address is not
-    /// present inside Endpoint.
+    /// Returns error if we cannot access the Endpoint or if the peer is not
+    /// connected to the Endpoint.
     async fn check_connection_active_in_endpoint(&self) -> Result<(), Error> {
         let ConnectionStats {
-            listen_addresses, ..
+            connected_peers, ..
         } = self
             .endpoint
             .send(GetConnectionStats)
             .await
             .map_err(|_| Error::NoEndpoint)?;
 
-        listen_addresses
-            .contains(&self.connect_address)
+        connected_peers
+            .contains(
+                &self
+                    .connect_address
+                    .clone()
+                    .extract_peer_id()
+                    .ok_or(Error::InvalidPeerId)?,
+            )
             .then(|| ())
             .ok_or(Error::ConnectionDropped)
     }
@@ -107,6 +114,8 @@ pub enum Error {
     NoEndpoint,
     #[error("Connection dropped from endpoint")]
     ConnectionDropped,
+    #[error("Invalid Peer Id")]
+    InvalidPeerId,
     #[error("Stop reason was not specified")]
     Unspecified,
 }

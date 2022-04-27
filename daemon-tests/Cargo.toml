@@ -24,4 +24,5 @@ tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
 xtra = { version = "0.6" }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
+xtra-libp2p = { path = "../xtra-libp2p" }
 xtra_productivity = { version = "0.1" }
