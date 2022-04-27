@@ -137,4 +137,9 @@ cd taker-frontend && yarn run eslint
 
 ## Contact
 
-Feel free to reach out to us on [Twitter](twitter.com/itchysats) or [Telegram](https://t.me/joinchat/ULycH50PLV1jOTI0).
+Feel free to reach out to us on [Twitter](twitter.com/itchysats), [Telegram](https://t.me/joinchat/ULycH50PLV1jOTI0) or [Matrix](https://matrix.to/#/!OSErkwZgvuIhcizfaI:matrix.org?via=matrix.org).
+
+## Contributing
+
+We encourage community contributions whether it be a bug fix or an improvement to the documentation.
+Please have a look at the [contributing guidelines](./CONTRIBUTING.md).
