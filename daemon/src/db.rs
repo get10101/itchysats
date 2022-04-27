@@ -33,6 +33,7 @@ use model::Txid;
 use model::Usd;
 use model::Vout;
 use model::SETTLEMENT_INTERVAL;
+use rayon::prelude::*;
 use sqlx::migrate::MigrateError;
 use sqlx::pool::PoolConnection;
 use sqlx::sqlite::SqliteConnectOptions;
@@ -1112,7 +1113,7 @@ async fn load_cfd_events(
     )
     .fetch_all(&mut *conn)
     .await?
-    .into_iter()
+    .into_par_iter()
     .map(|row| {
         Ok(CfdEvent {
             timestamp: row.created_at,
