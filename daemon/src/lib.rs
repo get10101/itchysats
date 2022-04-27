@@ -44,6 +44,7 @@ pub mod command;
 pub mod connection;
 pub mod db;
 mod future_ext;
+pub mod libp2p_utils;
 pub mod maker_cfd;
 pub mod maker_inc_connections;
 pub mod monitor;
@@ -166,9 +167,9 @@ where
 
         tasks.add(endpoint_context.run(endpoint));
 
-        let libp2p_socket = libp2p_socket_from_legacy_networking(&p2p_socket);
+        let libp2p_socket = libp2p_utils::libp2p_socket_from_legacy_networking(&p2p_socket);
         let endpoint_listen =
-            xtra_libp2p::create_listen_tcp_multiaddr(&libp2p_socket).expect("to parse properly");
+            libp2p_utils::create_listen_tcp_multiaddr(&libp2p_socket).expect("to parse properly");
 
         let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
             move || {
@@ -539,12 +540,4 @@ where
             })
             .await?
     }
-}
-
-/// By convention we increment the port by 1 for libp2p-based connections.
-///
-/// The obvious drawback is that when doing blue/green deployment, we need to
-/// increment/decrement ports by 2.
-pub fn libp2p_socket_from_legacy_networking(legacy_addr: &SocketAddr) -> SocketAddr {
-    SocketAddr::new(legacy_addr.ip(), legacy_addr.port() + 1)
 }

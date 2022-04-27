@@ -9,6 +9,7 @@ use daemon::bdk::bitcoin::Network;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
+use daemon::libp2p_utils::create_connect_tcp_multiaddr;
 use daemon::maker_cfd;
 use daemon::projection;
 use daemon::projection::Cfd;
@@ -45,7 +46,6 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use xtra::Actor;
 use xtra_bitmex_price_feed::Quote;
-use xtra_libp2p::create_connect_tcp_multiaddr;
 use xtra_libp2p::libp2p::PeerId;
 
 pub mod flow;
