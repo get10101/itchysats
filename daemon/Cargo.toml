@@ -9,7 +9,7 @@ anyhow = "1"
 async-stream = "0.3"
 async-trait = "0.1.53"
 asynchronous-codec = "0.6.0"
-bdk = { version = "0.17", default-features = false, features = ["electrum"] }
+bdk = { version = "0.18", default-features = false, features = ["electrum"] }
 bdk-ext = { path = "../bdk-ext" }
 btsieve = { path = "../btsieve" }
 bytes = "1"
