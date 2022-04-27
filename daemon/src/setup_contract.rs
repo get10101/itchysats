@@ -56,8 +56,18 @@ use std::ops::RangeInclusive;
 use std::time::Duration;
 use xtra::prelude::MessageChannel;
 
-/// How long protocol waits for the next message before giving up
-const MSG_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long contract setup protocol waits for the next message before giving up
+///
+/// 120s are currently needed to ensure that we can outlive times when the maker/taker are under
+/// heavy message load. Failed contract setups are annoying compared to failed rollovers so we allow
+/// more time to see them less often.
+const CONTRACT_SETUP_MSG_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// How long rollover protocol waits for the next message before giving up
+///
+/// 60s timeout are acceptable here because rollovers are automatically retried; a few failed
+/// rollovers are not a big deal.
+const ROLLOVER_MSG_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
@@ -97,9 +107,9 @@ pub async fn new(
         .context("Failed to send Msg0")?;
     let msg0 = stream
         .select_next_some()
-        .timeout(MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
-        .with_context(|| format_expect_msg_within("Msg0"))?
+        .with_context(|| format_expect_msg_within("Msg0", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg0()?;
 
     tracing::info!("Exchanged setup parameters");
@@ -161,9 +171,9 @@ pub async fn new(
 
     let msg1 = stream
         .select_next_some()
-        .timeout(MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
-        .with_context(|| format_expect_msg_within("Msg1"))?
+        .with_context(|| format_expect_msg_within("Msg1", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg1()?;
 
     tracing::info!("Exchanged CFD transactions");
@@ -245,9 +255,9 @@ pub async fn new(
     .context("Failed to send Msg2")?;
     let msg2 = stream
         .select_next_some()
-        .timeout(MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
-        .with_context(|| format_expect_msg_within("Msg2"))?
+        .with_context(|| format_expect_msg_within("Msg2", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg2()?;
     signed_lock_tx
         .merge(msg2.signed_lock)
@@ -313,9 +323,9 @@ pub async fn new(
         .context("Failed to send Msg3")?;
     let _ = stream
         .select_next_some()
-        .timeout(MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
-        .with_context(|| format_expect_msg_within("Msg3"))?
+        .with_context(|| format_expect_msg_within("Msg3", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg3()?;
 
     Ok(Dlc {
@@ -369,9 +379,9 @@ pub async fn roll_over(
     .context("Failed to send Msg0")?;
     let msg0 = stream
         .select_next_some()
-        .timeout(MSG_TIMEOUT)
+        .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| format_expect_msg_within("Msg0"))?
+        .with_context(|| format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg0()?;
 
     let complete_fee = match rollover_params.version {
@@ -471,9 +481,9 @@ pub async fn roll_over(
 
     let msg1 = stream
         .select_next_some()
-        .timeout(MSG_TIMEOUT)
+        .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| format_expect_msg_within("Msg1"))?
+        .with_context(|| format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg1()?;
 
     let lock_amount = taker_lock_amount + maker_lock_amount;
@@ -604,9 +614,9 @@ pub async fn roll_over(
 
     let msg2 = stream
         .select_next_some()
-        .timeout(MSG_TIMEOUT)
+        .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| format_expect_msg_within("Msg2"))?
+        .with_context(|| format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg2()?;
     let revocation_sk_theirs = msg2.revocation_sk;
 
@@ -637,9 +647,9 @@ pub async fn roll_over(
         .context("Failed to send Msg3")?;
     let _ = stream
         .select_next_some()
-        .timeout(MSG_TIMEOUT)
+        .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| format_expect_msg_within("Msg3"))?
+        .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg3()?;
 
     Ok(Dlc {
@@ -810,8 +820,8 @@ fn verify_cet_encsig(
 }
 
 /// Wrapper for the msg
-fn format_expect_msg_within(msg: &str) -> String {
-    let seconds = MSG_TIMEOUT.as_secs();
+fn format_expect_msg_within(msg: &str, timeout: Duration) -> String {
+    let seconds = timeout.as_secs();
 
     format!("Expected {msg} within {seconds} seconds")
 }
