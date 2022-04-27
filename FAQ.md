@@ -42,6 +42,9 @@ A: Not yet. We've got it on our roadmap, but for the time being the app has its 
 Q: Where is the wallet tab? I can't find the wallet!
 A: The wallet tab can be found after clicking the hamburger menu in the top left corner of the app.
 
+Q: How can I back up my ItchySats wallet?
+A: On Umbrel the wallet is derived from the Umbrel app-seed, so you don't need to backup anything in addition. Binary and docker containers users should backup the `taker_seed` file that is used to derive the wallet.
+
 ## Contact us
 
 In case none of the above questions match the problem you're having, please feel free to reach out to us via one of the following channels:
