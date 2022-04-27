@@ -179,7 +179,7 @@ export default function App() {
                                         daily_funding_rate_short: (0.00002283 * 24), // annualized 20% by default to have some values
                                         // TODO: Populate funding rate from the UI
                                         daily_funding_rate_long: (-0.00002283 * 24), // annualized 20% by default to have some values
-                                        tx_fee_rate: Number.parseFloat("0"),
+                                        tx_fee_rate: Number.parseFloat("1"),
                                         // TODO: This is is in sats which is not really in line with other APIs for the maker
                                         opening_fee: Number.parseFloat("100"),
                                     };
