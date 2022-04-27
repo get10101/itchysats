@@ -100,8 +100,7 @@ pub async fn new(
         .timeout(MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg0"))?
-        .try_into_msg0()
-        .context("Failed to read Msg0")?;
+        .try_into_msg0()?;
 
     tracing::info!("Exchanged setup parameters");
 
@@ -165,8 +164,7 @@ pub async fn new(
         .timeout(MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg1"))?
-        .try_into_msg1()
-        .context("Failed to read Msg1")?;
+        .try_into_msg1()?;
 
     tracing::info!("Exchanged CFD transactions");
 
@@ -250,8 +248,7 @@ pub async fn new(
         .timeout(MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg2"))?
-        .try_into_msg2()
-        .context("Failed to read Msg2")?;
+        .try_into_msg2()?;
     signed_lock_tx
         .merge(msg2.signed_lock)
         .context("Failed to merge lock PSBTs")?;
@@ -319,8 +316,7 @@ pub async fn new(
         .timeout(MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg3"))?
-        .try_into_msg3()
-        .context("Failed to read Msg3")?;
+        .try_into_msg3()?;
 
     Ok(Dlc {
         identity: sk,
@@ -376,8 +372,7 @@ pub async fn roll_over(
         .timeout(MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg0"))?
-        .try_into_msg0()
-        .context("Failed to read Msg0")?;
+        .try_into_msg0()?;
 
     let complete_fee = match rollover_params.version {
         RolloverVersion::V1 => {
@@ -479,8 +474,7 @@ pub async fn roll_over(
         .timeout(MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg1"))?
-        .try_into_msg1()
-        .context("Failed to read Msg1")?;
+        .try_into_msg1()?;
 
     let lock_amount = taker_lock_amount + maker_lock_amount;
 
@@ -613,8 +607,7 @@ pub async fn roll_over(
         .timeout(MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg2"))?
-        .try_into_msg2()
-        .context("Failed to read Msg2")?;
+        .try_into_msg2()?;
     let revocation_sk_theirs = msg2.revocation_sk;
 
     {
@@ -647,8 +640,7 @@ pub async fn roll_over(
         .timeout(MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg3"))?
-        .try_into_msg3()
-        .context("Failed to read Msg3")?;
+        .try_into_msg3()?;
 
     Ok(Dlc {
         identity: sk,
