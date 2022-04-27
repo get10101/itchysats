@@ -196,7 +196,7 @@ async fn main() -> Result<()> {
     let peer_id = identities.peer_id();
     let hex_pk = hex::encode(identities.identity_pk.to_bytes());
     tracing::info!("Authentication details: username='{auth_username}' password='{auth_password}'");
-    tracing::info!("Details for takers: maker_id='{hex_pk}', peer_id='{peer_id}'");
+    tracing::info!("Connection details: maker_id='{hex_pk}', peer_id='{peer_id}'");
 
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
