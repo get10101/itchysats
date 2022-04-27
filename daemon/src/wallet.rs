@@ -11,13 +11,13 @@ use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Txid;
 use bdk::blockchain::Blockchain;
 use bdk::blockchain::ElectrumBlockchain;
-use bdk::blockchain::NoopProgress;
 use bdk::database::BatchDatabase;
 use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
 use bdk::KeychainKind;
 use bdk::SignOptions;
+use bdk::SyncOptions;
 use maia::PartyParams;
 use maia::TxBuilderExt;
 use model::Timestamp;
@@ -84,7 +84,8 @@ static STD_DEV_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
     });
 
 pub struct Actor<B> {
-    wallet: bdk::Wallet<B, bdk::database::MemoryDatabase>,
+    wallet: bdk::Wallet<bdk::database::MemoryDatabase>,
+    blockchain_client: B,
     used_utxos: LockedUtxos,
     tasks: Tasks,
     sender: watch::Sender<Option<WalletInfo>>,
@@ -109,7 +110,6 @@ impl Actor<ElectrumBlockchain> {
             Some(bdk::template::Bip84(ext_priv_key, KeychainKind::Internal)),
             ext_priv_key.network,
             db,
-            ElectrumBlockchain::from(client),
         )?;
 
         // UTXOs chosen after coin selection will only be locked for a
@@ -126,16 +126,19 @@ impl Actor<ElectrumBlockchain> {
             tasks: Tasks::default(),
             sender,
             used_utxos: LockedUtxos::new(time_to_lock),
+            blockchain_client: ElectrumBlockchain::from(client),
         };
 
         Ok((actor, receiver))
     }
 }
 
-impl<B: Blockchain> Actor<B> {
+impl Actor<ElectrumBlockchain> {
     fn sync_internal(&mut self) -> Result<WalletInfo> {
+        self.wallet.ensure_addresses_cached(1000)?;
+
         self.wallet
-            .sync(NoopProgress, Some(1000))
+            .sync(&self.blockchain_client, SyncOptions::default())
             .context("Failed to sync wallet")?;
 
         let balance = self.wallet.get_balance()?;
@@ -224,7 +227,10 @@ impl Actor<ElectrumBlockchain> {
         };
 
         self.wallet.sign(&mut psbt, SignOptions::default())?;
-        let txid = self.wallet.broadcast(&psbt.extract_tx())?;
+
+        let tx = psbt.extract_tx();
+        let txid = tx.txid();
+        self.blockchain_client.broadcast(&tx)?;
 
         tracing::info!(%txid, "Withdraw successful");
 
@@ -337,7 +343,7 @@ trait BuildLockTx {
     ) -> Result<PartiallySignedTransaction>;
 }
 
-impl<B, D> BuildLockTx for bdk::Wallet<B, D>
+impl<D> BuildLockTx for bdk::Wallet<D>
 where
     D: BatchDatabase,
 {
@@ -440,6 +446,7 @@ mod tests {
                     inner: HashSet::default(),
                     time_to_lock,
                 },
+                blockchain_client: (),
             })
         }
     }

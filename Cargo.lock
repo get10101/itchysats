@@ -247,9 +247,9 @@ dependencies = [
 
 [[package]]
 name = "bdk"
-version = "0.16.1"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3face7de38293a2f7e2a9f69a48b442f28e864da0fc7a6a977388e31bdc367d7"
+checksum = "bdfb4ab7649b7ee7e170ea6dc3b7a3fc5d97671600fe40f6ffde3abe52ef4ae5"
 dependencies = [
  "async-trait",
  "bdk-macros",
@@ -1802,7 +1802,7 @@ dependencies = [
 [[package]]
 name = "maia"
 version = "0.1.0"
-source = "git+https://github.com/comit-network/maia#896d49ee340fc57f0ae441b979abf8aa45249085"
+source = "git+https://github.com/comit-network/maia#c465c154b881c6623633a5475281f9f234b25366"
 dependencies = [
  "anyhow",
  "bdk",
@@ -1883,9 +1883,9 @@ checksum = "9c64630dcdd71f1a64c435f54885086a0de5d6a12d104d69b165fb7d5286d677"
 
 [[package]]
 name = "miniscript"
-version = "6.0.1"
+version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d69450033bf162edf854d4aacaff82ca5ef34fa81f6cf69e1c81a103f0834997"
+checksum = "1e292b58407dfbf1384e5aca8428d3b0f2eaa09d24cb17088f6db0b7ca31194a"
 dependencies = [
  "bitcoin",
  "serde",
