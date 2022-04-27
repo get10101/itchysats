@@ -141,8 +141,9 @@ impl Connection {
                 anyhow::Ok(())
             };
 
-            if let Err(e) = fut.await {
-                tracing::warn!(order_id = %id, "Failed to move closed CFD: {e:#}");
+            match fut.await {
+                Ok(()) => tracing::debug!(order_id = %id, "Moved CFD to `closed_cfds` table"),
+                Err(e) => tracing::warn!(order_id = %id, "Failed to move closed CFD: {e:#}"),
             }
         }
 
