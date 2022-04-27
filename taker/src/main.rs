@@ -9,7 +9,8 @@ use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
 use daemon::connection::connect;
 use daemon::db;
-use daemon::libp2p_socket_from_legacy_networking;
+use daemon::libp2p_utils::create_connect_tcp_multiaddr;
+use daemon::libp2p_utils::libp2p_socket_from_legacy_networking;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
@@ -34,7 +35,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::Actor;
-use xtra_libp2p::create_connect_tcp_multiaddr;
 
 mod routes;
 
