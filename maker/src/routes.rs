@@ -124,6 +124,12 @@ pub async fn put_offer_params(
     maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
+    if offer_params.tx_fee_rate.to_u32() < 1 {
+        return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
+            .title("Posting offer failed")
+            .detail("TxFeeRate is below min_relay_fee (1)"));
+    };
+
     maker
         .set_offer_params(
             offer_params.price_long,
