@@ -1088,12 +1088,14 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
 ///
 /// The version of a CFD is the number of events that have been applied. If we have an aggregate
 /// instance in version 3, we can avoid loading the first 3 events and only apply the ones after.
+///
+/// Events will be sorted in chronological order.
 async fn load_cfd_events(
     conn: &mut Transaction<'_, Sqlite>,
     id: OrderId,
     from_version: u32,
 ) -> Result<Vec<CfdEvent>> {
-    let events = sqlx::query!(
+    let mut events = sqlx::query!(
         r#"
 
         select
@@ -1122,6 +1124,8 @@ async fn load_cfd_events(
         })
     })
     .collect::<Result<Vec<_>>>()?;
+
+    events.sort_unstable_by(CfdEvent::chronologically);
 
     Ok(events)
 }
