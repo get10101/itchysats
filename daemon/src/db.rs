@@ -258,7 +258,7 @@ impl Connection {
 
     pub fn load_all_cfds<C>(&self, args: C::CtorArgs) -> impl Stream<Item = Result<C>> + Unpin + '_
     where
-        C: ClosedCfdAggregate,
+        C: CfdAggregate + ClosedCfdAggregate,
         C::CtorArgs: Clone + Send + Sync,
     {
         let stream = async_stream::stream! {
