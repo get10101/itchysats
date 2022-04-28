@@ -43,10 +43,12 @@ pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 const MAINNET_ELECTRUM: &str = "ssl://blockstream.info:700";
 const MAINNET_MAKER: &str = "mainnet.itchysats.network:10000";
 const MAINNET_MAKER_ID: &str = "7e35e34801e766a6a29ecb9e22810ea4e3476c2b37bf75882edf94a68b1d9607";
+const MAINNET_MAKER_PEER_ID: &str = "12D3KooWP3BN6bq9jPy8cP7Grj1QyUBfr7U6BeQFgMwfTTu12wuY";
 
 const TESTNET_ELECTRUM: &str = "ssl://blockstream.info:993";
 const TESTNET_MAKER: &str = "testnet.itchysats.network:9999";
 const TESTNET_MAKER_ID: &str = "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e";
+const TESTNET_MAKER_PEER_ID: &str = "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1";
 
 #[derive(Parser)]
 struct Opts {
@@ -131,9 +133,8 @@ impl Opts {
         let maker_peer_id = match self.maker_peer_id {
             Some(maker_peer_id) => maker_peer_id,
             None => match network {
-                // TODO: Add defaults for mainnet and testnet
-                Network::Mainnet { .. } => bail!("No maker default peer id configured for mainnet"),
-                Network::Testnet { .. } => bail!("No maker default peer id configured for testnet"),
+                Network::Mainnet { .. } => MAINNET_MAKER_PEER_ID.parse()?,
+                Network::Testnet { .. } => TESTNET_MAKER_PEER_ID.parse()?,
                 Network::Signet { .. } => {
                     bail!("No maker default peer id configured for signet")
                 }
