@@ -35,6 +35,7 @@ pub use maia;
 pub mod archive_closed_cfds;
 pub mod archive_failed_cfds;
 pub mod auto_rollover;
+mod close_position_taker;
 pub mod collab_settlement_taker;
 pub mod command;
 pub mod connection;
