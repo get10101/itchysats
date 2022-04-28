@@ -52,7 +52,7 @@ impl Actor {
             })
             .await?;
 
-        let maker = PeerId::random(); // TODO: Load from CFD. Need to first save this to the DB before we can load it here.
+        let maker = PeerId::random(); // TODO: This needs to be returned from the above `execute` call as well.
 
         let endpoint = self.endpoint.clone();
 
