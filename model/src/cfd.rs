@@ -1027,7 +1027,7 @@ impl Cfd {
         &self,
         current_price: Price,
         n_payouts: usize,
-    ) -> Result<(CfdEvent, SettlementProposal)> {
+    ) -> Result<(CfdEvent, SettlementProposal, Transaction, Signature, Script)> {
         anyhow::ensure!(
             !self.is_in_collaborative_settlement()
                 && self.role == Role::Taker
@@ -1062,12 +1062,23 @@ impl Cfd {
             price: current_price,
         };
 
+        let dlc = self
+            .dlc
+            .as_ref()
+            .context("Collaborative close without DLC")?;
+
+        let (tx, sig, _) = dlc.close_transaction(&proposal)?;
+        let script_pk = dlc.script_pubkey_for(Role::Taker);
+
         Ok((
             CfdEvent::new(
                 self.id,
                 EventKind::CollaborativeSettlementStarted { proposal },
             ),
             proposal,
+            tx,
+            sig,
+            script_pk,
         ))
     }
 
