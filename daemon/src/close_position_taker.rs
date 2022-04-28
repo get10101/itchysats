@@ -1,6 +1,9 @@
 use crate::bitcoin::Transaction;
 use crate::command;
+use anyhow::anyhow;
 use anyhow::bail;
+use anyhow::Context as _;
+use anyhow::Error;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::Signature;
@@ -10,7 +13,9 @@ use model::OrderId;
 use model::Price;
 use serde::Deserialize;
 use serde::Serialize;
+use thiserror::Error;
 use tokio_tasks::Tasks;
+use xtra::message_channel::StrongMessageChannel;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
@@ -43,6 +48,7 @@ impl Actor {
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
         let this = ctx.address().expect("we are alive");
+
         let ClosePosition { id, price } = msg;
 
         let (proposal, transaction, taker_signature, script) = self
@@ -55,7 +61,9 @@ impl Actor {
         let maker = PeerId::random(); // TODO: This needs to be returned from the above `execute` call as well.
 
         let endpoint = self.endpoint.clone();
+        let fully_complete_mc = this.clone_channel();
 
+        // TODO: I think this part could live in a separate crate?
         self.tasks.add_fallible(
             async move {
                 let mut substream = endpoint
@@ -63,33 +71,40 @@ impl Actor {
                         maker,
                         "/itchysats/close-position/1.0.0",
                     ))
-                    .await??;
+                    .await
+                    .context("Endpoint is disconnected")?
+                    .context("Failed to open substream")?;
 
                 let msg0 = Msg0 { id, price };
-                substream.write_all(&msg0.to_bytes()).await?;
+                substream
+                    .write_all(&msg0.to_bytes())
+                    .await
+                    .context("Failed to send Msg0")?;
 
                 let msg1: Msg1 = todo!("Read Msg1 from substream, requires codec");
 
                 if let Msg1::Reject = msg1 {
-                    bail!("Listener rejected closing of position")
+                    return Err(Failed::BeforeSendingSignature {
+                        source: anyhow!("Maker rejected closing of position"), /* TODO: This
+                                                                                * should probably
+                                                                                * be its own
+                                                                                * variant. */
+                    });
                 }
 
                 let msg2 = Msg2 {
                     dialer_signature: taker_signature,
                 };
-                substream.write_all(&msg2.to_bytes()).await?;
+                substream.write_all(&msg2.to_bytes()).await.context("Failed to send Msg2")?;
 
                 let msg3: Result<Msg3> = todo!("Read Msg3 from substream, requires codec");
 
                 let msg3 = match msg3 {
                     Ok(msg3) => msg3,
                     Err(_) => {
-                        bail!("Failed to receive signature") // TODO: This should probably be a
-                                                             // typed error so we can handle it
-                                                             // appropriately in the error handler
-                                                             // (and partially complete the
-                                                             // protocol). Perhaps use double
-                                                             // result?
+                        // TODO: Add our own signature to `tx`
+
+                        return Err(Failed::AfterSendingSignature { tx: transaction });
                     }
                 };
 
@@ -97,11 +112,20 @@ impl Actor {
 
                 let tx: Transaction = todo!("Assemble entire transaction from all signatures");
 
-                this.send(FullyComplete { tx }).await??;
+                fully_complete_mc.send(FullyComplete { tx }).await.expect("TODO: How to handle actor being disconnected after having a fully-signed transaction???");
 
-                anyhow::Ok(())
+                Ok(())
             },
-            |e| async move {},
+            |e| async move {
+                match e {
+                    Failed::AfterSendingSignature { tx } => {
+                        let _ = this.send(PartiallyComplete { tx }).await;
+                    }
+                    Failed::BeforeSendingSignature { source } => {
+                        let _ = this.send(NotComplete { error: source }).await;
+                    }
+                }
+            },
         );
 
         Ok(())
@@ -114,11 +138,45 @@ impl Actor {
     ) -> Result<()> {
         Ok(())
     }
+
+    pub async fn handle(
+        &mut self,
+        msg: PartiallyComplete,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    pub async fn handle(&mut self, msg: NotComplete, ctx: &mut xtra::Context<Self>) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Notify the actor about a fully-completed "close" protocol.
 struct FullyComplete {
     tx: Transaction,
+}
+
+/// Notify the actor about a partially-completed "close" protocol.
+struct PartiallyComplete {
+    tx: Transaction,
+}
+
+/// Notify the actor about a not-completed "close" protocol.
+struct NotComplete {
+    error: anyhow::Error,
+}
+
+#[derive(Debug)]
+enum Failed {
+    AfterSendingSignature { tx: Transaction },
+    BeforeSendingSignature { source: anyhow::Error },
+}
+
+impl From<anyhow::Error> for Failed {
+    fn from(source: Error) -> Self {
+        Self::BeforeSendingSignature { source }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
