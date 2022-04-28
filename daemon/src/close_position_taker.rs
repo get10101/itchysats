@@ -20,7 +20,7 @@ pub struct Actor {
     endpoint: Address<Endpoint>,
     tasks: Tasks,
     executor: command::Executor,
-    n_payouts: usize,
+    n_payouts: usize, // TODO: Consider hard-coding this in the model crate.
 }
 
 #[async_trait]
