@@ -220,6 +220,7 @@ impl db::ClosedCfdAggregate for Cfd {
             is_closed: true,
             is_failed: false,
             is_refunded: false,
+            is_rejected: false,
             version: 0,
         }
     }
@@ -253,6 +254,16 @@ mod metrics {
             .unwrap()
         });
 
+    static POSITION_AMOUNT_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
+        conquer_once::Lazy::new(|| {
+            prometheus::register_int_gauge_vec!(
+                "positions_number_total",
+                "Total number of positions on ItchySats.",
+                &[POSITION_LABEL, STATUS_LABEL]
+            )
+            .unwrap()
+        });
+
     pub fn update_position_metrics(cfds: &[Cfd]) {
         set_position_metrics(cfds.iter().filter(|cfd| cfd.is_open), STATUS_OPEN_LABEL);
         set_position_metrics(cfds.iter().filter(|cfd| cfd.is_closed), STATUS_CLOSED_LABEL);
@@ -281,6 +292,13 @@ mod metrics {
                     .to_f64()
                     .unwrap_or_default(),
             );
+        POSITION_AMOUNT_GAUGE
+            .with(&HashMap::from([
+                (POSITION_LABEL, POSITION_LONG_LABEL),
+                (STATUS_LABEL, status),
+            ]))
+            .set(long.len() as i64);
+
         POSITION_QUANTITY_GAUGE
             .with(&HashMap::from([
                 (POSITION_LABEL, POSITION_SHORT_LABEL),
@@ -292,6 +310,12 @@ mod metrics {
                     .to_f64()
                     .unwrap_or_default(),
             );
+        POSITION_AMOUNT_GAUGE
+            .with(&HashMap::from([
+                (POSITION_LABEL, POSITION_SHORT_LABEL),
+                (STATUS_LABEL, status),
+            ]))
+            .set(short.len() as i64);
     }
 
     fn sum_amounts(cfds: &[&Cfd]) -> Usd {

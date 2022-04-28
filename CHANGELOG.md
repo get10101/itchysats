@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Maker only: Add new metric under `{maker_url}/api/metrics` which shows the quantity of total positions
+- Maker only: Add new metric under `{maker_url}/api/metrics` which shows the number of total positions
 
 ## [0.4.12] - 2022-04-26
 
