@@ -1,21 +1,26 @@
-use anyhow::{bail, Result};
+use crate::bitcoin::Transaction;
+use crate::command;
+use anyhow::bail;
+use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::Signature;
 use futures::AsyncWriteExt;
 use libp2p_core::PeerId;
 use model::OrderId;
 use model::Price;
+use serde::Deserialize;
 use serde::Serialize;
 use tokio_tasks::Tasks;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
-use crate::bitcoin::Transaction;
 
 pub struct Actor {
     endpoint: Address<Endpoint>,
     tasks: Tasks,
+    executor: command::Executor,
+    n_payouts: usize,
 }
 
 #[async_trait]
@@ -32,23 +37,36 @@ pub struct ClosePosition {
 
 #[xtra_productivity]
 impl Actor {
-    pub async fn handle(&mut self, msg: ClosePosition, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    pub async fn handle(
+        &mut self,
+        msg: ClosePosition,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
         let this = ctx.address().expect("we are alive");
         let ClosePosition { id, price } = msg;
+
+        // TODO: This should include the signature as well.
+        let proposal = self
+            .executor
+            .execute(id, |cfd| {
+                cfd.propose_collaborative_settlement(price, self.n_payouts)
+            })
+            .await?;
 
         let maker = PeerId::random(); // TODO: Load from CFD. Need to first save this to the DB before we can load it here.
         let taker_signature: Signature = todo!("preemptively sign close transaction");
 
-        let mut substream = self
-            .endpoint
-            .send(OpenSubstream::single_protocol(
-                maker,
-                "/itchysats/close-position/1.0.0",
-            ))
-            .await??;
+        let endpoint = self.endpoint.clone();
 
         self.tasks.add_fallible(
             async move {
+                let mut substream = endpoint
+                    .send(OpenSubstream::single_protocol(
+                        maker,
+                        "/itchysats/close-position/1.0.0",
+                    ))
+                    .await??;
+
                 let msg0 = Msg0 { id, price };
                 substream.write_all(&msg0.to_bytes()).await?;
 
@@ -59,7 +77,7 @@ impl Actor {
                 }
 
                 let msg2 = Msg2 {
-                    dialer_signature: taker_signature
+                    dialer_signature: taker_signature,
                 };
                 substream.write_all(&msg2.to_bytes()).await?;
 
@@ -68,7 +86,12 @@ impl Actor {
                 let msg3 = match msg3 {
                     Ok(msg3) => msg3,
                     Err(_) => {
-                        bail!("Failed to receive signature") // TODO: This should probably be a typed error so we can handle it appropriately in the error handler (and partially complete the protocol). Perhaps use double result?
+                        bail!("Failed to receive signature") // TODO: This should probably be a
+                                                             // typed error so we can handle it
+                                                             // appropriately in the error handler
+                                                             // (and partially complete the
+                                                             // protocol). Perhaps use double
+                                                             // result?
                     }
                 };
 
@@ -76,9 +99,7 @@ impl Actor {
 
                 let tx: Transaction = todo!("Assemble entire transaction from all signatures");
 
-                this.send(FullyComplete {
-                    tx
-                }).await??;
+                this.send(FullyComplete { tx }).await??;
 
                 anyhow::Ok(())
             },
@@ -88,14 +109,18 @@ impl Actor {
         Ok(())
     }
 
-    pub async fn handle(&mut self, msg: FullyComplete, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    pub async fn handle(
+        &mut self,
+        msg: FullyComplete,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
         Ok(())
     }
 }
 
 /// Notify the actor about a fully-completed "close" protocol.
 struct FullyComplete {
-    tx: Transaction
+    tx: Transaction,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -107,9 +132,8 @@ pub struct Msg0 {
 #[derive(Serialize, Deserialize)]
 pub enum Msg1 {
     Accept,
-    Reject
+    Reject,
 }
-
 
 #[derive(Serialize, Deserialize)]
 pub struct Msg2 {
