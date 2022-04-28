@@ -1,4 +1,3 @@
-use crate::db;
 use crate::process_manager;
 use crate::OrderId;
 use anyhow::Context;
@@ -9,12 +8,15 @@ use xtra::Address;
 
 #[derive(Clone)]
 pub struct Executor {
-    db: db::Connection,
+    db: sqlite_db::Connection,
     process_manager: Address<process_manager::Actor>,
 }
 
 impl Executor {
-    pub fn new(db: db::Connection, process_manager: Address<process_manager::Actor>) -> Self {
+    pub fn new(
+        db: sqlite_db::Connection,
+        process_manager: Address<process_manager::Actor>,
+    ) -> Self {
         Self {
             db,
             process_manager,
@@ -45,49 +47,6 @@ impl Executor {
         }
 
         Ok(rest)
-    }
-}
-
-impl db::CfdAggregate for Cfd {
-    type CtorArgs = ();
-
-    fn new(
-        _: Self::CtorArgs,
-        db::Cfd {
-            id,
-            position,
-            initial_price,
-            taker_leverage: leverage,
-            settlement_interval,
-            counterparty_network_identity,
-            role,
-            quantity_usd,
-            opening_fee,
-            initial_funding_rate,
-            initial_tx_fee_rate,
-        }: db::Cfd,
-    ) -> Self {
-        Cfd::new(
-            id,
-            position,
-            initial_price,
-            leverage,
-            settlement_interval,
-            role,
-            quantity_usd,
-            counterparty_network_identity,
-            opening_fee,
-            initial_funding_rate,
-            initial_tx_fee_rate,
-        )
-    }
-
-    fn apply(self, event: CfdEvent) -> Self {
-        self.apply(event)
-    }
-
-    fn version(&self) -> u32 {
-        self.version()
     }
 }
 

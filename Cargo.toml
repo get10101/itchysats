@@ -16,6 +16,7 @@ members = [
   "bitmex-stream",
   "xtra-libp2p",
   "xtra-libp2p-ping",
+  "sqlite-db",
 ]
 resolver = "2"
 

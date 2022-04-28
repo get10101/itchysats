@@ -1,6 +1,6 @@
 use crate::command;
 use crate::connection;
-use crate::db;
+
 use crate::process_manager;
 use crate::setup_contract;
 use crate::wallet;
@@ -46,7 +46,7 @@ pub struct Actor {
 impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         process_manager: xtra::Address<process_manager::Actor>,
         (order_id, quantity, n_payouts): (OrderId, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),

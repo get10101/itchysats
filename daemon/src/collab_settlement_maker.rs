@@ -1,5 +1,5 @@
 use crate::command;
-use crate::db;
+
 use crate::maker_inc_connections;
 use crate::process_manager;
 use anyhow::anyhow;
@@ -33,7 +33,7 @@ pub struct Actor {
     is_initiated: bool,
     n_payouts: usize,
     executor: command::Executor,
-    db: db::Connection,
+    db: sqlite_db::Connection,
     tasks: Tasks,
 }
 
@@ -152,7 +152,7 @@ impl Actor {
         taker_id: Identity,
         connections: &(impl MessageChannel<maker_inc_connections::settlement::Response> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
-        db: db::Connection,
+        db: sqlite_db::Connection,
         n_payouts: usize,
     ) -> Self {
         Self {

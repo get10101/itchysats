@@ -1,7 +1,7 @@
 use crate::bitcoin::consensus::encode::serialize_hex;
 use crate::bitcoin::Transaction;
 use crate::command;
-use crate::db;
+
 use crate::wallet::RpcErrorCode;
 use anyhow::Context;
 use anyhow::Result;
@@ -116,7 +116,7 @@ pub struct Actor {
     client: bdk::electrum_client::Client,
     tasks: Tasks,
     state: State<Event>,
-    db: db::Connection,
+    db: sqlite_db::Connection,
 }
 
 /// Read-model of the CFD for the monitoring actor.
@@ -144,10 +144,10 @@ struct Cfd {
     version: u32,
 }
 
-impl db::CfdAggregate for Cfd {
+impl sqlite_db::CfdAggregate for Cfd {
     type CtorArgs = ();
 
-    fn new(_: Self::CtorArgs, cfd: db::Cfd) -> Self {
+    fn new(_: Self::CtorArgs, cfd: sqlite_db::Cfd) -> Self {
         Self {
             id: cfd.id,
             params: None,
@@ -320,7 +320,7 @@ fn cet_txid_and_script(cet: Transaction) -> Option<(Txid, Script)> {
 
 impl Actor {
     pub fn new(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         electrum_rpc_url: String,
         executor: command::Executor,
     ) -> Result<Self> {

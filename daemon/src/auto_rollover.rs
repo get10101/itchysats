@@ -1,5 +1,4 @@
 use crate::connection;
-use crate::db;
 use crate::oracle;
 use crate::process_manager;
 use crate::rollover_taker;
@@ -19,7 +18,7 @@ use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
 pub struct Actor<O> {
-    db: db::Connection,
+    db: sqlite_db::Connection,
     oracle_pk: schnorrsig::PublicKey,
     process_manager: Address<process_manager::Actor>,
     conn: Address<connection::Actor>,
@@ -31,7 +30,7 @@ pub struct Actor<O> {
 
 impl<O> Actor<O> {
     pub fn new(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         oracle_pk: schnorrsig::PublicKey,
         process_manager: Address<process_manager::Actor>,
         conn: Address<connection::Actor>,

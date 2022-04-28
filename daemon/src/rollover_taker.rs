@@ -1,6 +1,6 @@
 use crate::command;
 use crate::connection;
-use crate::db;
+
 use crate::oracle;
 use crate::process_manager;
 use crate::setup_contract;
@@ -53,7 +53,7 @@ impl Actor {
         maker: xtra::Address<connection::Actor>,
         get_announcement: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
-        db: db::Connection,
+        db: sqlite_db::Connection,
     ) -> Self {
         Self {
             id,

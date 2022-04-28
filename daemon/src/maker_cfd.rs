@@ -1,6 +1,6 @@
 use crate::collab_settlement_maker;
 use crate::command;
-use crate::db;
+
 use crate::future_ext::FutureExt;
 use crate::maker_inc_connections;
 use crate::oracle;
@@ -165,7 +165,7 @@ struct RolloverProposal {
 }
 
 pub struct Actor<O, T, W> {
-    db: db::Connection,
+    db: sqlite_db::Connection,
     wallet: xtra::Address<W>,
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
@@ -186,7 +186,7 @@ pub struct Actor<O, T, W> {
 impl<O, T, W> Actor<O, T, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         wallet: xtra::Address<W>,
         settlement_interval: Duration,
         oracle_pk: schnorrsig::PublicKey,

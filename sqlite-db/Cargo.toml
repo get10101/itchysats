@@ -1,0 +1,21 @@
+[package]
+name = "sqlite-db"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1"
+async-stream = "0.3"
+bdk = "0.18"
+chashmap-async = "0.1"
+futures = { version = "0.3", default-features = false }
+maia = "0.1"
+model = { path = "../model" }
+rayon = "1.5"
+sqlx = { version = "0.5", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
+thiserror = "1"
+time = { version = "0.3", features = [] }
+tokio = { version = "1" }
+tracing = "0.1"

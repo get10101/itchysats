@@ -1,3 +1,5 @@
+mod impls;
+
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -2057,7 +2059,7 @@ mod tests {
     impl CfdAggregate for DummyAggregate {
         type CtorArgs = ();
 
-        fn new(_: Self::CtorArgs, _: crate::db::Cfd) -> Self {
+        fn new(_: Self::CtorArgs, _: crate::sqlite_db::Cfd) -> Self {
             Self
         }
 

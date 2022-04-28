@@ -42,7 +42,6 @@ pub mod collab_settlement_maker;
 pub mod collab_settlement_taker;
 pub mod command;
 pub mod connection;
-pub mod db;
 mod future_ext;
 pub mod libp2p_utils;
 pub mod maker_cfd;
@@ -95,7 +94,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         oracle_constructor: impl FnOnce(command::Executor) -> O,
@@ -338,7 +337,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         identity: Identities,

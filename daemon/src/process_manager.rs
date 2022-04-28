@@ -1,4 +1,3 @@
-use crate::db;
 use crate::monitor::MonitorCetFinality;
 use crate::monitor::MonitorCollaborativeSettlement;
 use crate::monitor::MonitorParams;
@@ -17,7 +16,7 @@ use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
 
 pub struct Actor {
-    db: db::Connection,
+    db: sqlite_db::Connection,
     role: Role,
     cfds_changed: Box<dyn MessageChannel<projection::CfdChanged>>,
     try_broadcast_transaction: Box<dyn MessageChannel<TryBroadcastTransaction>>,
@@ -38,7 +37,7 @@ impl Event {
 impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         role: Role,
         cfds_changed: &(impl MessageChannel<projection::CfdChanged> + 'static),
         try_broadcast_transaction: &(impl MessageChannel<TryBroadcastTransaction> + 'static),

@@ -1,5 +1,5 @@
 use crate::command;
-use crate::db;
+
 use crate::maker_inc_connections;
 use crate::oracle;
 use crate::process_manager;
@@ -79,7 +79,7 @@ impl Actor {
         oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
         register: &(impl MessageChannel<maker_inc_connections::RegisterRollover> + 'static),
-        db: db::Connection,
+        db: sqlite_db::Connection,
         version: RolloverVersion,
     ) -> Self {
         Self {

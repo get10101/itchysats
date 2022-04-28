@@ -1,5 +1,3 @@
-use crate::db;
-use crate::db::Settlement;
 use crate::Order;
 use anyhow::Context;
 use anyhow::Result;
@@ -46,6 +44,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
 use serde::Serialize;
+use sqlite_db::Settlement;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -69,7 +68,7 @@ pub struct CfdChanged(pub OrderId);
 struct Initialize;
 
 pub struct Actor {
-    db: db::Connection,
+    db: sqlite_db::Connection,
     tx: Tx,
     state: State,
     price_feed: Box<dyn MessageChannel<xtra_bitmex_price_feed::LatestQuote>>,
@@ -85,7 +84,7 @@ pub struct Feeds {
 
 impl Actor {
     pub fn new(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         network: Network,
         price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote> + 'static),
     ) -> (Self, Feeds) {
@@ -313,7 +312,7 @@ enum ProtocolNegotiationState {
 
 impl Cfd {
     fn new(
-        db::Cfd {
+        sqlite_db::Cfd {
             id,
             position,
             initial_price,
@@ -324,7 +323,7 @@ impl Cfd {
             opening_fee,
             initial_funding_rate,
             ..
-        }: db::Cfd,
+        }: sqlite_db::Cfd,
         network: Network,
     ) -> Self {
         let (our_leverage, counterparty_leverage) = match role {
@@ -815,10 +814,10 @@ struct State {
     cfds: Option<HashMap<OrderId, Cfd>>,
 }
 
-impl db::CfdAggregate for Cfd {
+impl sqlite_db::CfdAggregate for Cfd {
     type CtorArgs = Network;
 
-    fn new(args: Self::CtorArgs, cfd: db::Cfd) -> Self {
+    fn new(args: Self::CtorArgs, cfd: sqlite_db::Cfd) -> Self {
         Cfd::new(cfd, args)
     }
 
@@ -831,9 +830,9 @@ impl db::CfdAggregate for Cfd {
     }
 }
 
-impl db::ClosedCfdAggregate for Cfd {
-    fn new_closed(network: Self::CtorArgs, closed_cfd: db::ClosedCfd) -> Self {
-        let db::ClosedCfd {
+impl sqlite_db::ClosedCfdAggregate for Cfd {
+    fn new_closed(network: Self::CtorArgs, closed_cfd: sqlite_db::ClosedCfd) -> Self {
+        let sqlite_db::ClosedCfd {
             id,
             position,
             initial_price,
@@ -981,7 +980,7 @@ impl State {
         }
     }
 
-    async fn update_cfd(&mut self, db: db::Connection, id: OrderId) -> Result<()> {
+    async fn update_cfd(&mut self, db: sqlite_db::Connection, id: OrderId) -> Result<()> {
         let cfd = db.load_open_cfd(id, self.network).await?;
 
         let cfds = self

@@ -1,5 +1,5 @@
 use crate::command;
-use crate::db;
+
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -26,7 +26,7 @@ pub struct Actor {
     executor: command::Executor,
     announcement_lookahead: Duration,
     tasks: Tasks,
-    db: db::Connection,
+    db: sqlite_db::Connection,
     client: reqwest::Client,
 }
 
@@ -93,10 +93,10 @@ impl Cfd {
     }
 }
 
-impl db::CfdAggregate for Cfd {
+impl sqlite_db::CfdAggregate for Cfd {
     type CtorArgs = ();
 
-    fn new(_: Self::CtorArgs, _: db::Cfd) -> Self {
+    fn new(_: Self::CtorArgs, _: sqlite_db::Cfd) -> Self {
         Self::default()
     }
 
@@ -111,7 +111,7 @@ impl db::CfdAggregate for Cfd {
 
 impl Actor {
     pub fn new(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         executor: command::Executor,
         announcement_lookahead: Duration,
     ) -> Self {
