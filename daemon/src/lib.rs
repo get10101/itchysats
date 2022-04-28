@@ -50,6 +50,7 @@ pub mod maker_inc_connections;
 pub mod monitor;
 mod noise;
 pub mod oracle;
+pub mod position_metrics;
 pub mod process_manager;
 pub mod projection;
 pub mod rollover_maker;
@@ -80,6 +81,7 @@ pub struct MakerActorSystem<O, W> {
     executor: command::Executor,
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
+    _position_metrics_actor: Address<position_metrics::Actor>,
 }
 
 impl<O, W> MakerActorSystem<O, W>
@@ -194,7 +196,13 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
-        let close_cfds_actor = close_cfds::Actor::new(db).create(None).spawn(&mut tasks);
+        let close_cfds_actor = close_cfds::Actor::new(db.clone())
+            .create(None)
+            .spawn(&mut tasks);
+
+        let position_metrics_actor = position_metrics::Actor::new(db)
+            .create(None)
+            .spawn(&mut tasks);
 
         tracing::debug!("Maker actor system ready");
 
@@ -205,6 +213,7 @@ where
             executor,
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
+            _position_metrics_actor: position_metrics_actor,
         })
     }
 

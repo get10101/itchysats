@@ -55,6 +55,8 @@ pub enum Error {
 pub struct Usd(Decimal);
 
 impl Usd {
+    pub const ZERO: Usd = Usd(Decimal::ZERO);
+
     pub fn new(value: Decimal) -> Self {
         Self(value)
     }
