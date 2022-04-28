@@ -45,7 +45,6 @@ impl Actor {
         let this = ctx.address().expect("we are alive");
         let ClosePosition { id, price } = msg;
 
-        // TODO: This should include the signature as well.
         let (proposal, transaction, taker_signature, script) = self
             .executor
             .execute(id, |cfd| {
