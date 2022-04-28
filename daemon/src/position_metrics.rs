@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use model::CfdEvent;
 use model::EventKind;
+use model::OrderId;
 use model::Position;
 use model::Usd;
 use rust_decimal::prelude::FromPrimitive;
@@ -70,6 +71,7 @@ struct UpdateMetrics;
 /// Read-model of the CFD for the position metrics actor.
 #[derive(Clone, Copy)]
 pub struct Cfd {
+    id: OrderId,
     position: Position,
     quantity_usd: Usd,
 
@@ -87,6 +89,7 @@ impl db::CfdAggregate for Cfd {
 
     fn new(_: Self::CtorArgs, cfd: db::Cfd) -> Self {
         Self {
+            id: cfd.id,
             position: cfd.position,
             quantity_usd: cfd.quantity_usd,
             is_open: false,
@@ -204,6 +207,7 @@ impl Cfd {
 impl db::ClosedCfdAggregate for Cfd {
     fn new_closed(_: Self::CtorArgs, closed_cfd: db::ClosedCfd) -> Self {
         let db::ClosedCfd {
+            id,
             position,
             n_contracts,
             ..
@@ -213,6 +217,7 @@ impl db::ClosedCfdAggregate for Cfd {
             Usd::new(Decimal::from_u64(u64::from(n_contracts)).expect("u64 to fit into Decimal"));
 
         Self {
+            id,
             position,
             quantity_usd,
 
@@ -243,6 +248,9 @@ mod metrics {
     const STATUS_FAILED_LABEL: &str = "failed";
     const STATUS_REJECTED_LABEL: &str = "rejected";
     const STATUS_REFUNDED_LABEL: &str = "refunded";
+    // this is needed so that we do not lose cfds which are in a weird state, e.g. open & closed.
+    // This should be 0 though but for the time being we add it
+    const STATUS_UNKNOWN_LABEL: &str = "unknown";
 
     static POSITION_QUANTITY_GAUGE: conquer_once::Lazy<prometheus::GaugeVec> =
         conquer_once::Lazy::new(|| {
@@ -276,6 +284,30 @@ mod metrics {
             cfds.iter().filter(|cfd| cfd.is_refunded),
             STATUS_REFUNDED_LABEL,
         );
+
+        set_position_metrics(
+            cfds.iter().filter(|cfd| {
+                let unknown_state = is_unknown(cfd);
+                if unknown_state {
+                    tracing::error!(
+                        is_open = cfd.is_open,
+                        is_closed = cfd.is_closed,
+                        is_refunded = cfd.is_refunded,
+                        is_rejected = cfd.is_rejected,
+                        order_id = %cfd.id,
+                        "CFD is in weird state"
+                    );
+                }
+                unknown_state
+            }),
+            STATUS_UNKNOWN_LABEL,
+        );
+    }
+
+    /// Return true if a CFD is in multiple states
+    fn is_unknown(cfd: &Cfd) -> bool {
+        !(cfd.is_open ^ cfd.is_closed ^ cfd.is_refunded ^ cfd.is_rejected ^ cfd.is_failed)
+            && (cfd.is_open || cfd.is_closed || cfd.is_refunded || cfd.is_rejected || cfd.is_failed)
     }
 
     fn set_position_metrics<'a>(cfds: impl Iterator<Item = &'a Cfd>, status: &str) {
@@ -321,5 +353,102 @@ mod metrics {
     fn sum_amounts(cfds: &[&Cfd]) -> Usd {
         cfds.iter()
             .fold(Usd::ZERO, |sum, cfd| cfd.quantity_usd + sum)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn create_cfd(state_flags: StateFlags) -> Cfd {
+            Cfd {
+                id: Default::default(),
+                position: Position::Long,
+                quantity_usd: Usd::ZERO,
+                is_open: state_flags.open,
+                is_closed: state_flags.closed,
+                is_failed: state_flags.failed,
+                is_refunded: state_flags.refunded,
+                is_rejected: state_flags.rejected,
+                version: 0,
+            }
+        }
+
+        #[derive(Debug, Clone, Copy)]
+        struct StateFlags {
+            open: bool,
+            closed: bool,
+            failed: bool,
+            refunded: bool,
+            rejected: bool,
+        }
+
+        #[test]
+        fn when_cfd_is_in_single_no_state_then_is_not_unknown() {
+            let state_matrix = [
+                [false, false, false, false, false],
+                [true, false, false, false, false],
+                [false, true, false, false, false],
+                [false, false, true, false, false],
+                [false, false, false, true, false],
+                [false, false, false, false, true],
+            ];
+
+            for states in state_matrix {
+                let is_open = states[0];
+                let is_closed = states[1];
+                let is_failed = states[2];
+                let is_refunded = states[3];
+                let is_rejected = states[4];
+                let state_flags = StateFlags {
+                    open: is_open,
+                    closed: is_closed,
+                    failed: is_failed,
+                    refunded: is_refunded,
+                    rejected: is_rejected,
+                };
+                let cfd = create_cfd(state_flags);
+
+                assert!(
+                    !is_unknown(&cfd),
+                    "State combination was unknown. {state_flags:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn when_cfd_is_in_multiple_states_then_is_unknown() {
+            let state_matrix = [
+                [true, true, false, false, false],
+                [true, false, true, false, false],
+                [true, false, false, true, false],
+                [true, false, false, false, true],
+                [false, true, true, false, false],
+                [false, true, false, true, false],
+                [false, true, false, false, true],
+                [false, false, true, true, false],
+                [false, false, true, false, true],
+                [false, false, false, true, true],
+            ];
+            for states in state_matrix {
+                let is_open = states[0];
+                let is_closed = states[1];
+                let is_failed = states[2];
+                let is_refunded = states[3];
+                let is_rejected = states[4];
+
+                let state_flags = StateFlags {
+                    open: is_open,
+                    closed: is_closed,
+                    failed: is_failed,
+                    refunded: is_refunded,
+                    rejected: is_rejected,
+                };
+                let cfd = create_cfd(state_flags);
+                assert!(
+                    is_unknown(&cfd),
+                    "State combination was not unknown. {state_flags:?}"
+                );
+            }
+        }
     }
 }
