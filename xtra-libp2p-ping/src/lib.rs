@@ -129,7 +129,7 @@ impl Actor {
 
         tracing::trace!(%peer, %latency_milliseconds, "Received pong");
 
-        let latency_seconds = (latency_milliseconds as f64) * 1000.0;
+        let latency_seconds = (latency_milliseconds as f64) / 1000.0;
         PEER_LATENCY_HISTOGRAM.observe(latency_seconds);
     }
 
