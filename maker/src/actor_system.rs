@@ -7,6 +7,7 @@ use bdk::bitcoin::Amount;
 use bdk::bitcoin::Txid;
 use daemon::archive_closed_cfds;
 use daemon::archive_failed_cfds;
+use daemon::close_position;
 use daemon::command;
 use daemon::cull_old_dlcs;
 use daemon::monitor;
@@ -116,6 +117,11 @@ where
             &oracle_addr,
         )));
 
+        let libp2p_collab_settlement_addr =
+            close_position::maker::Actor::new(executor.clone(), n_payouts)
+                .create(None)
+                .spawn(&mut tasks);
+
         let libp2p_rollover_addr = rollover::maker::Actor::new(
             executor.clone(),
             oracle_pk,
@@ -137,6 +143,7 @@ where
             time_to_first_position_addr,
             n_payouts,
             libp2p_rollover_addr.clone(),
+            libp2p_collab_settlement_addr.clone(),
         )
         .create(None)
         .spawn(&mut tasks);
@@ -147,10 +154,20 @@ where
             TokioTcpConfig::new(),
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
-            [(
-                daemon::rollover::PROTOCOL,
-                xtra::message_channel::StrongMessageChannel::clone_channel(&libp2p_rollover_addr),
-            )],
+            [
+                (
+                    daemon::rollover::PROTOCOL,
+                    xtra::message_channel::StrongMessageChannel::clone_channel(
+                        &libp2p_rollover_addr,
+                    ),
+                ),
+                (
+                    daemon::close_position::PROTOCOL,
+                    xtra::message_channel::StrongMessageChannel::clone_channel(
+                        &libp2p_collab_settlement_addr,
+                    ),
+                ),
+            ],
         );
 
         tasks.add(endpoint_context.run(endpoint));

@@ -40,7 +40,7 @@ pub use maia_core;
 pub mod archive_closed_cfds;
 pub mod archive_failed_cfds;
 pub mod auto_rollover;
-pub mod collab_settlement_taker;
+pub mod close_position;
 pub mod command;
 pub mod connection;
 pub mod cull_old_dlcs;
@@ -156,6 +156,13 @@ where
             &oracle_addr,
         )));
 
+        let (endpoint_addr, endpoint_context) = Context::new(None);
+
+        let libp2p_collab_settlement_addr =
+            close_position::taker::Actor::new(endpoint_addr.clone(), executor.clone(), n_payouts)
+                .create(None)
+                .spawn(&mut tasks);
+
         let (connection_actor_addr, connection_actor_ctx) = Context::new(None);
         let cfd_actor_addr = taker_cfd::Actor::new(
             db.clone(),
@@ -165,6 +172,7 @@ where
             process_manager_addr,
             connection_actor_addr.clone(),
             oracle_addr.clone(),
+            libp2p_collab_settlement_addr,
             n_payouts,
             maker_identity,
             PeerId::from(
@@ -176,8 +184,6 @@ where
         )
         .create(None)
         .spawn(&mut tasks);
-
-        let (endpoint_addr, endpoint_context) = Context::new(None);
 
         let libp2p_rollover_addr = rollover::taker::Actor::new(
             endpoint_addr.clone(),
