@@ -46,7 +46,7 @@ impl Actor {
         let ClosePosition { id, price } = msg;
 
         // TODO: This should include the signature as well.
-        let proposal = self
+        let (proposal, transaction, taker_signature, script) = self
             .executor
             .execute(id, |cfd| {
                 cfd.propose_collaborative_settlement(price, self.n_payouts)
@@ -54,7 +54,6 @@ impl Actor {
             .await?;
 
         let maker = PeerId::random(); // TODO: Load from CFD. Need to first save this to the DB before we can load it here.
-        let taker_signature: Signature = todo!("preemptively sign close transaction");
 
         let endpoint = self.endpoint.clone();
 

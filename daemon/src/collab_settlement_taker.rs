@@ -55,7 +55,7 @@ impl Actor {
     }
 
     async fn propose(&mut self, this: xtra::Address<Self>) -> Result<()> {
-        let proposal = self
+        let (proposal, ..) = self
             .executor
             .execute(self.order_id, |cfd| {
                 cfd.propose_collaborative_settlement(self.current_price, self.n_payouts)
