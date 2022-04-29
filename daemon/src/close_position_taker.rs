@@ -5,7 +5,9 @@ use anyhow::Context as _;
 use anyhow::Error;
 use anyhow::Result;
 use async_trait::async_trait;
+use asynchronous_codec::Decoder;
 use bdk::bitcoin::secp256k1::Signature;
+use bytes::BytesMut;
 use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
@@ -73,20 +75,15 @@ impl Actor {
                     .await
                     .context("Endpoint is disconnected")?
                     .context("Failed to open substream")?;
-
                 let mut framed = asynchronous_codec::Framed::new(substream, asynchronous_codec::JsonCodec::<DialerMessage, ListenerMessage>::new());
 
                 framed.send(DialerMessage::Msg0(Msg0 { id, price })).await.context("Failed to send Msg0")?;
 
+                // TODO: We will need to apply a timeout to these. Perhaps we can put a timeout generally into "reading from the substream"?
                 let msg1 = framed.next().await.context("End of stream while receiving Msg1")?.context("Failed to decode Msg1")?.into_msg1()?;
 
                 if let Msg1::Reject = msg1 {
-                    return Err(Failed::BeforeSendingSignature {
-                        source: anyhow!("Maker rejected closing of position"), /* TODO: This
-                                                                                * should probably
-                                                                                * be its own
-                                                                                * variant. */
-                    });
+                    return Err(Failed::Rejected);
                 }
 
                 framed.send(DialerMessage::Msg2(Msg2 {
@@ -123,6 +120,9 @@ impl Actor {
                     Failed::BeforeSendingSignature { source } => {
                         let _ = this.send(NotComplete { error: source }).await;
                     }
+                    Failed::Rejected => {
+                        let _ = this.send(NotComplete { error: anyhow!("Rejected") }).await;
+                    }
                 }
             },
         );
@@ -153,7 +153,9 @@ impl Actor {
 
 /// Notify the actor about a fully-completed "close" protocol.
 struct FullyComplete {
-    tx: Transaction,
+    tx: Transaction, /* TODO: We don't have access to the `Dlc` model inside the protocol so
+                      * likely, we want to return the individual building blocks here. Or
+                      * refactor things so we can access it? */
 }
 
 /// Notify the actor about a partially-completed "close" protocol.
@@ -168,6 +170,7 @@ struct NotComplete {
 
 #[derive(Debug)]
 enum Failed {
+    Rejected,
     AfterSendingSignature { tx: Transaction },
     BeforeSendingSignature { source: anyhow::Error },
 }
