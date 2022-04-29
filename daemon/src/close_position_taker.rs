@@ -1,19 +1,18 @@
 use crate::bitcoin::Transaction;
 use crate::command;
 use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Error;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::Signature;
-use futures::AsyncWriteExt;
+use futures::SinkExt;
+use futures::StreamExt;
 use libp2p_core::PeerId;
 use model::OrderId;
 use model::Price;
 use serde::Deserialize;
 use serde::Serialize;
-use thiserror::Error;
 use tokio_tasks::Tasks;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::Address;
@@ -75,13 +74,11 @@ impl Actor {
                     .context("Endpoint is disconnected")?
                     .context("Failed to open substream")?;
 
-                let msg0 = Msg0 { id, price };
-                substream
-                    .write_all(&msg0.to_bytes())
-                    .await
-                    .context("Failed to send Msg0")?;
+                let mut framed = asynchronous_codec::Framed::new(substream, asynchronous_codec::JsonCodec::<DialerMessage, ListenerMessage>::new());
 
-                let msg1: Msg1 = todo!("Read Msg1 from substream, requires codec");
+                framed.send(DialerMessage::Msg0(Msg0 { id, price })).await.context("Failed to send Msg0")?;
+
+                let msg1 = framed.next().await.context("End of stream while receiving Msg1")?.context("Failed to decode Msg1")?.into_msg1()?;
 
                 if let Msg1::Reject = msg1 {
                     return Err(Failed::BeforeSendingSignature {
@@ -92,16 +89,18 @@ impl Actor {
                     });
                 }
 
-                let msg2 = Msg2 {
+                framed.send(DialerMessage::Msg2(Msg2 {
                     dialer_signature: taker_signature,
-                };
-                substream.write_all(&msg2.to_bytes()).await.context("Failed to send Msg2")?;
+                })).await.context("Failed to send Msg2")?;
 
-                let msg3: Result<Msg3> = todo!("Read Msg3 from substream, requires codec");
+                let msg3 = match framed.next().await {
+                    Some(Ok(msg)) => msg.into_msg3()?,
+                    Some(Err(_)) => {
+                        // TODO: Add our own signature to `tx`
 
-                let msg3 = match msg3 {
-                    Ok(msg3) => msg3,
-                    Err(_) => {
+                        return Err(Failed::AfterSendingSignature { tx: transaction });
+                    }
+                    None => {
                         // TODO: Add our own signature to `tx`
 
                         return Err(Failed::AfterSendingSignature { tx: transaction });
@@ -180,6 +179,34 @@ impl From<anyhow::Error> for Failed {
 }
 
 #[derive(Serialize, Deserialize)]
+enum DialerMessage {
+    Msg0(Msg0),
+    Msg2(Msg2),
+}
+
+#[derive(Serialize, Deserialize)]
+enum ListenerMessage {
+    Msg1(Msg1),
+    Msg3(Msg3),
+}
+
+impl ListenerMessage {
+    fn into_msg1(self) -> Result<Msg1> {
+        match self {
+            ListenerMessage::Msg1(msg1) => Ok(msg1),
+            ListenerMessage::Msg3(_) => Err(anyhow!("Expected Msg1 but got Msg3")),
+        }
+    }
+
+    fn into_msg3(self) -> Result<Msg3> {
+        match self {
+            ListenerMessage::Msg3(msg3) => Ok(msg3),
+            ListenerMessage::Msg1(_) => Err(anyhow!("Expected Msg3 but got Msg1")),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Msg0 {
     pub id: OrderId,
     pub price: Price,
@@ -196,19 +223,7 @@ pub struct Msg2 {
     pub dialer_signature: Signature,
 }
 
-impl Msg2 {
-    fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).expect("serialization always succeeds")
-    }
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct Msg3 {
     pub listener_signature: Signature,
-}
-
-impl Msg0 {
-    fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).expect("serialization always succeeds")
-    }
 }
