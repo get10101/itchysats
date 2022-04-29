@@ -1,3 +1,4 @@
+pub mod catchers;
 pub mod fairings;
 pub mod logger;
 mod to_sse_event;

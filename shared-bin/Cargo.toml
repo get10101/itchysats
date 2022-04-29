@@ -11,8 +11,10 @@ description = "Code that is shared between the daemons but application specific 
 anyhow = "1"
 atty = "0.2"
 daemon = { path = "../daemon" }
+http-api-problem = { version = "0.51.0", features = ["rocket"] }
 model = { path = "../model" }
 rocket = { version = "0.5.0-rc.1", features = ["json"] }
+rocket-basicauth = { path = "../rocket-basicauth" }
 serde = { version = "1", features = ["derive"] }
 time = "0.3"
 tracing = { version = "0.1" }
