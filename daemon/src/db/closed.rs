@@ -4,8 +4,8 @@
 //!
 //! Therefore, it also provides an interface to load closed CFDs: the
 //! `ClosedCfdAggregate` trait. Implementers of the trait will be able
-//! to call the `crate::db::load_all_cfds` API, which loads both open
-//! CFDs and closed CFDs.
+//! to call the `crate::db::load_all_cfds` API, which loads all types
+//! of CFD.
 
 use crate::db::delete_from_cfds_table;
 use crate::db::delete_from_events_table;

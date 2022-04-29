@@ -31,9 +31,11 @@ use std::sync::Arc;
 use time::Duration;
 
 pub use closed::*;
+pub use failed::*;
 
 mod closed;
 mod event_log;
+mod failed;
 
 #[derive(Clone)]
 pub struct Connection {
@@ -258,7 +260,7 @@ impl Connection {
 
     pub fn load_all_cfds<C>(&self, args: C::CtorArgs) -> impl Stream<Item = Result<C>> + Unpin + '_
     where
-        C: CfdAggregate + ClosedCfdAggregate,
+        C: CfdAggregate + ClosedCfdAggregate + FailedCfdAggregate,
         C::CtorArgs: Clone + Send + Sync,
     {
         let stream = async_stream::stream! {
@@ -315,6 +317,28 @@ impl Connection {
             for id in ids {
                 yield self.load_closed_cfd(id, args.clone()).await
                     .with_context(|| format!("Failed to load closed CFD {id}"));
+            }
+
+            let mut conn = self.inner.acquire().await?;
+
+            let ids = sqlx::query!(
+                r#"
+                SELECT
+                    uuid as "uuid: model::OrderId"
+                FROM
+                    failed_cfds
+                "#
+            )
+            .fetch_all(&mut *conn)
+            .await?
+            .into_iter()
+            .map(|r| r.uuid);
+
+            drop(conn);
+
+            for id in ids {
+                yield self.load_failed_cfd(id, args.clone()).await
+                    .with_context(|| format!("Failed to load failed CFD {id}"));
             }
         };
 
@@ -422,6 +446,37 @@ impl Connection {
             EventKind::COLLABORATIVE_SETTLEMENT_CONFIRMED,
             EventKind::CET_CONFIRMED,
             EventKind::REFUND_CONFIRMED,
+        )
+        .fetch_all(&mut *conn)
+        .await?
+        .into_iter()
+        .map(|r| r.uuid)
+        .collect();
+
+        Ok(ids)
+    }
+
+    async fn failed_cfd_ids_according_to_events(&self) -> Result<Vec<OrderId>> {
+        let mut conn = self.inner.acquire().await?;
+
+        let ids = sqlx::query!(
+            r#"
+            select
+                id as cfd_id,
+                uuid as "uuid: model::OrderId"
+            from
+                cfds
+            where exists (
+                select id from EVENTS as events
+                where events.cfd_id = cfds.id and
+                (
+                    events.name = $1 or
+                    events.name = $2
+                )
+            )
+            "#,
+            model::EventKind::OFFER_REJECTED,
+            model::EventKind::CONTRACT_SETUP_FAILED,
         )
         .fetch_all(&mut *conn)
         .await?
@@ -760,7 +815,7 @@ mod tests {
         assert_eq!(*cfd_ids.first().unwrap(), cfd_not_final.id())
     }
 
-    fn dummy_cfd() -> Cfd {
+    pub fn dummy_cfd() -> Cfd {
         Cfd::new(
             OrderId::default(),
             Position::Long,
@@ -778,7 +833,7 @@ mod tests {
         )
     }
 
-    fn lock_confirmed(cfd: &Cfd) -> CfdEvent {
+    pub fn lock_confirmed(cfd: &Cfd) -> CfdEvent {
         CfdEvent {
             timestamp: Timestamp::now(),
             id: cfd.id(),
@@ -786,7 +841,7 @@ mod tests {
         }
     }
 
-    fn setup_failed(cfd: &Cfd) -> CfdEvent {
+    pub fn setup_failed(cfd: &Cfd) -> CfdEvent {
         CfdEvent {
             timestamp: Timestamp::now(),
             id: cfd.id(),
@@ -794,7 +849,7 @@ mod tests {
         }
     }
 
-    fn order_rejected(cfd: &Cfd) -> CfdEvent {
+    pub fn order_rejected(cfd: &Cfd) -> CfdEvent {
         CfdEvent {
             timestamp: Timestamp::now(),
             id: cfd.id(),

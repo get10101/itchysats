@@ -272,6 +272,38 @@ impl db::ClosedCfdAggregate for Cfd {
     }
 }
 
+impl db::FailedCfdAggregate for Cfd {
+    fn new_failed(_: Self::CtorArgs, cfd: db::FailedCfd) -> Self {
+        let db::FailedCfd {
+            id,
+            position,
+            n_contracts,
+            kind,
+            ..
+        } = cfd;
+
+        let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
+
+        let (is_failed, is_rejected) = match kind {
+            db::Kind::OfferRejected => (false, true),
+            db::Kind::ContractSetupFailed => (true, false),
+        };
+
+        Self {
+            id,
+            position,
+            quantity_usd,
+
+            is_open: false,
+            is_closed: false,
+            is_failed,
+            is_refunded: false,
+            is_rejected,
+            version: 0,
+        }
+    }
+}
+
 mod metrics {
     use crate::position_metrics::Cfd;
     use model::OrderId;
