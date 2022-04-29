@@ -1728,18 +1728,23 @@ mod tests {
             .await
             .unwrap();
 
-        let projection_open = db
-            .load_open_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-            .await
-            .unwrap();
-        let projection_open = projection_open.with_current_quote(None); // to update payout-related fields
+        let projection_open = {
+            let projection_open = db
+                .load_open_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+                .await
+                .unwrap();
+            projection_open.with_current_quote(None) // unconditional processing in `projection`
+        };
 
         db.move_to_closed_cfds().await.unwrap();
 
-        let projection_closed = db
-            .load_closed_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-            .await
-            .unwrap();
+        let projection_closed = {
+            let projection_closed = db
+                .load_closed_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+                .await
+                .unwrap();
+            projection_closed.with_current_quote(None) // unconditional processing in `projection`
+        };
 
         // this comparison actually omits the `aggregated` field on
         // `projection::Cfd` because it is not used when aggregating

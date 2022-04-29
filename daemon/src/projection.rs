@@ -556,6 +556,11 @@ impl Cfd {
     }
 
     pub fn with_current_quote(self, latest_quote: Option<xtra_bitmex_price_feed::Quote>) -> Self {
+        // Closed CFDs should not be modified by the current quote
+        if self.aggregated.state == CfdState::Closed {
+            return self;
+        }
+
         // If we have a dedicated closing price, use that one.
         if let Some(payout) = self.aggregated.clone().payout(self.role) {
             let payout = payout
