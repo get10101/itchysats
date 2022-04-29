@@ -154,9 +154,7 @@ impl Actor {
 
 /// Notify the actor about a fully-completed "close" protocol.
 struct FullyComplete {
-    tx: Transaction, /* TODO: We don't have access to the `Dlc` model inside the protocol so
-                      * likely, we want to return the individual building blocks here. Or
-                      * refactor things so we can access it? */
+    tx: Transaction,
 }
 
 /// Notify the actor about a partially-completed "close" protocol.
