@@ -5,9 +5,9 @@ use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
-/// Interval at which we move closed CFDs to the correct database
+/// Interval at which we archive closed CFDs in the correct database
 /// table.
-const CLOSE_CFDS_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const ARCHIVE_CFDS_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 pub struct Actor {
     db: db::Connection,
@@ -30,7 +30,7 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
         self.tasks
-            .add(this.send_interval(CLOSE_CFDS_INTERVAL, || CloseCfds));
+            .add(this.send_interval(ARCHIVE_CFDS_INTERVAL, || ArchiveCfds));
     }
 
     async fn stopped(self) -> Self::Stop {}
@@ -38,11 +38,11 @@ impl xtra::Actor for Actor {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle(&mut self, _: CloseCfds) {
+    async fn handle(&mut self, _: ArchiveCfds) {
         if let Err(e) = self.db.move_to_closed_cfds().await {
-            tracing::warn!("Failed to move closed CFDs to corresponding table: {e:#}");
+            tracing::warn!("Failed to archive closed CFDs to corresponding table: {e:#}");
         }
     }
 }
 
-struct CloseCfds;
+struct ArchiveCfds;
