@@ -1082,6 +1082,63 @@ impl Cfd {
         ))
     }
 
+    pub fn close_position(
+        self,
+        current_price: Price,
+        n_payouts: usize,
+    ) -> Result<(CfdEvent, ClosePositionTransaction)> {
+        anyhow::ensure!(
+            !self.is_in_collaborative_settlement()
+                && self.role == Role::Taker
+                && self.can_settle_collaboratively(),
+            "Failed to propose collaborative settlement"
+        );
+
+        let payout_curve = calculate_payouts(
+            self.position,
+            self.role,
+            self.initial_price,
+            self.quantity,
+            self.long_leverage,
+            self.short_leverage,
+            n_payouts,
+            self.fee_account.settle(),
+        )?;
+
+        let payout = {
+            let current_price = current_price.try_into_u64()?;
+            payout_curve
+                .iter()
+                .find(|&x| x.digits().range().contains(&current_price))
+                .context("find current price on the payout curve")?
+        };
+
+        let dlc = self
+            .dlc
+            .as_ref()
+            .context("Collaborative close without DLC")?;
+
+        let close_position_tx =
+            dlc.close_position_transaction(*payout.maker_amount(), *payout.taker_amount())?;
+
+        // TODO: This is legacy. Why are we storing the entire thing in the event?
+        let proposal = SettlementProposal {
+            order_id: self.id,
+            timestamp: Timestamp::now(),
+            taker: *payout.taker_amount(),
+            maker: *payout.maker_amount(),
+            price: current_price,
+        };
+
+        Ok((
+            CfdEvent::new(
+                self.id,
+                EventKind::CollaborativeSettlementStarted { proposal },
+            ),
+            close_position_tx,
+        ))
+    }
+
     pub fn receive_collaborative_settlement_proposal(
         self,
         proposal: SettlementProposal,
@@ -1826,8 +1883,63 @@ pub struct Dlc {
     pub refund_timelock: u32,
 }
 
+pub struct ClosePositionTransaction {
+    lock_desc: Descriptor<PublicKey>,
+    lock_amount: Amount,
+
+    unsigned_transaction: Transaction,
+
+    own_pk: PublicKey,
+    own_signature: Signature,
+
+    counterparty_pk: PublicKey,
+    counterparty_signature: Option<Signature>,
+}
+
+impl ClosePositionTransaction {
+    pub fn unsigned_transaction(&self) -> Transaction {
+        todo!()
+    }
+
+    pub fn own_signature(&self) -> Signature {
+        todo!()
+    }
+
+    pub fn recv_counterparty_signature(self, counterparty_signature: Signature) -> Result<Self> {
+        let sighash = spending_tx_sighash(
+            &self.unsigned_transaction,
+            &self.lock_desc,
+            self.lock_amount,
+        );
+        SECP256K1
+            .verify(&sighash, &counterparty_signature, &self.counterparty_pk.key)
+            .context("Failed to verify counterparty signature")?;
+
+        Ok(Self {
+            counterparty_signature: Some(counterparty_signature),
+            ..self
+        })
+    }
+
+    pub fn finalize(self) -> Result<Transaction> {
+        let counterparty_signature = self
+            .counterparty_signature
+            .context("Missing `their_signature`")?;
+
+        let spend_tx = maia::finalize_spend_transaction(
+            self.unsigned_transaction,
+            &self.lock_desc,
+            (self.own_pk, self.own_signature),
+            (self.counterparty_pk, counterparty_signature),
+        )?;
+
+        Ok(spend_tx)
+    }
+}
+
 impl Dlc {
     /// Create a close transaction based on the current contract and a settlement proposals
+    #[deprecated]
     pub fn close_transaction(
         &self,
         proposal: &SettlementProposal,
@@ -1854,6 +1966,48 @@ impl Dlc {
         let sig = SECP256K1.sign(&sighash, &self.identity);
 
         Ok((tx, sig, lock_amount))
+    }
+
+    pub fn close_position_transaction(
+        &self,
+        payout_maker: Amount,
+        payout_taker: Amount,
+    ) -> Result<ClosePositionTransaction> {
+        let (lock_tx, lock_desc) = &self.lock;
+        let (lock_outpoint, lock_amount) = {
+            let outpoint = lock_tx
+                .outpoint(&lock_desc.script_pubkey())
+                .expect("lock script to be in lock tx");
+            let amount = Amount::from_sat(lock_tx.output[outpoint.vout as usize].value);
+
+            (outpoint, amount)
+        };
+        let (tx, sighash) = maia::close_transaction(
+            lock_desc,
+            lock_outpoint,
+            lock_amount,
+            (&self.maker_address, payout_maker),
+            (&self.taker_address, payout_taker),
+            1,
+        )
+        .context("Unable to build collaborative close transaction")?;
+
+        let own_signature = SECP256K1.sign(&sighash, &self.identity);
+
+        let own_pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
+            SECP256K1,
+            &self.identity,
+        ));
+
+        Ok(ClosePositionTransaction {
+            lock_desc: lock_desc.clone(),
+            lock_amount,
+            unsigned_transaction: tx,
+            own_pk,
+            own_signature,
+            counterparty_pk: self.identity_counterparty,
+            counterparty_signature: None,
+        })
     }
 
     pub fn finalize_spend_transaction(
