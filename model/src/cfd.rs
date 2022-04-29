@@ -1030,7 +1030,7 @@ impl Cfd {
     }
 
     pub fn propose_collaborative_settlement(
-        &self,
+        &self, // TODO: This should not be a reference!
         current_price: Price,
         n_payouts: usize,
     ) -> Result<(CfdEvent, SettlementProposal, Transaction, Signature, Script)> {
