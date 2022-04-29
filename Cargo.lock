@@ -160,6 +160,8 @@ dependencies = [
  "futures-util",
  "memchr",
  "pin-project-lite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
