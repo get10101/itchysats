@@ -216,7 +216,7 @@ pub struct Msg0 {
     ///
     /// Sending the full transaction allows the listening side to verify, how exactly the dialing
     /// side wants to close the position.
-    pub unsigned_tx: Transaction,
+    pub unsigned_tx: Transaction, // TODO: Serialize this as hex.
 }
 
 #[derive(Serialize, Deserialize)]
