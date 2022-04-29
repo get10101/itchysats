@@ -10,24 +10,6 @@
     },
     "query": "\n        INSERT INTO commit_txs\n        (\n            cfd_id,\n            txid\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2\n        )\n        "
   },
-  "1d4eb923917f299cba01fcdbb9c2a4b976432168fea82dc5e5d33d36dcddb5f0": {
-    "describe": {
-      "columns": [
-        {
-          "name": "uuid: model::OrderId",
-          "ordinal": 0,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
-        false
-      ],
-      "parameters": {
-        "Right": 0
-      }
-    },
-    "query": "\n                SELECT\n                    uuid as \"uuid: model::OrderId\"\n                FROM\n                    closed_cfds\n                "
-  },
   "4af3815bcce18c34ea78e3389ede21b193a0e493f98642d6a2a4636561667b66": {
     "describe": {
       "columns": [
@@ -45,6 +27,24 @@
       }
     },
     "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                cfds\n            "
+  },
+  "54d99318071bfab4da062578dc067bab5a0514d925119e6df2fbaf3f3522d6d8": {
+    "describe": {
+      "columns": [
+        {
+          "name": "uuid: model::OrderId",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Right": 0
+      }
+    },
+    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                closed_cfds\n            "
   },
   "58c86fddae29a8f0b7feb421d8566b14a41d5da18de07e1adc258a57376f56d4": {
     "describe": {

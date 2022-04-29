@@ -225,6 +225,26 @@ impl Connection {
 
         Ok(C::new_closed(args, cfd))
     }
+
+    pub(super) async fn load_closed_cfd_ids(&self) -> Result<Vec<OrderId>> {
+        let mut conn = self.inner.acquire().await?;
+
+        let ids = sqlx::query!(
+            r#"
+            SELECT
+                uuid as "uuid: model::OrderId"
+            FROM
+                closed_cfds
+            "#
+        )
+        .fetch_all(&mut *conn)
+        .await?
+        .into_iter()
+        .map(|r| r.uuid)
+        .collect();
+
+        Ok(ids)
+    }
 }
 
 /// Auxiliary type used to gradually combine a `Cfd` with its list of

@@ -281,23 +281,7 @@ impl Connection {
                 yield res;
             }
 
-            let mut conn = self.inner.acquire().await?;
-
-            let ids = sqlx::query!(
-                r#"
-                SELECT
-                    uuid as "uuid: model::OrderId"
-                FROM
-                    closed_cfds
-                "#
-            )
-            .fetch_all(&mut *conn)
-            .await?
-            .into_iter()
-            .map(|r| r.uuid);
-
-            drop(conn);
-
+            let ids = self.load_closed_cfd_ids().await?;
             for id in ids {
                 yield self.load_closed_cfd(id, args.clone()).await
                     .with_context(|| format!("Failed to load closed CFD {id}"));
