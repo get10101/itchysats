@@ -264,23 +264,7 @@ impl Connection {
         C::CtorArgs: Clone + Send + Sync,
     {
         let stream = async_stream::stream! {
-            let mut conn = self.inner.acquire().await?;
-
-            let ids = sqlx::query!(
-                r#"
-                SELECT
-                    uuid as "uuid: model::OrderId"
-                FROM
-                    cfds
-                "#
-            )
-            .fetch_all(&mut *conn)
-            .await?
-            .into_iter()
-            .map(|r| r.uuid);
-
-            drop(conn);
-
+            let ids = self.load_open_cfd_ids().await?;
             for id in ids {
                 let res = match self.load_open_cfd(id, args.clone()).await {
                     Err(Error::OpenCfdNotFound) => {
@@ -391,28 +375,11 @@ impl Connection {
 
         let ids = sqlx::query!(
             r#"
-            select
-                id as cfd_id,
+            SELECT
                 uuid as "uuid: model::OrderId"
-            from
+            FROM
                 cfds
-            where not exists (
-                select id from EVENTS as events
-                where events.cfd_id = cfds.id and
-                (
-                    events.name = $1 or
-                    events.name = $2 or
-                    events.name= $3 or
-                    events.name= $4 or
-                    events.name= $5
-                )
-            )
-            "#,
-            EventKind::COLLABORATIVE_SETTLEMENT_CONFIRMED,
-            EventKind::CET_CONFIRMED,
-            EventKind::REFUND_CONFIRMED,
-            EventKind::CONTRACT_SETUP_FAILED,
-            EventKind::OFFER_REJECTED
+            "#
         )
         .fetch_all(&mut *conn)
         .await?
@@ -762,57 +729,6 @@ mod tests {
         let events = load_cfd_events(&mut db_tx, cfd.id(), 0).await.unwrap();
         db_tx.commit().await.unwrap();
         assert_eq!(events, vec![event1, event2])
-    }
-
-    #[tokio::test]
-    async fn given_setup_failed_then_do_not_load_non_final_cfd() {
-        let db = memory().await.unwrap();
-
-        let cfd_final = dummy_cfd();
-        db.insert_cfd(&cfd_final).await.unwrap();
-
-        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
-        db.append_event(setup_failed(&cfd_final)).await.unwrap();
-
-        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
-        assert!(cfd_ids.is_empty());
-    }
-
-    #[tokio::test]
-    async fn given_order_rejected_then_do_not_load_non_final_cfd() {
-        let db = memory().await.unwrap();
-
-        let cfd_final = dummy_cfd();
-        db.insert_cfd(&cfd_final).await.unwrap();
-
-        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
-        db.append_event(order_rejected(&cfd_final)).await.unwrap();
-
-        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
-        assert!(cfd_ids.is_empty());
-    }
-
-    #[tokio::test]
-    async fn given_final_and_non_final_cfd_then_non_final_one_still_loaded() {
-        let db = memory().await.unwrap();
-
-        let cfd_not_final = dummy_cfd();
-        db.insert_cfd(&cfd_not_final).await.unwrap();
-
-        db.append_event(lock_confirmed(&cfd_not_final))
-            .await
-            .unwrap();
-
-        let cfd_final = dummy_cfd();
-        db.insert_cfd(&cfd_final).await.unwrap();
-
-        db.append_event(lock_confirmed(&cfd_final)).await.unwrap();
-        db.append_event(order_rejected(&cfd_final)).await.unwrap();
-
-        let cfd_ids = db.load_open_cfd_ids().await.unwrap();
-
-        assert_eq!(cfd_ids.len(), 1);
-        assert_eq!(*cfd_ids.first().unwrap(), cfd_not_final.id())
     }
 
     pub fn dummy_cfd() -> Cfd {

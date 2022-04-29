@@ -28,6 +28,24 @@
     },
     "query": "\n                SELECT\n                    uuid as \"uuid: model::OrderId\"\n                FROM\n                    closed_cfds\n                "
   },
+  "4af3815bcce18c34ea78e3389ede21b193a0e493f98642d6a2a4636561667b66": {
+    "describe": {
+      "columns": [
+        {
+          "name": "uuid: model::OrderId",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Right": 0
+      }
+    },
+    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                cfds\n            "
+  },
   "58c86fddae29a8f0b7feb421d8566b14a41d5da18de07e1adc258a57376f56d4": {
     "describe": {
       "columns": [
@@ -314,24 +332,6 @@
     },
     "query": "\n        SELECT\n            collaborative_settlement_txs.txid as \"txid: model::Txid\",\n            collaborative_settlement_txs.vout as \"vout: model::Vout\",\n            collaborative_settlement_txs.payout as \"payout: model::Payout\",\n            collaborative_settlement_txs.price as \"price: model::Price\"\n        FROM\n            collaborative_settlement_txs\n        JOIN\n            closed_cfds on closed_cfds.id = collaborative_settlement_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        "
   },
-  "b633a4c59c3a069175bfc104961c1f9d27524ebfd00da4c7572feb3d7bf8f869": {
-    "describe": {
-      "columns": [
-        {
-          "name": "uuid: model::OrderId",
-          "ordinal": 0,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
-        false
-      ],
-      "parameters": {
-        "Right": 0
-      }
-    },
-    "query": "\n                SELECT\n                    uuid as \"uuid: model::OrderId\"\n                FROM\n                    cfds\n                "
-  },
   "c9ef057c4481c04eb90d134ba185fca4d0e6ea7d42367d02b62e17afda3c8edd": {
     "describe": {
       "columns": [
@@ -415,30 +415,6 @@
       }
     },
     "query": "\n                SELECT\n                    uuid as \"uuid: model::OrderId\"\n                FROM\n                    failed_cfds\n                "
-  },
-  "cdc44ed0a0e4485f61b83ea31159360116ae2406c13a766443aeeed76587286d": {
-    "describe": {
-      "columns": [
-        {
-          "name": "cfd_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "uuid: model::OrderId",
-          "ordinal": 1,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
-        true,
-        false
-      ],
-      "parameters": {
-        "Right": 5
-      }
-    },
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            where not exists (\n                select id from EVENTS as events\n                where events.cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2 or\n                    events.name= $3 or\n                    events.name= $4 or\n                    events.name= $5\n                )\n            )\n            "
   },
   "d248ffbb2d38a6a8f6475f7b5e2f2ee1ab5798149ba8b70aff3a6cc9457382ef": {
     "describe": {
