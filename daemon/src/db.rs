@@ -287,23 +287,7 @@ impl Connection {
                     .with_context(|| format!("Failed to load closed CFD {id}"));
             }
 
-            let mut conn = self.inner.acquire().await?;
-
-            let ids = sqlx::query!(
-                r#"
-                SELECT
-                    uuid as "uuid: model::OrderId"
-                FROM
-                    failed_cfds
-                "#
-            )
-            .fetch_all(&mut *conn)
-            .await?
-            .into_iter()
-            .map(|r| r.uuid);
-
-            drop(conn);
-
+            let ids = self.load_failed_cfd_ids().await?;
             for id in ids {
                 yield self.load_failed_cfd(id, args.clone()).await
                     .with_context(|| format!("Failed to load failed CFD {id}"));

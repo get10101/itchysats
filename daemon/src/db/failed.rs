@@ -183,6 +183,26 @@ impl Connection {
 
         Ok(C::new_failed(args, cfd))
     }
+
+    pub(super) async fn load_failed_cfd_ids(&self) -> Result<Vec<OrderId>> {
+        let mut conn = self.inner.acquire().await?;
+
+        let ids = sqlx::query!(
+            r#"
+            SELECT
+                uuid as "uuid: model::OrderId"
+            FROM
+                failed_cfds
+            "#
+        )
+        .fetch_all(&mut *conn)
+        .await?
+        .into_iter()
+        .map(|r| r.uuid)
+        .collect();
+
+        Ok(ids)
+    }
 }
 
 async fn insert_failed_cfd(

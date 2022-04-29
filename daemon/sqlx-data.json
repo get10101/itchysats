@@ -10,6 +10,24 @@
     },
     "query": "\n        INSERT INTO commit_txs\n        (\n            cfd_id,\n            txid\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2\n        )\n        "
   },
+  "19d85c62be9e2deb6b03bfbb157643c91a194fb5f9254e2dbee097fd2bcd0b64": {
+    "describe": {
+      "columns": [
+        {
+          "name": "uuid: model::OrderId",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Right": 0
+      }
+    },
+    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                failed_cfds\n            "
+  },
   "4af3815bcce18c34ea78e3389ede21b193a0e493f98642d6a2a4636561667b66": {
     "describe": {
       "columns": [
@@ -397,24 +415,6 @@
       }
     },
     "query": "\n            SELECT\n                uuid as \"id: model::OrderId\",\n                position as \"position: model::Position\",\n                initial_price as \"initial_price: model::Price\",\n                taker_leverage as \"taker_leverage: model::Leverage\",\n                n_contracts as \"n_contracts: model::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: model::Identity\",\n                role as \"role: model::Role\",\n                fees as \"fees: model::Fees\",\n                kind as \"kind: Kind\"\n            FROM\n                failed_cfds\n            WHERE\n                failed_cfds.uuid = $1\n            "
-  },
-  "ca2d9c9ba7b60453b9f439e8092dcefc7a3cddbe03466eda291e9ddbb69f3ffe": {
-    "describe": {
-      "columns": [
-        {
-          "name": "uuid: model::OrderId",
-          "ordinal": 0,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
-        false
-      ],
-      "parameters": {
-        "Right": 0
-      }
-    },
-    "query": "\n                SELECT\n                    uuid as \"uuid: model::OrderId\"\n                FROM\n                    failed_cfds\n                "
   },
   "d248ffbb2d38a6a8f6475f7b5e2f2ee1ab5798149ba8b70aff3a6cc9457382ef": {
     "describe": {
