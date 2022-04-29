@@ -1,5 +1,6 @@
 use crate::bitcoin::Transaction;
 use crate::command;
+use crate::Amount;
 use anyhow::anyhow;
 use anyhow::Context as _;
 use anyhow::Error;
@@ -7,6 +8,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use asynchronous_codec::Decoder;
 use bdk::bitcoin::secp256k1::Signature;
+use bdk::bitcoin::PublicKey;
+use bdk::miniscript::Descriptor;
 use bytes::BytesMut;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -52,11 +55,9 @@ impl Actor {
 
         let ClosePosition { id, price } = msg;
 
-        let (proposal, unsigned_tx, taker_signature, script) = self
+        let close_position_tx = self
             .executor
-            .execute(id, |cfd| {
-                cfd.propose_collaborative_settlement(price, self.n_payouts)
-            })
+            .execute(id, |cfd| cfd.close_position(price, self.n_payouts))
             .await?;
 
         let maker = PeerId::random(); // TODO: This needs to be returned from the above `execute` call as well.
@@ -67,7 +68,7 @@ impl Actor {
         // TODO: I think this part could live in a separate crate?
         self.tasks.add_fallible(
             async move {
-                let mut substream = endpoint
+                let substream = endpoint
                     .send(OpenSubstream::single_protocol(
                         maker,
                         "/itchysats/close-position/1.0.0",
@@ -77,17 +78,17 @@ impl Actor {
                     .context("Failed to open substream")?;
                 let mut framed = asynchronous_codec::Framed::new(substream, asynchronous_codec::JsonCodec::<DialerMessage, ListenerMessage>::new());
 
-                framed.send(DialerMessage::Msg0(Msg0 { id, price })).await.context("Failed to send Msg0")?;
+                let unsigned_tx = close_position_tx.unsigned_transaction();
+
+                framed.send(DialerMessage::Msg0(Msg0 { id, price, unsigned_tx: unsigned_tx.clone() })).await.context("Failed to send Msg0")?;
 
                 // TODO: We will need to apply a timeout to these. Perhaps we can put a timeout generally into "reading from the substream"?
-                let msg1 = framed.next().await.context("End of stream while receiving Msg1")?.context("Failed to decode Msg1")?.into_msg1()?;
-
-                if let Msg1::Reject = msg1 {
+                if let Msg1::Reject = framed.next().await.context("End of stream while receiving Msg1")?.context("Failed to decode Msg1")?.into_msg1()? {
                     return Err(Failed::Rejected);
                 }
 
                 framed.send(DialerMessage::Msg2(Msg2 {
-                    dialer_signature: taker_signature,
+                    dialer_signature: close_position_tx.own_signature(),
                 })).await.context("Failed to send Msg2")?;
 
                 let msg3 = match framed.next().await {
@@ -97,9 +98,16 @@ impl Actor {
                     }
                 };
 
-                todo!("Verify signature!");
+                let close_position_tx = match close_position_tx.recv_counterparty_signature(msg3.listener_signature) {
+                    Ok(close_position_tx) => close_position_tx,
+                    Err(error) => {
+                        // TODO: What to do in case of an invalid signature?
 
-                let tx: Transaction = todo!("Assemble entire transaction from all signatures");
+                        return Err(Failed::AfterSendingSignature { unsigned_tx });
+                    }
+                };
+
+                let tx = close_position_tx.finalize()?; // TODO: What to do if we fail here?
 
                 fully_complete_mc.send(FullyComplete { tx }).await.expect("TODO: How to handle actor being disconnected after having a fully-signed transaction???");
 
@@ -206,6 +214,11 @@ impl ListenerMessage {
 pub struct Msg0 {
     pub id: OrderId,
     pub price: Price,
+    /// The transaction that is being proposed to close the protocol.
+    ///
+    /// Sending the full transaction allows the listening side to verify, how exactly the dialing
+    /// side wants to close the position.
+    pub unsigned_tx: Transaction,
 }
 
 #[derive(Serialize, Deserialize)]
