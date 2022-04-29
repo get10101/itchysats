@@ -38,6 +38,7 @@ use model::Payout;
 use model::Position;
 use model::Price;
 use model::Role;
+use model::Timestamp;
 use model::Txid;
 use model::Vout;
 use model::SETTLEMENT_INTERVAL;
@@ -66,6 +67,7 @@ pub struct ClosedCfd {
     pub expiry_timestamp: OffsetDateTime,
     pub lock: Lock,
     pub settlement: Settlement,
+    pub creation_timestamp: Timestamp,
 }
 
 /// Data loaded from the database about the lock transaction of a
@@ -201,6 +203,8 @@ impl Connection {
             }
         };
 
+        let creation_timestamp = load_creation_timestamp(&mut conn, id).await?;
+
         let cfd = ClosedCfd {
             id,
             position: cfd.position,
@@ -216,6 +220,7 @@ impl Connection {
                 dlc_vout: cfd.lock_dlc_vout,
             },
             settlement,
+            creation_timestamp,
         };
 
         Ok(C::new_closed(args, cfd))
@@ -887,6 +892,36 @@ async fn insert_event_log(
     }
 
     Ok(())
+}
+
+/// Obtain the time at which the closed CFD was created, according to
+/// the `event_log` table.
+///
+/// Every closed CFD must have gone through contract setup at some
+/// point. Therefore, we base the creation timestamp on the
+/// `EventKind::ContractSetupStarted` variant.
+async fn load_creation_timestamp(
+    conn: &mut PoolConnection<Sqlite>,
+    id: OrderId,
+) -> Result<Timestamp> {
+    let row = sqlx::query!(
+        r#"
+        SELECT
+            event_log.created_at
+        FROM
+            event_log
+        JOIN
+            closed_cfds on closed_cfds.id = event_log.cfd_id
+        WHERE
+            closed_cfds.uuid = $1 AND event_log.name = $2
+        "#,
+        id,
+        model::EventKind::CONTRACT_SETUP_STARTED,
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+
+    Ok(Timestamp::new(row.created_at))
 }
 
 #[cfg(test)]

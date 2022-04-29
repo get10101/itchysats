@@ -495,6 +495,7 @@ pub enum EventKind {
 }
 
 impl EventKind {
+    pub const CONTRACT_SETUP_STARTED: &'static str = "ContractSetupCompleted";
     pub const CONTRACT_SETUP_COMPLETED_EVENT: &'static str = "ContractSetupCompleted";
     pub const ROLLOVER_COMPLETED_EVENT: &'static str = "RolloverCompleted";
     pub const COLLABORATIVE_SETTLEMENT_CONFIRMED: &'static str = "CollaborativeSettlementConfirmed";
