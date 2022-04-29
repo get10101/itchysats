@@ -1,4 +1,3 @@
-import { ExternalLinkIcon } from "@chakra-ui/icons";
 import { Alert, AlertDescription, AlertIcon, AlertStatus, AlertTitle, Link } from "@chakra-ui/react";
 import * as React from "react";
 import { Link as ReachLink } from "react-router-dom";
@@ -21,7 +20,6 @@ export default function AlertBox({ title, description, status = "error", reachLi
                         <AlertDescription textDecor={"underline"}>
                             {description}
                         </AlertDescription>
-                        <ExternalLinkIcon marginLeft={1} marginBottom={1} />
                     </Link>
                 )
                 : (

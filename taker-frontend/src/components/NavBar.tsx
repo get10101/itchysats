@@ -1,26 +1,27 @@
-import { HamburgerIcon, MoonIcon, SunIcon } from "@chakra-ui/icons";
+import { Icon, MoonIcon, SunIcon, WarningIcon } from "@chakra-ui/icons";
 import {
     Box,
     Button,
+    ButtonGroup,
+    Center,
     Divider,
     Flex,
     Heading,
     HStack,
     Image,
     Link,
-    Menu,
-    MenuButton,
-    MenuItem,
-    MenuList,
     Skeleton,
     Stack,
     Text,
     Tooltip,
     useColorMode,
     useColorModeValue,
+    VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { useNavigate } from "react-router-dom";
+import { FaHome, FaWallet } from "react-icons/all";
+import { Link as ReachLink, useLocation, useNavigate } from "react-router-dom";
+import { BG_DARK, BG_LIGHT, VIEWPORT_WIDTH_PX } from "../App";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
 import { ConnectionCloseReason, ConnectionStatus, WalletInfo } from "../types";
@@ -51,100 +52,205 @@ export default function Nav({ walletInfo, connectedToMaker, nextFundingEvent, re
         <SunIcon />,
     );
 
-    let connectionMessage = connectedToMaker.online
-        ? { label: "Online", color: { light: "green.600", dark: "green.500" } }
-        : { label: "Offline", color: { light: "red.600", dark: "red.500" } };
-
-    if (connectedToMaker.connection_close_reason) {
-        switch (connectedToMaker.connection_close_reason) {
-            case ConnectionCloseReason.MAKER_VERSION_OUTDATED:
-                connectionMessage.label = connectionMessage
-                    .label + ": the maker is running an outdated version, please reach out to ItchySats!";
-                break;
-            case ConnectionCloseReason.TAKER_VERSION_OUTDATED:
-                connectionMessage.label = connectionMessage.label
-                    + ": you are running an incompatible version, please upgrade!";
-                break;
+    const connectionStatus = (connectedToMaker: ConnectionStatus) => {
+        if (connectedToMaker.connection_close_reason) {
+            switch (connectedToMaker.connection_close_reason) {
+                case ConnectionCloseReason.MAKER_VERSION_OUTDATED:
+                    return {
+                        warn: true,
+                        light: "yellow.800",
+                        dark: "yellow.200",
+                        tooltip: "The maker is running an outdated version, please reach out to ItchySats!",
+                    };
+                case ConnectionCloseReason.TAKER_VERSION_OUTDATED:
+                    return {
+                        warn: true,
+                        light: "yellow.800",
+                        dark: "yellow.200",
+                        tooltip: "You are running an incompatible version, please upgrade!",
+                    };
+            }
         }
-    }
+
+        if (connectedToMaker.online) {
+            return {
+                warn: false,
+                light: "green.600",
+                dark: "green.400",
+                tooltip: "The maker is online",
+            };
+        }
+
+        return {
+            warn: false,
+            light: "red.600",
+            dark: "red.400",
+            tooltip: "The maker is offline",
+        };
+    };
+
+    const connectionStatusDisplay = connectionStatus(connectedToMaker);
+
+    const connectionStatusIconColor = useColorModeValue(
+        connectionStatusDisplay.light,
+        connectionStatusDisplay.dark,
+    );
 
     return (
         <>
-            <Box bg={useColorModeValue("gray.100", "gray.900")} px={4} position={"fixed"} width={"100%"} zIndex={"100"}>
-                <Flex h={16} alignItems={"center"} justifyContent={"space-between"}>
-                    <Flex justifyContent={"flex-left"} width={"180px"}>
-                        <Menu>
-                            <MenuButton
-                                as={Button}
-                                variant={"link"}
-                                cursor={"pointer"}
-                                minW={0}
-                            >
-                                <HamburgerIcon w={"32px"} />
-                            </MenuButton>
-                            <MenuList alignItems={"center"}>
-                                <MenuItem onClick={() => navigate("/")}>Home</MenuItem>
-                                <MenuItem onClick={() => navigate("/wallet")}>Wallet</MenuItem>
-                            </MenuList>
-                        </Menu>
-                    </Flex>
-                    <HStack>
-                        <Text>{"Maker: "}</Text>
-                        <Heading
-                            size={"sm"}
-                            color={useColorModeValue(connectionMessage.color.light, connectionMessage.color.dark)}
+            <VStack spacing={0} position={"fixed"} width={"100%"} zIndex={"100"} height={"100px"}>
+                <Box bg={useColorModeValue("gray.100", "gray.900")} width={"100%"}>
+                    <Center>
+                        <Box
+                            paddingBottom={2}
+                            bg={useColorModeValue("gray.100", "gray.900")}
+                            width={"100%"}
+                            maxWidth={VIEWPORT_WIDTH_PX}
                         >
-                            {connectionMessage.label}
-                        </Heading>
-                        <TextDivider />
-                        <Text>{"Next funding event: "}</Text>
-                        <Skeleton
-                            isLoaded={nextFundingEvent != null}
-                            height={"20px"}
-                            display={"flex"}
-                            alignItems={"center"}
-                        >
-                            <Tooltip
-                                label={"The next time your CFDs will be extended and the funding fee will be collected based on the hourly rate."}
-                                hasArrow
-                            >
-                                <HStack minWidth={"80px"}>
-                                    <Heading size={"sm"}>{nextFundingEvent}</Heading>
+                            <Flex alignItems={"center"} justifyContent={"space-between"} padding={2}>
+                                <Flex justifyContent={"flex-left"}>
+                                    <NavigationButtons />
+                                </Flex>
+                                <Flex alignItems={"center"}>
+                                    <Stack direction={"row"} spacing={7}>
+                                        <Button onClick={toggleColorMode} variant={"unstyled"}>
+                                            {toggleIcon}
+                                        </Button>
+                                        <Box>
+                                            <Button bg={"transparent"} onClick={() => navigate("/")}>
+                                                {navBarLog}
+                                            </Button>
+                                        </Box>
+                                    </Stack>
+                                </Flex>
+                            </Flex>
+                        </Box>
+                    </Center>
+                </Box>
+
+                <Box
+                    paddingTop={2}
+                    bg={useColorModeValue(BG_LIGHT, BG_DARK)}
+                    width={"100%"}
+                    maxWidth={VIEWPORT_WIDTH_PX}
+                    height={"100%"}
+                >
+                    <Center>
+                        <HStack>
+                            <Tooltip label={connectionStatusDisplay.tooltip}>
+                                <HStack>
+                                    <Text>{"Maker: "}</Text>
+                                    {connectionStatusDisplay.warn
+                                        ? (
+                                            <WarningIcon
+                                                color={connectionStatusIconColor}
+                                            />
+                                        )
+                                        : (
+                                            <Icon
+                                                viewBox="0 0 200 200"
+                                                color={connectionStatusIconColor}
+                                            >
+                                                <path
+                                                    fill="currentColor"
+                                                    d="M 100, 100 m -75, 0 a 75,75 0 1,0 150,0 a 75,75 0 1,0 -150,0"
+                                                />
+                                            </Icon>
+                                        )}
                                 </HStack>
                             </Tooltip>
-                        </Skeleton>
-                        <TextDivider />
-                        <Text>{"Reference price: "}</Text>
-                        <Skeleton
-                            isLoaded={referencePrice !== undefined}
-                            height={"20px"}
-                            display={"flex"}
-                            alignItems={"center"}
-                        >
-                            <Tooltip label={"The price the Oracle attests to, the BitMEX BXBT index price"} hasArrow>
-                                <Link href={"https://outcome.observer/h00.ooo/x/BitMEX/BXBT"} target={"_blank"}>
-                                    {/* The minWidth helps with not letting the elements in Nav jump because the width changes*/}
-                                    <Heading size={"sm"} minWidth={"90px"}>
-                                        <DollarAmount amount={referencePrice || 0} />
-                                    </Heading>
-                                </Link>
-                            </Tooltip>
-                        </Skeleton>
-                    </HStack>
-                    <Flex alignItems={"center"}>
-                        <Stack direction={"row"} spacing={7}>
-                            <Button onClick={toggleColorMode} variant={"unstyled"}>
-                                {toggleIcon}
-                            </Button>
-                            <Box>
-                                <Button bg={"transparent"} onClick={() => navigate("/")}>
-                                    {navBarLog}
-                                </Button>
-                            </Box>
-                        </Stack>
-                    </Flex>
-                </Flex>
-            </Box>
+                            <TextDivider />
+                            <Text>{"Funding: "}</Text>
+                            <Skeleton
+                                isLoaded={nextFundingEvent != null}
+                                height={"20px"}
+                                display={"flex"}
+                                alignItems={"center"}
+                            >
+                                <Tooltip
+                                    label={"The next time your CFDs will be extended and the funding fee will be collected based on the hourly rate."}
+                                    hasArrow
+                                >
+                                    <HStack minWidth={"80px"}>
+                                        <Heading size={"sm"}>{nextFundingEvent}</Heading>
+                                    </HStack>
+                                </Tooltip>
+                            </Skeleton>
+                            <TextDivider />
+                            <Text>{"Ref price: "}</Text>
+                            <Skeleton
+                                isLoaded={referencePrice !== undefined}
+                                height={"20px"}
+                                display={"flex"}
+                                alignItems={"center"}
+                            >
+                                <Tooltip
+                                    label={"The price the Oracle attests to, the BitMEX BXBT index price"}
+                                    hasArrow
+                                >
+                                    <Link href={"https://outcome.observer/h00.ooo/x/BitMEX/BXBT"} target={"_blank"}>
+                                        {/* The minWidth helps with not letting the elements in Nav jump because the width changes*/}
+                                        <Heading size={"sm"} minWidth={"90px"}>
+                                            <DollarAmount amount={referencePrice || 0} />
+                                        </Heading>
+                                    </Link>
+                                </Tooltip>
+                            </Skeleton>
+                        </HStack>
+                    </Center>
+                </Box>
+            </VStack>
         </>
+    );
+}
+
+function NavigationButtons() {
+    const location = useLocation();
+    const isWalletSelected = location.pathname.includes("wallet");
+    const isHomeSelected = !isWalletSelected;
+
+    const unSelectedButton = "transparent";
+    const selectedButton = useColorModeValue("grey.400", "black.400");
+    const buttonBorder = useColorModeValue("grey.400", "black.400");
+    const buttonText = useColorModeValue("black", "white");
+
+    const width = "100px";
+    const borderWidth = 2;
+
+    return (
+        <HStack>
+            <Center>
+                <ButtonGroup spacing="3">
+                    <Button
+                        as={ReachLink}
+                        to="/long"
+                        color={isHomeSelected ? selectedButton : unSelectedButton}
+                        bg={isHomeSelected ? selectedButton : unSelectedButton}
+                        border={buttonBorder}
+                        borderWidth={borderWidth}
+                        isActive={isHomeSelected}
+                        w={width}
+                        leftIcon={<FaHome color={buttonText} />}
+                        boxShadow={"md"}
+                    >
+                        <Text fontSize={"md"} color={buttonText}>Home</Text>
+                    </Button>
+                    <Button
+                        as={ReachLink}
+                        to="/wallet"
+                        color={isWalletSelected ? selectedButton : unSelectedButton}
+                        bg={isWalletSelected ? selectedButton : unSelectedButton}
+                        border={buttonBorder}
+                        borderWidth={borderWidth}
+                        isActive={isWalletSelected}
+                        w={width}
+                        leftIcon={<FaWallet color={buttonText} />}
+                        boxShadow={"md"}
+                    >
+                        <Text fontSize={"md"} color={buttonText}>Wallet</Text>
+                    </Button>
+                </ButtonGroup>
+            </Center>
+        </HStack>
     );
 }
