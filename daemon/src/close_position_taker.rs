@@ -52,7 +52,7 @@ impl Actor {
 
         let ClosePosition { id, price } = msg;
 
-        let (proposal, transaction, taker_signature, script) = self
+        let (proposal, unsigned_tx, taker_signature, script) = self
             .executor
             .execute(id, |cfd| {
                 cfd.propose_collaborative_settlement(price, self.n_payouts)
@@ -92,15 +92,8 @@ impl Actor {
 
                 let msg3 = match framed.next().await {
                     Some(Ok(msg)) => msg.into_msg3()?,
-                    Some(Err(_)) => {
-                        // TODO: Add our own signature to `tx`
-
-                        return Err(Failed::AfterSendingSignature { tx: transaction });
-                    }
-                    None => {
-                        // TODO: Add our own signature to `tx`
-
-                        return Err(Failed::AfterSendingSignature { tx: transaction });
+                    Some(Err(_)) | None => {
+                        return Err(Failed::AfterSendingSignature { unsigned_tx });
                     }
                 };
 
@@ -114,7 +107,7 @@ impl Actor {
             },
             |e| async move {
                 match e {
-                    Failed::AfterSendingSignature { tx } => {
+                    Failed::AfterSendingSignature { unsigned_tx: tx } => {
                         let _ = this.send(PartiallyComplete { tx }).await;
                     }
                     Failed::BeforeSendingSignature { source } => {
@@ -171,7 +164,7 @@ struct NotComplete {
 #[derive(Debug)]
 enum Failed {
     Rejected,
-    AfterSendingSignature { tx: Transaction },
+    AfterSendingSignature { unsigned_tx: Transaction },
     BeforeSendingSignature { source: anyhow::Error },
 }
 
