@@ -313,41 +313,28 @@ mod metrics {
     fn set_position_metrics<'a>(cfds: impl Iterator<Item = &'a Cfd>, status: &str) {
         let (long, short): (Vec<_>, Vec<_>) = cfds.partition(|cfd| cfd.position == Position::Long);
 
-        POSITION_QUANTITY_GAUGE
-            .with(&HashMap::from([
-                (POSITION_LABEL, POSITION_LONG_LABEL),
-                (STATUS_LABEL, status),
-            ]))
-            .set(
-                sum_amounts(&long)
-                    .into_decimal()
-                    .to_f64()
-                    .unwrap_or_default(),
-            );
-        POSITION_AMOUNT_GAUGE
-            .with(&HashMap::from([
-                (POSITION_LABEL, POSITION_LONG_LABEL),
-                (STATUS_LABEL, status),
-            ]))
-            .set(long.len() as i64);
+        set_metrics_for(POSITION_LONG_LABEL, status, &long);
+        set_metrics_for(POSITION_SHORT_LABEL, status, &short);
+    }
 
+    fn set_metrics_for(position_label: &str, status: &str, position: &[&Cfd]) {
         POSITION_QUANTITY_GAUGE
             .with(&HashMap::from([
-                (POSITION_LABEL, POSITION_SHORT_LABEL),
+                (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
             ]))
             .set(
-                sum_amounts(&short)
+                sum_amounts(position)
                     .into_decimal()
                     .to_f64()
                     .unwrap_or_default(),
             );
         POSITION_AMOUNT_GAUGE
             .with(&HashMap::from([
-                (POSITION_LABEL, POSITION_SHORT_LABEL),
+                (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
             ]))
-            .set(short.len() as i64);
+            .set(position.len() as i64);
     }
 
     fn sum_amounts(cfds: &[&Cfd]) -> Usd {
