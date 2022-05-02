@@ -11,7 +11,6 @@ async-trait = "0.1"
 bitmex-stream = { path = "../bitmex-stream" }
 futures = "0.3"
 rust_decimal = { version = "1", features = ["serde-with-float"] }
-rust_decimal_macros = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
@@ -21,4 +20,6 @@ tokio-tasks = { path = "../tokio-tasks" }
 tracing = "0.1"
 xtra = "0.6"
 xtra_productivity = { version = "0.1.0" }
-xtras = { path = "../xtras" }
+
+[dev-dependencies]
+rust_decimal_macros = "1"

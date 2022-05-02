@@ -8,7 +8,6 @@ description = "Extension trait for the xtra actor framework"
 anyhow = "1"
 async-trait = "0.1.53"
 futures = { version = "0.3", default-features = false, features = ["std"] }
-regex = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 tokio-tasks = { path = "../tokio-tasks" }
