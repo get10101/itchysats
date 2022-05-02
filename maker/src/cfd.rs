@@ -1,21 +1,21 @@
-use crate::collab_settlement_maker;
-use crate::command;
-use crate::db;
+use crate::collab_settlement;
+use crate::connection;
+use crate::contract_setup;
 use crate::future_ext::FutureExt;
-use crate::maker_inc_connections;
-use crate::oracle;
-use crate::process_manager;
-use crate::projection;
-use crate::rollover_maker;
-use crate::setup_maker;
-use crate::wallet;
-use crate::wire;
+use crate::rollover;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use bdk::bitcoin::secp256k1::schnorrsig;
+use daemon::command;
+use daemon::db;
+use daemon::oracle;
+use daemon::process_manager;
+use daemon::projection;
+use daemon::wallet;
+use daemon::wire;
+use maia::secp256k1_zkp::schnorrsig;
 use model::olivia::BitMexPriceEventId;
 use model::Cfd;
 use model::FundingRate;
@@ -172,11 +172,11 @@ pub struct Actor<O, T, W> {
     projection: xtra::Address<projection::Actor>,
     process_manager: xtra::Address<process_manager::Actor>,
     executor: command::Executor,
-    rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
+    rollover_actors: AddressMap<OrderId, rollover::Actor>,
     takers: xtra::Address<T>,
     current_offers: Option<MakerOffers>,
-    setup_actors: AddressMap<OrderId, setup_maker::Actor>,
-    settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
+    setup_actors: AddressMap<OrderId, contract_setup::Actor>,
+    settlement_actors: AddressMap<OrderId, collab_settlement::Actor>,
     oracle: xtra::Address<O>,
     connected_takers: HashSet<Identity>,
     n_payouts: usize,
@@ -231,11 +231,11 @@ impl<O, T, W> Actor<O, T, W> {
 
 impl<O, T, W> Actor<O, T, W>
 where
-    T: xtra::Handler<maker_inc_connections::TakerMessage>,
+    T: xtra::Handler<connection::TakerMessage>,
 {
     async fn handle_taker_connected(&mut self, taker_id: Identity) -> Result<()> {
         self.takers
-            .send_async_safe(maker_inc_connections::TakerMessage {
+            .send_async_safe(connection::TakerMessage {
                 taker_id,
                 msg: wire::MakerToTaker::CurrentOffers(self.current_offers),
             })
@@ -260,8 +260,7 @@ where
 impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    T: xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::RegisterRollover>,
+    T: xtra::Handler<connection::TakerMessage> + xtra::Handler<connection::RegisterRollover>,
     W: 'static,
 {
     async fn handle_propose_rollover(
@@ -270,7 +269,7 @@ where
         taker_id: Identity,
         version: RolloverVersion,
     ) -> Result<()> {
-        let rollover_actor_addr = rollover_maker::Actor::new(
+        let rollover_actor_addr = rollover::Actor::new(
             order_id,
             self.n_payouts,
             &self.takers,
@@ -294,9 +293,9 @@ where
 impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    T: xtra::Handler<maker_inc_connections::ConfirmOrder>
-        + xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOffers>,
+    T: xtra::Handler<connection::ConfirmOrder>
+        + xtra::Handler<connection::TakerMessage>
+        + xtra::Handler<connection::BroadcastOffers>,
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle_take_order(
@@ -329,7 +328,7 @@ where
             tracing::warn!("Taker tried to take order with outdated id {order_id}");
 
             self.takers
-                .send(maker_inc_connections::TakerMessage {
+                .send(connection::TakerMessage {
                     taker_id,
                     msg: wire::MakerToTaker::InvalidOrderId(order_id),
                 })
@@ -347,7 +346,7 @@ where
         }
 
         self.takers
-            .send_async_safe(maker_inc_connections::BroadcastOffers(self.current_offers))
+            .send_async_safe(connection::BroadcastOffers(self.current_offers))
             .await?;
 
         self.projection
@@ -367,7 +366,7 @@ where
             .await??;
 
         // 5. Start up contract setup actor
-        let addr = setup_maker::Actor::new(
+        let addr = contract_setup::Actor::new(
             self.db.clone(),
             self.process_manager.clone(),
             (order_to_take, cfd.quantity(), self.n_payouts),
@@ -394,7 +393,7 @@ impl<O, T, W> Actor<O, T, W> {
 
         match self
             .setup_actors
-            .send(&order_id, setup_maker::Accepted)
+            .send(&order_id, contract_setup::Accepted)
             .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT)
             .await
         {
@@ -426,7 +425,7 @@ impl<O, T, W> Actor<O, T, W> {
 
         match self
             .setup_actors
-            .send(&order_id, setup_maker::Rejected)
+            .send(&order_id, contract_setup::Rejected)
             .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT)
             .await
         {
@@ -456,7 +455,7 @@ impl<O, T, W> Actor<O, T, W> {
 
         match self
             .settlement_actors
-            .send_async(&order_id, collab_settlement_maker::Accepted)
+            .send_async(&order_id, collab_settlement::Accepted)
             .await
         {
             Ok(_) => Ok(()),
@@ -477,7 +476,7 @@ impl<O, T, W> Actor<O, T, W> {
 
         match self
             .settlement_actors
-            .send_async(&order_id, collab_settlement_maker::Rejected)
+            .send_async(&order_id, collab_settlement::Rejected)
             .await
         {
             Ok(_) => Ok(()),
@@ -505,7 +504,7 @@ impl<O, T, W> Actor<O, T, W> {
             .rollover_actors
             .send_async(
                 &order_id,
-                rollover_maker::AcceptRollover {
+                rollover::AcceptRollover {
                     tx_fee_rate: current_offers.tx_fee_rate,
                     long_funding_rate: current_offers.funding_rate_long,
                     short_funding_rate: current_offers.funding_rate_short,
@@ -529,7 +528,7 @@ impl<O, T, W> Actor<O, T, W> {
 
         match self
             .rollover_actors
-            .send_async(&order_id, rollover_maker::RejectRollover)
+            .send_async(&order_id, rollover::RejectRollover)
             .await
         {
             Ok(_) => Ok(()),
@@ -547,7 +546,7 @@ impl<O, T, W> Actor<O, T, W> {
 impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::MonitorAttestation>,
-    T: xtra::Handler<maker_inc_connections::settlement::Response>,
+    T: xtra::Handler<connection::settlement::Response>,
     W: 'static + Send,
 {
     async fn handle_propose_settlement(
@@ -562,7 +561,7 @@ where
             .get_disconnected(order_id)
             .with_context(|| format!("Settlement for order {order_id} is already in progress",))?;
 
-        let addr = collab_settlement_maker::Actor::new(
+        let addr = collab_settlement::Actor::new(
             proposal,
             taker_id,
             &self.takers,
@@ -583,11 +582,11 @@ where
 impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    T: xtra::Handler<maker_inc_connections::ConfirmOrder>
-        + xtra::Handler<maker_inc_connections::TakerMessage>
-        + xtra::Handler<maker_inc_connections::BroadcastOffers>
-        + xtra::Handler<maker_inc_connections::settlement::Response>
-        + xtra::Handler<maker_inc_connections::RegisterRollover>,
+    T: xtra::Handler<connection::ConfirmOrder>
+        + xtra::Handler<connection::TakerMessage>
+        + xtra::Handler<connection::BroadcastOffers>
+        + xtra::Handler<connection::settlement::Response>
+        + xtra::Handler<connection::RegisterRollover>,
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
     async fn handle_new_order(&mut self, msg: OfferParams) -> Result<()> {
@@ -602,7 +601,7 @@ where
 
         // 3. Inform connected takers
         self.takers
-            .send_async_safe(maker_inc_connections::BroadcastOffers(self.current_offers))
+            .send_async_safe(connection::BroadcastOffers(self.current_offers))
             .await?;
 
         Ok(())
@@ -653,7 +652,7 @@ where
                 msg: wire::taker_to_maker::Settlement::Initiate { .. },
                 ..
             } => {
-                unreachable!("Handled within `collab_settlement_maker::Actor");
+                unreachable!("Handled within `collab_settlement::Actor");
             }
             wire::TakerToMaker::ProposeRollover {
                 order_id,

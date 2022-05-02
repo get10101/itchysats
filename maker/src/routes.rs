@@ -1,3 +1,4 @@
+use crate::actor_system::ActorSystem;
 use anyhow::Result;
 use daemon::bdk;
 use daemon::bdk::bitcoin::Network;
@@ -7,7 +8,6 @@ use daemon::projection::Cfd;
 use daemon::projection::CfdAction;
 use daemon::projection::Feeds;
 use daemon::wallet;
-use daemon::MakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
 use model::FundingRate;
@@ -36,7 +36,7 @@ use tokio::select;
 use tokio::sync::watch;
 use uuid::Uuid;
 
-pub type Maker = MakerActorSystem<oracle::Actor, wallet::Actor<ElectrumBlockchain>>;
+pub type Maker = ActorSystem<oracle::Actor, wallet::Actor<ElectrumBlockchain>>;
 
 #[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]

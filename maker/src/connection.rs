@@ -1,17 +1,17 @@
-use crate::collab_settlement_maker;
+use crate::cfd;
+use crate::collab_settlement;
+use crate::contract_setup;
 use crate::future_ext::FutureExt;
-use crate::maker_cfd;
-use crate::noise;
-use crate::noise::TransportStateExt;
-use crate::rollover_maker;
-use crate::setup_maker;
-use crate::wire;
-use crate::wire::taker_to_maker;
-use crate::wire::EncryptedJsonCodec;
+use crate::rollover;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use daemon::noise;
+use daemon::noise::TransportStateExt;
+use daemon::wire;
+use daemon::wire::taker_to_maker;
+use daemon::wire::EncryptedJsonCodec;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
@@ -35,29 +35,29 @@ use xtras::SendInterval;
 #[derive(Clone, Copy)]
 pub struct BroadcastOffers(pub Option<MakerOffers>);
 
-/// Message sent from the `setup_maker::Actor` to the
+/// Message sent from the `contract_setup::Actor` to the
 /// `maker_inc_connections::Actor` so that it can forward it to the
 /// taker.
 ///
 /// Additionally, the address of this instance of the
-/// `setup_maker::Actor` is included so that the
+/// `contract_setup::Actor` is included so that the
 /// `maker_inc_connections::Actor` knows where to forward the contract
 /// setup messages from the taker about this particular order.
 pub struct ConfirmOrder {
     pub taker_id: Identity,
     pub order_id: OrderId,
-    pub address: xtra::Address<setup_maker::Actor>,
+    pub address: xtra::Address<contract_setup::Actor>,
 }
 
 pub mod settlement {
     use super::*;
 
-    /// Message sent from the `collab_settlement_maker::Actor` to the
+    /// Message sent from the `collab_settlement::Actor` to the
     /// `maker_inc_connections::Actor` so that it can forward it to the
     /// taker.
     ///
     /// Additionally, the address of this instance of the
-    /// `collab_settlement_maker::Actor` is included so that the
+    /// `collab_settlement::Actor` is included so that the
     /// `maker_inc_connections::Actor` knows where to forward the
     /// collaborative settlement messages from the taker about this
     /// particular order.
@@ -69,7 +69,7 @@ pub mod settlement {
 
     pub enum Decision {
         Accept {
-            address: xtra::Address<collab_settlement_maker::Actor>,
+            address: xtra::Address<collab_settlement::Actor>,
         },
         Reject,
     }
@@ -82,20 +82,20 @@ pub struct TakerMessage {
 
 pub struct RegisterRollover {
     pub order_id: OrderId,
-    pub address: xtra::Address<rollover_maker::Actor>,
+    pub address: xtra::Address<rollover::Actor>,
 }
 
 pub struct Actor {
     connections: HashMap<Identity, Connection>,
-    taker_connected_channel: Box<dyn MessageChannel<maker_cfd::TakerConnected>>,
-    taker_disconnected_channel: Box<dyn MessageChannel<maker_cfd::TakerDisconnected>>,
-    taker_msg_channel: Box<dyn MessageChannel<maker_cfd::FromTaker>>,
+    taker_connected_channel: Box<dyn MessageChannel<cfd::TakerConnected>>,
+    taker_disconnected_channel: Box<dyn MessageChannel<cfd::TakerDisconnected>>,
+    taker_msg_channel: Box<dyn MessageChannel<cfd::FromTaker>>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
     p2p_socket: SocketAddr,
-    setup_actors: AddressMap<OrderId, setup_maker::Actor>,
-    settlement_actors: AddressMap<OrderId, collab_settlement_maker::Actor>,
-    rollover_actors: AddressMap<OrderId, rollover_maker::Actor>,
+    setup_actors: AddressMap<OrderId, contract_setup::Actor>,
+    settlement_actors: AddressMap<OrderId, collab_settlement::Actor>,
+    rollover_actors: AddressMap<OrderId, rollover::Actor>,
     tasks: Tasks,
 }
 
@@ -178,9 +178,9 @@ impl Drop for Connection {
 
 impl Actor {
     pub fn new(
-        taker_connected_channel: Box<dyn MessageChannel<maker_cfd::TakerConnected>>,
-        taker_disconnected_channel: Box<dyn MessageChannel<maker_cfd::TakerDisconnected>>,
-        taker_msg_channel: Box<dyn MessageChannel<maker_cfd::FromTaker>>,
+        taker_connected_channel: Box<dyn MessageChannel<cfd::TakerConnected>>,
+        taker_disconnected_channel: Box<dyn MessageChannel<cfd::TakerDisconnected>>,
+        taker_msg_channel: Box<dyn MessageChannel<cfd::FromTaker>>,
         noise_priv_key: x25519_dalek::StaticSecret,
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
@@ -206,7 +206,7 @@ impl Actor {
         if let Some(connection) = self.connections.remove(taker_id) {
             let _: Result<(), xtra::Disconnected> = self
                 .taker_disconnected_channel
-                .send_async_safe(maker_cfd::TakerDisconnected { id: *taker_id })
+                .send_async_safe(cfd::TakerDisconnected { id: *taker_id })
                 .await;
 
             NUM_CONNECTIONS_GAUGE
@@ -413,7 +413,7 @@ impl Actor {
 
         let _: Result<(), xtra::Disconnected> = self
             .taker_connected_channel
-            .send_async_safe(maker_cfd::TakerConnected { id: identity })
+            .send_async_safe(cfd::TakerConnected { id: identity })
             .await;
 
         let mut tasks = Tasks::default();
@@ -429,7 +429,7 @@ impl Actor {
                             .context("Failed to read from socket")?
                             .context("End of stream")?;
 
-                        this.send(maker_cfd::FromTaker {
+                        this.send(cfd::FromTaker {
                             taker_id: identity,
                             msg,
                         })
@@ -488,7 +488,7 @@ impl Actor {
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    async fn handle_msg_from_taker(&mut self, msg: maker_cfd::FromTaker) {
+    async fn handle_msg_from_taker(&mut self, msg: cfd::FromTaker) {
         let msg_str = msg.msg.name();
 
         tracing::trace!(target: "wire", taker_id = %msg.taker_id, msg_name = msg_str, "Received");
@@ -503,7 +503,7 @@ impl Actor {
             RolloverProtocol { order_id, msg } => {
                 if let Err(NotConnected(_)) = self
                     .rollover_actors
-                    .send_async(&order_id, rollover_maker::ProtocolMsg(msg))
+                    .send_async(&order_id, rollover::ProtocolMsg(msg))
                     .await
                 {
                     tracing::warn!(%order_id, "No active rollover actor");
@@ -515,7 +515,7 @@ impl Actor {
             } => {
                 if let Err(NotConnected(_)) = self
                     .settlement_actors
-                    .send_async(&order_id, collab_settlement_maker::Initiated { sig_taker })
+                    .send_async(&order_id, collab_settlement::Initiated { sig_taker })
                     .await
                 {
                     tracing::warn!(%order_id, "No active settlement actor");

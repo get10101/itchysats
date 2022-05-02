@@ -4,14 +4,18 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1"
+async-trait = "0.1.53"
+bdk = { version = "0.18", default-features = false, features = ["electrum"] }
 clap = { version = "3", features = ["derive"] }
+conquer-once = "0.3"
 daemon = { path = "../daemon" }
+futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 http-api-problem = { version = "0.51.0", features = ["rocket"] }
+libp2p-tcp = { version = "0.32", default-features = false, features = ["tokio"] }
+maia = "0.1.0"
 model = { path = "../model" }
 prometheus = { version = "0.13", default-features = false }
 rocket = { version = "0.5.0-rc.1", features = ["json", "uuid"] }
@@ -20,10 +24,17 @@ rust-embed = "6.4"
 rust-embed-rocket = { path = "../rust-embed-rocket" }
 serde = { version = "1", features = ["derive"] }
 shared-bin = { path = "../shared-bin" }
+thiserror = "1"
+time = { version = "0.3", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 tracing = { version = "0.1" }
 uuid = "0.8"
+x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6" }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
+xtra-libp2p = { path = "../xtra-libp2p" }
+xtra-libp2p-ping = { path = "../xtra-libp2p-ping" }
+xtra_productivity = { version = "0.1.0" }
 xtras = { path = "../xtras" }

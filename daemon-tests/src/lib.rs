@@ -10,14 +10,12 @@ use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
 use daemon::libp2p_utils::create_connect_tcp_multiaddr;
-use daemon::maker_cfd;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::Feeds;
 use daemon::projection::MakerOffers;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
-use daemon::MakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use model::FundingRate;
@@ -138,7 +136,7 @@ impl Default for TakerConfig {
 
 /// Maker Test Setup
 pub struct Maker {
-    pub system: MakerActorSystem<OracleActor, WalletActor>,
+    pub system: maker::ActorSystem<OracleActor, WalletActor>,
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     pub listen_addr: SocketAddr,
@@ -198,7 +196,7 @@ impl Maker {
         let mut monitor_mock = None;
         let mut oracle_mock = None;
 
-        let maker = daemon::MakerActorSystem::new(
+        let maker = maker::ActorSystem::new(
             db.clone(),
             wallet_addr,
             config.oracle_pk,
@@ -244,8 +242,8 @@ impl Maker {
         }
     }
 
-    pub async fn set_offer_params(&mut self, offer_params: maker_cfd::OfferParams) {
-        let maker_cfd::OfferParams {
+    pub async fn set_offer_params(&mut self, offer_params: maker::cfd::OfferParams) {
+        let maker::cfd::OfferParams {
             price_long,
             price_short,
             min_quantity,
@@ -443,13 +441,13 @@ pub fn dummy_quote() -> Quote {
 }
 
 // Offer params allowing a single position, either short or long
-pub fn dummy_offer_params(position_maker: Position) -> maker_cfd::OfferParams {
+pub fn dummy_offer_params(position_maker: Position) -> maker::cfd::OfferParams {
     let (price_long, price_short) = match position_maker {
         Position::Long => (Some(Price::new(dummy_price()).unwrap()), None),
         Position::Short => (None, Some(Price::new(dummy_price()).unwrap())),
     };
 
-    maker_cfd::OfferParams {
+    maker::cfd::OfferParams {
         price_long,
         price_short,
         min_quantity: Usd::new(dec!(5)),
