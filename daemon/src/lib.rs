@@ -126,10 +126,15 @@ where
 
         let mut tasks = Tasks::default();
 
+        let position_metrics_actor = position_metrics::Actor::new(db.clone())
+            .create(None)
+            .spawn(&mut tasks);
+
         tasks.add(process_manager_ctx.run(process_manager::Actor::new(
             db.clone(),
             Role::Maker,
             &projection_actor,
+            &position_metrics_actor,
             &monitor_addr,
             &monitor_addr,
             &monitor_addr,
@@ -196,13 +201,7 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
-        let close_cfds_actor = close_cfds::Actor::new(db.clone())
-            .create(None)
-            .spawn(&mut tasks);
-
-        let position_metrics_actor = position_metrics::Actor::new(db)
-            .create(None)
-            .spawn(&mut tasks);
+        let close_cfds_actor = close_cfds::Actor::new(db).create(None).spawn(&mut tasks);
 
         tracing::debug!("Maker actor system ready");
 
@@ -380,10 +379,15 @@ where
 
         let mut tasks = Tasks::default();
 
+        let position_metrics_actor = position_metrics::Actor::new(db.clone())
+            .create(None)
+            .spawn(&mut tasks);
+
         tasks.add(process_manager_ctx.run(process_manager::Actor::new(
             db.clone(),
             Role::Taker,
             &projection_actor,
+            &position_metrics_actor,
             &monitor_addr,
             &monitor_addr,
             &monitor_addr,

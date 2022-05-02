@@ -1,4 +1,6 @@
 use crate::db;
+use anyhow::Context;
+use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use model::CfdEvent;
@@ -6,26 +8,26 @@ use model::EventKind;
 use model::OrderId;
 use model::Position;
 use model::Usd;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
-use std::time::Duration;
-use tokio_tasks::Tasks;
+use std::collections::HashMap;
 use xtra_productivity::xtra_productivity;
-use xtras::SendInterval;
-
-// TODO: ideally this would be more often
-pub const UPDATE_METRIC_INTERVAL: Duration = Duration::from_secs(60);
+use xtras::SendAsyncSafe;
 
 pub struct Actor {
-    tasks: Tasks,
     db: db::Connection,
+    state: State,
+}
+
+/// Internal struct to keep state in one place
+struct State {
+    cfds: Option<HashMap<OrderId, Cfd>>,
 }
 
 impl Actor {
     pub fn new(db: db::Connection) -> Self {
         Self {
             db,
-            tasks: Tasks::default(),
+            state: State::new(),
         }
     }
 }
@@ -36,8 +38,9 @@ impl xtra::Actor for Actor {
 
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
-        self.tasks
-            .add(this.send_interval(UPDATE_METRIC_INTERVAL, || UpdateMetrics));
+        this.send_async_safe(Initialize)
+            .await
+            .expect("we just started");
     }
 
     async fn stopped(self) -> Self::Stop {}
@@ -45,11 +48,10 @@ impl xtra::Actor for Actor {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle(&mut self, _: UpdateMetrics) {
-        tracing::debug!("Collecting metrics");
+    async fn handle(&mut self, _: Initialize) {
         let mut stream = self.db.load_all_cfds::<Cfd>(());
 
-        let mut cfds = Vec::new();
+        let mut cfds = HashMap::new();
         while let Some(cfd) = stream.next().await {
             let cfd = match cfd {
                 Ok(cfd) => cfd,
@@ -58,15 +60,55 @@ impl Actor {
                     continue;
                 }
             };
-            cfds.push(cfd);
+            cfds.insert(cfd.id, cfd);
         }
 
-        metrics::update_position_metrics(cfds.as_slice());
+        self.state.cfds = Some(cfds);
+        metrics::update_position_metrics(
+            self.state.cfds.clone().expect("We've initialized it above"),
+        );
+    }
+
+    async fn handle(&mut self, msg: CfdChanged) {
+        if let Err(e) = self.state.update_cfd(self.db.clone(), msg.0).await {
+            tracing::error!("Failed to rehydrate CFD: {e:#}");
+            return;
+        };
+
+        metrics::update_position_metrics(
+            self.state
+                .cfds
+                .clone()
+                .expect("updating metrics failed. Internal list has not been initialized yet"),
+        );
+    }
+}
+
+impl State {
+    fn new() -> Self {
+        Self { cfds: None }
+    }
+
+    async fn update_cfd(&mut self, db: db::Connection, id: OrderId) -> Result<()> {
+        let cfd = db.load_open_cfd(id, ()).await?;
+
+        let cfds = self
+            .cfds
+            .as_mut()
+            .context("CFD list has not been initialized yet")?;
+
+        cfds.insert(id, cfd);
+
+        Ok(())
     }
 }
 
 #[derive(Debug)]
-struct UpdateMetrics;
+struct Initialize;
+
+/// Indicates that the CFD with the given order ID changed.
+#[derive(Clone, Copy)]
+pub struct CfdChanged(pub OrderId);
 
 /// Read-model of the CFD for the position metrics actor.
 #[derive(Clone, Copy)]
@@ -213,8 +255,7 @@ impl db::ClosedCfdAggregate for Cfd {
             ..
         } = closed_cfd;
 
-        let quantity_usd =
-            Usd::new(Decimal::from_u64(u64::from(n_contracts)).expect("u64 to fit into Decimal"));
+        let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         Self {
             id,
@@ -233,6 +274,7 @@ impl db::ClosedCfdAggregate for Cfd {
 
 mod metrics {
     use crate::position_metrics::Cfd;
+    use model::OrderId;
     use model::Position;
     use model::Usd;
     use rust_decimal::prelude::ToPrimitive;
@@ -272,7 +314,9 @@ mod metrics {
             .unwrap()
         });
 
-    pub fn update_position_metrics(cfds: &[Cfd]) {
+    pub fn update_position_metrics(cfds: HashMap<OrderId, Cfd>) {
+        let cfds = cfds.into_iter().map(|(_, cfd)| cfd).collect::<Vec<_>>();
+
         set_position_metrics(cfds.iter().filter(|cfd| cfd.is_open), STATUS_OPEN_LABEL);
         set_position_metrics(cfds.iter().filter(|cfd| cfd.is_closed), STATUS_CLOSED_LABEL);
         set_position_metrics(cfds.iter().filter(|cfd| cfd.is_failed), STATUS_FAILED_LABEL);
