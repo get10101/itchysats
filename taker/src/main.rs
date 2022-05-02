@@ -27,6 +27,7 @@ use model::Identity;
 use model::SETTLEMENT_INTERVAL;
 use rocket::fairing::AdHoc;
 use rocket::fairing::Fairing;
+use shared_bin::catchers::default_catchers;
 use shared_bin::fairings;
 use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
@@ -383,9 +384,9 @@ async fn main() -> Result<()> {
                 routes::post_withdraw_request,
             ],
         )
-        .register("/api", rocket::catchers![rocket_basicauth::unauthorized])
+        .register("/api", default_catchers())
         .mount("/", rocket::routes![routes::dist, routes::index])
-        .register("/", rocket::catchers![rocket_basicauth::unauthorized])
+        .register("/", default_catchers())
         .attach(fairings::log_launch())
         .attach(fairings::log_requests())
         .attach(ui_browser_launch())

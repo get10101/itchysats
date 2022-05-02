@@ -18,6 +18,7 @@ use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use model::olivia;
 use model::SETTLEMENT_INTERVAL;
+use shared_bin::catchers::default_catchers;
 use shared_bin::fairings;
 use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
@@ -265,9 +266,9 @@ async fn main() -> Result<()> {
                 routes::get_metrics,
             ],
         )
-        .register("/api", rocket::catchers![rocket_basicauth::unauthorized])
+        .register("/api", default_catchers())
         .mount("/", rocket::routes![routes::dist, routes::index])
-        .register("/", rocket::catchers![rocket_basicauth::unauthorized])
+        .register("/", default_catchers())
         .attach(fairings::log_launch())
         .attach(fairings::log_requests())
         .launch()

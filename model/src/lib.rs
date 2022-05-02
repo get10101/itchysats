@@ -12,6 +12,7 @@ use serde::Serialize;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fmt;
+use std::num::NonZeroU32;
 use std::num::NonZeroU8;
 use std::ops::Add;
 use std::ops::Div;
@@ -860,15 +861,15 @@ impl FeeAccount {
 
 /// Transaction fee in satoshis per vbyte
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
-pub struct TxFeeRate(u32);
+pub struct TxFeeRate(NonZeroU32);
 
 impl TxFeeRate {
-    pub fn new(fee_rate: u32) -> Self {
+    pub fn new(fee_rate: NonZeroU32) -> Self {
         Self(fee_rate)
     }
 
     pub fn to_u32(self) -> u32 {
-        self.0
+        self.0.into()
     }
 }
 
@@ -880,7 +881,7 @@ impl From<TxFeeRate> for bdk::FeeRate {
 
 impl Default for TxFeeRate {
     fn default() -> Self {
-        Self(1u32)
+        Self(NonZeroU32::new(1).expect("1 to be non-zero"))
     }
 }
 
