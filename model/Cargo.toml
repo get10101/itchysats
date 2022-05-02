@@ -12,7 +12,7 @@ conquer-once = "0.3"
 hex = "0.4"
 itertools = "0.10"
 maia = "0.1.0"
-nalgebra = { version = "0.30", default-features = false, features = ["std"] }
+nalgebra = { version = "0.31", default-features = false, features = ["std"] }
 ndarray = "0.15.4"
 ndarray_einsum_beta = "0.7.0"
 num = "0.4.0"
