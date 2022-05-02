@@ -9,13 +9,13 @@ anyhow = "1"
 async-trait = "0.1"
 bdk-ext = { path = "../bdk-ext" }
 daemon = { path = "../daemon" }
+maker = { path = "../maker" }
 mockall = "0.11"
 mockall_derive = "0.11"
 model = { path = "../model" }
 rand = "0.6"
 rust_decimal = "1.23"
 rust_decimal_macros = "1.23"
-maker = { path = "../maker" }
 time = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
