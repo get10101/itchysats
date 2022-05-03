@@ -183,7 +183,7 @@ export const App = () => {
                         height={"100%"}
                         bgGradient={useColorModeValue(
                             "linear(to-r, white 5%, gray.800, white 95%)",
-                            "linear(to-r, gray.800, white, gray.800)",
+                            "linear(to-r, gray.800 5%, white, gray.800 95%)",
                         )}
                     >
                         <Center>
