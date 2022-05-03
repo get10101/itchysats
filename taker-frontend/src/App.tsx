@@ -18,6 +18,7 @@ import dayjs from "dayjs";
 import isBetween from "dayjs/plugin/isBetween";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
+import "intro.js/introjs.css";
 import * as React from "react";
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
@@ -27,6 +28,7 @@ import Footer from "./components/Footer";
 import History from "./components/History";
 import Nav from "./components/NavBar";
 import PromoBanner from "./components/PromoBanner";
+import { Tour } from "./components/Tour";
 import Trade from "./components/Trade";
 import { Wallet } from "./components/Wallet";
 import { BXBTData, Cfd, ConnectionStatus, intoCfd, intoMakerOffer, isClosed, MakerOffer, WalletInfo } from "./types";
@@ -56,6 +58,7 @@ export const HEADER_HEIGHT = 100;
 export const VIEWPORT_WIDTH_PX = VIEWPORT_WIDTH + "px";
 export const BG_LIGHT = "gray.50";
 export const BG_DARK = "gray.800";
+export const FAQ_URL = "http://faq.itchysats.network";
 
 export const App = () => {
     const toast = useToast();
@@ -166,6 +169,8 @@ export const App = () => {
 
     return (
         <>
+            <Tour />
+
             <Nav
                 walletInfo={walletInfo}
                 connectedToMaker={connectedToMaker}
@@ -324,6 +329,7 @@ function NavigationButtons() {
                 <ButtonGroup
                     padding="3"
                     spacing="6"
+                    id={"longShortButtonSwitch"}
                 >
                     <Button
                         as={ReachLink}

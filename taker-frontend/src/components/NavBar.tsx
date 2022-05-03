@@ -246,6 +246,7 @@ function NavigationButtons() {
                         w={width}
                         leftIcon={<FaWallet color={buttonText} />}
                         boxShadow={"md"}
+                        id={"walletSwitchButton"}
                     >
                         <Text fontSize={"md"} color={buttonText}>Wallet</Text>
                     </Button>

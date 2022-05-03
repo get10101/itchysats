@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
 - Maker only: Add new metric under `{maker_url}/api/metrics` which shows the quantity of total positions
 - Maker only: Add new metric under `{maker_url}/api/metrics` which shows the number of total positions
+- Taker UI: Add initial onboarding tour that steps the taker through the user interface and ends in the wallet.
 
 ## [0.4.12] - 2022-04-26
 

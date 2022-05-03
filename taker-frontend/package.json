@@ -28,6 +28,8 @@
     "eslint": "^8.14.0",
     "eslint-config-react-app": "^7.0.1",
     "framer-motion": "^6",
+    "intro.js": "^5.1.0",
+    "intro.js-react": "^0.6.0",
     "jest": "^27.5.1",
     "npm-package-json-lint": "^6.3.0",
     "react": "^18.1.0",

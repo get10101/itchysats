@@ -176,6 +176,7 @@ export default function Trade({
                                     repeat: Infinity,
                                 }}
                                 animate={"pulse"}
+                                id={isLong ? "makerLongPrice" : "makerShortPrice"}
                             >
                                 <Circle size="256px" bg={outerCircleBg}>
                                     <Circle size="180px" bg={innerCircleBg}>
@@ -203,15 +204,16 @@ export default function Trade({
                                 setUserHasEdited(true);
                             }}
                             lotSize={lotSize}
+                            isLong={isLong}
                         />
                     </GridItem>
                     <GridItem colSpan={1} paddingLeft={5} paddingRight={5}>
-                        <Leverage leverage={leverage} />
+                        <Leverage leverage={leverage} isLong={isLong} />
                     </GridItem>
                     <GridItem colSpan={1}>
                         <Table variant="simple">
                             <Tbody>
-                                <Tr>
+                                <Tr id={isLong ? "longRequiredMargin" : "shortRequiredMargin"}>
                                     <Td>Required Margin</Td>
                                     <Td isNumeric>
                                         <BitcoinAmount btc={margin} />
@@ -236,7 +238,7 @@ export default function Trade({
                                     </Td>
                                 </Tr>
 
-                                <Tr>
+                                <Tr id={isLong ? "longPerpetualCost" : "shortPerpetualCost"}>
                                     <Td>
                                         <Text>Perpetual Cost</Text>
                                     </Td>
@@ -302,15 +304,16 @@ interface QuantityProps {
     quantity: number;
     lotSize: number;
     onChange: (valueAsString: string, valueAsNumber: number) => void;
+    isLong: boolean;
 }
 
-function Quantity({ min, max, onChange, quantity, lotSize }: QuantityProps) {
+function Quantity({ min, max, onChange, quantity, lotSize, isLong }: QuantityProps) {
     return (
         <FormControl id="quantity">
             <Center>
                 <FormLabel>BTC/USD Contracts</FormLabel>
             </Center>
-            <InputGroup>
+            <InputGroup id={isLong ? "longQuantityInput" : "shortQuantityInput"}>
                 <NumberInput
                     min={min}
                     max={max}
@@ -334,27 +337,30 @@ function Quantity({ min, max, onChange, quantity, lotSize }: QuantityProps) {
 
 interface LeverageProps {
     leverage: number;
+    isLong: boolean;
 }
 
-function Leverage({ leverage }: LeverageProps) {
+function Leverage({ leverage, isLong }: LeverageProps) {
     return (
-        <FormControl id="leverage">
-            <Center>
-                <FormLabel>Leverage</FormLabel>
-            </Center>
-            <Slider isDisabled={true} value={leverage} min={1} max={5} step={1}>
-                <SliderTrack>
-                    <Box position="relative" right={10} />
-                    <SliderFilledTrack />
-                </SliderTrack>
-                <SliderThumb boxSize={6}>
-                    <Text color="black">{leverage}</Text>
-                </SliderThumb>
-            </Slider>
-            <FormHelperText>
-                How much do you want to leverage your position?
-            </FormHelperText>
-        </FormControl>
+        <Box id={isLong ? "longLeverage" : "shortLeverage"}>
+            <FormControl id={"leverage"}>
+                <Center>
+                    <FormLabel>Leverage</FormLabel>
+                </Center>
+                <Slider isDisabled={true} value={leverage} min={1} max={5} step={1}>
+                    <SliderTrack>
+                        <Box position="relative" right={10} />
+                        <SliderFilledTrack />
+                    </SliderTrack>
+                    <SliderThumb boxSize={6}>
+                        <Text color="black">{leverage}</Text>
+                    </SliderThumb>
+                </Slider>
+                <FormHelperText>
+                    How much do you want to leverage your position?
+                </FormHelperText>
+            </FormControl>
+        </Box>
     );
 }
 
