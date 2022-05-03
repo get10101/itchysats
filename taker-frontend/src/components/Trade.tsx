@@ -1,4 +1,3 @@
-import { ExternalLinkIcon } from "@chakra-ui/icons";
 import { BoxProps } from "@chakra-ui/layout";
 import {
     Box,
@@ -36,6 +35,7 @@ import {
 import { motion } from "framer-motion";
 import * as React from "react";
 import { useEffect, useState } from "react";
+import { FaWallet } from "react-icons/all";
 import { useNavigate } from "react-router-dom";
 import { Offer } from "../App";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";
@@ -225,7 +225,7 @@ export default function Trade({
                                                 <IconButton
                                                     variant={"unstyled"}
                                                     aria-label="Go to wallet"
-                                                    icon={<ExternalLinkIcon marginBottom={1} />}
+                                                    icon={<FaWallet />}
                                                     onClick={() => navigate("/wallet")}
                                                 />
                                             </Tooltip>
@@ -264,6 +264,7 @@ export default function Trade({
                                 onClick={onOpen}
                                 h={16}
                                 w={"80%"}
+                                id={isLong ? "longButton" : "shortButton"}
                             >
                                 <VStack>
                                     <Text fontSize={"md"}>{isLong ? "Long" : "Short"}</Text>
