@@ -6,6 +6,7 @@ use crate::monitor::StartMonitoring;
 use crate::monitor::TransactionKind;
 use crate::monitor::TryBroadcastTransaction;
 use crate::oracle;
+use crate::position_metrics;
 use crate::projection;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -20,6 +21,7 @@ pub struct Actor {
     db: db::Connection,
     role: Role,
     cfds_changed: Box<dyn MessageChannel<projection::CfdChanged>>,
+    cfd_changed_metrics: Box<dyn MessageChannel<position_metrics::CfdChanged>>,
     try_broadcast_transaction: Box<dyn MessageChannel<TryBroadcastTransaction>>,
     start_monitoring: Box<dyn MessageChannel<StartMonitoring>>,
     monitor_cet_finality: Box<dyn MessageChannel<MonitorCetFinality>>,
@@ -41,6 +43,7 @@ impl Actor {
         db: db::Connection,
         role: Role,
         cfds_changed: &(impl MessageChannel<projection::CfdChanged> + 'static),
+        cfd_changed_metrics: &(impl MessageChannel<position_metrics::CfdChanged> + 'static),
         try_broadcast_transaction: &(impl MessageChannel<TryBroadcastTransaction> + 'static),
         start_monitoring: &(impl MessageChannel<StartMonitoring> + 'static),
         monitor_cet: &(impl MessageChannel<MonitorCetFinality> + 'static),
@@ -52,6 +55,7 @@ impl Actor {
             db,
             role,
             cfds_changed: cfds_changed.clone_channel(),
+            cfd_changed_metrics: cfd_changed_metrics.clone_channel(),
             try_broadcast_transaction: try_broadcast_transaction.clone_channel(),
             start_monitoring: start_monitoring.clone_channel(),
             monitor_cet_finality: monitor_cet.clone_channel(),
@@ -229,6 +233,11 @@ impl Actor {
         // 3. Update UI
         self.cfds_changed
             .send_async_safe(projection::CfdChanged(event.id))
+            .await?;
+
+        // 4. Update metrics
+        self.cfd_changed_metrics
+            .send_async_safe(position_metrics::CfdChanged(event.id))
             .await?;
 
         Ok(())

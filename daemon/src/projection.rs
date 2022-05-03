@@ -41,7 +41,6 @@ use model::Usd;
 use model::SETTLEMENT_INTERVAL;
 use parse_display::Display;
 use parse_display::FromStr;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
@@ -852,8 +851,7 @@ impl db::ClosedCfdAggregate for Cfd {
             settlement,
         } = closed_cfd;
 
-        let quantity_usd =
-            Usd::new(Decimal::from_u64(u64::from(n_contracts)).expect("u64 to fit into Decimal"));
+        let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         let (our_leverage, counterparty_leverage) = match role {
             Role::Maker => (Leverage::ONE, taker_leverage),
