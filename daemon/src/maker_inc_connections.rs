@@ -236,12 +236,14 @@ impl Actor {
             .get_mut(taker_id)
             .ok_or(NoConnection(*taker_id))?;
 
-        if conn.send(msg).await.is_err() {
-            self.drop_taker_connection(taker_id).await;
-            return Err(NoConnection(*taker_id));
+        match conn.send(msg).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                tracing::warn!(taker_id = %taker_id, "Failed sending message to taker {e:#}");
+                self.drop_taker_connection(taker_id).await;
+                Err(NoConnection(*taker_id))
+            }
         }
-
-        Ok(())
     }
 
     async fn start_listener(&mut self, ctx: &mut xtra::Context<Self>) {
