@@ -156,7 +156,7 @@ impl Connection {
                 _ => msg,
             }
         } else {
-            bail!("Don't know how to send send {msg_str} to taker with version {taker_version}");
+            bail!("Don't know how to send {msg_str} to taker with version {taker_version}");
         };
 
         self.write
