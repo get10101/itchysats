@@ -1,4 +1,5 @@
 use crate::connection;
+use crate::metrics::time_to_first_position;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -25,6 +26,7 @@ use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
 use xtras::LogFailure;
+use xtras::SendAsyncSafe;
 
 pub struct Actor {
     order: Order,
@@ -40,6 +42,7 @@ pub struct Actor {
     setup_msg_sender: Option<UnboundedSender<wire::SetupMsg>>,
     tasks: Tasks,
     executor: command::Executor,
+    time_to_first_position: xtra::Address<time_to_first_position::Actor>,
 }
 
 impl Actor {
@@ -56,6 +59,7 @@ impl Actor {
             &(impl MessageChannel<connection::ConfirmOrder> + 'static),
             Identity,
         ),
+        time_to_first_position: xtra::Address<time_to_first_position::Actor>,
     ) -> Self {
         Self {
             executor: command::Executor::new(db, process_manager),
@@ -71,6 +75,7 @@ impl Actor {
             taker_id,
             setup_msg_sender: None,
             tasks: Tasks::default(),
+            time_to_first_position,
         }
     }
 
@@ -124,6 +129,14 @@ impl Actor {
         {
             tracing::error!("Failed to execute `complete_contract_setup` command: {e:#}");
         }
+
+        if let Err(e) = self
+            .time_to_first_position
+            .send_async_safe(time_to_first_position::Position::new(self.taker_id))
+            .await
+        {
+            tracing::warn!("Failed to record potential time to first position: {e:#}");
+        };
 
         ctx.stop();
     }

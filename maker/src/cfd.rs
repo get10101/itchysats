@@ -2,6 +2,7 @@ use crate::collab_settlement;
 use crate::connection;
 use crate::contract_setup;
 use crate::future_ext::FutureExt;
+use crate::metrics::time_to_first_position;
 use crate::rollover;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -178,6 +179,7 @@ pub struct Actor<O, T, W> {
     setup_actors: AddressMap<OrderId, contract_setup::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement::Actor>,
     oracle: xtra::Address<O>,
+    time_to_first_position: xtra::Address<time_to_first_position::Actor>,
     connected_takers: HashSet<Identity>,
     n_payouts: usize,
     tasks: Tasks,
@@ -194,6 +196,7 @@ impl<O, T, W> Actor<O, T, W> {
         process_manager: xtra::Address<process_manager::Actor>,
         takers: xtra::Address<T>,
         oracle: xtra::Address<O>,
+        time_to_first_position: xtra::Address<time_to_first_position::Actor>,
         n_payouts: usize,
     ) -> Self {
         Self {
@@ -209,6 +212,7 @@ impl<O, T, W> Actor<O, T, W> {
             current_offers: None,
             setup_actors: AddressMap::default(),
             oracle,
+            time_to_first_position,
             n_payouts,
             connected_takers: HashSet::new(),
             settlement_actors: AddressMap::default(),
@@ -245,6 +249,9 @@ where
             tracing::warn!("Taker already connected: {:?}", &taker_id);
         }
         self.update_connected_takers().await?;
+        self.time_to_first_position
+            .send_async_safe(time_to_first_position::Connected::new(taker_id))
+            .await?;
         Ok(())
     }
 
@@ -374,6 +381,7 @@ where
             &self.wallet,
             &self.wallet,
             (&self.takers, &self.takers, taker_id),
+            self.time_to_first_position.clone(),
         )
         .create(None)
         .spawn(&mut self.tasks);

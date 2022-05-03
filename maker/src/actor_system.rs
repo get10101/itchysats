@@ -1,5 +1,6 @@
 use crate::cfd;
 use crate::connection;
+use crate::metrics::time_to_first_position;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
@@ -86,6 +87,7 @@ where
         let (oracle_addr, oracle_ctx) = Context::new(None);
         let (inc_conn_addr, inc_conn_ctx) = Context::new(None);
         let (process_manager_addr, process_manager_ctx) = Context::new(None);
+        let (time_to_first_position_addr, time_to_first_position_ctx) = Context::new(None);
 
         let executor = command::Executor::new(db.clone(), process_manager_addr.clone());
 
@@ -116,6 +118,7 @@ where
             process_manager_addr,
             inc_conn_addr,
             oracle_addr,
+            time_to_first_position_addr,
             n_payouts,
         )
         .create(None)
@@ -170,9 +173,11 @@ where
             .create(None)
             .spawn(&mut tasks);
 
-        let archive_failed_cfds_actor = archive_failed_cfds::Actor::new(db)
+        let archive_failed_cfds_actor = archive_failed_cfds::Actor::new(db.clone())
             .create(None)
             .spawn(&mut tasks);
+
+        tasks.add(time_to_first_position_ctx.run(time_to_first_position::Actor::new(db)));
 
         tracing::debug!("Maker actor system ready");
 

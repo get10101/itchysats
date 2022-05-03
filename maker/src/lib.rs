@@ -15,6 +15,7 @@ mod collab_settlement;
 mod connection;
 mod contract_setup;
 mod future_ext;
+mod metrics;
 mod rollover;
 pub mod routes;
 
