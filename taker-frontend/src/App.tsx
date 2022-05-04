@@ -110,8 +110,7 @@ export const App = () => {
         return Number.parseFloat(Number(n).toFixed(digits));
     }
 
-    const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
-    let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
+    const cfds = useLatestEvent<Cfd[]>(source, "cfds", intoCfd) || [];
     const connectedToMakerOrUndefined = useLatestEvent<ConnectionStatus>(source, "maker_status");
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
