@@ -177,80 +177,78 @@ export const App = () => {
                 nextFundingEvent={nextFundingEvent}
                 referencePrice={referencePrice}
             />
-            <Box height={"100%"}>
-                <Center>
-                    <Box
-                        maxWidth={(VIEWPORT_WIDTH + 200) + "px"}
-                        width={"100%"}
-                        bgGradient={useColorModeValue(
-                            "linear(to-r, white 5%, gray.800, white 95%)",
-                            "linear(to-r, gray.800 5%, white, gray.800 95%)",
-                        )}
-                    >
-                        <Center>
-                            <Box
-                                textAlign="center"
-                                padding={3}
-                                bg={useColorModeValue(BG_LIGHT, BG_DARK)}
-                                maxWidth={VIEWPORT_WIDTH_PX}
-                                marginTop={`${HEADER_HEIGHT}px`}
-                                minHeight={`calc(100vh - ${FOOTER_HEIGHT}px - ${HEADER_HEIGHT}px)`}
-                                width={"100%"}
-                            >
-                                <Routes>
-                                    <Route path="/">
+            <Center>
+                <Box
+                    maxWidth={(VIEWPORT_WIDTH + 200) + "px"}
+                    width={"100%"}
+                    bgGradient={useColorModeValue(
+                        "linear(to-r, white 5%, gray.800, white 95%)",
+                        "linear(to-r, gray.800 5%, white, gray.800 95%)",
+                    )}
+                >
+                    <Center>
+                        <Box
+                            textAlign="center"
+                            padding={3}
+                            bg={useColorModeValue(BG_LIGHT, BG_DARK)}
+                            maxWidth={VIEWPORT_WIDTH_PX}
+                            marginTop={`${HEADER_HEIGHT}px`}
+                            minHeight={`calc(100vh - ${FOOTER_HEIGHT}px - ${HEADER_HEIGHT}px)`}
+                            width={"100%"}
+                        >
+                            <Routes>
+                                <Route path="/">
+                                    <Route
+                                        path="wallet"
+                                        element={<Wallet walletInfo={walletInfo} />}
+                                    />
+                                    <Route
+                                        element={
+                                            // @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
+
+
+                                                <PageLayout
+                                                    cfds={cfds}
+                                                    connectedToMaker={connectedToMaker}
+                                                    showPromoBanner={isWithinPromoPeriod}
+                                                />
+
+                                        }
+                                    >
                                         <Route
-                                            path="wallet"
-                                            element={<Wallet walletInfo={walletInfo} />}
+                                            path="long"
+                                            element={
+                                                <Trade
+                                                    offer={longOffer}
+                                                    connectedToMaker={connectedToMaker}
+                                                    walletBalance={walletInfo ? walletInfo.balance : 0}
+                                                    isLong={true}
+                                                />
+                                            }
                                         />
                                         <Route
+                                            path="short"
                                             element={
-                                                // @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
-
-
-                                                    <PageLayout
-                                                        cfds={cfds}
-                                                        connectedToMaker={connectedToMaker}
-                                                        showPromoBanner={isWithinPromoPeriod}
-                                                    />
-
+                                                <Trade
+                                                    offer={shortOffer}
+                                                    connectedToMaker={connectedToMaker}
+                                                    walletBalance={walletInfo ? walletInfo.balance : 0}
+                                                    isLong={false}
+                                                />
                                             }
-                                        >
-                                            <Route
-                                                path="long"
-                                                element={
-                                                    <Trade
-                                                        offer={longOffer}
-                                                        connectedToMaker={connectedToMaker}
-                                                        walletBalance={walletInfo ? walletInfo.balance : 0}
-                                                        isLong={true}
-                                                    />
-                                                }
-                                            />
-                                            <Route
-                                                path="short"
-                                                element={
-                                                    <Trade
-                                                        offer={shortOffer}
-                                                        connectedToMaker={connectedToMaker}
-                                                        walletBalance={walletInfo ? walletInfo.balance : 0}
-                                                        isLong={false}
-                                                    />
-                                                }
-                                            />
-                                        </Route>
-                                        <Route index element={<Navigate to="long" />} />
+                                        />
                                     </Route>
-                                    <Route
-                                        path="/*"
-                                        element={<Navigate to="long" />}
-                                    />
-                                </Routes>
-                            </Box>
-                        </Center>
-                    </Box>
-                </Center>
-            </Box>
+                                    <Route index element={<Navigate to="long" />} />
+                                </Route>
+                                <Route
+                                    path="/*"
+                                    element={<Navigate to="long" />}
+                                />
+                            </Routes>
+                        </Box>
+                    </Center>
+                </Box>
+            </Center>
             <Footer />
         </>
     );
