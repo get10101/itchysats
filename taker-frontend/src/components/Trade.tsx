@@ -44,7 +44,7 @@ import AlertBox from "./AlertBox";
 import BitcoinAmount from "./BitcoinAmount";
 import ConfirmOrderModal from "./ConfirmOrderModal";
 import DollarAmount from "./DollarAmount";
-import { FundingRateTooltip } from "./FundingRateTooltip";
+import { InterestRateTooltip } from "./InterestRateTooltip";
 
 const MotionBox = motion<BoxProps>(Box);
 
@@ -242,7 +242,7 @@ export default function Trade({
                                     <Td>
                                         <Text>Interest Rate</Text>
                                     </Td>
-                                    <FundingRateTooltip
+                                    <InterestRateTooltip
                                         interestRateHourly={interestRateHourly}
                                         interestRateAnnualized={interestRateAnnualized}
                                         disabled={!interestRateHourly}
@@ -252,7 +252,7 @@ export default function Trade({
                                                 {interestRateHourly}% per hour
                                             </Skeleton>
                                         </Td>
-                                    </FundingRateTooltip>
+                                    </InterestRateTooltip>
                                 </Tr>
                             </Tbody>
                         </Table>

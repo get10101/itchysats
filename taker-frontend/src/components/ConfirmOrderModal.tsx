@@ -20,7 +20,7 @@ import { useRef } from "react";
 import { CfdOrderRequestPayload } from "../types";
 import BitcoinAmount from "./BitcoinAmount";
 import DollarAmount from "./DollarAmount";
-import { FundingRateTooltip } from "./FundingRateTooltip";
+import { InterestRateTooltip } from "./InterestRateTooltip";
 
 interface Props {
     orderId: string;
@@ -126,7 +126,7 @@ export default function ConfirmOrderModal({
                                     <BitcoinAmount btc={feeForFirstSettlementInterval} />
                                 </Td>
                             </Tr>
-                            <FundingRateTooltip
+                            <InterestRateTooltip
                                 interestRateHourly={interestRateHourly}
                                 interestRateAnnualized={interestRateAnnualized}
                                 disabled={!interestRateHourly}
@@ -137,7 +137,7 @@ export default function ConfirmOrderModal({
                                     </Td>
                                     <Td>{interestRateHourly}% per hour</Td>
                                 </Tr>
-                            </FundingRateTooltip>
+                            </InterestRateTooltip>
                         </Tbody>
                     </Table>
                 </ModalBody>

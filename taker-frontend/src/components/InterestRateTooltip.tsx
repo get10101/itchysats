@@ -2,14 +2,14 @@ import { Tooltip } from "@chakra-ui/react";
 import * as React from "react";
 import { PropsWithChildren } from "react";
 
-type FundingRateTooltipProps = PropsWithChildren<{
+type InterestRateTooltipProps = PropsWithChildren<{
     interestRateHourly?: number;
     interestRateAnnualized?: number;
     disabled: boolean;
 }>;
 
-export function FundingRateTooltip(
-    { children, interestRateHourly, interestRateAnnualized, disabled }: FundingRateTooltipProps,
+export function InterestRateTooltip(
+    { children, interestRateHourly, interestRateAnnualized, disabled }: InterestRateTooltipProps,
 ) {
     let label = `While your position is open you will pay hourly ${Math.abs(interestRateHourly || 0)}% (${
         Math.abs(interestRateAnnualized || 0)
