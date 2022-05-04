@@ -1101,11 +1101,11 @@ impl Cfd {
             "Failed to propose collaborative settlement"
         );
 
-        let (close_position_tx, proposal) = self.make_proposal(current_price, n_payouts, self.role);
+        let (close_position_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
         Ok((
             CfdEvent::new(
-                self.id,
+                proposal.order_id,
                 EventKind::CollaborativeSettlementStarted { proposal },
             ),
             close_position_tx,
@@ -1125,7 +1125,7 @@ impl Cfd {
             "Failed to start collaborative settlement"
         );
 
-        let (close_position_tx, proposal) = self.make_proposal(current_price, n_payouts, self.role);
+        let (close_position_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
         anyhow::ensure!(
             close_position_tx.unsigned_transaction == proposed_close_transaction,
@@ -1134,10 +1134,8 @@ impl Cfd {
 
         Ok((
             CfdEvent::new(
-                self.id,
-                EventKind::CollaborativeSettlementStarted {
-                    proposal: proposal.clone(),
-                },
+                proposal.order_id,
+                EventKind::CollaborativeSettlementStarted { proposal },
             ),
             close_position_tx,
             proposal,
@@ -1148,8 +1146,7 @@ impl Cfd {
         self,
         current_price: Price,
         n_payouts: usize,
-        role: Role,
-    ) -> (ClosePositionTransaction, SettlementProposal) {
+    ) -> Result<(ClosePositionTransaction, SettlementProposal)> {
         let payout_curve = calculate_payouts(
             self.position,
             self.role,
@@ -1178,7 +1175,7 @@ impl Cfd {
             *payout.maker_amount(),
             *payout.taker_amount(),
             current_price,
-            role,
+            self.role,
         )?;
 
         let proposal = SettlementProposal {
@@ -1189,7 +1186,7 @@ impl Cfd {
             price: current_price,
         };
 
-        (close_position_tx, proposal)
+        Ok((close_position_tx, proposal))
     }
 
     pub fn receive_collaborative_settlement_proposal(
@@ -1940,7 +1937,7 @@ pub struct Dlc {
     pub refund_timelock: u32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ClosePositionTransaction {
     lock_desc: Descriptor<PublicKey>,
     lock_amount: Amount,
@@ -1959,11 +1956,15 @@ pub struct ClosePositionTransaction {
 
 impl ClosePositionTransaction {
     pub fn unsigned_transaction(&self) -> Transaction {
-        todo!()
+        self.unsigned_transaction.clone()
     }
 
     pub fn own_signature(&self) -> Signature {
-        todo!()
+        self.own_signature
+    }
+
+    pub fn price(&self) -> Price {
+        self.price
     }
 
     /// Validate and store counterparty signature
@@ -2049,6 +2050,7 @@ impl Dlc {
 
             (outpoint, amount)
         };
+
         let (tx, sighash) = maia::close_transaction(
             lock_desc,
             lock_outpoint,
@@ -2256,7 +2258,7 @@ pub struct CollaborativeSettlement {
     pub timestamp: Timestamp,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     payout: Amount,
-    price: Price,
+    pub price: Price,
 }
 
 impl CollaborativeSettlement {

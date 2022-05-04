@@ -802,6 +802,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
+ "asynchronous-codec",
  "bdk",
  "bdk-ext",
  "btsieve",
