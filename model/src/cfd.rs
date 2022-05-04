@@ -2027,6 +2027,8 @@ impl Dlc {
         &self,
         payout_maker: Amount,
         payout_taker: Amount,
+        current_price: Price,
+        role: Role,
     ) -> Result<ClosePositionTransaction> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {
@@ -2057,8 +2059,10 @@ impl Dlc {
         Ok(ClosePositionTransaction {
             lock_desc: lock_desc.clone(),
             lock_amount,
+            price: current_price,
             unsigned_transaction: tx,
             own_pk,
+            own_script_pk: self.script_pubkey_for(role),
             own_signature,
             counterparty_pk: self.identity_counterparty,
             counterparty_signature: None,
@@ -2233,7 +2237,7 @@ pub struct RevokedCommit {
 
 /// Used when transactions (e.g. collaborative close) are recorded as a part of
 /// CfdState in the cases when we can't solely rely on state transition
-/// timestamp as it could have occured for different reasons (like a new
+/// timestamp as it could have occurred for different reasons (like a new
 /// attestation in Open state)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CollaborativeSettlement {
