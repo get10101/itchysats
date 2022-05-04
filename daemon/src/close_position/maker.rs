@@ -1,9 +1,4 @@
-use crate::close_position::protocol::ListenerMessage::Msg3;
-use crate::close_position::protocol::Msg1::Reject;
-use crate::close_position::protocol::*;
-use crate::command;
 use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Error;
 use anyhow::Result;
@@ -22,6 +17,9 @@ use tokio_tasks::Tasks;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
+
+use crate::close_position::protocol::*;
+use crate::command;
 
 /// Permanent actor to handle incoming substreams for the `/itchysats/close-position/1.0.0`
 /// protocol.
@@ -56,28 +54,24 @@ impl Actor {
         let NewInboundSubstream { peer, stream } = msg; // TODO: Use `PeerId` for something!
         let address = ctx.address().expect("we are alive");
 
-        // 1. Read message from stream but this can be blocking so needs to be in a separate task ->
-        // send message to ourselves once received
-
         self.tasks.add_fallible(
             async move {
-                let mut framed = asynchronous_codec::Framed::new(
-                    stream,
-                    JsonCodec::<ListenerMessage, DialerMessage>::new(),
-                );
+                let mut framed =
+                    Framed::new(stream, JsonCodec::<ListenerMessage, DialerMessage>::new());
 
                 let msg0 = framed
                     .next()
                     .await
-                    .expect("TODO")
-                    .expect("TODO")
-                    .into_msg0()
-                    .expect("TODO");
+                    .context("End of stream while receiving Msg0")?
+                    .context("Failed to decode Msg0")?
+                    .into_msg0()?;
 
-                let _ = address.send(Msg0Received { msg0, framed, peer }).await;
+                address.send(Msg0Received { msg0, framed, peer }).await?;
+
+                anyhow::Ok(())
             },
-            |e| async move { todo!(e) },
-        )
+            |e| async move { tracing::warn!("Failed to handle incoming close position: {e:#}") },
+        );
     }
 }
 
@@ -117,9 +111,7 @@ impl Actor {
             .remove(&order_id)
             .with_context(|| format!("No active protocol for order {order_id}"))?;
 
-        let executor = self.executor.clone();
-
-        executor
+        self.executor
             .execute(order_id, |cfd| {
                 cfd.accept_collaborative_settlement_proposal(&proposal)
             })
@@ -132,57 +124,74 @@ impl Actor {
                     .await
                     .context("Failed to send Msg1::Accept")?;
 
+                // TODO: We will need to apply a timeout to these. Perhaps we can put a timeout
+                // generally into "reading from the substream"?
                 let Msg2 { dialer_signature } = framed
                     .next()
                     .await
                     .context("End of stream while receiving Msg2")?
-                    .context("Failed to receive Msg2")?;
+                    .context("Failed to decode Msg2")?
+                    .into_msg2()?;
 
-                let transaction = transaction
+                let listener_signature = transaction.own_signature();
+
+                let settlement = transaction
                     .recv_counterparty_signature(dialer_signature)
-                    .context("Failed to receive counterparty signature")?;
+                    .context("Failed to receive counterparty signature")?
+                    .finalize()
+                    .context("Failed to finalize transaction")?;
 
-                framed
-                    .send(ListenerMessage::Msg3(Msg3 {
-                        listener_signature: transaction.own_signature(),
+                    framed.send(ListenerMessage::Msg3(Msg3 {
+                        listener_signature,
                     }))
                     .await
                     .map_err(|source| Failed::AfterReceiving {
-                        source,
-                        transaction: transaction.clone(),
+                        source: anyhow!(source),
+                        settlement: settlement.clone(),
                     })?;
 
                 address
-                    .send(Complete { settlement })
+                    .send(Complete {
+                        order_id,
+                        settlement: settlement.clone(),
+                    })
                     .await
                     .map_err(|source| Failed::AfterReceiving {
                         source: anyhow!(source),
-                        transaction,
+                        settlement,
                     })?;
 
                 Ok(())
             },
-            |failed| async move {
-                match failed {
-                    Failed::BeforeReceiving { source } => {
-                        executor
-                            .execute(
-                                order_id,
-                                |cfd| Ok(cfd.fail_collaborative_settlement(source)),
-                            )
-                            .await
-                            .expect("TODO: How to handle failure in executing command?");
-                    }
-                    Failed::AfterReceiving {
-                        source,
-                        transaction,
-                    } => {
-                        // TODO: Decide to broadcast the transaction anyway? Technically we are
-                        // complete from the protocol from our perspective, we just failed in
-                        // sending the last message.
-                    }
+{
+    let executor = self.executor.clone();
+    move |failed|                 async move {
+        match failed {
+            Failed::BeforeReceiving { source } => {
+                executor
+                    .execute(order_id, |cfd| {
+                        Ok(cfd.fail_collaborative_settlement(source))
+                    })
+                    .await
+                    .expect("TODO: How to handle failure in executing command?");
+            }
+            Failed::AfterReceiving {
+                source,
+                settlement,
+            } => {
+                tracing::debug!("Proceeding with transaction despite failure to complete settlement after receiving signature from taker: {source:#}");
+                if let Err(e) =
+                executor
+                    .execute(order_id, |cfd| {
+                        Ok(cfd.complete_collaborative_settlement(settlement))
+                    })
+                    .await {
+                        tracing::error!("Failed to complete settlement: {e:#}");
+                    };
                 }
-            },
+            }
+        }
+    }
         );
 
         // 1. Spawn async fn into tasks to perform further protocol steps like sending and
@@ -193,19 +202,24 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle(&mut self, Complete { settlement }: Complete) -> Result<()> {
-        let settlement = self
-            .executor
+    async fn handle(
+        &mut self,
+        Complete {
+            order_id,
+            settlement,
+        }: Complete,
+    ) -> Result<()> {
+        self.executor
             .execute(order_id, |cfd| {
-                cfd.sign_collaborative_settlement_maker(proposal, dialer_signature)
+                Ok(cfd.complete_collaborative_settlement(settlement))
             })
-            .await?;
+            .await
     }
 
     async fn handle(&mut self, msg: Reject) -> Result<()> {
         let Reject { order_id } = msg;
 
-        let (mut framed, _) = self
+        let (mut framed, ..) = self
             .pending_protocols
             .remove(&order_id)
             .with_context(|| format!("No active protocol for order {order_id}"))?;
@@ -216,10 +230,12 @@ impl Actor {
             })
             .await?;
 
-        self.tasks
-            .add_fallible(framed.send(ListenerMessage::Msg1(Msg1::Reject)), |e| async move {
+        self.tasks.add_fallible(
+            async move { framed.send(ListenerMessage::Msg1(Msg1::Reject)).await },
+            move |e| async move {
                 tracing::debug!(%order_id, "Failed to reject collaborative settlement")
-            });
+            },
+        );
 
         Ok(())
     }
@@ -240,23 +256,24 @@ pub struct Reject {
 }
 
 pub struct Complete {
+    order_id: OrderId,
     settlement: CollaborativeSettlement,
 }
 
 #[derive(Debug)]
 enum Failed {
     BeforeReceiving {
-        source: anyhow::Error,
+        source: Error,
     },
     AfterReceiving {
-        transaction: ClosePositionTransaction,
-        source: anyhow::Error,
+        settlement: CollaborativeSettlement,
+        source: Error,
     },
 }
 
 // Allows for easy use of `?`.
-impl From<anyhow::Error> for Failed {
-    fn from(source: anyhow::Error) -> Self {
+impl From<Error> for Failed {
+    fn from(source: Error) -> Self {
         Failed::BeforeReceiving { source }
     }
 }

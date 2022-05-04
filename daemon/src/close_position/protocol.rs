@@ -7,16 +7,20 @@ use anyhow::Result;
 use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
+use model::hex_transaction;
 use model::ClosePositionTransaction;
 use model::CollaborativeSettlement;
 use model::OrderId;
 use model::Price;
+use serde::Deserialize;
+use serde::Serialize;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
 
 pub async fn dialer(
     endpoint: Address<Endpoint>,
+    order_id: OrderId,
     counterparty: PeerId,
     close_position_tx: ClosePositionTransaction,
 ) -> Result<CollaborativeSettlement, DialerFailed> {
@@ -34,8 +38,8 @@ pub async fn dialer(
 
     framed
         .send(DialerMessage::Msg0(Msg0 {
-            id,
-            price,
+            id: order_id,
+            price: close_position_tx.price(),
             unsigned_tx: unsigned_tx.clone(),
         }))
         .await
@@ -90,7 +94,7 @@ pub enum DialerFailed {
 }
 
 impl From<anyhow::Error> for DialerFailed {
-    fn from(source: DialerFailed) -> Self {
+    fn from(source: anyhow::Error) -> Self {
         Self::BeforeSendingSignature { source }
     }
 }
@@ -104,7 +108,7 @@ pub enum DialerMessage {
 impl DialerMessage {
     pub fn into_msg0(self) -> Result<Msg0> {
         match self {
-            DialerMessage::Msg0(msg0) => Ok(msg),
+            DialerMessage::Msg0(msg0) => Ok(msg0),
             DialerMessage::Msg2(_) => Err(anyhow!("Expected Msg0 but got Msg2")),
         }
     }
@@ -147,7 +151,8 @@ pub struct Msg0 {
     ///
     /// Sending the full transaction allows the listening side to verify, how exactly the dialing
     /// side wants to close the position.
-    pub unsigned_tx: Transaction, // TODO: Serialize this as hex.
+    #[serde(with = "hex_transaction")]
+    pub unsigned_tx: Transaction,
 }
 
 #[derive(Serialize, Deserialize)]

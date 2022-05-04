@@ -1,31 +1,16 @@
 use crate::bitcoin::Transaction;
 use crate::close_position::protocol::*;
-use crate::close_position::PROTOCOL;
 use crate::command;
-use crate::Amount;
 use anyhow::anyhow;
-use anyhow::Context as _;
-use anyhow::Error;
 use anyhow::Result;
 use async_trait::async_trait;
-use asynchronous_codec::Decoder;
-use bdk::bitcoin::secp256k1::Signature;
-use bdk::bitcoin::PublicKey;
-use bdk::miniscript::Descriptor;
-use bytes::BytesMut;
-use futures::SinkExt;
-use futures::StreamExt;
 use libp2p_core::PeerId;
 use model::CollaborativeSettlement;
 use model::OrderId;
 use model::Price;
-use serde::Deserialize;
-use serde::Serialize;
 use tokio_tasks::Tasks;
-use xtra::message_channel::StrongMessageChannel;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
-use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
@@ -74,8 +59,8 @@ impl Actor {
             {
                 let this = this.clone();
                 async move {
-                    let settlement = dialer(endpoint, maker, close_position_tx).await?;
-                    this.send(FullyComplete { settlement }).await.expect("TODO: How to handle actor being disconnected after having a fully-signed transaction???");
+                    let settlement = dialer(endpoint, id, maker, close_position_tx).await?;
+                    let _ = this.send(FullyComplete { settlement }).await.expect("TODO: How to handle actor being disconnected after having a fully-signed transaction???");
 
                     Ok(())
                 }

@@ -26,7 +26,7 @@ mod sqlx_ext; // Must come first because it is a macro.
 
 mod cfd;
 mod contract_setup;
-mod hex_transaction;
+pub mod hex_transaction;
 pub mod olivia;
 pub mod payout_curve;
 mod rollover;
