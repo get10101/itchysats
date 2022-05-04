@@ -23,8 +23,6 @@ import { useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { Link as ReachLink } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
-import { useLocalStorage } from "usehooks-ts";
-import Disclaimer from "./components/Disclaimer";
 import Footer from "./components/Footer";
 import History from "./components/History";
 import Nav from "./components/NavBar";
@@ -166,11 +164,8 @@ export const App = () => {
         }
     }, [toast, connectedToMakerOrUndefined]);
 
-    const [hideDisclaimer, setHideDisclaimer] = useLocalStorage<boolean>("hideDisclaimer", false);
-
     return (
         <>
-            {!hideDisclaimer && <Disclaimer setHideDisclaimer={setHideDisclaimer} />}
             <Nav
                 walletInfo={walletInfo}
                 connectedToMaker={connectedToMaker}
