@@ -43,8 +43,8 @@ function OrderTile(
                     <Text width={labelWidth}>Opening Fee</Text>
                     <Text>{maker_offer.opening_fee}</Text>
 
-                    <Text width={labelWidth}>Funding Rate</Text>
-                    <Text>{maker_offer.funding_rate_hourly_percent}</Text>
+                    <Text width={labelWidth}>Interest Rate</Text>
+                    <Text>{maker_offer.interest_rate_hourly_percent}</Text>
 
                     <Text width={labelWidth}>Liquidation Price</Text>
                     <Text whiteSpace="nowrap">{maker_offer.liquidation_price}</Text>

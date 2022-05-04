@@ -35,8 +35,8 @@ interface Props {
     leverage: number;
     liquidationPriceAsNumber: number | undefined;
     feeForFirstSettlementInterval: number;
-    fundingRateHourly: number;
-    fundingRateAnnualized: number;
+    interestRateHourly: number;
+    interestRateAnnualized: number;
 }
 
 export default function ConfirmOrderModal({
@@ -52,8 +52,8 @@ export default function ConfirmOrderModal({
     leverage,
     liquidationPriceAsNumber,
     feeForFirstSettlementInterval,
-    fundingRateHourly,
-    fundingRateAnnualized,
+    interestRateHourly,
+    interestRateAnnualized,
 }: Props) {
     const confirmRef = useRef<HTMLButtonElement | null>(null);
 
@@ -127,15 +127,15 @@ export default function ConfirmOrderModal({
                                 </Td>
                             </Tr>
                             <FundingRateTooltip
-                                fundingRateHourly={fundingRateHourly}
-                                fundingRateAnnualized={fundingRateAnnualized}
-                                disabled={!fundingRateHourly}
+                                interestRateHourly={interestRateHourly}
+                                interestRateAnnualized={interestRateAnnualized}
+                                disabled={!interestRateHourly}
                             >
                                 <Tr>
                                     <Td>
-                                        <Text as={"b"}>Perpetual Cost</Text>
+                                        <Text as={"b"}>Interest Rate</Text>
                                     </Td>
-                                    <Td>Hourly @ {fundingRateHourly}%</Td>
+                                    <Td>{interestRateHourly}% per hour</Td>
                                 </Tr>
                             </FundingRateTooltip>
                         </Tbody>

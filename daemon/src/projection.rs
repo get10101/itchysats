@@ -48,6 +48,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::ops::Neg;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
@@ -1234,14 +1235,16 @@ pub struct CfdOrder {
 
     /// The interest as annualized percentage
     ///
-    /// This is an estimate as the funding rate can fluctuate
-    pub funding_rate_annualized_percent: String,
+    /// This is an estimate as the interest rate can fluctuate.
+    /// If it is positive it means the taker receives, if it is negative it means the taker pays.
+    pub interest_rate_annualized_percent: String,
 
-    /// The current estimated funding rate by the hour
+    /// The current interest rate by the hour
     ///
-    /// This represents the current funding rate of the maker.
-    /// The funding rate fluctuates with market movements.
-    pub funding_rate_hourly_percent: String,
+    /// This represents the current interest rate asked/offered by the maker.
+    /// The interest rate fluctuates with market movements.
+    /// If it is positive it means the taker receives, if it is negative it means the taker pays.
+    pub interest_rate_hourly_percent: String,
 
     #[serde(with = "round_to_two_dp")]
     pub min_quantity: Usd,
@@ -1307,6 +1310,9 @@ impl TryFrom<Order> for CfdOrder {
         )
         .context("unable to calculate initial funding fee")?;
 
+        let interest_rate =
+            InterestRate::from((order.funding_rate, order.position_maker.counter_position()));
+
         // Use a temporary fee account to define the funding fee's sign
         let temp_fee_account = FeeAccount::new(own_position, role);
         let initial_funding_fee_per_lot = temp_fee_account
@@ -1343,9 +1349,10 @@ impl TryFrom<Order> for CfdOrder {
                 .try_into()
                 .context("unable to convert settlement interval")?,
             opening_fee: Some(order.opening_fee.to_inner()),
-            funding_rate_annualized_percent: AnnualisedFundingPercent::from(order.funding_rate)
+            interest_rate_annualized_percent: AnnualisedInterestRatePercent::from(interest_rate)
                 .to_string(),
-            funding_rate_hourly_percent: HourlyFundingPercent::from(order.funding_rate).to_string(),
+            interest_rate_hourly_percent: HourlyInterestRatePercent::from(interest_rate)
+                .to_string(),
             initial_funding_fee_per_lot,
         })
     }
@@ -1534,45 +1541,83 @@ pub enum TxLabel {
     Collaborative,
 }
 
-struct AnnualisedFundingPercent(Decimal);
+/// The interest as annualized percentage
+///
+/// This is an estimate as the interest rate can fluctuate.
+/// Similar to a bank account: If it is positive it means the taker receives, if it is negative it
+/// means the taker pays.
+struct AnnualisedInterestRatePercent(Decimal);
 
-impl From<FundingRate> for AnnualisedFundingPercent {
-    fn from(funding_rate: FundingRate) -> Self {
-        Self(
-            funding_rate
-                .to_decimal()
-                .checked_mul(dec!(100))
-                .expect("Not to overflow for funding rate")
-                .checked_mul(Decimal::from(
-                    (24 / SETTLEMENT_INTERVAL.whole_hours()) * 365,
-                ))
-                .expect("not to overflow"),
-        )
+impl From<InterestRate> for AnnualisedInterestRatePercent {
+    fn from(interest_rate: InterestRate) -> Self {
+        let interest_rate_annualized = interest_rate
+            .to_decimal()
+            .checked_mul(dec!(100))
+            .expect("Not to overflow for funding rate")
+            .checked_mul(Decimal::from(
+                (24 / SETTLEMENT_INTERVAL.whole_hours()) * 365,
+            ))
+            .expect("not to overflow");
+        Self(interest_rate_annualized)
     }
 }
 
-impl fmt::Display for AnnualisedFundingPercent {
+impl fmt::Display for AnnualisedInterestRatePercent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.round_dp(2).fmt(f)
     }
 }
 
-struct HourlyFundingPercent(Decimal);
+/// The interest rate by the hour as percentage
+///
+/// This represents the current interest rate asked/offered by the maker.
+/// Similar to a bank account: If it is positive it means the taker receives, if it is negative it
+/// means the taker pays.
+struct HourlyInterestRatePercent(Decimal);
 
-impl From<FundingRate> for HourlyFundingPercent {
-    fn from(funding_rate: FundingRate) -> Self {
-        Self(
-            funding_rate
-                .to_decimal()
-                .checked_mul(dec!(100))
-                .expect("Not to overflow for funding rate")
-                .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
-                .expect("Not to fail as funding rate is sanitised"),
-        )
+impl From<InterestRate> for HourlyInterestRatePercent {
+    fn from(interest_rate: InterestRate) -> Self {
+        let interest_rate_hourly = interest_rate
+            .to_decimal()
+            .checked_mul(dec!(100))
+            .expect("Not to overflow for funding rate")
+            .checked_div(Decimal::from(SETTLEMENT_INTERVAL.whole_hours()))
+            .expect("Not to fail as funding rate is sanitised");
+        Self(interest_rate_hourly)
     }
 }
 
-impl fmt::Display for HourlyFundingPercent {
+#[derive(Clone, Copy)]
+struct InterestRate(Decimal);
+
+impl InterestRate {
+    pub fn to_decimal(self) -> Decimal {
+        self.0
+    }
+}
+
+/// Converts the funding rate into interest rate from the perspective of {position}
+///
+/// We take into account the position and the funding rate:
+/// - A positive funding rate means "long pay short"
+/// - A negative funding rate means "short pay long'
+/// Similar to a bank account:
+/// - If the interest rate is positive it means the taker receives,
+/// - If the interest rate is negative it means the taker pays.
+impl From<(FundingRate, Position)> for InterestRate {
+    fn from((funding_rate, position): (FundingRate, Position)) -> Self {
+        match (position, funding_rate.to_decimal().is_sign_positive()) {
+            (Position::Long, true) | (Position::Short, false) => {
+                InterestRate(funding_rate.to_decimal().neg())
+            }
+            (Position::Long, false) | (Position::Short, true) => {
+                InterestRate(funding_rate.to_decimal())
+            }
+        }
+    }
+}
+
+impl fmt::Display for HourlyInterestRatePercent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -1604,5 +1649,61 @@ mod tests {
         assert_eq!(json, "\"Refunded\"");
         let json = serde_json::to_string(&CfdState::SetupFailed).unwrap();
         assert_eq!(json, "\"SetupFailed\"");
+    }
+
+    #[test]
+    fn funding_rate_positive_and_you_are_short_then_interest_positive_meaning_you_receive() {
+        let funding_rate = FundingRate::new(dec!(1.0)).expect("To be valid funding rate");
+        let your_position = Position::Short;
+
+        let interest_rate = InterestRate::from((funding_rate, your_position));
+        let hourly = HourlyInterestRatePercent::from(interest_rate);
+        let annually = AnnualisedInterestRatePercent::from(interest_rate);
+
+        assert!(interest_rate.0.is_sign_positive());
+        assert!(hourly.0.is_sign_positive());
+        assert!(annually.0.is_sign_positive());
+    }
+
+    #[test]
+    fn funding_rate_positive_and_you_are_long_then_interest_negative_meaning_you_pay() {
+        let funding_rate = FundingRate::new(dec!(1.0)).expect("To be valid funding rate");
+        let your_position = Position::Long;
+
+        let interest_rate = InterestRate::from((funding_rate, your_position));
+        let hourly = HourlyInterestRatePercent::from(interest_rate);
+        let annually = AnnualisedInterestRatePercent::from(interest_rate);
+
+        assert!(interest_rate.0.is_sign_negative());
+        assert!(hourly.0.is_sign_negative());
+        assert!(annually.0.is_sign_negative());
+    }
+
+    #[test]
+    fn funding_rate_negative_and_you_are_short_then_interest_negative_meaning_you_receive() {
+        let funding_rate = FundingRate::new(dec!(-1.0)).expect("To be valid funding rate");
+        let your_position = Position::Short;
+
+        let interest_rate = InterestRate::from((funding_rate, your_position));
+        let hourly = HourlyInterestRatePercent::from(interest_rate);
+        let annually = AnnualisedInterestRatePercent::from(interest_rate);
+
+        assert!(interest_rate.0.is_sign_positive());
+        assert!(hourly.0.is_sign_positive());
+        assert!(annually.0.is_sign_positive());
+    }
+
+    #[test]
+    fn funding_rate_negative_and_you_are_long_then_interest_positive_meaning_you_pay() {
+        let funding_rate = FundingRate::new(dec!(-1.0)).expect("To be valid funding rate");
+        let your_position = Position::Long;
+
+        let interest_rate = InterestRate::from((funding_rate, your_position));
+        let hourly = HourlyInterestRatePercent::from(interest_rate);
+        let annually = AnnualisedInterestRatePercent::from(interest_rate);
+
+        assert!(interest_rate.0.is_sign_negative());
+        assert!(hourly.0.is_sign_negative());
+        assert!(annually.0.is_sign_negative());
     }
 }

@@ -40,8 +40,8 @@ export interface Offer {
     marginPerLot?: number;
     initialFundingFeePerLot?: number;
     liquidationPrice?: number;
-    fundingRateAnnualized?: number;
-    fundingRateHourly?: number;
+    interestRateAnnualized?: number;
+    interestRateHourly?: number;
 
     // defaulted for display purposes
     minQuantity: number;
@@ -91,8 +91,8 @@ export const App = () => {
                 marginPerLot: offer.margin_per_lot,
                 price: offer.price,
                 liquidationPrice: offer.liquidation_price,
-                fundingRateAnnualized: offer.funding_rate_annualized_percent,
-                fundingRateHourly: toFixedNumber(offer.funding_rate_hourly_percent, 5),
+                interestRateAnnualized: offer.interest_rate_annualized_percent,
+                interestRateHourly: toFixedNumber(offer.interest_rate_hourly_percent, 5),
                 minQuantity: offer.min_quantity,
                 maxQuantity: offer.max_quantity,
                 lotSize: offer.lot_size,

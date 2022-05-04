@@ -3,18 +3,26 @@ import * as React from "react";
 import { PropsWithChildren } from "react";
 
 type FundingRateTooltipProps = PropsWithChildren<{
-    fundingRateHourly?: number;
-    fundingRateAnnualized?: number;
+    interestRateHourly?: number;
+    interestRateAnnualized?: number;
     disabled: boolean;
 }>;
 
 export function FundingRateTooltip(
-    { children, fundingRateHourly, fundingRateAnnualized, disabled }: FundingRateTooltipProps,
+    { children, interestRateHourly, interestRateAnnualized, disabled }: FundingRateTooltipProps,
 ) {
+    let label = `While your position is open you will pay hourly ${Math.abs(interestRateHourly || 0)}% (${
+        Math.abs(interestRateAnnualized || 0)
+    }% p.a.).
+        This amount will fluctuate depending on the market movement and can also become positive.`;
+    if (interestRateAnnualized && interestRateAnnualized > 0) {
+        label =
+            `While your position is open you will receive hourly ${interestRateHourly}% (${interestRateAnnualized}% p.a.).
+        This amount will fluctuate depending on the market movement and can also become negative.`;
+    }
     return (
         <Tooltip
-            label={`The CFD is rolled over perpetually every hour at ${fundingRateHourly}% (${fundingRateAnnualized}% p.a.). 
-        The cost can fluctuate depending on the market movements.`}
+            label={label}
             hasArrow
             placement={"right"}
             isDisabled={disabled}

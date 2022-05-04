@@ -14,8 +14,8 @@ export interface MakerOffer {
     settlement_time_interval_in_secs: number;
 
     opening_fee: number;
-    funding_rate_annualized_percent: number; // e.g. "18.5" (does not include % char)
-    funding_rate_hourly_percent: number; // e.g. "0.002345" (does not include % char)
+    interest_rate_annualized_percent: number; // e.g. "18.5" (does not include % char)
+    interest_rate_hourly_percent: number; // e.g. "0.002345" (does not include % char)
     initial_funding_fee_per_lot: number;
 }
 

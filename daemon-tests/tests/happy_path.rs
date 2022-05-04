@@ -176,7 +176,7 @@ fn assert_eq_orders(mut published: CfdOrder, received: CfdOrder) {
 
     // Hard-coded to match the dummy_new_order()
     assert_eq!(received.opening_fee.unwrap(), Amount::from_sat(2));
-    assert_eq!(received.funding_rate_hourly_percent, "0.00100");
+    assert_eq!(received.interest_rate_hourly_percent, "-0.00100");
 }
 
 #[tokio::test]

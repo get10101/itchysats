@@ -64,8 +64,8 @@ export default function Trade({
         initialFundingFeePerLot,
         marginPerLot,
         liquidationPrice: liquidationPriceAsNumber,
-        fundingRateAnnualized,
-        fundingRateHourly,
+        interestRateAnnualized,
+        interestRateHourly,
         minQuantity,
         maxQuantity,
         lotSize,
@@ -240,16 +240,16 @@ export default function Trade({
 
                                 <Tr id={isLong ? "longPerpetualCost" : "shortPerpetualCost"}>
                                     <Td>
-                                        <Text>Perpetual Cost</Text>
+                                        <Text>Interest Rate</Text>
                                     </Td>
                                     <FundingRateTooltip
-                                        fundingRateHourly={fundingRateHourly}
-                                        fundingRateAnnualized={fundingRateAnnualized}
-                                        disabled={!fundingRateHourly}
+                                        interestRateHourly={interestRateHourly}
+                                        interestRateAnnualized={interestRateAnnualized}
+                                        disabled={!interestRateHourly}
                                     >
                                         <Td isNumeric>
-                                            <Skeleton isLoaded={fundingRateHourly != null}>
-                                                Hourly @ {fundingRateHourly}%
+                                            <Skeleton isLoaded={interestRateHourly != null}>
+                                                {interestRateHourly}% per hour
                                             </Skeleton>
                                         </Td>
                                     </FundingRateTooltip>
@@ -286,8 +286,8 @@ export default function Trade({
                                 leverage={leverage}
                                 liquidationPriceAsNumber={liquidationPriceAsNumber}
                                 feeForFirstSettlementInterval={feeForFirstSettlementInterval}
-                                fundingRateHourly={fundingRateHourly || 0}
-                                fundingRateAnnualized={fundingRateAnnualized || 0}
+                                interestRateHourly={interestRateHourly || 0}
+                                interestRateAnnualized={interestRateAnnualized || 0}
                             />
                         </Center>
                     </GridItem>

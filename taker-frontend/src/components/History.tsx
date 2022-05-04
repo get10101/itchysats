@@ -112,6 +112,11 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
         ? failedCfd ? "Missed P/L 😭" : "Realized P/L"
         : "Unrealized P/L";
 
+    let estimated_fees_text = "Estimated fees to pay";
+    if (cfd.accumulated_fees < 0) {
+        estimated_fees_text = "Estimated interest earned";
+    }
+
     return (
         <HStack
             bg={useColorModeValue("white", "gray.700")}
@@ -206,7 +211,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                     <Tbody>
                         <Tr>
                             <Td>
-                                <Text as={"b"}>Estimated fees</Text>
+                                <Text as={"b"}>{estimated_fees_text}</Text>
                             </Td>
                             <Td textAlign="right">
                                 <BitcoinAmount btc={cfd.accumulated_fees} />
