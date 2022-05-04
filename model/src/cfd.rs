@@ -1029,6 +1029,7 @@ impl Cfd {
         Ok(settlement)
     }
 
+    // TODO: Delete this.
     pub fn propose_collaborative_settlement(
         &self, // TODO: This should not be a reference!
         current_price: Price,
@@ -1088,7 +1089,7 @@ impl Cfd {
         ))
     }
 
-    pub fn close_position(
+    pub fn start_close_position_taker(
         self,
         current_price: Price,
         n_payouts: usize,
@@ -1100,6 +1101,55 @@ impl Cfd {
             "Failed to propose collaborative settlement"
         );
 
+        let (close_position_tx, proposal) = self.make_proposal(current_price, n_payouts, self.role);
+
+        Ok((
+            CfdEvent::new(
+                self.id,
+                EventKind::CollaborativeSettlementStarted { proposal },
+            ),
+            close_position_tx,
+        ))
+    }
+
+    pub fn start_close_position_maker(
+        self,
+        current_price: Price,
+        n_payouts: usize,
+        proposed_close_transaction: Transaction,
+    ) -> Result<(CfdEvent, ClosePositionTransaction, SettlementProposal)> {
+        anyhow::ensure!(
+            !self.is_in_collaborative_settlement()
+                && self.role == Role::Maker
+                && self.can_settle_collaboratively(),
+            "Failed to start collaborative settlement"
+        );
+
+        let (close_position_tx, proposal) = self.make_proposal(current_price, n_payouts, self.role);
+
+        anyhow::ensure!(
+            close_position_tx.unsigned_transaction == proposed_close_transaction,
+            "Proposed close transaction does not equal locally created one"
+        );
+
+        Ok((
+            CfdEvent::new(
+                self.id,
+                EventKind::CollaborativeSettlementStarted {
+                    proposal: proposal.clone(),
+                },
+            ),
+            close_position_tx,
+            proposal,
+        ))
+    }
+
+    fn make_proposal(
+        self,
+        current_price: Price,
+        n_payouts: usize,
+        role: Role,
+    ) -> (ClosePositionTransaction, SettlementProposal) {
         let payout_curve = calculate_payouts(
             self.position,
             self.role,
@@ -1124,25 +1174,22 @@ impl Cfd {
             .as_ref()
             .context("Collaborative close without DLC")?;
 
-        let close_position_tx =
-            dlc.close_position_transaction(*payout.maker_amount(), *payout.taker_amount())?;
+        let close_position_tx = dlc.close_position_transaction(
+            *payout.maker_amount(),
+            *payout.taker_amount(),
+            current_price,
+            role,
+        )?;
 
-        // TODO: This is legacy. Why are we storing the entire thing in the event?
         let proposal = SettlementProposal {
-            order_id: self.id,
-            timestamp: Timestamp::now(),
+            order_id: self.id,           // TODO: This is redundant.
+            timestamp: Timestamp::now(), // TODO: This is not used for anything, ever :(
             taker: *payout.taker_amount(),
             maker: *payout.maker_amount(),
             price: current_price,
         };
 
-        Ok((
-            CfdEvent::new(
-                self.id,
-                EventKind::CollaborativeSettlementStarted { proposal },
-            ),
-            close_position_tx,
-        ))
+        (close_position_tx, proposal)
     }
 
     pub fn receive_collaborative_settlement_proposal(
@@ -1893,13 +1940,17 @@ pub struct Dlc {
     pub refund_timelock: u32,
 }
 
+#[derive(Clone)]
 pub struct ClosePositionTransaction {
     lock_desc: Descriptor<PublicKey>,
     lock_amount: Amount,
 
+    price: Price,
+
     unsigned_transaction: Transaction,
 
     own_pk: PublicKey,
+    own_script_pk: Script,
     own_signature: Signature,
 
     counterparty_pk: PublicKey,
@@ -1915,6 +1966,7 @@ impl ClosePositionTransaction {
         todo!()
     }
 
+    /// Validate and store counterparty signature
     pub fn recv_counterparty_signature(self, counterparty_signature: Signature) -> Result<Self> {
         let sighash = spending_tx_sighash(
             &self.unsigned_transaction,
@@ -1931,10 +1983,13 @@ impl ClosePositionTransaction {
         })
     }
 
-    pub fn finalize(self) -> Result<Transaction> {
+    pub fn finalize(self) -> Result<CollaborativeSettlement> {
         let counterparty_signature = self
             .counterparty_signature
             .context("Missing `their_signature`")?;
+
+        let own_script_pubkey = self.own_script_pk;
+        let price = self.price;
 
         let spend_tx = maia::finalize_spend_transaction(
             self.unsigned_transaction,
@@ -1943,7 +1998,7 @@ impl ClosePositionTransaction {
             (self.counterparty_pk, counterparty_signature),
         )?;
 
-        Ok(spend_tx)
+        CollaborativeSettlement::new(spend_tx, own_script_pubkey, price)
     }
 }
 
