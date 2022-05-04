@@ -21,7 +21,7 @@ import {
 import * as React from "react";
 import { FaHome, FaWallet } from "react-icons/all";
 import { Link as ReachLink, useLocation, useNavigate } from "react-router-dom";
-import { BG_DARK, BG_LIGHT, VIEWPORT_WIDTH_PX } from "../App";
+import { BG_DARK, BG_LIGHT, HEADER_HEIGHT, VIEWPORT_WIDTH_PX } from "../App";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
 import { ConnectionCloseReason, ConnectionStatus, WalletInfo } from "../types";
@@ -98,7 +98,7 @@ export default function Nav({ walletInfo, connectedToMaker, nextFundingEvent, re
 
     return (
         <>
-            <VStack spacing={0} position={"fixed"} width={"100%"} zIndex={"100"} height={"100px"}>
+            <VStack spacing={0} position={"fixed"} width={"100%"} zIndex={"100"} height={`${HEADER_HEIGHT}px`}>
                 <Box bg={useColorModeValue("gray.100", "gray.900")} width={"100%"}>
                     <Center>
                         <Box

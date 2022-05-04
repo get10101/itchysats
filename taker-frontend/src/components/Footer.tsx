@@ -1,6 +1,7 @@
 import { ExternalLinkIcon } from "@chakra-ui/icons";
 import { Box, Center, Divider, HStack, Link, Text, useColorModeValue } from "@chakra-ui/react";
 import * as React from "react";
+import { FOOTER_HEIGHT } from "../App";
 import { SocialLinks } from "./SocialLinks";
 
 function TextDivider() {
@@ -14,7 +15,7 @@ export default function Footer() {
             color={useColorModeValue("gray.700", "gray.200")}
         >
             <Center>
-                <HStack h={16} alignItems={"center"}>
+                <HStack h={`${FOOTER_HEIGHT}px`} alignItems={"center"}>
                     <Link
                         href="http://faq.itchysats.network"
                         isExternal

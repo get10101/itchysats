@@ -53,6 +53,8 @@ export interface Offer {
 
 // TODO: Evaluate moving these globals into the theme to make them accessible through that
 export const VIEWPORT_WIDTH = 1000;
+export const FOOTER_HEIGHT = 50;
+export const HEADER_HEIGHT = 100;
 export const VIEWPORT_WIDTH_PX = VIEWPORT_WIDTH + "px";
 export const BG_LIGHT = "gray.50";
 export const BG_DARK = "gray.800";
@@ -175,12 +177,11 @@ export const App = () => {
                 nextFundingEvent={nextFundingEvent}
                 referencePrice={referencePrice}
             />
-            <Box>
+            <Box height={"100%"}>
                 <Center>
                     <Box
                         maxWidth={(VIEWPORT_WIDTH + 200) + "px"}
                         width={"100%"}
-                        height={"100%"}
                         bgGradient={useColorModeValue(
                             "linear(to-r, white 5%, gray.800, white 95%)",
                             "linear(to-r, gray.800 5%, white, gray.800 95%)",
@@ -192,8 +193,9 @@ export const App = () => {
                                 padding={3}
                                 bg={useColorModeValue(BG_LIGHT, BG_DARK)}
                                 maxWidth={VIEWPORT_WIDTH_PX}
+                                marginTop={`${HEADER_HEIGHT}px`}
+                                minHeight={`calc(100vh - ${FOOTER_HEIGHT}px - ${HEADER_HEIGHT}px)`}
                                 width={"100%"}
-                                marginTop={"100px"}
                             >
                                 <Routes>
                                     <Route path="/">
