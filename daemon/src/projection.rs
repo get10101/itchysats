@@ -1152,16 +1152,14 @@ pub struct CfdOrder {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
     pub opening_fee: Option<Amount>,
 
-    /// The interest as annualized percentage
-    ///
-    /// This is an estimate as the funding rate can fluctuate
-    pub funding_rate_annualized_percent: String,
-
-    /// The current estimated funding rate by the hour
-    ///
-    /// This represents the current funding rate of the maker.
-    /// The funding rate fluctuates with market movements.
-    pub funding_rate_hourly_percent: String,
+    /// The currently estimated interests you have to pay/hour
+    pub you_pay_hourly: Option<String>,
+    /// The currently estimated interests you have to pay/anno
+    pub you_pay_annually: Option<String>,
+    /// The currently estimated interests you receive to pay/hour
+    pub you_receive_hourly: Option<String>,
+    /// The currently estimated interests you receive to pay/anno
+    pub you_receive_annually: Option<String>,
 
     #[serde(with = "round_to_two_dp")]
     pub min_quantity: Usd,
@@ -1245,6 +1243,8 @@ impl TryFrom<Order> for CfdOrder {
             Position::Short => calculate_margin(order.price, lot_size, short_leverage),
         };
 
+        let interest_rates = extract_interest_rates(order.position_maker, order.funding_rate);
+
         Ok(Self {
             id: order.id,
             trading_pair: order.trading_pair,
@@ -1263,11 +1263,43 @@ impl TryFrom<Order> for CfdOrder {
                 .try_into()
                 .context("unable to convert settlement interval")?,
             opening_fee: Some(order.opening_fee.to_inner()),
-            funding_rate_annualized_percent: AnnualisedFundingPercent::from(order.funding_rate)
-                .to_string(),
-            funding_rate_hourly_percent: HourlyFundingPercent::from(order.funding_rate).to_string(),
             initial_funding_fee_per_lot,
+            you_pay_hourly: interest_rates.you_pay_hourly.map(|rate| format!("{rate}%")),
+            you_pay_annually: interest_rates
+                .you_pay_annually
+                .map(|rate| format!("{rate}%")),
+            you_receive_hourly: interest_rates
+                .you_receive_hourly
+                .map(|rate| format!("{rate}%")),
+            you_receive_annually: interest_rates
+                .you_receive_annually
+                .map(|rate| format!("{rate}%")),
         })
+    }
+}
+
+struct InterestRates {
+    you_pay_hourly: Option<HourlyFundingPercent>,
+    you_pay_annually: Option<AnnualisedFundingPercent>,
+    you_receive_hourly: Option<HourlyFundingPercent>,
+    you_receive_annually: Option<AnnualisedFundingPercent>,
+}
+
+/// Returns in interest rate to pay or to receive
+fn extract_interest_rates(position_maker: Position, funding_rate: FundingRate) -> InterestRates {
+    match (position_maker, funding_rate.long_pays_short()) {
+        (Position::Long, true) | (Position::Short, false) => InterestRates {
+            you_pay_hourly: None,
+            you_pay_annually: None,
+            you_receive_hourly: Some(HourlyFundingPercent::from(funding_rate)),
+            you_receive_annually: Some(AnnualisedFundingPercent::from(funding_rate)),
+        },
+        (Position::Long, false) | (Position::Short, true) => InterestRates {
+            you_pay_hourly: Some(HourlyFundingPercent::from(funding_rate)),
+            you_pay_annually: Some(AnnualisedFundingPercent::from(funding_rate)),
+            you_receive_hourly: None,
+            you_receive_annually: None,
+        },
     }
 }
 
@@ -1524,5 +1556,57 @@ mod tests {
         assert_eq!(json, "\"Refunded\"");
         let json = serde_json::to_string(&CfdState::SetupFailed).unwrap();
         assert_eq!(json, "\"SetupFailed\"");
+    }
+
+    #[test]
+    fn funding_rate_positive_and_maker_short_then_you_pay() {
+        let funding_rate = FundingRate::new(dec!(1.0)).expect("To be valid funding rate");
+        let position_maker = Position::Short;
+        let interest_rates = extract_interest_rates(position_maker, funding_rate);
+
+        assert!(interest_rates.you_receive_hourly.is_none());
+        assert!(interest_rates.you_receive_annually.is_none());
+
+        assert!(interest_rates.you_pay_hourly.is_some());
+        assert!(interest_rates.you_pay_annually.is_some());
+    }
+
+    #[test]
+    fn funding_rate_positive_and_maker_long_then_you_receive() {
+        let funding_rate = FundingRate::new(dec!(1.0)).expect("To be valid funding rate");
+        let position_maker = Position::Long;
+        let interest_rates = extract_interest_rates(position_maker, funding_rate);
+
+        assert!(interest_rates.you_receive_hourly.is_some());
+        assert!(interest_rates.you_receive_annually.is_some());
+
+        assert!(interest_rates.you_pay_hourly.is_none());
+        assert!(interest_rates.you_pay_annually.is_none());
+    }
+
+    #[test]
+    fn funding_rate_negative_and_maker_short_then_you_receive() {
+        let funding_rate = FundingRate::new(dec!(-1.0)).expect("To be valid funding rate");
+        let position_maker = Position::Short;
+        let interest_rates = extract_interest_rates(position_maker, funding_rate);
+
+        assert!(interest_rates.you_receive_hourly.is_some());
+        assert!(interest_rates.you_receive_annually.is_some());
+
+        assert!(interest_rates.you_pay_hourly.is_none());
+        assert!(interest_rates.you_pay_annually.is_none());
+    }
+
+    #[test]
+    fn funding_rate_negative_and_maker_long_then_you_receive() {
+        let funding_rate = FundingRate::new(dec!(-1.0)).expect("To be valid funding rate");
+        let position_maker = Position::Long;
+        let interest_rates = extract_interest_rates(position_maker, funding_rate);
+
+        assert!(interest_rates.you_receive_hourly.is_none());
+        assert!(interest_rates.you_receive_annually.is_none());
+
+        assert!(interest_rates.you_pay_hourly.is_some());
+        assert!(interest_rates.you_pay_annually.is_some());
     }
 }
