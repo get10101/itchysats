@@ -252,10 +252,16 @@ impl db::ClosedCfdAggregate for Cfd {
             id,
             position,
             n_contracts,
+            settlement,
             ..
         } = closed_cfd;
 
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
+
+        let (is_refunded, is_closed) = match settlement {
+            db::Settlement::Collaborative { .. } | db::Settlement::Cet { .. } => (false, true),
+            db::Settlement::Refund { .. } => (true, false),
+        };
 
         Self {
             id,
@@ -263,9 +269,9 @@ impl db::ClosedCfdAggregate for Cfd {
             quantity_usd,
 
             is_open: false,
-            is_closed: true,
+            is_closed,
             is_failed: false,
-            is_refunded: false,
+            is_refunded,
             is_rejected: false,
             version: 0,
         }
