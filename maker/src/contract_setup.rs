@@ -112,7 +112,7 @@ impl Actor {
         );
 
         self.tasks.add(async move {
-            let _: Result<(), xtra::Disconnected> = match contract_future.await {
+            let _: Result<(), xtra::Error> = match contract_future.await {
                 Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
                 Err(error) => this.send(SetupFailed { error }).await,
             };

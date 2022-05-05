@@ -330,7 +330,7 @@ impl xtra::Actor for Actor {
                         }
                     };
                     if let Some(pending_attestation) = pending_attestation {
-                        let _: Result<(), xtra::Disconnected> = this
+                        let _: Result<(), xtra::Error> = this
                             .send(MonitorAttestation {
                                 event_id: pending_attestation,
                             })

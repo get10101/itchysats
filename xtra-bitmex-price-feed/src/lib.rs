@@ -5,7 +5,6 @@ use rust_decimal::Decimal;
 use std::fmt;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;
-use xtra::Disconnected;
 use xtra_productivity::xtra_productivity;
 
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
@@ -65,7 +64,7 @@ impl xtra::Actor for Actor {
                 }
             },
             |e: Error| async move {
-                let _: Result<(), Disconnected> = this.send(e).await;
+                let _: Result<(), xtra::Error> = this.send(e).await;
             },
         );
     }

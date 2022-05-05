@@ -13,7 +13,7 @@ where
     /// is alive. If they are, the message we are sending will
     /// eventually be handled by them, but we don't wait for them to
     /// do so.
-    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected>;
+    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error>;
 }
 
 #[async_trait]
@@ -22,7 +22,7 @@ where
     A: xtra::Handler<M>,
     M: xtra::Message<Result = ()>,
 {
-    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
+    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         #[allow(clippy::disallowed_methods)]
         self.do_send_async(msg).await
     }
@@ -35,9 +35,9 @@ where
     M: xtra::Message<Result = Result<(), E>>,
     E: fmt::Display + Send,
 {
-    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
+    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         if !self.is_connected() {
-            return Err(xtra::Disconnected);
+            return Err(xtra::Error::Disconnected);
         }
 
         let send_fut = self.send(msg);
@@ -62,7 +62,7 @@ impl<M> SendAsyncSafe<M, ()> for Box<dyn xtra::prelude::MessageChannel<M>>
 where
     M: xtra::Message<Result = ()>,
 {
-    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
+    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         #[allow(clippy::disallowed_methods)]
         self.do_send(msg)
     }
@@ -73,7 +73,7 @@ impl<M> SendAsyncSafe<M, ()> for Box<dyn xtra::prelude::StrongMessageChannel<M>>
 where
     M: xtra::Message<Result = ()>,
 {
-    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
+    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         #[allow(clippy::disallowed_methods)]
         self.do_send(msg)
     }
@@ -85,9 +85,9 @@ where
     M: xtra::Message<Result = Result<(), E>>,
     E: fmt::Display + Send,
 {
-    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Disconnected> {
+    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         if !self.is_connected() {
-            return Err(xtra::Disconnected);
+            return Err(xtra::Error::Disconnected);
         }
 
         let send_fut = self.send(msg);

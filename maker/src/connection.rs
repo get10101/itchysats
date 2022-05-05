@@ -210,7 +210,7 @@ impl Actor {
 
     async fn drop_taker_connection(&mut self, taker_id: &Identity) {
         if let Some(connection) = self.connections.remove(taker_id) {
-            let _: Result<(), xtra::Disconnected> = self
+            let _: Result<(), xtra::Error> = self
                 .taker_disconnected_channel
                 .send_async_safe(cfd::TakerDisconnected { id: *taker_id })
                 .await;
@@ -420,7 +420,7 @@ impl Actor {
             return;
         }
 
-        let _: Result<(), xtra::Disconnected> = self
+        let _: Result<(), xtra::Error> = self
             .taker_connected_channel
             .send_async_safe(cfd::TakerConnected { id: identity })
             .await;
