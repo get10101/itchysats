@@ -949,6 +949,7 @@ mod tests {
     use super::*;
     use crate::db::memory;
     use bdk::bitcoin::SignedAmount;
+    use model::libp2p::PeerId;
     use model::Cfd;
     use model::EventKind;
     use model::FundingRate;
@@ -1323,6 +1324,7 @@ mod tests {
             "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e"
                 .parse()
                 .unwrap(),
+            Some(PeerId::random()),
             OpeningFee::new(Amount::ZERO),
             FundingRate::default(),
             TxFeeRate::default(),

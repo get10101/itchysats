@@ -16,6 +16,7 @@ use bdk::bitcoin::Amount;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
+use model::libp2p::PeerId;
 use model::Identity;
 use model::Leverage;
 use model::OrderId;
@@ -152,6 +153,7 @@ impl State {
 pub struct Actor {
     status_sender: watch::Sender<ConnectionStatus>,
     identity_sk: x25519_dalek::StaticSecret,
+    peer_id: PeerId,
     current_order: Box<dyn MessageChannel<CurrentMakerOffers>>,
     /// How often we check ("measure pulse") for heartbeat
     /// It should not be greater than maker's `heartbeat interval`
@@ -231,6 +233,7 @@ impl Actor {
         status_sender: watch::Sender<ConnectionStatus>,
         current_order: &(impl MessageChannel<CurrentMakerOffers> + 'static),
         identity_sk: x25519_dalek::StaticSecret,
+        peer_id: PeerId,
         maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
     ) -> Self {
@@ -248,6 +251,7 @@ impl Actor {
             connect_timeout,
             collab_settlement_actors: AddressMap::default(),
             rollover_actors: AddressMap::default(),
+            peer_id,
         }
     }
 }
@@ -356,9 +360,10 @@ impl Actor {
 
         let proposed_version = Version::LATEST;
         write
-            .send(wire::TakerToMaker::HelloV2 {
+            .send(wire::TakerToMaker::HelloV3 {
                 proposed_wire_version: proposed_version.clone(),
                 daemon_version: version::version().to_string(),
+                peer_id: self.peer_id,
             })
             .timeout(TCP_TIMEOUT)
             .await??;

@@ -5,7 +5,7 @@ use bdk::bitcoin::Network;
 use hkdf::Hkdf;
 use libp2p_core::identity::ed25519;
 use libp2p_core::identity::Keypair;
-use libp2p_core::PeerId;
+use model::libp2p::PeerId;
 use rand::Rng;
 use sha2::Sha256;
 use std::convert::TryInto;
@@ -23,7 +23,7 @@ pub struct Identities {
 
 impl Identities {
     pub fn peer_id(&self) -> PeerId {
-        self.libp2p.public().to_peer_id()
+        PeerId::from(self.libp2p.public().to_peer_id())
     }
 }
 

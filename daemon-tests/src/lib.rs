@@ -18,6 +18,7 @@ use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
+use model::libp2p::PeerId;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
@@ -45,7 +46,6 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use xtra::Actor;
 use xtra_bitmex_price_feed::Quote;
-use xtra_libp2p::libp2p::PeerId;
 
 pub mod flow;
 pub mod maia;
@@ -320,7 +320,7 @@ impl Taker {
         let mut oracle_mock = None;
         let mut monitor_mock = None;
 
-        let maker_multiaddr = create_connect_tcp_multiaddr(&maker_address, maker_peer_id)
+        let maker_multiaddr = create_connect_tcp_multiaddr(&maker_address, maker_peer_id.inner())
             .expect("to be able to construct Multiaddr");
 
         let taker = daemon::TakerActorSystem::new(

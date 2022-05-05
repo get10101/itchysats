@@ -10,6 +10,7 @@ use connection::ConnectionStatus;
 use libp2p_core::Multiaddr;
 use libp2p_tcp::TokioTcpConfig;
 use maia_core::secp256k1_zkp::schnorrsig;
+use model::libp2p::PeerId;
 use model::olivia;
 use model::Identity;
 use model::Leverage;
@@ -26,6 +27,7 @@ use tokio_tasks::Tasks;
 use xtra::prelude::*;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use xtra_libp2p::dialer;
+use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
 use xtras::supervisor;
 
@@ -158,6 +160,12 @@ where
             oracle_addr.clone(),
             n_payouts,
             maker_identity,
+            PeerId::from(
+                maker_multiaddr
+                    .clone()
+                    .extract_peer_id()
+                    .context("Unable to extract peer id from maker address")?,
+            ),
         )
         .create(None)
         .spawn(&mut tasks);
@@ -179,7 +187,8 @@ where
                 .run(connection::Actor::new(
                     maker_online_status_feed_sender,
                     &cfd_actor_addr,
-                    identity.identity_sk,
+                    identity.identity_sk.clone(),
+                    identity.peer_id(),
                     maker_heartbeat_interval,
                     connect_timeout,
                 )),
