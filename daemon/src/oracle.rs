@@ -208,10 +208,18 @@ impl Actor {
                         anyhow::bail!("GET {url} responded with {code}");
                     }
 
-                    let attestation = response
-                        .json::<olivia::Attestation>()
-                        .await
-                        .context("Failed to deserialize as Attestation")?;
+                    let attestation = match response.json::<olivia::Attestation>().await {
+                        Ok(a) => a,
+                        Err(_)
+                            if OffsetDateTime::now_utc() < event_id.timestamp() + 1.minutes() =>
+                        {
+                            // we give Olivia a grace period of 1
+                            // minute to come up with any given
+                            // attestation
+                            return Ok(());
+                        }
+                        e => e.context("Failed to deserialize as Attestation")?,
+                    };
 
                     this.send(NewAttestationFetched {
                         id: event_id,
