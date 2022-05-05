@@ -1204,7 +1204,7 @@ impl From<xtra_bitmex_price_feed::Quote> for Quote {
     }
 }
 
-/// Maker offers represents the offers as cerated by the maker
+/// Maker offers represents the offers as created by the maker
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MakerOffers {
     /// The offer where the maker's position is long
