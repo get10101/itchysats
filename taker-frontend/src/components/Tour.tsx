@@ -3,7 +3,7 @@ import { Link, Text } from "@chakra-ui/react";
 import { Steps } from "intro.js-react";
 import * as React from "react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { FAQ_URL } from "../App";
 import cfd101 from "../images/CFD_101_light_bg.svg";
 import confirmationDialog from "../images/confirmation_dialog.png";
@@ -29,12 +29,14 @@ export const Tour = () => {
                 </>
             ),
             position: "right",
+            targetRoute: "/long",
         },
         {
             element: "#walletSwitchButton",
             intro:
                 "Before you can open a position you will have to add funds to your wallet. We will come back to this at the end of the tour.",
             position: "right",
+            targetRoute: "/long",
         },
         {
             title: "Long and Short",
@@ -51,35 +53,41 @@ export const Tour = () => {
             ),
             element: "#longShortButtonSwitch",
             position: "right",
+            targetRoute: "/long",
         },
         {
             element: "#makerLongPrice",
             intro: "This is the current price of the maker for opening a long position...",
             position: "right",
+            targetRoute: "/long",
         },
         {
             element: "#longQuantityInput",
             intro:
                 "You specify how many contracts of BTC/USD you buy. This will determine the margin that will be locked up on chain.",
             position: "right",
+            targetRoute: "/long",
         },
         {
             element: "#longLeverage",
             // TODO: Add link to learn about leverage trading
             intro: "The leverage influences the margin as well. At the moment the leverage is fixed at x2.",
             position: "right",
+            targetRoute: "/long",
         },
         {
             element: "#longRequiredMargin",
             intro:
                 "This is the amount of BTC that is necessary to open the position. This amount will be locked on chain.",
             position: "right",
+            targetRoute: "/long",
         },
         {
             element: "#longPerpetualCost",
             intro:
                 "To allow you to close any point in time in the future you pay a small fee per the hour. Initially you will pay fees for 24h, with every hour that the CFD remains open you pay for one additional hour.",
             position: "right",
+            targetRoute: "/long",
         },
         {
             element: "#longButton",
@@ -99,12 +107,14 @@ export const Tour = () => {
                 </>
             ),
             position: "right",
+            targetRoute: "/long",
         },
         {
             title: "Time for funding the wallet!",
             element: "#walletSwitchButton",
             intro: "Time to add some funds to the wallet... Let me take you there...",
             position: "right",
+            targetRoute: "/long",
         },
         {
             title: "Happy trading!",
@@ -120,6 +130,7 @@ export const Tour = () => {
                 </>
             ),
             position: "right",
+            targetRoute: "/wallet",
         },
     ];
 
@@ -130,10 +141,26 @@ export const Tour = () => {
     };
 
     const navigate = useNavigate();
+    const location = useLocation();
+
     const onChange = (nextStepIndex: number) => {
-        // Before the last step we jump to the wallet
-        if (nextStepIndex === (tourSteps.length - 1)) {
-            navigate("/wallet");
+        let nextStep = tourSteps[nextStepIndex];
+
+        if (!location.pathname.endsWith(nextStep.targetRoute)) {
+            navigate(nextStep.targetRoute);
+
+            // If the tour is only shown once initially then this condition will never be true.
+            // However, a user might re-trigger the tour by re-loading (which could happen from the /wallet route).
+            // We need to re-render because intro-js creates the tour based on the initial route and the DOM elements available at that point.
+            // If the initial route is not /long then some tour steps will not be attached to the elements because the elements are not rendered.
+            if (nextStepIndex === 1) {
+                // This is a hacky trick to re-render the tour.
+                // Unfortunately there is no other way to trigger a re-render.
+                // One somewhat weird side effect is that the second step (because the change callbacks always provide the next step...)
+                // will be shown twice, once unattached and after re-enabling the tour in the right location.
+                setTourEnabled(false);
+                setTourEnabled(true);
+            }
         }
     };
 
