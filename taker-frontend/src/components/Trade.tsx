@@ -20,6 +20,7 @@ import {
     Skeleton,
     Slider,
     SliderFilledTrack,
+    SliderMark,
     SliderThumb,
     SliderTrack,
     Table,
@@ -69,7 +70,7 @@ export default function Trade({
         minQuantity,
         maxQuantity,
         lotSize,
-        leverage,
+        leverage_choices,
     },
     connectedToMaker,
     walletBalance,
@@ -78,6 +79,7 @@ export default function Trade({
     const navigate = useNavigate();
 
     let [quantity, setQuantity] = useState(0);
+    let [leverage, setLeverage] = useState(2);
     let [userHasEdited, setUserHasEdited] = useState(false);
 
     // We update the quantity because the offer can change any time.
@@ -208,7 +210,12 @@ export default function Trade({
                         />
                     </GridItem>
                     <GridItem colSpan={1} paddingLeft={5} paddingRight={5}>
-                        <Leverage leverage={leverage} isLong={isLong} />
+                        <Leverage
+                            leverage_choices={leverage_choices}
+                            currentChoice={leverage}
+                            onChange={setLeverage}
+                            isLong={isLong}
+                        />
                     </GridItem>
                     <GridItem colSpan={1}>
                         <Table variant="simple">
@@ -336,24 +343,37 @@ function Quantity({ min, max, onChange, quantity, lotSize, isLong }: QuantityPro
 }
 
 interface LeverageProps {
-    leverage: number;
+    leverage_choices: number[];
+    currentChoice: number;
+    onChange: (val: number) => void;
     isLong: boolean;
 }
 
-function Leverage({ leverage, isLong }: LeverageProps) {
+function Leverage({ leverage_choices, onChange, currentChoice, isLong }: LeverageProps) {
+    const min = Math.min.apply(Math, leverage_choices);
+    const max = Math.max.apply(Math, leverage_choices);
+
     return (
         <Box id={isLong ? "longLeverage" : "shortLeverage"}>
-            <FormControl id={"leverage"}>
+            <FormControl id="leverage">
                 <Center>
                     <FormLabel>Leverage</FormLabel>
                 </Center>
-                <Slider isDisabled={true} value={leverage} min={1} max={5} step={1}>
+                <Slider
+                    isDisabled={true}
+                    value={currentChoice}
+                    min={min}
+                    max={max}
+                    onChange={(val) => onChange(val)}
+                    onChangeEnd={(val) => onChange(val)}
+                >
+                    {leverage_choices.map(leverage => <SliderMark key={leverage} value={leverage} fontSize="sm" />)}
                     <SliderTrack>
                         <Box position="relative" right={10} />
                         <SliderFilledTrack />
                     </SliderTrack>
                     <SliderThumb boxSize={6}>
-                        <Text color="black">{leverage}</Text>
+                        <Text color="black">{currentChoice}</Text>
                     </SliderThumb>
                 </Slider>
                 <FormHelperText>

@@ -8,7 +8,7 @@ export interface MakerOffer {
     max_quantity: number;
     lot_size: number;
     margin_per_lot: number;
-    leverage: number;
+    leverage_choices: number[];
     liquidation_price: number;
     creation_timestamp: number;
     settlement_time_interval_in_secs: number;

@@ -1255,8 +1255,7 @@ pub struct CfdOrder {
     #[serde(with = "round_to_two_dp")]
     pub lot_size: Usd,
 
-    #[serde(rename = "leverage")]
-    pub taker_leverage_choices: Leverage,
+    pub leverage_choices: Vec<Leverage>,
 
     /// Own liquidation price according to position and leverage
     #[serde(with = "round_to_two_dp")]
@@ -1294,8 +1293,11 @@ impl TryFrom<Order> for CfdOrder {
             Origin::Theirs => order.position_maker.counter_position(),
         };
 
+        // FIXME: this won't work anymore because we don't know what leverage the user wants to
+        // take. I'll fix it to Leverage::2 for now as this is our only choice but this
+        // needs to be fixed!
         let (long_leverage, short_leverage) =
-            long_and_short_leverage(order.leverage_taker, role, own_position);
+            long_and_short_leverage(Leverage::TWO, role, own_position);
 
         let initial_funding_fee_per_lot = FundingFee::calculate(
             order.price,
@@ -1334,7 +1336,7 @@ impl TryFrom<Order> for CfdOrder {
             max_quantity: order.max_quantity,
             lot_size,
             margin_per_lot,
-            taker_leverage_choices: order.leverage_taker,
+            leverage_choices: order.leverage_choices,
             liquidation_price,
             creation_timestamp: order.creation_timestamp_maker,
             settlement_time_interval_in_secs: order

@@ -16,6 +16,7 @@ use futures::SinkExt;
 use maia::secp256k1_zkp::schnorrsig;
 use model::olivia::Announcement;
 use model::Dlc;
+use model::Leverage;
 use model::OrderId;
 use model::Role;
 use model::Usd;
@@ -32,6 +33,7 @@ const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Actor {
     order_id: OrderId,
     quantity: Usd,
+    leverage: Leverage,
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
     announcement: Announcement,
@@ -48,7 +50,7 @@ impl Actor {
     pub fn new(
         db: db::Connection,
         process_manager: xtra::Address<process_manager::Actor>,
-        (order_id, quantity, n_payouts): (OrderId, Usd, usize),
+        (order_id, quantity, leverage, n_payouts): (OrderId, Usd, Leverage, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
@@ -57,6 +59,7 @@ impl Actor {
         Self {
             order_id,
             quantity,
+            leverage,
             n_payouts,
             oracle_pk,
             announcement,
@@ -223,6 +226,7 @@ impl xtra::Actor for Actor {
             .send(connection::TakeOrder {
                 order_id: self.order_id,
                 quantity: self.quantity,
+                leverage: self.leverage,
                 address,
             })
             .await;

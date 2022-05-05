@@ -20,6 +20,7 @@ use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use model::FundingRate;
 use model::Identity;
+use model::Leverage;
 use model::OpeningFee;
 use model::OrderId;
 use model::Position;
@@ -252,6 +253,7 @@ impl Maker {
             funding_rate_long,
             funding_rate_short,
             opening_fee,
+            leverage_choices,
         } = offer_params;
         self.system
             .set_offer_params(
@@ -263,6 +265,7 @@ impl Maker {
                 funding_rate_long,
                 funding_rate_short,
                 opening_fee,
+                leverage_choices,
             )
             .await
             .unwrap();
@@ -457,6 +460,7 @@ pub fn dummy_offer_params(position_maker: Position) -> maker::cfd::OfferParams {
         funding_rate_long: FundingRate::new(dec!(0.00024)).unwrap(),
         funding_rate_short: FundingRate::new(dec!(0.00024)).unwrap(),
         opening_fee: OpeningFee::new(Amount::from_sat(2)),
+        leverage_choices: vec![Leverage::TWO],
     }
 }
 

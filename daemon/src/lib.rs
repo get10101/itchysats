@@ -12,6 +12,7 @@ use libp2p_tcp::TokioTcpConfig;
 use maia::secp256k1_zkp::schnorrsig;
 use model::olivia;
 use model::Identity;
+use model::Leverage;
 use model::Order;
 use model::OrderId;
 use model::Price;
@@ -251,9 +252,18 @@ where
         })
     }
 
-    pub async fn take_offer(&self, order_id: OrderId, quantity: Usd) -> Result<()> {
+    pub async fn take_offer(
+        &self,
+        order_id: OrderId,
+        quantity: Usd,
+        leverage: Leverage,
+    ) -> Result<()> {
         self.cfd_actor
-            .send(taker_cfd::TakeOffer { order_id, quantity })
+            .send(taker_cfd::TakeOffer {
+                order_id,
+                quantity,
+                leverage,
+            })
             .await??;
         Ok(())
     }

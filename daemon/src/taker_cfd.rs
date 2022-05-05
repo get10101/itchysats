@@ -14,6 +14,7 @@ use bdk::bitcoin::secp256k1::schnorrsig;
 use model::market_closing_price;
 use model::Cfd;
 use model::Identity;
+use model::Leverage;
 use model::MakerOffers;
 use model::OrderId;
 use model::Origin;
@@ -26,13 +27,14 @@ use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct CurrentMakerOffers(pub Option<MakerOffers>);
 
 #[derive(Clone, Copy)]
 pub struct TakeOffer {
     pub order_id: OrderId,
     pub quantity: Usd,
+    pub leverage: Leverage,
 }
 
 #[derive(Clone)]
@@ -109,12 +111,13 @@ impl<O, W> Actor<O, W> {
             maker_offers
         });
 
-        self.current_maker_offers = takers_perspective_of_maker_offers;
-
+        self.current_maker_offers = takers_perspective_of_maker_offers.clone();
         tracing::trace!("new maker offers {:?}", takers_perspective_of_maker_offers);
 
         self.projection_actor
-            .send(projection::Update(takers_perspective_of_maker_offers))
+            .send(projection::Update(
+                takers_perspective_of_maker_offers.clone(),
+            ))
             .await?;
 
         Ok(())
@@ -163,7 +166,11 @@ where
     W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
 {
     async fn handle_take_offer(&mut self, msg: TakeOffer) -> Result<()> {
-        let TakeOffer { order_id, quantity } = msg;
+        let TakeOffer {
+            order_id,
+            quantity,
+            leverage,
+        } = msg;
 
         let disconnected = self
             .setup_actors
@@ -174,6 +181,7 @@ where
 
         let (order_to_take, maker_offers) = self
             .current_maker_offers
+            .clone()
             .context("No maker offers available to take")?
             .take_order(order_id);
 
@@ -185,7 +193,7 @@ where
         {
             self.current_maker_offers.replace(maker_offers);
             self.projection_actor
-                .send(projection::Update(self.current_maker_offers))
+                .send(projection::Update(self.current_maker_offers.clone()))
                 .await?;
         }
 
@@ -198,7 +206,13 @@ where
         // We create the cfd here without any events yet, only static data
         // Once the contract setup completes (rejected / accepted / failed) the first event will be
         // recorded
-        let cfd = Cfd::from_order(order_to_take, quantity, self.maker_identity, Role::Taker);
+        let cfd = Cfd::from_order(
+            &order_to_take,
+            quantity,
+            self.maker_identity,
+            Role::Taker,
+            leverage,
+        );
 
         self.db.insert_cfd(&cfd).await?;
         self.projection_actor
@@ -215,7 +229,12 @@ where
         let addr = setup_taker::Actor::new(
             self.db.clone(),
             self.process_manager_actor.clone(),
-            (cfd.id(), cfd.quantity(), self.n_payouts),
+            (
+                cfd.id(),
+                cfd.quantity(),
+                cfd.taker_leverage(),
+                self.n_payouts,
+            ),
             (self.oracle_pk, announcement),
             &self.wallet,
             &self.wallet,

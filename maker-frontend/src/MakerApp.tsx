@@ -153,6 +153,7 @@ export default function App() {
                             </HStack>
                         </HStack>
 
+                        {/* TODO: change this to checkboxes */}
                         <Text>Leverage:</Text>
                         <HStack spacing={5}>
                             <Button disabled={true}>x1</Button>
@@ -182,6 +183,7 @@ export default function App() {
                                         tx_fee_rate: Number.parseFloat("1"),
                                         // TODO: This is is in sats which is not really in line with other APIs for the maker
                                         opening_fee: Number.parseFloat("100"),
+                                        leverage_choices: [1, 2],
                                     };
                                     makeNewCfdSellOrder(payload);
                                 }}
