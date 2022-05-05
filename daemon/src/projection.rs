@@ -41,6 +41,7 @@ use model::Usd;
 use model::SETTLEMENT_INTERVAL;
 use parse_display::Display;
 use parse_display::FromStr;
+use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
@@ -849,6 +850,7 @@ impl db::ClosedCfdAggregate for Cfd {
             expiry_timestamp,
             lock,
             settlement,
+            creation_timestamp,
         } = closed_cfd;
 
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
@@ -940,10 +942,12 @@ impl db::ClosedCfdAggregate for Cfd {
                 .expect("Amount to fit into signed amount"),
         );
 
-        // we don't need the aggregate of the events to know all the
-        // information about a closed CFD. This is why the information
-        // in this struct is not updated
-        let empty_aggregated = Aggregated::new(FeeAccount::new(position, role));
+        // there are no events to apply at this stage for closed CFDs,
+        // which is why this field is mostly ignored
+        let mut aggregated = Aggregated::new(FeeAccount::new(position, role));
+
+        // set the creation_timestamp to be able to sort closed CFDs
+        aggregated.creation_timestamp = creation_timestamp;
 
         Self {
             order_id: id,
@@ -969,7 +973,83 @@ impl db::ClosedCfdAggregate for Cfd {
             expiry_timestamp: Some(expiry_timestamp),
             counterparty: counterparty_network_identity,
             pending_settlement_proposal_price: None,
-            aggregated: empty_aggregated,
+            aggregated,
+            network,
+        }
+    }
+}
+
+impl db::FailedCfdAggregate for Cfd {
+    fn new_failed(network: Self::CtorArgs, failed_cfd: db::FailedCfd) -> Self {
+        let db::FailedCfd {
+            id,
+            position,
+            initial_price,
+            taker_leverage,
+            n_contracts,
+            counterparty_network_identity,
+            role,
+            fees,
+            kind,
+            creation_timestamp,
+        } = failed_cfd;
+
+        let state = match kind {
+            db::Kind::OfferRejected => CfdState::Rejected,
+            db::Kind::ContractSetupFailed => CfdState::SetupFailed,
+        };
+
+        let quantity_usd =
+            Usd::new(Decimal::from_u64(u64::from(n_contracts)).expect("u64 to fit into Decimal"));
+
+        let (our_leverage, counterparty_leverage) = match role {
+            Role::Maker => (Leverage::ONE, taker_leverage),
+            Role::Taker => (taker_leverage, Leverage::ONE),
+        };
+
+        let margin = calculate_margin(initial_price, quantity_usd, our_leverage);
+        let margin_counterparty =
+            calculate_margin(initial_price, quantity_usd, counterparty_leverage);
+
+        let liquidation_price = match position {
+            Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
+            Position::Short => calculate_short_liquidation_price(our_leverage, initial_price),
+        };
+
+        // there are no events to apply at this stage for failed CFDs,
+        // which is why this field is mostly ignored
+        let mut aggregated = Aggregated::new(FeeAccount::new(position, role));
+
+        // set the creation_timestamp to be able to sort failed CFDs
+        aggregated.creation_timestamp = creation_timestamp;
+
+        Self {
+            order_id: id,
+            initial_price,
+            accumulated_fees: fees.into(),
+            leverage_taker: taker_leverage,
+            trading_pair: TradingPair::BtcUsd,
+            position,
+            liquidation_price,
+            quantity_usd,
+            margin,
+            margin_counterparty,
+            role,
+
+            profit_btc: None,
+            profit_percent: None,
+            payout: None,
+            closing_price: None,
+
+            state,
+            actions: HashSet::default(),
+            details: CfdDetails {
+                tx_url_list: HashSet::default(),
+            },
+            expiry_timestamp: None,
+            counterparty: counterparty_network_identity,
+            pending_settlement_proposal_price: None,
+            aggregated,
             network,
         }
     }

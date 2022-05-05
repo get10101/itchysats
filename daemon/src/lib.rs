@@ -36,8 +36,9 @@ use xtras::supervisor;
 pub use bdk;
 pub use maia;
 
+mod archive_closed_cfds;
+mod archive_failed_cfds;
 pub mod auto_rollover;
-mod close_cfds;
 pub mod collab_settlement_maker;
 pub mod collab_settlement_taker;
 pub mod command;
@@ -77,7 +78,8 @@ pub const N_PAYOUTS: usize = 200;
 pub struct MakerActorSystem<O, W> {
     pub cfd_actor: Address<maker_cfd::Actor<O, maker_inc_connections::Actor, W>>,
     wallet_actor: Address<W>,
-    _close_cfds_actor: Address<close_cfds::Actor>,
+    _close_cfds_actor: Address<archive_closed_cfds::Actor>,
+    _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
     executor: command::Executor,
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
@@ -201,7 +203,13 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
-        let close_cfds_actor = close_cfds::Actor::new(db).create(None).spawn(&mut tasks);
+        let close_cfds_actor = archive_closed_cfds::Actor::new(db.clone())
+            .create(None)
+            .spawn(&mut tasks);
+
+        let archive_failed_cfds_actor = archive_failed_cfds::Actor::new(db)
+            .create(None)
+            .spawn(&mut tasks);
 
         tracing::debug!("Maker actor system ready");
 
@@ -209,6 +217,7 @@ where
             cfd_actor: cfd_actor_addr,
             wallet_actor: wallet_addr,
             _close_cfds_actor: close_cfds_actor,
+            _archive_failed_cfds_actor: archive_failed_cfds_actor,
             executor,
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
@@ -325,7 +334,8 @@ pub struct TakerActorSystem<O, W, P> {
     _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
     _dialer_actor: Address<dialer::Actor>,
     _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
-    _close_cfds_actor: Address<close_cfds::Actor>,
+    _close_cfds_actor: Address<archive_closed_cfds::Actor>,
+    _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
@@ -472,7 +482,12 @@ where
 
         let price_feed_supervisor = supervisor.create(None).spawn(&mut tasks);
 
-        let close_cfds_actor = close_cfds::Actor::new(db).create(None).spawn(&mut tasks);
+        let close_cfds_actor = archive_closed_cfds::Actor::new(db.clone())
+            .create(None)
+            .spawn(&mut tasks);
+        let archive_failed_cfds_actor = archive_failed_cfds::Actor::new(db)
+            .create(None)
+            .spawn(&mut tasks);
 
         tracing::debug!("Taker actor system ready");
 
@@ -487,6 +502,7 @@ where
             _dialer_actor: dialer_actor,
             _dialer_supervisor: dialer_supervisor,
             _close_cfds_actor: close_cfds_actor,
+            _archive_failed_cfds_actor: archive_failed_cfds_actor,
             _tasks: tasks,
             maker_online_status_feed_receiver,
         })
