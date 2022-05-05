@@ -917,9 +917,8 @@ async fn insert_event_log(
 /// Obtain the time at which the closed CFD was created, according to
 /// the `event_log` table.
 ///
-/// Every closed CFD must have gone through contract setup at some
-/// point. Therefore, we base the creation timestamp on the
-/// `EventKind::ContractSetupStarted` variant.
+/// We use the timestamp of the first event for a particular CFD `id`
+/// in the `event_log` table.
 async fn load_creation_timestamp(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
@@ -933,10 +932,11 @@ async fn load_creation_timestamp(
         JOIN
             closed_cfds on closed_cfds.id = event_log.cfd_id
         WHERE
-            closed_cfds.uuid = $1 AND event_log.name = $2
+            closed_cfds.uuid = $1
+        ORDER BY event_log.created_at ASC
+        LIMIT 1
         "#,
         id,
-        model::EventKind::CONTRACT_SETUP_STARTED,
     )
     .fetch_one(&mut *conn)
     .await?;
@@ -1245,6 +1245,38 @@ mod tests {
         assert_eq!(inserted, loaded);
     }
 
+    #[tokio::test]
+    async fn given_confirmed_settlement_when_move_cfds_to_closed_table_then_creation_timestamp_is_that_of_first_event(
+    ) {
+        let db = memory().await.unwrap();
+
+        let (cfd, mut contract_setup_completed, collaborative_settlement_completed) =
+            cfd_collaboratively_settled();
+        let order_id = cfd.id();
+
+        db.insert_cfd(&cfd).await.unwrap();
+
+        let first_event_timestamp = Timestamp::new(1);
+        contract_setup_completed.timestamp = first_event_timestamp;
+
+        db.append_event(contract_setup_completed).await.unwrap();
+        db.append_event(collaborative_settlement_completed)
+            .await
+            .unwrap();
+        db.append_event(collab_settlement_confirmed(&cfd))
+            .await
+            .unwrap();
+
+        db.move_to_closed_cfds().await.unwrap();
+
+        let DummyAggregate { creation_timestamp } = db
+            .load_closed_cfd::<DummyAggregate>(order_id, ())
+            .await
+            .unwrap();
+
+        assert_eq!(creation_timestamp, Some(first_event_timestamp));
+    }
+
     async fn insert_dummy_closed_cfd(
         conn: &mut Transaction<'_, Sqlite>,
         id: OrderId,
@@ -1333,17 +1365,23 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct DummyAggregate;
+    struct DummyAggregate {
+        creation_timestamp: Option<Timestamp>,
+    }
 
     impl CfdAggregate for DummyAggregate {
         type CtorArgs = ();
 
         fn new(_: Self::CtorArgs, _: crate::db::Cfd) -> Self {
-            Self
+            Self {
+                creation_timestamp: None,
+            }
         }
 
         fn apply(self, _: CfdEvent) -> Self {
-            Self
+            Self {
+                creation_timestamp: None,
+            }
         }
 
         fn version(&self) -> u32 {
@@ -1352,8 +1390,10 @@ mod tests {
     }
 
     impl ClosedCfdAggregate for DummyAggregate {
-        fn new_closed(_: Self::CtorArgs, _: ClosedCfd) -> Self {
-            Self
+        fn new_closed(_: Self::CtorArgs, closed: ClosedCfd) -> Self {
+            Self {
+                creation_timestamp: Some(closed.creation_timestamp),
+            }
         }
     }
 

@@ -338,6 +338,10 @@ impl Connection {
         stream.boxed()
     }
 
+    /// Load the IDs for all the CFDs found in the `cfds` table.
+    ///
+    /// Importantly, callers **cannot** rely on the CFD IDs returned
+    /// corresponding to open CFDs.
     pub async fn load_open_cfd_ids(&self) -> Result<Vec<OrderId>> {
         let mut conn = self.inner.acquire().await?;
 
