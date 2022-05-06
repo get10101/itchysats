@@ -57,7 +57,7 @@ use std::time::Duration;
 use xtra::prelude::MessageChannel;
 
 /// How long protocol waits for the next message before giving up
-const MSG_TIMEOUT: Duration = Duration::from_secs(60);
+const MSG_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the other party.
