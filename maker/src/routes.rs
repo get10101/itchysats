@@ -102,7 +102,7 @@ pub async fn maker_feed(
 }
 
 /// The maker PUTs this to set the offer params
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub struct CfdNewOfferParamsRequest {
     pub price_long: Option<Price>,
     pub price_short: Option<Price>,
