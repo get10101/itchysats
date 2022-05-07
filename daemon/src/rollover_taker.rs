@@ -16,6 +16,7 @@ use futures::SinkExt;
 use maia::secp256k1_zkp::schnorrsig;
 use model::olivia::BitMexPriceEventId;
 use model::Dlc;
+use model::FeeFlow;
 use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
@@ -95,6 +96,7 @@ impl Actor {
             oracle_event_id,
             tx_fee_rate,
             funding_rate,
+            complete_fee,
         }: RolloverAccepted = msg;
         let order_id = self.id;
 
@@ -132,6 +134,7 @@ impl Actor {
             position,
             dlc,
             self.n_payouts,
+            complete_fee,
         );
 
         let this = ctx.address().expect("self to be alive");
@@ -320,6 +323,7 @@ pub struct RolloverAccepted {
     pub oracle_event_id: BitMexPriceEventId,
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
+    pub complete_fee: FeeFlow,
 }
 
 /// Message sent from the `connection::Actor` to the
