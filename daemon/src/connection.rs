@@ -481,6 +481,7 @@ impl Actor {
                 oracle_event_id,
                 tx_fee_rate,
                 funding_rate,
+                complete_fee,
             } => {
                 if let Err(NotConnected(_)) = self
                     .rollover_actors
@@ -490,6 +491,7 @@ impl Actor {
                             oracle_event_id,
                             tx_fee_rate,
                             funding_rate,
+                            complete_fee: complete_fee.into(),
                         },
                     )
                     .await

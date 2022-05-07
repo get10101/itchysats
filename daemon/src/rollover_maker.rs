@@ -177,6 +177,27 @@ impl Actor {
 
         let taker_id = self.taker_id;
 
+        // the maker computes the rollover fee and sends it over to the taker so that both parties
+        // are on the same page
+        let complete_fee = match rollover_params.version {
+            RolloverVersion::V1 => {
+                // Note there is actually a bug here, but we have to keep this as is to reach
+                // agreement on the fee for the protocol V1 version.
+                //
+                // The current fee is supposed to be added here, but we never noticed because in V1
+                // the fee is always charged for one hour using a static rate. This
+                // results in applying the fee in the DLC only for the next rollover
+                // (because we do apply the fee in the Cfd when loading the rollover
+                // event). Effectively this means, that we always charged one
+                // rollover too little.
+                rollover_params.fee_account.settle()
+            }
+            RolloverVersion::V2 => rollover_params
+                .fee_account
+                .add_funding_fee(rollover_params.current_fee)
+                .settle(),
+        };
+
         self.send_to_taker_actor
             .send(maker_inc_connections::TakerMessage {
                 taker_id,
@@ -185,6 +206,7 @@ impl Actor {
                     oracle_event_id,
                     tx_fee_rate,
                     funding_rate,
+                    complete_fee: complete_fee.into(),
                 },
             })
             .await
@@ -214,6 +236,7 @@ impl Actor {
             position,
             dlc,
             self.n_payouts,
+            complete_fee,
         );
 
         let this = ctx.address().expect("self to be alive");
