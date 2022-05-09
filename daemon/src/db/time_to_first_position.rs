@@ -159,19 +159,15 @@ mod tests {
         .fetch_optional(&mut *conn)
         .await?;
 
-        let timestamp = match row {
-            None => return Ok(None),
-            Some(row) => row.first_seen_timestamp,
-        };
+        let timestamp = row
+            .map(|row| {
+                row.first_seen_timestamp
+                    .map(OffsetDateTime::from_unix_timestamp)
+            })
+            .unwrap_or(None)
+            .transpose()?;
 
-        let timestamp = match timestamp {
-            None => return Ok(None),
-            Some(timestamp) => timestamp,
-        };
-
-        let timestamp = OffsetDateTime::from_unix_timestamp(timestamp)?;
-
-        Ok(Some(timestamp))
+        Ok(timestamp)
     }
 
     async fn load_first_position_timestamp(
@@ -192,19 +188,15 @@ mod tests {
         .fetch_optional(&mut *conn)
         .await?;
 
-        let timestamp = match row {
-            None => return Ok(None),
-            Some(row) => row.first_position_timestamp,
-        };
+        let timestamp = row
+            .map(|row| {
+                row.first_position_timestamp
+                    .map(OffsetDateTime::from_unix_timestamp)
+            })
+            .unwrap_or(None)
+            .transpose()?;
 
-        let timestamp = match timestamp {
-            None => return Ok(None),
-            Some(timestamp) => timestamp,
-        };
-
-        let timestamp = OffsetDateTime::from_unix_timestamp(timestamp)?;
-
-        Ok(Some(timestamp))
+        Ok(timestamp)
     }
 
     fn dummy_identity() -> Identity {
