@@ -1,11 +1,11 @@
-use crate::command;
-use crate::db;
-use crate::maker_inc_connections;
-use crate::process_manager;
+use crate::connection;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use daemon::command;
+use daemon::db;
+use daemon::process_manager;
 use maia::secp256k1_zkp::Signature;
 use model::CollaborativeSettlement;
 use model::Identity;
@@ -28,7 +28,7 @@ const INITIATE_TIMEOUT: Duration = Duration::from_secs(60 * 5);
 pub struct Actor {
     proposal: SettlementProposal,
     taker_id: Identity,
-    connections: Box<dyn MessageChannel<maker_inc_connections::settlement::Response>>,
+    connections: Box<dyn MessageChannel<connection::settlement::Response>>,
     has_accepted: bool,
     is_initiated: bool,
     n_payouts: usize,
@@ -150,7 +150,7 @@ impl Actor {
     pub fn new(
         proposal: SettlementProposal,
         taker_id: Identity,
-        connections: &(impl MessageChannel<maker_inc_connections::settlement::Response> + 'static),
+        connections: &(impl MessageChannel<connection::settlement::Response> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
         db: db::Connection,
         n_payouts: usize,
@@ -258,10 +258,10 @@ impl Actor {
 
         let this = ctx.address().expect("self to be alive");
         self.connections
-            .send(maker_inc_connections::settlement::Response {
+            .send(connection::settlement::Response {
                 taker_id: self.taker_id,
                 order_id,
-                decision: maker_inc_connections::settlement::Decision::Accept { address: this },
+                decision: connection::settlement::Decision::Accept { address: this },
             })
             .await
             .context("Failed to inform taker about settlement acceptance")??;
@@ -275,10 +275,10 @@ impl Actor {
 
         let _ = self
             .connections
-            .send(maker_inc_connections::settlement::Response {
+            .send(connection::settlement::Response {
                 taker_id: self.taker_id,
                 order_id,
-                decision: maker_inc_connections::settlement::Decision::Reject,
+                decision: connection::settlement::Decision::Reject,
             })
             .await;
 

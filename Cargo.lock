@@ -800,7 +800,6 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
- "asynchronous-codec",
  "bdk",
  "bdk-ext",
  "btsieve",
@@ -861,6 +860,7 @@ dependencies = [
  "async-trait",
  "bdk-ext",
  "daemon",
+ "maker",
  "mockall",
  "mockall_derive",
  "model",
@@ -1857,10 +1857,16 @@ name = "maker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "bdk",
  "clap",
+ "conquer-once",
  "daemon",
+ "futures",
  "hex",
  "http-api-problem",
+ "libp2p-tcp",
+ "maia",
  "model",
  "prometheus",
  "rocket",
@@ -1869,12 +1875,19 @@ dependencies = [
  "rust-embed-rocket",
  "serde",
  "shared-bin",
+ "thiserror",
+ "time 0.3.9",
  "tokio",
  "tokio-tasks",
+ "tokio-util 0.7.1",
  "tracing",
  "uuid",
+ "x25519-dalek",
  "xtra",
  "xtra-bitmex-price-feed",
+ "xtra-libp2p",
+ "xtra-libp2p-ping",
+ "xtra_productivity",
  "xtras",
 ]
 
@@ -5112,7 +5125,6 @@ dependencies = [
  "tracing",
  "xtra",
  "xtra_productivity",
- "xtras",
 ]
 
 [[package]]
@@ -5180,7 +5192,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
- "regex",
  "thiserror",
  "tokio",
  "tokio-tasks",

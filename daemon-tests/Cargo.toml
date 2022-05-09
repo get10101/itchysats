@@ -4,13 +4,12 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
 bdk-ext = { path = "../bdk-ext" }
 daemon = { path = "../daemon" }
+maker = { path = "../maker" }
 mockall = "0.11"
 mockall_derive = "0.11"
 model = { path = "../model" }

@@ -46,6 +46,24 @@
     },
     "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                failed_cfds\n            "
   },
+  "20dcbd828efa787dbff1d26cabc1a5ac81acacad6536a27c51aab3b02c0efd58": {
+    "describe": {
+      "columns": [
+        {
+          "name": "first_seen_timestamp",
+          "ordinal": 0,
+          "type_info": "Int64"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "\n            SELECT\n                first_seen_timestamp\n            FROM\n                time_to_first_position\n            WHERE\n                taker_id = $1\n            "
+  },
   "4af3815bcce18c34ea78e3389ede21b193a0e493f98642d6a2a4636561667b66": {
     "describe": {
       "columns": [
@@ -199,6 +217,34 @@
       }
     },
     "query": "\n        INSERT INTO closed_cfds\n        (\n            uuid,\n            position,\n            initial_price,\n            taker_leverage,\n            n_contracts,\n            counterparty_network_identity,\n            role,\n            fees,\n            expiry_timestamp,\n            lock_txid,\n            lock_dlc_vout\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n        "
+  },
+  "9ee7e0229619689eed2c5f2e834d9449a732824bbeffed628d01abc1d1839319": {
+    "describe": {
+      "columns": [
+        {
+          "name": "first_position_timestamp",
+          "ordinal": 0,
+          "type_info": "Int64"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "\n            SELECT\n                first_position_timestamp\n            FROM\n                time_to_first_position\n            WHERE\n                taker_id = $1\n            "
+  },
+  "a8124175098e096f61da0874f7cd9f1ebfadde95fd2fc2cc478982be04d1e150": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 2
+      }
+    },
+    "query": "\n            UPDATE time_to_first_position\n            SET first_position_timestamp = $2\n            WHERE taker_id = $1 and first_position_timestamp is NULL\n            "
   },
   "a97c0728390b1d1bd516874a60f00fbd0f5d7cbd33fea156b760e42544710d71": {
     "describe": {
@@ -467,6 +513,16 @@
       }
     },
     "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            cets.txid as \"txid: model::Txid\",\n            cets.vout as \"vout: model::Vout\",\n            cets.payout as \"payout: model::Payout\",\n            cets.price as \"price: model::Price\"\n        FROM\n            cets\n        JOIN\n            commit_txs on commit_txs.cfd_id = cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        "
+  },
+  "d87c695f2f1f67e9acbc2ed4dac9a083738e82c52e419f5f025f8c4e327b4858": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 2
+      }
+    },
+    "query": "\n            INSERT OR IGNORE INTO time_to_first_position\n            (\n                taker_id,\n                first_seen_timestamp\n            )\n            VALUES ($1, $2)\n            "
   },
   "da7431dcc9aa5d799bf29bef7fb6a8b31469fb2deb4eab99a518f03f79eabbf4": {
     "describe": {

@@ -1,13 +1,14 @@
-use crate::command;
-use crate::db;
-use crate::maker_inc_connections;
-use crate::process_manager;
-use crate::setup_contract;
-use crate::wallet;
-use crate::wire;
+use crate::connection;
+use crate::metrics::time_to_first_position;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use daemon::command;
+use daemon::db;
+use daemon::process_manager;
+use daemon::setup_contract;
+use daemon::wallet;
+use daemon::wire;
 use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
@@ -25,6 +26,7 @@ use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
 use xtras::LogFailure;
+use xtras::SendAsyncSafe;
 
 pub struct Actor {
     order: Order,
@@ -34,12 +36,13 @@ pub struct Actor {
     announcement: Announcement,
     build_party_params: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign: Box<dyn MessageChannel<wallet::Sign>>,
-    taker: Box<dyn MessageChannel<maker_inc_connections::TakerMessage>>,
-    confirm_order: Box<dyn MessageChannel<maker_inc_connections::ConfirmOrder>>,
+    taker: Box<dyn MessageChannel<connection::TakerMessage>>,
+    confirm_order: Box<dyn MessageChannel<connection::ConfirmOrder>>,
     taker_id: Identity,
     setup_msg_sender: Option<UnboundedSender<wire::SetupMsg>>,
     tasks: Tasks,
     executor: command::Executor,
+    time_to_first_position: xtra::Address<time_to_first_position::Actor>,
 }
 
 impl Actor {
@@ -52,10 +55,11 @@ impl Actor {
         build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
         sign: &(impl MessageChannel<wallet::Sign> + 'static),
         (taker, confirm_order, taker_id): (
-            &(impl MessageChannel<maker_inc_connections::TakerMessage> + 'static),
-            &(impl MessageChannel<maker_inc_connections::ConfirmOrder> + 'static),
+            &(impl MessageChannel<connection::TakerMessage> + 'static),
+            &(impl MessageChannel<connection::ConfirmOrder> + 'static),
             Identity,
         ),
+        time_to_first_position: xtra::Address<time_to_first_position::Actor>,
     ) -> Self {
         Self {
             executor: command::Executor::new(db, process_manager),
@@ -71,6 +75,7 @@ impl Actor {
             taker_id,
             setup_msg_sender: None,
             tasks: Tasks::default(),
+            time_to_first_position,
         }
     }
 
@@ -91,7 +96,7 @@ impl Actor {
 
         let contract_future = setup_contract::new(
             self.taker.sink().with(move |msg| {
-                future::ok(maker_inc_connections::TakerMessage {
+                future::ok(connection::TakerMessage {
                     taker_id,
                     msg: wire::MakerToTaker::Protocol { order_id, msg },
                 })
@@ -124,6 +129,14 @@ impl Actor {
         {
             tracing::error!("Failed to execute `complete_contract_setup` command: {e:#}");
         }
+
+        if let Err(e) = self
+            .time_to_first_position
+            .send_async_safe(time_to_first_position::Position::new(self.taker_id))
+            .await
+        {
+            tracing::warn!("Failed to record potential time to first position: {e:#}");
+        };
 
         ctx.stop();
     }
@@ -181,7 +194,7 @@ impl Actor {
 
         let fut = async {
             self.confirm_order
-                .send(maker_inc_connections::ConfirmOrder {
+                .send(connection::ConfirmOrder {
                     taker_id: self.taker_id,
                     order_id,
                     address: this.clone(),
@@ -208,7 +221,7 @@ impl Actor {
     fn handle(&mut self, _msg: Rejected, ctx: &mut xtra::Context<Self>) {
         let _ = self
             .taker
-            .send(maker_inc_connections::TakerMessage {
+            .send(connection::TakerMessage {
                 taker_id: self.taker_id,
                 msg: wire::MakerToTaker::RejectOrder(self.order.id),
             })
@@ -251,7 +264,7 @@ impl xtra::Actor for Actor {
 
             let _ = self
                 .taker
-                .send(maker_inc_connections::TakerMessage {
+                .send(connection::TakerMessage {
                     taker_id: self.taker_id,
                     msg: wire::MakerToTaker::RejectOrder(self.order.id),
                 })

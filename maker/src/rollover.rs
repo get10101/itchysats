@@ -1,17 +1,17 @@
-use crate::command;
-use crate::db;
-use crate::maker_inc_connections;
-use crate::oracle;
-use crate::process_manager;
-use crate::schnorrsig;
-use crate::setup_contract;
-use crate::wire;
+use crate::connection;
 use anyhow::Context as _;
 use anyhow::Result;
+use daemon::command;
+use daemon::db;
+use daemon::oracle;
+use daemon::process_manager;
+use daemon::setup_contract;
+use daemon::wire;
 use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
+use maia::secp256k1_zkp::schnorrsig;
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
@@ -56,13 +56,13 @@ struct RolloverFailed {
 
 pub struct Actor {
     order_id: OrderId,
-    send_to_taker_actor: Box<dyn MessageChannel<maker_inc_connections::TakerMessage>>,
+    send_to_taker_actor: Box<dyn MessageChannel<connection::TakerMessage>>,
     n_payouts: usize,
     taker_id: Identity,
     oracle_pk: schnorrsig::PublicKey,
     sent_from_taker: Option<UnboundedSender<wire::RolloverMsg>>,
     oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
-    register: Box<dyn MessageChannel<maker_inc_connections::RegisterRollover>>,
+    register: Box<dyn MessageChannel<connection::RegisterRollover>>,
     tasks: Tasks,
     executor: command::Executor,
     version: RolloverVersion,
@@ -73,12 +73,12 @@ impl Actor {
     pub fn new(
         order_id: OrderId,
         n_payouts: usize,
-        send_to_taker_actor: &(impl MessageChannel<maker_inc_connections::TakerMessage> + 'static),
+        send_to_taker_actor: &(impl MessageChannel<connection::TakerMessage> + 'static),
         taker_id: Identity,
         oracle_pk: schnorrsig::PublicKey,
         oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
-        register: &(impl MessageChannel<maker_inc_connections::RegisterRollover> + 'static),
+        register: &(impl MessageChannel<connection::RegisterRollover> + 'static),
         db: db::Connection,
         version: RolloverVersion,
     ) -> Self {
@@ -178,7 +178,7 @@ impl Actor {
         let taker_id = self.taker_id;
 
         self.send_to_taker_actor
-            .send(maker_inc_connections::TakerMessage {
+            .send(connection::TakerMessage {
                 taker_id,
                 msg: wire::MakerToTaker::ConfirmRollover {
                     order_id,
@@ -202,7 +202,7 @@ impl Actor {
 
         let rollover_fut = setup_contract::roll_over(
             self.send_to_taker_actor.sink().with(move |msg| {
-                future::ok(maker_inc_connections::TakerMessage {
+                future::ok(connection::TakerMessage {
                     taker_id,
                     msg: wire::MakerToTaker::RolloverProtocol { order_id, msg },
                 })
@@ -233,7 +233,7 @@ impl Actor {
         tracing::info!(id = %self.order_id, "Rejecting rollover proposal" );
 
         self.send_to_taker_actor
-            .send(maker_inc_connections::TakerMessage {
+            .send(connection::TakerMessage {
                 taker_id: self.taker_id,
                 msg: wire::MakerToTaker::RejectRollover(self.order_id),
             })
@@ -279,7 +279,7 @@ impl xtra::Actor for Actor {
             // takers, so that it knows where to forward rollover messages
             // which correspond to this instance
             self.register
-                .send(maker_inc_connections::RegisterRollover {
+                .send(connection::RegisterRollover {
                     order_id,
                     address: this,
                 })

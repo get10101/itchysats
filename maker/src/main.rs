@@ -1,10 +1,6 @@
 use anyhow::Context;
 use anyhow::Result;
-use clap::Parser;
-use clap::Subcommand;
-use daemon::bdk;
-use daemon::bdk::bitcoin;
-use daemon::bdk::bitcoin::Amount;
+use clap::StructOpt;
 use daemon::bdk::FeeRate;
 use daemon::db;
 use daemon::monitor;
@@ -13,130 +9,21 @@ use daemon::projection;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::wallet;
-use daemon::MakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
+use maker::routes;
+use maker::ActorSystem;
+use maker::Opts;
+use maker::Withdraw;
 use model::olivia;
 use model::SETTLEMENT_INTERVAL;
 use shared_bin::catchers::default_catchers;
 use shared_bin::fairings;
 use shared_bin::logger;
-use shared_bin::logger::LevelFilter;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use tokio_tasks::Tasks;
 use xtra::Actor;
 use xtras::supervisor;
-
-mod routes;
-
-#[derive(Parser)]
-struct Opts {
-    /// The port to listen on for p2p connections.
-    #[clap(long, default_value = "9999")]
-    p2p_port: u16,
-
-    /// The IP address to listen on for the HTTP API.
-    #[clap(long, default_value = "127.0.0.1:8001")]
-    http_address: SocketAddr,
-
-    /// Where to permanently store data, defaults to the current working directory.
-    #[clap(long)]
-    data_dir: Option<PathBuf>,
-
-    /// If enabled logs will be in json format
-    #[clap(short, long)]
-    json: bool,
-
-    /// Configure the log level, e.g.: one of Error, Warn, Info, Debug, Trace
-    #[clap(short, long, default_value = "Debug")]
-    log_level: LevelFilter,
-
-    #[clap(subcommand)]
-    network: Network,
-}
-
-#[derive(Parser)]
-enum Network {
-    /// Run on mainnet.
-    Mainnet {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long, default_value = "ssl://blockstream.info:700")]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-    /// Run on testnet.
-    Testnet {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long, default_value = "ssl://blockstream.info:993")]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-    /// Run on signet
-    Signet {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long)]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-}
-
-#[derive(Subcommand)]
-enum Withdraw {
-    Withdraw {
-        /// Optionally specify the amount of Bitcoin to be withdrawn. If not specified the wallet
-        /// will be drained. Amount is to be specified with denomination, e.g. "0.1 BTC"
-        #[clap(long)]
-        amount: Option<Amount>,
-        /// Optionally specify the fee-rate for the transaction. The fee-rate is specified as sats
-        /// per vbyte, e.g. 5.0
-        #[clap(long)]
-        fee: Option<f32>,
-        /// The address to receive the Bitcoin.
-        #[clap(long)]
-        address: bdk::bitcoin::Address,
-    },
-}
-
-impl Network {
-    fn electrum(&self) -> &str {
-        match self {
-            Network::Mainnet { electrum, .. } => electrum,
-            Network::Testnet { electrum, .. } => electrum,
-            Network::Signet { electrum, .. } => electrum,
-        }
-    }
-
-    fn bitcoin_network(&self) -> bitcoin::Network {
-        match self {
-            Network::Mainnet { .. } => bitcoin::Network::Bitcoin,
-            Network::Testnet { .. } => bitcoin::Network::Testnet,
-            Network::Signet { .. } => bitcoin::Network::Signet,
-        }
-    }
-
-    fn data_dir(&self, base: PathBuf) -> PathBuf {
-        match self {
-            Network::Mainnet { .. } => base.join("mainnet"),
-            Network::Testnet { .. } => base.join("testnet"),
-            Network::Signet { .. } => base.join("signet"),
-        }
-    }
-
-    fn withdraw(&self) -> &Option<Withdraw> {
-        match self {
-            Network::Mainnet { withdraw, .. } => withdraw,
-            Network::Testnet { withdraw, .. } => withdraw,
-            Network::Signet { withdraw, .. } => withdraw,
-        }
-    }
-}
 
 #[rocket::main]
 async fn main() -> Result<()> {
@@ -213,7 +100,7 @@ async fn main() -> Result<()> {
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
-    let maker = MakerActorSystem::new(
+    let maker = ActorSystem::new(
         db.clone(),
         wallet.clone(),
         *olivia::PUBLIC_KEY,

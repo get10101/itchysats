@@ -37,6 +37,8 @@ mod closed;
 mod event_log;
 mod failed;
 
+pub mod time_to_first_position;
+
 #[derive(Clone)]
 pub struct Connection {
     inner: SqlitePool,
