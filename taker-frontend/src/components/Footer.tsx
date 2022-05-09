@@ -9,7 +9,11 @@ function TextDivider() {
     return <Divider orientation={"vertical"} borderColor={useColorModeValue("black", "white")} height={"20px"} />;
 }
 
-export default function Footer() {
+interface FooterProps {
+    taker_id: string;
+}
+
+export default function Footer({ taker_id }: FooterProps) {
     return (
         <Box
             bg={useColorModeValue("gray.100", "gray.900")}
@@ -30,8 +34,10 @@ export default function Footer() {
                     <Text fontSize={"20"} fontWeight={"bold"}>Contact us:</Text>
                     <SocialLinks />
                     <TextDivider />
-                    {/* TODO Consider adding takerId */}
-                    <FeedbackFish projectId="c1260a96cdb3d8">
+                    <FeedbackFish
+                        projectId="c1260a96cdb3d8"
+                        metadata={{ position: "footer", customerId: taker_id }}
+                    >
                         <Button fontSize={"20"} color={useColorModeValue("black", "white")}>Send feedback</Button>
                     </FeedbackFish>
                 </HStack>

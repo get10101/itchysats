@@ -1,3 +1,4 @@
+use crate::routes::IdentityInfo;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -334,6 +335,11 @@ async fn main() -> Result<()> {
     let maker_libp2p_address = libp2p_socket_from_legacy_networking(first_maker_address);
     let maker_multiaddr = create_connect_tcp_multiaddr(&maker_libp2p_address, maker_peer_id)?;
 
+    let identity_info = IdentityInfo {
+        taker_id: hex::encode(identities.identity_pk.to_bytes()),
+        taker_peer_id: identities.libp2p.public().to_peer_id().to_string(),
+    };
+
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
@@ -369,6 +375,7 @@ async fn main() -> Result<()> {
     rocket::custom(figment)
         .manage(projection_feeds)
         .manage(wallet_feed_receiver)
+        .manage(identity_info)
         .manage(bitcoin_network)
         .manage(taker.maker_online_status_feed_receiver.clone())
         .manage(taker)
