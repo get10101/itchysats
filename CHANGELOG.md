@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.14] - 2022-05-10
 
+### Added
+
+- Additional API for the taker: `api/metrics` will return prometheus-based metrics about your positions and about general behavior of the application
+
 ## [0.4.13] - 2022-05-10
 
 ### Added
@@ -25,7 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - network: an additional field `leverage` was added to `wire::MakerToTaker::TakeOffer`.
   - network: an additional field `leverage_choices` was added to `Order` which is sent from maker to taker when he created a new offer.
     The field `leverage` was deprecated.
-- Additional API for the taker: `api/metrics` will return prometheus-based metrics about your positions and about general behavior of the application
 
 ### Changed
 
