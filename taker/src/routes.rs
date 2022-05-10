@@ -283,6 +283,19 @@ pub async fn post_withdraw_request(
     Ok(projection::to_mempool_url(txid, *network.inner()))
 }
 
+#[rocket::get("/metrics")]
+pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProblem> {
+    let metrics = prometheus::TextEncoder::new()
+        .encode_to_string(&prometheus::gather())
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Failed to encode metrics")
+                .detail(e.to_string())
+        })?;
+
+    Ok(metrics)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

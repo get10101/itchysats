@@ -4201,6 +4201,7 @@ dependencies = [
  "itertools",
  "libp2p-core",
  "model",
+ "prometheus",
  "rocket",
  "rocket-basicauth",
  "rust-embed",
