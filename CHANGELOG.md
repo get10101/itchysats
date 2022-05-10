@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.13] - 2022-05-10
+
 ### Added
 
 - Maker only: Add new metric under `{maker_url}/api/metrics` which shows the quantity of total positions
 - Maker only: Add new metric under `{maker_url}/api/metrics` which shows the number of total positions
 - Taker UI: Add initial onboarding tour that steps the taker through the user interface and ends in the wallet.
+- Taker UI: Add link to the FAQ (frequently asked questions) documentation.
+- Taker UI: Add Feedback-fish that allows users to submit feedback through a form.
 - API changes: maker and taker HTTP Api changed to let the taker chose between multiple leverages
   - maker: `/api/offer`: has an additional field `leverage_choices: Vec<Leverage>`
   - taker: `/api/cfd/order`: has an additional field `leverage: Leverage`, i.e. the leverage selected by the taker
@@ -19,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - network: an additional field `leverage` was added to `wire::MakerToTaker::TakeOffer`.
   - network: an additional field `leverage_choices` was added to `Order` which is sent from maker to taker when he created a new offer.
     The field `leverage` was deprecated.
+
+### Changed
+
+- Taker UI: Navigation improvements to more easily find the wallet.
+- Taker binary: Automatically open the user interface in the default browser upon startup (includes credentials).
+- Move failed CFDs (CFDs that were either rejected or the contract setup failed) into a separate table.
 
 ## [0.4.12] - 2022-04-26
 
@@ -131,7 +141,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.12...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.13...HEAD
+[0.4.13]: https://github.com/itchysats/itchysats/compare/0.4.12...0.4.13
 [0.4.12]: https://github.com/itchysats/itchysats/compare/0.4.11...0.4.12
 [0.4.11]: https://github.com/itchysats/itchysats/compare/0.4.10...0.4.11
 [0.4.10]: https://github.com/itchysats/itchysats/compare/0.4.9...0.4.10
