@@ -182,7 +182,7 @@ impl Actor {
 
     fn update_pending_attestations(&mut self, ctx: &mut xtra::Context<Self>) {
         for event_id in self.pending_attestations.iter().copied() {
-            if !event_id.has_likely_occured() {
+            if !event_id.has_likely_occurred() {
                 tracing::trace!("Skipping {event_id} because it likely hasn't occurred yet");
 
                 continue;
