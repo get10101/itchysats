@@ -382,6 +382,7 @@ async fn main() -> Result<()> {
                 routes::get_health_check,
                 routes::post_cfd_action,
                 routes::post_withdraw_request,
+                routes::get_metrics,
             ],
         )
         .register("/api", default_catchers())
