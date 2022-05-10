@@ -10,6 +10,7 @@ use std::fmt;
 use std::str;
 use time::format_description::FormatItem;
 use time::macros::format_description;
+use time::Duration;
 use time::OffsetDateTime;
 use time::PrimitiveDateTime;
 use time::Time;
@@ -77,7 +78,7 @@ impl BitMexPriceEventId {
     pub fn has_likely_occured(&self) -> bool {
         let now = OffsetDateTime::now_utc();
 
-        now > self.timestamp
+        now > self.timestamp + Duration::minutes(1)
     }
 
     pub fn to_olivia_url(self) -> Url {
