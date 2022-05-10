@@ -43,11 +43,11 @@ use model::calculate_payouts;
 use model::olivia;
 use model::Cet;
 use model::Dlc;
+use model::FeeFlow;
 use model::Position;
 use model::RevokedCommit;
 use model::Role;
 use model::RolloverParams;
-use model::RolloverVersion;
 use model::SetupParams;
 use model::CET_TIMELOCK;
 use std::collections::HashMap;
@@ -359,6 +359,7 @@ pub async fn roll_over(
     our_position: Position,
     dlc: Dlc,
     n_payouts: usize,
+    complete_fee: FeeFlow,
 ) -> Result<Dlc> {
     let sk = dlc.identity;
     let pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk));
@@ -383,24 +384,6 @@ pub async fn roll_over(
         .await
         .with_context(|| format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg0()?;
-
-    let complete_fee = match rollover_params.version {
-        RolloverVersion::V1 => {
-            // Note there is actually a bug here, but we have to keep this as is to reach agreement
-            // on the fee for the protocol V1 version.
-            //
-            // The current fee is supposed to be added here, but we never noticed because in V1 the
-            // fee is always charged for one hour using a static rate. This results in applying the
-            // fee in the DLC only for the next rollover (because we do apply the fee in the Cfd
-            // when loading the rollover event). Effectively this means, that we always charged one
-            // rollover too little.
-            rollover_params.fee_account.settle()
-        }
-        RolloverVersion::V2 => rollover_params
-            .fee_account
-            .add_funding_fee(rollover_params.current_fee)
-            .settle(),
-    };
 
     let maker_lock_amount = dlc.maker_lock_amount;
     let taker_lock_amount = dlc.taker_lock_amount;

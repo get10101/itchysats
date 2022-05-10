@@ -16,6 +16,7 @@ use maia::secp256k1_zkp::SecretKey;
 use maia::CfdTransactions;
 use maia::PartyParams;
 use maia::PunishParams;
+use model::FeeFlow;
 use model::FundingRate;
 use model::Leverage;
 use model::MakerOffers;
@@ -185,6 +186,7 @@ pub enum MakerToTaker {
         oracle_event_id: BitMexPriceEventId,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
+        complete_fee: CompleteFee,
     },
     RejectRollover(OrderId),
     Settlement {
@@ -193,6 +195,38 @@ pub enum MakerToTaker {
     },
     #[serde(other, deserialize_with = "deserialize_ignore_any")]
     Unknown,
+}
+
+/// Fee to be paid for the rollover.
+///
+/// The maker comes up with this amount so that both parties are on the same page
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CompleteFee {
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
+    LongPaysShort(Amount),
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
+    ShortPaysLong(Amount),
+    Nein,
+}
+
+impl From<FeeFlow> for CompleteFee {
+    fn from(fee_flow: FeeFlow) -> Self {
+        match fee_flow {
+            FeeFlow::LongPaysShort(a) => CompleteFee::LongPaysShort(a),
+            FeeFlow::ShortPaysLong(a) => CompleteFee::ShortPaysLong(a),
+            FeeFlow::Nein => CompleteFee::Nein,
+        }
+    }
+}
+
+impl From<CompleteFee> for FeeFlow {
+    fn from(fee_flow: CompleteFee) -> Self {
+        match fee_flow {
+            CompleteFee::LongPaysShort(a) => FeeFlow::LongPaysShort(a),
+            CompleteFee::ShortPaysLong(a) => FeeFlow::ShortPaysLong(a),
+            CompleteFee::Nein => FeeFlow::Nein,
+        }
+    }
 }
 
 /// Legacy wire struct to retain backwards compatibility on the wire with version 0.4.7
