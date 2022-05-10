@@ -17,6 +17,7 @@ use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
 use model::Identity;
+use model::Leverage;
 use model::OrderId;
 use model::Price;
 use model::Timestamp;
@@ -201,6 +202,7 @@ pub enum ConnectionCloseReason {
 pub struct TakeOrder {
     pub order_id: OrderId,
     pub quantity: Usd,
+    pub leverage: Leverage,
     pub address: xtra::Address<setup_taker::Actor>,
 }
 
@@ -258,6 +260,7 @@ impl Actor {
             .send(wire::TakerToMaker::TakeOrder {
                 order_id: msg.order_id,
                 quantity: msg.quantity,
+                leverage: msg.leverage,
             })
             .await?;
 

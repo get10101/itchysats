@@ -18,7 +18,7 @@ export interface MakerOffer {
     max_quantity: number;
     lot_size: number;
     margin_per_lot: number;
-    leverage: number;
+    leverage_choices: number[];
     liquidation_price: number;
     creation_timestamp: number;
     settlement_time_interval_in_secs: number;
@@ -242,6 +242,7 @@ export interface CfdOrderRequestPayload {
     order_id: string;
     quantity: number;
     position: string;
+    leverage: number;
 }
 
 export function intoMakerOffer(key: string, value: any): any {

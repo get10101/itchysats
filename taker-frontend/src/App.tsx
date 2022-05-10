@@ -48,7 +48,7 @@ export interface Offer {
     minQuantity: number;
     maxQuantity: number;
     lotSize: number;
-    leverage: number;
+    leverage_choices: number[];
 }
 
 // TODO: Evaluate moving these globals into the theme to make them accessible through that
@@ -97,7 +97,7 @@ export const App = () => {
                 minQuantity: offer.min_quantity,
                 maxQuantity: offer.max_quantity,
                 lotSize: offer.lot_size,
-                leverage: offer.leverage,
+                leverage_choices: offer.leverage_choices,
             };
         }
 
@@ -105,7 +105,7 @@ export const App = () => {
             minQuantity: 0,
             maxQuantity: 0,
             lotSize: 100,
-            leverage: 2,
+            leverage_choices: [],
         };
     }
 

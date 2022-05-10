@@ -12,6 +12,7 @@ use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
 use model::FundingRate;
 use model::Identity;
+use model::Leverage;
 use model::OpeningFee;
 use model::OrderId;
 use model::Price;
@@ -102,7 +103,7 @@ pub async fn maker_feed(
 }
 
 /// The maker PUTs this to set the offer params
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CfdNewOfferParamsRequest {
     pub price_long: Option<Price>,
     pub price_short: Option<Price>,
@@ -116,6 +117,12 @@ pub struct CfdNewOfferParamsRequest {
     // TODO: This is not inline with other parts of the API! We should not expose internal types
     // here. We have to specify sats for here because of that.
     pub opening_fee: OpeningFee,
+    #[serde(default = "empty_leverage")]
+    pub leverage_choices: Vec<Leverage>,
+}
+
+fn empty_leverage() -> Vec<Leverage> {
+    vec![Leverage::TWO]
 }
 
 #[rocket::put("/offer", data = "<offer_params>")]
@@ -134,6 +141,7 @@ pub async fn put_offer_params(
             offer_params.daily_funding_rate_long,
             offer_params.daily_funding_rate_short,
             offer_params.opening_fee,
+            offer_params.leverage_choices.clone(),
         )
         .await
         .map_err(|e| {

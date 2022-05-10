@@ -108,7 +108,7 @@ impl From<Uuid> for OrderId {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MakerOffers {
     pub long: Option<Order>,
     pub short: Option<Order>,
@@ -134,14 +134,14 @@ impl MakerOffers {
     ///
     /// Returns the order to take without removing it.
     pub fn pick_order_to_take(&self, id: OrderId) -> Option<Order> {
-        if let Some(long) = self.long {
+        if let Some(long) = &self.long {
             if long.id == id {
-                return Some(long);
+                return Some(long.clone());
             }
         }
-        if let Some(short) = self.short {
+        if let Some(short) = &self.short {
             if short.id == id {
-                return Some(short);
+                return Some(short.clone());
             }
         }
         None
@@ -151,18 +151,19 @@ impl MakerOffers {
     ///
     /// Resets the order that was taken to None.
     pub fn take_order(mut self, id: OrderId) -> (Option<Order>, Self) {
-        if let Some(long) = self.long {
+        if let Some(long) = &self.long {
             if long.id == id {
+                let order = long.clone();
                 self.long = None;
-
-                return (Some(long), self);
+                return (Some(order), self);
             }
         }
-        if let Some(short) = self.short {
+        if let Some(short) = &self.short {
             if short.id == id {
+                let order = short.clone();
                 self.short = None;
 
-                return (Some(short), self);
+                return (Some(order), self);
             }
         }
         (None, self)
@@ -171,8 +172,8 @@ impl MakerOffers {
     /// Update the orders after one of them got taken.
     pub fn replicate(&self) -> MakerOffers {
         MakerOffers {
-            long: self.long.map(|order| order.replicate()),
-            short: self.short.map(|order| order.replicate()),
+            long: self.long.as_ref().map(|order| order.replicate()),
+            short: self.short.as_ref().map(|order| order.replicate()),
             tx_fee_rate: self.tx_fee_rate,
             funding_rate_long: self.funding_rate_long,
             funding_rate_short: self.funding_rate_short,
@@ -204,7 +205,7 @@ impl From<Origin> for Role {
 }
 
 /// A concrete order created by a maker for a taker
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Order {
     pub id: OrderId,
 
@@ -225,10 +226,13 @@ pub struct Order {
 
     /// The taker leverage that the maker allows for the taker
     ///
-    /// Currently only leverage of x2 is possible, that's why this is not a range of choices.
-    /// The maker's leverage always set o x1 is currently just implied.
+    /// This is needed for backwards compatibility reasons.
+    #[deprecated(since = "0.4.13", note = "please use `leverage_choices` instead")]
     #[serde(rename = "leverage")]
     pub leverage_taker: Leverage,
+
+    /// A selection of leverages that the maker allows for the taker
+    pub leverage_choices: Vec<Leverage>,
 
     /// The creation timestamp as set by the maker
     #[serde(rename = "creation_timestamp")]
@@ -262,15 +266,17 @@ impl Order {
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
         opening_fee: OpeningFee,
+        leverage_choices: Vec<Leverage>,
     ) -> Self {
-        let leverage_choices_for_taker = Leverage::TWO;
-
+        // allowing deprecated use of field `leverage_taker` here for backwards compatibility.
+        #[allow(deprecated)]
         Order {
             id: OrderId::default(),
             price,
             min_quantity,
             max_quantity,
-            leverage_taker: leverage_choices_for_taker,
+            leverage_taker: Leverage::TWO,
+            leverage_choices,
             trading_pair: TradingPair::BtcUsd,
             position_maker,
             creation_timestamp_maker: Timestamp::now(),
@@ -296,6 +302,7 @@ impl Order {
             self.tx_fee_rate,
             self.funding_rate,
             self.opening_fee,
+            self.leverage_choices.clone(),
         )
     }
 
@@ -715,10 +722,11 @@ impl Cfd {
 
     /// A convenience method, creating a Cfd from an Order
     pub fn from_order(
-        order: Order,
+        order: &Order,
         quantity: Usd,
         counterparty_network_identity: Identity,
         role: Role,
+        taker_leverage: Leverage,
     ) -> Self {
         let position = match role {
             Role::Maker => order.position_maker,
@@ -729,7 +737,7 @@ impl Cfd {
             order.id,
             position,
             order.price,
-            order.leverage_taker,
+            taker_leverage,
             order.settlement_interval,
             role,
             quantity,
@@ -3163,6 +3171,7 @@ mod tests {
                 .with_price(opening_price)
                 .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
             quantity,
+            Leverage::TWO,
         )
         .with_id(order_id);
 
@@ -3171,6 +3180,7 @@ mod tests {
                 .with_price(opening_price)
                 .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
             quantity,
+            Leverage::TWO,
         )
         .with_id(order_id);
 
@@ -3439,40 +3449,43 @@ mod tests {
     }
 
     impl Cfd {
-        fn taker_long_from_order(mut order: Order, quantity: Usd) -> Self {
+        fn taker_long_from_order(mut order: Order, quantity: Usd, leverage: Leverage) -> Self {
             order.origin = Origin::Theirs;
 
-            Cfd::from_order(order, quantity, dummy_identity(), Role::Taker)
+            Cfd::from_order(&order, quantity, dummy_identity(), Role::Taker, leverage)
         }
 
-        fn maker_short_from_order(order: Order, quantity: Usd) -> Self {
-            Cfd::from_order(order, quantity, dummy_identity(), Role::Maker)
+        fn maker_short_from_order(order: Order, quantity: Usd, leverage: Leverage) -> Self {
+            Cfd::from_order(&order, quantity, dummy_identity(), Role::Maker, leverage)
         }
 
         fn dummy_taker_long() -> Self {
             Cfd::from_order(
-                Order::dummy_short(),
+                &Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 Role::Taker,
+                Leverage::TWO,
             )
         }
 
         fn dummy_maker_short() -> Self {
             Cfd::from_order(
-                Order::dummy_short(),
+                &Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 Role::Maker,
+                Leverage::TWO,
             )
         }
 
         fn dummy_not_open_yet() -> Self {
             Cfd::from_order(
-                Order::dummy_short(),
+                &Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 Role::Taker,
+                Leverage::TWO,
             )
         }
 
@@ -3617,10 +3630,11 @@ mod tests {
 
         fn dummy_with_attestation(event_id: BitMexPriceEventId) -> Self {
             let cfd = Cfd::from_order(
-                Order::dummy_short(),
+                &Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 Role::Taker,
+                Leverage::TWO,
             );
 
             CfdEvent::dummy_attestation_prior_timelock(event_id)
@@ -3630,10 +3644,11 @@ mod tests {
 
         fn dummy_final(event_id: BitMexPriceEventId) -> Self {
             let cfd = Cfd::from_order(
-                Order::dummy_short(),
+                &Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 Role::Taker,
+                Leverage::TWO,
             );
 
             CfdEvent::dummy_final_cet(event_id)
@@ -3675,6 +3690,7 @@ mod tests {
                 TxFeeRate::default(),
                 FundingRate::default(),
                 OpeningFee::default(),
+                vec![Leverage::TWO],
             )
         }
 

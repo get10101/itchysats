@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Maker only: Add new metric under `{maker_url}/api/metrics` which shows the quantity of total positions
 - Maker only: Add new metric under `{maker_url}/api/metrics` which shows the number of total positions
 - Taker UI: Add initial onboarding tour that steps the taker through the user interface and ends in the wallet.
+- API changes: maker and taker HTTP Api changed to let the taker chose between multiple leverages
+  - maker: `/api/offer`: has an additional field `leverage_choices: Vec<Leverage>`
+  - taker: `/api/cfd/order`: has an additional field `leverage: Leverage`, i.e. the leverage selected by the taker
+  - both: `/api/feed/long_offer` && `/api/feed/short_ofer`: instead of a single leverage it now returns a list of leverages (`leverage_choices`)
+  - network: an additional field `leverage` was added to `wire::MakerToTaker::TakeOffer`.
+  - network: an additional field `leverage_choices` was added to `Order` which is sent from maker to taker when he created a new offer.
+    The field `leverage` was deprecated.
 
 ## [0.4.12] - 2022-04-26
 

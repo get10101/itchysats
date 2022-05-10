@@ -153,6 +153,7 @@ export default function ConfirmOrderModal({
                                     order_id: orderId,
                                     quantity,
                                     position,
+                                    leverage,
                                 });
 
                                 onClose();

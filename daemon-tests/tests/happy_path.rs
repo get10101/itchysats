@@ -25,6 +25,7 @@ use daemon_tests::TakerConfig;
 use model::calculate_margin;
 use model::olivia;
 use model::Identity;
+use model::Leverage;
 use model::OrderId;
 use model::Position;
 use model::Usd;
@@ -152,11 +153,7 @@ fn assert_eq_offers(published: MakerOffers, received: MakerOffers) {
 
 fn assert_eq_orders(mut published: CfdOrder, received: CfdOrder) {
     // align margin_per_lot to be the long margin_per_lot
-    let long_margin_per_lot = calculate_margin(
-        published.price,
-        published.lot_size,
-        published.taker_leverage_choices,
-    );
+    let long_margin_per_lot = calculate_margin(published.price, published.lot_size, Leverage::TWO);
     published.margin_per_lot = long_margin_per_lot;
 
     // make sure that the initial funding fee per lot is flipped
@@ -200,7 +197,7 @@ async fn taker_takes_order_and_maker_rejects() {
     maker.mocks.mock_oracle_announcement().await;
     taker
         .system
-        .take_offer(order_id, Usd::new(dec!(10)))
+        .take_offer(order_id, Usd::new(dec!(10)), Leverage::TWO)
         .await
         .unwrap();
 
@@ -232,7 +229,7 @@ async fn another_offer_is_automatically_created_after_taker_takes_order() {
     maker.mocks.mock_oracle_announcement().await;
     taker
         .system
-        .take_offer(order_id_take, Usd::new(dec!(10)))
+        .take_offer(order_id_take, Usd::new(dec!(10)), Leverage::TWO)
         .await
         .unwrap();
 
@@ -284,7 +281,7 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 
     taker
         .system
-        .take_offer(order_id, Usd::new(dec!(5)))
+        .take_offer(order_id, Usd::new(dec!(5)), Leverage::TWO)
         .await
         .unwrap();
     wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
@@ -700,7 +697,7 @@ async fn start_from_open_cfd_state(
 
     taker
         .system
-        .take_offer(order_to_take.id, Usd::new(dec!(5)))
+        .take_offer(order_to_take.id, Usd::new(dec!(5)), Leverage::TWO)
         .await
         .unwrap();
     wait_next_state!(order_to_take.id, maker, taker, CfdState::PendingSetup);

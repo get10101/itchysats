@@ -19,6 +19,7 @@ use daemon::wallet;
 use libp2p_tcp::TokioTcpConfig;
 use maia::secp256k1_zkp::schnorrsig;
 use model::FundingRate;
+use model::Leverage;
 use model::OpeningFee;
 use model::OrderId;
 use model::Price;
@@ -207,6 +208,7 @@ where
         funding_rate_long: FundingRate,
         funding_rate_short: FundingRate,
         opening_fee: OpeningFee,
+        leverage_choices: Vec<Leverage>,
     ) -> Result<()> {
         self.cfd_actor
             .send(cfd::OfferParams {
@@ -218,6 +220,7 @@ where
                 funding_rate_long,
                 funding_rate_short,
                 opening_fee,
+                leverage_choices,
             })
             .await??;
 

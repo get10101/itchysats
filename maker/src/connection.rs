@@ -16,6 +16,7 @@ use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
 use model::Identity;
+use model::Leverage;
 use model::MakerOffers;
 use model::OrderId;
 use std::collections::HashMap;
@@ -32,7 +33,7 @@ use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct BroadcastOffers(pub Option<MakerOffers>);
 
 /// Message sent from the `contract_setup::Actor` to the
@@ -131,25 +132,30 @@ impl Connection {
             match msg {
                 wire::MakerToTaker::CurrentOffers(offers) => {
                     wire::MakerToTaker::CurrentOrder(offers.and_then(|offers| offers.short).map(
-                        |order| wire::DeprecatedOrder047 {
-                            id: order.id,
-                            trading_pair: order.trading_pair,
-                            position_maker: order.position_maker,
-                            price: order.price,
-                            min_quantity: order.min_quantity,
-                            max_quantity: order.max_quantity,
-                            leverage_taker: order.leverage_taker,
-                            creation_timestamp: order.creation_timestamp_maker,
-                            settlement_interval: order.settlement_interval,
-                            liquidation_price: model::calculate_long_liquidation_price(
-                                order.leverage_taker,
-                                order.price,
-                            ),
-                            origin: order.origin,
-                            oracle_event_id: order.oracle_event_id,
-                            tx_fee_rate: order.tx_fee_rate,
-                            funding_rate: order.funding_rate,
-                            opening_fee: order.opening_fee,
+                        |order| {
+                            // This is deprecated, hence we hardcode the leverage to 2 which was the
+                            // only choice the taker had
+                            let leverage = Leverage::TWO;
+                            wire::DeprecatedOrder047 {
+                                id: order.id,
+                                trading_pair: order.trading_pair,
+                                position_maker: order.position_maker,
+                                price: order.price,
+                                min_quantity: order.min_quantity,
+                                max_quantity: order.max_quantity,
+                                leverage_taker: leverage,
+                                creation_timestamp: order.creation_timestamp_maker,
+                                settlement_interval: order.settlement_interval,
+                                liquidation_price: model::calculate_long_liquidation_price(
+                                    leverage,
+                                    order.price,
+                                ),
+                                origin: order.origin,
+                                oracle_event_id: order.oracle_event_id,
+                                tx_fee_rate: order.tx_fee_rate,
+                                funding_rate: order.funding_rate,
+                                opening_fee: order.opening_fee,
+                            }
                         },
                     ))
                 }
@@ -314,7 +320,10 @@ impl Actor {
         let mut broken_connections = Vec::with_capacity(self.connections.len());
 
         for (id, conn) in &mut self.connections {
-            if let Err(e) = conn.send(wire::MakerToTaker::CurrentOffers(offers)).await {
+            if let Err(e) = conn
+                .send(wire::MakerToTaker::CurrentOffers(offers.clone()))
+                .await
+            {
                 tracing::warn!("{:#}", e);
                 broken_connections.push(*id);
 
@@ -521,7 +530,8 @@ impl Actor {
                     tracing::warn!(%order_id, "No active settlement actor");
                 }
             }
-            TakeOrder { .. }
+            DeprecatedTakeOrder { .. }
+            | TakeOrder { .. }
             | ProposeRollover { .. }
             | ProposeRolloverV2 { .. }
             | Settlement {

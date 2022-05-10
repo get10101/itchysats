@@ -9,6 +9,7 @@ export interface CfdNewOfferParamsPayload {
     daily_funding_rate_short: number;
     tx_fee_rate: number;
     opening_fee?: number;
+    leverage_choices: number[];
 }
 
 export async function putCfdNewOfferParamsRequest(payload: CfdNewOfferParamsPayload) {

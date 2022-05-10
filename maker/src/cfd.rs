@@ -21,6 +21,7 @@ use model::olivia::BitMexPriceEventId;
 use model::Cfd;
 use model::FundingRate;
 use model::Identity;
+use model::Leverage;
 use model::MakerOffers;
 use model::OpeningFee;
 use model::Order;
@@ -46,7 +47,7 @@ use xtras::SendAsyncSafe;
 const HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(10);
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct NewOffers {
     pub params: OfferParams,
 }
@@ -91,7 +92,7 @@ pub struct TakerDisconnected {
     pub id: Identity,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct OfferParams {
     pub price_long: Option<Price>,
     pub price_short: Option<Price>,
@@ -101,6 +102,7 @@ pub struct OfferParams {
     pub funding_rate_long: FundingRate,
     pub funding_rate_short: FundingRate,
     pub opening_fee: OpeningFee,
+    pub leverage_choices: Vec<Leverage>,
 }
 
 impl OfferParams {
@@ -121,6 +123,7 @@ impl OfferParams {
                 self.tx_fee_rate,
                 self.funding_rate_long,
                 self.opening_fee,
+                self.leverage_choices.clone(),
             )
         })
     }
@@ -138,6 +141,7 @@ impl OfferParams {
                 self.tx_fee_rate,
                 self.funding_rate_short,
                 self.opening_fee,
+                self.leverage_choices.clone(),
             )
         })
     }
@@ -241,7 +245,7 @@ where
         self.takers
             .send_async_safe(connection::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::CurrentOffers(self.current_offers),
+                msg: wire::MakerToTaker::CurrentOffers(self.current_offers.clone()),
             })
             .await?;
 
@@ -310,6 +314,7 @@ where
         taker_id: Identity,
         order_id: OrderId,
         quantity: Usd,
+        leverage: Leverage,
     ) -> Result<()> {
         tracing::debug!(%taker_id, %quantity, %order_id, "Taker wants to take an order");
 
@@ -323,6 +328,7 @@ where
         // 1. Validate if order is still valid
         let order_to_take = self
             .current_offers
+            .as_ref()
             .and_then(|offers| offers.pick_order_to_take(order_id));
 
         let order_to_take = if let Some(order_to_take) = order_to_take {
@@ -344,20 +350,20 @@ where
             return Ok(());
         };
 
-        let cfd = Cfd::from_order(order_to_take, quantity, taker_id, Role::Maker);
+        let cfd = Cfd::from_order(&order_to_take, quantity, taker_id, Role::Maker, leverage);
 
         // 2. Replicate the orders in the offers with new ones to allow other takers to use
         // the same offer
-        if let Some(offers) = self.current_offers {
+        if let Some(offers) = &self.current_offers {
             self.current_offers = Some(offers.replicate());
         }
 
         self.takers
-            .send_async_safe(connection::BroadcastOffers(self.current_offers))
+            .send_async_safe(connection::BroadcastOffers(self.current_offers.clone()))
             .await?;
 
         self.projection
-            .send(projection::Update(self.current_offers))
+            .send(projection::Update(self.current_offers.clone()))
             .await?;
 
         self.db.insert_cfd(&cfd).await?;
@@ -376,7 +382,7 @@ where
         let addr = contract_setup::Actor::new(
             self.db.clone(),
             self.process_manager.clone(),
-            (order_to_take, cfd.quantity(), self.n_payouts),
+            (order_to_take.clone(), cfd.quantity(), self.n_payouts),
             (self.oracle_pk, announcement),
             &self.wallet,
             &self.wallet,
@@ -604,12 +610,12 @@ where
 
         // 2. Notify UI via feed
         self.projection
-            .send(projection::Update(self.current_offers))
+            .send(projection::Update(self.current_offers.clone()))
             .await?;
 
         // 3. Inform connected takers
         self.takers
-            .send_async_safe(connection::BroadcastOffers(self.current_offers))
+            .send_async_safe(connection::BroadcastOffers(self.current_offers.clone()))
             .await?;
 
         Ok(())
@@ -625,8 +631,27 @@ where
 
     async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker) {
         match msg {
-            wire::TakerToMaker::TakeOrder { order_id, quantity } => {
-                if let Err(e) = self.handle_take_order(taker_id, order_id, quantity).await {
+            wire::TakerToMaker::DeprecatedTakeOrder { order_id, quantity } => {
+                // Old clients do not send over leverage. Hence we default to Leverage::TWO which
+                // was the default before.
+                let leverage = Leverage::TWO;
+
+                if let Err(e) = self
+                    .handle_take_order(taker_id, order_id, quantity, leverage)
+                    .await
+                {
+                    tracing::error!("Error when handling order take request: {:#}", e)
+                }
+            }
+            wire::TakerToMaker::TakeOrder {
+                order_id,
+                quantity,
+                leverage,
+            } => {
+                if let Err(e) = self
+                    .handle_take_order(taker_id, order_id, quantity, leverage)
+                    .await
+                {
                     tracing::error!("Error when handling order take request: {:#}", e)
                 }
             }

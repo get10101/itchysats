@@ -92,9 +92,17 @@ pub enum TakerToMaker {
         proposed_wire_version: Version,
         daemon_version: String,
     },
+    /// This is deprecated, use `TakeOrderWithLeverage` instead
+    #[serde(rename = "TakeOrder")]
+    DeprecatedTakeOrder {
+        order_id: OrderId,
+        quantity: Usd,
+    },
+    #[serde(rename = "TakeOrderWithLeverage")]
     TakeOrder {
         order_id: OrderId,
         quantity: Usd,
+        leverage: Leverage,
     },
     ProposeRollover {
         order_id: OrderId,
@@ -123,7 +131,10 @@ pub enum TakerToMaker {
 impl TakerToMaker {
     pub fn name(&self) -> &'static str {
         match self {
-            TakerToMaker::TakeOrder { .. } => "TakerToMaker::TakeOrder",
+            // allowing deprecated use of field `TakeOrder` here for backwards compatibility.
+            #[allow(deprecated)]
+            TakerToMaker::DeprecatedTakeOrder { .. } => "TakerToMaker::TakeOrder",
+            TakerToMaker::TakeOrder { .. } => "TakerToMaker::TakeOrderWithLeverage",
             TakerToMaker::Protocol { msg, .. } => match msg {
                 SetupMsg::Msg0(_) => "TakerToMaker::Protocol::Msg0",
                 SetupMsg::Msg1(_) => "TakerToMaker::Protocol::Msg1",
