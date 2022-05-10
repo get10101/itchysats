@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.14] - 2022-05-10
+
+### Added
+
+- Additional API for the taker: `api/metrics` will return prometheus-based metrics about your positions and about general behavior of the application
+
 ## [0.4.13] - 2022-05-10
 
 ### Added
@@ -23,7 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - network: an additional field `leverage` was added to `wire::MakerToTaker::TakeOffer`.
   - network: an additional field `leverage_choices` was added to `Order` which is sent from maker to taker when he created a new offer.
     The field `leverage` was deprecated.
-- Additional API for the taker: `api/metrics` will return prometheus-based metrics about your positions and about general behavior of the application
 
 ### Changed
 
@@ -142,7 +147,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.13...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.14...HEAD
+[0.4.14]: https://github.com/itchysats/itchysats/compare/0.4.13...0.4.14
 [0.4.13]: https://github.com/itchysats/itchysats/compare/0.4.12...0.4.13
 [0.4.12]: https://github.com/itchysats/itchysats/compare/0.4.11...0.4.12
 [0.4.11]: https://github.com/itchysats/itchysats/compare/0.4.10...0.4.11
