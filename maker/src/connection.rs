@@ -37,12 +37,12 @@ use xtras::SendInterval;
 pub struct BroadcastOffers(pub Option<MakerOffers>);
 
 /// Message sent from the `contract_setup::Actor` to the
-/// `maker_inc_connections::Actor` so that it can forward it to the
+/// `connection::Actor` so that it can forward it to the
 /// taker.
 ///
 /// Additionally, the address of this instance of the
 /// `contract_setup::Actor` is included so that the
-/// `maker_inc_connections::Actor` knows where to forward the contract
+/// `connection::Actor` knows where to forward the contract
 /// setup messages from the taker about this particular order.
 pub struct ConfirmOrder {
     pub taker_id: Identity,
@@ -54,12 +54,12 @@ pub mod settlement {
     use super::*;
 
     /// Message sent from the `collab_settlement::Actor` to the
-    /// `maker_inc_connections::Actor` so that it can forward it to the
+    /// `connection::Actor` so that it can forward it to the
     /// taker.
     ///
     /// Additionally, the address of this instance of the
     /// `collab_settlement::Actor` is included so that the
-    /// `maker_inc_connections::Actor` knows where to forward the
+    /// `connection::Actor` knows where to forward the
     /// collaborative settlement messages from the taker about this
     /// particular order.
     pub struct Response {
