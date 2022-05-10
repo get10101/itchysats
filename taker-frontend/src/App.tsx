@@ -31,7 +31,17 @@ import PromoBanner from "./components/PromoBanner";
 import { Tour } from "./components/Tour";
 import Trade from "./components/Trade";
 import { Wallet } from "./components/Wallet";
-import { BXBTData, Cfd, ConnectionStatus, intoCfd, intoMakerOffer, isClosed, MakerOffer, WalletInfo } from "./types";
+import {
+    BXBTData,
+    Cfd,
+    ConnectionStatus,
+    IdentityInfo,
+    intoCfd,
+    intoMakerOffer,
+    isClosed,
+    MakerOffer,
+    WalletInfo,
+} from "./types";
 import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
 
@@ -81,6 +91,8 @@ export const App = () => {
     const makerLong = useLatestEvent<MakerOffer>(source, "long_offer", intoMakerOffer);
     const makerShort = useLatestEvent<MakerOffer>(source, "short_offer", intoMakerOffer);
 
+    const identityOrUndefined = useLatestEvent<IdentityInfo>(source, "identity");
+
     const shortOffer = makerOfferToTakerOffer(makerLong);
     const longOffer = makerOfferToTakerOffer(makerShort);
 
@@ -116,6 +128,7 @@ export const App = () => {
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
+    let identity = identityOrUndefined ? identityOrUndefined! : { taker_id: "unknown", taker_peer_id: "unknown" };
     const connectedToMakerOrUndefined = useLatestEvent<ConnectionStatus>(source, "maker_status");
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
@@ -249,7 +262,10 @@ export const App = () => {
                     </Center>
                 </Box>
             </Center>
-            <Footer />
+            <Center>
+                <Text fontSize={"12"}>Taker Id: {identity.taker_id}</Text>
+            </Center>
+            <Footer taker_id={identity.taker_id} />
         </>
     );
 };

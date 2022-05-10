@@ -44,11 +44,20 @@ type Taker = TakerActorSystem<
 
 const HEARTBEAT_INTERVAL_SECS: u64 = 5;
 
+#[derive(Debug, Clone, Serialize)]
+pub struct IdentityInfo {
+    /// legacy networking identity
+    pub(crate) taker_id: String,
+    /// libp2p peer id
+    pub(crate) taker_peer_id: String,
+}
+
 #[rocket::get("/feed")]
 pub async fn feed(
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
+    identity_info: &State<IdentityInfo>,
     _auth: Authenticated,
 ) -> EventStream![] {
     let rx = rx.inner();
@@ -57,6 +66,7 @@ pub async fn feed(
     let mut rx_quote = rx.quote.clone();
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_maker_status = rx_maker_status.inner().clone();
+    let identity = identity_info.inner().clone();
     let mut heartbeat =
         tokio::time::interval(std::time::Duration::from_secs(HEARTBEAT_INTERVAL_SECS));
 
@@ -66,6 +76,8 @@ pub async fn feed(
 
         let maker_status = rx_maker_status.borrow().clone();
         yield maker_status.to_sse_event();
+
+        yield Event::json(&identity).event("identity");
 
         let offers = rx_offers.borrow().clone();
         yield Event::json(&offers.long).event("long_offer");
