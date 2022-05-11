@@ -262,9 +262,6 @@ export const App = () => {
                     </Center>
                 </Box>
             </Center>
-            <Center>
-                <Text fontSize={"12"}>Taker Id: {identity.taker_id}</Text>
-            </Center>
             <Footer taker_id={identity.taker_id} />
         </>
     );
