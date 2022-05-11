@@ -376,6 +376,7 @@ mod metrics {
                         is_closed = cfd.is_closed,
                         is_refunded = cfd.is_refunded,
                         is_rejected = cfd.is_rejected,
+                        is_failed = cfd.is_failed,
                         order_id = %cfd.id,
                         "CFD is in weird state"
                     );
