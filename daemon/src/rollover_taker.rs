@@ -26,7 +26,6 @@ use model::TxFeeRate;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
-use xtra::Disconnected;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
@@ -141,7 +140,7 @@ impl Actor {
         self.tasks.add(async move {
             // Use an explicit type annotation to cause a compile error if someone changes the
             // handler.
-            let _: Result<(), Disconnected> =
+            let _: Result<(), xtra::Error> =
                 match rollover_fut.await.context("Rollover protocol failed") {
                     Ok(dlc) => this.send(RolloverSucceeded { dlc, funding_fee }).await,
                     Err(error) => this.send(RolloverFailed { error }).await,
