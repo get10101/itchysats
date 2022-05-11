@@ -1433,6 +1433,8 @@ impl Cfd {
 
         let hours_left = settlement_time - OffsetDateTime::now_utc();
 
+        tracing::trace!(target = "cfd", time_left_in_cfd = %hours_left, "Calculating hours to extend in rollover");
+
         if !hours_left.is_positive() {
             tracing::warn!("Rolling over a contract that can be settled non-collaboratively");
 

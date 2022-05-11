@@ -10,6 +10,7 @@ use std::fmt;
 use std::str;
 use time::format_description::FormatItem;
 use time::macros::format_description;
+use time::Duration;
 use time::OffsetDateTime;
 use time::PrimitiveDateTime;
 use time::Time;
@@ -74,10 +75,10 @@ impl BitMexPriceEventId {
     /// Checks whether this event has likely already occurred.
     ///
     /// We can't be sure about it because our local clock might be off from the oracle's clock.
-    pub fn has_likely_occured(&self) -> bool {
+    pub fn has_likely_occurred(&self) -> bool {
         let now = OffsetDateTime::now_utc();
 
-        now > self.timestamp
+        now > self.timestamp + Duration::minutes(1)
     }
 
     pub fn to_olivia_url(self) -> Url {
@@ -443,6 +444,6 @@ mod tests {
         let past_event =
             BitMexPriceEventId::with_20_digits(datetime!(2021-09-23 10:00:00).assume_utc());
 
-        assert!(past_event.has_likely_occured());
+        assert!(past_event.has_likely_occurred());
     }
 }
