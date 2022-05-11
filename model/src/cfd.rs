@@ -1746,6 +1746,20 @@ impl Cet {
         maker_address: &Address,
         taker_address: &Address,
     ) -> Result<Transaction> {
+        let output = vec![
+            (self.maker_amount, maker_address),
+            (self.taker_amount, taker_address),
+        ]
+        .iter()
+        .filter_map(|(amount, address)| match amount {
+            &Amount::ZERO => None,
+            amount => Some(TxOut {
+                value: amount.as_sat(),
+                script_pubkey: address.script_pubkey(),
+            }),
+        })
+        .collect();
+
         let tx = Transaction {
             version: 2,
             input: vec![TxIn {
@@ -1754,16 +1768,7 @@ impl Cet {
                 ..Default::default()
             }],
             lock_time: 0,
-            output: vec![
-                TxOut {
-                    value: self.maker_amount.as_sat(),
-                    script_pubkey: maker_address.script_pubkey(),
-                },
-                TxOut {
-                    value: self.taker_amount.as_sat(),
-                    script_pubkey: taker_address.script_pubkey(),
-                },
-            ],
+            output,
         };
 
         if tx.txid() != self.txid {
