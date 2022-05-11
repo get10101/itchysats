@@ -556,8 +556,9 @@ impl Cfd {
     }
 
     pub fn with_current_quote(self, latest_quote: Option<xtra_bitmex_price_feed::Quote>) -> Self {
-        // Closed CFDs should not be modified by the current quote
-        if self.aggregated.state == CfdState::Closed {
+        // If the payout was already set we don't care about the current quote, this applies to
+        // closed CFDs
+        if self.payout.is_some() {
             return self;
         }
 
