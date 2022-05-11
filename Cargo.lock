@@ -816,7 +816,8 @@ dependencies = [
  "libp2p-core",
  "libp2p-noise",
  "libp2p-tcp",
- "maia",
+ "maia 0.1.0",
+ "maia 0.2.0",
  "maia-core",
  "model",
  "parse-display",
@@ -1845,7 +1846,21 @@ dependencies = [
 [[package]]
 name = "maia"
 version = "0.1.0"
-source = "git+https://github.com/comit-network/maia#e419cb2cf19bed6ec53eaa3672408a6205a9b705"
+source = "git+https://github.com/comit-network/maia?rev=e419cb2cf19bed6ec53eaa3672408a6205a9b705#e419cb2cf19bed6ec53eaa3672408a6205a9b705"
+dependencies = [
+ "anyhow",
+ "bdk",
+ "itertools",
+ "maia-core",
+ "rand 0.6.5",
+ "secp256k1-zkp",
+ "thiserror",
+]
+
+[[package]]
+name = "maia"
+version = "0.2.0"
+source = "git+https://github.com/comit-network/maia?rev=a963084189e1598ca622abe206a78015ab6b8466#a963084189e1598ca622abe206a78015ab6b8466"
 dependencies = [
  "anyhow",
  "bdk",
@@ -1859,7 +1874,7 @@ dependencies = [
 [[package]]
 name = "maia-core"
 version = "0.1.0"
-source = "git+https://github.com/comit-network/maia#e419cb2cf19bed6ec53eaa3672408a6205a9b705"
+source = "git+https://github.com/comit-network/maia?rev=e419cb2cf19bed6ec53eaa3672408a6205a9b705#e419cb2cf19bed6ec53eaa3672408a6205a9b705"
 dependencies = [
  "anyhow",
  "bdk",
@@ -1882,7 +1897,7 @@ dependencies = [
  "hex",
  "http-api-problem",
  "libp2p-tcp",
- "maia",
+ "maia 0.2.0",
  "maia-core",
  "model",
  "prometheus",
@@ -2030,7 +2045,7 @@ dependencies = [
  "hex",
  "itertools",
  "libp2p-core",
- "maia",
+ "maia 0.2.0",
  "maia-core",
  "nalgebra 0.31.0",
  "ndarray",

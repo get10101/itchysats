@@ -56,6 +56,8 @@ pub mod projection;
 pub mod rollover;
 pub mod seed;
 pub mod setup_contract;
+// TODO: Remove setup_contract_deprecated module after phasing out legacy networking
+pub mod setup_contract_deprecated;
 pub mod setup_taker;
 pub mod taker_cfd;
 mod transaction_ext;
