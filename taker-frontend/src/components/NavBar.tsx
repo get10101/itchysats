@@ -139,7 +139,7 @@ export default function Nav({ walletInfo, connectedToMaker, nextFundingEvent, re
                         <HStack>
                             <Tooltip label={connectionStatusDisplay.tooltip}>
                                 <HStack>
-                                    <Text>{"Maker: "}</Text>
+                                    <Text>{"Maker "}</Text>
                                     {connectionStatusDisplay.warn
                                         ? (
                                             <WarningIcon
@@ -160,7 +160,7 @@ export default function Nav({ walletInfo, connectedToMaker, nextFundingEvent, re
                                 </HStack>
                             </Tooltip>
                             <TextDivider />
-                            <Text>{"Funding: "}</Text>
+                            <Text>{"Funding "}</Text>
                             <Skeleton
                                 isLoaded={nextFundingEvent != null}
                                 height={"20px"}
@@ -171,13 +171,21 @@ export default function Nav({ walletInfo, connectedToMaker, nextFundingEvent, re
                                     label={"The next time your CFDs will be extended and the funding fee will be collected based on the hourly rate."}
                                     hasArrow
                                 >
-                                    <HStack minWidth={"80px"}>
-                                        <Heading size={"sm"}>{nextFundingEvent}</Heading>
+                                    <HStack minWidth={"80px"} maxWidth={["90px", "90px", "inherit"]}>
+                                        <Heading
+                                            size={"sm"}
+                                            textOverflow={"ellipsis"}
+                                            overflow={"hidden"}
+                                            whiteSpace={"nowrap"}
+                                        >
+                                            {nextFundingEvent}
+                                        </Heading>
                                     </HStack>
                                 </Tooltip>
                             </Skeleton>
                             <TextDivider />
-                            <Text>{"Ref price: "}</Text>
+                            <Text display={["inherit", "inherit", "none"]}>Ref</Text>
+                            <Text display={["none", "none", "inherit"]}>Reference Price</Text>
                             <Skeleton
                                 isLoaded={referencePrice !== undefined}
                                 height={"20px"}
