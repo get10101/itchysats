@@ -2,6 +2,7 @@ import { ExternalLinkIcon } from "@chakra-ui/icons";
 import { Box, Button, Center, Divider, HStack, Link, Text, useColorModeValue } from "@chakra-ui/react";
 import { FeedbackFish } from "@feedback-fish/react";
 import * as React from "react";
+import { FaRegCommentDots } from "react-icons/all";
 import { FAQ_URL, FOOTER_HEIGHT } from "../App";
 import { SocialLinks } from "./SocialLinks";
 
@@ -31,14 +32,21 @@ export default function Footer({ taker_id }: FooterProps) {
                         </HStack>
                     </Link>
                     <TextDivider />
-                    <Text fontSize={"20"} fontWeight={"bold"}>Contact us:</Text>
+                    <Text fontSize={"20"} fontWeight={"bold"} display={["none", "none", "inherit"]}>Contact us:</Text>
                     <SocialLinks />
                     <TextDivider />
                     <FeedbackFish
                         projectId="c1260a96cdb3d8"
                         metadata={{ position: "footer", customerId: taker_id }}
                     >
-                        <Button fontSize={"20"} color={useColorModeValue("black", "white")}>Send feedback</Button>
+                        <Button
+                            fontSize={"20"}
+                            color={useColorModeValue("black", "white")}
+                            leftIcon={<FaRegCommentDots />}
+                            variant={"ghost"}
+                        >
+                            <Text display={["none", "none", "inherit"]}>Send Feedback</Text>
+                        </Button>
                     </FeedbackFish>
                 </HStack>
             </Center>
