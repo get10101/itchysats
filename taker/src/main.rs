@@ -47,7 +47,7 @@ const MAINNET_MAKER_ID: &str = "7e35e34801e766a6a29ecb9e22810ea4e3476c2b37bf7588
 const MAINNET_MAKER_PEER_ID: &str = "12D3KooWP3BN6bq9jPy8cP7Grj1QyUBfr7U6BeQFgMwfTTu12wuY";
 
 const TESTNET_ELECTRUM: &str = "ssl://blockstream.info:993";
-const TESTNET_MAKER: &str = "testnet.itchysats.network:9999";
+const TESTNET_MAKER: &str = "testnet.itchysats.network:10000";
 const TESTNET_MAKER_ID: &str = "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e";
 const TESTNET_MAKER_PEER_ID: &str = "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1";
 

@@ -22,7 +22,7 @@ pub mod routes;
 #[derive(Parser)]
 pub struct Opts {
     /// The port to listen on for p2p connections.
-    #[clap(long, default_value = "9999")]
+    #[clap(long, default_value = "10000")]
     pub p2p_port: u16,
 
     /// The IP address to listen on for the HTTP API.
