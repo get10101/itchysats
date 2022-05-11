@@ -164,7 +164,7 @@ impl Cfd {
                 is_refunded: false,
                 ..self
             },
-            ContractSetupCompleted { .. } | LockConfirmed | LockConfirmedAfterFinality => Self {
+            ContractSetupCompleted { .. } | LockConfirmed => Self {
                 is_open: true,
                 ..self
             },
@@ -218,6 +218,14 @@ impl Cfd {
                 ..self
             },
             CollaborativeSettlementConfirmed => Self {
+                is_open: false,
+                is_closed: true,
+                ..self
+            },
+            LockConfirmedAfterFinality => Self {
+                // This event is only appended if lock confirmation happens after we spent from lock
+                // on chain. This is for special case where collaborative settlement is triggered
+                // before lock is confirmed. In such a case the CFD is closed
                 is_open: false,
                 is_closed: true,
                 ..self
