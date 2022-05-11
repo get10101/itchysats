@@ -180,13 +180,17 @@ where
             .checked_mul(2)
             .expect("not to overflow");
 
-        tasks.add(connection_actor_ctx.run(connection::Actor::new(
-            maker_online_status_feed_sender,
-            &cfd_actor_addr,
-            identity.identity_sk,
-            taker_heartbeat_timeout,
-            connect_timeout,
-        )));
+        tasks.add(
+            connection_actor_ctx
+                .with_handler_timeout(Duration::from_secs(120))
+                .run(connection::Actor::new(
+                    maker_online_status_feed_sender,
+                    &cfd_actor_addr,
+                    identity.identity_sk,
+                    taker_heartbeat_timeout,
+                    connect_timeout,
+                )),
+        );
 
         tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
 
