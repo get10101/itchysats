@@ -21,6 +21,7 @@ use model::MakerOffers;
 use model::OrderId;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::str;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
@@ -32,6 +33,22 @@ use xtras::address_map::NotConnected;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
+
+/// Taker daemon version. Used to determine which protocol to use for backwards compatibility
+/// purposes.
+///
+/// * `None`: It must be an old version - use the oldest available protocol stack.
+#[derive(Clone)]
+pub struct TakerDaemonVersion(pub semver::Version);
+
+impl str::FromStr for TakerDaemonVersion {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let version = semver::Version::from_str(s)?;
+        Ok(TakerDaemonVersion(version))
+    }
+}
 
 #[derive(Clone)]
 pub struct BroadcastOffers(pub Option<MakerOffers>);
@@ -422,7 +439,10 @@ impl Actor {
 
         let _: Result<(), xtra::Error> = self
             .taker_connected_channel
-            .send_async_safe(cfd::TakerConnected { id: identity })
+            .send_async_safe(cfd::TakerConnected {
+                id: identity,
+                taker_version: daemon_version.parse().ok(),
+            })
             .await;
 
         let mut tasks = Tasks::default();

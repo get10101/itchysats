@@ -1873,6 +1873,7 @@ dependencies = [
  "rocket-basicauth",
  "rust-embed",
  "rust-embed-rocket",
+ "semver 1.0.9",
  "serde",
  "shared-bin",
  "thiserror",

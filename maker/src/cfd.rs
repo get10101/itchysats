@@ -1,5 +1,6 @@
 use crate::collab_settlement;
 use crate::connection;
+use crate::connection::TakerDaemonVersion;
 use crate::contract_setup;
 use crate::future_ext::FutureExt;
 use crate::metrics::time_to_first_position;
@@ -35,6 +36,8 @@ use model::SettlementProposal;
 use model::Timestamp;
 use model::TxFeeRate;
 use model::Usd;
+use semver::VersionReq;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use time::Duration;
 use tokio_tasks::Tasks;
@@ -46,6 +49,16 @@ use xtras::SendAsyncSafe;
 
 const HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(10);
+
+/// Determine which maia version to use in protocol execution
+///
+/// Older version of maia had a bug in which the CETs were calculated incorrectly.
+/// This enum ensures that we can be backwards-compatible with takers running older version.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MaiaProtocolVariant {
+    Old,
+    New,
+}
 
 #[derive(Clone)]
 pub struct NewOffers {
@@ -82,9 +95,11 @@ pub struct RejectRollover {
     pub order_id: OrderId,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct TakerConnected {
     pub id: Identity,
+    /// Send along the taker daemon version to deal with backwards compatibility.
+    pub taker_version: Option<TakerDaemonVersion>,
 }
 
 #[derive(Clone, Copy)]
@@ -185,6 +200,7 @@ pub struct Actor<O, T, W> {
     oracle: xtra::Address<O>,
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
     connected_takers: HashSet<Identity>,
+    taker_versions: HashMap<Identity, Option<TakerDaemonVersion>>,
     n_payouts: usize,
     tasks: Tasks,
 }
@@ -219,6 +235,7 @@ impl<O, T, W> Actor<O, T, W> {
             time_to_first_position,
             n_payouts,
             connected_takers: HashSet::new(),
+            taker_versions: HashMap::default(),
             settlement_actors: AddressMap::default(),
             tasks: Tasks::default(),
         }
@@ -241,7 +258,13 @@ impl<O, T, W> Actor<O, T, W>
 where
     T: xtra::Handler<connection::TakerMessage>,
 {
-    async fn handle_taker_connected(&mut self, taker_id: Identity) -> Result<()> {
+    async fn handle_taker_connected(
+        &mut self,
+        taker_id: Identity,
+        taker_daemon_version: Option<TakerDaemonVersion>,
+    ) -> Result<()> {
+        self.taker_versions.insert(taker_id, taker_daemon_version);
+
         self.takers
             .send_async_safe(connection::TakerMessage {
                 taker_id,
@@ -291,6 +314,7 @@ where
             &self.takers,
             self.db.clone(),
             version,
+            pick_maia_protocol_variant(self.taker_versions.get(&taker_id).unwrap_or(&None).clone()),
         )
         .create(None)
         .spawn(&mut self.tasks);
@@ -388,6 +412,7 @@ where
             &self.wallet,
             (&self.takers, &self.takers, taker_id),
             self.time_to_first_position.clone(),
+            pick_maia_protocol_variant(self.taker_versions.get(&taker_id).unwrap_or(&None).clone()),
         )
         .create(None)
         .spawn(&mut self.tasks);
@@ -582,6 +607,7 @@ where
             self.process_manager.clone(),
             self.db.clone(),
             self.n_payouts,
+            pick_maia_protocol_variant(self.taker_versions.get(&taker_id).unwrap_or(&None).clone()),
         )
         .create(None)
         .spawn(&mut self.tasks);
@@ -622,7 +648,7 @@ where
     }
 
     async fn handle(&mut self, msg: TakerConnected) -> Result<()> {
-        self.handle_taker_connected(msg.id).await
+        self.handle_taker_connected(msg.id, msg.taker_version).await
     }
 
     async fn handle(&mut self, msg: TakerDisconnected) -> Result<()> {
@@ -741,4 +767,56 @@ impl<O: Send + 'static, T: Send + 'static, W: Send + 'static> xtra::Actor for Ac
     type Stop = ();
 
     async fn stopped(self) -> Self::Stop {}
+}
+
+fn pick_maia_protocol_variant(taker_version: Option<TakerDaemonVersion>) -> MaiaProtocolVariant {
+    if let Some(version) = taker_version {
+        let new_maia_req = VersionReq::parse(">0.4.14").unwrap();
+        if new_maia_req.matches(&version.0) {
+            MaiaProtocolVariant::New
+        } else {
+            MaiaProtocolVariant::Old
+        }
+    } else {
+        MaiaProtocolVariant::Old
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pick_old_maia_if_taker_is_0_4_14() {
+        assert_eq!(
+            pick_maia_protocol_variant("0.4.14".parse().ok()),
+            MaiaProtocolVariant::Old,
+        );
+
+        assert_eq!(
+            pick_maia_protocol_variant("v0.4.14".parse().ok()),
+            MaiaProtocolVariant::Old,
+        );
+    }
+
+    #[test]
+    fn pick_new_maia_if_taker_is_above_0_4_14() {
+        assert_eq!(
+            pick_maia_protocol_variant("0.4.15".parse().ok()),
+            MaiaProtocolVariant::New,
+        );
+
+        assert_eq!(
+            pick_maia_protocol_variant("0.5.0".parse().ok()),
+            MaiaProtocolVariant::New,
+        );
+    }
+
+    #[test]
+    fn pick_old_maia_if_cannot_determine_taker_version() {
+        assert_eq!(
+            pick_maia_protocol_variant("0.not.working".parse().ok()),
+            MaiaProtocolVariant::Old,
+        );
+    }
 }

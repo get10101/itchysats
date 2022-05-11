@@ -1,3 +1,4 @@
+use crate::cfd::MaiaProtocolVariant;
 use crate::connection;
 use anyhow::Context as _;
 use anyhow::Result;
@@ -66,6 +67,7 @@ pub struct Actor {
     tasks: Tasks,
     executor: command::Executor,
     version: RolloverVersion,
+    protocol_variant: MaiaProtocolVariant,
 }
 
 impl Actor {
@@ -81,6 +83,7 @@ impl Actor {
         register: &(impl MessageChannel<connection::RegisterRollover> + 'static),
         db: db::Connection,
         version: RolloverVersion,
+        protocol_variant: MaiaProtocolVariant,
     ) -> Self {
         Self {
             order_id,
@@ -94,6 +97,7 @@ impl Actor {
             executor: command::Executor::new(db, process_manager),
             tasks: Tasks::default(),
             version,
+            protocol_variant,
         }
     }
 

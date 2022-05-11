@@ -1,3 +1,4 @@
+use crate::cfd::MaiaProtocolVariant;
 use crate::connection;
 use crate::metrics::time_to_first_position;
 use anyhow::Context;
@@ -43,6 +44,7 @@ pub struct Actor {
     tasks: Tasks,
     executor: command::Executor,
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
+    protocol_variant: MaiaProtocolVariant,
 }
 
 impl Actor {
@@ -60,6 +62,7 @@ impl Actor {
             Identity,
         ),
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
+        protocol_variant: MaiaProtocolVariant,
     ) -> Self {
         Self {
             executor: command::Executor::new(db, process_manager),
@@ -76,6 +79,7 @@ impl Actor {
             setup_msg_sender: None,
             tasks: Tasks::default(),
             time_to_first_position,
+            protocol_variant,
         }
     }
 

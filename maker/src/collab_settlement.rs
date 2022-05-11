@@ -1,3 +1,4 @@
+use crate::cfd::MaiaProtocolVariant;
 use crate::connection;
 use anyhow::anyhow;
 use anyhow::Context;
@@ -35,6 +36,7 @@ pub struct Actor {
     executor: command::Executor,
     db: db::Connection,
     tasks: Tasks,
+    protocol_variant: MaiaProtocolVariant,
 }
 
 #[derive(Clone, Copy)]
@@ -154,6 +156,7 @@ impl Actor {
         process_manager: xtra::Address<process_manager::Actor>,
         db: db::Connection,
         n_payouts: usize,
+        protocol_variant: MaiaProtocolVariant,
     ) -> Self {
         Self {
             proposal,
@@ -165,6 +168,7 @@ impl Actor {
             db,
             tasks: Tasks::default(),
             is_initiated: false,
+            protocol_variant,
         }
     }
 
