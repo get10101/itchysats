@@ -168,10 +168,19 @@ impl Cfd {
                 is_open: true,
                 ..self
             },
-            ContractSetupFailed => Self {
-                is_failed: true,
-                ..self
-            },
+            ContractSetupFailed => {
+                // This is needed due to a bug that has since been fixed; `OfferRejected` and
+                // `ContractSetupFailed` are mutually exclusive.
+                // We give `OfferRejected` priority over `ContractSetupFailed`.
+                if self.is_rejected {
+                    Self { ..self }
+                } else {
+                    Self {
+                        is_failed: true,
+                        ..self
+                    }
+                }
+            }
             OfferRejected => Self {
                 is_rejected: true,
                 ..self
