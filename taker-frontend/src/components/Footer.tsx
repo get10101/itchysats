@@ -1,7 +1,26 @@
 import { ExternalLinkIcon } from "@chakra-ui/icons";
-import { Box, Button, Center, Divider, HStack, Link, Text, useColorModeValue } from "@chakra-ui/react";
+import {
+    Box,
+    Button,
+    Center,
+    Divider,
+    HStack,
+    IconButton,
+    Link,
+    Modal,
+    ModalBody,
+    ModalCloseButton,
+    ModalContent,
+    ModalFooter,
+    ModalHeader,
+    ModalOverlay,
+    Text,
+    useColorModeValue,
+    useDisclosure,
+} from "@chakra-ui/react";
 import { FeedbackFish } from "@feedback-fish/react";
 import * as React from "react";
+import { FaInfo, FaRegCommentDots } from "react-icons/all";
 import { FAQ_URL, FOOTER_HEIGHT } from "../App";
 import { SocialLinks } from "./SocialLinks";
 
@@ -14,6 +33,8 @@ interface FooterProps {
 }
 
 export default function Footer({ taker_id }: FooterProps) {
+    const { isOpen, onOpen, onClose } = useDisclosure();
+
     return (
         <Box
             bg={useColorModeValue("gray.100", "gray.900")}
@@ -31,14 +52,44 @@ export default function Footer({ taker_id }: FooterProps) {
                         </HStack>
                     </Link>
                     <TextDivider />
-                    <Text fontSize={"20"} fontWeight={"bold"}>Contact us:</Text>
+                    <Text fontSize={"20"} fontWeight={"bold"} display={["none", "none", "inherit"]}>Contact us:</Text>
                     <SocialLinks />
+                    <TextDivider />
+                    <IconButton
+                        aria-label={"itchysats-about"}
+                        icon={<FaInfo />}
+                        fontSize="20px"
+                        color={"gray.600"}
+                        onClick={onOpen}
+                    />
+                    <Modal isOpen={isOpen} onClose={onClose}>
+                        <ModalOverlay />
+                        <ModalContent>
+                            <ModalHeader>ItchySats Info</ModalHeader>
+                            <ModalCloseButton />
+                            <ModalBody>
+                                <Text>Your Taker ID: {taker_id}</Text>
+                            </ModalBody>
+                            <ModalFooter>
+                                <Button colorScheme="blue" mr={3} onClick={onClose}>
+                                    Close
+                                </Button>
+                            </ModalFooter>
+                        </ModalContent>
+                    </Modal>
                     <TextDivider />
                     <FeedbackFish
                         projectId="c1260a96cdb3d8"
                         metadata={{ position: "footer", customerId: taker_id }}
                     >
-                        <Button fontSize={"20"} color={useColorModeValue("black", "white")}>Send feedback</Button>
+                        <Button
+                            fontSize={"20"}
+                            color={useColorModeValue("black", "white")}
+                            leftIcon={<FaRegCommentDots />}
+                            variant={"ghost"}
+                        >
+                            <Text display={["none", "none", "inherit"]}>Send Feedback</Text>
+                        </Button>
                     </FeedbackFish>
                 </HStack>
             </Center>
