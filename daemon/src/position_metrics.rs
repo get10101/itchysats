@@ -164,14 +164,23 @@ impl Cfd {
                 is_refunded: false,
                 ..self
             },
-            ContractSetupCompleted { .. } | LockConfirmed | LockConfirmedAfterFinality => Self {
+            ContractSetupCompleted { .. } | LockConfirmed => Self {
                 is_open: true,
                 ..self
             },
-            ContractSetupFailed => Self {
-                is_failed: true,
-                ..self
-            },
+            ContractSetupFailed => {
+                // This is needed due to a bug that has since been fixed; `OfferRejected` and
+                // `ContractSetupFailed` are mutually exclusive.
+                // We give `OfferRejected` priority over `ContractSetupFailed`.
+                if self.is_rejected {
+                    Self { ..self }
+                } else {
+                    Self {
+                        is_failed: true,
+                        ..self
+                    }
+                }
+            }
             OfferRejected => Self {
                 is_rejected: true,
                 ..self
@@ -218,6 +227,14 @@ impl Cfd {
                 ..self
             },
             CollaborativeSettlementConfirmed => Self {
+                is_open: false,
+                is_closed: true,
+                ..self
+            },
+            LockConfirmedAfterFinality => Self {
+                // This event is only appended if lock confirmation happens after we spent from lock
+                // on chain. This is for special case where collaborative settlement is triggered
+                // before lock is confirmed. In such a case the CFD is closed
                 is_open: false,
                 is_closed: true,
                 ..self
@@ -376,6 +393,7 @@ mod metrics {
                         is_closed = cfd.is_closed,
                         is_refunded = cfd.is_refunded,
                         is_rejected = cfd.is_rejected,
+                        is_failed = cfd.is_failed,
                         order_id = %cfd.id,
                         "CFD is in weird state"
                     );
