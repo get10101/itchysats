@@ -157,14 +157,18 @@ where
         );
         let listener_supervisor = supervisor.create(None).spawn(&mut tasks);
 
-        tasks.add(inc_conn_ctx.run(connection::Actor::new(
-            Box::new(cfd_actor_addr.clone()),
-            Box::new(cfd_actor_addr.clone()),
-            Box::new(cfd_actor_addr.clone()),
-            identity.identity_sk,
-            heartbeat_interval,
-            p2p_socket,
-        )));
+        tasks.add(
+            inc_conn_ctx
+                .with_handler_timeout(Duration::from_secs(120))
+                .run(connection::Actor::new(
+                    Box::new(cfd_actor_addr.clone()),
+                    Box::new(cfd_actor_addr.clone()),
+                    Box::new(cfd_actor_addr.clone()),
+                    identity.identity_sk,
+                    heartbeat_interval,
+                    p2p_socket,
+                )),
+        );
 
         tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
 
