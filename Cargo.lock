@@ -815,6 +815,7 @@ dependencies = [
  "libp2p-noise",
  "libp2p-tcp",
  "maia",
+ "maia-core",
  "model",
  "parse-display",
  "pretty_assertions",
@@ -1841,13 +1842,25 @@ dependencies = [
 [[package]]
 name = "maia"
 version = "0.1.0"
-source = "git+https://github.com/comit-network/maia#c465c154b881c6623633a5475281f9f234b25366"
+source = "git+https://github.com/comit-network/maia#e419cb2cf19bed6ec53eaa3672408a6205a9b705"
+dependencies = [
+ "anyhow",
+ "bdk",
+ "itertools",
+ "maia-core",
+ "rand 0.6.5",
+ "secp256k1-zkp",
+ "thiserror",
+]
+
+[[package]]
+name = "maia-core"
+version = "0.1.0"
+source = "git+https://github.com/comit-network/maia#e419cb2cf19bed6ec53eaa3672408a6205a9b705"
 dependencies = [
  "anyhow",
  "bdk",
  "bit-vec",
- "itertools",
- "rand 0.6.5",
  "secp256k1-zkp",
  "thiserror",
 ]
@@ -1867,6 +1880,7 @@ dependencies = [
  "http-api-problem",
  "libp2p-tcp",
  "maia",
+ "maia-core",
  "model",
  "prometheus",
  "rocket",
@@ -2013,6 +2027,7 @@ dependencies = [
  "hex",
  "itertools",
  "maia",
+ "maia-core",
  "nalgebra 0.31.0",
  "ndarray",
  "ndarray_einsum_beta",

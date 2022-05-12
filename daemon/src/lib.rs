@@ -9,7 +9,7 @@ use bdk::FeeRate;
 use connection::ConnectionStatus;
 use libp2p_core::Multiaddr;
 use libp2p_tcp::TokioTcpConfig;
-use maia::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::schnorrsig;
 use model::olivia;
 use model::Identity;
 use model::Leverage;
@@ -31,6 +31,7 @@ use xtras::supervisor;
 
 pub use bdk;
 pub use maia;
+pub use maia_core;
 
 pub mod archive_closed_cfds;
 pub mod archive_failed_cfds;

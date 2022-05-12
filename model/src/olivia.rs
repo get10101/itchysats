@@ -1,8 +1,8 @@
 use crate::impl_sqlx_type_display_from_str;
 use anyhow::Context;
 use conquer_once::Lazy;
-use maia::secp256k1_zkp::schnorrsig;
-use maia::secp256k1_zkp::SecretKey;
+use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::SecretKey;
 use serde::Deserialize;
 use serde_with::DeserializeFromStr;
 use serde_with::SerializeDisplay;
@@ -124,9 +124,9 @@ impl str::FromStr for BitMexPriceEventId {
     }
 }
 
-impl From<Announcement> for maia::Announcement {
+impl From<Announcement> for maia_core::Announcement {
     fn from(announcement: Announcement) -> Self {
-        maia::Announcement {
+        maia_core::Announcement {
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks,
         }
@@ -138,8 +138,8 @@ impl_sqlx_type_display_from_str!(BitMexPriceEventId);
 mod olivia_api {
     use super::*;
     use anyhow::Context;
-    use maia::secp256k1_zkp::schnorrsig;
-    use maia::secp256k1_zkp::SecretKey;
+    use maia_core::secp256k1_zkp::schnorrsig;
+    use maia_core::secp256k1_zkp::SecretKey;
     use std::convert::TryFrom;
     use time::OffsetDateTime;
 

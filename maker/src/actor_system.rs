@@ -17,7 +17,7 @@ use daemon::projection;
 use daemon::seed::Identities;
 use daemon::wallet;
 use libp2p_tcp::TokioTcpConfig;
-use maia::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::schnorrsig;
 use model::FundingRate;
 use model::Leverage;
 use model::OpeningFee;

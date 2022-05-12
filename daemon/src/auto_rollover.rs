@@ -6,7 +6,7 @@ use crate::rollover_taker;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use maia::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::schnorrsig;
 use model::OrderId;
 use std::time::Duration;
 use time::OffsetDateTime;

@@ -15,7 +15,7 @@ use core::fmt;
 use derivative::Derivative;
 use futures::StreamExt;
 use itertools::Itertools;
-use maia::TransactionExt;
+use maia_core::TransactionExt;
 use model::calculate_long_liquidation_price;
 use model::calculate_margin;
 use model::calculate_profit;

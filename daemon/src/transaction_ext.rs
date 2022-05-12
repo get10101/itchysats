@@ -2,7 +2,7 @@ use bdk::bitcoin::Amount;
 use bdk::bitcoin::OutPoint;
 use bdk::bitcoin::Script;
 use bdk::bitcoin::Transaction;
-use maia::TransactionExt as _;
+use maia_core::TransactionExt as _;
 
 pub trait TransactionExt {
     fn find_output_amount(&self, script_pubkey: &Script) -> Option<Amount>;
