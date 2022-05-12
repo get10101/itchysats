@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.15] - 2022-05-12
+
+### Changed
+
+- Taker UI: Layout fixes and move the taker-id into a separate modal.
+
+### Fixed
+
+- An issue where the `payout` and `P/L` for closed positions was returned incorrectly (based on the current price).
+- An issue where the position metrics recorded an error for CFDs with a weird combinations of events.
+- An issue where a CET for a liquidated position could not be published because a `Txout` with a value of `0`.
+
 ## [0.4.14] - 2022-05-10
 
 ### Added
@@ -147,7 +159,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.14...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.15...HEAD
+[0.4.15]: https://github.com/itchysats/itchysats/compare/0.4.14...0.4.15
 [0.4.14]: https://github.com/itchysats/itchysats/compare/0.4.13...0.4.14
 [0.4.13]: https://github.com/itchysats/itchysats/compare/0.4.12...0.4.13
 [0.4.12]: https://github.com/itchysats/itchysats/compare/0.4.11...0.4.12
