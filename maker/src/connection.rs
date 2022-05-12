@@ -530,10 +530,25 @@ impl Actor {
                     tracing::warn!(%order_id, "No active settlement actor");
                 }
             }
+            ProposeRollover { order_id, .. } | ProposeRolloverV2 { order_id, .. } => {
+                if self.rollover_actors.is_empty() {
+                    let _ = self.taker_msg_channel.send_async_safe(msg).await;
+                } else {
+                    let ongoing = self.rollover_actors.first_key();
+                    let ignored = order_id;
+
+                    match ongoing {
+                        None => {
+                            tracing::error!("Ignoring rollover request but it appears there is no rollover ongoing. This should really not happen.")
+                        }
+                        Some(ongoing) => {
+                            tracing::trace!(target:"wire", %ongoing, %ignored, "Ignoring rollover request because there is still a rollover ongoing.")
+                        }
+                    }
+                }
+            }
             DeprecatedTakeOrder { .. }
             | TakeOrder { .. }
-            | ProposeRollover { .. }
-            | ProposeRolloverV2 { .. }
             | Settlement {
                 order_id: _,
                 msg: taker_to_maker::Settlement::Propose { .. },

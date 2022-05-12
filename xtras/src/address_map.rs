@@ -56,6 +56,15 @@ where
         self.inner.retain(|_, candidate| candidate.is_connected());
     }
 
+    pub fn is_empty(&mut self) -> bool {
+        self.gc();
+        self.inner.is_empty()
+    }
+
+    pub fn first_key(&self) -> Option<&K> {
+        self.inner.keys().next()
+    }
+
     pub fn insert(&mut self, key: K, address: Address<A>) {
         self.gc();
         self.inner.insert(key, address);
