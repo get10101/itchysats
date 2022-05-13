@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.16] - 2022-05-13
+
 ## [0.4.15] - 2022-05-12
 
 ### Changed
@@ -159,7 +161,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.15...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.16...HEAD
+[0.4.16]: https://github.com/itchysats/itchysats/compare/0.4.15...0.4.16
 [0.4.15]: https://github.com/itchysats/itchysats/compare/0.4.14...0.4.15
 [0.4.14]: https://github.com/itchysats/itchysats/compare/0.4.13...0.4.14
 [0.4.13]: https://github.com/itchysats/itchysats/compare/0.4.12...0.4.13
