@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.16] - 2022-05-13
 
+### Changed
+
+- Taker only re-establishes connection to maker after three minutes.
+- Automatically time out `xtra` handlers after 2 minutes.
+
 ## [0.4.15] - 2022-05-12
 
 ### Changed
