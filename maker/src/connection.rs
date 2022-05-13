@@ -531,19 +531,12 @@ impl Actor {
                 }
             }
             ProposeRollover { order_id, .. } | ProposeRolloverV2 { order_id, .. } => {
-                if self.rollover_actors.is_empty() {
+                if self.rollover_actors.len() < 2 {
                     let _ = self.taker_msg_channel.send_async_safe(msg).await;
                 } else {
-                    let ongoing = self.rollover_actors.first_key();
                     let ignored = order_id;
-
-                    match ongoing {
-                        None => {
-                            tracing::error!("Ignoring rollover request but it appears there is no rollover ongoing. This should really not happen.")
-                        }
-                        Some(ongoing) => {
-                            tracing::trace!(target:"wire", %ongoing, %ignored, "Ignoring rollover request because there is still a rollover ongoing.")
-                        }
+                    for ongoing in self.rollover_actors.keys() {
+                        tracing::trace!(target:"wire", %ongoing, %ignored, "Ignoring rollover request because there is still a rollover ongoing.")
                     }
                 }
             }
