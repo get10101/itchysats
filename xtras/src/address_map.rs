@@ -2,6 +2,7 @@ use crate::ActorName;
 use crate::SendAsyncSafe;
 use anyhow::Result;
 use std::collections::hash_map::Entry;
+use std::collections::hash_map::Keys;
 use std::collections::HashMap;
 use std::hash::Hash;
 use xtra::Address;
@@ -61,8 +62,13 @@ where
         self.inner.is_empty()
     }
 
-    pub fn first_key(&self) -> Option<&K> {
-        self.inner.keys().next()
+    pub fn len(&mut self) -> usize {
+        self.gc();
+        self.inner.len()
+    }
+
+    pub fn keys(&self) -> Keys<'_, K, Address<A>> {
+        self.inner.keys()
     }
 
     pub fn insert(&mut self, key: K, address: Address<A>) {
