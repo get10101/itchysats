@@ -236,7 +236,7 @@ impl Actor {
             heartbeat_measuring_rate: maker_heartbeat_interval.checked_div(2).expect("to divide"),
             maker_heartbeat_interval,
             heartbeat_timeout: maker_heartbeat_interval
-                .checked_mul(2)
+                .checked_mul(36)
                 .expect("to not overflow"),
             state: State::Disconnected,
             setup_actors: AddressMap::default(),

@@ -175,11 +175,6 @@ where
         .create(None)
         .spawn(&mut tasks);
 
-        // Timeout happens when taker did not receive two consecutive heartbeats
-        let taker_heartbeat_timeout = maker_heartbeat_interval
-            .checked_mul(2)
-            .expect("not to overflow");
-
         tasks.add(
             connection_actor_ctx
                 .with_handler_timeout(Duration::from_secs(120))
@@ -187,7 +182,7 @@ where
                     maker_online_status_feed_sender,
                     &cfd_actor_addr,
                     identity.identity_sk,
-                    taker_heartbeat_timeout,
+                    maker_heartbeat_interval,
                     connect_timeout,
                 )),
         );
