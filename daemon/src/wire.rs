@@ -159,6 +159,20 @@ impl TakerToMaker {
             TakerToMaker::Unknown => "TakerToMaker::Unknown",
         }
     }
+
+    pub fn order_id(&self) -> Option<OrderId> {
+        use TakerToMaker::*;
+        match self {
+            DeprecatedTakeOrder { order_id, .. }
+            | TakeOrder { order_id, .. }
+            | ProposeRollover { order_id, .. }
+            | ProposeRolloverV2 { order_id, .. }
+            | Protocol { order_id, .. }
+            | RolloverProtocol { order_id, .. }
+            | Settlement { order_id, .. } => Some(*order_id),
+            Hello(_) | HelloV2 { .. } | Unknown => None,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -280,6 +294,22 @@ impl MakerToTaker {
                 maker_to_taker::Settlement::Reject => "MakerToTaker::Settlement::Reject",
             },
             MakerToTaker::Unknown => "MakerToTaker::Unknown",
+        }
+    }
+
+    pub fn order_id(&self) -> Option<OrderId> {
+        use MakerToTaker::*;
+        match self {
+            CurrentOrder(Some(DeprecatedOrder047 { id: order_id, .. }))
+            | ConfirmOrder(order_id)
+            | RejectOrder(order_id)
+            | InvalidOrderId(order_id)
+            | Protocol { order_id, .. }
+            | RolloverProtocol { order_id, .. }
+            | ConfirmRollover { order_id, .. }
+            | RejectRollover(order_id)
+            | Settlement { order_id, .. } => Some(*order_id),
+            Hello(_) | Heartbeat | CurrentOffers(_) | CurrentOrder(_) | Unknown => None,
         }
     }
 }

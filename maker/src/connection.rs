@@ -118,7 +118,14 @@ impl Connection {
             .with(&HashMap::from([(MESSAGE_LABEL, msg_str)]))
             .inc();
 
-        tracing::trace!(target: "wire", %taker_id, msg_name = msg_str, "Sending");
+        match msg.order_id() {
+            Some(order_id) => {
+                tracing::trace!(target: "wire", %taker_id, msg_name = msg_str, %order_id, "Sending")
+            }
+            None => {
+                tracing::trace!(target: "wire", %taker_id, msg_name = msg_str, "Sending")
+            }
+        }
 
         let taker_version = self.wire_version.clone();
 
@@ -500,7 +507,14 @@ impl Actor {
     async fn handle_msg_from_taker(&mut self, msg: cfd::FromTaker) {
         let msg_str = msg.msg.name();
 
-        tracing::trace!(target: "wire", taker_id = %msg.taker_id, msg_name = msg_str, "Received");
+        match msg.msg.order_id() {
+            Some(order_id) => {
+                tracing::trace!(target: "wire", taker_id = %msg.taker_id, msg_name = msg_str, %order_id, "Received")
+            }
+            None => {
+                tracing::trace!(target: "wire", taker_id = %msg.taker_id, msg_name = msg_str, "Received")
+            }
+        }
 
         use wire::TakerToMaker::*;
         match msg.msg {
