@@ -32,7 +32,7 @@ tokio-util = { version = "0.7", features = ["codec"] }
 tracing = { version = "0.1" }
 uuid = "0.8"
 x25519-dalek = { version = "1.1" }
-xtra = { version = "0.6" }
+xtra = { version = "0.6", features = ["metrics", "timeout", "tracing"] }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtra-libp2p = { path = "../xtra-libp2p" }
 xtra-libp2p-ping = { path = "../xtra-libp2p-ping" }
