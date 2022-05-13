@@ -5105,6 +5105,7 @@ dependencies = [
  "pollster",
  "prometheus",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
