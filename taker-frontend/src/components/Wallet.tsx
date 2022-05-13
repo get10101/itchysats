@@ -76,7 +76,7 @@ export default function Wallet(
                 <Divider marginTop={2} marginBottom={2} />
                 <Skeleton isLoaded={address != null}>
                     <HStack>
-                        <Text isTruncated>{address}</Text>
+                        <Text noOfLines={1}>{address}</Text>
                         <IconButton
                             variant={"outline"}
                             aria-label="Copy to clipboard"

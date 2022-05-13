@@ -74,7 +74,7 @@ export default function CloseButton({ cfd, request, status, buttonTitle, isForce
                             </PopoverBody>
                             <PopoverFooter
                                 border="0"
-                                d="flex"
+                                display="flex"
                                 alignItems="center"
                                 justifyContent="space-between"
                                 pb={4}
