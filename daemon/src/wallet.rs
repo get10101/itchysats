@@ -32,7 +32,7 @@ use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
-const SYNC_INTERVAL: Duration = Duration::from_secs(10);
+const SYNC_INTERVAL: Duration = Duration::from_secs(60);
 
 static BALANCE_GAUGE: conquer_once::Lazy<prometheus::Gauge> = conquer_once::Lazy::new(|| {
     prometheus::register_gauge!(
@@ -135,8 +135,7 @@ impl Actor<ElectrumBlockchain> {
 
 impl Actor<ElectrumBlockchain> {
     fn sync_internal(&mut self) -> Result<WalletInfo> {
-        self.wallet.ensure_addresses_cached(1000)?;
-
+        let now = Instant::now();
         self.wallet
             .sync(&self.blockchain_client, SyncOptions::default())
             .context("Failed to sync wallet")?;
@@ -167,6 +166,7 @@ impl Actor<ElectrumBlockchain> {
             last_updated_at: Timestamp::now(),
         };
 
+        tracing::trace!(target : "wallet", sync_time_sec = %now.elapsed().as_secs(), "Wallet sync done");
         Ok(wallet_info)
     }
 }
@@ -178,11 +178,9 @@ impl Actor<ElectrumBlockchain> {
             Ok(wallet_info) => Some(wallet_info),
             Err(e) => {
                 tracing::debug!("{:#}", e);
-
                 None
             }
         };
-
         let _ = self.sender.send(wallet_info_update);
     }
 
@@ -285,6 +283,15 @@ impl xtra::Actor for Actor<ElectrumBlockchain> {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
+
+        // We only cache the addresses at startup
+        if let Err(e) = self
+            .wallet
+            .ensure_addresses_cached(1000)
+            .with_context(|| "Could not cache addresses")
+        {
+            tracing::warn!("{:#}", e);
+        }
 
         self.tasks.add(this.send_interval(SYNC_INTERVAL, || Sync));
     }
