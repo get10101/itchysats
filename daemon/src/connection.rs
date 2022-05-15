@@ -70,7 +70,12 @@ impl State {
             }
         };
 
-        tracing::trace!(target: "wire", msg_name = msg_str, "Sending");
+        match msg.order_id() {
+            Some(order_id) => {
+                tracing::trace!(target: "wire", msg_name = msg_str, %order_id, "Sending")
+            }
+            None => tracing::trace!(target: "wire", msg_name = msg_str, "Sending"),
+        };
 
         write
             .send(msg)
@@ -432,7 +437,10 @@ impl Actor {
 
         let msg_name = msg.name();
 
-        tracing::trace!(target: "wire", msg_name, "Received");
+        match msg.order_id() {
+            Some(order_id) => tracing::trace!(target: "wire", msg_name, %order_id, "Received"),
+            None => tracing::trace!(target: "wire", msg_name, "Received"),
+        }
 
         match msg {
             wire::MakerToTaker::Heartbeat => {
