@@ -92,8 +92,10 @@ impl Cfd {
         self.version += 1;
 
         let settlement_event_id = match event.event {
-            EventKind::ContractSetupCompleted { dlc, .. } => dlc.settlement_event_id,
-            EventKind::RolloverCompleted { dlc, .. } => dlc.settlement_event_id,
+            EventKind::ContractSetupCompleted { dlc: None, .. } => return self,
+            EventKind::ContractSetupCompleted { dlc: Some(dlc), .. } => dlc.settlement_event_id,
+            EventKind::RolloverCompleted { dlc: None, .. } => return self,
+            EventKind::RolloverCompleted { dlc: Some(dlc), .. } => dlc.settlement_event_id,
             // TODO: There might be a few cases where we do not need to monitor the attestation,
             // e.g. when we already agreed to collab. settle. Ignoring it for now
             // because I don't want to think about it and it doesn't cause much harm to do the

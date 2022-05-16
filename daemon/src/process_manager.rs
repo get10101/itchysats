@@ -76,7 +76,7 @@ impl Actor {
         // 2. Post process event
         use EventKind::*;
         match event.event {
-            ContractSetupCompleted { dlc, .. } => {
+            ContractSetupCompleted { dlc: Some(dlc), .. } => {
                 let lock_tx = dlc.lock.0.clone();
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
@@ -187,7 +187,7 @@ impl Actor {
                     })
                     .await?;
             }
-            RolloverCompleted { dlc, .. } => {
+            RolloverCompleted { dlc: Some(dlc), .. } => {
                 self.start_monitoring
                     .send_async_safe(StartMonitoring {
                         id: event.id,
@@ -209,7 +209,9 @@ impl Actor {
                     })
                     .await?;
             }
-            RefundConfirmed
+            ContractSetupCompleted { dlc: None, .. }
+            | RolloverCompleted { dlc: None, .. }
+            | RefundConfirmed
             | CollaborativeSettlementStarted { .. }
             | ContractSetupStarted
             | ContractSetupFailed

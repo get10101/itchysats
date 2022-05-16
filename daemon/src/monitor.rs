@@ -190,7 +190,7 @@ impl Cfd {
         use EventKind::*;
         match event.event {
             ContractSetupCompleted { dlc, .. } => Self {
-                params: Some(MonitorParams::new(dlc.clone())),
+                params: dlc.clone().map(MonitorParams::new),
                 monitor_lock_finality: true,
                 monitor_commit_finality: true,
                 monitor_cet_timelock: true,
@@ -198,14 +198,14 @@ impl Cfd {
                 monitor_refund_finality: true,
                 monitor_revoked_commit_transactions: false,
                 monitor_collaborative_settlement_finality: None,
-                lock_tx: Some(dlc.lock.0),
+                lock_tx: dlc.map(|dlc| dlc.lock.0),
                 cet: None,
                 commit_tx: None,
                 ..self
             },
             RolloverCompleted { dlc, .. } => {
                 Self {
-                    params: Some(MonitorParams::new(dlc)),
+                    params: dlc.map(MonitorParams::new),
                     monitor_lock_finality: false, // Lock is already final after rollover.
                     monitor_commit_finality: true,
                     monitor_cet_timelock: true,

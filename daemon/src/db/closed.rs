@@ -339,7 +339,7 @@ impl ClosedCfdInputAggregate {
             ContractSetupStarted => {}
             ContractSetupCompleted { dlc } => {
                 self.fee_account = self.fee_account.add_funding_fee(self.initial_funding_fee);
-                self.latest_dlc = Some(dlc);
+                self.latest_dlc = dlc;
             }
             ContractSetupFailed => {}
             OfferRejected => {}
@@ -348,7 +348,7 @@ impl ClosedCfdInputAggregate {
             RolloverRejected => {}
             RolloverCompleted { dlc, funding_fee } => {
                 self.fee_account = self.fee_account.add_funding_fee(funding_fee);
-                self.latest_dlc = Some(dlc);
+                self.latest_dlc = dlc;
             }
             RolloverFailed => {}
             CollaborativeSettlementStarted { .. } => {}
