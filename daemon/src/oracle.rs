@@ -20,6 +20,12 @@ use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
+/// Timout to be passed into the reqwest client for doing http requests against the oracle.
+///
+/// 10 seconds was chosen arbitrarily. It should be plenty to fetch from the oracle and does not let
+/// us wait forever.
+const REQWEST_TIMEOUT: core::time::Duration = core::time::Duration::from_secs(10);
+
 pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
     pending_attestations: HashSet<BitMexPriceEventId>,
@@ -199,6 +205,7 @@ impl Actor {
 
                     let response = client
                         .get(url.clone())
+                        .timeout(REQWEST_TIMEOUT)
                         .send()
                         .await
                         .with_context(|| format!("Failed to GET {url}"))?;
