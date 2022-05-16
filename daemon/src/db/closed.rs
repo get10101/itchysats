@@ -23,7 +23,7 @@ use bdk::bitcoin::Amount;
 use bdk::bitcoin::OutPoint;
 use bdk::bitcoin::Script;
 use bdk::miniscript::DescriptorTrait;
-use maia::TransactionExt;
+use maia_core::TransactionExt;
 use model::long_and_short_leverage;
 use model::CfdEvent;
 use model::Contracts;

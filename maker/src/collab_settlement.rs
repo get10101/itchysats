@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use daemon::command;
 use daemon::db;
 use daemon::process_manager;
-use maia::secp256k1_zkp::Signature;
+use maia_core::secp256k1_zkp::Signature;
 use model::CollaborativeSettlement;
 use model::Identity;
 use model::SettlementProposal;

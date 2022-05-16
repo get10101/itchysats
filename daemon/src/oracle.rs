@@ -4,7 +4,7 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use maia::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::schnorrsig;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::CfdEvent;

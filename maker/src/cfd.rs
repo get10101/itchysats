@@ -16,7 +16,7 @@ use daemon::process_manager;
 use daemon::projection;
 use daemon::wallet;
 use daemon::wire;
-use maia::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::schnorrsig;
 use model::olivia::BitMexPriceEventId;
 use model::Cfd;
 use model::FundingRate;

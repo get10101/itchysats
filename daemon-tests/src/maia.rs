@@ -1,5 +1,5 @@
-use daemon::maia::secp256k1_zkp::schnorrsig;
-use daemon::maia::secp256k1_zkp::SecretKey;
+use daemon::maia_core::secp256k1_zkp::schnorrsig;
+use daemon::maia_core::secp256k1_zkp::SecretKey;
 use daemon::oracle;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
