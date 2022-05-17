@@ -31,6 +31,9 @@ const REQWEST_TIMEOUT: core::time::Duration = core::time::Duration::from_secs(10
 /// Syncing every 60 seconds might still be an overkill but should not hurt us.
 const SYNC_ANNOUNCEMENTS_INTERVAL: core::time::Duration = std::time::Duration::from_secs(60);
 
+/// We want to sync attestations fast but don't spam our internal actor. Hence, we chose 30 seconds.
+const SYNC_ATTESTATIONS_INTERVAL: core::time::Duration = std::time::Duration::from_secs(30);
+
 pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
     pending_attestations: HashSet<BitMexPriceEventId>,
@@ -42,7 +45,10 @@ pub struct Actor {
 }
 
 #[derive(Clone, Copy)]
-pub struct Sync;
+pub struct SyncAnnouncements;
+
+#[derive(Clone, Copy)]
+pub struct SyncAttestations;
 
 #[derive(Clone, Copy)]
 pub struct MonitorAttestation {
@@ -270,8 +276,11 @@ impl Actor {
             .insert(msg.id, (msg.expected_outcome_time, msg.nonce_pks));
     }
 
-    fn handle_sync(&mut self, _: Sync, ctx: &mut xtra::Context<Self>) {
+    fn handle_sync_announcements(&mut self, _: SyncAnnouncements, ctx: &mut xtra::Context<Self>) {
         self.ensure_having_announcements(self.announcement_lookahead, ctx);
+    }
+
+    fn handle_sync_attestations(&mut self, _: SyncAttestations, ctx: &mut xtra::Context<Self>) {
         self.update_pending_attestations(ctx);
     }
 
@@ -321,7 +330,7 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("we are alive");
         self.tasks.add(
             this.clone()
-                .send_interval(SYNC_ANNOUNCEMENTS_INTERVAL, || Sync),
+                .send_interval(SYNC_ANNOUNCEMENTS_INTERVAL, || SyncAnnouncements),
         );
 
         self.tasks.add({
@@ -349,6 +358,9 @@ impl xtra::Actor for Actor {
                             .await;
                     }
                 }
+                this.clone()
+                    .send_interval(SYNC_ATTESTATIONS_INTERVAL, || SyncAttestations)
+                    .await;
             }
         });
     }
