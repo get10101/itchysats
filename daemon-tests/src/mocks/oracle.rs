@@ -48,7 +48,9 @@ impl OracleActor {
 
     async fn handle(&mut self, _msg: oracle::MonitorAttestation) {}
 
-    async fn handle(&mut self, _msg: oracle::Sync) {}
+    async fn handle(&mut self, _msg: oracle::SyncAnnouncements) {}
+
+    async fn handle(&mut self, _msg: oracle::SyncAttestations) {}
 }
 pub struct MockOracle {
     executor: command::Executor,

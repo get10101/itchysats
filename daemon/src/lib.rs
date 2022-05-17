@@ -89,10 +89,7 @@ pub struct TakerActorSystem<O, W, P> {
 
 impl<O, W, P> TakerActorSystem<O, W, P>
 where
-    O: Handler<oracle::MonitorAttestation>
-        + Handler<oracle::GetAnnouncement>
-        + Handler<oracle::Sync>
-        + Actor<Stop = ()>,
+    O: Handler<oracle::MonitorAttestation> + Handler<oracle::GetAnnouncement> + Actor<Stop = ()>,
     W: Handler<wallet::BuildPartyParams>
         + Handler<wallet::Sign>
         + Handler<wallet::Withdraw>
