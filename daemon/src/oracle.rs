@@ -26,6 +26,11 @@ use xtras::SendInterval;
 /// us wait forever.
 const REQWEST_TIMEOUT: core::time::Duration = core::time::Duration::from_secs(10);
 
+/// We only have to sync for new announcements once an hour.
+///
+/// Syncing every 60 seconds might still be an overkill but should not hurt us.
+const SYNC_ANNOUNCEMENTS_INTERVAL: core::time::Duration = std::time::Duration::from_secs(60);
+
 pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
     pending_attestations: HashSet<BitMexPriceEventId>,
@@ -316,7 +321,7 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("we are alive");
         self.tasks.add(
             this.clone()
-                .send_interval(std::time::Duration::from_secs(5), || Sync),
+                .send_interval(SYNC_ANNOUNCEMENTS_INTERVAL, || Sync),
         );
 
         self.tasks.add({
