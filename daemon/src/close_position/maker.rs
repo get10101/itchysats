@@ -48,6 +48,25 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
+// 10 rollovers
+// - NewInboundStream
+// - Msg0Received
+// - NewInboundStream
+// - Msg0Received
+// - NewInboundStream
+// - Msg0Received
+// - NewInboundStream
+// - Msg0Received
+// - NewInboundStream
+// - Msg0Received
+// - NewInboundStream
+// - Msg0Received
+// - NewInboundStream
+// - Msg0Received
+// - NewInboundStream
+// - Msg0Received
+// - NewInboundStream
+
 #[xtra_productivity(message_impl = false)]
 impl Actor {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut xtra::Context<Self>) {
