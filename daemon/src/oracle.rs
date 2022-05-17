@@ -247,16 +247,18 @@ impl Actor {
             )
         }
     }
+
+    fn add_pending_attestation(&mut self, event_id: BitMexPriceEventId) {
+        if !self.pending_attestations.insert(event_id) {
+            tracing::trace!("Attestation for {event_id} already being monitored");
+        }
+    }
 }
 
 #[xtra_productivity]
 impl Actor {
     fn handle_monitor_attestation(&mut self, msg: MonitorAttestation) {
-        let price_event_id = msg.event_id;
-
-        if !self.pending_attestations.insert(price_event_id) {
-            tracing::trace!("Attestation {price_event_id} already being monitored");
-        }
+        self.add_pending_attestation(msg.event_id)
     }
 
     fn handle_get_announcement(
