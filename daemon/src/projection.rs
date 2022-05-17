@@ -1592,6 +1592,9 @@ impl fmt::Display for HourlyFundingPercent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::memory;
+    use model::OpeningFee;
+    use model::TxFeeRate;
 
     #[test]
     fn state_snapshot_test() {
@@ -1615,5 +1618,211 @@ mod tests {
         assert_eq!(json, "\"Refunded\"");
         let json = serde_json::to_string(&CfdState::SetupFailed).unwrap();
         assert_eq!(json, "\"SetupFailed\"");
+    }
+
+    pub fn dummy_cfd() -> model::Cfd {
+        model::Cfd::new(
+            OrderId::default(),
+            Position::Long,
+            Price::new(dec!(60_000)).unwrap(),
+            Leverage::TWO,
+            time::Duration::hours(24),
+            Role::Taker,
+            Usd::new(dec!(1_000)),
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+                .parse()
+                .unwrap(),
+            OpeningFee::new(Amount::from_sat(2000)),
+            FundingRate::default(),
+            TxFeeRate::default(),
+        )
+    }
+
+    pub fn setup_failed(cfd: &model::Cfd) -> CfdEvent {
+        CfdEvent {
+            timestamp: Timestamp::now(),
+            id: cfd.id(),
+            event: EventKind::ContractSetupFailed,
+        }
+    }
+
+    pub fn order_rejected(cfd: &model::Cfd) -> CfdEvent {
+        CfdEvent {
+            timestamp: Timestamp::now(),
+            id: cfd.id(),
+            event: EventKind::OfferRejected,
+        }
+    }
+
+    fn cfd_collaboratively_settled() -> (model::Cfd, CfdEvent, CfdEvent) {
+        // 1|<RANDOM-ORDER-ID>|Long|41772.8325|2|24|100|
+        // 69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e|Taker|0|0|1
+        let order_id = OrderId::default();
+        let cfd = model::Cfd::new(
+            order_id,
+            Position::Long,
+            Price::new(dec!(41_772.8325)).unwrap(),
+            Leverage::TWO,
+            time::Duration::hours(24),
+            Role::Taker,
+            Usd::new(dec!(100)),
+            "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e"
+                .parse()
+                .unwrap(),
+            OpeningFee::new(Amount::ZERO),
+            FundingRate::default(),
+            TxFeeRate::default(),
+        );
+
+        let contract_setup_completed =
+            std::fs::read_to_string("./src/test_events/contract_setup_completed.json").unwrap();
+        let contract_setup_completed =
+            serde_json::from_str::<EventKind>(&contract_setup_completed).unwrap();
+        let contract_setup_completed = CfdEvent {
+            timestamp: Timestamp::now(),
+            id: order_id,
+            event: contract_setup_completed,
+        };
+
+        let collaborative_settlement_completed =
+            std::fs::read_to_string("./src/test_events/collaborative_settlement_completed.json")
+                .unwrap();
+        let collaborative_settlement_completed =
+            serde_json::from_str::<EventKind>(&collaborative_settlement_completed).unwrap();
+        let collaborative_settlement_completed = CfdEvent {
+            timestamp: Timestamp::now(),
+            id: order_id,
+            event: collaborative_settlement_completed,
+        };
+
+        (
+            cfd,
+            contract_setup_completed,
+            collaborative_settlement_completed,
+        )
+    }
+
+    fn collab_settlement_confirmed(cfd: &model::Cfd) -> CfdEvent {
+        CfdEvent {
+            timestamp: Timestamp::now(),
+            id: cfd.id(),
+            event: EventKind::CollaborativeSettlementConfirmed,
+        }
+    }
+
+    #[tokio::test]
+    async fn given_contract_setup_failed_when_move_cfds_to_failed_table_then_projection_aggregate_stays_the_same(
+    ) {
+        let db = memory().await.unwrap();
+
+        let cfd = dummy_cfd();
+        let order_id = cfd.id();
+
+        db.insert_cfd(&cfd).await.unwrap();
+
+        db.append_event(setup_failed(&cfd)).await.unwrap();
+
+        let projection_open = {
+            let projection_open = db
+                .load_open_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+                .await
+                .unwrap();
+            projection_open.with_current_quote(None) // unconditional processing in `projection`
+        };
+
+        db.move_to_failed_cfds().await.unwrap();
+
+        let projection_failed = {
+            let projection_failed = db
+                .load_failed_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+                .await
+                .unwrap();
+            projection_failed.with_current_quote(None) // unconditional processing in `projection`
+        };
+
+        // this comparison actually omits the `aggregated` field on
+        // `projection::Cfd` because it is not used when aggregating
+        // from a failed CFD
+        assert_eq!(projection_open, projection_failed);
+    }
+
+    #[tokio::test]
+    async fn given_order_rejected_when_move_cfds_to_failed_table_then_projection_aggregate_stays_the_same(
+    ) {
+        let db = memory().await.unwrap();
+
+        let cfd = dummy_cfd();
+        let order_id = cfd.id();
+
+        db.insert_cfd(&cfd).await.unwrap();
+
+        db.append_event(order_rejected(&cfd)).await.unwrap();
+
+        let projection_open = {
+            let projection_open = db
+                .load_open_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+                .await
+                .unwrap();
+            projection_open.with_current_quote(None) // unconditional processing in `projection`
+        };
+
+        db.move_to_failed_cfds().await.unwrap();
+
+        let projection_failed = {
+            let projection_failed = db
+                .load_failed_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+                .await
+                .unwrap();
+            projection_failed.with_current_quote(None) // unconditional processing in `projection`
+        };
+
+        // this comparison actually omits the `aggregated` field on
+        // `projection::Cfd` because it is not used when aggregating
+        // from a failed CFD
+        assert_eq!(projection_open, projection_failed);
+    }
+
+    #[tokio::test]
+    async fn given_confirmed_settlement_when_move_cfds_to_closed_table_then_projection_aggregate_stays_the_same(
+    ) {
+        let db = memory().await.unwrap();
+
+        let (cfd, contract_setup_completed, collaborative_settlement_completed) =
+            cfd_collaboratively_settled();
+        let order_id = cfd.id();
+
+        db.insert_cfd(&cfd).await.unwrap();
+
+        db.append_event(contract_setup_completed).await.unwrap();
+        db.append_event(collaborative_settlement_completed)
+            .await
+            .unwrap();
+
+        db.append_event(collab_settlement_confirmed(&cfd))
+            .await
+            .unwrap();
+
+        let projection_open = {
+            let projection_open = db
+                .load_open_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+                .await
+                .unwrap();
+            projection_open.with_current_quote(None) // unconditional processing in `projection`
+        };
+
+        db.move_to_closed_cfds().await.unwrap();
+
+        let projection_closed = {
+            let projection_closed = db
+                .load_closed_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
+                .await
+                .unwrap();
+            projection_closed.with_current_quote(None) // unconditional processing in `projection`
+        };
+
+        // this comparison actually omits the `aggregated` field on
+        // `projection::Cfd` because it is not used when aggregating
+        // from a closed CFD
+        assert_eq!(projection_open, projection_closed);
     }
 }

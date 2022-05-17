@@ -141,7 +141,7 @@ impl Connection {
     }
 
     /// Load a failed CFD from the database.
-    pub(super) async fn load_failed_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
+    pub async fn load_failed_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
     where
         C: FailedCfdAggregate,
     {
@@ -456,78 +456,6 @@ mod tests {
         assert!(load_from_open.is_ok());
         assert_eq!(load_from_events.len(), 1);
         assert!(load_from_failed.is_err());
-    }
-
-    #[tokio::test]
-    async fn given_contract_setup_failed_when_move_cfds_to_failed_table_then_projection_aggregate_stays_the_same(
-    ) {
-        let db = memory().await.unwrap();
-
-        let cfd = dummy_cfd();
-        let order_id = cfd.id();
-
-        db.insert_cfd(&cfd).await.unwrap();
-
-        db.append_event(setup_failed(&cfd)).await.unwrap();
-
-        let projection_open = {
-            let projection_open = db
-                .load_open_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_open.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        db.move_to_failed_cfds().await.unwrap();
-
-        let projection_failed = {
-            let projection_failed = db
-                .load_failed_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_failed.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        // this comparison actually omits the `aggregated` field on
-        // `projection::Cfd` because it is not used when aggregating
-        // from a failed CFD
-        assert_eq!(projection_open, projection_failed);
-    }
-
-    #[tokio::test]
-    async fn given_order_rejected_when_move_cfds_to_failed_table_then_projection_aggregate_stays_the_same(
-    ) {
-        let db = memory().await.unwrap();
-
-        let cfd = dummy_cfd();
-        let order_id = cfd.id();
-
-        db.insert_cfd(&cfd).await.unwrap();
-
-        db.append_event(order_rejected(&cfd)).await.unwrap();
-
-        let projection_open = {
-            let projection_open = db
-                .load_open_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_open.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        db.move_to_failed_cfds().await.unwrap();
-
-        let projection_failed = {
-            let projection_failed = db
-                .load_failed_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_failed.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        // this comparison actually omits the `aggregated` field on
-        // `projection::Cfd` because it is not used when aggregating
-        // from a failed CFD
-        assert_eq!(projection_open, projection_failed);
     }
 
     #[tokio::test]

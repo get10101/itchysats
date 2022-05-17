@@ -156,7 +156,7 @@ impl Connection {
     }
 
     /// Load a closed CFD from the database.
-    pub(super) async fn load_closed_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
+    pub async fn load_closed_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
     where
         C: ClosedCfdAggregate,
     {
@@ -1050,50 +1050,6 @@ mod tests {
         assert!(load_from_open.is_ok());
         assert_eq!(load_from_events.len(), 2);
         assert!(load_from_closed.is_err());
-    }
-
-    #[tokio::test]
-    async fn given_confirmed_settlement_when_move_cfds_to_closed_table_then_projection_aggregate_stays_the_same(
-    ) {
-        let db = memory().await.unwrap();
-
-        let (cfd, contract_setup_completed, collaborative_settlement_completed) =
-            cfd_collaboratively_settled();
-        let order_id = cfd.id();
-
-        db.insert_cfd(&cfd).await.unwrap();
-
-        db.append_event(contract_setup_completed).await.unwrap();
-        db.append_event(collaborative_settlement_completed)
-            .await
-            .unwrap();
-
-        db.append_event(collab_settlement_confirmed(&cfd))
-            .await
-            .unwrap();
-
-        let projection_open = {
-            let projection_open = db
-                .load_open_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_open.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        db.move_to_closed_cfds().await.unwrap();
-
-        let projection_closed = {
-            let projection_closed = db
-                .load_closed_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_closed.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        // this comparison actually omits the `aggregated` field on
-        // `projection::Cfd` because it is not used when aggregating
-        // from a closed CFD
-        assert_eq!(projection_open, projection_closed);
     }
 
     #[tokio::test]
