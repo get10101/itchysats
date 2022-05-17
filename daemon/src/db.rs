@@ -523,10 +523,11 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
 
     let role = cfd_row.role;
     let counterparty_network_identity = cfd_row.counterparty_network_identity;
-    let counterparty_peer_id = cfd_row.counterparty_peer_id;
-
-    let counterparty_peer_id =
-        derive_known_peer_id(counterparty_peer_id, counterparty_network_identity, role);
+    let counterparty_peer_id = if cfd_row.counterparty_peer_id == PeerId::placeholder() {
+        derive_known_peer_id(counterparty_network_identity, role)
+    } else {
+        Some(cfd_row.counterparty_peer_id)
+    };
 
     Ok(Cfd {
         id: cfd_row.uuid,
@@ -549,11 +550,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
 /// This is used temporarily for rolling out the libp2p based network protocols.
 /// The peer-id is defaulted to a placeholder dummy in the database. Based on the dummy we can
 /// decide to default the peer-id according to known makers.
-fn derive_known_peer_id(
-    peer_id: PeerId,
-    legacy_network_identity: Identity,
-    role: Role,
-) -> Option<PeerId> {
+fn derive_known_peer_id(legacy_network_identity: Identity, role: Role) -> Option<PeerId> {
     const MAINNET_MAKER_ID: &str =
         "7e35e34801e766a6a29ecb9e22810ea4e3476c2b37bf75882edf94a68b1d9607";
     const MAINNET_MAKER_PEER_ID: &str = "12D3KooWP3BN6bq9jPy8cP7Grj1QyUBfr7U6BeQFgMwfTTu12wuY";
@@ -562,20 +559,16 @@ fn derive_known_peer_id(
         "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e";
     const TESTNET_MAKER_PEER_ID: &str = "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1";
 
-    if peer_id == PeerId::placeholder() {
-        match role {
-            // Default known maker PeerIds based on the legacy network identity
-            Role::Taker => (match legacy_network_identity.to_string().as_str() {
-                MAINNET_MAKER_ID => Some(MAINNET_MAKER_PEER_ID),
-                TESTNET_MAKER_ID => Some(TESTNET_MAKER_PEER_ID),
-                _ => None,
-            })
-            .map(|peer_id| PeerId::from_str(peer_id).expect("static peer-id to parse"))
-            .map(PeerId::from),
-            Role::Maker => None,
-        }
-    } else {
-        Some(peer_id)
+    match role {
+        // Default known maker PeerIds based on the legacy network identity
+        Role::Taker => (match legacy_network_identity.to_string().as_str() {
+            MAINNET_MAKER_ID => Some(MAINNET_MAKER_PEER_ID),
+            TESTNET_MAKER_ID => Some(TESTNET_MAKER_PEER_ID),
+            _ => None,
+        })
+        .map(|peer_id| PeerId::from_str(peer_id).expect("static peer-id to parse"))
+        .map(PeerId::from),
+        Role::Maker => None,
     }
 }
 
