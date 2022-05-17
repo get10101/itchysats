@@ -6567,10 +6567,10 @@ use-sidecar@^1.1.2:
     detect-node-es "^1.1.0"
     tslib "^2.0.0"
 
-usehooks-ts@^2.5.2:
-  version "2.5.2"
-  resolved "https://registry.yarnpkg.com/usehooks-ts/-/usehooks-ts-2.5.2.tgz#c6229a4dd59f7081e0b78569b23e7bb6f966e569"
-  integrity sha512-keONG+M5aax8eN9kEZeayNBgK+7MSLVGCuP18pSdce5D5iLiImCxqkm04GWYSkA7Xpo0GWnPOK3cXAOY/K+T1g==
+usehooks-ts@^2.5.3:
+  version "2.5.3"
+  resolved "https://registry.yarnpkg.com/usehooks-ts/-/usehooks-ts-2.5.3.tgz#379738eda9dc4058431a6fb6c0252ed7144102b8"
+  integrity sha512-9R6gMpMSjW7twa1wpW67xYWhEB7UGyKj+8/CEN6RHPlJsdv4fmzDe8mB+Dn5ABcTWtFajqqm1uVpSPGTUQ715g==
 
 v8-compile-cache@^2.0.3:
   version "2.3.0"
