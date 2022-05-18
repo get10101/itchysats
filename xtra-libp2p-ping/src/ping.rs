@@ -126,8 +126,8 @@ impl Actor {
 
         tracing::trace!(%peer, %latency_milliseconds, "Received pong");
 
-        let latency_seconds = (latency_milliseconds as f64) / 1000.0;
-        PEER_LATENCY_HISTOGRAM.observe(latency_seconds);
+        let latency_seconds = latency_milliseconds.checked_div(1000).unwrap_or_default();
+        PEER_LATENCY_HISTOGRAM.observe(latency_seconds as f64);
     }
 
     async fn handle(&mut self, GetLatency(peer): GetLatency) -> Option<Duration> {
