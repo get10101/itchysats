@@ -1,5 +1,4 @@
 use crate::future_ext::FutureExt;
-use crate::protocol;
 use crate::transaction_ext::TransactionExt;
 use crate::wallet;
 use crate::wire::Msg0;
@@ -110,7 +109,7 @@ pub async fn new(
         .select_next_some()
         .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg0", CONTRACT_SETUP_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg0", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg0()?;
 
     tracing::info!("Exchanged setup parameters");
@@ -174,7 +173,7 @@ pub async fn new(
         .select_next_some()
         .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg1", CONTRACT_SETUP_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg1", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg1()?;
 
     tracing::info!("Exchanged CFD transactions");
@@ -201,7 +200,7 @@ pub async fn new(
 
     let commit_amount = Amount::from_sat(commit_tx.output[0].value);
 
-    protocol::verify_adaptor_signature(
+    verify_adaptor_signature(
         &commit_tx,
         &lock_desc,
         lock_amount,
@@ -218,7 +217,7 @@ pub async fn new(
             .cloned()
             .context("Expect event to exist in msg")?;
 
-        protocol::verify_cets(
+        verify_cets(
             (oracle_pk, own_grouped_cets.event.nonce_pks.clone()),
             params.other.clone(),
             own_grouped_cets.cets,
@@ -233,7 +232,7 @@ pub async fn new(
     let lock_tx = own_cfd_txs.lock;
     let refund_tx = own_cfd_txs.refund.0;
 
-    protocol::verify_signature(
+    verify_signature(
         &refund_tx,
         &commit_desc,
         commit_amount,
@@ -258,7 +257,7 @@ pub async fn new(
         .select_next_some()
         .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg2", CONTRACT_SETUP_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg2", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg2()?;
     signed_lock_tx
         .merge(msg2.signed_lock)
@@ -338,7 +337,7 @@ pub async fn new(
         .select_next_some()
         .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg3", CONTRACT_SETUP_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg3", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg3()?;
 
     Ok(Dlc {
@@ -395,7 +394,7 @@ pub async fn roll_over(
         .select_next_some()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg0()?;
 
     let maker_lock_amount = dlc.maker_lock_amount;
@@ -479,7 +478,7 @@ pub async fn roll_over(
         .select_next_some()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg1()?;
 
     let lock_amount = taker_lock_amount + maker_lock_amount;
@@ -502,7 +501,7 @@ pub async fn roll_over(
 
     let commit_amount = Amount::from_sat(commit_tx.output[0].value);
 
-    protocol::verify_adaptor_signature(
+    verify_adaptor_signature(
         &commit_tx,
         &dlc.lock.1,
         lock_amount,
@@ -524,7 +523,7 @@ pub async fn roll_over(
             .cloned()
             .context("Expect event to exist in msg")?;
 
-        protocol::verify_cets(
+        verify_cets(
             (oracle_pk, announcement.nonce_pks.clone()),
             PartyParams {
                 lock_psbt: lock_tx.clone(),
@@ -543,7 +542,7 @@ pub async fn roll_over(
 
     let refund_tx = own_cfd_txs.refund.0;
 
-    protocol::verify_signature(
+    verify_signature(
         &refund_tx,
         &commit_desc,
         commit_amount,
@@ -620,7 +619,7 @@ pub async fn roll_over(
         .select_next_some()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg2()?;
     let revocation_sk_theirs = msg2.revocation_sk;
 
@@ -653,7 +652,7 @@ pub async fn roll_over(
         .select_next_some()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg3()?;
 
     Ok(Dlc {
@@ -731,3 +730,102 @@ impl AllParams {
         }
     }
 }
+
+pub async fn verify_cets(
+    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),
+    other: PartyParams,
+    own_cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
+    cets: Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>,
+    commit_desc: Descriptor<PublicKey>,
+    commit_amount: Amount,
+) -> anyhow::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        for (tx, _, digits) in own_cets.iter() {
+            let other_encsig = cets
+                .iter()
+                .find_map(|(range, encsig)| (range == &digits.range()).then(|| encsig))
+                .with_context(|| {
+                    let range = digits.range();
+
+                    format!("no enc sig from other party for price range {range:?}",)
+                })?;
+
+            verify_cet_encsig(
+                tx,
+                other_encsig,
+                digits,
+                &other.identity_pk,
+                (&oracle_pk, &nonce_pks),
+                &commit_desc,
+                commit_amount,
+            )
+                .context("enc sig on CET does not verify")?;
+        }
+
+        anyhow::Ok(())
+    })
+        .await??;
+
+    Ok(())
+}
+
+pub fn verify_adaptor_signature(
+    tx: &Transaction,
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+    encsig: &EcdsaAdaptorSignature,
+    encryption_point: &PublicKey,
+    pk: &PublicKey,
+) -> anyhow::Result<()> {
+    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
+
+    encsig
+        .verify(SECP256K1, &sighash, &pk.key, &encryption_point.key)
+        .context("failed to verify encsig spend tx")
+}
+
+pub fn verify_signature(
+    tx: &Transaction,
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+    sig: &Signature,
+    pk: &PublicKey,
+) -> anyhow::Result<()> {
+    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
+    SECP256K1.verify(&sighash, sig, &pk.key)?;
+    Ok(())
+}
+
+fn verify_cet_encsig(
+    tx: &Transaction,
+    encsig: &EcdsaAdaptorSignature,
+    digits: &interval::Digits,
+    pk: &PublicKey,
+    (oracle_pk, nonce_pks): (&schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
+    spent_descriptor: &Descriptor<PublicKey>,
+    spent_amount: Amount,
+) -> anyhow::Result<()> {
+    let index_nonce_pairs = &digits
+        .to_indices()
+        .into_iter()
+        .zip(nonce_pks.iter().cloned())
+        .collect::<Vec<_>>();
+    let adaptor_point = compute_adaptor_pk(oracle_pk, index_nonce_pairs)
+        .context("could not calculate adaptor point")?;
+    verify_adaptor_signature(
+        tx,
+        spent_descriptor,
+        spent_amount,
+        encsig,
+        &PublicKey::new(adaptor_point),
+        pk,
+    )
+}
+
+/// Wrapper for the msg
+pub fn format_expect_msg_within(msg: &str, timeout: Duration) -> String {
+    let seconds = timeout.as_secs();
+
+    format!("Expected {msg} within {seconds} seconds")
+}
+

@@ -38,3 +38,9 @@ pub fn create_listen_tcp_multiaddr(socket_addr: &SocketAddr) -> Result<Multiaddr
 pub fn libp2p_socket_from_legacy_networking(legacy_addr: &SocketAddr) -> SocketAddr {
     SocketAddr::new(legacy_addr.ip(), legacy_addr.port() + 1)
 }
+
+/// Whether to use libp2p or legacy protocol
+pub fn use_libp2p(cfd: &model::Cfd) -> bool {
+    cfd.counterparty_peer_id().is_some()
+}
+

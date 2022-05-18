@@ -5,6 +5,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use asynchronous_codec::Framed;
 use asynchronous_codec::JsonCodec;
+use futures::future;
 use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
@@ -197,8 +198,15 @@ impl Actor {
         let (sink, stream) = framed.split();
 
         let rollover_fut = setup_contract::roll_over(
-            sink,
-            stream,
+            sink.with(|msg| future::ok(ListenerMessage::RolloverMsg(msg))),
+            Box::pin(stream.filter_map(|msg| async move {
+                if let Ok(msg) = msg {
+                    msg.into_rollover_msg().ok()
+                } else {
+                    None
+                }
+            }))
+            .fuse(),
             (self.oracle_pk, announcement),
             rollover_params,
             Role::Maker,

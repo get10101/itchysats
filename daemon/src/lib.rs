@@ -51,7 +51,6 @@ pub mod oracle;
 pub mod position_metrics;
 pub mod process_manager;
 pub mod projection;
-mod protocol;
 mod rollover;
 pub mod rollover_taker;
 pub mod seed;

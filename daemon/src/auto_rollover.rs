@@ -2,7 +2,6 @@ use crate::connection;
 use crate::db;
 use crate::oracle;
 use crate::process_manager;
-use crate::protocol::use_libp2p;
 use crate::rollover;
 use crate::rollover::taker::ProposeRollover;
 use crate::rollover_taker;
@@ -20,6 +19,7 @@ use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
+use crate::libp2p_utils::use_libp2p;
 
 pub struct Actor<O> {
     db: db::Connection,
