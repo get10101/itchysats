@@ -36,7 +36,6 @@ use xtra::Handler;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
-use xtra_libp2p_ping::pong;
 use xtras::supervisor;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -129,16 +128,12 @@ where
         ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
             .create(None)
             .spawn(&mut tasks);
-        let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
 
         let endpoint = Endpoint::new(
             TokioTcpConfig::new(),
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
-            [(
-                xtra_libp2p_ping::PROTOCOL_NAME,
-                xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
-            )],
+            [],
         );
 
         tasks.add(endpoint_context.run(endpoint));
