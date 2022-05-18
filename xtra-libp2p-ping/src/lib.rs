@@ -70,7 +70,7 @@ mod tests {
         let (endpoint_address, endpoint_context) = Context::new(None);
 
         let id = Keypair::generate_ed25519();
-        let ping_address = ping::Actor::new(endpoint_address.clone(), Some(Duration::from_secs(1)))
+        let ping_address = ping::Actor::new(endpoint_address.clone(), Duration::from_secs(1))
             .create(None)
             .spawn_global();
         let pong_address = pong::Actor::default().create(None).spawn_global();

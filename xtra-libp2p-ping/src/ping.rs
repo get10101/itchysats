@@ -34,13 +34,13 @@ use xtras::SendInterval;
 /// latencies itself or keeping connections alive otherwise.
 pub struct Actor {
     endpoint: Address<Endpoint>,
-    ping_interval: Option<Duration>,
+    ping_interval: Duration,
     tasks: Tasks,
     latencies: HashMap<PeerId, Duration>,
 }
 
 impl Actor {
-    pub fn new(endpoint: Address<Endpoint>, ping_interval: Option<Duration>) -> Self {
+    pub fn new(endpoint: Address<Endpoint>, ping_interval: Duration) -> Self {
         Self {
             endpoint,
             ping_interval,
@@ -57,9 +57,8 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut Context<Self>) {
         let this = ctx.address().expect("we just started");
 
-        if let Some(interval) = self.ping_interval {
-            self.tasks.add(this.send_interval(interval, || Ping));
-        }
+        self.tasks
+            .add(this.send_interval(self.ping_interval, || Ping));
     }
 
     async fn stopped(self) -> Self::Stop {}

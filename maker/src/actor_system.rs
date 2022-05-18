@@ -40,7 +40,7 @@ use xtra_libp2p_ping::pong;
 use xtras::supervisor;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
-const PING_INTERVAL: Option<Duration> = Some(Duration::from_secs(5));
+const PING_INTERVAL: Duration = Duration::from_secs(5);
 
 pub struct ActorSystem<O, W> {
     pub cfd_actor: Address<cfd::Actor<O, connection::Actor, W>>,
