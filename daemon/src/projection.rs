@@ -852,6 +852,7 @@ impl db::ClosedCfdAggregate for Cfd {
             lock,
             settlement,
             creation_timestamp,
+            ..
         } = closed_cfd;
 
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
@@ -993,6 +994,7 @@ impl db::FailedCfdAggregate for Cfd {
             fees,
             kind,
             creation_timestamp,
+            ..
         } = failed_cfd;
 
         let state = match kind {

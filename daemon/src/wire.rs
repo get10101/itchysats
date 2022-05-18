@@ -16,6 +16,7 @@ use maia_core::secp256k1_zkp::SecretKey;
 use maia_core::CfdTransactions;
 use maia_core::PartyParams;
 use maia_core::PunishParams;
+use model::libp2p::PeerId;
 use model::FeeFlow;
 use model::FundingRate;
 use model::Leverage;
@@ -93,6 +94,11 @@ pub enum TakerToMaker {
         proposed_wire_version: Version,
         daemon_version: String,
     },
+    HelloV3 {
+        proposed_wire_version: Version,
+        daemon_version: String,
+        peer_id: PeerId,
+    },
     /// This is deprecated, use `TakeOrderWithLeverage` instead
     #[serde(rename = "TakeOrder")]
     DeprecatedTakeOrder {
@@ -156,6 +162,7 @@ impl TakerToMaker {
             },
             TakerToMaker::Hello(_) => "TakerToMaker::Hello",
             TakerToMaker::HelloV2 { .. } => "TakerToMaker::HelloV2",
+            TakerToMaker::HelloV3 { .. } => "TakerToMaker::HelloV3",
             TakerToMaker::Unknown => "TakerToMaker::Unknown",
         }
     }
@@ -170,7 +177,7 @@ impl TakerToMaker {
             | Protocol { order_id, .. }
             | RolloverProtocol { order_id, .. }
             | Settlement { order_id, .. } => Some(*order_id),
-            Hello(_) | HelloV2 { .. } | Unknown => None,
+            Hello(_) | HelloV2 { .. } | HelloV3 { .. } | Unknown => None,
         }
     }
 }

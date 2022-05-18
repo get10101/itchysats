@@ -5,6 +5,7 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use futures::Stream;
 use futures::StreamExt;
+use model::libp2p::PeerId;
 use model::CfdEvent;
 use model::EventKind;
 use model::FundingRate;
@@ -27,6 +28,7 @@ use sqlx::Transaction;
 use std::any::Any;
 use std::any::TypeId;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use time::Duration;
 
@@ -147,11 +149,12 @@ impl Connection {
             settlement_time_interval_hours,
             quantity_usd,
             counterparty_network_identity,
+            counterparty_peer_id,
             role,
             opening_fee,
             initial_funding_rate,
             initial_tx_fee_rate
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
         .bind(&cfd.id())
         .bind(&cfd.position())
@@ -160,6 +163,14 @@ impl Connection {
         .bind(&cfd.settlement_time_interval_hours().whole_hours())
         .bind(&cfd.quantity())
         .bind(&cfd.counterparty_network_identity())
+        .bind(&cfd.counterparty_peer_id().unwrap_or({
+            tracing::debug!(
+                order_id=%cfd.id(),
+                taker_id=%cfd.counterparty_network_identity(),
+                "Inserting deprecated CFD with placeholder peer-id"
+            );
+            PeerId::placeholder()
+        }))
         .bind(&cfd.role())
         .bind(&cfd.opening_fee())
         .bind(&cfd.initial_funding_rate())
@@ -440,6 +451,7 @@ pub struct Cfd {
     pub settlement_interval: Duration,
     pub quantity_usd: Usd,
     pub counterparty_network_identity: Identity,
+    pub counterparty_peer_id: Option<PeerId>,
     pub role: Role,
     pub opening_fee: OpeningFee,
     pub initial_funding_rate: FundingRate,
@@ -493,6 +505,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
                 settlement_time_interval_hours,
                 quantity_usd as "quantity_usd: model::Usd",
                 counterparty_network_identity as "counterparty_network_identity: model::Identity",
+                counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
                 role as "role: model::Role",
                 opening_fee as "opening_fee: model::OpeningFee",
                 initial_funding_rate as "initial_funding_rate: model::FundingRate",
@@ -508,6 +521,14 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
     .await?
     .ok_or(Error::OpenCfdNotFound)?;
 
+    let role = cfd_row.role;
+    let counterparty_network_identity = cfd_row.counterparty_network_identity;
+    let counterparty_peer_id = if cfd_row.counterparty_peer_id == PeerId::placeholder() {
+        derive_known_peer_id(counterparty_network_identity, role)
+    } else {
+        Some(cfd_row.counterparty_peer_id)
+    };
+
     Ok(Cfd {
         id: cfd_row.uuid,
         position: cfd_row.position,
@@ -515,12 +536,40 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
         taker_leverage: cfd_row.leverage,
         settlement_interval: Duration::hours(cfd_row.settlement_time_interval_hours),
         quantity_usd: cfd_row.quantity_usd,
-        counterparty_network_identity: cfd_row.counterparty_network_identity,
-        role: cfd_row.role,
+        counterparty_network_identity,
+        counterparty_peer_id,
+        role,
         opening_fee: cfd_row.opening_fee,
         initial_funding_rate: cfd_row.initial_funding_rate,
         initial_tx_fee_rate: cfd_row.initial_tx_fee_rate,
     })
+}
+
+/// Derive the peer id for known makers
+///
+/// This is used temporarily for rolling out the libp2p based network protocols.
+/// The peer-id is defaulted to a placeholder dummy in the database. Based on the dummy we can
+/// decide to default the peer-id according to known makers.
+fn derive_known_peer_id(legacy_network_identity: Identity, role: Role) -> Option<PeerId> {
+    const MAINNET_MAKER_ID: &str =
+        "7e35e34801e766a6a29ecb9e22810ea4e3476c2b37bf75882edf94a68b1d9607";
+    const MAINNET_MAKER_PEER_ID: &str = "12D3KooWP3BN6bq9jPy8cP7Grj1QyUBfr7U6BeQFgMwfTTu12wuY";
+
+    const TESTNET_MAKER_ID: &str =
+        "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e";
+    const TESTNET_MAKER_PEER_ID: &str = "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1";
+
+    match role {
+        // Default known maker PeerIds based on the legacy network identity
+        Role::Taker => (match legacy_network_identity.to_string().as_str() {
+            MAINNET_MAKER_ID => Some(MAINNET_MAKER_PEER_ID),
+            TESTNET_MAKER_ID => Some(TESTNET_MAKER_PEER_ID),
+            _ => None,
+        })
+        .map(|peer_id| PeerId::from_str(peer_id).expect("static peer-id to parse"))
+        .map(PeerId::from),
+        Role::Maker => None,
+    }
 }
 
 /// Load events for a given CFD but only onwards from the specified version.
@@ -642,6 +691,7 @@ mod tests {
             settlement_interval,
             quantity_usd,
             counterparty_network_identity,
+            counterparty_peer_id,
             role,
             opening_fee,
             initial_funding_rate,
@@ -660,6 +710,7 @@ mod tests {
             cfd.counterparty_network_identity(),
             counterparty_network_identity
         );
+        assert_eq!(cfd.counterparty_peer_id(), counterparty_peer_id);
         assert_eq!(cfd.role(), role);
         assert_eq!(cfd.opening_fee(), opening_fee);
         assert_eq!(cfd.initial_funding_rate(), initial_funding_rate);
@@ -705,7 +756,99 @@ mod tests {
         assert_eq!(events, vec![event1, event2])
     }
 
+    #[tokio::test]
+    async fn given_insert_cfd_with_peer_id_then_peer_id_loaded() {
+        let db = memory().await.unwrap();
+
+        let cfd = dummy_taker_with_counterparty_peer_id();
+        db.insert_cfd(&cfd).await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+
+        let super::Cfd {
+            counterparty_peer_id,
+            ..
+        } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
+
+        db_tx.commit().await.unwrap();
+
+        assert_eq!(cfd.counterparty_peer_id(), counterparty_peer_id);
+    }
+
+    #[tokio::test]
+    async fn given_insert_cfd_without_peer_id_when_known_mainnet_maker_then_peer_id_loaded() {
+        let db = memory().await.unwrap();
+
+        let cfd = dummy_taker_with_legacy_identity(
+            "7e35e34801e766a6a29ecb9e22810ea4e3476c2b37bf75882edf94a68b1d9607",
+        );
+        db.insert_cfd(&cfd).await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+
+        let super::Cfd {
+            counterparty_peer_id,
+            ..
+        } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
+
+        db_tx.commit().await.unwrap();
+
+        assert_eq!(
+            "12D3KooWP3BN6bq9jPy8cP7Grj1QyUBfr7U6BeQFgMwfTTu12wuY",
+            counterparty_peer_id.unwrap().inner().to_string().as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn given_insert_cfd_without_peer_id_when_known_testnet_maker_then_peer_id_loaded() {
+        let db = memory().await.unwrap();
+
+        let cfd = dummy_taker_with_legacy_identity(
+            "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e",
+        );
+        db.insert_cfd(&cfd).await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+
+        let super::Cfd {
+            counterparty_peer_id,
+            ..
+        } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
+
+        db_tx.commit().await.unwrap();
+
+        assert_eq!(
+            "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1",
+            counterparty_peer_id.unwrap().inner().to_string().as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn given_insert_cfd_without_peer_id_when_unknown_maker_then_no_peer_id_loaded() {
+        let db = memory().await.unwrap();
+
+        let cfd = dummy_cfd();
+        db.insert_cfd(&cfd).await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+
+        let super::Cfd {
+            counterparty_peer_id,
+            ..
+        } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
+
+        db_tx.commit().await.unwrap();
+
+        assert_eq!(None, counterparty_peer_id);
+    }
+
     pub fn dummy_cfd() -> Cfd {
+        dummy_taker_with_legacy_identity(
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+        )
+    }
+
+    pub fn dummy_taker_with_counterparty_peer_id() -> Cfd {
         Cfd::new(
             OrderId::default(),
             Position::Long,
@@ -717,6 +860,24 @@ mod tests {
             "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
                 .parse()
                 .unwrap(),
+            Some(PeerId::random()),
+            OpeningFee::new(Amount::from_sat(2000)),
+            FundingRate::default(),
+            TxFeeRate::default(),
+        )
+    }
+
+    pub fn dummy_taker_with_legacy_identity(identity: &str) -> Cfd {
+        Cfd::new(
+            OrderId::default(),
+            Position::Long,
+            Price::new(dec!(60_000)).unwrap(),
+            Leverage::TWO,
+            Duration::hours(24),
+            Role::Taker,
+            Usd::new(dec!(1_000)),
+            identity.parse().unwrap(),
+            None,
             OpeningFee::new(Amount::from_sat(2000)),
             FundingRate::default(),
             TxFeeRate::default(),

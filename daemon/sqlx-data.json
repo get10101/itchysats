@@ -1,6 +1,7 @@
 {
   "db": "SQLite",
   "12a758d80dca77c52d5a17c9c2b286bdc537dee587289bf6eba94bf0fb16fc83": {
+    "query": "\n        SELECT\n            event_log.created_at\n        FROM\n            event_log\n        JOIN\n            closed_cfds on closed_cfds.id = event_log.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ORDER BY event_log.created_at ASC\n        LIMIT 1\n        ",
     "describe": {
       "columns": [
         {
@@ -9,26 +10,26 @@
           "type_info": "Int64"
         }
       ],
-      "nullable": [
-        false
-      ],
       "parameters": {
         "Right": 1
-      }
-    },
-    "query": "\n        SELECT\n            event_log.created_at\n        FROM\n            event_log\n        JOIN\n            closed_cfds on closed_cfds.id = event_log.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ORDER BY event_log.created_at ASC\n        LIMIT 1\n        "
+      },
+      "nullable": [
+        false
+      ]
+    }
   },
   "16d1dd8c374c41c479594214f1bc927759195f743d17f489d328040bb2a66b5f": {
+    "query": "\n        INSERT INTO commit_txs\n        (\n            cfd_id,\n            txid\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2\n        )\n        ",
     "describe": {
       "columns": [],
-      "nullable": [],
       "parameters": {
         "Right": 2
-      }
-    },
-    "query": "\n        INSERT INTO commit_txs\n        (\n            cfd_id,\n            txid\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2\n        )\n        "
+      },
+      "nullable": []
+    }
   },
   "19d85c62be9e2deb6b03bfbb157643c91a194fb5f9254e2dbee097fd2bcd0b64": {
+    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                failed_cfds\n            ",
     "describe": {
       "columns": [
         {
@@ -37,16 +38,16 @@
           "type_info": "Text"
         }
       ],
-      "nullable": [
-        false
-      ],
       "parameters": {
         "Right": 0
-      }
-    },
-    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                failed_cfds\n            "
+      },
+      "nullable": [
+        false
+      ]
+    }
   },
   "20dcbd828efa787dbff1d26cabc1a5ac81acacad6536a27c51aab3b02c0efd58": {
+    "query": "\n            SELECT\n                first_seen_timestamp\n            FROM\n                time_to_first_position\n            WHERE\n                taker_id = $1\n            ",
     "describe": {
       "columns": [
         {
@@ -55,198 +56,16 @@
           "type_info": "Int64"
         }
       ],
+      "parameters": {
+        "Right": 1
+      },
       "nullable": [
         true
-      ],
-      "parameters": {
-        "Right": 1
-      }
-    },
-    "query": "\n            SELECT\n                first_seen_timestamp\n            FROM\n                time_to_first_position\n            WHERE\n                taker_id = $1\n            "
+      ]
+    }
   },
-  "4af3815bcce18c34ea78e3389ede21b193a0e493f98642d6a2a4636561667b66": {
-    "describe": {
-      "columns": [
-        {
-          "name": "uuid: model::OrderId",
-          "ordinal": 0,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
-        false
-      ],
-      "parameters": {
-        "Right": 0
-      }
-    },
-    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                cfds\n            "
-  },
-  "54d99318071bfab4da062578dc067bab5a0514d925119e6df2fbaf3f3522d6d8": {
-    "describe": {
-      "columns": [
-        {
-          "name": "uuid: model::OrderId",
-          "ordinal": 0,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
-        false
-      ],
-      "parameters": {
-        "Right": 0
-      }
-    },
-    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                closed_cfds\n            "
-  },
-  "58c86fddae29a8f0b7feb421d8566b14a41d5da18de07e1adc258a57376f56d4": {
-    "describe": {
-      "columns": [
-        {
-          "name": "cfd_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "uuid: model::OrderId",
-          "ordinal": 1,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
-        true,
-        false
-      ],
-      "parameters": {
-        "Right": 3
-      }
-    },
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            where exists (\n                select id from EVENTS as events\n                where events.cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2 or\n                    events.name= $3\n                )\n            )\n            "
-  },
-  "590c2da6afd09d64c50900c1cf684052f9e94ba6e62bdf4564c358bbbdf1a7e4": {
-    "describe": {
-      "columns": [
-        {
-          "name": "cfd_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "uuid: model::OrderId",
-          "ordinal": 1,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
-        true,
-        false
-      ],
-      "parameters": {
-        "Right": 2
-      }
-    },
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            where exists (\n                select id from EVENTS as events\n                where events.cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2\n                )\n            )\n            "
-  },
-  "6705894784db563cfc16ca0ac9c2a4eb152fe6f9111c068c4c077e7de930e0a0": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 1
-      }
-    },
-    "query": "\n        DELETE FROM\n            cfds\n        WHERE\n            cfds.uuid = $1\n        "
-  },
-  "6eb26ec9a02d29ae5e2d8335cc8a12bfef55fa1adb19d8089f5fbe307ffc8ba2": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 4
-      }
-    },
-    "query": "\n        INSERT INTO refund_txs\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4\n        )\n        "
-  },
-  "7743059deba9a6cf222e0c8ef0db029d4090c65fcaa113d325eb0457c8c08465": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 9
-      }
-    },
-    "query": "\n        INSERT INTO failed_cfds\n        (\n            uuid,\n            position,\n            initial_price,\n            taker_leverage,\n            n_contracts,\n            counterparty_network_identity,\n            role,\n            fees,\n            kind\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n        "
-  },
-  "7a7a9cc00acb13e8aab74b57a9ced6e6ef490780956e659e090a15833ceee571": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 3
-      }
-    },
-    "query": "\n            INSERT INTO event_log_failed (\n                cfd_id,\n                name,\n                created_at\n            )\n            VALUES\n            (\n                (SELECT id FROM failed_cfds WHERE failed_cfds.uuid = $1),\n                $2, $3\n            )\n            "
-  },
-  "8192c50dcb3342b01b9ab39daadcbc73f75d3b7f48ae18dfe4d936ebf8725fb4": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 3
-      }
-    },
-    "query": "\n            INSERT INTO event_log (\n                cfd_id,\n                name,\n                created_at\n            )\n            VALUES\n            (\n                (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n                $2, $3\n            )\n            "
-  },
-  "8be24a7ddeb039a60c0600232d742f9ba75c02cde7bf536bb190525be07f0d5b": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 5
-      }
-    },
-    "query": "\n        INSERT INTO collaborative_settlement_txs\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout,\n            price\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4, $5\n        )\n        "
-  },
-  "9189ea1221610d712f3567ecf0aaf0ac201e9795de1fa5d6397996ac7cedfadb": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 11
-      }
-    },
-    "query": "\n        INSERT INTO closed_cfds\n        (\n            uuid,\n            position,\n            initial_price,\n            taker_leverage,\n            n_contracts,\n            counterparty_network_identity,\n            role,\n            fees,\n            expiry_timestamp,\n            lock_txid,\n            lock_dlc_vout\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n        "
-  },
-  "9ee7e0229619689eed2c5f2e834d9449a732824bbeffed628d01abc1d1839319": {
-    "describe": {
-      "columns": [
-        {
-          "name": "first_position_timestamp",
-          "ordinal": 0,
-          "type_info": "Int64"
-        }
-      ],
-      "nullable": [
-        true
-      ],
-      "parameters": {
-        "Right": 1
-      }
-    },
-    "query": "\n            SELECT\n                first_position_timestamp\n            FROM\n                time_to_first_position\n            WHERE\n                taker_id = $1\n            "
-  },
-  "a8124175098e096f61da0874f7cd9f1ebfadde95fd2fc2cc478982be04d1e150": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 2
-      }
-    },
-    "query": "\n            UPDATE time_to_first_position\n            SET first_position_timestamp = $2\n            WHERE taker_id = $1 and first_position_timestamp is NULL\n            "
-  },
-  "a97c0728390b1d1bd516874a60f00fbd0f5d7cbd33fea156b760e42544710d71": {
+  "32ea41a619b311985f52e754eea03d6fa20602896c147689fb486c8e19a36637": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\",\n                position as \"position: model::Position\",\n                initial_price as \"initial_price: model::Price\",\n                leverage as \"leverage: model::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: model::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: model::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: model::libp2p::PeerId\",\n                role as \"role: model::Role\",\n                opening_fee as \"opening_fee: model::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: model::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: model::TxFeeRate\"\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            ",
     "describe": {
       "columns": [
         {
@@ -290,26 +109,34 @@
           "type_info": "Text"
         },
         {
-          "name": "role: model::Role",
+          "name": "counterparty_peer_id: model::libp2p::PeerId",
           "ordinal": 8,
           "type_info": "Text"
         },
         {
-          "name": "opening_fee: model::OpeningFee",
+          "name": "role: model::Role",
           "ordinal": 9,
-          "type_info": "Null"
+          "type_info": "Text"
         },
         {
-          "name": "initial_funding_rate: model::FundingRate",
+          "name": "opening_fee: model::OpeningFee",
           "ordinal": 10,
           "type_info": "Null"
         },
         {
-          "name": "initial_tx_fee_rate: model::TxFeeRate",
+          "name": "initial_funding_rate: model::FundingRate",
           "ordinal": 11,
+          "type_info": "Null"
+        },
+        {
+          "name": "initial_tx_fee_rate: model::TxFeeRate",
+          "ordinal": 12,
           "type_info": "Null"
         }
       ],
+      "parameters": {
+        "Right": 1
+      },
       "nullable": [
         true,
         false,
@@ -322,15 +149,185 @@
         false,
         false,
         false,
+        false,
         false
+      ]
+    }
+  },
+  "4af3815bcce18c34ea78e3389ede21b193a0e493f98642d6a2a4636561667b66": {
+    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                cfds\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "uuid: model::OrderId",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 0
+      },
+      "nullable": [
+        false
+      ]
+    }
+  },
+  "54d99318071bfab4da062578dc067bab5a0514d925119e6df2fbaf3f3522d6d8": {
+    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                closed_cfds\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "uuid: model::OrderId",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 0
+      },
+      "nullable": [
+        false
+      ]
+    }
+  },
+  "58c86fddae29a8f0b7feb421d8566b14a41d5da18de07e1adc258a57376f56d4": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            where exists (\n                select id from EVENTS as events\n                where events.cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2 or\n                    events.name= $3\n                )\n            )\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "uuid: model::OrderId",
+          "ordinal": 1,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 3
+      },
+      "nullable": [
+        true,
+        false
+      ]
+    }
+  },
+  "590c2da6afd09d64c50900c1cf684052f9e94ba6e62bdf4564c358bbbdf1a7e4": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            where exists (\n                select id from EVENTS as events\n                where events.cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2\n                )\n            )\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "uuid: model::OrderId",
+          "ordinal": 1,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": [
+        true,
+        false
+      ]
+    }
+  },
+  "6705894784db563cfc16ca0ac9c2a4eb152fe6f9111c068c4c077e7de930e0a0": {
+    "query": "\n        DELETE FROM\n            cfds\n        WHERE\n            cfds.uuid = $1\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": []
+    }
+  },
+  "6eb26ec9a02d29ae5e2d8335cc8a12bfef55fa1adb19d8089f5fbe307ffc8ba2": {
+    "query": "\n        INSERT INTO refund_txs\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4\n        )\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 4
+      },
+      "nullable": []
+    }
+  },
+  "7a7a9cc00acb13e8aab74b57a9ced6e6ef490780956e659e090a15833ceee571": {
+    "query": "\n            INSERT INTO event_log_failed (\n                cfd_id,\n                name,\n                created_at\n            )\n            VALUES\n            (\n                (SELECT id FROM failed_cfds WHERE failed_cfds.uuid = $1),\n                $2, $3\n            )\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 3
+      },
+      "nullable": []
+    }
+  },
+  "8192c50dcb3342b01b9ab39daadcbc73f75d3b7f48ae18dfe4d936ebf8725fb4": {
+    "query": "\n            INSERT INTO event_log (\n                cfd_id,\n                name,\n                created_at\n            )\n            VALUES\n            (\n                (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n                $2, $3\n            )\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 3
+      },
+      "nullable": []
+    }
+  },
+  "8556fa5ffa07322e35a16add4e40fa35bd543f7a1cb6d81b046ded4ec7bbb0be": {
+    "query": "\n        INSERT INTO closed_cfds\n        (\n            uuid,\n            position,\n            initial_price,\n            taker_leverage,\n            n_contracts,\n            counterparty_network_identity,\n            counterparty_peer_id,\n            role,\n            fees,\n            expiry_timestamp,\n            lock_txid,\n            lock_dlc_vout\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 12
+      },
+      "nullable": []
+    }
+  },
+  "8be24a7ddeb039a60c0600232d742f9ba75c02cde7bf536bb190525be07f0d5b": {
+    "query": "\n        INSERT INTO collaborative_settlement_txs\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout,\n            price\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4, $5\n        )\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 5
+      },
+      "nullable": []
+    }
+  },
+  "9ee7e0229619689eed2c5f2e834d9449a732824bbeffed628d01abc1d1839319": {
+    "query": "\n            SELECT\n                first_position_timestamp\n            FROM\n                time_to_first_position\n            WHERE\n                taker_id = $1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "first_position_timestamp",
+          "ordinal": 0,
+          "type_info": "Int64"
+        }
       ],
       "parameters": {
         "Right": 1
-      }
-    },
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\",\n                position as \"position: model::Position\",\n                initial_price as \"initial_price: model::Price\",\n                leverage as \"leverage: model::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: model::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: model::Identity\",\n                role as \"role: model::Role\",\n                opening_fee as \"opening_fee: model::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: model::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: model::TxFeeRate\"\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            "
+      },
+      "nullable": [
+        true
+      ]
+    }
+  },
+  "a8124175098e096f61da0874f7cd9f1ebfadde95fd2fc2cc478982be04d1e150": {
+    "query": "\n            UPDATE time_to_first_position\n            SET first_position_timestamp = $2\n            WHERE taker_id = $1 and first_position_timestamp is NULL\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": []
+    }
   },
   "ad1226a1cd097ba070294b41e818228e4a9ed07ce8b69bd1583eb854c4c84f0e": {
+    "query": "\n\n        select\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        limit $2,-1\n            ",
     "describe": {
       "columns": [
         {
@@ -349,18 +346,18 @@
           "type_info": "Text"
         }
       ],
+      "parameters": {
+        "Right": 2
+      },
       "nullable": [
         false,
         false,
         false
-      ],
-      "parameters": {
-        "Right": 2
-      }
-    },
-    "query": "\n\n        select\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        limit $2,-1\n            "
+      ]
+    }
   },
   "adcc764462a8cd428c52595130b9e5c7c3cf9438b97e90efa0f0da3446d12eb4": {
+    "query": "\n        SELECT\n            collaborative_settlement_txs.txid as \"txid: model::Txid\",\n            collaborative_settlement_txs.vout as \"vout: model::Vout\",\n            collaborative_settlement_txs.payout as \"payout: model::Payout\",\n            collaborative_settlement_txs.price as \"price: model::Price\"\n        FROM\n            collaborative_settlement_txs\n        JOIN\n            closed_cfds on closed_cfds.id = collaborative_settlement_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
     "describe": {
       "columns": [
         {
@@ -384,19 +381,91 @@
           "type_info": "Text"
         }
       ],
+      "parameters": {
+        "Right": 1
+      },
       "nullable": [
         false,
         false,
         false,
         false
+      ]
+    }
+  },
+  "cd61f78c82124bdc7f5b97b7ff86b4608708463c25aca9b4de156ed0d837d535": {
+    "query": "\n        INSERT INTO failed_cfds\n        (\n            uuid,\n            position,\n            initial_price,\n            taker_leverage,\n            n_contracts,\n            counterparty_network_identity,\n            counterparty_peer_id,\n            role,\n            fees,\n            kind\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 10
+      },
+      "nullable": []
+    }
+  },
+  "d248ffbb2d38a6a8f6475f7b5e2f2ee1ab5798149ba8b70aff3a6cc9457382ef": {
+    "query": "\n        INSERT INTO cets\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout,\n            price\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4, $5\n        )\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 5
+      },
+      "nullable": []
+    }
+  },
+  "d34c71aabe47b87cc7de4c7da4f923544721264e4be976634a3f989d40278211": {
+    "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            cets.txid as \"txid: model::Txid\",\n            cets.vout as \"vout: model::Vout\",\n            cets.payout as \"payout: model::Payout\",\n            cets.price as \"price: model::Price\"\n        FROM\n            cets\n        JOIN\n            commit_txs on commit_txs.cfd_id = cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "commit_txid: model::Txid",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "txid: model::Txid",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "vout: model::Vout",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "payout: model::Payout",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "price: model::Price",
+          "ordinal": 4,
+          "type_info": "Text"
+        }
       ],
       "parameters": {
         "Right": 1
-      }
-    },
-    "query": "\n        SELECT\n            collaborative_settlement_txs.txid as \"txid: model::Txid\",\n            collaborative_settlement_txs.vout as \"vout: model::Vout\",\n            collaborative_settlement_txs.payout as \"payout: model::Payout\",\n            collaborative_settlement_txs.price as \"price: model::Price\"\n        FROM\n            collaborative_settlement_txs\n        JOIN\n            closed_cfds on closed_cfds.id = collaborative_settlement_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        "
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
   },
-  "c9ef057c4481c04eb90d134ba185fca4d0e6ea7d42367d02b62e17afda3c8edd": {
+  "d87c695f2f1f67e9acbc2ed4dac9a083738e82c52e419f5f025f8c4e327b4858": {
+    "query": "\n            INSERT OR IGNORE INTO time_to_first_position\n            (\n                taker_id,\n                first_seen_timestamp\n            )\n            VALUES ($1, $2)\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": []
+    }
+  },
+  "e35110fab2bfa16dde537505e1a674b7283d307c650c6f5bfe82e085f4795a01": {
+    "query": "\n            SELECT\n                uuid as \"id: model::OrderId\",\n                position as \"position: model::Position\",\n                initial_price as \"initial_price: model::Price\",\n                taker_leverage as \"taker_leverage: model::Leverage\",\n                n_contracts as \"n_contracts: model::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: model::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: model::libp2p::PeerId\",\n                role as \"role: model::Role\",\n                fees as \"fees: model::Fees\",\n                kind as \"kind: Kind\"\n            FROM\n                failed_cfds\n            WHERE\n                failed_cfds.uuid = $1\n            ",
     "describe": {
       "columns": [
         {
@@ -430,21 +499,29 @@
           "type_info": "Text"
         },
         {
-          "name": "role: model::Role",
+          "name": "counterparty_peer_id: model::libp2p::PeerId",
           "ordinal": 6,
           "type_info": "Text"
         },
         {
-          "name": "fees: model::Fees",
+          "name": "role: model::Role",
           "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "fees: model::Fees",
+          "ordinal": 8,
           "type_info": "Int64"
         },
         {
           "name": "kind: Kind",
-          "ordinal": 8,
+          "ordinal": 9,
           "type_info": "Text"
         }
       ],
+      "parameters": {
+        "Right": 1
+      },
       "nullable": [
         false,
         false,
@@ -454,25 +531,13 @@
         false,
         false,
         false,
+        false,
         false
-      ],
-      "parameters": {
-        "Right": 1
-      }
-    },
-    "query": "\n            SELECT\n                uuid as \"id: model::OrderId\",\n                position as \"position: model::Position\",\n                initial_price as \"initial_price: model::Price\",\n                taker_leverage as \"taker_leverage: model::Leverage\",\n                n_contracts as \"n_contracts: model::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: model::Identity\",\n                role as \"role: model::Role\",\n                fees as \"fees: model::Fees\",\n                kind as \"kind: Kind\"\n            FROM\n                failed_cfds\n            WHERE\n                failed_cfds.uuid = $1\n            "
+      ]
+    }
   },
-  "d248ffbb2d38a6a8f6475f7b5e2f2ee1ab5798149ba8b70aff3a6cc9457382ef": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 5
-      }
-    },
-    "query": "\n        INSERT INTO cets\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout,\n            price\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4, $5\n        )\n        "
-  },
-  "d34c71aabe47b87cc7de4c7da4f923544721264e4be976634a3f989d40278211": {
+  "e3bddc86b453b35f2c4232bca0bb17caf42b763c6f30a585a5ee2ce78081b63a": {
+    "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            refund_txs.txid as \"txid: model::Txid\",\n            refund_txs.vout as \"vout: model::Vout\",\n            refund_txs.payout as \"payout: model::Payout\"\n        FROM\n            refund_txs\n        JOIN\n            commit_txs on commit_txs.cfd_id = refund_txs.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = refund_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
     "describe": {
       "columns": [
         {
@@ -494,37 +559,39 @@
           "name": "payout: model::Payout",
           "ordinal": 3,
           "type_info": "Int64"
-        },
-        {
-          "name": "price: model::Price",
-          "ordinal": 4,
-          "type_info": "Text"
         }
       ],
+      "parameters": {
+        "Right": 1
+      },
       "nullable": [
         false,
         false,
         false,
-        false,
         false
+      ]
+    }
+  },
+  "eaa1ac5e11d036f67d5a6fd1b7c150dba3f59021faee1e89abb0f2cda4ca6af9": {
+    "query": "\n        SELECT\n            event_log_failed.created_at\n        FROM\n            event_log_failed\n        JOIN\n            failed_cfds on failed_cfds.id = event_log_failed.cfd_id\n        WHERE\n            failed_cfds.uuid = $1\n        ORDER BY event_log_failed.created_at ASC\n        LIMIT 1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "created_at",
+          "ordinal": 0,
+          "type_info": "Int64"
+        }
       ],
       "parameters": {
         "Right": 1
-      }
-    },
-    "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            cets.txid as \"txid: model::Txid\",\n            cets.vout as \"vout: model::Vout\",\n            cets.payout as \"payout: model::Payout\",\n            cets.price as \"price: model::Price\"\n        FROM\n            cets\n        JOIN\n            commit_txs on commit_txs.cfd_id = cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        "
+      },
+      "nullable": [
+        false
+      ]
+    }
   },
-  "d87c695f2f1f67e9acbc2ed4dac9a083738e82c52e419f5f025f8c4e327b4858": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 2
-      }
-    },
-    "query": "\n            INSERT OR IGNORE INTO time_to_first_position\n            (\n                taker_id,\n                first_seen_timestamp\n            )\n            VALUES ($1, $2)\n            "
-  },
-  "da7431dcc9aa5d799bf29bef7fb6a8b31469fb2deb4eab99a518f03f79eabbf4": {
+  "f44c119ce16e5fe44d9f16f336395587cdaa7ce66c709f77700a575ea21a0d8a": {
+    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\",\n                position as \"position: model::Position\",\n                initial_price as \"initial_price: model::Price\",\n                taker_leverage as \"taker_leverage: model::Leverage\",\n                n_contracts as \"n_contracts: model::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: model::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: model::libp2p::PeerId\",\n                role as \"role: model::Role\",\n                fees as \"fees: model::Fees\",\n                expiry_timestamp,\n                lock_txid as \"lock_txid: model::Txid\",\n                lock_dlc_vout as \"lock_dlc_vout: model::Vout\"\n            FROM\n                closed_cfds\n            WHERE\n                closed_cfds.uuid = $1\n            ",
     "describe": {
       "columns": [
         {
@@ -558,31 +625,39 @@
           "type_info": "Text"
         },
         {
-          "name": "role: model::Role",
+          "name": "counterparty_peer_id: model::libp2p::PeerId",
           "ordinal": 6,
           "type_info": "Text"
         },
         {
-          "name": "fees: model::Fees",
+          "name": "role: model::Role",
           "ordinal": 7,
-          "type_info": "Int64"
+          "type_info": "Text"
         },
         {
-          "name": "expiry_timestamp",
+          "name": "fees: model::Fees",
           "ordinal": 8,
           "type_info": "Int64"
         },
         {
-          "name": "lock_txid: model::Txid",
+          "name": "expiry_timestamp",
           "ordinal": 9,
+          "type_info": "Int64"
+        },
+        {
+          "name": "lock_txid: model::Txid",
+          "ordinal": 10,
           "type_info": "Text"
         },
         {
           "name": "lock_dlc_vout: model::Vout",
-          "ordinal": 10,
+          "ordinal": 11,
           "type_info": "Int64"
         }
       ],
+      "parameters": {
+        "Right": 1
+      },
       "nullable": [
         false,
         false,
@@ -594,76 +669,19 @@
         false,
         false,
         false,
-        false
-      ],
-      "parameters": {
-        "Right": 1
-      }
-    },
-    "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\",\n                position as \"position: model::Position\",\n                initial_price as \"initial_price: model::Price\",\n                taker_leverage as \"taker_leverage: model::Leverage\",\n                n_contracts as \"n_contracts: model::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: model::Identity\",\n                role as \"role: model::Role\",\n                fees as \"fees: model::Fees\",\n                expiry_timestamp,\n                lock_txid as \"lock_txid: model::Txid\",\n                lock_dlc_vout as \"lock_dlc_vout: model::Vout\"\n            FROM\n                closed_cfds\n            WHERE\n                closed_cfds.uuid = $1\n            "
-  },
-  "e3bddc86b453b35f2c4232bca0bb17caf42b763c6f30a585a5ee2ce78081b63a": {
-    "describe": {
-      "columns": [
-        {
-          "name": "commit_txid: model::Txid",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "txid: model::Txid",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "vout: model::Vout",
-          "ordinal": 2,
-          "type_info": "Int64"
-        },
-        {
-          "name": "payout: model::Payout",
-          "ordinal": 3,
-          "type_info": "Int64"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
         false,
         false
-      ],
-      "parameters": {
-        "Right": 1
-      }
-    },
-    "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            refund_txs.txid as \"txid: model::Txid\",\n            refund_txs.vout as \"vout: model::Vout\",\n            refund_txs.payout as \"payout: model::Payout\"\n        FROM\n            refund_txs\n        JOIN\n            commit_txs on commit_txs.cfd_id = refund_txs.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = refund_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        "
-  },
-  "eaa1ac5e11d036f67d5a6fd1b7c150dba3f59021faee1e89abb0f2cda4ca6af9": {
-    "describe": {
-      "columns": [
-        {
-          "name": "created_at",
-          "ordinal": 0,
-          "type_info": "Int64"
-        }
-      ],
-      "nullable": [
-        false
-      ],
-      "parameters": {
-        "Right": 1
-      }
-    },
-    "query": "\n        SELECT\n            event_log_failed.created_at\n        FROM\n            event_log_failed\n        JOIN\n            failed_cfds on failed_cfds.id = event_log_failed.cfd_id\n        WHERE\n            failed_cfds.uuid = $1\n        ORDER BY event_log_failed.created_at ASC\n        LIMIT 1\n        "
+      ]
+    }
   },
   "fc7e8992943cd5c64d307272eb1951e4c7c645308b20245d5f2818aaaf3b265b": {
+    "query": "\n        DELETE FROM\n            events\n        WHERE events.cfd_id IN\n            (SELECT id FROM cfds WHERE cfds.uuid = $1)\n        ",
     "describe": {
       "columns": [],
-      "nullable": [],
       "parameters": {
         "Right": 1
-      }
-    },
-    "query": "\n        DELETE FROM\n            events\n        WHERE events.cfd_id IN\n            (SELECT id FROM cfds WHERE cfds.uuid = $1)\n        "
+      },
+      "nullable": []
+    }
   }
 }

@@ -15,6 +15,7 @@ use daemon::wire::EncryptedJsonCodec;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
+use model::libp2p::PeerId;
 use model::Identity;
 use model::Leverage;
 use model::MakerOffers;
@@ -411,6 +412,7 @@ impl Actor {
             mut read,
             write,
             identity,
+            peer_id,
             address,
             wire_version,
             daemon_version,
@@ -446,6 +448,7 @@ impl Actor {
                             .context("End of stream")?;
 
                         this.send(cfd::FromTaker {
+                            peer_id,
                             taker_id: identity,
                             msg,
                         })
@@ -563,7 +566,7 @@ impl Actor {
                 // dispatch to the maker cfd actor
                 let _ = self.taker_msg_channel.send_async_safe(msg).await;
             }
-            Hello(_) | HelloV2 { .. } => {
+            Hello(_) | HelloV2 { .. } | HelloV3 { .. } => {
                 if cfg!(debug_assertions) {
                     unreachable!("Message {} is not dispatched to this actor", msg.msg.name())
                 }
@@ -604,12 +607,17 @@ async fn upgrade(
         .context("Failed to read first message on stream")?
         .context("Stream closed before first message")?;
 
-    let (proposed_wire_version, daemon_version) = match first_message {
-        wire::TakerToMaker::Hello(proposed_wire_version) => (proposed_wire_version, None),
+    let (proposed_wire_version, daemon_version, peer_id) = match first_message {
+        wire::TakerToMaker::Hello(proposed_wire_version) => (proposed_wire_version, None, None),
         wire::TakerToMaker::HelloV2 {
             proposed_wire_version,
             daemon_version,
-        } => (proposed_wire_version, Some(daemon_version)),
+        } => (proposed_wire_version, Some(daemon_version), None),
+        wire::TakerToMaker::HelloV3 {
+            proposed_wire_version,
+            daemon_version,
+            peer_id,
+        } => (proposed_wire_version, Some(daemon_version), Some(peer_id)),
         unexpected_message => {
             bail!(
                 "Unexpected message {} from taker {taker_id}",
@@ -646,6 +654,7 @@ async fn upgrade(
             read,
             write,
             identity: taker_id,
+            peer_id,
             address: taker_address,
             wire_version: negotiated_wire_version,
             daemon_version,
@@ -659,6 +668,7 @@ struct ConnectionReady {
     read: wire::Read<wire::TakerToMaker, wire::MakerToTaker>,
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
     identity: Identity,
+    peer_id: Option<PeerId>,
     address: SocketAddr,
     wire_version: wire::Version,
     daemon_version: String,

@@ -1,5 +1,6 @@
 use crate::contract_setup::SetupParams;
 use crate::hex_transaction;
+use crate::libp2p::PeerId;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
@@ -616,6 +617,7 @@ pub struct Cfd {
     settlement_interval: Duration,
     quantity: Usd,
     counterparty_network_identity: Identity,
+    counterparty_peer_id: Option<PeerId>,
     role: Role,
     opening_fee: OpeningFee,
     initial_tx_fee_rate: TxFeeRate,
@@ -668,6 +670,7 @@ impl Cfd {
         role: Role,
         quantity: Usd,
         counterparty_network_identity: Identity,
+        counterparty_peer_id: Option<PeerId>,
         opening_fee: OpeningFee,
         initial_funding_rate: FundingRate,
         initial_tx_fee_rate: TxFeeRate,
@@ -695,6 +698,7 @@ impl Cfd {
             settlement_interval,
             quantity,
             counterparty_network_identity,
+            counterparty_peer_id,
             role,
             initial_funding_rate,
             opening_fee,
@@ -725,6 +729,7 @@ impl Cfd {
         order: &Order,
         quantity: Usd,
         counterparty_network_identity: Identity,
+        counterparty_peer_id: Option<PeerId>,
         role: Role,
         taker_leverage: Leverage,
     ) -> Self {
@@ -742,6 +747,7 @@ impl Cfd {
             role,
             quantity,
             counterparty_network_identity,
+            counterparty_peer_id,
             order.opening_fee,
             order.funding_rate,
             order.tx_fee_rate,
@@ -1382,6 +1388,10 @@ impl Cfd {
 
     pub fn counterparty_network_identity(&self) -> Identity {
         self.counterparty_network_identity
+    }
+
+    pub fn counterparty_peer_id(&self) -> Option<PeerId> {
+        self.counterparty_peer_id
     }
 
     pub fn role(&self) -> Role {
@@ -3459,11 +3469,25 @@ mod tests {
         fn taker_long_from_order(mut order: Order, quantity: Usd, leverage: Leverage) -> Self {
             order.origin = Origin::Theirs;
 
-            Cfd::from_order(&order, quantity, dummy_identity(), Role::Taker, leverage)
+            Cfd::from_order(
+                &order,
+                quantity,
+                dummy_identity(),
+                dummy_peer_id(),
+                Role::Taker,
+                leverage,
+            )
         }
 
         fn maker_short_from_order(order: Order, quantity: Usd, leverage: Leverage) -> Self {
-            Cfd::from_order(&order, quantity, dummy_identity(), Role::Maker, leverage)
+            Cfd::from_order(
+                &order,
+                quantity,
+                dummy_identity(),
+                dummy_peer_id(),
+                Role::Maker,
+                leverage,
+            )
         }
 
         fn dummy_taker_long() -> Self {
@@ -3471,6 +3495,7 @@ mod tests {
                 &Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
+                dummy_peer_id(),
                 Role::Taker,
                 Leverage::TWO,
             )
@@ -3481,6 +3506,7 @@ mod tests {
                 &Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
+                dummy_peer_id(),
                 Role::Maker,
                 Leverage::TWO,
             )
@@ -3491,6 +3517,7 @@ mod tests {
                 &Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
+                dummy_peer_id(),
                 Role::Taker,
                 Leverage::TWO,
             )
@@ -3572,7 +3599,7 @@ mod tests {
         ) -> (Self, SettlementProposal, Signature, Script) {
             let mut events = Vec::new();
 
-            let (propose, settlement_proposal) = self
+            let (propose, settlement_proposal, ..) = self
                 .propose_collaborative_settlement(price, N_PAYOUTS)
                 .unwrap();
             events.push(propose);
@@ -3640,6 +3667,7 @@ mod tests {
                 &Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
+                dummy_peer_id(),
                 Role::Taker,
                 Leverage::TWO,
             );
@@ -3654,6 +3682,7 @@ mod tests {
                 &Order::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
+                dummy_peer_id(),
                 Role::Taker,
                 Leverage::TWO,
             );
@@ -3882,6 +3911,10 @@ mod tests {
         Identity::new(x25519_dalek::PublicKey::from(
             *b"hello world, oh what a beautiful",
         ))
+    }
+
+    pub fn dummy_peer_id() -> Option<PeerId> {
+        Some(PeerId::random())
     }
 
     pub fn dummy_event_id() -> BitMexPriceEventId {

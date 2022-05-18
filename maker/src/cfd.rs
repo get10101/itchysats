@@ -17,6 +17,7 @@ use daemon::projection;
 use daemon::wallet;
 use daemon::wire;
 use maia_core::secp256k1_zkp::schnorrsig;
+use model::libp2p::PeerId;
 use model::olivia::BitMexPriceEventId;
 use model::Cfd;
 use model::FundingRate;
@@ -159,6 +160,7 @@ fn create_maker_offers(offer_params: OfferParams, settlement_interval: Duration)
 
 pub struct FromTaker {
     pub taker_id: Identity,
+    pub peer_id: Option<PeerId>,
     pub msg: wire::TakerToMaker,
 }
 
@@ -312,6 +314,7 @@ where
     async fn handle_take_order(
         &mut self,
         taker_id: Identity,
+        taker_peer_id: Option<PeerId>,
         order_id: OrderId,
         quantity: Usd,
         leverage: Leverage,
@@ -350,7 +353,14 @@ where
             return Ok(());
         };
 
-        let cfd = Cfd::from_order(&order_to_take, quantity, taker_id, Role::Maker, leverage);
+        let cfd = Cfd::from_order(
+            &order_to_take,
+            quantity,
+            taker_id,
+            taker_peer_id.map(PeerId::from),
+            Role::Maker,
+            leverage,
+        );
 
         // 2. Replicate the orders in the offers with new ones to allow other takers to use
         // the same offer
@@ -629,7 +639,14 @@ where
         self.handle_taker_disconnected(msg.id).await
     }
 
-    async fn handle(&mut self, FromTaker { taker_id, msg }: FromTaker) {
+    async fn handle(
+        &mut self,
+        FromTaker {
+            taker_id,
+            peer_id,
+            msg,
+        }: FromTaker,
+    ) {
         match msg {
             wire::TakerToMaker::DeprecatedTakeOrder { order_id, quantity } => {
                 // Old clients do not send over leverage. Hence we default to Leverage::TWO which
@@ -637,7 +654,7 @@ where
                 let leverage = Leverage::TWO;
 
                 if let Err(e) = self
-                    .handle_take_order(taker_id, order_id, quantity, leverage)
+                    .handle_take_order(taker_id, peer_id, order_id, quantity, leverage)
                     .await
                 {
                     tracing::error!("Error when handling order take request: {:#}", e)
@@ -649,7 +666,7 @@ where
                 leverage,
             } => {
                 if let Err(e) = self
-                    .handle_take_order(taker_id, order_id, quantity, leverage)
+                    .handle_take_order(taker_id, peer_id, order_id, quantity, leverage)
                     .await
                 {
                     tracing::error!("Error when handling order take request: {:#}", e)
@@ -727,6 +744,7 @@ where
             | wire::TakerToMaker::Protocol { .. }
             | wire::TakerToMaker::Hello(_)
             | wire::TakerToMaker::HelloV2 { .. }
+            | wire::TakerToMaker::HelloV3 { .. }
             | wire::TakerToMaker::Unknown => {
                 if cfg!(debug_assertions) {
                     unreachable!("Message {} is not dispatched to this actor", msg.name())

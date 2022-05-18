@@ -21,7 +21,7 @@ use libp2p_core::PeerId;
 pub mod dialer;
 mod endpoint;
 pub mod listener;
-mod multiaddress_ext;
+pub mod multiaddress_ext;
 mod substream;
 mod upgrade;
 mod verify_peer_id;

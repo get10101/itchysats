@@ -1725,6 +1725,7 @@ dependencies = [
  "rand 0.8.4",
  "ring",
  "rw-stream-sink",
+ "serde",
  "sha2 0.10.2",
  "smallvec",
  "thiserror",
@@ -2026,6 +2027,7 @@ dependencies = [
  "conquer-once",
  "hex",
  "itertools",
+ "libp2p-core",
  "maia",
  "maia-core",
  "nalgebra 0.31.0",
@@ -2097,6 +2099,8 @@ dependencies = [
  "core2",
  "digest 0.10.3",
  "multihash-derive",
+ "serde",
+ "serde-big-array",
  "sha2 0.10.2",
  "unsigned-varint",
 ]
@@ -3651,6 +3655,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61ea8d54c77f8315140a05f4c7237403bf38b72704d031543aa1d16abbf517d1"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-big-array"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd31f59f6fe2b0c055371bb2f16d7f0aa7d8881676c04a55b1596d1a17cd10a4"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

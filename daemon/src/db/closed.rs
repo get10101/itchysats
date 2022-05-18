@@ -9,6 +9,7 @@
 
 use crate::db::delete_from_cfds_table;
 use crate::db::delete_from_events_table;
+use crate::db::derive_known_peer_id;
 use crate::db::event_log::EventLog;
 use crate::db::event_log::EventLogEntry;
 use crate::db::load_cfd_events;
@@ -24,6 +25,7 @@ use bdk::bitcoin::OutPoint;
 use bdk::bitcoin::Script;
 use bdk::miniscript::DescriptorTrait;
 use maia_core::TransactionExt;
+use model::libp2p::PeerId;
 use model::long_and_short_leverage;
 use model::CfdEvent;
 use model::Contracts;
@@ -62,6 +64,7 @@ pub struct ClosedCfd {
     pub taker_leverage: Leverage,
     pub n_contracts: Contracts,
     pub counterparty_network_identity: Identity,
+    pub counterparty_peer_id: PeerId,
     pub role: Role,
     pub fees: Fees,
     pub expiry_timestamp: OffsetDateTime,
@@ -168,6 +171,7 @@ impl Connection {
                 taker_leverage as "taker_leverage: model::Leverage",
                 n_contracts as "n_contracts: model::Contracts",
                 counterparty_network_identity as "counterparty_network_identity: model::Identity",
+                counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
                 role as "role: model::Role",
                 fees as "fees: model::Fees",
                 expiry_timestamp,
@@ -212,6 +216,7 @@ impl Connection {
             taker_leverage: cfd.taker_leverage,
             n_contracts: cfd.n_contracts,
             counterparty_network_identity: cfd.counterparty_network_identity,
+            counterparty_peer_id: cfd.counterparty_peer_id,
             role: cfd.role,
             fees: cfd.fees,
             expiry_timestamp,
@@ -260,6 +265,7 @@ struct ClosedCfdInputAggregate {
     taker_leverage: Leverage,
     n_contracts: Contracts,
     counterparty_network_identity: Identity,
+    counterparty_peer_id: Option<PeerId>,
     role: Role,
     fee_account: FeeAccount,
     initial_funding_fee: FundingFee,
@@ -281,6 +287,7 @@ impl ClosedCfdInputAggregate {
             settlement_interval: _,
             quantity_usd,
             counterparty_network_identity,
+            counterparty_peer_id,
             role,
             opening_fee,
             initial_funding_rate,
@@ -313,6 +320,7 @@ impl ClosedCfdInputAggregate {
             taker_leverage,
             n_contracts,
             counterparty_network_identity,
+            counterparty_peer_id,
             role,
             fee_account: FeeAccount::new(position, role).add_opening_fee(opening_fee),
             initial_funding_fee,
@@ -510,6 +518,7 @@ impl ClosedCfdInputAggregate {
             taker_leverage,
             n_contracts,
             counterparty_network_identity,
+            counterparty_peer_id,
             role,
             fee_account,
             ..
@@ -541,6 +550,7 @@ impl ClosedCfdInputAggregate {
             taker_leverage,
             n_contracts,
             counterparty_network_identity,
+            counterparty_peer_id,
             role,
             fees: Fees::new(fee_account.balance()),
             expiry_timestamp: dlc.settlement_event_id.timestamp(),
@@ -560,6 +570,7 @@ struct ClosedCfdInput {
     taker_leverage: Leverage,
     n_contracts: Contracts,
     counterparty_network_identity: Identity,
+    counterparty_peer_id: Option<PeerId>,
     role: Role,
     fees: Fees,
     expiry_timestamp: OffsetDateTime,
@@ -569,6 +580,12 @@ struct ClosedCfdInput {
 
 async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInput) -> Result<()> {
     let expiry_timestamp = cfd.expiry_timestamp.unix_timestamp();
+
+    let counterparty_peer_id = match cfd.counterparty_peer_id {
+        None => derive_known_peer_id(cfd.counterparty_network_identity, cfd.role)
+            .unwrap_or_else(PeerId::placeholder),
+        Some(peer_id) => peer_id,
+    };
 
     let query_result = sqlx::query!(
         r#"
@@ -580,13 +597,14 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
             taker_leverage,
             n_contracts,
             counterparty_network_identity,
+            counterparty_peer_id,
             role,
             fees,
             expiry_timestamp,
             lock_txid,
             lock_dlc_vout
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
         cfd.id,
         cfd.position,
@@ -594,6 +612,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         cfd.taker_leverage,
         cfd.n_contracts,
         cfd.counterparty_network_identity,
+        counterparty_peer_id,
         cfd.role,
         cfd.fees,
         expiry_timestamp,
@@ -949,6 +968,7 @@ mod tests {
     use super::*;
     use crate::db::memory;
     use bdk::bitcoin::SignedAmount;
+    use model::libp2p::PeerId;
     use model::Cfd;
     use model::EventKind;
     use model::FundingRate;
@@ -1288,6 +1308,7 @@ mod tests {
             taker_leverage: Leverage::TWO,
             n_contracts: Contracts::new(100),
             counterparty_network_identity: dummy_identity(),
+            counterparty_peer_id: Some(PeerId::random()),
             role: Role::Maker,
             fees: Fees::new(SignedAmount::ONE_BTC),
             expiry_timestamp: OffsetDateTime::now_utc(),
@@ -1323,6 +1344,7 @@ mod tests {
             "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e"
                 .parse()
                 .unwrap(),
+            Some(PeerId::random()),
             OpeningFee::new(Amount::ZERO),
             FundingRate::default(),
             TxFeeRate::default(),

@@ -14,6 +14,7 @@
 use crate::db;
 use crate::db::delete_from_cfds_table;
 use crate::db::delete_from_events_table;
+use crate::db::derive_known_peer_id;
 use crate::db::event_log::EventLog;
 use crate::db::event_log::EventLogEntry;
 use crate::db::load_cfd_events;
@@ -23,6 +24,7 @@ use crate::db::Connection;
 use anyhow::bail;
 use anyhow::Result;
 use model::impl_sqlx_type_display_from_str;
+use model::libp2p::PeerId;
 use model::long_and_short_leverage;
 use model::Contracts;
 use model::EventKind;
@@ -57,6 +59,7 @@ pub struct FailedCfd {
     pub taker_leverage: Leverage,
     pub n_contracts: Contracts,
     pub counterparty_network_identity: Identity,
+    pub counterparty_peer_id: PeerId,
     pub role: Role,
     pub fees: Fees,
     pub kind: Kind,
@@ -153,6 +156,7 @@ impl Connection {
                 taker_leverage as "taker_leverage: model::Leverage",
                 n_contracts as "n_contracts: model::Contracts",
                 counterparty_network_identity as "counterparty_network_identity: model::Identity",
+                counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
                 role as "role: model::Role",
                 fees as "fees: model::Fees",
                 kind as "kind: Kind"
@@ -175,6 +179,7 @@ impl Connection {
             taker_leverage: cfd.taker_leverage,
             n_contracts: cfd.n_contracts,
             counterparty_network_identity: cfd.counterparty_network_identity,
+            counterparty_peer_id: cfd.counterparty_peer_id,
             role: cfd.role,
             fees: cfd.fees,
             kind: cfd.kind,
@@ -245,6 +250,12 @@ async fn insert_failed_cfd(
         Fees::new(fee_account.balance())
     };
 
+    let counterparty_peer_id = match cfd.counterparty_peer_id {
+        None => derive_known_peer_id(cfd.counterparty_network_identity, cfd.role)
+            .unwrap_or_else(PeerId::placeholder),
+        Some(peer_id) => peer_id,
+    };
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO failed_cfds
@@ -255,11 +266,12 @@ async fn insert_failed_cfd(
             taker_leverage,
             n_contracts,
             counterparty_network_identity,
+            counterparty_peer_id,
             role,
             fees,
             kind
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
         cfd.id,
         cfd.position,
@@ -267,6 +279,7 @@ async fn insert_failed_cfd(
         cfd.taker_leverage,
         n_contracts,
         cfd.counterparty_network_identity,
+        counterparty_peer_id,
         cfd.role,
         fees,
         kind,

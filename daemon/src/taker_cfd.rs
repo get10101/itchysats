@@ -11,6 +11,7 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
+use model::libp2p::PeerId;
 use model::market_closing_price;
 use model::Cfd;
 use model::Identity;
@@ -59,6 +60,7 @@ pub struct Actor<O, W> {
     tasks: Tasks,
     current_maker_offers: Option<MakerOffers>,
     maker_identity: Identity,
+    maker_peer_id: PeerId,
 }
 
 impl<O, W> Actor<O, W>
@@ -76,6 +78,7 @@ where
         oracle_actor: xtra::Address<O>,
         n_payouts: usize,
         maker_identity: Identity,
+        maker_peer_id: PeerId,
     ) -> Self {
         Self {
             db,
@@ -91,6 +94,7 @@ where
             tasks: Tasks::default(),
             current_maker_offers: None,
             maker_identity,
+            maker_peer_id,
         }
     }
 }
@@ -210,6 +214,7 @@ where
             &order_to_take,
             quantity,
             self.maker_identity,
+            Some(self.maker_peer_id),
             Role::Taker,
             leverage,
         );
