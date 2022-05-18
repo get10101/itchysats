@@ -1,7 +1,7 @@
 use std::collections::HashMap;
+use std::time::Duration;
 use crate::setup_contract;
-use crate::wire::{CompleteFee, RolloverMsg0, RolloverMsg1, RolloverMsg2, RolloverMsg3};
-use crate::wire::RolloverMsg;
+use crate::wire::{CompleteFee, RolloverMsg, RolloverMsg0, RolloverMsg1, RolloverMsg2, RolloverMsg3};
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -30,6 +30,7 @@ use maia::{commit_descriptor, renew_cfd_transactions};
 use maia_core::{Announcement, PartyParams, PunishParams, secp256k1_zkp};
 use bdk_ext::keypair;
 use crate::future_ext::FutureExt;
+use crate::protocol::{format_expect_msg_within, verify_adaptor_signature, verify_cets, verify_signature};
 use crate::transaction_ext::TransactionExt;
 
 use super::PROTOCOL;
@@ -39,9 +40,15 @@ pub struct Rollover {
     pub funding_fee: FundingFee,
 }
 
+/// How long rollover protocol waits for the next message before giving up
+///
+/// 60s timeout are acceptable here because rollovers are automatically retried; a few failed
+/// rollovers are not a big deal.
+const ROLLOVER_MSG_TIMEOUT: Duration = Duration::from_secs(60);
+
 #[allow(clippy::too_many_arguments)]
 pub async fn roll_over(
-    mut framed: Framed<Substream, JsonCodec<DialerMessage, ListenerMessage>>,
+    mut framed: Framed<Substream, JsonCodec<ListenerMessage, DialerMessage>>,
     (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     rollover_params: RolloverParams,
     our_role: Role,
@@ -62,17 +69,21 @@ pub async fn roll_over(
     };
 
     framed
-        .send(RolloverMsg::Msg0(RolloverMsg0 {
+        .send(ListenerMessage::RolloverMsg(RolloverMsg::Msg0(RolloverMsg0 {
             revocation_pk: rev_pk,
             publish_pk,
-        }))
+        })))
         .await
         .context("Failed to send Msg0")?;
+
+    // TODO: Try to use select_next_some again and get the traitbounds right? possible?
     let msg0 = framed
         .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
+        .context("Msg0 was None for some reason, why would this happen?")??
+        .into_rollover_msg()?
         .try_into_msg0()?;
 
     let maker_lock_amount = dlc.maker_lock_amount;
@@ -148,15 +159,17 @@ pub async fn roll_over(
     .await?
     .context("Failed to create new CFD transactions")?;
 
-    framed.send(RolloverMsg::Msg1(RolloverMsg1::from(own_cfd_txs.clone())))
+    framed.send(ListenerMessage::RolloverMsg(RolloverMsg::Msg1(RolloverMsg1::from(own_cfd_txs.clone()))))
         .await
         .context("Failed to send Msg1")?;
 
     let msg1 = framed
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
+        .context("Msg0 was None for some reason, why would this happen?")??
+        .into_rollover_msg()?
         .try_into_msg1()?;
 
     let lock_amount = taker_lock_amount + maker_lock_amount;
@@ -287,17 +300,19 @@ pub async fn roll_over(
         .collect::<Result<HashMap<_, _>>>()?;
 
     // reveal revocation secrets to the other party
-    framed.send(RolloverMsg::Msg2(RolloverMsg2 {
+    framed.send(ListenerMessage::RolloverMsg(RolloverMsg::Msg2(RolloverMsg2 {
         revocation_sk: dlc.revocation,
-    }))
+    })))
     .await
     .context("Failed to send Msg2")?;
 
     let msg2 = framed
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
+        .context("Msg0 was None for some reason, why would this happen?")??
+        .into_rollover_msg()?
         .try_into_msg2()?;
     let revocation_sk_theirs = msg2.revocation_sk;
 
@@ -323,14 +338,16 @@ pub async fn roll_over(
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
     // monitoring
-    framed.send(RolloverMsg::Msg3(RolloverMsg3))
+    framed.send(ListenerMessage::RolloverMsg(RolloverMsg::Msg3(RolloverMsg3)))
         .await
         .context("Failed to send Msg3")?;
     let _ = framed
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
+        .context("Msg0 was None for some reason, why would this happen?")??
+        .into_rollover_msg()?
         .try_into_msg3()?;
 
     Ok(Dlc {
@@ -470,11 +487,11 @@ pub struct Propose {
 
 #[derive(Serialize, Deserialize)]
 pub struct Confirm {
-    order_id: OrderId,
-    oracle_event_id: BitMexPriceEventId,
-    tx_fee_rate: TxFeeRate,
-    funding_rate: FundingRate,
-    complete_fee: CompleteFee,
+    pub order_id: OrderId,
+    pub oracle_event_id: BitMexPriceEventId,
+    pub tx_fee_rate: TxFeeRate,
+    pub funding_rate: FundingRate,
+    pub complete_fee: CompleteFee,
 }
 
 #[derive(Serialize, Deserialize)]
