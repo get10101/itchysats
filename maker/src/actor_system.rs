@@ -14,6 +14,7 @@ use daemon::oracle;
 use daemon::position_metrics;
 use daemon::process_manager;
 use daemon::projection;
+use daemon::rollover;
 use daemon::seed::Identities;
 use daemon::wallet;
 use libp2p_tcp::TokioTcpConfig;
@@ -115,7 +116,7 @@ where
             projection_actor,
             process_manager_addr,
             inc_conn_addr,
-            oracle_addr,
+            oracle_addr.clone(),
             time_to_first_position_addr,
             n_payouts,
         )
@@ -123,6 +124,15 @@ where
         .spawn(&mut tasks);
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
+
+        let _libp2p_rollover = rollover::maker::Actor::new(
+            executor.clone(),
+            oracle_pk,
+            Box::new(oracle_addr),
+            n_payouts,
+        )
+        .create(None)
+        .spawn(&mut tasks);
 
         let ping_address = xtra_libp2p_ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
             .create(None)

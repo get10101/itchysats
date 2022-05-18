@@ -53,6 +53,24 @@ pub struct Actor {
     executor: command::Executor,
 }
 
+impl Actor {
+    pub fn new(
+        executor: command::Executor,
+        oracle_pk: schnorrsig::PublicKey,
+        oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
+        n_payouts: usize,
+    ) -> Self {
+        Self {
+            tasks: Tasks::default(),
+            oracle_pk,
+            oracle_actor,
+            n_payouts,
+            pending_protocols: HashMap::default(),
+            executor,
+        }
+    }
+}
+
 #[async_trait]
 impl xtra::Actor for Actor {
     type Stop = ();
