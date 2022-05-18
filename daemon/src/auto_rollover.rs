@@ -4,6 +4,7 @@ use crate::oracle;
 use crate::process_manager;
 use crate::protocol::use_libp2p;
 use crate::rollover;
+use crate::rollover::taker::ProposeRollover;
 use crate::rollover_taker;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -73,7 +74,11 @@ where
 
     async fn handle(&mut self, Rollover(order_id): Rollover) -> Result<()> {
         let cfd = self.db.load_open_cfd::<model::Cfd>(order_id, ()).await?;
-        if use_libp2p(&cfd) {}
+        if use_libp2p(&cfd) {
+            self.libp2p_rollover
+                .send(ProposeRollover { order_id })
+                .await?;
+        }
         {
             let disconnected = match self.rollover_actors.get_disconnected(order_id) {
                 Ok(disconnected) => disconnected,

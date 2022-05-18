@@ -25,7 +25,7 @@ impl xtra::Actor for Actor {
 }
 
 pub struct ProposeRollover {
-    pub id: OrderId,
+    pub order_id: OrderId,
 }
 
 impl Actor {
@@ -47,15 +47,15 @@ impl Actor {
     ) -> Result<()> {
         let this = ctx.address().expect("we are alive");
 
-        let ProposeRollover { id } = msg;
+        let ProposeRollover { order_id } = msg;
 
         self.executor
-            .execute(id, |cfd| cfd.start_rollover())
+            .execute(order_id, |cfd| cfd.start_rollover())
             .await?;
 
         let maker = PeerId::random(); // TODO: This needs to be returned from the above `execute` call as well.
 
-        dialer(self.endpoint.clone(), id, maker).await?;
+        dialer(self.endpoint.clone(), order_id, maker).await?;
 
         Ok(())
     }
