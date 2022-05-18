@@ -117,13 +117,20 @@ pub struct Cfd {
     position: Position,
     quantity_usd: Usd,
 
-    is_open: bool,
-    is_closed: bool,
-    is_failed: bool,
-    is_refunded: bool,
-    is_rejected: bool,
+    state: AggregatedState,
 
     version: u32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AggregatedState {
+    /// Used when the CFD is new or in contract setup
+    New,
+    Open,
+    Closed,
+    Failed,
+    Refunded,
+    Rejected,
 }
 
 impl db::CfdAggregate for Cfd {
@@ -134,11 +141,7 @@ impl db::CfdAggregate for Cfd {
             id: cfd.id,
             position: cfd.position,
             quantity_usd: cfd.quantity_usd,
-            is_open: false,
-            is_closed: false,
-            is_failed: false,
-            is_refunded: false,
-            is_rejected: false,
+            state: AggregatedState::New,
             version: 0,
         }
     }
@@ -158,31 +161,28 @@ impl Cfd {
         use EventKind::*;
         match event.event {
             ContractSetupStarted => Self {
-                is_open: false,
-                is_closed: false,
-                is_failed: false,
-                is_refunded: false,
+                state: AggregatedState::New,
                 ..self
             },
             ContractSetupCompleted { .. } | LockConfirmed => Self {
-                is_open: true,
+                state: AggregatedState::Open,
                 ..self
             },
             ContractSetupFailed => {
                 // This is needed due to a bug that has since been fixed; `OfferRejected` and
                 // `ContractSetupFailed` are mutually exclusive.
                 // We give `OfferRejected` priority over `ContractSetupFailed`.
-                if self.is_rejected {
-                    Self { ..self }
+                if let AggregatedState::Rejected = self.state {
+                    self
                 } else {
                     Self {
-                        is_failed: true,
+                        state: AggregatedState::Failed,
                         ..self
                     }
                 }
             }
             OfferRejected => Self {
-                is_rejected: true,
+                state: AggregatedState::Rejected,
                 ..self
             },
             RolloverStarted
@@ -201,8 +201,7 @@ impl Cfd {
                 ..self
             },
             CollaborativeSettlementCompleted { .. } => Self {
-                is_open: false,
-                is_closed: true,
+                state: AggregatedState::Closed,
                 ..self
             },
             ManualCommit { .. } | CommitConfirmed => Self {
@@ -211,52 +210,44 @@ impl Cfd {
                 ..self
             },
             CetConfirmed => Self {
-                is_open: false,
-                is_closed: true,
+                state: AggregatedState::Closed,
                 ..self
             },
             RefundConfirmed => Self {
-                is_open: false,
-                is_refunded: true,
+                state: AggregatedState::Refunded,
                 ..self
             },
             RevokeConfirmed => Self {
                 // the other party was punished, we are done here!
-                is_open: false,
-                is_closed: true,
+                state: AggregatedState::Closed,
                 ..self
             },
             CollaborativeSettlementConfirmed => Self {
-                is_open: false,
-                is_closed: true,
+                state: AggregatedState::Closed,
                 ..self
             },
             LockConfirmedAfterFinality => Self {
                 // This event is only appended if lock confirmation happens after we spent from lock
                 // on chain. This is for special case where collaborative settlement is triggered
                 // before lock is confirmed. In such a case the CFD is closed
-                is_open: false,
-                is_closed: true,
+                state: AggregatedState::Closed,
                 ..self
             },
             CetTimelockExpiredPriorOracleAttestation
             | CetTimelockExpiredPostOracleAttestation { .. } => Self {
-                is_open: false,
-                is_closed: true,
+                state: AggregatedState::Closed,
                 ..self
             },
             RefundTimelockExpired { .. } => Self {
                 // a rollover with an expired timelock should be rejected for settlement and
                 // rollover, hence, this is closed
-                is_open: false,
-                is_closed: true,
+                state: AggregatedState::Closed,
                 ..self
             },
             OracleAttestedPriorCetTimelock { .. } | OracleAttestedPostCetTimelock { .. } => Self {
                 // we know the closing price already and can assume that the cfd will be closed
                 // accordingly
-                is_open: false,
-                is_closed: true,
+                state: AggregatedState::Closed,
                 ..self
             },
         }
@@ -275,21 +266,18 @@ impl db::ClosedCfdAggregate for Cfd {
 
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
-        let (is_refunded, is_closed) = match settlement {
-            db::Settlement::Collaborative { .. } | db::Settlement::Cet { .. } => (false, true),
-            db::Settlement::Refund { .. } => (true, false),
+        let state = match settlement {
+            db::Settlement::Collaborative { .. } | db::Settlement::Cet { .. } => {
+                AggregatedState::Closed
+            }
+            db::Settlement::Refund { .. } => AggregatedState::Refunded,
         };
 
         Self {
             id,
             position,
             quantity_usd,
-
-            is_open: false,
-            is_closed,
-            is_failed: false,
-            is_refunded,
-            is_rejected: false,
+            state,
             version: 0,
         }
     }
@@ -307,27 +295,23 @@ impl db::FailedCfdAggregate for Cfd {
 
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
-        let (is_failed, is_rejected) = match kind {
-            db::Kind::OfferRejected => (false, true),
-            db::Kind::ContractSetupFailed => (true, false),
+        let state = match kind {
+            db::Kind::OfferRejected => AggregatedState::Rejected,
+            db::Kind::ContractSetupFailed => AggregatedState::Failed,
         };
 
         Self {
             id,
             position,
             quantity_usd,
-
-            is_open: false,
-            is_closed: false,
-            is_failed,
-            is_refunded: false,
-            is_rejected,
+            state,
             version: 0,
         }
     }
 }
 
 mod metrics {
+    use crate::position_metrics::AggregatedState;
     use crate::position_metrics::Cfd;
     use model::OrderId;
     use model::Position;
@@ -340,14 +324,12 @@ mod metrics {
     const POSITION_SHORT_LABEL: &str = "short";
 
     const STATUS_LABEL: &str = "status";
+    const STATUS_NEW_LABEL: &str = "new";
     const STATUS_OPEN_LABEL: &str = "open";
     const STATUS_CLOSED_LABEL: &str = "closed";
     const STATUS_FAILED_LABEL: &str = "failed";
     const STATUS_REJECTED_LABEL: &str = "rejected";
     const STATUS_REFUNDED_LABEL: &str = "refunded";
-    // this is needed so that we do not lose cfds which are in a weird state, e.g. open & closed.
-    // This should be 0 though but for the time being we add it
-    const STATUS_UNKNOWN_LABEL: &str = "unknown";
 
     static POSITION_QUANTITY_GAUGE: conquer_once::Lazy<prometheus::GaugeVec> =
         conquer_once::Lazy::new(|| {
@@ -372,42 +354,34 @@ mod metrics {
     pub fn update_position_metrics(cfds: HashMap<OrderId, Cfd>) {
         let cfds = cfds.into_iter().map(|(_, cfd)| cfd).collect::<Vec<_>>();
 
-        set_position_metrics(cfds.iter().filter(|cfd| cfd.is_open), STATUS_OPEN_LABEL);
-        set_position_metrics(cfds.iter().filter(|cfd| cfd.is_closed), STATUS_CLOSED_LABEL);
-        set_position_metrics(cfds.iter().filter(|cfd| cfd.is_failed), STATUS_FAILED_LABEL);
         set_position_metrics(
-            cfds.iter().filter(|cfd| cfd.is_rejected),
+            cfds.iter().filter(|cfd| cfd.state == AggregatedState::New),
+            STATUS_NEW_LABEL,
+        );
+        set_position_metrics(
+            cfds.iter().filter(|cfd| cfd.state == AggregatedState::Open),
+            STATUS_OPEN_LABEL,
+        );
+        set_position_metrics(
+            cfds.iter()
+                .filter(|cfd| cfd.state == AggregatedState::Closed),
+            STATUS_CLOSED_LABEL,
+        );
+        set_position_metrics(
+            cfds.iter()
+                .filter(|cfd| cfd.state == AggregatedState::Failed),
+            STATUS_FAILED_LABEL,
+        );
+        set_position_metrics(
+            cfds.iter()
+                .filter(|cfd| cfd.state == AggregatedState::Rejected),
             STATUS_REJECTED_LABEL,
         );
         set_position_metrics(
-            cfds.iter().filter(|cfd| cfd.is_refunded),
+            cfds.iter()
+                .filter(|cfd| cfd.state == AggregatedState::Refunded),
             STATUS_REFUNDED_LABEL,
         );
-
-        set_position_metrics(
-            cfds.iter().filter(|cfd| {
-                let unknown_state = is_unknown(cfd);
-                if unknown_state {
-                    tracing::error!(
-                        is_open = cfd.is_open,
-                        is_closed = cfd.is_closed,
-                        is_refunded = cfd.is_refunded,
-                        is_rejected = cfd.is_rejected,
-                        is_failed = cfd.is_failed,
-                        order_id = %cfd.id,
-                        "CFD is in weird state"
-                    );
-                }
-                unknown_state
-            }),
-            STATUS_UNKNOWN_LABEL,
-        );
-    }
-
-    /// Return true if a CFD is in multiple states
-    fn is_unknown(cfd: &Cfd) -> bool {
-        !(cfd.is_open ^ cfd.is_closed ^ cfd.is_refunded ^ cfd.is_rejected ^ cfd.is_failed)
-            && (cfd.is_open || cfd.is_closed || cfd.is_refunded || cfd.is_rejected || cfd.is_failed)
     }
 
     fn set_position_metrics<'a>(cfds: impl Iterator<Item = &'a Cfd>, status: &str) {
@@ -440,102 +414,5 @@ mod metrics {
     fn sum_amounts(cfds: &[&Cfd]) -> Usd {
         cfds.iter()
             .fold(Usd::ZERO, |sum, cfd| cfd.quantity_usd + sum)
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        fn create_cfd(state_flags: StateFlags) -> Cfd {
-            Cfd {
-                id: Default::default(),
-                position: Position::Long,
-                quantity_usd: Usd::ZERO,
-                is_open: state_flags.open,
-                is_closed: state_flags.closed,
-                is_failed: state_flags.failed,
-                is_refunded: state_flags.refunded,
-                is_rejected: state_flags.rejected,
-                version: 0,
-            }
-        }
-
-        #[derive(Debug, Clone, Copy)]
-        struct StateFlags {
-            open: bool,
-            closed: bool,
-            failed: bool,
-            refunded: bool,
-            rejected: bool,
-        }
-
-        #[test]
-        fn when_cfd_is_in_single_no_state_then_is_not_unknown() {
-            let state_matrix = [
-                [false, false, false, false, false],
-                [true, false, false, false, false],
-                [false, true, false, false, false],
-                [false, false, true, false, false],
-                [false, false, false, true, false],
-                [false, false, false, false, true],
-            ];
-
-            for states in state_matrix {
-                let is_open = states[0];
-                let is_closed = states[1];
-                let is_failed = states[2];
-                let is_refunded = states[3];
-                let is_rejected = states[4];
-                let state_flags = StateFlags {
-                    open: is_open,
-                    closed: is_closed,
-                    failed: is_failed,
-                    refunded: is_refunded,
-                    rejected: is_rejected,
-                };
-                let cfd = create_cfd(state_flags);
-
-                assert!(
-                    !is_unknown(&cfd),
-                    "State combination was unknown. {state_flags:?}"
-                );
-            }
-        }
-
-        #[test]
-        fn when_cfd_is_in_multiple_states_then_is_unknown() {
-            let state_matrix = [
-                [true, true, false, false, false],
-                [true, false, true, false, false],
-                [true, false, false, true, false],
-                [true, false, false, false, true],
-                [false, true, true, false, false],
-                [false, true, false, true, false],
-                [false, true, false, false, true],
-                [false, false, true, true, false],
-                [false, false, true, false, true],
-                [false, false, false, true, true],
-            ];
-            for states in state_matrix {
-                let is_open = states[0];
-                let is_closed = states[1];
-                let is_failed = states[2];
-                let is_refunded = states[3];
-                let is_rejected = states[4];
-
-                let state_flags = StateFlags {
-                    open: is_open,
-                    closed: is_closed,
-                    failed: is_failed,
-                    refunded: is_refunded,
-                    rejected: is_rejected,
-                };
-                let cfd = create_cfd(state_flags);
-                assert!(
-                    is_unknown(&cfd),
-                    "State combination was not unknown. {state_flags:?}"
-                );
-            }
-        }
     }
 }
