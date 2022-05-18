@@ -5,7 +5,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use asynchronous_codec::Framed;
 use asynchronous_codec::JsonCodec;
-use futures::SinkExt;
+use futures::{SinkExt};
 use futures::StreamExt;
 use libp2p_core::PeerId;
 use model::CollaborativeSettlement;

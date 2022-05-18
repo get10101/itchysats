@@ -22,7 +22,7 @@ use xtra_libp2p::OpenSubstream;
 
 use super::PROTOCOL;
 
-struct Rollover {
+pub struct Rollover {
     pub dlc: Dlc,
     pub funding_fee: FundingFee,
 }
