@@ -14,6 +14,7 @@ use xtra_libp2p::Endpoint;
 use xtra_libp2p::GetConnectionStats;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
+use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
 /// An actor implementing the official ipfs/libp2p ping protocol.
@@ -104,7 +105,7 @@ impl Actor {
                         .await??;
                     let latency = protocol::send(stream).await?;
 
-                    this.send(RecordLatency {
+                    this.send_async_safe(RecordLatency {
                         peer,
                         latency
                     }).await?;
