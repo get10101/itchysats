@@ -1,7 +1,6 @@
-mod ping;
+pub mod ping;
+pub mod pong;
 mod protocol;
-
-pub use ping::*;
 
 /// The name of the official ipfs/libp2p ping protocol.
 ///
@@ -53,12 +52,12 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         let alice_to_bob_latency = alice_ping_actor
-            .send(GetLatency(bob_peer_id))
+            .send(ping::GetLatency(bob_peer_id))
             .await
             .unwrap()
             .unwrap();
         let bob_to_alice_latency = bob_ping_actor
-            .send(GetLatency(alice_peer_id))
+            .send(ping::GetLatency(alice_peer_id))
             .await
             .unwrap()
             .unwrap();
@@ -67,18 +66,20 @@ mod tests {
         assert!(!bob_to_alice_latency.is_zero());
     }
 
-    fn create_endpoint_with_ping() -> (PeerId, Address<Actor>, Address<Endpoint>) {
+    fn create_endpoint_with_ping() -> (PeerId, Address<ping::Actor>, Address<Endpoint>) {
         let (endpoint_address, endpoint_context) = Context::new(None);
 
         let id = Keypair::generate_ed25519();
-        let ping_address = Actor::new(endpoint_address.clone(), Some(Duration::from_secs(1)))
+        let ping_address = ping::Actor::new(endpoint_address.clone(), Some(Duration::from_secs(1)))
             .create(None)
             .spawn_global();
+        let pong_address = pong::Actor::default().create(None).spawn_global();
+
         let endpoint = Endpoint::new(
             MemoryTransport::default(),
             id.clone(),
             Duration::from_secs(10),
-            [(PROTOCOL_NAME, ping_address.clone_channel())],
+            [(PROTOCOL_NAME, pong_address.clone_channel())],
         );
 
         #[allow(clippy::disallowed_methods)]

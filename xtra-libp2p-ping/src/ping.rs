@@ -12,7 +12,6 @@ use xtra::Context;
 use xtra_libp2p::libp2p::PeerId;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::GetConnectionStats;
-use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
@@ -132,19 +131,6 @@ impl Actor {
 
     async fn handle(&mut self, GetLatency(peer): GetLatency) -> Option<Duration> {
         return self.latencies.get(&peer).copied();
-    }
-}
-
-#[xtra_productivity(message_impl = false)]
-impl Actor {
-    async fn handle(&mut self, message: NewInboundSubstream) {
-        let NewInboundSubstream { stream, peer } = message;
-
-        let future = protocol::recv(stream);
-
-        self.tasks.add_fallible(future, move |e| async move {
-            tracing::debug!(%peer, "Inbound ping protocol failed: {e}");
-        });
     }
 }
 
