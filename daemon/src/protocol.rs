@@ -1,13 +1,18 @@
-use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
-use maia_core::{interval, PartyParams};
-use bdk::descriptor::Descriptor;
-use maia::{compute_adaptor_pk, spending_tx_sighash};
-use std::time::Duration;
-use std::ops::RangeInclusive;
+use crate::bitcoin::secp256k1::Signature;
+use crate::bitcoin::secp256k1::SECP256K1;
+use crate::bitcoin::PublicKey;
+use crate::bitcoin::Transaction;
+use crate::schnorrsig;
+use crate::Amount;
 use anyhow::Context;
-use crate::bitcoin::{PublicKey, Transaction};
-use crate::{Amount, schnorrsig};
-use crate::bitcoin::secp256k1::{SECP256K1, Signature};
+use bdk::descriptor::Descriptor;
+use maia::compute_adaptor_pk;
+use maia::spending_tx_sighash;
+use maia_core::interval;
+use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
+use maia_core::PartyParams;
+use std::ops::RangeInclusive;
+use std::time::Duration;
 
 pub async fn verify_cets(
     (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),

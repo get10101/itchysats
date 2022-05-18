@@ -1,6 +1,7 @@
 use crate::future_ext::FutureExt;
+use crate::protocol;
 use crate::transaction_ext::TransactionExt;
-use crate::{protocol, wallet};
+use crate::wallet;
 use crate::wire::Msg0;
 use crate::wire::Msg1;
 use crate::wire::Msg2;

@@ -51,6 +51,7 @@ pub mod oracle;
 pub mod position_metrics;
 pub mod process_manager;
 pub mod projection;
+mod protocol;
 mod rollover;
 pub mod rollover_taker;
 pub mod seed;
@@ -61,7 +62,6 @@ mod transaction_ext;
 pub mod version;
 pub mod wallet;
 pub mod wire;
-mod protocol;
 
 /// Duration between the heartbeats sent by the maker, used by the taker to
 /// determine whether the maker is online.
