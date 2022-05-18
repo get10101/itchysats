@@ -3823,26 +3823,28 @@ mod tests {
             self,
             price: Price,
         ) -> (Self, SettlementProposal, Signature, Script) {
-            let mut events = Vec::new();
+            todo!()
 
-            let (propose, settlement_proposal, ..) = self
-                .propose_collaborative_settlement(price, N_PAYOUTS)
-                .unwrap();
-            events.push(propose);
-
-            let (spend_tx, taker_signature, taker_script) = self
-                .sign_collaborative_settlement_taker(&settlement_proposal)
-                .unwrap();
-
-            let settlement =
-                CollaborativeSettlement::new(spend_tx, taker_script.clone(), price).unwrap();
-
-            let settle = self.clone().complete_collaborative_settlement(settlement);
-            events.push(settle);
-
-            let cfd = events.into_iter().fold(self, Cfd::apply);
-
-            (cfd, settlement_proposal, taker_signature, taker_script)
+            // let mut events = Vec::new();
+            //
+            // let (propose, settlement_proposal, ..) = self
+            //     .propose_collaborative_settlement(price, N_PAYOUTS)
+            //     .unwrap();
+            // events.push(propose);
+            //
+            // let (spend_tx, taker_signature, taker_script) = self
+            //     .sign_collaborative_settlement_taker(&settlement_proposal)
+            //     .unwrap();
+            //
+            // let settlement =
+            //     CollaborativeSettlement::new(spend_tx, taker_script.clone(), price).unwrap();
+            //
+            // let settle = self.clone().complete_collaborative_settlement(settlement);
+            // events.push(settle);
+            //
+            // let cfd = events.into_iter().fold(self, Cfd::apply);
+            //
+            // (cfd, settlement_proposal, taker_signature, taker_script)
         }
 
         fn dummy_collab_settlement_maker(
