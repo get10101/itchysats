@@ -28,6 +28,16 @@ pub struct ProposeRollover {
     pub id: OrderId,
 }
 
+impl Actor {
+    pub fn new(endpoint: Address<Endpoint>, executor: command::Executor) -> Self {
+        Self {
+            endpoint,
+            tasks: Tasks::default(),
+            executor,
+        }
+    }
+}
+
 #[xtra_productivity]
 impl Actor {
     pub async fn handle(

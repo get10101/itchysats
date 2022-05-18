@@ -173,12 +173,20 @@ where
         .create(None)
         .spawn(&mut tasks);
 
+        let (endpoint_addr, endpoint_context) = Context::new(None);
+
+        let libp2p_rollover_addr =
+            rollover::taker::Actor::new(endpoint_addr.clone(), executor.clone())
+                .create(None)
+                .spawn(&mut tasks);
+
         let auto_rollover_addr = auto_rollover::Actor::new(
             db.clone(),
             oracle_pk,
             process_manager_addr,
             connection_actor_addr.clone(),
             oracle_addr,
+            libp2p_rollover_addr.clone(),
             n_payouts,
         )
         .create(None)
@@ -200,8 +208,6 @@ where
         tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
 
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
-
-        let (endpoint_addr, endpoint_context) = Context::new(None);
 
         let ping_address = xtra_libp2p_ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
             .create(None)

@@ -383,6 +383,7 @@ impl Taker {
             .send(auto_rollover::Rollover(id))
             .await
             .unwrap()
+            .unwrap();
     }
 }
 

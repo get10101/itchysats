@@ -9,7 +9,6 @@ use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
 use maia_core::secp256k1_zkp::schnorrsig;
-use model::CollaborativeSettlement;
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;

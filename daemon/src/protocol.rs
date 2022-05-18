@@ -111,3 +111,8 @@ pub fn format_expect_msg_within(msg: &str, timeout: Duration) -> String {
 
     format!("Expected {msg} within {seconds} seconds")
 }
+
+/// Whether to use libp2p or legacy protocol
+pub fn use_libp2p(cfd: &model::Cfd) -> bool {
+    cfd.counterparty_peer_id().is_some()
+}

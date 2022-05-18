@@ -2,6 +2,7 @@ use crate::connection;
 use crate::db;
 use crate::oracle;
 use crate::process_manager;
+use crate::protocol::use_libp2p;
 use crate::rollover;
 use crate::rollover_taker;
 use anyhow::Result;
@@ -26,6 +27,7 @@ pub struct Actor<O> {
     conn: Address<connection::Actor>,
     oracle: Address<O>,
     n_payouts: usize,
+    libp2p_rollover: Address<rollover::taker::Actor>,
     rollover_actors: AddressMap<OrderId, rollover_taker::Actor>,
     tasks: Tasks,
 }
@@ -37,6 +39,7 @@ impl<O> Actor<O> {
         process_manager: Address<process_manager::Actor>,
         conn: Address<connection::Actor>,
         oracle: Address<O>,
+        libp2p_rollover: Address<rollover::taker::Actor>,
         n_payouts: usize,
     ) -> Self {
         Self {
@@ -46,6 +49,7 @@ impl<O> Actor<O> {
             conn,
             oracle,
             n_payouts,
+            libp2p_rollover,
             rollover_actors: AddressMap::default(),
             tasks: Tasks::default(),
         }
@@ -67,28 +71,33 @@ where
         }
     }
 
-    async fn handle(&mut self, Rollover(order_id): Rollover) {
-        let disconnected = match self.rollover_actors.get_disconnected(order_id) {
-            Ok(disconnected) => disconnected,
-            Err(_) => {
-                tracing::debug!(%order_id, "Rollover already in progress");
-                return;
-            }
-        };
+    async fn handle(&mut self, Rollover(order_id): Rollover) -> Result<()> {
+        let cfd = self.db.load_open_cfd::<model::Cfd>(order_id, ()).await?;
+        if use_libp2p(&cfd) {}
+        {
+            let disconnected = match self.rollover_actors.get_disconnected(order_id) {
+                Ok(disconnected) => disconnected,
+                Err(_) => {
+                    tracing::debug!(%order_id, "Rollover already in progress");
+                    return Ok(());
+                }
+            };
 
-        let addr = rollover_taker::Actor::new(
-            order_id,
-            self.n_payouts,
-            self.oracle_pk,
-            self.conn.clone(),
-            &self.oracle,
-            self.process_manager.clone(),
-            self.db.clone(),
-        )
-        .create(None)
-        .spawn(&mut self.tasks);
+            let addr = rollover_taker::Actor::new(
+                order_id,
+                self.n_payouts,
+                self.oracle_pk,
+                self.conn.clone(),
+                &self.oracle,
+                self.process_manager.clone(),
+                self.db.clone(),
+            )
+            .create(None)
+            .spawn(&mut self.tasks);
 
-        disconnected.insert(addr);
+            disconnected.insert(addr);
+        }
+        Ok(())
     }
 }
 
