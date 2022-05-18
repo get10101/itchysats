@@ -2,6 +2,7 @@ use crate::connection;
 use crate::db;
 use crate::oracle;
 use crate::process_manager;
+use crate::rollover;
 use crate::rollover_taker;
 use anyhow::Result;
 use async_trait::async_trait;
