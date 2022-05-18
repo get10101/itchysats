@@ -168,19 +168,10 @@ impl Cfd {
                 state: AggregatedState::Open,
                 ..self
             },
-            ContractSetupFailed => {
-                // This is needed due to a bug that has since been fixed; `OfferRejected` and
-                // `ContractSetupFailed` are mutually exclusive.
-                // We give `OfferRejected` priority over `ContractSetupFailed`.
-                if let AggregatedState::Rejected = self.state {
-                    self
-                } else {
-                    Self {
-                        state: AggregatedState::Failed,
-                        ..self
-                    }
-                }
-            }
+            ContractSetupFailed => Self {
+                state: AggregatedState::Failed,
+                ..self
+            },
             OfferRejected => Self {
                 state: AggregatedState::Rejected,
                 ..self
