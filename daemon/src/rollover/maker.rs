@@ -5,7 +5,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use asynchronous_codec::Framed;
 use asynchronous_codec::JsonCodec;
-use futures::SinkExt;
+use futures::{AsyncReadExt, AsyncWriteExt, future, FutureExt, SinkExt, TryStreamExt};
 use futures::StreamExt;
 use libp2p_core::PeerId;
 use maia_core::secp256k1_zkp::schnorrsig;
@@ -25,9 +25,10 @@ use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
 
-use crate::command;
+use crate::{command, setup_contract};
 use crate::oracle;
 use crate::rollover::protocol::*;
+use crate::wire::RolloverMsg;
 
 use super::protocol;
 
@@ -194,8 +195,11 @@ impl Actor {
 
         let funding_fee = *rollover_params.funding_fee();
 
-        let rollover_fut = roll_over(
-            framed,
+        let (sink, stream) = framed.split();
+
+        let rollover_fut = setup_contract::roll_over(
+            sink.with(|msg| future::ok(ListenerMessage::RolloverMsg(msg))),
+                stream.filter_map(|msg| ),
             (self.oracle_pk, announcement),
             rollover_params,
             Role::Maker,
