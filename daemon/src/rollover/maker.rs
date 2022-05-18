@@ -27,6 +27,7 @@ use xtra_productivity::xtra_productivity;
 use crate::command;
 use crate::oracle;
 use crate::rollover::protocol::*;
+use crate::setup_contract;
 
 use super::protocol;
 
@@ -193,8 +194,11 @@ impl Actor {
 
         let funding_fee = *rollover_params.funding_fee();
 
-        let rollover_fut = roll_over(
-            framed,
+        let (sink, stream) = framed.split();
+
+        let rollover_fut = setup_contract::roll_over(
+            sink,
+            stream,
             (self.oracle_pk, announcement),
             rollover_params,
             Role::Maker,

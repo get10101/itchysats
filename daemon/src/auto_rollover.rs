@@ -77,7 +77,7 @@ where
         if use_libp2p(&cfd) {
             self.libp2p_rollover
                 .send(ProposeRollover { order_id })
-                .await?;
+                .await??;
         }
         {
             let disconnected = match self.rollover_actors.get_disconnected(order_id) {
