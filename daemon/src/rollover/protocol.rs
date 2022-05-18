@@ -1,60 +1,16 @@
-use crate::future_ext::FutureExt;
-use crate::setup_contract;
-use crate::transaction_ext::TransactionExt;
 use crate::wire::CompleteFee;
 use crate::wire::RolloverMsg;
-use crate::wire::RolloverMsg0;
-use crate::wire::RolloverMsg1;
-use crate::wire::RolloverMsg2;
-use crate::wire::RolloverMsg3;
 use anyhow::anyhow;
-use anyhow::Context;
 use anyhow::Result;
-use async_stream::stream;
-use asynchronous_codec::Framed;
-use asynchronous_codec::JsonCodec;
-use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::secp256k1::SECP256K1;
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::Amount;
-use bdk::bitcoin::PublicKey;
-use bdk::miniscript::DescriptorTrait;
-use bdk_ext::keypair;
-use futures::SinkExt;
-use futures::StreamExt;
-use libp2p_core::PeerId;
-use maia::commit_descriptor;
-use maia::renew_cfd_transactions;
-use maia_core::secp256k1_zkp;
-use maia_core::Announcement;
-use maia_core::PartyParams;
-use maia_core::PunishParams;
-use model::calculate_payouts;
-use model::olivia;
 use model::olivia::BitMexPriceEventId;
-use model::Cet;
 use model::Dlc;
-use model::FeeFlow;
 use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
-use model::Position;
-use model::RevokedCommit;
-use model::Role;
-use model::RolloverParams;
 use model::Timestamp;
 use model::TxFeeRate;
-use model::CET_TIMELOCK;
 use serde::Deserialize;
 use serde::Serialize;
-use std::collections::HashMap;
-use std::time::Duration;
-use xtra::Address;
-use xtra_libp2p::Endpoint;
-use xtra_libp2p::OpenSubstream;
-use xtra_libp2p::Substream;
-
-use super::PROTOCOL;
 
 pub struct RolloverCompletedParams {
     pub dlc: Dlc,
@@ -97,7 +53,7 @@ impl DialerMessage {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum Decision {
     Confirm(Confirm),
     Reject(Reject),
@@ -127,13 +83,13 @@ impl ListenerMessage {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Propose {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Confirm {
     pub order_id: OrderId,
     pub oracle_event_id: BitMexPriceEventId,
@@ -142,7 +98,7 @@ pub struct Confirm {
     pub complete_fee: CompleteFee,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Reject {
     pub order_id: OrderId,
 }

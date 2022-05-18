@@ -731,14 +731,14 @@ impl AllParams {
     }
 }
 
-pub async fn verify_cets(
+async fn verify_cets(
     (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),
     other: PartyParams,
     own_cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
     cets: Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>,
     commit_desc: Descriptor<PublicKey>,
     commit_amount: Amount,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     tokio::task::spawn_blocking(move || {
         for (tx, _, digits) in own_cets.iter() {
             let other_encsig = cets
@@ -769,14 +769,14 @@ pub async fn verify_cets(
     Ok(())
 }
 
-pub fn verify_adaptor_signature(
+fn verify_adaptor_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<PublicKey>,
     spent_amount: Amount,
     encsig: &EcdsaAdaptorSignature,
     encryption_point: &PublicKey,
     pk: &PublicKey,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
 
     encsig
@@ -784,13 +784,13 @@ pub fn verify_adaptor_signature(
         .context("failed to verify encsig spend tx")
 }
 
-pub fn verify_signature(
+fn verify_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<PublicKey>,
     spent_amount: Amount,
     sig: &Signature,
     pk: &PublicKey,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
     SECP256K1.verify(&sighash, sig, &pk.key)?;
     Ok(())
@@ -804,7 +804,7 @@ fn verify_cet_encsig(
     (oracle_pk, nonce_pks): (&schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
     spent_descriptor: &Descriptor<PublicKey>,
     spent_amount: Amount,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     let index_nonce_pairs = &digits
         .to_indices()
         .into_iter()
@@ -823,7 +823,7 @@ fn verify_cet_encsig(
 }
 
 /// Wrapper for the msg
-pub fn format_expect_msg_within(msg: &str, timeout: Duration) -> String {
+fn format_expect_msg_within(msg: &str, timeout: Duration) -> String {
     let seconds = timeout.as_secs();
 
     format!("Expected {msg} within {seconds} seconds")

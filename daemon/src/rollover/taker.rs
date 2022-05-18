@@ -3,12 +3,10 @@ use crate::oracle;
 use crate::rollover;
 use crate::rollover::protocol::Confirm;
 use crate::rollover::protocol::Decision;
-use crate::rollover::protocol::DialerError;
 use crate::rollover::protocol::DialerMessage;
 use crate::rollover::protocol::ListenerMessage;
 use crate::rollover::protocol::Propose;
 use crate::setup_contract;
-use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -44,6 +42,7 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
+#[derive(Copy, Clone)]
 pub struct ProposeRollover {
     pub order_id: OrderId,
     pub maker_peer_id: PeerId,

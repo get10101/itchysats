@@ -1,6 +1,5 @@
 use crate::connection;
 use crate::db;
-use crate::libp2p_utils::use_libp2p;
 use crate::oracle;
 use crate::process_manager;
 use crate::rollover;

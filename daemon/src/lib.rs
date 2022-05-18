@@ -190,7 +190,7 @@ where
             process_manager_addr,
             connection_actor_addr.clone(),
             oracle_addr,
-            libp2p_rollover_addr.clone(),
+            libp2p_rollover_addr,
             n_payouts,
         )
         .create(None)
