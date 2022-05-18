@@ -8,7 +8,7 @@ use asynchronous_codec::JsonCodec;
 use futures::{SinkExt};
 use futures::StreamExt;
 use libp2p_core::PeerId;
-use model::CollaborativeSettlement;
+use model::{CollaborativeSettlement, Role, RolloverVersion};
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
@@ -16,12 +16,14 @@ use model::OrderId;
 use model::Position;
 use model::TxFeeRate;
 use std::collections::HashMap;
+use maia_core::secp256k1_zkp::schnorrsig;
+use xtra::message_channel::MessageChannel;
 use tokio_tasks::Tasks;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
 
-use crate::command;
+use crate::{command, oracle};
 use crate::rollover::protocol::*;
 
 use super::protocol;
@@ -33,6 +35,9 @@ use super::protocol;
 /// task whenever we interact with a substream to not block the execution of other connections.
 pub struct Actor {
     tasks: Tasks,
+    oracle_pk: schnorrsig::PublicKey,
+    oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
+    n_payouts: usize,
     pending_protocols: HashMap<
         OrderId,
         (
@@ -133,37 +138,89 @@ impl Actor {
                     Position::Short => short_funding_rate,
                 };
 
-                cfd.accept_rollover_proposal(tx_fee_rate, funding_rate, model::RolloverVersion::V2)
+                // TODO: Move the version into the actor if we want to be backwards compatible
+                let (event, params, dlc, position, interval) =
+                    cfd.accept_rollover_proposal(tx_fee_rate, funding_rate, RolloverVersion::V2)?;
+
+                Ok((event, params, dlc, position, interval, funding_rate))
             })
             .await?;
+
+        let oracle_event_id =
+            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + interval);
+
+        // the maker computes the rollover fee and sends it over to the taker so that both parties
+        // are on the same page
+        let complete_fee = match rollover_params.version {
+            RolloverVersion::V1 => {
+                // Note there is actually a bug here, but we have to keep this as is to reach
+                // agreement on the fee for the protocol V1 version.
+                //
+                // The current fee is supposed to be added here, but we never noticed because in V1
+                // the fee is always charged for one hour using a static rate. This
+                // results in applying the fee in the DLC only for the next rollover
+                // (because we do apply the fee in the Cfd when loading the rollover
+                // event). Effectively this means, that we always charged one
+                // rollover too little.
+                rollover_params.fee_account.settle()
+            }
+            RolloverVersion::V2 => rollover_params
+                .fee_account
+                .add_funding_fee(rollover_params.current_fee)
+                .settle(),
+        };
 
         self.tasks.add_fallible(
             async move {
                 framed
-                    .send(ListenerMessage::Decision(Decision::Accept))
+                    .send(ListenerMessage::Decision(Decision::Confirm(Confirm {
+                        order_id,
+                        oracle_event_id,
+                        tx_fee_rate,
+                        funding_rate,
+                        complete_fee: complete_fee.into()
+                    })))
                     .await
                     .context("Failed to send Msg1::Accept")?;
 
                 Ok(())
             },
             // TODO: Dispatch that we failed here
-            |e| async move { tracing::warn!("Failed to rollover: {e:#}") },
+            move | e: anyhow::Error | async move { tracing::warn!("Failed to rollover: {e:#}") },
         );
 
-        // 1. Spawn async fn into tasks to perform further protocol steps like sending and
-        // receiving.
+        let announcement = self
+            .oracle_actor
+            .send(oracle::GetAnnouncement(oracle_event_id))
+            .await
+            .context("Oracle actor disconnected")?
+            .context("Failed to get announcement")?;
+
+        let funding_fee = *rollover_params.funding_fee();
+
+        let oracle_pk = self.oracle_pk;
+        let payouts = self.n_payouts;
 
         self.tasks.add_fallible(
             async move {
-                roll_over(framed)
+                let dlc = roll_over(
+                    framed,
+                    (oracle_pk, announcement),
+                    rollover_params,
+                    Role::Maker,
+                    position,
+                    dlc,
+                    payouts,
+                    complete_fee,
+                ).await.context("Failed in rollover block")?;
+
+                // TODO: SEnd the DLC out and finish with success
+
+                Ok(())
             },
-            |e| async move {
-
-
-                tracing::warn!("Failed to rollover: {e:#}") },
+            // TODO: Dispatch that we failed here
+            move | e: anyhow::Error | async move { tracing::warn!("Failed to rollover: {e:#}") },
         );
-
-        // 2. Notify actor at end of protocol to save state
 
         Ok(())
     }

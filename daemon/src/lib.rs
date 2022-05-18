@@ -61,6 +61,7 @@ mod transaction_ext;
 pub mod version;
 pub mod wallet;
 pub mod wire;
+mod protocol;
 
 /// Duration between the heartbeats sent by the maker, used by the taker to
 /// determine whether the maker is online.
