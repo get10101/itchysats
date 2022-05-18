@@ -27,6 +27,8 @@ use xtra::prelude::*;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use xtra_libp2p::dialer;
 use xtra_libp2p::Endpoint;
+use xtra_libp2p_ping::ping;
+use xtra_libp2p_ping::pong;
 use xtras::supervisor;
 
 pub use bdk;
@@ -191,9 +193,10 @@ where
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
-        let ping_address = xtra_libp2p_ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
+        ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
             .create(None)
             .spawn(&mut tasks);
+        let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
 
         let endpoint = Endpoint::new(
             TokioTcpConfig::new(),
@@ -201,7 +204,7 @@ where
             ENDPOINT_CONNECTION_TIMEOUT,
             [(
                 xtra_libp2p_ping::PROTOCOL_NAME,
-                xtra::message_channel::StrongMessageChannel::clone_channel(&ping_address),
+                xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
             )],
         );
 
