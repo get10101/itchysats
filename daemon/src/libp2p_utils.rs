@@ -43,4 +43,3 @@ pub fn libp2p_socket_from_legacy_networking(legacy_addr: &SocketAddr) -> SocketA
 pub fn use_libp2p(cfd: &model::Cfd) -> bool {
     cfd.counterparty_peer_id().is_some()
 }
-

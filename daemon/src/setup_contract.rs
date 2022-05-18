@@ -759,12 +759,12 @@ pub async fn verify_cets(
                 &commit_desc,
                 commit_amount,
             )
-                .context("enc sig on CET does not verify")?;
+            .context("enc sig on CET does not verify")?;
         }
 
         anyhow::Ok(())
     })
-        .await??;
+    .await??;
 
     Ok(())
 }
@@ -828,4 +828,3 @@ pub fn format_expect_msg_within(msg: &str, timeout: Duration) -> String {
 
     format!("Expected {msg} within {seconds} seconds")
 }
-

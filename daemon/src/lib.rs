@@ -174,10 +174,15 @@ where
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
-        let libp2p_rollover_addr =
-            rollover::taker::Actor::new(endpoint_addr.clone(), executor.clone())
-                .create(None)
-                .spawn(&mut tasks);
+        let libp2p_rollover_addr = rollover::taker::Actor::new(
+            endpoint_addr.clone(),
+            executor.clone(),
+            oracle_pk,
+            Box::new(oracle_addr.clone()),
+            n_payouts,
+        )
+        .create(None)
+        .spawn(&mut tasks);
 
         let auto_rollover_addr = auto_rollover::Actor::new(
             db.clone(),

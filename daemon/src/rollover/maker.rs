@@ -40,7 +40,7 @@ use super::protocol;
 pub struct Actor {
     tasks: Tasks,
     oracle_pk: schnorrsig::PublicKey,
-    oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
+    get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
     n_payouts: usize,
     pending_protocols: HashMap<
         OrderId,
@@ -57,13 +57,13 @@ impl Actor {
     pub fn new(
         executor: command::Executor,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
+        get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
         n_payouts: usize,
     ) -> Self {
         Self {
             tasks: Tasks::default(),
             oracle_pk,
-            oracle_actor,
+            get_announcement,
             n_payouts,
             pending_protocols: HashMap::default(),
             executor,
@@ -205,7 +205,7 @@ impl Actor {
             .context("Failed to send Msg1::Accept")?;
 
         let announcement = self
-            .oracle_actor
+            .get_announcement
             .send(oracle::GetAnnouncement(oracle_event_id))
             .await
             .context("Oracle actor disconnected")?

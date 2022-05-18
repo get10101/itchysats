@@ -1,5 +1,6 @@
 use crate::connection;
 use crate::db;
+use crate::libp2p_utils::use_libp2p;
 use crate::oracle;
 use crate::process_manager;
 use crate::rollover;
@@ -19,7 +20,6 @@ use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
-use crate::libp2p_utils::use_libp2p;
 
 pub struct Actor<O> {
     db: db::Connection,
@@ -74,12 +74,15 @@ where
 
     async fn handle(&mut self, Rollover(order_id): Rollover) -> Result<()> {
         let cfd = self.db.load_open_cfd::<model::Cfd>(order_id, ()).await?;
-        if use_libp2p(&cfd) {
+
+        if let Some(maker_peer_id) = cfd.counterparty_peer_id() {
             self.libp2p_rollover
-                .send(ProposeRollover { order_id })
+                .send(ProposeRollover {
+                    order_id,
+                    maker_peer_id,
+                })
                 .await??;
-        }
-        {
+        } else {
             let disconnected = match self.rollover_actors.get_disconnected(order_id) {
                 Ok(disconnected) => disconnected,
                 Err(_) => {

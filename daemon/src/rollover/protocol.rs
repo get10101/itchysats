@@ -61,49 +61,6 @@ pub struct RolloverCompletedParams {
     pub funding_fee: FundingFee,
 }
 
-// in other words, the taker
-pub async fn dialer(
-    endpoint: Address<Endpoint>,
-    order_id: OrderId,
-    counterparty: PeerId,
-) -> Result<RolloverCompletedParams, DialerError> {
-    let substream = endpoint
-        .send(OpenSubstream::single_protocol(counterparty, PROTOCOL))
-        .await
-        .context("Endpoint is disconnected")?
-        .context("Failed to open substream")?;
-    let mut framed = asynchronous_codec::Framed::new(
-        substream,
-        asynchronous_codec::JsonCodec::<DialerMessage, ListenerMessage>::new(),
-    );
-
-    framed
-        .send(DialerMessage::Propose(Propose {
-            order_id,
-            timestamp: Timestamp::now(),
-        }))
-        .await
-        .context("Failed to send Msg0")?;
-
-    // TODO: We will need to apply a timeout to these. Perhaps we can put a timeout generally into
-    // "reading from the substream"?
-    match framed
-        .next()
-        .await
-        .context("End of stream while receiving Msg1")?
-        .context("Failed to decode Msg1")?
-        .into_decision()?
-    {
-        Decision::Confirm(_) => {
-            // TODO: Add setup_contract::roll_over() invocation
-            // setup_contract::roll_over(sink, stream, _, rollover_params, our_role, our_position,
-            // dlc, n_payouts, complete_fee)
-        }
-        Decision::Reject(_) => return Err(DialerError::Rejected),
-    }
-    todo!("Finish this function");
-}
-
 #[derive(thiserror::Error, Debug)]
 pub enum DialerError {
     #[error("Rollover got rejected")]
