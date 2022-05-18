@@ -11,7 +11,6 @@ pub const PROTOCOL_NAME: &str = "/ipfs/ping/1.0.0";
 mod tests {
     use super::*;
     use futures::Future;
-    use futures::FutureExt;
     use std::time::Duration;
     use xtra::message_channel::StrongMessageChannel;
     use xtra::spawn::TokioGlobalSpawnExt;
@@ -27,65 +26,57 @@ mod tests {
     use xtra_libp2p::Endpoint;
     use xtra_libp2p::ListenOn;
 
-    #[tokio::test]
-    async fn latency_to_peer_is_recorded() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1000)]
+    async fn latency_to_peers_is_low() {
         tracing_subscriber::fmt()
             .with_env_filter("xtra_libp2p_ping=trace")
+            .with_env_filter("xtra=trace")
             .with_test_writer()
             .init();
 
-        let (alice_peer_id, alice_ping_actor, alice_endpoint) = create_endpoint_with_ping();
-        let (bob_peer_id, bob_ping_actor, bob_endpoint) = create_endpoint_with_ping();
+        let (alice_peer_id, _alice_ping_actor, alice_endpoint) = create_endpoint_with_ping(true);
 
         alice_endpoint
             .send(ListenOn(Multiaddr::empty().with(Protocol::Memory(1000))))
             .await
             .unwrap();
-        bob_endpoint
-            .send(Connect(
-                Multiaddr::empty()
-                    .with(Protocol::Memory(1000))
-                    .with(Protocol::P2p(alice_peer_id.into())),
-            ))
-            .await
-            .unwrap()
-            .unwrap();
 
-        let alice_to_bob_latency = {
-            || {
-                let alice_ping_actor = alice_ping_actor.clone();
-                async move {
-                    alice_ping_actor
-                        .send(ping::GetLatency(bob_peer_id))
-                        .map(|res| res.unwrap())
-                        .await
-                }
-            }
-        };
-        let alice_to_bob_latency = retry_until_some(alice_to_bob_latency).await;
+        let mut bob_endpoints = Vec::new();
+        for bob in 0..200 {
+            let (_bob_peer_id, _bob_ping_actor, bob_endpoint) = create_endpoint_with_ping(true);
+            bob_endpoints.push(bob_endpoint);
 
-        let bob_to_alice_latency = || {
-            let bob_ping_actor = bob_ping_actor.clone();
-            async move {
-                bob_ping_actor
-                    .send(ping::GetLatency(alice_peer_id))
-                    .map(|res| res.unwrap())
-                    .await
-            }
-        };
-        let bob_to_alice_latency = retry_until_some(bob_to_alice_latency).await;
+            tracing::info!(%bob, "Spawned bob")
+        }
 
-        assert!(!alice_to_bob_latency.is_zero());
-        assert!(!bob_to_alice_latency.is_zero());
+        for (bob, bob_endpoint) in bob_endpoints.iter().enumerate() {
+            bob_endpoint
+                .send(Connect(
+                    Multiaddr::empty()
+                        .with(Protocol::Memory(1000))
+                        .with(Protocol::P2p(alice_peer_id.into())),
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+
+            tracing::info!(%bob, "Connected bob to Alice")
+        }
+
+        tokio::time::sleep(Duration::from_secs(60)).await;
     }
 
-    fn create_endpoint_with_ping() -> (PeerId, Address<ping::Actor>, Address<Endpoint>) {
+    fn create_endpoint_with_ping(
+        is_pinger: bool,
+    ) -> (PeerId, Option<Address<ping::Actor>>, Address<Endpoint>) {
         let (endpoint_address, endpoint_context) = Context::new(None);
 
         let id = Keypair::generate_ed25519();
-        let ping_address = ping::Actor::new(endpoint_address.clone(), Duration::from_secs(1))
-            .create(None)
-            .spawn_global();
+        let ping_address = is_pinger.then(|| {
+            ping::Actor::new(endpoint_address.clone(), Duration::from_secs(5))
+                .create(None)
+                .spawn_global()
+        });
         let pong_address = pong::Actor::default().create(None).spawn_global();
 
         let endpoint = Endpoint::new(
