@@ -296,6 +296,6 @@ enum Failed {
 // Allows for easy use of `?`.
 impl From<Error> for Failed {
     fn from(source: Error) -> Self {
-        Failed::BeforeReceiving { source }
+        Failed::Unfinished { source }
     }
 }

@@ -1,41 +1,66 @@
-use std::collections::HashMap;
-use std::time::Duration;
+use crate::future_ext::FutureExt;
+use crate::protocol::format_expect_msg_within;
+use crate::protocol::verify_adaptor_signature;
+use crate::protocol::verify_cets;
+use crate::protocol::verify_signature;
 use crate::setup_contract;
-use crate::wire::{CompleteFee, RolloverMsg, RolloverMsg0, RolloverMsg1, RolloverMsg2, RolloverMsg3};
+use crate::transaction_ext::TransactionExt;
+use crate::wire::CompleteFee;
+use crate::wire::RolloverMsg;
+use crate::wire::RolloverMsg0;
+use crate::wire::RolloverMsg1;
+use crate::wire::RolloverMsg2;
+use crate::wire::RolloverMsg3;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_stream::stream;
-use asynchronous_codec::{Framed, JsonCodec};
+use asynchronous_codec::Framed;
+use asynchronous_codec::JsonCodec;
+use bdk::bitcoin::secp256k1::schnorrsig;
+use bdk::bitcoin::secp256k1::SECP256K1;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
+use bdk::bitcoin::Amount;
+use bdk::bitcoin::PublicKey;
+use bdk::miniscript::DescriptorTrait;
+use bdk_ext::keypair;
 use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
+use maia::commit_descriptor;
+use maia::renew_cfd_transactions;
+use maia_core::secp256k1_zkp;
+use maia_core::Announcement;
+use maia_core::PartyParams;
+use maia_core::PunishParams;
+use model::calculate_payouts;
+use model::olivia;
 use model::olivia::BitMexPriceEventId;
-use model::{calculate_payouts, Cet, CET_TIMELOCK, Dlc, FeeFlow, olivia, Position, RevokedCommit, Role, RolloverParams};
+use model::Cet;
+use model::Dlc;
+use model::FeeFlow;
 use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
+use model::Position;
+use model::RevokedCommit;
+use model::Role;
+use model::RolloverParams;
 use model::Timestamp;
 use model::TxFeeRate;
+use model::CET_TIMELOCK;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
+use std::time::Duration;
 use xtra::Address;
-use xtra_libp2p::{Endpoint, Substream};
+use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
-use bdk::bitcoin::secp256k1::{schnorrsig, SECP256K1};
-use bdk::bitcoin::{Amount, PublicKey};
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::miniscript::DescriptorTrait;
-use maia::{commit_descriptor, renew_cfd_transactions};
-use maia_core::{Announcement, PartyParams, PunishParams, secp256k1_zkp};
-use bdk_ext::keypair;
-use crate::future_ext::FutureExt;
-use crate::protocol::{format_expect_msg_within, verify_adaptor_signature, verify_cets, verify_signature};
-use crate::transaction_ext::TransactionExt;
+use xtra_libp2p::Substream;
 
 use super::PROTOCOL;
 
-pub struct Rollover {
+pub struct RolloverCompletedParams {
     pub dlc: Dlc,
     pub funding_fee: FundingFee,
 }
@@ -69,10 +94,12 @@ pub async fn roll_over(
     };
 
     framed
-        .send(ListenerMessage::RolloverMsg(RolloverMsg::Msg0(RolloverMsg0 {
-            revocation_pk: rev_pk,
-            publish_pk,
-        })))
+        .send(ListenerMessage::RolloverMsg(RolloverMsg::Msg0(
+            RolloverMsg0 {
+                revocation_pk: rev_pk,
+                publish_pk,
+            },
+        )))
         .await
         .context("Failed to send Msg0")?;
 
@@ -159,7 +186,10 @@ pub async fn roll_over(
     .await?
     .context("Failed to create new CFD transactions")?;
 
-    framed.send(ListenerMessage::RolloverMsg(RolloverMsg::Msg1(RolloverMsg1::from(own_cfd_txs.clone()))))
+    framed
+        .send(ListenerMessage::RolloverMsg(RolloverMsg::Msg1(
+            RolloverMsg1::from(own_cfd_txs.clone()),
+        )))
         .await
         .context("Failed to send Msg1")?;
 
@@ -300,11 +330,14 @@ pub async fn roll_over(
         .collect::<Result<HashMap<_, _>>>()?;
 
     // reveal revocation secrets to the other party
-    framed.send(ListenerMessage::RolloverMsg(RolloverMsg::Msg2(RolloverMsg2 {
-        revocation_sk: dlc.revocation,
-    })))
-    .await
-    .context("Failed to send Msg2")?;
+    framed
+        .send(ListenerMessage::RolloverMsg(RolloverMsg::Msg2(
+            RolloverMsg2 {
+                revocation_sk: dlc.revocation,
+            },
+        )))
+        .await
+        .context("Failed to send Msg2")?;
 
     let msg2 = framed
         .next()
@@ -338,7 +371,10 @@ pub async fn roll_over(
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
     // monitoring
-    framed.send(ListenerMessage::RolloverMsg(RolloverMsg::Msg3(RolloverMsg3)))
+    framed
+        .send(ListenerMessage::RolloverMsg(RolloverMsg::Msg3(
+            RolloverMsg3,
+        )))
         .await
         .context("Failed to send Msg3")?;
     let _ = framed
@@ -376,7 +412,7 @@ pub async fn dialer(
     endpoint: Address<Endpoint>,
     order_id: OrderId,
     counterparty: PeerId,
-) -> Result<Rollover, DialerError> {
+) -> Result<RolloverCompletedParams, DialerError> {
     let substream = endpoint
         .send(OpenSubstream::single_protocol(counterparty, PROTOCOL))
         .await
@@ -406,7 +442,8 @@ pub async fn dialer(
     {
         Decision::Confirm(_) => {
             // TODO: Add setup_contract::roll_over() invocation
-            // setup_contract::roll_over(sink, stream, _, rollover_params, our_role, our_position, dlc, n_payouts, complete_fee)
+            // setup_contract::roll_over(sink, stream, _, rollover_params, our_role, our_position,
+            // dlc, n_payouts, complete_fee)
         }
         Decision::Reject(_) => return Err(DialerError::Rejected),
     }
