@@ -5,25 +5,28 @@ use anyhow::Result;
 use async_trait::async_trait;
 use asynchronous_codec::Framed;
 use asynchronous_codec::JsonCodec;
-use futures::{SinkExt};
+use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
-use model::{CollaborativeSettlement, Role, RolloverVersion};
+use maia_core::secp256k1_zkp::schnorrsig;
+use model::CollaborativeSettlement;
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
 use model::Position;
+use model::Role;
+use model::RolloverVersion;
 use model::TxFeeRate;
 use std::collections::HashMap;
-use maia_core::secp256k1_zkp::schnorrsig;
-use xtra::message_channel::MessageChannel;
 use tokio_tasks::Tasks;
+use xtra::message_channel::MessageChannel;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
 
-use crate::{command, oracle};
+use crate::command;
+use crate::oracle;
 use crate::rollover::protocol::*;
 
 use super::protocol;
@@ -131,7 +134,8 @@ impl Actor {
             .remove(&order_id)
             .with_context(|| format!("No active protocol for order {order_id}"))?;
 
-        let (rollover_params, dlc, position, interval, funding_rate) = self.executor
+        let (rollover_params, dlc, position, interval, funding_rate) = self
+            .executor
             .execute(order_id, |cfd| {
                 let funding_rate = match cfd.position() {
                     Position::Long => long_funding_rate,
@@ -170,24 +174,16 @@ impl Actor {
                 .settle(),
         };
 
-        self.tasks.add_fallible(
-            async move {
-                framed
-                    .send(ListenerMessage::Decision(Decision::Confirm(Confirm {
-                        order_id,
-                        oracle_event_id,
-                        tx_fee_rate,
-                        funding_rate,
-                        complete_fee: complete_fee.into()
-                    })))
-                    .await
-                    .context("Failed to send Msg1::Accept")?;
-
-                Ok(())
-            },
-            // TODO: Dispatch that we failed here
-            move | e: anyhow::Error | async move { tracing::warn!("Failed to rollover: {e:#}") },
-        );
+        framed
+            .send(ListenerMessage::Decision(Decision::Confirm(Confirm {
+                order_id,
+                oracle_event_id,
+                tx_fee_rate,
+                funding_rate,
+                complete_fee: complete_fee.into(),
+            })))
+            .await
+            .context("Failed to send Msg1::Accept")?;
 
         let announcement = self
             .oracle_actor
@@ -198,29 +194,28 @@ impl Actor {
 
         let funding_fee = *rollover_params.funding_fee();
 
-        let oracle_pk = self.oracle_pk;
-        let payouts = self.n_payouts;
-
-        self.tasks.add_fallible(
-            async move {
-                let dlc = roll_over(
-                    framed,
-                    (oracle_pk, announcement),
-                    rollover_params,
-                    Role::Maker,
-                    position,
-                    dlc,
-                    payouts,
-                    complete_fee,
-                ).await.context("Failed in rollover block")?;
-
-                // TODO: SEnd the DLC out and finish with success
-
-                Ok(())
-            },
-            // TODO: Dispatch that we failed here
-            move | e: anyhow::Error | async move { tracing::warn!("Failed to rollover: {e:#}") },
+        let rollover_fut = roll_over(
+            framed,
+            (self.oracle_pk, announcement),
+            rollover_params,
+            Role::Maker,
+            position,
+            dlc,
+            self.n_payouts,
+            complete_fee,
         );
+
+        let this = ctx.address().expect("self to be alive");
+
+        self.tasks.add(async move {
+            let _: Result<(), xtra::Error> =
+                match rollover_fut.await.context("Rollover protocol failed") {
+                    Ok(dlc) => todo!("Send success with DLC"),
+                    // this.send(RolloverSucceeded { dlc, funding_fee }).await,
+                    Err(source) => todo!("Handle failed"),
+                    // this.send(RolloverFailed { error: source }).await,
+                };
+        });
 
         Ok(())
     }
@@ -295,13 +290,7 @@ pub struct Complete {
 
 #[derive(Debug)]
 enum Failed {
-    BeforeReceiving {
-        source: Error,
-    },
-    AfterReceiving {
-        settlement: CollaborativeSettlement,
-        source: Error,
-    },
+    Unfinished { source: Error },
 }
 
 // Allows for easy use of `?`.
