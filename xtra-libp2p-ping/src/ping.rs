@@ -4,6 +4,7 @@ use conquer_once::Lazy;
 use prometheus::register_histogram;
 use prometheus::Histogram;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::async_trait;
@@ -16,6 +17,8 @@ use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
+
+const UPDATE_CONNECTED_PEERS_INTERVAL: Duration = Duration::from_secs(5);
 
 /// An actor implementing the official ipfs/libp2p ping protocol.
 ///
@@ -35,6 +38,7 @@ use xtras::SendInterval;
 pub struct Actor {
     endpoint: Address<Endpoint>,
     ping_interval: Duration,
+    connected_peers: HashSet<PeerId>,
     tasks: Tasks,
     latencies: HashMap<PeerId, Duration>,
 }
@@ -44,6 +48,7 @@ impl Actor {
         Self {
             endpoint,
             ping_interval,
+            connected_peers: HashSet::default(),
             tasks: Tasks::default(),
             latencies: HashMap::default(),
         }
@@ -58,7 +63,9 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("we just started");
 
         self.tasks
-            .add(this.send_interval(self.ping_interval, || Ping));
+            .add(this.clone().send_interval(self.ping_interval, || Ping));
+        self.tasks
+            .add(this.send_interval(UPDATE_CONNECTED_PEERS_INTERVAL, || UpdateConnectedPeers));
     }
 
     async fn stopped(self) -> Self::Stop {}
@@ -78,20 +85,16 @@ struct RecordLatency {
 /// Primarily used for testing. May be exposed publicly at some point.
 pub(crate) struct GetLatency(pub PeerId);
 
+/// Private message to update the internal view of the connected
+/// peers.
+struct UpdateConnectedPeers;
+
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, _: Ping, ctx: &mut Context<Self>) {
-        let connection_stats = match self.endpoint.send(GetConnectionStats).await {
-            Ok(connection_stats) => connection_stats,
-            Err(_) => {
-                tracing::warn!("Cannot ping peers because `Endpoint` actor is down");
-                return;
-            }
-        };
-
         self.latencies.clear();
 
-        for peer in connection_stats.connected_peers {
+        for peer in self.connected_peers.iter().copied() {
             let endpoint = self.endpoint.clone();
             let this = ctx.address().expect("we are alive");
 
@@ -131,6 +134,16 @@ impl Actor {
 
     async fn handle(&mut self, GetLatency(peer): GetLatency) -> Option<Duration> {
         return self.latencies.get(&peer).copied();
+    }
+
+    async fn handle(&mut self, _: UpdateConnectedPeers) {
+        self.connected_peers = match self.endpoint.send(GetConnectionStats).await {
+            Ok(connection_stats) => connection_stats.connected_peers,
+            Err(e) => {
+                tracing::warn!("Cannot ping peers: {e}");
+                return;
+            }
+        };
     }
 }
 
