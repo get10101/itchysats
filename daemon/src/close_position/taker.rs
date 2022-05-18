@@ -86,20 +86,26 @@ impl Actor {
     pub async fn handle(
         &mut self,
         msg: FullyComplete,
-        ctx: &mut xtra::Context<Self>,
+        _ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
+        let settlement = msg.settlement;
+        tracing::debug!(?settlement, "Received FullyComplete msg");
         Ok(())
     }
 
     pub async fn handle(
         &mut self,
         msg: PartiallyComplete,
-        ctx: &mut xtra::Context<Self>,
+        _ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
+        let tx = msg.tx;
+        tracing::debug!(?tx, "Received PartiallyComplete msg");
         Ok(())
     }
 
-    pub async fn handle(&mut self, msg: NotComplete, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    pub async fn handle(&mut self, msg: NotComplete, _ctx: &mut xtra::Context<Self>) -> Result<()> {
+        let error = msg.error;
+        tracing::debug!(%error, "Received NotComplete msg");
         Ok(())
     }
 }

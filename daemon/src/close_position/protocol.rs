@@ -74,7 +74,7 @@ pub async fn dialer(
     let close_position_tx =
         match close_position_tx.recv_counterparty_signature(msg3.listener_signature) {
             Ok(close_position_tx) => close_position_tx,
-            Err(error) => {
+            Err(_error) => {
                 // TODO: What to do in case of an invalid signature?
 
                 return Err(DialerFailed::AfterSendingSignature { unsigned_tx });

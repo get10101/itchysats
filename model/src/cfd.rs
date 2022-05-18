@@ -1018,6 +1018,7 @@ impl Cfd {
             .as_ref()
             .context("Collaborative close without DLC")?;
 
+        #[allow(deprecated)]
         let (tx, sig_maker, lock_amount) = dlc.close_transaction(&proposal)?;
 
         let spend_tx = dlc
@@ -1074,6 +1075,7 @@ impl Cfd {
             .as_ref()
             .context("Collaborative close without DLC")?;
 
+        #[allow(deprecated)]
         let (tx, sig, _) = dlc.close_transaction(&proposal)?;
         let script_pk = dlc.script_pubkey_for(Role::Taker);
 
@@ -1537,6 +1539,7 @@ impl Cfd {
             .as_ref()
             .context("Collaborative close without DLC")?;
 
+        #[allow(deprecated)]
         let (tx, sig, _) = dlc.close_transaction(proposal)?;
         let script_pk = dlc.script_pubkey_for(Role::Taker);
 

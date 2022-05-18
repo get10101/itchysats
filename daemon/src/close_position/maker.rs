@@ -26,12 +26,15 @@ use crate::command;
 ///
 /// There is only one instance of this actor for all connections, meaning we must always spawn a
 /// task whenever we interact with a substream to not block the execution of other connections.
+
+type FramedProtocol = Framed<Substream, JsonCodec<ListenerMessage, DialerMessage>>;
+
 pub struct Actor {
     tasks: Tasks,
     pending_protocols: HashMap<
         OrderId,
         (
-            Framed<Substream, JsonCodec<ListenerMessage, DialerMessage>>,
+            FramedProtocol,
             ClosePositionTransaction,
             SettlementProposal,
             PeerId,
@@ -106,10 +109,10 @@ impl Actor {
         let Accept { order_id } = msg;
         let address = ctx.address().expect("we are alive");
 
-        let (mut framed, transaction, proposal, peer) = self
-            .pending_protocols
-            .remove(&order_id)
-            .with_context(|| format!("No active protocol for order {order_id}"))?;
+        let (mut framed, transaction, proposal, _peer) =
+            self.pending_protocols
+                .remove(&order_id)
+                .with_context(|| format!("No active protocol for order {order_id}"))?;
 
         self.executor
             .execute(order_id, |cfd| {
@@ -159,7 +162,7 @@ impl Actor {
                     .map_err(|source| Failed::AfterReceiving {
                         source: anyhow!(source),
                         settlement,
-                    })?;
+                    })??;
 
                 Ok(())
             },
@@ -233,7 +236,7 @@ impl Actor {
         self.tasks.add_fallible(
             async move { framed.send(ListenerMessage::Msg1(Msg1::Reject)).await },
             move |e| async move {
-                tracing::debug!(%order_id, "Failed to reject collaborative settlement")
+                tracing::debug!(%order_id, "Failed to reject collaborative settlement: {e:#}")
             },
         );
 
