@@ -2,7 +2,7 @@
 //!
 //! Insbired by https://github.com/libp2p/rust-libp2p/blob/102509afe3a3b984e43a88dbe4de935fde36f319/protocols/ping/src/protocol.rs#L82-L113.
 
-pub const SIZE: usize = 32;
+pub(crate) const SIZE: usize = 32;
 
 use futures::AsyncReadExt;
 use futures::AsyncWriteExt;
@@ -14,7 +14,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 /// Sends a ping and waits for the pong.
-pub async fn send<S>(mut stream: S) -> io::Result<Duration>
+pub(crate) async fn send<S>(mut stream: S) -> io::Result<Duration>
 where
     S: AsyncWriteExt + AsyncReadExt + Unpin,
 {
@@ -38,7 +38,7 @@ where
 }
 
 /// Waits for a ping and sends a pong.
-pub async fn recv<S>(mut stream: S) -> io::Result<()>
+pub(crate) async fn recv<S>(mut stream: S) -> io::Result<()>
 where
     S: AsyncWriteExt + AsyncReadExt + Unpin,
 {
