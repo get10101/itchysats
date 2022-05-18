@@ -104,6 +104,7 @@ impl Actor {
             .context("Failed to start rollover protocol");
 
         if let Err(e) = result {
+            // TODO dispatch that we failed rollover
             tracing::debug!(%order_id, %peer, "Failed to start rollover protocol: {e:#}");
             return;
         }
@@ -125,7 +126,7 @@ impl Actor {
             .remove(&order_id)
             .with_context(|| format!("No active protocol for order {order_id}"))?;
 
-        self.executor
+        let (rollover_params, dlc, position, interval, funding_rate) = self.executor
             .execute(order_id, |cfd| {
                 let funding_rate = match cfd.position() {
                     Position::Long => long_funding_rate,
@@ -136,19 +137,32 @@ impl Actor {
             })
             .await?;
 
-        // self.tasks.add_fallible(
-        //     async move {
-        //         framed
-        //             .send(ListenerMessage::Msg1(Msg1::Accept))
-        //             .await
-        //             .context("Failed to send Msg1::Accept")?;
+        self.tasks.add_fallible(
+            async move {
+                framed
+                    .send(ListenerMessage::Decision(Decision::Accept))
+                    .await
+                    .context("Failed to send Msg1::Accept")?;
 
-        //         Ok(())
-        //     },
+                Ok(())
+            },
+            // TODO: Dispatch that we failed here
+            |e| async move { tracing::warn!("Failed to rollover: {e:#}") },
+        );
 
         // 1. Spawn async fn into tasks to perform further protocol steps like sending and
         // receiving.
-        //
+
+        self.tasks.add_fallible(
+            async move {
+                roll_over(framed)
+            },
+            |e| async move {
+
+
+                tracing::warn!("Failed to rollover: {e:#}") },
+        );
+
         // 2. Notify actor at end of protocol to save state
 
         Ok(())
