@@ -25,7 +25,7 @@ use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use bdk_ext::keypair;
 use futures::stream::FusedStream;
-use futures::Sink;
+use futures::{Sink, Stream};
 use futures::SinkExt;
 use futures::StreamExt;
 use maia::commit_descriptor;
@@ -56,6 +56,7 @@ use std::iter::FromIterator;
 use std::ops::RangeInclusive;
 use std::time::Duration;
 use xtra::prelude::MessageChannel;
+use crate::protocol::format_expect_msg_within;
 
 /// How long contract setup protocol waits for the next message before giving up
 ///
@@ -365,7 +366,7 @@ pub async fn new(
 #[allow(clippy::too_many_arguments)]
 pub async fn roll_over(
     mut sink: impl Sink<RolloverMsg, Error = anyhow::Error> + Unpin,
-    mut stream: impl FusedStream<Item = RolloverMsg> + Unpin,
+    mut stream: impl Stream<Item = RolloverMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     rollover_params: RolloverParams,
     our_role: Role,
@@ -392,10 +393,11 @@ pub async fn roll_over(
     .await
     .context("Failed to send Msg0")?;
     let msg0 = stream
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
+        .context("stream is terminated")?
         .try_into_msg0()?;
 
     let maker_lock_amount = dlc.maker_lock_amount;
@@ -476,10 +478,11 @@ pub async fn roll_over(
         .context("Failed to send Msg1")?;
 
     let msg1 = stream
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
+        .context("Msg0 was None for some reason, why would this happen?")?
         .try_into_msg1()?;
 
     let lock_amount = taker_lock_amount + maker_lock_amount;
@@ -617,10 +620,11 @@ pub async fn roll_over(
     .context("Failed to send Msg2")?;
 
     let msg2 = stream
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
+        .context("Msg0 was None for some reason, why would this happen?")?
         .try_into_msg2()?;
     let revocation_sk_theirs = msg2.revocation_sk;
 
@@ -650,10 +654,11 @@ pub async fn roll_over(
         .await
         .context("Failed to send Msg3")?;
     let _ = stream
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
-        .with_context(|| protocol::format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
+        .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
+        .context("Msg0 was None for some reason, why would this happen?")?
         .try_into_msg3()?;
 
     Ok(Dlc {
