@@ -470,9 +470,13 @@ pub async fn roll_over(
     .await?
     .context("Failed to create new CFD transactions")?;
 
+    tracing::info!("BEFORE SEND MSG1");
+
     sink.send(RolloverMsg::Msg1(RolloverMsg1::from(own_cfd_txs.clone())))
         .await
         .context("Failed to send Msg1")?;
+
+    tracing::info!("AFTER SEND MSG1");
 
     let msg1 = stream
         .select_next_some()
@@ -480,6 +484,8 @@ pub async fn roll_over(
         .await
         .with_context(|| format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg1()?;
+
+    tracing::info!("AFTER RECEIVE MSG1");
 
     let lock_amount = taker_lock_amount + maker_lock_amount;
 
