@@ -50,6 +50,7 @@ pub struct ActorSystem<O, W> {
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
+    _listener_actor: Address<listener::Actor>,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -163,7 +164,7 @@ where
         let endpoint_listen = daemon::libp2p_utils::create_listen_tcp_multiaddr(&libp2p_socket)
             .expect("to parse properly");
 
-        let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
+        let (supervisor, listener_actor) = supervisor::Actor::with_policy(
             move || {
                 let endpoint_addr = endpoint_addr.clone();
                 let endpoint_listen = endpoint_listen.clone();
@@ -211,6 +212,7 @@ where
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
             _position_metrics_actor: position_metrics_actor,
+            _listener_actor: listener_actor,
         })
     }
 
