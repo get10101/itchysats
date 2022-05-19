@@ -164,10 +164,10 @@ impl Connection {
         .bind(&cfd.settlement_time_interval_hours().whole_hours())
         .bind(&cfd.quantity())
         .bind(&cfd.counterparty_network_identity())
-        .bind(&cfd.counterparty_peer_id().unwrap_or({
+        .bind(&cfd.counterparty_peer_id().unwrap_or_else(|| {
             tracing::debug!(
                 order_id=%cfd.id(),
-                taker_id=%cfd.counterparty_network_identity(),
+                counterparty_identity=%cfd.counterparty_network_identity(),
                 "Inserting deprecated CFD with placeholder peer-id"
             );
             PeerId::placeholder()
