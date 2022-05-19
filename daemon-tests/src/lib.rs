@@ -10,6 +10,7 @@ use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
 use daemon::libp2p_utils::create_connect_tcp_multiaddr;
+use daemon::libp2p_utils::libp2p_socket_from_legacy_networking;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::Feeds;
@@ -320,8 +321,10 @@ impl Taker {
         let mut oracle_mock = None;
         let mut monitor_mock = None;
 
-        let maker_multiaddr = create_connect_tcp_multiaddr(&maker_address, maker_peer_id.inner())
-            .expect("to be able to construct Multiaddr");
+        let maker_libp2p_address = libp2p_socket_from_legacy_networking(&maker_address);
+        let maker_multiaddr =
+            create_connect_tcp_multiaddr(&maker_libp2p_address, maker_peer_id.inner())
+                .expect("to parse properly");
 
         tracing::info!("Connecting to maker {maker_multiaddr}");
 
