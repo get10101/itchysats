@@ -184,9 +184,12 @@ impl Maker {
         let wallet_addr = wallet.create(None).spawn(&mut tasks);
 
         let (price_feed_addr, price_feed_fut) = price_feed.create(None).run();
-        tasks.add(async move {
-            let _ = price_feed_fut.await;
-        });
+        tasks.add(
+            async move {
+                let _ = price_feed_fut.await;
+            },
+            "pricefeed",
+        );
 
         let settlement_interval = SETTLEMENT_INTERVAL;
 
@@ -230,7 +233,7 @@ impl Maker {
         );
 
         let (proj_actor, feeds) = projection::Actor::new(db, Network::Testnet, &price_feed_addr);
-        tasks.add(projection_context.run(proj_actor));
+        tasks.add(projection_context.run(proj_actor), "projection");
 
         Self {
             system: maker,
@@ -359,14 +362,17 @@ impl Taker {
 
         let (proj_actor, feeds) =
             projection::Actor::new(db, Network::Testnet, &taker.price_feed_actor);
-        tasks.add(projection_context.run(proj_actor));
+        tasks.add(projection_context.run(proj_actor), "projection");
 
-        tasks.add(connect(
-            taker.maker_online_status_feed_receiver.clone(),
-            taker.connection_actor.clone(),
-            maker_identity,
-            vec![maker_address],
-        ));
+        tasks.add(
+            connect(
+                taker.maker_online_status_feed_receiver.clone(),
+                taker.connection_actor.clone(),
+                maker_identity,
+                vec![maker_address],
+            ),
+            "connection",
+        );
 
         Self {
             id: model::Identity::new(identities.identity_pk),

@@ -158,7 +158,7 @@ mod tests {
         let mut tasks = Tasks::default();
         let mut map = AddressMap::default();
         let (addr_1, ctx_1) = Context::new(None);
-        tasks.add(ctx_1.run(Dummy));
+        tasks.add(ctx_1.run(Dummy), "dummy");
         map.insert("addr_1", addr_1.clone());
 
         addr_1.send(Shutdown).await.unwrap();

@@ -193,6 +193,7 @@ impl Actor {
                 |e| async move {
                     tracing::debug!("Failed to fetch announcement: {:#}", e);
                 },
+                "oracle_failable",
             );
         }
     }
@@ -242,6 +243,7 @@ impl Actor {
                 |e| async move {
                     tracing::debug!("Failed to fetch attestation: {:#}", e);
                 },
+                "oracle_failable_2",
             )
         }
     }
@@ -331,38 +333,42 @@ impl xtra::Actor for Actor {
         self.tasks.add(
             this.clone()
                 .send_interval(SYNC_ANNOUNCEMENTS_INTERVAL, || SyncAnnouncements),
+            "oracle1",
         );
 
-        self.tasks.add({
-            let db = self.db.clone();
+        self.tasks.add(
+            {
+                let db = self.db.clone();
 
-            async move {
-                let mut stream = db.load_all_open_cfds::<Cfd>(());
+                async move {
+                    let mut stream = db.load_all_open_cfds::<Cfd>(());
 
-                while let Some(cfd) = stream.next().await {
-                    let Cfd {
-                        pending_attestation,
-                        ..
-                    } = match cfd {
-                        Ok(cfd) => cfd,
-                        Err(e) => {
-                            tracing::warn!("Failed to load CFD from database: {e:#}");
-                            continue;
+                    while let Some(cfd) = stream.next().await {
+                        let Cfd {
+                            pending_attestation,
+                            ..
+                        } = match cfd {
+                            Ok(cfd) => cfd,
+                            Err(e) => {
+                                tracing::warn!("Failed to load CFD from database: {e:#}");
+                                continue;
+                            }
+                        };
+                        if let Some(pending_attestation) = pending_attestation {
+                            let _: Result<(), xtra::Error> = this
+                                .send(MonitorAttestation {
+                                    event_id: pending_attestation,
+                                })
+                                .await;
                         }
-                    };
-                    if let Some(pending_attestation) = pending_attestation {
-                        let _: Result<(), xtra::Error> = this
-                            .send(MonitorAttestation {
-                                event_id: pending_attestation,
-                            })
-                            .await;
                     }
+                    this.clone()
+                        .send_interval(SYNC_ATTESTATIONS_INTERVAL, || SyncAttestations)
+                        .await;
                 }
-                this.clone()
-                    .send_interval(SYNC_ATTESTATIONS_INTERVAL, || SyncAttestations)
-                    .await;
-            }
-        });
+            },
+            "oracle2",
+        );
     }
 
     async fn stopped(self) -> Self::Stop {}

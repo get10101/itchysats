@@ -1164,25 +1164,27 @@ impl xtra::Actor for Actor {
         this.send_async_safe(Initialize)
             .await
             .expect("we just started");
+        self.tasks.add(
+            {
+                let price_feed = self.price_feed.clone_channel();
 
-        self.tasks.add({
-            let price_feed = self.price_feed.clone_channel();
+                async move {
+                    loop {
+                        match price_feed.send(xtra_bitmex_price_feed::LatestQuote).await {
+                            Ok(quote) => {
+                                let _ = this.send(Update(quote)).await;
+                            }
+                            Err(_) => {
+                                tracing::trace!("Price feed actor currently unreachable");
+                            }
+                        }
 
-            async move {
-                loop {
-                    match price_feed.send(xtra_bitmex_price_feed::LatestQuote).await {
-                        Ok(quote) => {
-                            let _ = this.send(Update(quote)).await;
-                        }
-                        Err(_) => {
-                            tracing::trace!("Price feed actor currently unreachable");
-                        }
+                        tokio::time::sleep(Duration::from_secs(10)).await;
                     }
-
-                    tokio::time::sleep(Duration::from_secs(10)).await;
                 }
-            }
-        })
+            },
+            "projection",
+        )
     }
 
     async fn stopped(self) -> Self::Stop {}

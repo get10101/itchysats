@@ -137,17 +137,20 @@ where
             .create(None)
             .spawn(&mut tasks);
 
-        tasks.add(process_manager_ctx.run(process_manager::Actor::new(
-            db.clone(),
-            Role::Taker,
-            &projection_actor,
-            &position_metrics_actor,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &oracle_addr,
-        )));
+        tasks.add(
+            process_manager_ctx.run(process_manager::Actor::new(
+                db.clone(),
+                Role::Taker,
+                &projection_actor,
+                &position_metrics_actor,
+                &monitor_addr,
+                &monitor_addr,
+                &monitor_addr,
+                &monitor_addr,
+                &oracle_addr,
+            )),
+            "process_manager",
+        );
 
         let (connection_actor_addr, connection_actor_ctx) = Context::new(None);
         let cfd_actor_addr = taker_cfd::Actor::new(
@@ -192,11 +195,18 @@ where
                     maker_heartbeat_interval,
                     connect_timeout,
                 )),
+            "connection_actor",
         );
 
-        tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
+        tasks.add(
+            monitor_ctx.run(monitor_constructor(executor.clone())?),
+            "montor_actor",
+        );
 
-        tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
+        tasks.add(
+            oracle_ctx.run(oracle_constructor(executor.clone())),
+            "oracle_actor",
+        );
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
@@ -214,7 +224,7 @@ where
             )],
         );
 
-        tasks.add(endpoint_context.run(endpoint));
+        tasks.add(endpoint_context.run(endpoint), "endpoint_context");
 
         let dialer_constructor =
             { move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone()) };

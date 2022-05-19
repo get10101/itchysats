@@ -65,7 +65,7 @@ impl xtra::Actor for Actor {
             },
             |e: Error| async move {
                 let _: Result<(), xtra::Error> = this.send(e).await;
-            },
+            }, "bitmex_price_feed",
         );
     }
 

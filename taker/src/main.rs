@@ -363,14 +363,17 @@ async fn main() -> Result<()> {
 
     let (proj_actor, projection_feeds) =
         projection::Actor::new(db.clone(), bitcoin_network, &taker.price_feed_actor);
-    tasks.add(projection_context.run(proj_actor));
+    tasks.add(projection_context.run(proj_actor), "taker_projection");
 
-    tasks.add(connect(
-        taker.maker_online_status_feed_receiver.clone(),
-        taker.connection_actor.clone(),
-        maker_identity,
-        possible_addresses,
-    ));
+    tasks.add(
+        connect(
+            taker.maker_online_status_feed_receiver.clone(),
+            taker.connection_actor.clone(),
+            maker_identity,
+            possible_addresses,
+        ),
+        "taker_connection",
+    );
 
     rocket::custom(figment)
         .manage(projection_feeds)

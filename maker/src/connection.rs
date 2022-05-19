@@ -301,7 +301,7 @@ impl Actor {
                                 upgrade,
                                 move |e| async move {
                                     tracing::warn!(address = %address, "Failed to upgrade incoming connection: {:#}", e);
-                                }
+                                }, "upgrade_connection_failable"
                             );
                     }
                     Err(error) => {
@@ -310,7 +310,7 @@ impl Actor {
                     }
                 }
             }
-        });
+        }, "connection_2");
     }
 }
 
@@ -471,8 +471,12 @@ impl Actor {
                         .await;
                 }
             },
+            "read_message",
         );
-        tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)));
+        tasks.add(
+            this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)),
+            "heartbeat",
+        );
 
         self.connections.insert(
             identity,

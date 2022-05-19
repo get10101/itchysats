@@ -95,17 +95,20 @@ where
             .create(None)
             .spawn(&mut tasks);
 
-        tasks.add(process_manager_ctx.run(process_manager::Actor::new(
-            db.clone(),
-            Role::Maker,
-            &projection_actor,
-            &position_metrics_actor,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &oracle_addr,
-        )));
+        tasks.add(
+            process_manager_ctx.run(process_manager::Actor::new(
+                db.clone(),
+                Role::Maker,
+                &projection_actor,
+                &position_metrics_actor,
+                &monitor_addr,
+                &monitor_addr,
+                &monitor_addr,
+                &monitor_addr,
+                &oracle_addr,
+            )),
+            "process_manager",
+        );
 
         let cfd_actor_addr = cfd::Actor::new(
             db.clone(),
@@ -138,7 +141,7 @@ where
             )],
         );
 
-        tasks.add(endpoint_context.run(endpoint));
+        tasks.add(endpoint_context.run(endpoint), "endpoint_context");
 
         let libp2p_socket = daemon::libp2p_utils::libp2p_socket_from_legacy_networking(&p2p_socket);
         let endpoint_listen = daemon::libp2p_utils::create_listen_tcp_multiaddr(&libp2p_socket)
@@ -165,11 +168,18 @@ where
                     heartbeat_interval,
                     p2p_socket,
                 )),
+            "inc_conn_ctx",
         );
 
-        tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
+        tasks.add(
+            monitor_ctx.run(monitor_constructor(executor.clone())?),
+            "monitor_ctx",
+        );
 
-        tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
+        tasks.add(
+            oracle_ctx.run(oracle_constructor(executor.clone())),
+            "oracle_ctx",
+        );
 
         let archive_closed_cfds_actor = archive_closed_cfds::Actor::new(db.clone())
             .create(None)
@@ -179,7 +189,10 @@ where
             .create(None)
             .spawn(&mut tasks);
 
-        tasks.add(time_to_first_position_ctx.run(time_to_first_position::Actor::new(db)));
+        tasks.add(
+            time_to_first_position_ctx.run(time_to_first_position::Actor::new(db)),
+            "time_to_first_position_ctx",
+        );
 
         tracing::debug!("Maker actor system ready");
 

@@ -241,13 +241,16 @@ impl Actor {
 
         let this = ctx.address().expect("self to be alive");
 
-        self.tasks.add(async move {
-            let _: Result<(), xtra::Error> =
-                match rollover_fut.await.context("Rollover protocol failed") {
-                    Ok(dlc) => this.send(RolloverSucceeded { dlc, funding_fee }).await,
-                    Err(source) => this.send(RolloverFailed { error: source }).await,
-                };
-        });
+        self.tasks.add(
+            async move {
+                let _: Result<(), xtra::Error> =
+                    match rollover_fut.await.context("Rollover protocol failed") {
+                        Ok(dlc) => this.send(RolloverSucceeded { dlc, funding_fee }).await,
+                        Err(source) => this.send(RolloverFailed { error: source }).await,
+                    };
+            },
+            "rollover",
+        );
 
         Ok(())
     }

@@ -99,7 +99,7 @@ where
         (supervisor, address)
     }
 
-    fn spawn_new(&mut self, ctx: &mut Context<Self>) {
+    fn spawn_new(&mut self, ctx: &mut Context<Self>, name: &str) {
         let actor_name = T::name();
         tracing::info!(actor = %&actor_name, "Spawning new actor instance");
 
@@ -107,24 +107,27 @@ where
         let actor = (self.ctor)();
 
         self.metrics.num_spawns += 1;
-        self.tasks.add({
-            let task = self.context.attach(actor);
+        self.tasks.add(
+            {
+                let task = self.context.attach(actor);
 
-            async move {
-                match AssertUnwindSafe(task).catch_unwind().await {
-                    Ok(reason) => {
-                        let _ = this
-                            .send(Stopped {
-                                reason: reason.into(),
-                            })
-                            .await;
-                    }
-                    Err(error) => {
-                        let _ = this.send(Panicked { error }).await;
+                async move {
+                    match AssertUnwindSafe(task).catch_unwind().await {
+                        Ok(reason) => {
+                            let _ = this
+                                .send(Stopped {
+                                    reason: reason.into(),
+                                })
+                                .await;
+                        }
+                        Err(error) => {
+                            let _ = this.send(Panicked { error }).await;
+                        }
                     }
                 }
-            }
-        });
+            },
+            name,
+        );
     }
 }
 
@@ -138,7 +141,7 @@ where
     type Stop = ();
 
     async fn started(&mut self, ctx: &mut Context<Self>) {
-        self.spawn_new(ctx);
+        self.spawn_new(ctx, "supervisor");
     }
 
     async fn stopped(self) -> Self::Stop {}
@@ -159,7 +162,7 @@ where
         tracing::info!(actor = %&actor, reason = %reason_str, restart = %should_restart, "Actor stopped");
 
         if should_restart {
-            self.spawn_new(ctx)
+            self.spawn_new(ctx, actor.as_str())
         }
     }
 }
@@ -193,7 +196,7 @@ where
         tracing::info!(actor = %&actor, %reason, restart = true, "Actor panicked");
 
         self.metrics.num_panics += 1;
-        self.spawn_new(ctx)
+        self.spawn_new(ctx, actor.as_str())
     }
 }
 

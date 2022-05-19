@@ -139,8 +139,11 @@ where
 
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
-        self.tasks
-            .add(this.send_interval(Duration::from_secs(5 * 60), || AutoRollover));
+
+        self.tasks.add(
+            this.send_interval(Duration::from_secs(5 * 60), || AutoRollover),
+            "auto_rollover",
+        );
     }
 
     async fn stopped(self) -> Self::Stop {}

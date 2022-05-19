@@ -125,12 +125,15 @@ impl Actor {
         );
 
         let this = ctx.address().expect("self to be alive");
-        self.tasks.add(async move {
-            let _: Result<(), xtra::Error> = match contract_future.await {
-                Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
-                Err(error) => this.send(SetupFailed { error }).await,
-            };
-        });
+        self.tasks.add(
+            async move {
+                let _: Result<(), xtra::Error> = match contract_future.await {
+                    Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
+                    Err(error) => this.send(SetupFailed { error }).await,
+                };
+            },
+            "rollover_accepted",
+        );
     }
 
     fn handle(&mut self, msg: Rejected, ctx: &mut xtra::Context<Self>) {
@@ -248,8 +251,7 @@ impl xtra::Actor for Actor {
                     .await;
             }
         };
-
-        self.tasks.add(maker_response_timeout);
+        self.tasks.add(maker_response_timeout, "setup_taker");
     }
 
     async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {

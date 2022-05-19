@@ -175,8 +175,7 @@ impl xtra::Actor for Actor {
                     .await;
             }
         };
-
-        self.tasks.add(maker_response_timeout);
+        self.tasks.add(maker_response_timeout, "collab_settlement");
     }
 
     async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {

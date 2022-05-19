@@ -293,7 +293,8 @@ impl xtra::Actor for Actor<ElectrumBlockchain> {
             tracing::warn!("{:#}", e);
         }
 
-        self.tasks.add(this.send_interval(SYNC_INTERVAL, || Sync));
+        self.tasks
+            .add(this.send_interval(SYNC_INTERVAL, || Sync), "wallet_sync");
     }
 
     async fn stopped(self) -> Self::Stop {}

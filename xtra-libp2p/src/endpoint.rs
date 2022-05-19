@@ -215,10 +215,13 @@ impl Endpoint {
         };
 
         // TODO: Evaluate whether dropping and closing has to be in a particular order.
-        self.tasks.add(async move {
-            let _ = control.close().await;
-            drop(tasks);
-        });
+        self.tasks.add(
+            async move {
+                let _ = control.close().await;
+                drop(tasks);
+            },
+            "endpoint",
+        );
     }
 
     async fn open_substream(
@@ -262,7 +265,7 @@ impl Endpoint {
         } = msg;
 
         let mut tasks = Tasks::default();
-        tasks.add(worker);
+        tasks.add(worker, "endpoint_worker");
         tasks.add_fallible(
             {
                 let inbound_substream_channels = self
@@ -308,6 +311,7 @@ impl Endpoint {
             move |error| async move {
                 let _ = this.send(ExistingConnectionFailed { peer, error }).await;
             },
+            "endpoint_worker_2",
         );
         self.controls.insert(peer, (control, tasks));
     }
@@ -378,6 +382,7 @@ impl Endpoint {
             move |error| async move {
                 let _ = this.send(FailedToConnect { peer, error }).await;
             },
+            "endpoint_connect",
         );
 
         Ok(())
@@ -431,6 +436,7 @@ impl Endpoint {
                                     move |e: anyhow::Error| async move {
                                         tracing::error!("Cannot upgrade connection {e:#}");
                                     },
+                                    "connection_upgrade_listener",
                                 );
                             }
                             Err(e) => {
@@ -450,6 +456,7 @@ impl Endpoint {
                     })
                     .await;
             },
+            "endpoint_listen_on",
         );
     }
 

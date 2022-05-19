@@ -137,15 +137,18 @@ impl Actor {
         );
 
         let this = ctx.address().expect("self to be alive");
-        self.tasks.add(async move {
-            // Use an explicit type annotation to cause a compile error if someone changes the
-            // handler.
-            let _: Result<(), xtra::Error> =
-                match rollover_fut.await.context("Rollover protocol failed") {
-                    Ok(dlc) => this.send(RolloverSucceeded { dlc, funding_fee }).await,
-                    Err(error) => this.send(RolloverFailed { error }).await,
-                };
-        });
+        self.tasks.add(
+            async move {
+                // Use an explicit type annotation to cause a compile error if someone changes the
+                // handler.
+                let _: Result<(), xtra::Error> =
+                    match rollover_fut.await.context("Rollover protocol failed") {
+                        Ok(dlc) => this.send(RolloverSucceeded { dlc, funding_fee }).await,
+                        Err(error) => this.send(RolloverFailed { error }).await,
+                    };
+            },
+            "rollover_protocol",
+        );
 
         Ok(())
     }
@@ -233,8 +236,7 @@ impl xtra::Actor for Actor {
                     .await;
             }
         };
-
-        self.tasks.add(maker_response_timeout);
+        self.tasks.add(maker_response_timeout, "rollover_taker");
     }
 
     async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {

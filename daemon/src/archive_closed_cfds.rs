@@ -29,8 +29,10 @@ impl xtra::Actor for Actor {
 
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
-        self.tasks
-            .add(this.send_interval(ARCHIVE_CFDS_INTERVAL, || ArchiveCfds));
+        self.tasks.add(
+            this.send_interval(ARCHIVE_CFDS_INTERVAL, || ArchiveCfds),
+            "archive_closed_cfds",
+        );
     }
 
     async fn stopped(self) -> Self::Stop {}

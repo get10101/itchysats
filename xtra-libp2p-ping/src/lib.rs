@@ -61,7 +61,8 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("we just started");
 
         if let Some(interval) = self.ping_interval {
-            self.tasks.add(this.send_interval(interval, || Ping));
+            self.tasks
+                .add(this.send_interval(interval, || Ping), "ping");
         }
     }
 
@@ -115,7 +116,7 @@ impl Actor {
 
                     anyhow::Ok(())
                 },
-                move |e| async move { tracing::debug!(%peer, "Outbound ping protocol failed: {e:#}") },
+                move |e| async move { tracing::debug!(%peer, "Outbound ping protocol failed: {e:#}") }, "sending_ping",
             );
         }
     }
@@ -145,9 +146,13 @@ impl Actor {
 
         let future = ping::recv(stream);
 
-        self.tasks.add_fallible(future, move |e| async move {
-            tracing::debug!(%peer, "Inbound ping protocol failed: {e}");
-        });
+        self.tasks.add_fallible(
+            future,
+            move |e| async move {
+                tracing::debug!(%peer, "Inbound ping protocol failed: {e}");
+            },
+            "new_inbound_stream",
+        );
     }
 }
 

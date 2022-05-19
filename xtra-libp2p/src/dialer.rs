@@ -82,8 +82,10 @@ impl xtra::Actor for Actor {
 
         // Only start checking the connection after it had enough time to be established
         tokio::time::sleep(CHECK_INTERVAL).await;
-        self.tasks
-            .add(this.send_interval(CHECK_INTERVAL, || CheckConnection));
+        self.tasks.add(
+            this.send_interval(CHECK_INTERVAL, || CheckConnection),
+            "dialer",
+        );
     }
 
     async fn stopped(self) -> Self::Stop {

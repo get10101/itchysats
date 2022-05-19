@@ -111,12 +111,15 @@ impl Actor {
             self.n_payouts,
         );
 
-        self.tasks.add(async move {
-            let _: Result<(), xtra::Error> = match contract_future.await {
-                Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
-                Err(error) => this.send(SetupFailed { error }).await,
-            };
-        });
+        self.tasks.add(
+            async move {
+                let _: Result<(), xtra::Error> = match contract_future.await {
+                    Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
+                    Err(error) => this.send(SetupFailed { error }).await,
+                };
+            },
+            "setup",
+        );
 
         Ok(())
     }

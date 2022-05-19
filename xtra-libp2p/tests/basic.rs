@@ -257,10 +257,13 @@ impl HelloWorld {
     async fn handle(&mut self, msg: NewInboundSubstream) {
         tracing::info!("New hello world stream from {}", msg.peer);
 
-        self.tasks
-            .add_fallible(hello_world_listener(msg.stream), move |e| async move {
+        self.tasks.add_fallible(
+            hello_world_listener(msg.stream),
+            move |e| async move {
                 tracing::warn!("Hello world protocol with peer {} failed: {}", msg.peer, e);
-            });
+            },
+            "basic",
+        );
     }
 }
 

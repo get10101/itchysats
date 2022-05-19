@@ -415,8 +415,12 @@ impl Actor {
         tasks.add(
             this.clone()
                 .attach_stream(read.map(move |item| MakerStreamMessage { item })),
+            "maker_stream",
         );
-        tasks.add(this.send_interval(self.heartbeat_measuring_rate, || MeasurePulse));
+        tasks.add(
+            this.send_interval(self.heartbeat_measuring_rate, || MeasurePulse),
+            "maker_pulse",
+        );
 
         self.state = State::Connected {
             last_heartbeat: SystemTime::now(),

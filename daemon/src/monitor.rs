@@ -550,8 +550,10 @@ impl xtra::Actor for Actor {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
-        self.tasks
-            .add(this.clone().send_interval(Duration::from_secs(20), || Sync));
+        self.tasks.add(
+            this.clone().send_interval(Duration::from_secs(20), || Sync),
+            "monitor1",
+        );
 
         self.tasks.add_fallible(
             {
@@ -645,6 +647,7 @@ impl xtra::Actor for Actor {
             |e| async move {
                 tracing::warn!("Failed to re-initialize monitoring: {e:#}");
             },
+            "monitor_failable",
         );
     }
 

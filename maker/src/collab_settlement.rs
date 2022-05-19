@@ -254,7 +254,7 @@ impl Actor {
                     .await;
             }
         };
-        self.tasks.add(timeout);
+        self.tasks.add(timeout, "timeout_ftx");
 
         let this = ctx.address().expect("self to be alive");
         self.connections
