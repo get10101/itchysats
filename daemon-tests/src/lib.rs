@@ -323,6 +323,8 @@ impl Taker {
         let maker_multiaddr = create_connect_tcp_multiaddr(&maker_address, maker_peer_id.inner())
             .expect("to be able to construct Multiaddr");
 
+        tracing::info!("Connecting to maker {maker_multiaddr}");
+
         let taker = daemon::TakerActorSystem::new(
             db.clone(),
             wallet_addr,
