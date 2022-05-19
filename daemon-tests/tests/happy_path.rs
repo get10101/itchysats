@@ -432,7 +432,7 @@ async fn maker_rejects_rollover_of_open_cfd() {
     let (mut maker, mut taker, order_id) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
 
-    taker.trigger_rollover(order_id, None).await;
+    taker.trigger_rollover(order_id, Some(maker.peer_id)).await;
 
     wait_next_state!(
         order_id,
