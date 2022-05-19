@@ -36,6 +36,7 @@ pub use closed::*;
 pub use failed::*;
 
 mod closed;
+mod cull_old_dlcs;
 mod event_log;
 mod failed;
 

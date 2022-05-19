@@ -425,7 +425,7 @@ impl CfdEvent {
 pub enum EventKind {
     ContractSetupStarted,
     ContractSetupCompleted {
-        dlc: Dlc,
+        dlc: Option<Dlc>,
     },
 
     ContractSetupFailed,
@@ -435,7 +435,7 @@ pub enum EventKind {
     RolloverAccepted,
     RolloverRejected,
     RolloverCompleted {
-        dlc: Dlc,
+        dlc: Option<Dlc>,
         funding_fee: FundingFee,
     },
     RolloverFailed,
@@ -1145,7 +1145,7 @@ impl Cfd {
 
         tracing::info!(order_id = %self.id, "Contract setup was completed");
 
-        Ok(self.event(EventKind::ContractSetupCompleted { dlc }))
+        Ok(self.event(EventKind::ContractSetupCompleted { dlc: Some(dlc) }))
     }
 
     pub fn reject_contract_setup(self, reason: anyhow::Error) -> Result<CfdEvent> {
@@ -1171,7 +1171,10 @@ impl Cfd {
             Ok(_) => {
                 tracing::info!(order_id = %self.id, "Rollover was completed");
 
-                self.event(EventKind::RolloverCompleted { dlc, funding_fee })
+                self.event(EventKind::RolloverCompleted {
+                    dlc: Some(dlc),
+                    funding_fee,
+                })
             }
             Err(e) => self.fail_rollover(e.into()),
         }
@@ -1482,7 +1485,7 @@ impl Cfd {
         match evt.event {
             ContractSetupStarted => self.during_contract_setup = true,
             ContractSetupCompleted { dlc } => {
-                self.dlc = Some(dlc);
+                self.dlc = dlc;
                 self.during_contract_setup = false;
             }
             OracleAttestedPostCetTimelock { cet, .. } => self.cet = Some(cet),
@@ -1504,7 +1507,7 @@ impl Cfd {
             }
             RolloverAccepted => {}
             RolloverCompleted { dlc, funding_fee } => {
-                self.dlc = Some(dlc);
+                self.dlc = dlc;
                 self.during_rollover = false;
                 self.fee_account = self.fee_account.add_funding_fee(funding_fee);
             }
@@ -2486,13 +2489,13 @@ mod tests {
     #[test]
     fn cfd_ensure_stable_names_for_expensive_events() {
         let (rollover_event_name, _) = EventKind::RolloverCompleted {
-            dlc: Dlc::dummy(None),
+            dlc: Some(Dlc::dummy(None)),
             funding_fee: FundingFee::new(Amount::ZERO, FundingRate::default()),
         }
         .to_json();
 
         let (setup_event_name, _) = EventKind::ContractSetupCompleted {
-            dlc: Dlc::dummy(None),
+            dlc: Some(Dlc::dummy(None)),
         }
         .to_json();
 
@@ -3372,7 +3375,7 @@ mod tests {
                     timestamp: Timestamp::now(),
                     id: Default::default(),
                     event: EventKind::ContractSetupCompleted {
-                        dlc: Dlc::dummy(Some(event_id)),
+                        dlc: Some(Dlc::dummy(Some(event_id))),
                     },
                 },
                 CfdEvent {
@@ -3418,7 +3421,7 @@ mod tests {
                     timestamp: Timestamp::now(),
                     id: Default::default(),
                     event: EventKind::RolloverCompleted {
-                        dlc: Dlc::dummy(Some(dummy_event_id())),
+                        dlc: Some(Dlc::dummy(Some(dummy_event_id()))),
                         funding_fee: FundingFee {
                             fee: Amount::from_sat(fee_sat),
                             rate: FundingRate::new(funding_rate).unwrap(),
