@@ -373,6 +373,8 @@ pub async fn roll_over(
     n_payouts: usize,
     complete_fee: FeeFlow,
 ) -> Result<Dlc> {
+    tracing::info!("ENTERED ROLL_OVER!");
+
     let sk = dlc.identity;
     let pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk));
 
@@ -390,12 +392,17 @@ pub async fn roll_over(
     }))
     .await
     .context("Failed to send Msg0")?;
+
+    tracing::info!("AFTER SENDING MSG0");
+
     let msg0 = stream
         .select_next_some()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg0()?;
+
+    tracing::info!("AFTER RECEIVING MSG0");
 
     let maker_lock_amount = dlc.maker_lock_amount;
     let taker_lock_amount = dlc.taker_lock_amount;
@@ -415,6 +422,8 @@ pub async fn roll_over(
             complete_fee,
         )?,
     )]);
+
+    tracing::info!("AFTER CALC PAYOUTS");
 
     // unsign lock tx because PartiallySignedTransaction needs an unsigned tx
     let mut unsigned_lock_tx = dlc.lock.0.clone();
@@ -470,9 +479,13 @@ pub async fn roll_over(
     .await?
     .context("Failed to create new CFD transactions")?;
 
+    tracing::info!("BEFORE SENDING MSG1");
+
     sink.send(RolloverMsg::Msg1(RolloverMsg1::from(own_cfd_txs.clone())))
         .await
         .context("Failed to send Msg1")?;
+
+    tracing::info!("AFTER SENDING MSG1");
 
     let msg1 = stream
         .select_next_some()
@@ -480,6 +493,8 @@ pub async fn roll_over(
         .await
         .with_context(|| format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg1()?;
+
+    tracing::info!("AFTER RECEIVING MSG1");
 
     let lock_amount = taker_lock_amount + maker_lock_amount;
 
@@ -643,6 +658,8 @@ pub async fn roll_over(
         script_pubkey: dlc.commit.2.script_pubkey(),
     });
 
+    tracing::info!("BEFORE SENDING MSG3");
+
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
     // monitoring
     sink.send(RolloverMsg::Msg3(RolloverMsg3))
@@ -654,6 +671,8 @@ pub async fn roll_over(
         .await
         .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg3()?;
+
+    tracing::info!("AFTER RECEIVING MSG3");
 
     Ok(Dlc {
         identity: sk,

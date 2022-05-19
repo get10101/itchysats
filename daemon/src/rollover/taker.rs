@@ -1,7 +1,7 @@
 use crate::command;
 use crate::oracle;
 use crate::rollover;
-use crate::rollover::protocol::Confirm;
+use crate::rollover::protocol::{Confirm, roll_over_maker, roll_over_taker};
 use crate::rollover::protocol::Decision;
 use crate::rollover::protocol::DialerMessage;
 use crate::rollover::protocol::ListenerMessage;
@@ -161,18 +161,10 @@ impl Actor {
 
                         let funding_fee = *rollover_params.funding_fee();
 
-                        let (sink, stream) = framed.split();
+                        // let (sink, stream) = framed.split();
 
-                        let dlc = setup_contract::roll_over(
-                            sink.with(|msg| future::ok(DialerMessage::RolloverMsg(msg))),
-                            Box::pin(stream.filter_map(|msg| async move {
-                                if let Ok(msg) = msg {
-                                    msg.into_rollover_msg().ok()
-                                } else {
-                                    None
-                                }
-                            }))
-                                .fuse(),
+                        let dlc = roll_over_taker(
+                            framed,
                             (oracle_pk, announcement),
                             rollover_params,
                             Role::Taker,

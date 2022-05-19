@@ -4,7 +4,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use asynchronous_codec::Framed;
 use asynchronous_codec::JsonCodec;
-use futures::future;
 use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
@@ -25,7 +24,6 @@ use xtra_productivity::xtra_productivity;
 use crate::command;
 use crate::oracle;
 use crate::rollover::protocol::*;
-use crate::setup_contract;
 
 use super::protocol;
 
@@ -197,18 +195,10 @@ impl Actor {
 
                     let funding_fee = *rollover_params.funding_fee();
 
-                    let (sink, stream) = framed.split();
+                    // let (sink, stream) = framed.split();
 
-                    let dlc = setup_contract::roll_over(
-                        sink.with(|msg| future::ok(ListenerMessage::RolloverMsg(msg))),
-                        Box::pin(stream.filter_map(|msg| async move {
-                            if let Ok(msg) = msg {
-                                msg.into_rollover_msg().ok()
-                            } else {
-                                None
-                            }
-                        }))
-                        .fuse(),
+                    let dlc = roll_over_maker(
+                        framed,
                         (oracle_pk, announcement),
                         rollover_params,
                         Role::Maker,
@@ -218,6 +208,8 @@ impl Actor {
                         complete_fee,
                     )
                     .await?;
+
+                    tracing::debug!("Rollover completed, saving new DLC in database");
 
                     if let Err(e) = executor
                         .execute(order_id, |cfd| Ok(cfd.complete_rollover(dlc, funding_fee)))
