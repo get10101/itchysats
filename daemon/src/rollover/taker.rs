@@ -86,7 +86,11 @@ impl Actor {
             .context("Failed to open substream")
         {
             Ok(Ok(substream)) => substream,
-            Ok(Err(e)) => todo!(),
+            // TODO: Same error path and add failed
+            Ok(Err(e)) => {
+                tracing::error!("Failed to open connection to maker: {e:#}");
+                return;
+            }
             Err(e) => {
                 tracing::error!(%order_id, "Failed to open connection to maker for  rollover: {e:#}");
 

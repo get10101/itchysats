@@ -85,7 +85,6 @@ pub struct TakerActorSystem<O, W, P> {
     _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
-    _libp2p_rollover_actor: Address<rollover::taker::Actor>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
@@ -269,7 +268,6 @@ where
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             _tasks: tasks,
             maker_online_status_feed_receiver,
-            _libp2p_rollover_actor: libp2p_rollover_addr,
         })
     }
 
