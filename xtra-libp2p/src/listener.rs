@@ -47,8 +47,6 @@ impl Actor {
             .await
             .map_err(|_| Error::NoEndpoint)?;
 
-        tracing::error!("{:?}", listen_addresses);
-
         listen_addresses
             .contains(&self.listen_address)
             .then(|| ())
