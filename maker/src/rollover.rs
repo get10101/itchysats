@@ -12,7 +12,6 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia_core::secp256k1_zkp::schnorrsig;
-use model::olivia;
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
@@ -158,7 +157,7 @@ impl Actor {
 
         self.sent_from_taker = Some(sender);
 
-        let (rollover_params, dlc, position, interval, funding_rate) = self
+        let (rollover_params, dlc, position, oracle_event_id, funding_rate) = self
             .executor
             .execute(self.order_id, |cfd| {
                 let funding_rate = match cfd.position() {
@@ -166,15 +165,11 @@ impl Actor {
                     Position::Short => short_funding_rate,
                 };
 
-                let (event, params, dlc, position, interval) =
+                let (event, params, dlc, position, event_id) =
                     cfd.accept_rollover_proposal(tx_fee_rate, funding_rate, self.version)?;
-
-                Ok((event, params, dlc, position, interval, funding_rate))
+                Ok((event, params, dlc, position, event_id, funding_rate))
             })
             .await?;
-
-        let oracle_event_id =
-            olivia::next_announcement_after(time::OffsetDateTime::now_utc() + interval);
 
         let taker_id = self.taker_id;
 
@@ -193,7 +188,7 @@ impl Actor {
                 // rollover too little.
                 rollover_params.fee_account.settle()
             }
-            RolloverVersion::V2 => rollover_params
+            RolloverVersion::V2 | RolloverVersion::V3 => rollover_params
                 .fee_account
                 .add_funding_fee(rollover_params.current_fee)
                 .settle(),

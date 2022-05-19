@@ -313,7 +313,7 @@ impl Actor {
         } = msg;
 
         self.state
-            .send(wire::TakerToMaker::ProposeRolloverV2 {
+            .send(wire::TakerToMaker::ProposeRolloverV3 {
                 order_id,
                 timestamp,
             })

@@ -741,6 +741,24 @@ where
                     tracing::warn!("Failed to handle rollover proposal V2: {:#}", e);
                 }
             }
+            wire::TakerToMaker::ProposeRolloverV3 {
+                order_id,
+                timestamp,
+            } => {
+                if let Err(e) = self
+                    .handle_propose_rollover(
+                        RolloverProposal {
+                            order_id,
+                            timestamp,
+                        },
+                        taker_id,
+                        RolloverVersion::V3,
+                    )
+                    .await
+                {
+                    tracing::warn!("Failed to handle rollover proposal V3: {:#}", e);
+                }
+            }
             wire::TakerToMaker::RolloverProtocol { .. }
             | wire::TakerToMaker::Protocol { .. }
             | wire::TakerToMaker::Hello(_)

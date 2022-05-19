@@ -547,7 +547,9 @@ impl Actor {
                     tracing::warn!(%order_id, "No active settlement actor");
                 }
             }
-            ProposeRollover { order_id, .. } | ProposeRolloverV2 { order_id, .. } => {
+            ProposeRollover { order_id, .. }
+            | ProposeRolloverV2 { order_id, .. }
+            | ProposeRolloverV3 { order_id, .. } => {
                 if self.rollover_actors.len() < 2 {
                     let _ = self.taker_msg_channel.send_async_safe(msg).await;
                 } else {
