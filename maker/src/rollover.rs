@@ -12,6 +12,7 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia_core::secp256k1_zkp::schnorrsig;
+use model::olivia;
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
@@ -173,7 +174,7 @@ impl Actor {
             .await?;
 
         let oracle_event_id =
-            oracle::next_announcement_after(time::OffsetDateTime::now_utc() + interval);
+            olivia::next_announcement_after(time::OffsetDateTime::now_utc() + interval);
 
         let taker_id = self.taker_id;
 
