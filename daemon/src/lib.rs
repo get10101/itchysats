@@ -124,6 +124,8 @@ where
             + Handler<monitor::TryBroadcastTransaction>
             + Actor<Stop = ()>,
     {
+        futures::executor::block_on(db.cull_old_dlcs())?;
+
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
             watch::channel(ConnectionStatus::Offline { reason: None });
 

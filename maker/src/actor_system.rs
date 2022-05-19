@@ -83,6 +83,8 @@ where
             + Handler<monitor::MonitorCetFinality>
             + Actor<Stop = ()>,
     {
+        futures::executor::block_on(db.cull_old_dlcs())?;
+
         let (monitor_addr, monitor_ctx) = Context::new(None);
         let (oracle_addr, oracle_ctx) = Context::new(None);
         let (inc_conn_addr, inc_conn_ctx) = Context::new(None);

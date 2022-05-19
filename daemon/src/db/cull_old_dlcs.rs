@@ -5,7 +5,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 
 impl Connection {
-    pub(crate) async fn cull_old_dlcs(&self) -> Result<()> {
+    pub async fn cull_old_dlcs(&self) -> Result<()> {
         let mut conn = self.inner.acquire().await?;
 
         let emptied_dlc_events = emptied_dlc_events(&mut conn).await?;
