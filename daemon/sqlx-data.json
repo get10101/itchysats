@@ -288,17 +288,7 @@
     },
     "query": "\n        INSERT INTO closed_cfds\n        (\n            uuid,\n            position,\n            initial_price,\n            taker_leverage,\n            n_contracts,\n            counterparty_network_identity,\n            counterparty_peer_id,\n            role,\n            fees,\n            expiry_timestamp,\n            lock_txid,\n            lock_dlc_vout\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n        "
   },
-  "8be24a7ddeb039a60c0600232d742f9ba75c02cde7bf536bb190525be07f0d5b": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 5
-      }
-    },
-    "query": "\n        INSERT INTO collaborative_settlement_txs\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout,\n            price\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4, $5\n        )\n        "
-  },
-  "9d8fcfaf748e05ab93f4302ce85a9a986b95ea8f176b8fe232b37ccc6f74e5e4": {
+  "8829b6a512b890272829f364f9789b97df27f0bbd9cd09f5cf9af10edeb6c52e": {
     "describe": {
       "columns": [
         {
@@ -323,10 +313,20 @@
         false
       ],
       "parameters": {
-        "Right": 2
+        "Right": 3
       }
     },
-    "query": "\n        SELECT\n            id,\n            name,\n            data\n        FROM\n            events\n        WHERE\n            name = $1 OR\n            name = $2\n        ORDER BY\n            created_at DESC\n        LIMIT -1 OFFSET 1\n        "
+    "query": "\n        SELECT\n            events.id,\n            events.name,\n            events.data\n        FROM\n            events\n        JOIN\n            cfds on cfds.id = events.cfd_id\n        WHERE\n            cfds.uuid = $1 AND\n            (events.name = $2 OR events.name = $3)\n        ORDER BY\n            created_at DESC\n        LIMIT -1 OFFSET 1\n        "
+  },
+  "8be24a7ddeb039a60c0600232d742f9ba75c02cde7bf536bb190525be07f0d5b": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 5
+      }
+    },
+    "query": "\n        INSERT INTO collaborative_settlement_txs\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout,\n            price\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4, $5\n        )\n        "
   },
   "9ee7e0229619689eed2c5f2e834d9449a732824bbeffed628d01abc1d1839319": {
     "describe": {

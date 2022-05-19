@@ -1,18 +1,22 @@
 use crate::db::Connection;
 use anyhow::Result;
 use model::EventKind;
+use model::OrderId;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 
 impl Connection {
     pub async fn cull_old_dlcs(&self) -> Result<()> {
+        let order_ids = self.load_open_cfd_ids().await?;
+
         let mut conn = self.inner.acquire().await?;
+        for order_id in order_ids.into_iter() {
+            let emptied_dlc_events = emptied_dlc_events(&mut conn, order_id).await?;
 
-        let emptied_dlc_events = emptied_dlc_events(&mut conn).await?;
-
-        for (id, event) in emptied_dlc_events {
-            if let Err(e) = update_event_data(&mut conn, id, event).await {
-                tracing::warn!("Failed to overwrite old DLC: {e:#}");
+            for (id, event) in emptied_dlc_events {
+                if let Err(e) = update_event_data(&mut conn, id, event).await {
+                    tracing::warn!("Failed to overwrite old DLC: {e:#}");
+                }
             }
         }
 
@@ -33,22 +37,26 @@ impl Connection {
 /// the contents of the database.
 async fn emptied_dlc_events(
     conn: &mut PoolConnection<Sqlite>,
+    order_id: OrderId,
 ) -> Result<impl Iterator<Item = (i64, EventKind)>> {
     let rows = sqlx::query!(
         r#"
         SELECT
-            id,
-            name,
-            data
+            events.id,
+            events.name,
+            events.data
         FROM
             events
+        JOIN
+            cfds on cfds.id = events.cfd_id
         WHERE
-            name = $1 OR
-            name = $2
+            cfds.uuid = $1 AND
+            (events.name = $2 OR events.name = $3)
         ORDER BY
             created_at DESC
         LIMIT -1 OFFSET 1
         "#,
+        order_id,
         model::EventKind::CONTRACT_SETUP_COMPLETED_EVENT,
         model::EventKind::ROLLOVER_COMPLETED_EVENT,
     )
@@ -59,17 +67,15 @@ async fn emptied_dlc_events(
         .into_iter()
         .filter_map(|row| {
             let id = row.id;
-            let event = match EventKind::from_json(row.name, row.data) {
-                Ok(event) => Some(event),
+            match EventKind::from_json(row.name, row.data) {
+                Ok(event) => Some((event, id)),
                 Err(e) => {
                     tracing::warn!("Failed to deserialize EventKind from JSON: {e:#}");
                     None
                 }
-            };
-
-            event.map(|event| (id, event))
+            }
         })
-        .filter_map(|(id, event)| {
+        .filter_map(|(event, id)| {
             use EventKind::*;
             let event = match event {
                 ContractSetupCompleted { dlc: Some(_), .. } => {
@@ -224,24 +230,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn given_contract_setup_completed_when_cull_old_dlcs_then_dlc_is_some() {
+    async fn given_contract_setup_completed_cfds_when_cull_old_dlcs_then_dlcs_are_some() {
         let db = memory().await.unwrap();
 
-        let (cfd, contract_setup) = contract_setup_completed_cfd();
-        let contract_setup_cloned = contract_setup.event.clone();
+        let mut cfds = Vec::new();
+        for _ in 0..3 {
+            let (cfd, contract_setup) = contract_setup_completed_cfd();
+            let contract_setup_cloned = contract_setup.event.clone();
 
-        db.insert_cfd(&cfd).await.unwrap();
+            db.insert_cfd(&cfd).await.unwrap();
 
-        db.append_event(contract_setup).await.unwrap();
+            db.append_event(contract_setup).await.unwrap();
+
+            cfds.push((cfd.id(), contract_setup_cloned));
+        }
 
         db.cull_old_dlcs().await.unwrap();
 
-        let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
-        let events = load_cfd_events(&mut db_tx, cfd.id(), 0).await.unwrap();
-        db_tx.commit().await.unwrap();
+        for (id, contract_setup) in cfds.into_iter() {
+            let mut conn = db.inner.acquire().await.unwrap();
+            let mut db_tx = conn.begin().await.unwrap();
 
-        assert_eq!(events[0].event, contract_setup_cloned,);
+            let events = load_cfd_events(&mut db_tx, id, 0).await.unwrap();
+
+            db_tx.commit().await.unwrap();
+
+            assert_eq!(events[0].event, contract_setup);
+        }
     }
 
     fn contract_setup_completed_cfd() -> (Cfd, CfdEvent) {
