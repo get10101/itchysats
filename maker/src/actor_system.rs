@@ -8,6 +8,7 @@ use bdk::bitcoin::Txid;
 use daemon::archive_closed_cfds;
 use daemon::archive_failed_cfds;
 use daemon::command;
+use daemon::cull_old_dlcs;
 use daemon::db;
 use daemon::monitor;
 use daemon::oracle;
@@ -49,6 +50,7 @@ pub struct ActorSystem<O, W> {
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
+    _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -179,7 +181,9 @@ where
             .create(None)
             .spawn(&mut tasks);
 
-        tasks.add(time_to_first_position_ctx.run(time_to_first_position::Actor::new(db)));
+        tasks.add(time_to_first_position_ctx.run(time_to_first_position::Actor::new(db.clone())));
+
+        let _cull_old_dlcs_actor = cull_old_dlcs::Actor::new(db).create(None).spawn(&mut tasks);
 
         tracing::debug!("Maker actor system ready");
 
@@ -192,6 +196,7 @@ where
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
             _position_metrics_actor: position_metrics_actor,
+            _cull_old_dlcs_actor,
         })
     }
 
