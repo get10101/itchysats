@@ -407,6 +407,8 @@ async fn rollover_an_open_cfd(maker_position: Position) {
         .set_offer_params(dummy_offer_params(maker_position))
         .await;
 
+    tracing::error!("Maker peer id: {}", maker.peer_id);
+
     taker.trigger_rollover(order_id, Some(maker.peer_id)).await;
 
     wait_next_state!(
