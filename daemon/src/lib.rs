@@ -41,6 +41,7 @@ pub mod auto_rollover;
 pub mod collab_settlement_taker;
 pub mod command;
 pub mod connection;
+pub mod cull_old_dlcs;
 pub mod db;
 mod future_ext;
 pub mod libp2p_utils;
