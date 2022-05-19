@@ -50,7 +50,6 @@ pub struct ActorSystem<O, W> {
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
-    _libp2p_rollover_actor: Address<rollover::maker::Actor>,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -144,10 +143,18 @@ where
             TokioTcpConfig::new(),
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
-            [(
-                xtra_libp2p_ping::PROTOCOL_NAME,
-                xtra::message_channel::StrongMessageChannel::clone_channel(&ping_address),
-            )],
+            [
+                (
+                    xtra_libp2p_ping::PROTOCOL_NAME,
+                    xtra::message_channel::StrongMessageChannel::clone_channel(&ping_address),
+                ),
+                (
+                    daemon::rollover::PROTOCOL,
+                    xtra::message_channel::StrongMessageChannel::clone_channel(
+                        &libp2p_rollover_addr,
+                    ),
+                ),
+            ],
         );
 
         tasks.add(endpoint_context.run(endpoint));
@@ -204,7 +211,6 @@ where
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
             _position_metrics_actor: position_metrics_actor,
-            _libp2p_rollover_actor: libp2p_rollover_addr,
         })
     }
 
