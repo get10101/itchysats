@@ -50,6 +50,7 @@ pub struct ActorSystem<O, W> {
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
+    _libp2p_rollover_actor: Address<rollover::maker::Actor>,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -108,7 +109,7 @@ where
             &oracle_addr,
         )));
 
-        let libp2p_rollover = rollover::maker::Actor::new(
+        let libp2p_rollover_addr = rollover::maker::Actor::new(
             executor.clone(),
             oracle_pk,
             Box::new(oracle_addr.clone()),
@@ -128,7 +129,7 @@ where
             oracle_addr,
             time_to_first_position_addr,
             n_payouts,
-            libp2p_rollover,
+            libp2p_rollover_addr.clone(),
         )
         .create(None)
         .spawn(&mut tasks);
@@ -203,6 +204,7 @@ where
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
             _position_metrics_actor: position_metrics_actor,
+            _libp2p_rollover_actor: libp2p_rollover_addr,
         })
     }
 
