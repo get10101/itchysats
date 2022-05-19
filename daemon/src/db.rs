@@ -167,7 +167,7 @@ impl Connection {
         .bind(&cfd.counterparty_peer_id().unwrap_or({
             tracing::debug!(
                 order_id=%cfd.id(),
-                taker_id=%cfd.counterparty_network_identity(),
+                counterparty_identity=%cfd.counterparty_network_identity(),
                 "Inserting deprecated CFD with placeholder peer-id"
             );
             PeerId::placeholder()
