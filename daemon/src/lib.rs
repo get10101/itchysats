@@ -221,10 +221,7 @@ where
             TokioTcpConfig::new(),
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
-            [(
-                xtra_libp2p_ping::PROTOCOL_NAME,
-                xtra::message_channel::StrongMessageChannel::clone_channel(&ping_address),
-            )],
+            [],
         );
 
         tasks.add(endpoint_context.run(endpoint));

@@ -146,10 +146,6 @@ where
             ENDPOINT_CONNECTION_TIMEOUT,
             [
                 (
-                    xtra_libp2p_ping::PROTOCOL_NAME,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(&ping_address),
-                ),
-                (
                     daemon::rollover::PROTOCOL,
                     xtra::message_channel::StrongMessageChannel::clone_channel(
                         &libp2p_rollover_addr,
