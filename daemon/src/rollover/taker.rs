@@ -9,7 +9,6 @@ use crate::rollover::protocol::Propose;
 use crate::setup_contract;
 use anyhow::anyhow;
 use anyhow::Context;
-use anyhow::Result;
 use async_trait::async_trait;
 use futures::future;
 use futures::SinkExt;
@@ -70,132 +69,148 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    pub async fn handle(&mut self, msg: ProposeRollover) -> Result<()> {
+    pub async fn handle(&mut self, msg: ProposeRollover) {
         let ProposeRollover {
             order_id,
             maker_peer_id,
         } = msg;
 
-        self.executor
-            .execute(order_id, |cfd| cfd.start_rollover())
-            .await?;
-
-        let substream = self
+        let substream = match self
             .endpoint
             .send(OpenSubstream::single_protocol(
                 maker_peer_id.inner(),
                 rollover::PROTOCOL,
             ))
             .await
-            .context("Endpoint is disconnected")?
-            .context("Failed to open substream")?;
-        let mut framed = asynchronous_codec::Framed::new(
-            substream,
-            asynchronous_codec::JsonCodec::<DialerMessage, ListenerMessage>::new(),
-        );
-
-        framed
-            .send(DialerMessage::Propose(Propose {
-                order_id,
-                timestamp: Timestamp::now(),
-            }))
-            .await
-            .context("Failed to send Msg0")?;
-
-        // TODO: We will need to apply a timeout to these. Perhaps we can put a timeout generally
-        // into "reading from the substream"?
-        match framed
-            .next()
-            .await
-            .context("End of stream while receiving Msg1")?
-            .context("Failed to decode Msg1")?
-            .into_decision()?
+            .context("Endpoint is disconnected")
+            .context("Failed to open substream")
         {
-            Decision::Confirm(Confirm {
-                order_id,
-                oracle_event_id,
-                tx_fee_rate,
-                funding_rate,
-                complete_fee,
-            }) => {
-                let (rollover_params, dlc, position) = self
-                    .executor
-                    .execute(order_id, |cfd| {
-                        cfd.handle_rollover_accepted_taker(tx_fee_rate, funding_rate)
-                    })
-                    .await?;
+            Ok(Ok(substream)) => substream,
+            Ok(Err(e)) => todo!(),
+            Err(e) => {
+                tracing::error!(%order_id, "Failed to open connection to maker for  rollover: {e:#}");
 
-                let announcement = self
-                    .get_announcement
-                    .send(oracle::GetAnnouncement(oracle_event_id))
-                    .await
-                    .context("Oracle actor disconnected")?
-                    .context("Failed to get announcement")?;
-
-                tracing::info!(%order_id, "Rollover proposal got accepted");
-
-                let funding_fee = *rollover_params.funding_fee();
-
-                let (sink, stream) = framed.split();
-
-                let rollover_fut = setup_contract::roll_over(
-                    sink.with(|msg| future::ok(DialerMessage::RolloverMsg(msg))),
-                    Box::pin(stream.filter_map(|msg| async move {
-                        if let Ok(msg) = msg {
-                            msg.into_rollover_msg().ok()
-                        } else {
-                            None
-                        }
-                    }))
-                    .fuse(),
-                    (self.oracle_pk, announcement),
-                    rollover_params,
-                    Role::Taker,
-                    position,
-                    dlc,
-                    self.n_payouts,
-                    complete_fee.into(),
-                );
-
-                self.tasks.add({
-                    let executor = self.executor.clone();
-                    async move {
-                        match rollover_fut.await {
-                            Ok(dlc) => {
-                                if let Err(e) = executor
-                                    .execute(order_id, |cfd| Ok(cfd.complete_rollover(dlc, funding_fee)))
-                                    .await
-                                {
-                                    tracing::warn!(%order_id, "Failed to execute rollover completed: {e:#}")
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!(%order_id, "Rollover protocol failed: {e:#}");
-
-                                if let Err(e) = executor
-                                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(e)))
-                                    .await
-                                {
-                                    tracing::error!(%order_id, "Failed to execute rollover failed: {e:#}")
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-            Decision::Reject(_) => {
                 if let Err(e) = self
                     .executor
-                    .execute(order_id, |cfd| {
-                        Ok(cfd.reject_rollover(anyhow!("Maker rejected rollover proposal")))
-                    })
+                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(e)))
                     .await
                 {
-                    tracing::error!(%order_id, "Failed to execute rollover rejected: {e:#}")
+                    tracing::error!(%order_id, "Failed to execute rollover failed: {e:#}")
+                }
+
+                return;
+            }
+        };
+
+        self.tasks.add_fallible({
+            let executor = self.executor.clone();
+            let get_announcement = self.get_announcement.clone_channel();
+            let oracle_pk = self.oracle_pk;
+            let n_payouts = self.n_payouts;
+            async move {
+                let mut framed = asynchronous_codec::Framed::new(
+                    substream,
+                    asynchronous_codec::JsonCodec::<DialerMessage, ListenerMessage>::new(),
+                );
+
+                executor
+                    .execute(order_id, |cfd| cfd.start_rollover())
+                    .await?;
+
+                framed
+                    .send(DialerMessage::Propose(Propose {
+                        order_id,
+                        timestamp: Timestamp::now(),
+                    }))
+                    .await
+                    .context("Failed to send Msg0")?;
+
+                // TODO: We will need to apply a timeout to these. Perhaps we can put a timeout generally
+                // into "reading from the substream"?
+                match framed
+                    .next()
+                    .await
+                    .context("End of stream while receiving Msg1")?
+                    .context("Failed to decode Msg1")?
+                    .into_decision()?
+                {
+                    Decision::Confirm(Confirm {
+                                          order_id,
+                                          oracle_event_id,
+                                          tx_fee_rate,
+                                          funding_rate,
+                                          complete_fee,
+                                      }) => {
+                        let (rollover_params, dlc, position) = executor
+                            .execute(order_id, |cfd| {
+                                cfd.handle_rollover_accepted_taker(tx_fee_rate, funding_rate)
+                            })
+                            .await?;
+
+                        let announcement = get_announcement
+                            .send(oracle::GetAnnouncement(oracle_event_id))
+                            .await
+                            .context("Oracle actor disconnected")?
+                            .context("Failed to get announcement")?;
+
+                        tracing::info!(%order_id, "Rollover proposal got accepted");
+
+                        let funding_fee = *rollover_params.funding_fee();
+
+                        let (sink, stream) = framed.split();
+
+                        let dlc = setup_contract::roll_over(
+                            sink.with(|msg| future::ok(DialerMessage::RolloverMsg(msg))),
+                            Box::pin(stream.filter_map(|msg| async move {
+                                if let Ok(msg) = msg {
+                                    msg.into_rollover_msg().ok()
+                                } else {
+                                    None
+                                }
+                            }))
+                                .fuse(),
+                            (oracle_pk, announcement),
+                            rollover_params,
+                            Role::Taker,
+                            position,
+                            dlc,
+                            n_payouts,
+                            complete_fee.into(),
+                        ).await?;
+
+                        // TODO: For now we assume that we can always save into the db, we should re-try here
+                        if let Err(e) = executor
+                            .execute(order_id, |cfd| Ok(cfd.complete_rollover(dlc, funding_fee)))
+                            .await
+                        {
+                            tracing::warn!(%order_id, "Failed to execute rollover completed: {e:#}")
+                        }
+                    }
+                    Decision::Reject(_) => {
+                        if let Err(e) = executor
+                            .execute(order_id, |cfd| {
+                                Ok(cfd.reject_rollover(anyhow!("Maker rejected rollover proposal")))
+                            })
+                            .await
+                        {
+                            tracing::error!(%order_id, "Failed to execute rollover rejected: {e:#}")
+                        }
+                    }
+                }
+                Ok(())
+            } }, {
+                let executor = self.executor.clone();
+                move |e|                 async move {
+                    tracing::error!(%order_id, "Rollover failed: {e:#}");
+
+                    if let Err(e) = executor
+                        .execute(order_id, |cfd| Ok(cfd.fail_rollover(e)))
+                        .await
+                    {
+                        tracing::error!(%order_id, "Failed to execute rollover failed: {e:#}")
+                    }
                 }
             }
-        }
-
-        Ok(())
+        );
     }
 }

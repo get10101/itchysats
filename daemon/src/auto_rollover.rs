@@ -9,6 +9,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use maia_core::secp256k1_zkp::schnorrsig;
+use model::libp2p::PeerId;
 use model::OrderId;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -71,22 +72,30 @@ where
         }
     }
 
-    async fn handle(&mut self, Rollover(order_id): Rollover) -> Result<()> {
-        let cfd = self.db.load_open_cfd::<model::Cfd>(order_id, ()).await?;
-
-        if let Some(maker_peer_id) = cfd.counterparty_peer_id() {
-            self.libp2p_rollover
+    async fn handle(
+        &mut self,
+        Rollover {
+            order_id,
+            maker_peer_id,
+        }: Rollover,
+    ) {
+        if let Some(maker_peer_id) = maker_peer_id {
+            if let Err(e) = self
+                .libp2p_rollover
                 .send(ProposeRollover {
                     order_id,
                     maker_peer_id,
                 })
-                .await??;
+                .await
+            {
+                tracing::error!(%order_id, "Failed to dispatch proposal to libp2p rollover actor: {e:#}");
+            }
         } else {
             let disconnected = match self.rollover_actors.get_disconnected(order_id) {
                 Ok(disconnected) => disconnected,
                 Err(_) => {
                     tracing::debug!(%order_id, "Rollover already in progress");
-                    return Ok(());
+                    return;
                 }
             };
 
@@ -104,7 +113,6 @@ where
 
             disconnected.insert(addr);
         }
-        Ok(())
     }
 }
 
@@ -131,11 +139,17 @@ where
                 }
             };
             let id = cfd.id();
+            let maker_peer_id = cfd.counterparty_peer_id();
 
             match cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
                 Ok(()) => {
-                    let _ = this.send_async_safe(Rollover(id)).await; // If we disconnect, we don't
-                                                                      // care.
+                    let _ = this
+                        .send_async_safe(Rollover {
+                            order_id: id,
+                            maker_peer_id,
+                        })
+                        .await; // If we disconnect, we don't
+                                // care.
                 }
                 Err(reason) => {
                     tracing::trace!(order_id = %id, %reason, "CFD is not eligible for auto-rollover");
@@ -172,4 +186,7 @@ pub struct AutoRollover;
 ///
 /// This helps us trigger rollover in the tests unconditionally of time.
 #[derive(Clone, Copy)]
-pub struct Rollover(pub OrderId);
+pub struct Rollover {
+    pub order_id: OrderId,
+    pub maker_peer_id: Option<PeerId>,
+}

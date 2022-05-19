@@ -377,12 +377,14 @@ impl Taker {
         }
     }
 
-    pub async fn trigger_rollover(&self, id: OrderId) {
+    pub async fn trigger_rollover(&self, id: OrderId, maker_peer_id: Option<PeerId>) {
         self.system
             .auto_rollover_actor
-            .send(auto_rollover::Rollover(id))
+            .send(auto_rollover::Rollover {
+                order_id: id,
+                maker_peer_id,
+            })
             .await
-            .unwrap()
             .unwrap();
     }
 }

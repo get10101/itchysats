@@ -407,7 +407,7 @@ async fn rollover_an_open_cfd(maker_position: Position) {
         .set_offer_params(dummy_offer_params(maker_position))
         .await;
 
-    taker.trigger_rollover(order_id).await;
+    taker.trigger_rollover(order_id, None).await;
 
     wait_next_state!(
         order_id,
@@ -430,7 +430,7 @@ async fn maker_rejects_rollover_of_open_cfd() {
     let (mut maker, mut taker, order_id) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
 
-    taker.trigger_rollover(order_id).await;
+    taker.trigger_rollover(order_id, None).await;
 
     wait_next_state!(
         order_id,
@@ -456,7 +456,7 @@ async fn maker_rejects_rollover_after_commit_finality() {
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
 
-    taker.trigger_rollover(order_id).await;
+    taker.trigger_rollover(order_id, None).await;
 
     wait_next_state!(
         order_id,
@@ -487,7 +487,7 @@ async fn maker_accepts_rollover_after_commit_finality() {
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
 
-    taker.trigger_rollover(order_id).await;
+    taker.trigger_rollover(order_id, None).await;
 
     wait_next_state!(
         order_id,
