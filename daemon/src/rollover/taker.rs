@@ -7,6 +7,7 @@ use crate::rollover::protocol::DialerMessage;
 use crate::rollover::protocol::ListenerMessage;
 use crate::rollover::protocol::Propose;
 use crate::setup_contract;
+use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -69,13 +70,7 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    pub async fn handle(
-        &mut self,
-        msg: ProposeRollover,
-        ctx: &mut xtra::Context<Self>,
-    ) -> Result<()> {
-        let this = ctx.address().expect("we are alive");
-
+    pub async fn handle(&mut self, msg: ProposeRollover) -> Result<()> {
         let ProposeRollover {
             order_id,
             maker_peer_id,
@@ -162,20 +157,43 @@ impl Actor {
                     complete_fee.into(),
                 );
 
-                let this = ctx.address().expect("self to be alive");
-                self.tasks.add(async move {
-                    // Use an explicit type annotation to cause a compile error if someone changes
-                    // the handler.
-                    let _: Result<(), xtra::Error> =
-                        match rollover_fut.await.context("Rollover protocol failed") {
-                            Ok(dlc) => todo!("Handle success"),
-                            // this.send(RolloverSucceeded { dlc, funding_fee }).await,
-                            Err(error) => todo!("Handle failure"), /* this.send(RolloverFailed {
-                                                                    * error }).await, */
-                        };
+                self.tasks.add({
+                    let executor = self.executor.clone();
+                    async move {
+                        match rollover_fut.await {
+                            Ok(dlc) => {
+                                if let Err(e) = executor
+                                    .execute(order_id, |cfd| Ok(cfd.complete_rollover(dlc, funding_fee)))
+                                    .await
+                                {
+                                    tracing::warn!(%order_id, "Failed to execute rollover completed: {e:#}")
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(%order_id, "Rollover protocol failed: {e:#}");
+
+                                if let Err(e) = executor
+                                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(e)))
+                                    .await
+                                {
+                                    tracing::error!(%order_id, "Failed to execute rollover failed: {e:#}")
+                                }
+                            }
+                        }
+                    }
                 });
             }
-            Decision::Reject(_) => todo!("Handle the failed path"),
+            Decision::Reject(_) => {
+                if let Err(e) = self
+                    .executor
+                    .execute(order_id, |cfd| {
+                        Ok(cfd.reject_rollover(anyhow!("Maker rejected rollover proposal")))
+                    })
+                    .await
+                {
+                    tracing::error!(%order_id, "Failed to execute rollover rejected: {e:#}")
+                }
+            }
         }
 
         Ok(())

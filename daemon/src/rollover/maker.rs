@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use anyhow::Context;
-use anyhow::Error;
 use anyhow::Result;
 use async_trait::async_trait;
 use asynchronous_codec::Framed;
@@ -10,8 +9,6 @@ use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
 use maia_core::secp256k1_zkp::schnorrsig;
-use model::Dlc;
-use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
 use model::Position;
@@ -46,7 +43,6 @@ pub struct Actor {
         OrderId,
         (
             Framed<Substream, JsonCodec<ListenerMessage, DialerMessage>>,
-            // TODO: might need a bit more here
             PeerId,
         ),
     >,
@@ -121,34 +117,30 @@ impl Actor {
         } = msg;
         let order_id = propose.order_id;
 
-        let result = self
+        if let Err(e) = self
             .executor
             .execute(order_id, |cfd| {
                 // TODO: Validate that the correct peer is invoking this?
                 cfd.start_rollover()
             })
             .await
-            .context("Failed to start rollover protocol");
-
-        if let Err(e) = result {
-            // TODO dispatch that we failed rollover
-            tracing::debug!(%order_id, %peer, "Failed to start rollover protocol: {e:#}");
+        {
+            tracing::debug!(%order_id, %peer, "Failed to execute propose rollover: {e:#}");
             return;
         }
 
         self.pending_protocols.insert(order_id, (framed, peer));
     }
 
-    async fn handle(&mut self, msg: Accept, ctx: &mut xtra::Context<Self>) -> Result<()> {
+    async fn handle(&mut self, msg: Accept) -> Result<()> {
         let Accept {
             order_id,
             tx_fee_rate,
             long_funding_rate,
             short_funding_rate,
         } = msg;
-        let address = ctx.address().expect("we are alive");
 
-        let (mut framed, peer) = self
+        let (mut framed, _) = self
             .pending_protocols
             .remove(&order_id)
             .with_context(|| format!("No active protocol for order {order_id}"))?;
@@ -175,6 +167,9 @@ impl Actor {
             .fee_account
             .add_funding_fee(rollover_params.current_fee)
             .settle();
+
+        // TODO: Consider spinning of task here and not only with roll_over - depends on what
+        // information we want to communicate back to the caller
 
         framed
             .send(ListenerMessage::Decision(Decision::Confirm(Confirm {
@@ -217,32 +212,33 @@ impl Actor {
             complete_fee,
         );
 
-        let this = ctx.address().expect("self to be alive");
+        self.tasks.add({
+            let executor = self.executor.clone();
+            async move {
+                match rollover_fut.await {
+                    Ok(dlc) => {
+                        if let Err(e) = executor
+                            .execute(order_id, |cfd| Ok(cfd.complete_rollover(dlc, funding_fee)))
+                            .await
+                        {
+                            tracing::warn!(%order_id, "Failed to execute rollover completed: {e:#}")
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(%order_id, "Rollover protocol failed: {e:#}");
 
-        self.tasks.add(async move {
-            let _: Result<(), xtra::Error> =
-                match rollover_fut.await.context("Rollover protocol failed") {
-                    Ok(dlc) => todo!("Send success with DLC"),
-                    // this.send(RolloverSucceeded { dlc, funding_fee }).await,
-                    Err(source) => todo!("Handle failed"),
-                    // this.send(RolloverFailed { error: source }).await,
-                };
+                        if let Err(e) = executor
+                            .execute(order_id, |cfd| Ok(cfd.fail_rollover(e)))
+                            .await
+                        {
+                            tracing::error!(%order_id, "Failed to execute rollover failed: {e:#}")
+                        }
+                    }
+                }
+            }
         });
 
         Ok(())
-    }
-
-    async fn handle(
-        &mut self,
-        Complete {
-            order_id,
-            dlc,
-            funding_fee,
-        }: Complete,
-    ) -> Result<()> {
-        self.executor
-            .execute(order_id, |cfd| Ok(cfd.complete_rollover(dlc, funding_fee)))
-            .await
     }
 
     async fn handle(&mut self, msg: Reject) -> Result<()> {
@@ -253,11 +249,15 @@ impl Actor {
             .remove(&order_id)
             .with_context(|| format!("No active protocol for order {order_id}"))?;
 
-        self.executor
+        if let Err(e) = self
+            .executor
             .execute(order_id, |cfd| {
                 Ok(cfd.reject_rollover(anyhow!("maker decision")))
             })
-            .await?;
+            .await
+        {
+            tracing::error!(%order_id, "Failed to execute rollover rejected: {e:#}")
+        }
 
         self.tasks.add_fallible(
             async move {
@@ -267,7 +267,9 @@ impl Actor {
                     )))
                     .await
             },
-            move |e| async move { tracing::debug!(%order_id, "Failed to reject rollover") },
+            move |e| async move {
+                tracing::debug!(%order_id, "Failed to send reject rollover to the taker: {e:#}")
+            },
         );
 
         Ok(())
@@ -282,7 +284,7 @@ struct ProposeReceived {
 
 /// Upon accepting Rollover maker sends the current estimated transaction fee and
 /// funding rate
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Accept {
     pub order_id: OrderId,
     pub tx_fee_rate: TxFeeRate,
@@ -290,24 +292,7 @@ pub struct Accept {
     pub short_funding_rate: FundingRate,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct Reject {
     order_id: OrderId,
-}
-
-pub struct Complete {
-    order_id: OrderId,
-    dlc: Dlc,
-    funding_fee: FundingFee,
-}
-
-#[derive(Debug)]
-enum Failed {
-    Unfinished { source: Error },
-}
-
-// Allows for easy use of `?`.
-impl From<Error> for Failed {
-    fn from(source: Error) -> Self {
-        Failed::Unfinished { source }
-    }
 }
