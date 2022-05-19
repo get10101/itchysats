@@ -294,5 +294,5 @@ pub struct Accept {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Reject {
-    order_id: OrderId,
+    pub order_id: OrderId,
 }
