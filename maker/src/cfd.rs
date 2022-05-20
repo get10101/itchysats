@@ -11,6 +11,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use daemon::command;
 use daemon::db;
+use daemon::libp2p_utils::can_use_libp2p;
 use daemon::oracle;
 use daemon::process_manager;
 use daemon::projection;
@@ -190,6 +191,7 @@ pub struct Actor<O, T, W> {
     connected_takers: HashSet<Identity>,
     n_payouts: usize,
     tasks: Tasks,
+    libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
 }
 
 impl<O, T, W> Actor<O, T, W> {
@@ -205,6 +207,7 @@ impl<O, T, W> Actor<O, T, W> {
         oracle: xtra::Address<O>,
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
         n_payouts: usize,
+        libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
     ) -> Self {
         Self {
             db: db.clone(),
@@ -224,6 +227,7 @@ impl<O, T, W> Actor<O, T, W> {
             connected_takers: HashSet::new(),
             settlement_actors: AddressMap::default(),
             tasks: Tasks::default(),
+            libp2p_rollover,
         }
     }
 
@@ -525,25 +529,41 @@ impl<O, T, W> Actor<O, T, W> {
 
         let order_id = msg.order_id;
 
-        match self
-            .rollover_actors
-            .send_async(
-                &order_id,
-                rollover::AcceptRollover {
+        let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
+
+        if can_use_libp2p(&cfd) {
+            // Using send here is fine because we dispatch to a task internally
+            self.libp2p_rollover
+                .send(daemon::rollover::maker::Accept {
+                    order_id,
                     tx_fee_rate: current_offers.tx_fee_rate,
                     long_funding_rate: current_offers.funding_rate_long,
                     short_funding_rate: current_offers.funding_rate_short,
-                },
-            )
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(NotConnected(e)) => {
-                self.executor
-                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
-                    .await?;
+                })
+                .await??;
 
-                bail!("Accept failed: No active rollover for order {order_id}")
+            Ok(())
+        } else {
+            match self
+                .rollover_actors
+                .send_async(
+                    &order_id,
+                    rollover::AcceptRollover {
+                        tx_fee_rate: current_offers.tx_fee_rate,
+                        long_funding_rate: current_offers.funding_rate_long,
+                        short_funding_rate: current_offers.funding_rate_short,
+                    },
+                )
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(NotConnected(e)) => {
+                    self.executor
+                        .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
+                        .await?;
+
+                    bail!("Accept failed: No active rollover for order {order_id}")
+                }
             }
         }
     }
@@ -551,18 +571,29 @@ impl<O, T, W> Actor<O, T, W> {
     async fn handle_reject_rollover(&mut self, msg: RejectRollover) -> Result<()> {
         let order_id = msg.order_id;
 
-        match self
-            .rollover_actors
-            .send_async(&order_id, rollover::RejectRollover)
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(NotConnected(e)) => {
-                self.executor
-                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
-                    .await?;
+        let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
 
-                bail!("Reject failed: No active rollover for order {order_id}")
+        if can_use_libp2p(&cfd) {
+            // Using send here is fine because we dispatch to a task internally
+            self.libp2p_rollover
+                .send(daemon::rollover::maker::Reject { order_id })
+                .await??;
+
+            Ok(())
+        } else {
+            match self
+                .rollover_actors
+                .send_async(&order_id, rollover::RejectRollover)
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(NotConnected(e)) => {
+                    self.executor
+                        .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
+                        .await?;
+
+                    bail!("Reject failed: No active rollover for order {order_id}")
+                }
             }
         }
     }

@@ -52,6 +52,7 @@ pub mod oracle;
 pub mod position_metrics;
 pub mod process_manager;
 pub mod projection;
+pub mod rollover;
 pub mod rollover_taker;
 pub mod seed;
 pub mod setup_contract;
@@ -175,12 +176,25 @@ where
         .create(None)
         .spawn(&mut tasks);
 
+        let (endpoint_addr, endpoint_context) = Context::new(None);
+
+        let libp2p_rollover_addr = rollover::taker::Actor::new(
+            endpoint_addr.clone(),
+            executor.clone(),
+            oracle_pk,
+            xtra::message_channel::MessageChannel::clone_channel(&oracle_addr),
+            n_payouts,
+        )
+        .create(None)
+        .spawn(&mut tasks);
+
         let auto_rollover_addr = auto_rollover::Actor::new(
             db.clone(),
             oracle_pk,
             process_manager_addr,
             connection_actor_addr.clone(),
             oracle_addr,
+            libp2p_rollover_addr,
             n_payouts,
         )
         .create(None)
@@ -202,8 +216,6 @@ where
         tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
 
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
-
-        let (endpoint_addr, endpoint_context) = Context::new(None);
 
         let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
         let endpoint = Endpoint::new(

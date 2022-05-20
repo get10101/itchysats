@@ -10,6 +10,7 @@ use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
 use daemon::libp2p_utils::create_connect_tcp_multiaddr;
+use daemon::libp2p_utils::libp2p_socket_from_legacy_networking;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::Feeds;
@@ -278,6 +279,7 @@ pub struct Taker {
     pub system: daemon::TakerActorSystem<OracleActor, WalletActor, PriceFeedActor>,
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
+    pub maker_peer_id: PeerId,
     _tasks: Tasks,
 }
 
@@ -320,8 +322,12 @@ impl Taker {
         let mut oracle_mock = None;
         let mut monitor_mock = None;
 
-        let maker_multiaddr = create_connect_tcp_multiaddr(&maker_address, maker_peer_id.inner())
-            .expect("to be able to construct Multiaddr");
+        let maker_libp2p_address = libp2p_socket_from_legacy_networking(&maker_address);
+        let maker_multiaddr =
+            create_connect_tcp_multiaddr(&maker_libp2p_address, maker_peer_id.inner())
+                .expect("to parse properly");
+
+        tracing::info!("Connecting to maker {maker_multiaddr}");
 
         let taker = daemon::TakerActorSystem::new(
             db.clone(),
@@ -373,6 +379,7 @@ impl Taker {
             system: taker,
             feeds,
             mocks,
+            maker_peer_id,
             _tasks: tasks,
         }
     }
@@ -380,9 +387,12 @@ impl Taker {
     pub async fn trigger_rollover(&self, id: OrderId) {
         self.system
             .auto_rollover_actor
-            .send(auto_rollover::Rollover(id))
+            .send(auto_rollover::Rollover {
+                order_id: id,
+                maker_peer_id: Some(self.maker_peer_id),
+            })
             .await
-            .unwrap()
+            .unwrap();
     }
 }
 

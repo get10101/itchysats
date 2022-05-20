@@ -2,11 +2,14 @@ use crate::connection;
 use crate::db;
 use crate::oracle;
 use crate::process_manager;
+use crate::rollover;
+use crate::rollover::taker::ProposeRollover;
 use crate::rollover_taker;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use maia_core::secp256k1_zkp::schnorrsig;
+use model::libp2p::PeerId;
 use model::OrderId;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -25,6 +28,7 @@ pub struct Actor<O> {
     conn: Address<connection::Actor>,
     oracle: Address<O>,
     n_payouts: usize,
+    libp2p_rollover: Address<rollover::taker::Actor>,
     rollover_actors: AddressMap<OrderId, rollover_taker::Actor>,
     tasks: Tasks,
 }
@@ -36,6 +40,7 @@ impl<O> Actor<O> {
         process_manager: Address<process_manager::Actor>,
         conn: Address<connection::Actor>,
         oracle: Address<O>,
+        libp2p_rollover: Address<rollover::taker::Actor>,
         n_payouts: usize,
     ) -> Self {
         Self {
@@ -45,6 +50,7 @@ impl<O> Actor<O> {
             conn,
             oracle,
             n_payouts,
+            libp2p_rollover,
             rollover_actors: AddressMap::default(),
             tasks: Tasks::default(),
         }
@@ -66,28 +72,47 @@ where
         }
     }
 
-    async fn handle(&mut self, Rollover(order_id): Rollover) {
-        let disconnected = match self.rollover_actors.get_disconnected(order_id) {
-            Ok(disconnected) => disconnected,
-            Err(_) => {
-                tracing::debug!(%order_id, "Rollover already in progress");
-                return;
-            }
-        };
-
-        let addr = rollover_taker::Actor::new(
+    async fn handle(
+        &mut self,
+        Rollover {
             order_id,
-            self.n_payouts,
-            self.oracle_pk,
-            self.conn.clone(),
-            &self.oracle,
-            self.process_manager.clone(),
-            self.db.clone(),
-        )
-        .create(None)
-        .spawn(&mut self.tasks);
+            maker_peer_id,
+        }: Rollover,
+    ) {
+        if let Some(maker_peer_id) = maker_peer_id {
+            if let Err(e) = self
+                .libp2p_rollover
+                .send(ProposeRollover {
+                    order_id,
+                    maker_peer_id,
+                })
+                .await
+            {
+                tracing::error!(%order_id, "Failed to dispatch proposal to libp2p rollover actor: {e:#}");
+            }
+        } else {
+            let disconnected = match self.rollover_actors.get_disconnected(order_id) {
+                Ok(disconnected) => disconnected,
+                Err(_) => {
+                    tracing::debug!(%order_id, "Rollover already in progress");
+                    return;
+                }
+            };
 
-        disconnected.insert(addr);
+            let addr = rollover_taker::Actor::new(
+                order_id,
+                self.n_payouts,
+                self.oracle_pk,
+                self.conn.clone(),
+                &self.oracle,
+                self.process_manager.clone(),
+                self.db.clone(),
+            )
+            .create(None)
+            .spawn(&mut self.tasks);
+
+            disconnected.insert(addr);
+        }
     }
 }
 
@@ -114,11 +139,17 @@ where
                 }
             };
             let id = cfd.id();
+            let maker_peer_id = cfd.counterparty_peer_id();
 
             match cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
                 Ok(()) => {
-                    let _ = this.send_async_safe(Rollover(id)).await; // If we disconnect, we don't
-                                                                      // care.
+                    // If we disconnect, we don't care.
+                    let _ = this
+                        .send_async_safe(Rollover {
+                            order_id: id,
+                            maker_peer_id,
+                        })
+                        .await;
                 }
                 Err(reason) => {
                     tracing::trace!(order_id = %id, %reason, "CFD is not eligible for auto-rollover");
@@ -155,4 +186,7 @@ pub struct AutoRollover;
 ///
 /// This helps us trigger rollover in the tests unconditionally of time.
 #[derive(Clone, Copy)]
-pub struct Rollover(pub OrderId);
+pub struct Rollover {
+    pub order_id: OrderId,
+    pub maker_peer_id: Option<PeerId>,
+}
