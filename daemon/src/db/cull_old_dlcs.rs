@@ -34,7 +34,7 @@ impl Connection {
                         where inner_events.id = EVENTS.id 
                     )
                 where name = $1
-                  and json_extract(EVENTS.data, '$.dlc.cets') is not null
+                  and json_extract(EVENTS.data, '$.dlc') is not null
                   and id not in (
                     select max(id) from EVENTS as inner_events
                     where inner_events.cfd_id = EVENTS.cfd_id
@@ -67,7 +67,7 @@ impl Connection {
                         where EVENTS.id = inner_events.id
                     )
                 where name = $1
-                  and json_extract(EVENTS.data, '$.dlc.cets') is not null
+                  and json_extract(EVENTS.data, '$.dlc') is not null
                   and cfd_id in (
                     select distinct cfd_id from EVENTS as inner_events
                         where inner_events.cfd_id = EVENTS.cfd_id
