@@ -66,12 +66,79 @@ impl Connection {
     }
 }
 
+// We cannot hide this under the `test` compilation flag because it
+// makes it much less convenient to call `cargo sqlx prepare`.
+#[allow(dead_code)]
+mod sqlx_test_utils {
+    use super::*;
+    use sqlx::pool::PoolConnection;
+    use sqlx::Sqlite;
+
+    pub(crate) async fn load_first_seen_timestamp(
+        conn: &mut PoolConnection<Sqlite>,
+        taker_id: Identity,
+    ) -> Result<Option<OffsetDateTime>> {
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                first_seen_timestamp
+            FROM
+                time_to_first_position
+            WHERE
+                taker_id = $1
+            "#,
+            taker_id
+        )
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        let timestamp = row
+            .map(|row| {
+                row.first_seen_timestamp
+                    .map(OffsetDateTime::from_unix_timestamp)
+            })
+            .unwrap_or(None)
+            .transpose()?;
+
+        Ok(timestamp)
+    }
+
+    pub(crate) async fn load_first_position_timestamp(
+        conn: &mut PoolConnection<Sqlite>,
+        taker_id: Identity,
+    ) -> Result<Option<OffsetDateTime>> {
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                first_position_timestamp
+            FROM
+                time_to_first_position
+            WHERE
+                taker_id = $1
+            "#,
+            taker_id
+        )
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        let timestamp = row
+            .map(|row| {
+                row.first_position_timestamp
+                    .map(OffsetDateTime::from_unix_timestamp)
+            })
+            .unwrap_or(None)
+            .transpose()?;
+
+        Ok(timestamp)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::memory;
-    use sqlx::pool::PoolConnection;
-    use sqlx::Sqlite;
+    use sqlx_test_utils::load_first_position_timestamp;
+    use sqlx_test_utils::load_first_seen_timestamp;
 
     #[tokio::test]
     async fn given_inserted_first_seen_when_trying_to_insert_second_seen_then_timestamp_does_not_change(
@@ -139,64 +206,6 @@ mod tests {
         assert_eq!(Some(first_inserted_timestamp), second_loaded_timestamp);
 
         assert_ne!(Some(second_inserted_timestamp), second_loaded_timestamp);
-    }
-
-    async fn load_first_seen_timestamp(
-        conn: &mut PoolConnection<Sqlite>,
-        taker_id: Identity,
-    ) -> Result<Option<OffsetDateTime>> {
-        let row = sqlx::query!(
-            r#"
-            SELECT
-                first_seen_timestamp
-            FROM
-                time_to_first_position
-            WHERE
-                taker_id = $1
-            "#,
-            taker_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let timestamp = row
-            .map(|row| {
-                row.first_seen_timestamp
-                    .map(OffsetDateTime::from_unix_timestamp)
-            })
-            .unwrap_or(None)
-            .transpose()?;
-
-        Ok(timestamp)
-    }
-
-    async fn load_first_position_timestamp(
-        conn: &mut PoolConnection<Sqlite>,
-        taker_id: Identity,
-    ) -> Result<Option<OffsetDateTime>> {
-        let row = sqlx::query!(
-            r#"
-            SELECT
-                first_position_timestamp
-            FROM
-                time_to_first_position
-            WHERE
-                taker_id = $1
-            "#,
-            taker_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let timestamp = row
-            .map(|row| {
-                row.first_position_timestamp
-                    .map(OffsetDateTime::from_unix_timestamp)
-            })
-            .unwrap_or(None)
-            .transpose()?;
-
-        Ok(timestamp)
     }
 
     fn dummy_identity() -> Identity {
