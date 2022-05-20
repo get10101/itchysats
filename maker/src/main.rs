@@ -100,6 +100,13 @@ async fn main() -> Result<()> {
 
     let (projection_actor, projection_context) = xtra::Context::new(None);
 
+    let libp2p_socket = daemon::libp2p_utils::libp2p_socket_from_legacy_networking(&p2p_socket);
+    let endpoint_listen = daemon::libp2p_utils::create_listen_tcp_multiaddr(
+        &libp2p_socket.ip(),
+        libp2p_socket.port(),
+    )
+    .expect("to parse properly");
+
     let maker = ActorSystem::new(
         db.clone(),
         wallet.clone(),
@@ -117,6 +124,7 @@ async fn main() -> Result<()> {
         identities,
         HEARTBEAT_INTERVAL,
         p2p_socket,
+        endpoint_listen,
     )?;
 
     let (supervisor, price_feed) =

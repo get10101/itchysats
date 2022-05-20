@@ -36,6 +36,7 @@ use xtra::Actor;
 use xtra::Address;
 use xtra::Context;
 use xtra::Handler;
+use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
@@ -78,6 +79,7 @@ where
         identity: Identities,
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
+        listen_multiaddr: Multiaddr,
     ) -> Result<Self>
     where
         M: Handler<monitor::StartMonitoring>
@@ -158,14 +160,10 @@ where
 
         tasks.add(endpoint_context.run(endpoint));
 
-        let libp2p_socket = daemon::libp2p_utils::libp2p_socket_from_legacy_networking(&p2p_socket);
-        let endpoint_listen = daemon::libp2p_utils::create_listen_tcp_multiaddr(&libp2p_socket)
-            .expect("to parse properly");
-
         let (supervisor, listener_actor) = supervisor::Actor::with_policy(
             move || {
                 let endpoint_addr = endpoint_addr.clone();
-                let endpoint_listen = endpoint_listen.clone();
+                let endpoint_listen = listen_multiaddr.clone();
                 listener::Actor::new(endpoint_addr, endpoint_listen)
             },
             |_: &listener::Error| true, // always restart listener actor

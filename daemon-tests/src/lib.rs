@@ -9,8 +9,7 @@ use daemon::bdk::bitcoin::Network;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::db;
-use daemon::libp2p_utils::create_connect_tcp_multiaddr;
-use daemon::libp2p_utils::libp2p_socket_from_legacy_networking;
+use daemon::libp2p_utils::create_connect_multiaddr;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::Feeds;
@@ -47,6 +46,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use xtra::Actor;
 use xtra_bitmex_price_feed::Quote;
+use xtra_libp2p::libp2p::Multiaddr;
+use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 
 pub mod flow;
 pub mod maia;
@@ -65,7 +66,7 @@ pub async fn start_both() -> (Maker, Taker) {
         &TakerConfig::default(),
         maker.listen_addr,
         maker.identity,
-        maker.peer_id,
+        maker.connect_addr.clone(),
     )
     .await;
     (maker, taker)
@@ -78,6 +79,7 @@ pub struct MakerConfig {
     pub heartbeat_interval: Duration,
     n_payouts: usize,
     dedicated_port: Option<u16>,
+    dedicated_libp2p_port: Option<u16>,
 }
 
 impl MakerConfig {
@@ -94,6 +96,13 @@ impl MakerConfig {
             ..self
         }
     }
+
+    pub fn with_dedicated_libp2p_port(self, port: u16) -> Self {
+        Self {
+            dedicated_libp2p_port: Some(port),
+            ..self
+        }
+    }
 }
 
 impl Default for MakerConfig {
@@ -104,6 +113,7 @@ impl Default for MakerConfig {
             heartbeat_interval: HEARTBEAT_INTERVAL,
             n_payouts: N_PAYOUTS,
             dedicated_port: None,
+            dedicated_libp2p_port: None,
         }
     }
 }
@@ -143,7 +153,9 @@ pub struct Maker {
     pub feeds: Feeds,
     pub listen_addr: SocketAddr,
     pub identity: Identity,
-    pub peer_id: PeerId,
+    /// The address on which taker can dial in with libp2p protocols (includes
+    /// maker's PeerId)
+    pub connect_addr: Multiaddr,
     _tasks: Tasks,
 }
 
@@ -163,16 +175,13 @@ impl Maker {
     pub async fn start(config: &MakerConfig) -> Self {
         let port = match config.dedicated_port {
             Some(port) => port,
-            None => {
-                // If not explicitly given, get a random free port
-                TcpListener::bind("127.0.0.1:0")
-                    .await
-                    .unwrap()
-                    .local_addr()
-                    .unwrap()
-                    .port()
-            }
+            None => find_random_free_port().await,
         };
+        let libp2p_port = match config.dedicated_libp2p_port {
+            Some(port) => port,
+            None => find_random_free_port().await,
+        };
+
         let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
 
         let db = db::memory().await.unwrap();
@@ -198,6 +207,10 @@ impl Maker {
         let mut monitor_mock = None;
         let mut oracle_mock = None;
 
+        let endpoint_listen =
+            daemon::libp2p_utils::create_listen_tcp_multiaddr(&address.ip(), libp2p_port)
+                .expect("to parse properly");
+
         let maker = maker::ActorSystem::new(
             db.clone(),
             wallet_addr,
@@ -220,6 +233,7 @@ impl Maker {
             identities.clone(),
             config.heartbeat_interval,
             address,
+            endpoint_listen.clone(),
         )
         .unwrap();
 
@@ -240,7 +254,8 @@ impl Maker {
             listen_addr: address,
             mocks,
             _tasks: tasks,
-            peer_id: identities.peer_id(),
+            connect_addr: create_connect_multiaddr(&endpoint_listen, &identities.peer_id().inner())
+                .expect("to parse properly"),
         }
     }
 
@@ -271,6 +286,15 @@ impl Maker {
             .await
             .unwrap();
     }
+}
+
+async fn find_random_free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 /// Taker Test Setup
@@ -304,7 +328,7 @@ impl Taker {
         config: &TakerConfig,
         maker_address: SocketAddr,
         maker_identity: Identity,
-        maker_peer_id: PeerId,
+        maker_multiaddr: Multiaddr,
     ) -> Self {
         let identities = config.seed.derive_identities();
 
@@ -321,12 +345,6 @@ impl Taker {
 
         let mut oracle_mock = None;
         let mut monitor_mock = None;
-
-        let maker_libp2p_address = libp2p_socket_from_legacy_networking(&maker_address);
-        let maker_multiaddr =
-            create_connect_tcp_multiaddr(&maker_libp2p_address, maker_peer_id.inner())
-                .expect("to parse properly");
-
         tracing::info!("Connecting to maker {maker_multiaddr}");
 
         let taker = daemon::TakerActorSystem::new(
@@ -352,7 +370,7 @@ impl Taker {
             Duration::from_secs(10),
             projection_actor,
             maker_identity,
-            maker_multiaddr,
+            maker_multiaddr.clone(),
         )
         .unwrap();
 
@@ -379,7 +397,10 @@ impl Taker {
             system: taker,
             feeds,
             mocks,
-            maker_peer_id,
+            maker_peer_id: maker_multiaddr
+                .extract_peer_id()
+                .expect("to have peer id")
+                .into(),
             _tasks: tasks,
         }
     }
