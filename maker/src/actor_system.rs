@@ -15,6 +15,7 @@ use daemon::oracle;
 use daemon::position_metrics;
 use daemon::process_manager;
 use daemon::projection;
+use daemon::rollover;
 use daemon::seed::Identities;
 use daemon::wallet;
 use libp2p_tcp::TokioTcpConfig;
@@ -30,10 +31,12 @@ use model::Usd;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio_tasks::Tasks;
+use xtra::message_channel::MessageChannel;
 use xtra::Actor;
 use xtra::Address;
 use xtra::Context;
 use xtra::Handler;
+use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
@@ -52,6 +55,7 @@ pub struct ActorSystem<O, W> {
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
     _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
+    _listener_actor: Address<listener::Actor>,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -75,6 +79,7 @@ where
         identity: Identities,
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
+        listen_multiaddr: Multiaddr,
     ) -> Result<Self>
     where
         M: Handler<monitor::StartMonitoring>
@@ -112,6 +117,15 @@ where
             &oracle_addr,
         )));
 
+        let libp2p_rollover_addr = rollover::maker::Actor::new(
+            executor.clone(),
+            oracle_pk,
+            oracle_addr.clone_channel(),
+            n_payouts,
+        )
+        .create(None)
+        .spawn(&mut tasks);
+
         let cfd_actor_addr = cfd::Actor::new(
             db.clone(),
             wallet_addr.clone(),
@@ -123,6 +137,7 @@ where
             oracle_addr,
             time_to_first_position_addr,
             n_payouts,
+            libp2p_rollover_addr.clone(),
         )
         .create(None)
         .spawn(&mut tasks);
@@ -137,19 +152,18 @@ where
             TokioTcpConfig::new(),
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
-            [],
+            [(
+                daemon::rollover::PROTOCOL,
+                xtra::message_channel::StrongMessageChannel::clone_channel(&libp2p_rollover_addr),
+            )],
         );
 
         tasks.add(endpoint_context.run(endpoint));
 
-        let libp2p_socket = daemon::libp2p_utils::libp2p_socket_from_legacy_networking(&p2p_socket);
-        let endpoint_listen = daemon::libp2p_utils::create_listen_tcp_multiaddr(&libp2p_socket)
-            .expect("to parse properly");
-
-        let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
+        let (supervisor, listener_actor) = supervisor::Actor::with_policy(
             move || {
                 let endpoint_addr = endpoint_addr.clone();
-                let endpoint_listen = endpoint_listen.clone();
+                let endpoint_listen = listen_multiaddr.clone();
                 listener::Actor::new(endpoint_addr, endpoint_listen)
             },
             |_: &listener::Error| true, // always restart listener actor
@@ -197,6 +211,7 @@ where
             _listener_supervisor: listener_supervisor,
             _position_metrics_actor: position_metrics_actor,
             _cull_old_dlcs_actor,
+            _listener_actor: listener_actor,
         })
     }
 

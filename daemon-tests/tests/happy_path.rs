@@ -605,7 +605,7 @@ async fn taker_notices_lack_of_maker() {
         &taker_config,
         maker.listen_addr,
         maker.identity,
-        maker.peer_id,
+        maker.connect_addr.clone(),
     )
     .await;
 
@@ -665,7 +665,7 @@ async fn start_from_open_cfd_state(
         &TakerConfig::default(),
         maker.listen_addr,
         maker.identity,
-        maker.peer_id,
+        maker.connect_addr.clone(),
     )
     .await;
 

@@ -160,6 +160,8 @@ dependencies = [
  "futures-util",
  "memchr",
  "pin-project-lite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -800,6 +802,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
+ "asynchronous-codec",
  "bdk",
  "bdk-ext",
  "btsieve",
