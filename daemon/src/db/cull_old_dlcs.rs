@@ -1,127 +1,88 @@
 use crate::db::Connection;
 use anyhow::Result;
-use model::EventKind;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
 
 impl Connection {
+    /// Cull DLC data from old events.
+    ///
+    /// This method modifies the `dlc` field of the JSON blobs stored in the `events`
+    /// table for all the rows which do not correspond to the most recent
+    /// `EventKind::ContractSetupCompleted` or `EventKind::RolloverCompleted` event
+    /// of a CFD.
     pub async fn cull_old_dlcs(&self) -> Result<()> {
         let mut conn = self.inner.acquire().await?;
 
-        let emptied_dlc_events = emptied_dlc_events(&mut conn).await?;
-
-        for (id, event) in emptied_dlc_events {
-            if let Err(e) = update_event_data(&mut conn, id, event).await {
-                tracing::warn!("Failed to overwrite old DLC: {e:#}");
-            }
-        }
+        Connection::cull_rollover_completed(&mut conn).await?;
+        Connection::cull_contract_setup_completed(&mut conn).await?;
 
         Ok(())
     }
-}
 
-/// Load all old events with DLC data from the database and return
-/// them with empty `dlc` fields.
-///
-/// `EventKind::ContractSetupCompleted` an
-/// `EventKind::RolloverCompleted` are the two kinds of event that can
-/// have DLC data associated with them. One of these event is
-/// considered old if it isn't the most recent one related to a CFD.
-///
-/// This method does not modify the database: it just loads rows and
-/// processes them. The returned values can later be used to update
-/// the contents of the database.
-async fn emptied_dlc_events(
-    conn: &mut PoolConnection<Sqlite>,
-) -> Result<impl Iterator<Item = (i64, EventKind)>> {
-    let rows = sqlx::query!(
-        r#"
-        SELECT
-            id,
-            name,
-            data
-        FROM
-            events
-        WHERE
-            name = $1 OR
-            name = $2
-        ORDER BY
-            created_at DESC
-        LIMIT -1 OFFSET 1
-        "#,
-        model::EventKind::CONTRACT_SETUP_COMPLETED_EVENT,
-        model::EventKind::ROLLOVER_COMPLETED_EVENT,
-    )
-    .fetch_all(&mut *conn)
-    .await?;
+    /// Cull old cfd rollover events which are not needed anymore
+    ///
+    /// We set the `dlc` field of events `RolloverCompleted` to null where the event is not the most
+    /// recent `RolloverCompleted` event.
+    async fn cull_rollover_completed(conn: &mut PoolConnection<Sqlite>) -> Result<()> {
+        let affected_rows = sqlx::query!(
+            r#"
+            update EVENTS
+                set
+                    data = (
+                        select json_set(events.data, '$.dlc', null)
+                        from events as inner_events
+                        where inner_events.id = EVENTS.id 
+                    )
+                where name = $1
+                  and id not in (
+                    select max(id) from EVENTS as inner_events
+                    where inner_events.cfd_id = EVENTS.cfd_id
+                      and inner_events.name = EVENTS.name
+                );
+            "#,
+            model::EventKind::ROLLOVER_COMPLETED_EVENT,
+        )
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
 
-    Ok(rows
-        .into_iter()
-        .filter_map(|row| {
-            let id = row.id;
-            let event = match EventKind::from_json(row.name, row.data) {
-                Ok(event) => Some(event),
-                Err(e) => {
-                    tracing::warn!("Failed to deserialize EventKind from JSON: {e:#}");
-                    None
-                }
-            };
+        tracing::debug!(%affected_rows,"Culled RolloverCompleted events");
 
-            event.map(|event| (id, event))
-        })
-        .filter_map(|(id, event)| {
-            use EventKind::*;
-            let event = match event {
-                ContractSetupCompleted { dlc: Some(_), .. } => {
-                    Some(ContractSetupCompleted { dlc: None })
-                }
-                RolloverCompleted {
-                    dlc: Some(_),
-                    funding_fee,
-                } => Some(RolloverCompleted {
-                    dlc: None,
-                    funding_fee,
-                }),
-                // ignore events that have already been culled
-                ContractSetupCompleted { dlc: None } | RolloverCompleted { dlc: None, .. } => None,
-                // ignore all other events
-                _ => None,
-            };
-
-            event.map(|event| (id, event))
-        }))
-}
-
-/// Overwrite the contents of the `data` column for a row
-/// corresponding to `id` with the JSON blob originated from
-/// `updated_event`.
-async fn update_event_data(
-    conn: &mut PoolConnection<Sqlite>,
-    id: i64,
-    updated_event: EventKind,
-) -> Result<()> {
-    let (_, updated_data) = updated_event.to_json();
-
-    let query_result = sqlx::query!(
-        r#"
-        UPDATE
-            events
-        SET
-            data = $1
-        WHERE
-            id = $2
-        "#,
-        updated_data,
-        id,
-    )
-    .execute(&mut *conn)
-    .await?;
-
-    if query_result.rows_affected() != 1 {
-        anyhow::bail!("Failed to update event data");
+        Ok(())
     }
 
-    Ok(())
+    /// Cull `ContractSetupCompleted` events which are not needed anymore
+    ///
+    /// `ContractSetupCompleted` events are not needed anymore if there was at least one
+    /// `RolloverCompletedEvent` afterwards
+    async fn cull_contract_setup_completed(conn: &mut PoolConnection<Sqlite>) -> Result<()> {
+        let affected_rows = sqlx::query!(
+            r#"
+            update EVENTS
+                set
+                    data = (
+                        select json_set(events.data, '$.dlc', null)
+                        from events as inner_events
+                        where EVENTS.id = inner_events.id
+                    )
+                where name = $1
+                  and cfd_id in (
+                    select distinct cfd_id from EVENTS as inner_events
+                        where inner_events.cfd_id = EVENTS.cfd_id
+                        and inner_events.name = $2
+                    );
+            "#,
+            model::EventKind::CONTRACT_SETUP_COMPLETED_EVENT,
+            model::EventKind::ROLLOVER_COMPLETED_EVENT,
+        )
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
+
+        tracing::debug!(%affected_rows,"Culled ContractSetupCompleted events");
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -149,16 +110,59 @@ mod tests {
     use time::Duration;
 
     #[tokio::test]
+    async fn given_only_contract_setup_completed_and_no_rollover_when_culled_event_has_some_dlc() {
+        let db = memory().await.unwrap();
+
+        let (cfd, contract_setup) = contract_setup_completed_cfd();
+        let contract_setup_cloned = contract_setup.event.clone();
+        db.insert_cfd(&cfd).await.unwrap();
+        db.append_event(contract_setup).await.unwrap();
+
+        db.cull_old_dlcs().await.unwrap();
+
+        let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+        let events = load_cfd_events(&mut db_tx, cfd.id(), 0).await.unwrap();
+        db_tx.commit().await.unwrap();
+
+        assert_eq!(events[0].event, contract_setup_cloned,);
+    }
+
+    #[tokio::test]
+    async fn given_one_rollover_when_cull_then_first_event_has_none_dlc_and_second_has_some_dlc() {
+        let db = memory().await.unwrap();
+
+        let (cfd, contract_setup, rollovers) = rolled_over_cfd(NonZeroU8::new(1).unwrap());
+        db.insert_cfd(&cfd).await.unwrap();
+        db.append_event(contract_setup).await.unwrap();
+        let only_rollover_event = rollovers.get(0).unwrap().clone().event;
+        for rollover in rollovers {
+            db.append_event(rollover).await.unwrap();
+        }
+
+        db.cull_old_dlcs().await.unwrap();
+
+        let mut conn = db.inner.acquire().await.unwrap();
+        let mut db_tx = conn.begin().await.unwrap();
+        let events = load_cfd_events(&mut db_tx, cfd.id(), 0).await.unwrap();
+        db_tx.commit().await.unwrap();
+
+        assert!(matches!(
+            &events[0].event,
+            EventKind::ContractSetupCompleted { dlc: None, .. },
+        ));
+
+        assert_eq!(events[1].event, only_rollover_event);
+    }
+
+    #[tokio::test]
     async fn given_two_rollovers_when_cull_old_dlcs_then_only_last_one_has_some_dlc() {
         let db = memory().await.unwrap();
 
         let (cfd, contract_setup, rollovers) = rolled_over_cfd(NonZeroU8::new(2).unwrap());
-        let most_recent_rollover = rollovers.last().unwrap().event.clone();
-
         db.insert_cfd(&cfd).await.unwrap();
-
         db.append_event(contract_setup).await.unwrap();
-
+        let last_rollover_event = rollovers.last().unwrap().clone().event;
         for rollover in rollovers {
             db.append_event(rollover).await.unwrap();
         }
@@ -180,7 +184,7 @@ mod tests {
             EventKind::RolloverCompleted { dlc: None, .. },
         ));
 
-        assert_eq!(events[2].event, most_recent_rollover);
+        assert_eq!(events[2].event, last_rollover_event);
     }
 
     #[tokio::test]
@@ -189,11 +193,8 @@ mod tests {
 
         let (cfd, contract_setup, rollovers) = rolled_over_cfd(NonZeroU8::new(3).unwrap());
         let most_recent_rollover = rollovers.last().unwrap().event.clone();
-
         db.insert_cfd(&cfd).await.unwrap();
-
         db.append_event(contract_setup).await.unwrap();
-
         for rollover in rollovers {
             db.append_event(rollover).await.unwrap();
         }
@@ -224,24 +225,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn given_contract_setup_completed_when_cull_old_dlcs_then_dlc_is_some() {
+    async fn given_cfds_contract_setup_completed_and_cfd_rolled_over_then_both_culled_correctly() {
         let db = memory().await.unwrap();
 
-        let (cfd, contract_setup) = contract_setup_completed_cfd();
-        let contract_setup_cloned = contract_setup.event.clone();
-
-        db.insert_cfd(&cfd).await.unwrap();
-
+        let (cfd1, contract_setup) = contract_setup_completed_cfd();
+        let contract_setup1_cloned = contract_setup.event.clone();
+        db.insert_cfd(&cfd1).await.unwrap();
         db.append_event(contract_setup).await.unwrap();
+
+        let (cfd2, contract_setup, rollovers) = rolled_over_cfd(NonZeroU8::new(2).unwrap());
+        db.insert_cfd(&cfd2).await.unwrap();
+        db.append_event(contract_setup).await.unwrap();
+        let most_recent_rollover = rollovers.last().unwrap().event.clone();
+        for rollover in rollovers {
+            db.append_event(rollover).await.unwrap();
+        }
 
         db.cull_old_dlcs().await.unwrap();
 
         let mut conn = db.inner.acquire().await.unwrap();
         let mut db_tx = conn.begin().await.unwrap();
-        let events = load_cfd_events(&mut db_tx, cfd.id(), 0).await.unwrap();
+
+        let events_cfd1 = load_cfd_events(&mut db_tx, cfd1.id(), 0).await.unwrap();
+        let events_cfd2 = load_cfd_events(&mut db_tx, cfd2.id(), 0).await.unwrap();
         db_tx.commit().await.unwrap();
 
-        assert_eq!(events[0].event, contract_setup_cloned,);
+        assert_eq!(events_cfd1[0].event, contract_setup1_cloned,);
+
+        assert!(matches!(
+            &events_cfd2[0].event,
+            EventKind::ContractSetupCompleted { dlc: None, .. },
+        ));
+
+        assert!(matches!(
+            &events_cfd2[1].event,
+            EventKind::RolloverCompleted { dlc: None, .. },
+        ));
+
+        assert_eq!(events_cfd2[2].event, most_recent_rollover);
     }
 
     fn contract_setup_completed_cfd() -> (Cfd, CfdEvent) {
