@@ -1,67 +1,37 @@
-use crate::connection;
 use crate::db;
-use crate::oracle;
-use crate::process_manager;
 use crate::rollover;
 use crate::rollover::taker::ProposeRollover;
-use crate::rollover_taker;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use maia_core::secp256k1_zkp::schnorrsig;
 use model::libp2p::PeerId;
 use model::OrderId;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;
-use xtra::Actor as _;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
-use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
-pub struct Actor<O> {
+pub struct Actor {
     db: db::Connection,
-    oracle_pk: schnorrsig::PublicKey,
-    process_manager: Address<process_manager::Actor>,
-    conn: Address<connection::Actor>,
-    oracle: Address<O>,
-    n_payouts: usize,
     libp2p_rollover: Address<rollover::taker::Actor>,
-    rollover_actors: AddressMap<OrderId, rollover_taker::Actor>,
     tasks: Tasks,
 }
 
-impl<O> Actor<O> {
-    pub fn new(
-        db: db::Connection,
-        oracle_pk: schnorrsig::PublicKey,
-        process_manager: Address<process_manager::Actor>,
-        conn: Address<connection::Actor>,
-        oracle: Address<O>,
-        libp2p_rollover: Address<rollover::taker::Actor>,
-        n_payouts: usize,
-    ) -> Self {
+impl Actor {
+    pub fn new(db: db::Connection, libp2p_rollover: Address<rollover::taker::Actor>) -> Self {
         Self {
             db,
-            oracle_pk,
-            process_manager,
-            conn,
-            oracle,
-            n_payouts,
             libp2p_rollover,
-            rollover_actors: AddressMap::default(),
             tasks: Tasks::default(),
         }
     }
 }
 
 #[xtra_productivity]
-impl<O> Actor<O>
-where
-    O: xtra::Handler<oracle::GetAnnouncement>,
-{
+impl Actor {
     async fn handle(&mut self, _msg: AutoRollover, ctx: &mut xtra::Context<Self>) {
         tracing::trace!("Checking all CFDs for rollover eligibility");
 
@@ -91,38 +61,15 @@ where
                 tracing::error!(%order_id, "Failed to dispatch proposal to libp2p rollover actor: {e:#}");
             }
         } else {
-            let disconnected = match self.rollover_actors.get_disconnected(order_id) {
-                Ok(disconnected) => disconnected,
-                Err(_) => {
-                    tracing::debug!(%order_id, "Rollover already in progress");
-                    return;
-                }
-            };
-
-            let addr = rollover_taker::Actor::new(
-                order_id,
-                self.n_payouts,
-                self.oracle_pk,
-                self.conn.clone(),
-                &self.oracle,
-                self.process_manager.clone(),
-                self.db.clone(),
-            )
-            .create(None)
-            .spawn(&mut self.tasks);
-
-            disconnected.insert(addr);
+            unreachable!("this should not happen on the taker side, we always know the peer id ,")
         }
     }
 }
 
-impl<O> Actor<O>
-where
-    O: xtra::Handler<oracle::GetAnnouncement>,
-{
+impl Actor {
     async fn handle_auto_rollover_impl(
         &mut self,
-        ctx: &mut xtra::Context<Actor<O>>,
+        ctx: &mut xtra::Context<Actor>,
     ) -> Result<(), anyhow::Error> {
         let this = ctx
             .address()
@@ -162,10 +109,7 @@ where
 }
 
 #[async_trait]
-impl<O> xtra::Actor for Actor<O>
-where
-    O: xtra::Handler<oracle::GetAnnouncement> + 'static,
-{
+impl xtra::Actor for Actor {
     type Stop = ();
 
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
