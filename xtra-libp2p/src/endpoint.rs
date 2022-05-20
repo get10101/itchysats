@@ -84,6 +84,8 @@ impl OpenSubstream<Single> {
     /// We will only attempt to negotiate the given protocol. If the endpoint does not speak this
     /// protocol, negotiation will fail.
     pub fn single_protocol(peer: PeerId, protocol: &'static str) -> Self {
+        tracing::trace!("Open substream with peer {peer} on protocol {protocol}");
+
         Self {
             peer,
             protocols: vec![protocol],
@@ -100,6 +102,9 @@ impl OpenSubstream<Multiple> {
     /// can attempt to first establish a substream with a new protocol and falling back to older
     /// versions in case the new version is not supported.
     pub fn multiple_protocols(peer: PeerId, protocols: Vec<&'static str>) -> Self {
+        tracing::trace!(
+            "Open substream (multi protocol) with peer {peer} on protocol {protocols:?}"
+        );
         Self {
             peer,
             protocols,
