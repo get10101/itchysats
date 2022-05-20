@@ -36,10 +36,11 @@ use xtra::Context;
 use xtra::Handler;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
+use xtra_libp2p_ping::ping;
 use xtras::supervisor;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
-const PING_INTERVAL: Option<Duration> = Some(Duration::from_secs(5));
+const PING_INTERVAL: Duration = Duration::from_secs(5);
 
 pub struct ActorSystem<O, W> {
     pub cfd_actor: Address<cfd::Actor<O, connection::Actor, W>>,
@@ -128,7 +129,7 @@ where
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
-        let ping_address = xtra_libp2p_ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
+        ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
             .create(None)
             .spawn(&mut tasks);
 
@@ -136,10 +137,7 @@ where
             TokioTcpConfig::new(),
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
-            [(
-                xtra_libp2p_ping::PROTOCOL_NAME,
-                xtra::message_channel::StrongMessageChannel::clone_channel(&ping_address),
-            )],
+            [],
         );
 
         tasks.add(endpoint_context.run(endpoint));
