@@ -12,10 +12,12 @@ use rand::Rng;
 use std::io;
 use std::time::Duration;
 use std::time::Instant;
-use xtra_libp2p::Substream;
 
 /// Sends a ping and waits for the pong.
-pub async fn send(mut stream: Substream) -> io::Result<Duration> {
+pub async fn send<S>(mut stream: S) -> io::Result<Duration>
+where
+    S: AsyncWriteExt + AsyncReadExt + Unpin,
+{
     let payload: [u8; SIZE] = thread_rng().sample(distributions::Standard);
     stream.write_all(&payload).await?;
     stream.flush().await?;
@@ -36,7 +38,10 @@ pub async fn send(mut stream: Substream) -> io::Result<Duration> {
 }
 
 /// Waits for a ping and sends a pong.
-pub async fn recv(mut stream: Substream) -> io::Result<()> {
+pub async fn recv<S>(mut stream: S) -> io::Result<()>
+where
+    S: AsyncWriteExt + AsyncReadExt + Unpin,
+{
     let mut payload = [0u8; SIZE];
     stream.read_exact(&mut payload).await?;
     stream.write_all(&payload).await?;
