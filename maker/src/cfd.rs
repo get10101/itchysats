@@ -18,6 +18,7 @@ use daemon::wallet;
 use daemon::wire;
 use maia_core::secp256k1_zkp::schnorrsig;
 use model::libp2p::PeerId;
+use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::Cfd;
 use model::FundingRate;
@@ -108,7 +109,7 @@ pub struct OfferParams {
 
 impl OfferParams {
     fn pick_oracle_event_id(settlement_interval: Duration) -> BitMexPriceEventId {
-        oracle::next_announcement_after(time::OffsetDateTime::now_utc() + settlement_interval)
+        olivia::next_announcement_after(time::OffsetDateTime::now_utc() + settlement_interval)
     }
 
     pub fn create_long_order(&self, settlement_interval: Duration) -> Option<Order> {
@@ -738,6 +739,24 @@ where
                     .await
                 {
                     tracing::warn!("Failed to handle rollover proposal V2: {:#}", e);
+                }
+            }
+            wire::TakerToMaker::ProposeRolloverV3 {
+                order_id,
+                timestamp,
+            } => {
+                if let Err(e) = self
+                    .handle_propose_rollover(
+                        RolloverProposal {
+                            order_id,
+                            timestamp,
+                        },
+                        taker_id,
+                        RolloverVersion::V3,
+                    )
+                    .await
+                {
+                    tracing::warn!("Failed to handle rollover proposal V3: {:#}", e);
                 }
             }
             wire::TakerToMaker::RolloverProtocol { .. }

@@ -18,6 +18,12 @@ pub enum Version {
     /// This version can handle charging for "missed" rollovers, i.e. we calculate the hours to
     /// charge based on the oracle event timestamp of the last successful rollover.
     V2,
+    /// Version two of the rollover protocol
+    ///
+    /// This version calculates the time to extend the settlement time
+    /// by using the `BitMexPriceEventId` of the settlement event
+    /// associated with the rollover.
+    V3,
 }
 
 impl std::fmt::Display for Version {
@@ -25,6 +31,7 @@ impl std::fmt::Display for Version {
         match *self {
             Version::V1 => write!(f, "V1"),
             Version::V2 => write!(f, "V2"),
+            Version::V3 => write!(f, "V3"),
         }
     }
 }

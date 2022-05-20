@@ -8,6 +8,7 @@ use serde_with::DeserializeFromStr;
 use serde_with::SerializeDisplay;
 use std::fmt;
 use std::str;
+use time::ext::NumericalDuration;
 use time::format_description::FormatItem;
 use time::macros::format_description;
 use time::Duration;
@@ -134,6 +135,20 @@ impl From<Announcement> for maia_core::Announcement {
 }
 
 impl_sqlx_type_display_from_str!(BitMexPriceEventId);
+
+pub fn next_announcement_after(timestamp: OffsetDateTime) -> BitMexPriceEventId {
+    let adjusted = ceil_to_next_hour(timestamp);
+
+    BitMexPriceEventId::with_20_digits(adjusted)
+}
+
+fn ceil_to_next_hour(original: OffsetDateTime) -> OffsetDateTime {
+    let timestamp = original + 1.hours();
+    let exact_hour = Time::from_hms(timestamp.hour(), 0, 0).expect(
+        "Exact hour from timestamp to be always within range, both docs and tests confirm it",
+    );
+    timestamp.replace_time(exact_hour)
+}
 
 mod olivia_api {
     use super::*;
@@ -445,5 +460,25 @@ mod tests {
             BitMexPriceEventId::with_20_digits(datetime!(2021-09-23 10:00:00).assume_utc());
 
         assert!(past_event.has_likely_occurred());
+    }
+
+    #[test]
+    fn next_event_id_after_timestamp() {
+        let event_id = next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc());
+
+        assert_eq!(
+            event_id.to_string(),
+            "/x/BitMEX/BXBT/2021-09-23T11:00:00.price?n=20"
+        );
+    }
+
+    #[test]
+    fn next_event_id_is_midnight_next_day() {
+        let event_id = next_announcement_after(datetime!(2021-09-23 23:40:00).assume_utc());
+
+        assert_eq!(
+            event_id.to_string(),
+            "/x/BitMEX/BXBT/2021-09-24T00:00:00.price?n=20"
+        );
     }
 }

@@ -119,6 +119,10 @@ pub enum TakerToMaker {
         order_id: OrderId,
         timestamp: Timestamp,
     },
+    ProposeRolloverV3 {
+        order_id: OrderId,
+        timestamp: Timestamp,
+    },
     Protocol {
         order_id: OrderId,
         msg: SetupMsg,
@@ -150,6 +154,7 @@ impl TakerToMaker {
             },
             TakerToMaker::ProposeRollover { .. } => "TakerToMaker::ProposeRollover",
             TakerToMaker::ProposeRolloverV2 { .. } => "TakerToMaker::ProposeRolloverV2",
+            TakerToMaker::ProposeRolloverV3 { .. } => "TakerToMaker::ProposeRolloverV3",
             TakerToMaker::RolloverProtocol { msg, .. } => match msg {
                 RolloverMsg::Msg0(_) => "TakerToMaker::RolloverProtocol::Msg0",
                 RolloverMsg::Msg1(_) => "TakerToMaker::RolloverProtocol::Msg1",
@@ -174,6 +179,7 @@ impl TakerToMaker {
             | TakeOrder { order_id, .. }
             | ProposeRollover { order_id, .. }
             | ProposeRolloverV2 { order_id, .. }
+            | ProposeRolloverV3 { order_id, .. }
             | Protocol { order_id, .. }
             | RolloverProtocol { order_id, .. }
             | Settlement { order_id, .. } => Some(*order_id),
