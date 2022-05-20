@@ -55,6 +55,11 @@ pub struct MonitorAttestation {
     pub event_id: BitMexPriceEventId,
 }
 
+#[derive(Clone)]
+struct MonitorAttestations {
+    pub event_ids: Vec<BitMexPriceEventId>,
+}
+
 /// Message used to request the `Announcement` from the
 /// `oracle::Actor`'s local state.
 ///
@@ -261,6 +266,12 @@ impl Actor {
         self.add_pending_attestation(msg.event_id)
     }
 
+    fn handle_monitor_attestations(&mut self, msg: MonitorAttestations) {
+        for id in msg.event_ids.into_iter() {
+            self.add_pending_attestation(id);
+        }
+    }
+
     fn handle_get_announcement(
         &mut self,
         msg: GetAnnouncement,
@@ -339,31 +350,31 @@ impl xtra::Actor for Actor {
 
         self.tasks.add({
             let db = self.db.clone();
-
             async move {
-                let mut stream = db.load_all_open_cfds::<Cfd>(());
-
-                while let Some(cfd) = stream.next().await {
-                    let Cfd {
-                        pending_attestation,
-                        ..
-                    } = match cfd {
-                        Ok(cfd) => cfd,
-                        Err(e) => {
-                            tracing::warn!("Failed to load CFD from database: {e:#}");
-                            continue;
+                let pending_attestations = db
+                    .load_all_open_cfds::<Cfd>(())
+                    .filter_map(|res| async move {
+                        match res {
+                            Ok(Cfd {
+                                pending_attestation,
+                                ..
+                            }) => pending_attestation,
+                            Err(e) => {
+                                tracing::warn!("Failed to load CFD from database: {e:#}");
+                                None
+                            }
                         }
-                    };
-                    if let Some(pending_attestation) = pending_attestation {
-                        let _: Result<(), xtra::Error> = this
-                            .send(MonitorAttestation {
-                                event_id: pending_attestation,
-                            })
-                            .await;
-                    }
-                }
-                this.clone()
-                    .send_interval(SYNC_ATTESTATIONS_INTERVAL, || SyncAttestations)
+                    })
+                    .collect::<Vec<_>>()
+                    .await;
+
+                let _: Result<(), xtra::Error> = this
+                    .send(MonitorAttestations {
+                        event_ids: pending_attestations,
+                    })
+                    .await;
+
+                this.send_interval(SYNC_ATTESTATIONS_INTERVAL, || SyncAttestations)
                     .await;
             }
         });
