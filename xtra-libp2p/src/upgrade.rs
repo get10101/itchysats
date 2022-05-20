@@ -18,7 +18,6 @@ use libp2p_noise as noise;
 use multistream_select::NegotiationError;
 use std::time::Duration;
 use void::Void;
-use yamux::Mode;
 
 /// Upgrades the given [`Transport`].
 ///
@@ -62,14 +61,25 @@ where
             upgrade::from_fn::<_, _, _, _, _, Void>(
                 b"/yamux/1.0.0",
                 move |conn, endpoint| async move {
+                    // Set to 10MB window size.
+                    // This is necessary for getting our contract setup and rollover messages over
+                    // the wire in a timely fashion. Note that this is
+                    // configured for the entire endpoint and can potentially impact other
+                    // protocols. There is a yamux mode where the parties can
+                    // agree on a window size by exchanging messages. We could opt for that at some
+                    // point to configure the window size only when needed.
+                    let window_size = 10 * 1024 * 1024;
+                    let mut yamux_config = yamux::Config::default();
+                    let yamux_config = yamux_config.set_receive_window(window_size);
+
                     Ok(match endpoint {
                         Endpoint::Dialer => (
                             peer_id,
-                            yamux::Connection::new(conn, yamux::Config::default(), Mode::Client),
+                            yamux::Connection::new(conn, yamux_config.clone(), yamux::Mode::Client),
                         ),
                         Endpoint::Listener => (
                             peer_id,
-                            yamux::Connection::new(conn, yamux::Config::default(), Mode::Server),
+                            yamux::Connection::new(conn, yamux_config.clone(), yamux::Mode::Server),
                         ),
                     })
                 },
