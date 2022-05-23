@@ -40,6 +40,7 @@ type ListenerConnection = (
 /// task whenever we interact with a substream to not block the execution of other connections.
 pub struct Actor {
     tasks: Tasks,
+    protocol_tasks: HashMap<OrderId, Tasks>,
     oracle_pk: schnorrsig::PublicKey,
     get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
     n_payouts: usize,
@@ -56,6 +57,7 @@ impl Actor {
     ) -> Self {
         Self {
             tasks: Tasks::default(),
+            protocol_tasks: HashMap::default(),
             oracle_pk,
             get_announcement,
             n_payouts,
@@ -151,7 +153,8 @@ impl Actor {
             format!("No active protocol for {order_id} when accepting rollover")
         })?;
 
-        self.tasks.add_fallible(
+        let mut tasks = Tasks::default();
+        tasks.add_fallible(
             {
                 let executor = self.executor.clone();
                 let get_announcement = self.get_announcement.clone_channel();
@@ -236,6 +239,7 @@ impl Actor {
                 }
             },
         );
+        self.protocol_tasks.insert(order_id, tasks);
 
         Ok(())
     }
@@ -249,7 +253,8 @@ impl Actor {
 
         emit_rejected(order_id, &self.executor).await;
 
-        self.tasks.add_fallible(
+        let mut tasks = Tasks::default();
+        tasks.add_fallible(
             async move {
                 framed
                     .send(ListenerMessage::Decision(Decision::Reject(
@@ -261,6 +266,7 @@ impl Actor {
                 tracing::debug!(%order_id, "Failed to send reject rollover to the taker: {e:#}")
             },
         );
+        self.protocol_tasks.insert(order_id, tasks);
 
         Ok(())
     }
