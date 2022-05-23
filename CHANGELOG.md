@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Culling old DLC data from database, i.e. we remove old DLC data which is not needed anymore. This reduces the db size and is more efficient when loading
+
 ## [0.4.16] - 2022-05-13
 
 ### Changed
