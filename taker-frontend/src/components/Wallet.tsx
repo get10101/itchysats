@@ -24,6 +24,7 @@ import {
     useToast,
     VStack,
 } from "@chakra-ui/react";
+import { QRCodeCanvas } from "qrcode.react";
 import * as React from "react";
 import { useState } from "react";
 import { WalletInfo, WithdrawRequest } from "../types";
@@ -67,30 +68,37 @@ export default function Wallet(
                 <Center>
                     <Heading size="sm">Wallet Details</Heading>
                 </Center>
-                <HStack padding={2}>
-                    <Text align={"left"}>Balance:</Text>
-                    <Skeleton isLoaded={balance != null}>
-                        <Text>{balance} BTC</Text>
-                    </Skeleton>
-                </HStack>
-                <Divider marginTop={2} marginBottom={2} />
-                <Skeleton isLoaded={address != null}>
-                    <HStack>
-                        <Text noOfLines={1}>{address}</Text>
-                        <IconButton
-                            variant={"outline"}
-                            aria-label="Copy to clipboard"
-                            icon={hasCopied ? <CheckIcon /> : <CopyIcon />}
-                            onClick={onCopy}
-                        />
-                    </HStack>
-                </Skeleton>
-                <Divider marginTop={2} marginBottom={2} />
-                <HStack>
-                    <Text align={"left"}>Updated:</Text>
-                    <Skeleton isLoaded={last_updated_at != null}>
-                        <Timestamp timestamp={last_updated_at!} />
-                    </Skeleton>
+                <HStack spacing={8} direction="row" align="stretch">
+                    <Box>
+                        <HStack>
+                            <Text align={"left"}>Balance:</Text>
+                            <Skeleton isLoaded={balance != null}>
+                                <Text>{balance} BTC</Text>
+                            </Skeleton>
+                        </HStack>
+                        <Divider marginTop={2} marginBottom={2} />
+                        <Skeleton isLoaded={address != null}>
+                            <HStack>
+                                <Text noOfLines={1}>{address}</Text>
+                                <IconButton
+                                    variant={"outline"}
+                                    aria-label="Copy to clipboard"
+                                    icon={hasCopied ? <CheckIcon /> : <CopyIcon />}
+                                    onClick={onCopy}
+                                />
+                            </HStack>
+                        </Skeleton>
+                        <Divider marginTop={2} marginBottom={2} />
+                        <HStack>
+                            <Text align={"left"}>Updated:</Text>
+                            <Skeleton isLoaded={last_updated_at != null}>
+                                <Timestamp timestamp={last_updated_at!} />
+                            </Skeleton>
+                        </HStack>
+                    </Box>
+                    <Box>
+                        <QRCodeCanvas value={`bitcoin:${address!}`} />
+                    </Box>
                 </HStack>
 
                 <Divider marginTop={2} marginBottom={2} />
