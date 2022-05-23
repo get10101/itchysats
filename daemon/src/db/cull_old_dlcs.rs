@@ -47,7 +47,11 @@ impl Connection {
         .await?
         .rows_affected();
 
-        tracing::debug!(%affected_rows,"Culled RolloverCompleted events");
+        if affected_rows > 0 {
+            tracing::debug!(%affected_rows,"Culled RolloverCompleted events");
+        } else {
+            tracing::trace!("Culling RolloverCompleted did not change anything");
+        }
 
         Ok(())
     }
@@ -81,7 +85,11 @@ impl Connection {
         .await?
         .rows_affected();
 
-        tracing::debug!(%affected_rows,"Culled ContractSetupCompleted events");
+        if affected_rows > 0 {
+            tracing::debug!(%affected_rows,"Culled ContractSetupCompleted events");
+        } else {
+            tracing::trace!("Culling ContractSetupCompleted did not change anything");
+        }
 
         Ok(())
     }
