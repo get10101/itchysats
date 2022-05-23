@@ -495,7 +495,11 @@ impl Actor {
             ]))
             .inc();
 
-        tracing::debug!(taker_id = %identity, taker_addres = %address, %wire_version, %daemon_version, "Connection is ready");
+        if let Some(peer_id) = peer_id {
+            tracing::debug!(taker_id = %identity, taker_addres = %address, %wire_version, %daemon_version, %peer_id, "Connection is ready");
+        } else {
+            tracing::debug!(taker_id = %identity, taker_addres = %address, %wire_version, %daemon_version, "Connection is ready");
+        }
     }
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
