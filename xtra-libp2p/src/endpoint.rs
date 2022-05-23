@@ -434,7 +434,7 @@ impl Endpoint {
                                         Ok(())
                                     },
                                     move |e: anyhow::Error| async move {
-                                        tracing::error!("Cannot upgrade connection {e:#}");
+                                        tracing::warn!("Could not upgrade connection {e:#}");
                                     },
                                 );
                             }
