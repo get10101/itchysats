@@ -39,7 +39,6 @@ use bdk::bitcoin::TxOut;
 use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
-use cached::proc_macro::cached;
 use itertools::Itertools;
 use maia::spending_tx_sighash;
 use maia_core::generate_payouts;
@@ -502,41 +501,6 @@ pub enum EventKind {
     },
 }
 
-impl EventKind {
-    pub const CONTRACT_SETUP_STARTED: &'static str = "ContractSetupCompleted";
-    pub const CONTRACT_SETUP_COMPLETED_EVENT: &'static str = "ContractSetupCompleted";
-    pub const ROLLOVER_COMPLETED_EVENT: &'static str = "RolloverCompleted";
-    pub const COLLABORATIVE_SETTLEMENT_CONFIRMED: &'static str = "CollaborativeSettlementConfirmed";
-    pub const CET_CONFIRMED: &'static str = "CetConfirmed";
-    pub const REFUND_CONFIRMED: &'static str = "RefundConfirmed";
-    pub const CONTRACT_SETUP_FAILED: &'static str = "ContractSetupFailed";
-    pub const OFFER_REJECTED: &'static str = "OfferRejected";
-
-    pub fn to_json(&self) -> (String, String) {
-        let value = serde_json::to_value(self).expect("serialization to always work");
-        let object = value.as_object().expect("always an object");
-
-        let name = object
-            .get("name")
-            .expect("to have property `name`")
-            .as_str()
-            .expect("name to be `string`")
-            .to_owned();
-        let data = object.get("data").cloned().unwrap_or_default().to_string();
-
-        (name, data)
-    }
-
-    pub fn from_json(name: String, data: String) -> Result<Self> {
-        match name.as_str() {
-            Self::CONTRACT_SETUP_COMPLETED_EVENT | Self::ROLLOVER_COMPLETED_EVENT => {
-                from_json_inner_cached(name, data)
-            }
-            _ => from_json_inner(name, data),
-        }
-    }
-}
-
 impl fmt::Display for EventKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use EventKind::*;
@@ -576,24 +540,43 @@ impl fmt::Display for EventKind {
     }
 }
 
-// Deserialisation of events has been proved to use substantial amount of the CPU.
-// Cache the events.
-#[cached(size = 500, result = true)]
-fn from_json_inner_cached(name: String, data: String) -> Result<EventKind> {
-    from_json_inner(name, data)
-}
+impl EventKind {
+    pub const CONTRACT_SETUP_STARTED: &'static str = "ContractSetupCompleted";
+    pub const CONTRACT_SETUP_COMPLETED_EVENT: &'static str = "ContractSetupCompleted";
+    pub const ROLLOVER_COMPLETED_EVENT: &'static str = "RolloverCompleted";
+    pub const COLLABORATIVE_SETTLEMENT_CONFIRMED: &'static str = "CollaborativeSettlementConfirmed";
+    pub const CET_CONFIRMED: &'static str = "CetConfirmed";
+    pub const REFUND_CONFIRMED: &'static str = "RefundConfirmed";
+    pub const CONTRACT_SETUP_FAILED: &'static str = "ContractSetupFailed";
+    pub const OFFER_REJECTED: &'static str = "OfferRejected";
 
-fn from_json_inner(name: String, data: String) -> Result<EventKind> {
-    use serde_json::json;
+    pub fn to_json(&self) -> (String, String) {
+        let value = serde_json::to_value(self).expect("serialization to always work");
+        let object = value.as_object().expect("always an object");
 
-    let data = serde_json::from_str::<serde_json::Value>(&data)?;
+        let name = object
+            .get("name")
+            .expect("to have property `name`")
+            .as_str()
+            .expect("name to be `string`")
+            .to_owned();
+        let data = object.get("data").cloned().unwrap_or_default().to_string();
 
-    let event = serde_json::from_value::<EventKind>(json!({
-        "name": name,
-        "data": data
-    }))?;
+        (name, data)
+    }
 
-    Ok(event)
+    pub fn from_json(name: String, data: String) -> Result<Self> {
+        use serde_json::json;
+
+        let data = serde_json::from_str::<serde_json::Value>(&data)?;
+
+        let event = serde_json::from_value::<EventKind>(json!({
+            "name": name,
+            "data": data
+        }))?;
+
+        Ok(event)
+    }
 }
 
 /// Models the cfd state of the taker
