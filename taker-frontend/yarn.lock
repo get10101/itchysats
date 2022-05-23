@@ -5856,10 +5856,10 @@ react-style-singleton@^2.2.0:
     invariant "^2.2.4"
     tslib "^2.0.0"
 
-react-use-websocket@^4.1.0:
-  version "4.1.0"
-  resolved "https://registry.yarnpkg.com/react-use-websocket/-/react-use-websocket-4.1.0.tgz#b9eb0df44950390795879f47b5f3aee5b8fd6851"
-  integrity sha512-agCpI+RHhPJVVDpZkZUoac84O5AVW7R2y25wqdbNFXBu8FKJcAkjPbnIzomRShQqdEKobmSfPFgExcSlZSWLYw==
+react-use-websocket@^4.2.0:
+  version "4.2.0"
+  resolved "https://registry.yarnpkg.com/react-use-websocket/-/react-use-websocket-4.2.0.tgz#658c4e44ee5e0fc3d29a66c2a753a72754a5db87"
+  integrity sha512-ZovaTlc/tWX6a590fi3kMWImhyoWj46BWJWvO5oucZJzRnVVhYtes2D9g+5MKXjSdR7Es3456hB89v4/1pcBKg==
 
 react@^18.1.0:
   version "18.1.0"
