@@ -360,7 +360,6 @@ function Leverage({ leverage_choices, onChange, currentChoice, isLong }: Leverag
                     <FormLabel>Leverage</FormLabel>
                 </Center>
                 <Slider
-                    isDisabled={true}
                     value={currentChoice}
                     min={min}
                     max={max}
