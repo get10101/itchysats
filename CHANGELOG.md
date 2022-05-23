@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.17] - 2022-05-23
+
+- Culling old DLC data from database, i.e. we remove old DLC data which is not needed anymore. This reduces the db size and is more efficient when loading
+
 ## [0.4.16] - 2022-05-13
 
 ### Changed
@@ -166,7 +170,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.16...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.17...HEAD
+[0.4.17]: https://github.com/itchysats/itchysats/compare/0.4.16...0.4.17
 [0.4.16]: https://github.com/itchysats/itchysats/compare/0.4.15...0.4.16
 [0.4.15]: https://github.com/itchysats/itchysats/compare/0.4.14...0.4.15
 [0.4.14]: https://github.com/itchysats/itchysats/compare/0.4.13...0.4.14
