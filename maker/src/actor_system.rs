@@ -55,7 +55,6 @@ pub struct ActorSystem<O, W> {
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
     _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
-    _listener_actor: Address<listener::Actor>,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -160,7 +159,7 @@ where
 
         tasks.add(endpoint_context.run(endpoint));
 
-        let (supervisor, listener_actor) = supervisor::Actor::with_policy(
+        let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
             move || {
                 let endpoint_addr = endpoint_addr.clone();
                 let endpoint_listen = listen_multiaddr.clone();
@@ -211,7 +210,6 @@ where
             _listener_supervisor: listener_supervisor,
             _position_metrics_actor: position_metrics_actor,
             _cull_old_dlcs_actor,
-            _listener_actor: listener_actor,
         })
     }
 
