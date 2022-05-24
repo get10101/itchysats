@@ -22,7 +22,6 @@ use daemon_tests::Maker;
 use daemon_tests::MakerConfig;
 use daemon_tests::Taker;
 use daemon_tests::TakerConfig;
-use model::calculate_margin;
 use model::olivia;
 use model::Identity;
 use model::Leverage;
@@ -152,22 +151,30 @@ fn assert_eq_offers(published: MakerOffers, received: MakerOffers) {
 }
 
 fn assert_eq_orders(mut published: CfdOrder, received: CfdOrder) {
-    // align margin_per_lot to be the long margin_per_lot
-    let long_margin_per_lot = calculate_margin(published.price, published.lot_size, Leverage::TWO);
-    published.margin_per_lot = long_margin_per_lot;
+    // we fix the leverage to TWO for our test
+    let fixed_leverage = Leverage::TWO;
 
     // make sure that the initial funding fee per lot is flipped
     // note: we publish as maker and receive as taker, the funding fee is to be received by one
     // party and paid by the other
-    assert_eq!(
-        published.initial_funding_fee_per_lot,
-        received.initial_funding_fee_per_lot * -1
-    );
-    // align initial_funding_fee_per_lot so we can assert on the order
-    published.initial_funding_fee_per_lot = received.initial_funding_fee_per_lot;
 
-    // align liquidation price so we can assert on the order
-    published.liquidation_price = received.liquidation_price;
+    assert_eq!(
+        published
+            .leverage_details
+            .iter()
+            .find(|l| l.leverage == fixed_leverage)
+            .unwrap()
+            .initial_funding_fee_per_lot,
+        received
+            .leverage_details
+            .iter()
+            .find(|l| l.leverage == fixed_leverage)
+            .unwrap()
+            .initial_funding_fee_per_lot
+            * -1
+    );
+    // align leverage details so we can assert on the order
+    published.leverage_details = received.leverage_details.clone();
 
     assert_eq!(published, received);
 

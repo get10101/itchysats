@@ -38,7 +38,7 @@ function OrderTile(
                     <Text>{maker_offer.max_quantity}</Text>
 
                     <Text width={labelWidth}>Leverage Choices</Text>
-                    <Text>[{maker_offer.leverage_choices.map(leverage => `${leverage},`)}]</Text>
+                    <Text>[{maker_offer.leverage_details.map(leverage => `${leverage.leverage},`)}]</Text>
 
                     <Text width={labelWidth}>Opening Fee</Text>
                     <Text>{maker_offer.opening_fee}</Text>
@@ -47,7 +47,7 @@ function OrderTile(
                     <Text>{maker_offer.funding_rate_hourly_percent}</Text>
 
                     <Text width={labelWidth}>Liquidation Price</Text>
-                    <Text whiteSpace="nowrap">{maker_offer.liquidation_price}</Text>
+                    <Text>[{maker_offer.leverage_details.map(leverage => `${leverage.liquidation_price},`)}]</Text>
                 </Grid>
             </VStack>
         </Box>

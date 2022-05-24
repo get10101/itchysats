@@ -62,15 +62,12 @@ export default function Trade({
     offer: {
         id: orderId,
         price: priceAsNumber,
-        initialFundingFeePerLot,
-        marginPerLot,
-        liquidationPrice: liquidationPriceAsNumber,
         fundingRateAnnualized,
         fundingRateHourly,
         minQuantity,
         maxQuantity,
         lotSize,
-        leverage_choices,
+        leverageDetails,
     },
     connectedToMaker,
     walletBalance,
@@ -81,6 +78,9 @@ export default function Trade({
     let [quantity, setQuantity] = useState(0);
     let [leverage, setLeverage] = useState(2);
     let [userHasEdited, setUserHasEdited] = useState(false);
+
+    const currentLeverageDetails = leverageDetails.find((leverageDetail) => leverageDetail.leverage === leverage);
+    const leverageChoices = leverageDetails.map((leverageDetail) => leverageDetail.leverage);
 
     // We update the quantity because the offer can change any time.
     useEffect(() => {
@@ -96,9 +96,9 @@ export default function Trade({
 
     const { isOpen, onOpen, onClose } = useDisclosure();
 
-    const margin = (quantity / lotSize) * (marginPerLot || 0);
-    const feeForFirstSettlementInterval = (quantity / lotSize) * (initialFundingFeePerLot || 0);
-
+    const margin = (quantity / lotSize) * (currentLeverageDetails?.margin_per_lot || 0);
+    const feeForFirstSettlementInterval = (quantity / lotSize)
+        * (currentLeverageDetails?.initial_funding_fee_per_lot || 0);
     const balanceTooLow = walletBalance < margin;
 
     const quantityTooHigh = maxQuantity < quantity;
@@ -211,7 +211,7 @@ export default function Trade({
                     </GridItem>
                     <GridItem colSpan={1} paddingLeft={5} paddingRight={5}>
                         <Leverage
-                            leverage_choices={leverage_choices}
+                            leverage_choices={leverageChoices}
                             currentChoice={leverage}
                             onChange={setLeverage}
                             isLong={isLong}
@@ -291,7 +291,7 @@ export default function Trade({
                                 quantity={quantity}
                                 margin={margin}
                                 leverage={leverage}
-                                liquidationPriceAsNumber={liquidationPriceAsNumber}
+                                liquidationPriceAsNumber={currentLeverageDetails?.liquidation_price || 0}
                                 feeForFirstSettlementInterval={feeForFirstSettlementInterval}
                                 fundingRateHourly={fundingRateHourly || 0}
                                 fundingRateAnnualized={fundingRateAnnualized || 0}
