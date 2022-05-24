@@ -33,6 +33,7 @@ use shared_bin::catchers::default_catchers;
 use shared_bin::fairings;
 use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
+use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -341,9 +342,9 @@ async fn main() -> Result<()> {
         taker_peer_id: identities.libp2p.public().to_peer_id().to_string(),
     };
 
-    let environment = match option_env!("ITCHYSATS_ENV") {
-        Some(environment) => Environment::from_str_or_unknown(environment),
-        None => Environment::Binary,
+    let environment = match env::var("ITCHYSATS_ENV") {
+        Ok(environment) => Environment::from_str_or_unknown(environment.as_str()),
+        Err(_) => Environment::Binary,
     };
 
     let taker = TakerActorSystem::new(
