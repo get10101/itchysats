@@ -82,7 +82,6 @@ pub struct TakerActorSystem<O, W, P> {
     /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
     /// address.
     _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
-    _dialer_actor: Address<dialer::Actor>,
     _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
@@ -227,7 +226,7 @@ where
         let dialer_constructor =
             { move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone()) };
 
-        let (supervisor, dialer_actor) = supervisor::Actor::with_policy(
+        let (supervisor, _dialer_actor) = supervisor::Actor::with_policy(
             dialer_constructor,
             |_: &dialer::Error| true, // always restart dialer actor
         );
@@ -259,7 +258,6 @@ where
             price_feed_actor,
             executor,
             _price_feed_supervisor: price_feed_supervisor,
-            _dialer_actor: dialer_actor,
             _dialer_supervisor: dialer_supervisor,
             _close_cfds_actor: close_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
