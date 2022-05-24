@@ -30,8 +30,8 @@ struct Metrics {
     pub num_panics: u64,
 }
 
-#[derive(Debug)]
-struct UnitReason {}
+#[derive(Debug, Clone, Copy)]
+pub struct UnitReason {}
 
 impl fmt::Display for UnitReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
