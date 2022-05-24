@@ -53,7 +53,6 @@ pub mod position_metrics;
 pub mod process_manager;
 pub mod projection;
 pub mod rollover;
-pub mod rollover_taker;
 pub mod seed;
 pub mod setup_contract;
 pub mod setup_taker;
@@ -76,7 +75,7 @@ pub struct TakerActorSystem<O, W, P> {
     pub cfd_actor: Address<taker_cfd::Actor<O, W>>,
     pub connection_actor: Address<connection::Actor>,
     wallet_actor: Address<W>,
-    pub auto_rollover_actor: Address<auto_rollover::Actor<O>>,
+    pub auto_rollover_actor: Address<auto_rollover::Actor>,
     pub price_feed_actor: Address<P>,
     executor: command::Executor,
     /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
@@ -161,7 +160,7 @@ where
             wallet_actor_addr.clone(),
             oracle_pk,
             projection_actor,
-            process_manager_addr.clone(),
+            process_manager_addr,
             connection_actor_addr.clone(),
             oracle_addr.clone(),
             n_payouts,
@@ -188,17 +187,9 @@ where
         .create(None)
         .spawn(&mut tasks);
 
-        let auto_rollover_addr = auto_rollover::Actor::new(
-            db.clone(),
-            oracle_pk,
-            process_manager_addr,
-            connection_actor_addr.clone(),
-            oracle_addr,
-            libp2p_rollover_addr,
-            n_payouts,
-        )
-        .create(None)
-        .spawn(&mut tasks);
+        let auto_rollover_addr = auto_rollover::Actor::new(db.clone(), libp2p_rollover_addr)
+            .create(None)
+            .spawn(&mut tasks);
 
         tasks.add(
             connection_actor_ctx

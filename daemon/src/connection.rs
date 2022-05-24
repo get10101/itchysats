@@ -1,7 +1,6 @@
 use crate::collab_settlement_taker;
 use crate::future_ext::FutureExt;
 use crate::noise;
-use crate::rollover_taker;
 use crate::setup_taker;
 use crate::taker_cfd::CurrentMakerOffers;
 use crate::version;
@@ -167,7 +166,6 @@ pub struct Actor {
     state: State,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
-    rollover_actors: AddressMap<OrderId, rollover_taker::Actor>,
 }
 
 #[derive(Clone, Copy)]
@@ -222,12 +220,6 @@ pub struct ProposeSettlement {
     pub address: xtra::Address<collab_settlement_taker::Actor>,
 }
 
-pub struct ProposeRollover {
-    pub order_id: OrderId,
-    pub timestamp: Timestamp,
-    pub address: xtra::Address<rollover_taker::Actor>,
-}
-
 impl Actor {
     pub fn new(
         status_sender: watch::Sender<ConnectionStatus>,
@@ -250,7 +242,6 @@ impl Actor {
             setup_actors: AddressMap::default(),
             connect_timeout,
             collab_settlement_actors: AddressMap::default(),
-            rollover_actors: AddressMap::default(),
             peer_id,
         }
     }
@@ -301,25 +292,6 @@ impl Actor {
             .await?;
 
         self.collab_settlement_actors.insert(order_id, address);
-
-        Ok(())
-    }
-
-    async fn handle_propose_rollover(&mut self, msg: ProposeRollover) -> Result<()> {
-        let ProposeRollover {
-            order_id,
-            timestamp,
-            address,
-        } = msg;
-
-        self.state
-            .send(wire::TakerToMaker::ProposeRolloverV3 {
-                order_id,
-                timestamp,
-            })
-            .await?;
-
-        self.rollover_actors.insert(order_id, address);
 
         Ok(())
     }
@@ -492,43 +464,14 @@ impl Actor {
                     tracing::warn!(%order_id, "No active collaborative settlement")
                 }
             }
-            wire::MakerToTaker::ConfirmRollover {
-                order_id,
-                oracle_event_id,
-                tx_fee_rate,
-                funding_rate,
-                complete_fee,
-            } => {
-                if let Err(NotConnected(_)) = self
-                    .rollover_actors
-                    .send_async(
-                        &order_id,
-                        rollover_taker::RolloverAccepted {
-                            oracle_event_id,
-                            tx_fee_rate,
-                            funding_rate,
-                            complete_fee: complete_fee.into(),
-                        },
-                    )
-                    .await
-                {
-                    tracing::warn!(%order_id, "No active rollover");
-                }
+            wire::MakerToTaker::ConfirmRollover { .. } => {
+                tracing::error!("legacy handler - use libp2p rollover instead")
             }
-            wire::MakerToTaker::RejectRollover(order_id) => {
-                if let Err(NotConnected(_)) = self
-                    .rollover_actors
-                    .send_async(&order_id, rollover_taker::RolloverRejected)
-                    .await
-                {
-                    tracing::warn!(%order_id, "No active rollover");
-                }
+            wire::MakerToTaker::RejectRollover(_) => {
+                tracing::error!("legacy handler - use libp2p rollover instead")
             }
-            wire::MakerToTaker::RolloverProtocol { order_id, msg } => {
-                if let Err(NotConnected(_)) = self.rollover_actors.send_async(&order_id, msg).await
-                {
-                    tracing::warn!(%order_id, "No active rollover");
-                }
+            wire::MakerToTaker::RolloverProtocol { .. } => {
+                tracing::error!("legacy handler - use libp2p rollover instead")
             }
             wire::MakerToTaker::CurrentOffers(maker_offers) => {
                 let _ = self
