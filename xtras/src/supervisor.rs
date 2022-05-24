@@ -18,6 +18,7 @@ pub struct Actor<T, R> {
     ctor: Box<dyn Fn() -> T + Send + 'static>,
     tasks: Tasks,
     restart_policy: Box<dyn FnMut(&R) -> bool + Send + 'static>,
+    _actor: Address<T>, // kept around to ensure that the supervised actor stays alive
     metrics: Metrics,
 }
 
@@ -64,6 +65,7 @@ where
             ctor: Box::new(ctor),
             tasks: Tasks::default(),
             restart_policy: Box::new(|UnitReason {}| true),
+            _actor: address.clone(),
             metrics: Metrics::default(),
         };
 
@@ -93,6 +95,7 @@ where
             ctor: Box::new(ctor),
             tasks: Tasks::default(),
             restart_policy: Box::new(restart_policy),
+            _actor: address.clone(),
             metrics: Metrics::default(),
         };
 
