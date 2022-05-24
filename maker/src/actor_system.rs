@@ -160,11 +160,7 @@ where
         tasks.add(endpoint_context.run(endpoint));
 
         let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
-            move || {
-                let endpoint_addr = endpoint_addr.clone();
-                let endpoint_listen = listen_multiaddr.clone();
-                listener::Actor::new(endpoint_addr, endpoint_listen)
-            },
+            move || listener::Actor::new(endpoint_addr.clone(), listen_multiaddr.clone()),
             |_: &listener::Error| true, // always restart listener actor
         );
         let listener_supervisor = supervisor.create(None).spawn(&mut tasks);
