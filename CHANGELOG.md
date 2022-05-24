@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The API for retrieving offers now returns `leverage_details` which is a set of leverages including pre-computed values for margin, liquidation price and initial funding fee.
+- Taker can choose a leverage provided the maker offers a selection of leverage.
+
 ## [0.4.17] - 2022-05-23
 
 - Culling old DLC data from database, i.e. we remove old DLC data which is not needed anymore. This reduces the db size and is more efficient when loading

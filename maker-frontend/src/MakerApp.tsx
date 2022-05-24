@@ -1,11 +1,14 @@
 import {
     Box,
     Button,
+    Checkbox,
+    CheckboxGroup,
     Container,
     Divider,
     Grid,
     GridItem,
     HStack,
+    Stack,
     Switch,
     Tab,
     TabList,
@@ -37,6 +40,8 @@ export default function App() {
     document.title = "Hermes Maker";
 
     let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });
+
+    let [leverages, setLeverages] = useState(["1", "2", "3"]);
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
@@ -153,13 +158,17 @@ export default function App() {
                             </HStack>
                         </HStack>
 
-                        {/* TODO: change this to checkboxes */}
                         <Text>Leverage:</Text>
-                        <HStack spacing={5}>
-                            <Button disabled={true}>x1</Button>
-                            <Button colorScheme="blue" variant="solid">x{2}</Button>
-                            <Button disabled={true}>x5</Button>
-                        </HStack>
+                        <CheckboxGroup
+                            defaultValue={leverages}
+                            onChange={(value) => setLeverages(value.map((v) => v.toString()))}
+                        >
+                            <Stack spacing={[1, 5]} direction={["column", "row"]}>
+                                <Checkbox value="1">1x</Checkbox>
+                                <Checkbox value="2">2x</Checkbox>
+                                <Checkbox value="3">3x</Checkbox>
+                            </Stack>
+                        </CheckboxGroup>
 
                         <GridItem colSpan={2}>
                             <Divider colSpan={2} />
@@ -183,7 +192,7 @@ export default function App() {
                                         tx_fee_rate: Number.parseFloat("1"),
                                         // TODO: This is is in sats which is not really in line with other APIs for the maker
                                         opening_fee: Number.parseFloat("100"),
-                                        leverage_choices: [1, 2],
+                                        leverage_choices: leverages.map((val) => Number.parseInt(val)),
                                     };
                                     makeNewCfdSellOrder(payload);
                                 }}

@@ -1258,15 +1258,19 @@ pub struct CfdOrder {
     #[serde(with = "round_to_two_dp")]
     pub lot_size: Usd,
 
-    pub leverage_choices: Vec<Leverage>,
-
-    /// Own liquidation price according to position and leverage
-    #[serde(with = "round_to_two_dp")]
-    pub liquidation_price: Price,
+    /// Contains liquidation price, margin and initial fund amount per leverage
+    pub leverage_details: Vec<LeverageDetails>,
 
     pub creation_timestamp: Timestamp,
     pub settlement_time_interval_in_secs: u64,
+}
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct LeverageDetails {
+    pub leverage: Leverage,
+    /// Own liquidation price according to position and leverage
+    #[serde(with = "round_to_two_dp")]
+    pub liquidation_price: Price,
     /// Margin per lot from the perspective of the role
     ///
     /// Since this is a calculated value that we need in the UI this value is based on the
@@ -1296,39 +1300,44 @@ impl TryFrom<Order> for CfdOrder {
             Origin::Theirs => order.position_maker.counter_position(),
         };
 
-        // FIXME: this won't work anymore because we don't know what leverage the user wants to
-        // take. I'll fix it to Leverage::2 for now as this is our only choice but this
-        // needs to be fixed!
-        let (long_leverage, short_leverage) =
-            long_and_short_leverage(Leverage::TWO, role, own_position);
+        let leverage_details = order
+            .leverage_choices
+            .iter()
+            .map(|leverage| {
+                let liquidation_price = match own_position {
+                    Position::Long => calculate_long_liquidation_price(*leverage, order.price),
+                    Position::Short => calculate_short_liquidation_price(*leverage, order.price),
+                };
+                // Margin per lot price is dependent on one's own leverage
+                let margin_per_lot = calculate_margin(order.price, lot_size, *leverage);
 
-        let initial_funding_fee_per_lot = FundingFee::calculate(
-            order.price,
-            lot_size,
-            long_leverage,
-            short_leverage,
-            order.funding_rate,
-            SETTLEMENT_INTERVAL.whole_hours(),
-        )
-        .context("unable to calculate initial funding fee")?;
+                let (long_leverage, short_leverage) =
+                    long_and_short_leverage(*leverage, role, own_position);
 
-        // Use a temporary fee account to define the funding fee's sign
-        let temp_fee_account = FeeAccount::new(own_position, role);
-        let initial_funding_fee_per_lot = temp_fee_account
-            .add_funding_fee(initial_funding_fee_per_lot)
-            .balance();
+                let initial_funding_fee_per_lot = FundingFee::calculate(
+                    order.price,
+                    lot_size,
+                    long_leverage,
+                    short_leverage,
+                    order.funding_rate,
+                    SETTLEMENT_INTERVAL.whole_hours(),
+                )
+                .context("unable to calculate initial funding fee")?;
 
-        // Liquidation price is dependent on one's own leverage
-        let liquidation_price = match own_position {
-            Position::Long => calculate_long_liquidation_price(long_leverage, order.price),
-            Position::Short => calculate_short_liquidation_price(short_leverage, order.price),
-        };
+                // Use a temporary fee account to define the funding fee's sign
+                let temp_fee_account = FeeAccount::new(own_position, role);
+                let initial_funding_fee_per_lot = temp_fee_account
+                    .add_funding_fee(initial_funding_fee_per_lot)
+                    .balance();
 
-        // Margin per lot price is dependent on one's own leverage
-        let margin_per_lot = match own_position {
-            Position::Long => calculate_margin(order.price, lot_size, long_leverage),
-            Position::Short => calculate_margin(order.price, lot_size, short_leverage),
-        };
+                Ok(LeverageDetails {
+                    leverage: *leverage,
+                    liquidation_price,
+                    margin_per_lot,
+                    initial_funding_fee_per_lot,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             id: order.id,
@@ -1338,9 +1347,7 @@ impl TryFrom<Order> for CfdOrder {
             min_quantity: order.min_quantity,
             max_quantity: order.max_quantity,
             lot_size,
-            margin_per_lot,
-            leverage_choices: order.leverage_choices,
-            liquidation_price,
+            leverage_details,
             creation_timestamp: order.creation_timestamp_maker,
             settlement_time_interval_in_secs: order
                 .settlement_interval
@@ -1351,7 +1358,6 @@ impl TryFrom<Order> for CfdOrder {
             funding_rate_annualized_percent: AnnualisedFundingPercent::from(order.funding_rate)
                 .to_string(),
             funding_rate_hourly_percent: HourlyFundingPercent::from(order.funding_rate).to_string(),
-            initial_funding_fee_per_lot,
         })
     }
 }

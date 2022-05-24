@@ -17,15 +17,18 @@ export interface MakerOffer {
     min_quantity: number;
     max_quantity: number;
     lot_size: number;
-    margin_per_lot: number;
-    leverage_choices: number[];
-    liquidation_price: number;
-    creation_timestamp: number;
     settlement_time_interval_in_secs: number;
-
+    leverage_details: LeverageDetails[];
     opening_fee: number;
     funding_rate_annualized_percent: number; // e.g. "18.5" (does not include % char)
     funding_rate_hourly_percent: number; // e.g. "0.002345" (does not include % char)
+    creation_timestamp: number;
+}
+
+export interface LeverageDetails {
+    leverage: number;
+    liquidation_price: number;
+    margin_per_lot: number;
     initial_funding_fee_per_lot: number;
 }
 

@@ -152,12 +152,6 @@ pub async fn post_order_request(
     taker: &State<Taker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
-    // TODO: remove me. This is a temporary fix to ensure no one tries to use a different leverage
-    // for now
-    if cfd_order_request.leverage != Leverage::TWO {
-        return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
-            .title("Invalid leverage selected. For time being, please go with leverage 2."));
-    }
     taker
         .take_offer(
             cfd_order_request.order_id,

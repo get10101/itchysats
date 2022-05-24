@@ -39,6 +39,7 @@ import {
     intoCfd,
     intoMakerOffer,
     isClosed,
+    LeverageDetails,
     MakerOffer,
     WalletInfo,
 } from "./types";
@@ -48,17 +49,14 @@ import useLatestEvent from "./useLatestEvent";
 export interface Offer {
     id?: string;
     price?: number;
-    marginPerLot?: number;
-    initialFundingFeePerLot?: number;
-    liquidationPrice?: number;
     fundingRateAnnualized?: number;
     fundingRateHourly?: number;
+    leverageDetails: LeverageDetails[];
 
     // defaulted for display purposes
     minQuantity: number;
     maxQuantity: number;
     lotSize: number;
-    leverage_choices: number[];
 }
 
 // TODO: Evaluate moving these globals into the theme to make them accessible through that
@@ -100,24 +98,21 @@ export const App = () => {
         if (offer) {
             return {
                 id: offer.id,
-                initialFundingFeePerLot: offer.initial_funding_fee_per_lot,
-                marginPerLot: offer.margin_per_lot,
                 price: offer.price,
-                liquidationPrice: offer.liquidation_price,
                 fundingRateAnnualized: offer.funding_rate_annualized_percent,
                 fundingRateHourly: toFixedNumber(offer.funding_rate_hourly_percent, 5),
                 minQuantity: offer.min_quantity,
                 maxQuantity: offer.max_quantity,
                 lotSize: offer.lot_size,
-                leverage_choices: offer.leverage_choices,
+                leverageDetails: offer.leverage_details,
             };
         }
 
         return {
+            leverageDetails: [],
             minQuantity: 0,
             maxQuantity: 0,
             lotSize: 100,
-            leverage_choices: [],
         };
     }
 
