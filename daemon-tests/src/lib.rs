@@ -16,6 +16,7 @@ use daemon::projection::Feeds;
 use daemon::projection::MakerOffers;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
+use daemon::Environment;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use model::libp2p::PeerId;
@@ -371,6 +372,7 @@ impl Taker {
             projection_actor,
             maker_identity,
             maker_multiaddr.clone(),
+            Environment::Test,
         )
         .unwrap();
 

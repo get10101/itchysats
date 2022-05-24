@@ -7,6 +7,7 @@ use crate::version;
 use crate::wire;
 use crate::wire::EncryptedJsonCodec;
 use crate::wire::Version;
+use crate::Environment;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -166,6 +167,7 @@ pub struct Actor {
     state: State,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
     collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
+    environment: Environment,
 }
 
 #[derive(Clone, Copy)]
@@ -228,6 +230,7 @@ impl Actor {
         peer_id: PeerId,
         maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
+        environment: Environment,
     ) -> Self {
         Self {
             status_sender,
@@ -243,6 +246,7 @@ impl Actor {
             connect_timeout,
             collab_settlement_actors: AddressMap::default(),
             peer_id,
+            environment,
         }
     }
 }
@@ -332,10 +336,11 @@ impl Actor {
 
         let proposed_version = Version::LATEST;
         write
-            .send(wire::TakerToMaker::HelloV3 {
+            .send(wire::TakerToMaker::HelloV4 {
                 proposed_wire_version: proposed_version.clone(),
                 daemon_version: version::version().to_string(),
                 peer_id: self.peer_id,
+                environment: self.environment.into(),
             })
             .timeout(TCP_TIMEOUT)
             .await??;

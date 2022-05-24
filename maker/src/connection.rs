@@ -12,6 +12,7 @@ use daemon::noise::TransportStateExt;
 use daemon::wire;
 use daemon::wire::taker_to_maker;
 use daemon::wire::EncryptedJsonCodec;
+use daemon::Environment;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
@@ -417,6 +418,7 @@ impl Actor {
             address,
             wire_version,
             daemon_version,
+            environment,
         }: ConnectionReady,
         ctx: &mut xtra::Context<Self>,
     ) {
@@ -496,9 +498,9 @@ impl Actor {
             .inc();
 
         if let Some(peer_id) = peer_id {
-            tracing::debug!(taker_id = %identity, taker_addres = %address, %wire_version, %daemon_version, %peer_id, "Connection is ready");
+            tracing::debug!(taker_id = %identity, taker_addres = %address, %wire_version, %daemon_version, %environment, %peer_id, "Connection is ready");
         } else {
-            tracing::debug!(taker_id = %identity, taker_addres = %address, %wire_version, %daemon_version, "Connection is ready");
+            tracing::debug!(taker_id = %identity, taker_addres = %address, %wire_version, %daemon_version, %environment, "Connection is ready");
         }
     }
 
@@ -575,7 +577,7 @@ impl Actor {
                 // dispatch to the maker cfd actor
                 let _ = self.taker_msg_channel.send_async_safe(msg).await;
             }
-            Hello(_) | HelloV2 { .. } | HelloV3 { .. } => {
+            Hello(_) | HelloV2 { .. } | HelloV3 { .. } | HelloV4 { .. } => {
                 if cfg!(debug_assertions) {
                     unreachable!("Message {} is not dispatched to this actor", msg.msg.name())
                 }
@@ -616,17 +618,40 @@ async fn upgrade(
         .context("Failed to read first message on stream")?
         .context("Stream closed before first message")?;
 
-    let (proposed_wire_version, daemon_version, peer_id) = match first_message {
-        wire::TakerToMaker::Hello(proposed_wire_version) => (proposed_wire_version, None, None),
+    let (proposed_wire_version, daemon_version, peer_id, environment) = match first_message {
+        wire::TakerToMaker::Hello(proposed_wire_version) => {
+            (proposed_wire_version, None, None, Environment::Legacy)
+        }
         wire::TakerToMaker::HelloV2 {
             proposed_wire_version,
             daemon_version,
-        } => (proposed_wire_version, Some(daemon_version), None),
+        } => (
+            proposed_wire_version,
+            Some(daemon_version),
+            None,
+            Environment::Legacy,
+        ),
         wire::TakerToMaker::HelloV3 {
             proposed_wire_version,
             daemon_version,
             peer_id,
-        } => (proposed_wire_version, Some(daemon_version), Some(peer_id)),
+        } => (
+            proposed_wire_version,
+            Some(daemon_version),
+            Some(peer_id),
+            Environment::Legacy,
+        ),
+        wire::TakerToMaker::HelloV4 {
+            proposed_wire_version,
+            daemon_version,
+            peer_id,
+            environment,
+        } => (
+            proposed_wire_version,
+            Some(daemon_version),
+            Some(peer_id),
+            environment.into(),
+        ),
         unexpected_message => {
             bail!(
                 "Unexpected message {} from taker {taker_id}",
@@ -667,6 +692,7 @@ async fn upgrade(
             address: taker_address,
             wire_version: negotiated_wire_version,
             daemon_version,
+            environment,
         })
         .await;
 
@@ -681,6 +707,7 @@ struct ConnectionReady {
     address: SocketAddr,
     wire_version: wire::Version,
     daemon_version: String,
+    environment: Environment,
 }
 
 struct ReadFail {

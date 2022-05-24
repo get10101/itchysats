@@ -19,6 +19,7 @@ use model::OrderId;
 use model::Price;
 use model::Role;
 use model::Usd;
+use parse_display::Display;
 use seed::Identities;
 use std::time::Duration;
 use time::ext::NumericalDuration;
@@ -116,6 +117,7 @@ where
         projection_actor: Address<projection::Actor>,
         maker_identity: Identity,
         maker_multiaddr: Multiaddr,
+        environment: Environment,
     ) -> Result<Self>
     where
         M: Handler<monitor::StartMonitoring>
@@ -201,6 +203,7 @@ where
                     identity.peer_id(),
                     maker_heartbeat_interval,
                     connect_timeout,
+                    environment,
                 )),
         );
 
@@ -335,5 +338,27 @@ where
                 fee: Some(fee_rate),
             })
             .await?
+    }
+}
+
+#[derive(Debug, Copy, Clone, Display)]
+pub enum Environment {
+    Umbrel,
+    RaspiBlitz,
+    Docker,
+    Binary,
+    Test,
+    Legacy,
+    Unknown,
+}
+
+impl Environment {
+    pub fn from_str_or_unknown(s: &str) -> Environment {
+        match s {
+            "umbrel" => Environment::Umbrel,
+            "raspiblitz" => Environment::RaspiBlitz,
+            "docker" => Environment::Docker,
+            _ => Environment::Unknown,
+        }
     }
 }

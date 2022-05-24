@@ -795,6 +795,7 @@ where
             | wire::TakerToMaker::Hello(_)
             | wire::TakerToMaker::HelloV2 { .. }
             | wire::TakerToMaker::HelloV3 { .. }
+            | wire::TakerToMaker::HelloV4 { .. }
             | wire::TakerToMaker::Unknown => {
                 if cfg!(debug_assertions) {
                     unreachable!("Message {} is not dispatched to this actor", msg.name())

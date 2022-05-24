@@ -1,5 +1,7 @@
 FROM gcr.io/distroless/cc
 
+ENV ITCHYSATS_ENV=docker
+
 USER 1000
 
 LABEL "org.opencontainers.image.source"="https://github.com/itchysats/itchysats"
