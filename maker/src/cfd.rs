@@ -533,37 +533,46 @@ impl<O, T, W> Actor<O, T, W> {
 
         if can_use_libp2p(&cfd) {
             // Using send here is fine because we dispatch to a task internally
-            self.libp2p_rollover
+            match self
+                .libp2p_rollover
                 .send(daemon::rollover::maker::Accept {
                     order_id,
                     tx_fee_rate: current_offers.tx_fee_rate,
                     long_funding_rate: current_offers.funding_rate_long,
                     short_funding_rate: current_offers.funding_rate_short,
                 })
-                .await??;
-
-            Ok(())
-        } else {
-            match self
-                .rollover_actors
-                .send_async(
-                    &order_id,
-                    rollover::AcceptRollover {
-                        tx_fee_rate: current_offers.tx_fee_rate,
-                        long_funding_rate: current_offers.funding_rate_long,
-                        short_funding_rate: current_offers.funding_rate_short,
-                    },
-                )
                 .await
             {
-                Ok(_) => Ok(()),
-                Err(NotConnected(e)) => {
-                    self.executor
-                        .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
-                        .await?;
-
-                    bail!("Accept failed: No active rollover for order {order_id}")
+                // Return early if dispatch to libp2p rollover worked
+                Ok(Ok(())) => return Ok(()),
+                Ok(Err(error)) => {
+                    tracing::warn!("Try fallback to legacy rollover because unable to dispatch accept to libp2p rollover actor: {error:#}");
                 }
+                Err(error) => {
+                    tracing::warn!("Try fallback to legacy rollover because unable to handle accept via libp2p: {error:#}");
+                }
+            }
+        }
+
+        match self
+            .rollover_actors
+            .send_async(
+                &order_id,
+                rollover::AcceptRollover {
+                    tx_fee_rate: current_offers.tx_fee_rate,
+                    long_funding_rate: current_offers.funding_rate_long,
+                    short_funding_rate: current_offers.funding_rate_short,
+                },
+            )
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(NotConnected(e)) => {
+                self.executor
+                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
+                    .await?;
+
+                bail!("Accept failed: No active rollover for order {order_id}")
             }
         }
     }
@@ -575,25 +584,34 @@ impl<O, T, W> Actor<O, T, W> {
 
         if can_use_libp2p(&cfd) {
             // Using send here is fine because we dispatch to a task internally
-            self.libp2p_rollover
-                .send(daemon::rollover::maker::Reject { order_id })
-                .await??;
-
-            Ok(())
-        } else {
             match self
-                .rollover_actors
-                .send_async(&order_id, rollover::RejectRollover)
+                .libp2p_rollover
+                .send(daemon::rollover::maker::Reject { order_id })
                 .await
             {
-                Ok(_) => Ok(()),
-                Err(NotConnected(e)) => {
-                    self.executor
-                        .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
-                        .await?;
-
-                    bail!("Reject failed: No active rollover for order {order_id}")
+                // Return early if dispatch to libp2p rollover worked
+                Ok(Ok(())) => return Ok(()),
+                Ok(Err(error)) => {
+                    tracing::warn!("Try fallback to legacy rollover because unable to dispatch reject to libp2p rollover actor: {error:#}");
                 }
+                Err(error) => {
+                    tracing::warn!("Try fallback to legacy rollover because unable to handle reject via libp2p: {error:#}");
+                }
+            }
+        }
+
+        match self
+            .rollover_actors
+            .send_async(&order_id, rollover::RejectRollover)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(NotConnected(e)) => {
+                self.executor
+                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
+                    .await?;
+
+                bail!("Reject failed: No active rollover for order {order_id}")
             }
         }
     }
