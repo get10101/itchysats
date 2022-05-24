@@ -107,6 +107,7 @@ struct Connection {
     taker: Identity,
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
     wire_version: wire::Version,
+    environment: Environment,
     daemon_version: String,
     address: SocketAddr,
     _tasks: Tasks,
@@ -232,6 +233,10 @@ impl Actor {
                         connection.wire_version.to_string().as_str(),
                     ),
                     (DAEMON_VERSION_LABEL, connection.daemon_version.as_str()),
+                    (
+                        ENVIRONMENT_LABEL,
+                        connection.environment.to_string().as_str(),
+                    ),
                 ]))
                 .dec();
         } else {
@@ -485,6 +490,7 @@ impl Actor {
                 address,
                 write,
                 wire_version: wire_version.clone(),
+                environment,
                 daemon_version: daemon_version.clone(),
                 _tasks: tasks,
             },
@@ -494,6 +500,7 @@ impl Actor {
             .with(&HashMap::from([
                 (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
                 (DAEMON_VERSION_LABEL, daemon_version.as_str()),
+                (ENVIRONMENT_LABEL, environment.to_string().as_str()),
             ]))
             .inc();
 
@@ -731,13 +738,14 @@ impl xtra::Actor for Actor {
 
 const WIRE_VERSION_LABEL: &str = "wire_version";
 const DAEMON_VERSION_LABEL: &str = "daemon_version";
+const ENVIRONMENT_LABEL: &str = "environment";
 
 static NUM_CONNECTIONS_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
     conquer_once::Lazy::new(|| {
         prometheus::register_int_gauge_vec!(
             "p2p_connections_total",
             "The number of active p2p connections.",
-            &[WIRE_VERSION_LABEL, DAEMON_VERSION_LABEL]
+            &[WIRE_VERSION_LABEL, DAEMON_VERSION_LABEL, ENVIRONMENT_LABEL]
         )
         .unwrap()
     });
