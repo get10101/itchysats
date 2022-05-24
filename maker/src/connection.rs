@@ -429,15 +429,6 @@ impl Actor {
     ) {
         let this = ctx.address().expect("we are alive");
 
-        if let Some(connection) = self.connections.get(&identity) {
-            tracing::debug!(
-                taker_id = %identity,
-                new_address = %address,
-                old_address = %connection.address,
-                "Received second connection from taker: overwriting existing connection with new!"
-            );
-        }
-
         let _: Result<(), xtra::Error> = self
             .taker_connected_channel
             .send_async_safe(cfd::TakerConnected { id: identity })
@@ -483,7 +474,7 @@ impl Actor {
         );
         tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)));
 
-        self.connections.insert(
+        if let Some(old_connection) = self.connections.insert(
             identity,
             Connection {
                 taker: identity,
@@ -494,21 +485,26 @@ impl Actor {
                 daemon_version: daemon_version.clone(),
                 _tasks: tasks,
             },
-        );
-
-        NUM_CONNECTIONS_GAUGE
-            .with(&HashMap::from([
-                (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
-                (DAEMON_VERSION_LABEL, daemon_version.as_str()),
-                (ENVIRONMENT_LABEL, environment.to_string().as_str()),
-            ]))
-            .inc();
-
-        if let Some(peer_id) = peer_id {
-            tracing::debug!(taker_id = %identity, taker_addres = %address, %wire_version, %daemon_version, %environment, %peer_id, "Connection is ready");
+        ) {
+            tracing::debug!(
+                taker_id = %identity,
+                new_address = %address,
+                old_address = %old_connection.address,
+                "Received second connection from taker: overwriting existing connection with new!"
+            );
         } else {
-            tracing::debug!(taker_id = %identity, taker_addres = %address, %wire_version, %daemon_version, %environment, "Connection is ready");
+            // Only increment the NUM_CONNECTIONS_GAUGE if we haven't been connected to a given
+            // TakerId already
+            NUM_CONNECTIONS_GAUGE
+                .with(&HashMap::from([
+                    (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
+                    (DAEMON_VERSION_LABEL, daemon_version.as_str()),
+                    (ENVIRONMENT_LABEL, environment.to_string().as_str()),
+                ]))
+                .inc();
         }
+
+        tracing::debug!(taker_id = %identity, taker_address = %address, %wire_version, %daemon_version, %environment, ?peer_id, "Connection is ready");
     }
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
