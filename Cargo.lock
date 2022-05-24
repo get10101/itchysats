@@ -5238,6 +5238,7 @@ dependencies = [
  "tokio-tasks",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "xtra",
  "xtra_productivity",
 ]
