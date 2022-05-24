@@ -99,6 +99,12 @@ pub enum TakerToMaker {
         daemon_version: String,
         peer_id: PeerId,
     },
+    HelloV4 {
+        proposed_wire_version: Version,
+        daemon_version: String,
+        peer_id: PeerId,
+        environment: Environment,
+    },
     /// This is deprecated, use `TakeOrderWithLeverage` instead
     #[serde(rename = "TakeOrder")]
     DeprecatedTakeOrder {
@@ -168,6 +174,7 @@ impl TakerToMaker {
             TakerToMaker::Hello(_) => "TakerToMaker::Hello",
             TakerToMaker::HelloV2 { .. } => "TakerToMaker::HelloV2",
             TakerToMaker::HelloV3 { .. } => "TakerToMaker::HelloV3",
+            TakerToMaker::HelloV4 { .. } => "TakerToMaker::HelloV4",
             TakerToMaker::Unknown => "TakerToMaker::Unknown",
         }
     }
@@ -183,7 +190,7 @@ impl TakerToMaker {
             | Protocol { order_id, .. }
             | RolloverProtocol { order_id, .. }
             | Settlement { order_id, .. } => Some(*order_id),
-            Hello(_) | HelloV2 { .. } | HelloV3 { .. } | Unknown => None,
+            Hello(_) | HelloV2 { .. } | HelloV3 { .. } | HelloV4 { .. } | Unknown => None,
         }
     }
 }
@@ -660,6 +667,44 @@ impl From<CfdTransactions> for RolloverMsg1 {
             commit: txs.commit.1,
             cets,
             refund: txs.refund.1,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum Environment {
+    Umbrel,
+    RaspiBlitz,
+    Docker,
+    Binary,
+    Test,
+    Unknown,
+}
+
+impl From<crate::Environment> for Environment {
+    fn from(environment: crate::Environment) -> Self {
+        match environment {
+            crate::Environment::Umbrel => Environment::Umbrel,
+            crate::Environment::RaspiBlitz => Environment::RaspiBlitz,
+            crate::Environment::Docker => Environment::Docker,
+            crate::Environment::Binary => Environment::Binary,
+            crate::Environment::Test => Environment::Test,
+
+            // LEGACY not sent over wire; fallback on maker side for legacy Hello messages.
+            crate::Environment::Legacy | crate::Environment::Unknown => Environment::Unknown,
+        }
+    }
+}
+
+impl From<Environment> for crate::Environment {
+    fn from(environment: Environment) -> Self {
+        match environment {
+            Environment::Umbrel => crate::Environment::Umbrel,
+            Environment::RaspiBlitz => crate::Environment::RaspiBlitz,
+            Environment::Docker => crate::Environment::Docker,
+            Environment::Binary => crate::Environment::Binary,
+            Environment::Test => crate::Environment::Test,
+            Environment::Unknown => crate::Environment::Unknown,
         }
     }
 }

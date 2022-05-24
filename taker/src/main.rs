@@ -19,6 +19,7 @@ use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::seed::UmbrelSeed;
 use daemon::wallet;
+use daemon::Environment;
 use daemon::TakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
@@ -340,6 +341,11 @@ async fn main() -> Result<()> {
         taker_peer_id: identities.libp2p.public().to_peer_id().to_string(),
     };
 
+    let environment = match option_env!("ITCHYSATS_ENV") {
+        Some(environment) => Environment::from_str_or_unknown(environment),
+        None => Environment::Binary,
+    };
+
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
@@ -359,6 +365,7 @@ async fn main() -> Result<()> {
         projection_actor.clone(),
         Identity::new(maker_id),
         maker_multiaddr,
+        environment,
     )?;
 
     let (proj_actor, projection_feeds) =
