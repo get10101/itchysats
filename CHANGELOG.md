@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The API for retrieving offers now returns `leverage_details` which is a set of leverages including pre-computed values for margin, liquidation price and initial funding fee.
 - Taker can choose a leverage provided the maker offers a selection of leverage.
+- Rollback that a second connection of a taker would steal the old connection
 
 ## [0.4.17] - 2022-05-23
 
