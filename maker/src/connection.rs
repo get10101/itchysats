@@ -109,7 +109,6 @@ struct Connection {
     wire_version: wire::Version,
     environment: Environment,
     daemon_version: String,
-    address: SocketAddr,
     _tasks: Tasks,
 }
 
@@ -429,6 +428,14 @@ impl Actor {
     ) {
         let this = ctx.address().expect("we are alive");
 
+        if self.connections.contains_key(&identity) {
+            tracing::debug!(
+                taker_id = %identity,
+                "Refusing to accept 2nd connection from already connected taker!"
+            );
+            return;
+        }
+
         let _: Result<(), xtra::Error> = self
             .taker_connected_channel
             .send_async_safe(cfd::TakerConnected { id: identity })
@@ -474,35 +481,25 @@ impl Actor {
         );
         tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)));
 
-        if let Some(old_connection) = self.connections.insert(
+        self.connections.insert(
             identity,
             Connection {
                 taker: identity,
-                address,
                 write,
                 wire_version: wire_version.clone(),
                 environment,
                 daemon_version: daemon_version.clone(),
                 _tasks: tasks,
             },
-        ) {
-            tracing::debug!(
-                taker_id = %identity,
-                new_address = %address,
-                old_address = %old_connection.address,
-                "Received second connection from taker: overwriting existing connection with new!"
-            );
-        } else {
-            // Only increment the NUM_CONNECTIONS_GAUGE if we haven't been connected to a given
-            // TakerId already
-            NUM_CONNECTIONS_GAUGE
-                .with(&HashMap::from([
-                    (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
-                    (DAEMON_VERSION_LABEL, daemon_version.as_str()),
-                    (ENVIRONMENT_LABEL, environment.to_string().as_str()),
-                ]))
-                .inc();
-        }
+        );
+
+        NUM_CONNECTIONS_GAUGE
+            .with(&HashMap::from([
+                (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
+                (DAEMON_VERSION_LABEL, daemon_version.as_str()),
+                (ENVIRONMENT_LABEL, environment.to_string().as_str()),
+            ]))
+            .inc();
 
         tracing::debug!(taker_id = %identity, taker_address = %address, %wire_version, %daemon_version, %environment, ?peer_id, "Connection is ready");
     }
