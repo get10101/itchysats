@@ -53,9 +53,9 @@ pub struct ActorSystem<O, W> {
     executor: command::Executor,
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
+    _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
     _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
-    _listener_actor: Address<listener::Actor>,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -144,10 +144,6 @@ where
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
-        ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
-            .create(None)
-            .spawn(&mut tasks);
-
         let endpoint = Endpoint::new(
             TokioTcpConfig::new(),
             identity.libp2p,
@@ -160,15 +156,19 @@ where
 
         tasks.add(endpoint_context.run(endpoint));
 
-        let (supervisor, listener_actor) = supervisor::Actor::with_policy(
-            move || {
+        let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
+            {
                 let endpoint_addr = endpoint_addr.clone();
-                let endpoint_listen = listen_multiaddr.clone();
-                listener::Actor::new(endpoint_addr, endpoint_listen)
+                move || listener::Actor::new(endpoint_addr.clone(), listen_multiaddr.clone())
             },
             |_: &listener::Error| true, // always restart listener actor
         );
         let listener_supervisor = supervisor.create(None).spawn(&mut tasks);
+
+        let (supervisor, _ping_address) = supervisor::Actor::new({
+            move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
+        });
+        let _ping_supervisor = supervisor.create(None).spawn(&mut tasks);
 
         tasks.add(
             inc_conn_ctx
@@ -209,9 +209,9 @@ where
             executor,
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
+            _ping_supervisor,
             _position_metrics_actor: position_metrics_actor,
             _cull_old_dlcs_actor,
-            _listener_actor: listener_actor,
         })
     }
 
