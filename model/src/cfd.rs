@@ -901,13 +901,14 @@ impl Cfd {
             bail!("Can only accept proposal as a maker");
         }
 
-        let candidate_event_id =
-            olivia::next_announcement_after(OffsetDateTime::now_utc() + self.settlement_interval);
+        let now = OffsetDateTime::now_utc();
+
+        let candidate_event_id = olivia::next_announcement_after(now + self.settlement_interval);
         let hours_to_charge = match version {
             rollover::Version::V1 => 1,
-            rollover::Version::V2 => self.hours_to_extend_in_rollover()?,
+            rollover::Version::V2 => self.hours_to_extend_in_rollover(now)?,
             rollover::Version::V3 => {
-                self.hours_to_extend_in_rollover_based_on_event(candidate_event_id)?
+                self.hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)?
             }
         };
 
@@ -962,10 +963,11 @@ impl Cfd {
 
         self.can_rollover()?;
 
-        let candidate_event_id =
-            olivia::next_announcement_after(OffsetDateTime::now_utc() + self.settlement_interval);
+        let now = OffsetDateTime::now_utc();
+
+        let candidate_event_id = olivia::next_announcement_after(now + self.settlement_interval);
         let hours_to_charge =
-            self.hours_to_extend_in_rollover_based_on_event(candidate_event_id)?;
+            self.hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)?;
         let funding_fee = FundingFee::calculate(
             self.initial_price,
             self.quantity,
@@ -1431,11 +1433,11 @@ impl Cfd {
     /// During rollover the time-to-live of the contract is extended
     /// so that the non-collaborative settlement time is set to ~24
     /// hours in the future from now.
-    fn hours_to_extend_in_rollover(&self) -> Result<u64> {
+    fn hours_to_extend_in_rollover(&self, now: OffsetDateTime) -> Result<u64> {
         let dlc = self.dlc.as_ref().context("Cannot roll over without DLC")?;
         let settlement_time = dlc.settlement_event_id.timestamp();
 
-        let hours_left = settlement_time - OffsetDateTime::now_utc();
+        let hours_left = settlement_time - now;
 
         tracing::trace!(target = "cfd", time_left_in_cfd = %hours_left, "Calculating hours to extend in rollover");
 
@@ -1467,11 +1469,12 @@ impl Cfd {
     fn hours_to_extend_in_rollover_based_on_event(
         &self,
         candidate_event_id: BitMexPriceEventId,
+        now: OffsetDateTime,
     ) -> Result<u64> {
         let dlc = self.dlc.as_ref().context("Cannot roll over without DLC")?;
         let current_settlement_time = dlc.settlement_event_id.timestamp();
 
-        let hours_left = current_settlement_time - OffsetDateTime::now_utc();
+        let hours_left = current_settlement_time - now;
 
         tracing::trace!(target = "cfd", time_left_in_cfd = %hours_left, "Calculating hours to extend in rollover");
 
@@ -3131,178 +3134,213 @@ mod tests {
 
     #[test]
     fn given_current_settlement_in_12_hours_and_candidate_in_19_then_7_hour_extension() {
-        let current_event_id =
-            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() + 12.hours());
-        let candidate_event_id =
-            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() + 19.hours());
-
-        let taker = Cfd::dummy_taker_long().dummy_open(current_event_id);
-        let maker = Cfd::dummy_maker_short().dummy_open(current_event_id);
-
-        assert_eq!(
-            taker
-                .hours_to_extend_in_rollover_based_on_event(candidate_event_id)
-                .unwrap(),
-            7
-        );
-
-        assert_eq!(
-            maker
-                .hours_to_extend_in_rollover_based_on_event(candidate_event_id)
-                .unwrap(),
-            7
-        );
-    }
-
-    #[test]
-    fn given_settlement_within_24_hours_when_calculating_hours_to_extend_based_on_event_then_return_expected_hours(
-    ) {
-        let settlement_interval = SETTLEMENT_INTERVAL.whole_hours();
-
-        let candidate_event_id = BitMexPriceEventId::with_20_digits(
-            OffsetDateTime::now_utc() + settlement_interval.hours(),
-        );
-
-        for hour in 0..settlement_interval {
-            let current_event_id =
-                BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() + hour.hours());
+        for now in common_time_boundaries() {
+            let current_event_id = BitMexPriceEventId::with_20_digits(now + 12.hours());
+            let candidate_event_id = BitMexPriceEventId::with_20_digits(now + 19.hours());
 
             let taker = Cfd::dummy_taker_long().dummy_open(current_event_id);
             let maker = Cfd::dummy_maker_short().dummy_open(current_event_id);
 
             assert_eq!(
                 taker
-                    .hours_to_extend_in_rollover_based_on_event(candidate_event_id)
+                    .hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)
                     .unwrap(),
-                (candidate_event_id.timestamp() - current_event_id.timestamp()).whole_hours()
-                    as u64
+                7,
+                "Failed with now {}",
+                now
             );
 
             assert_eq!(
                 maker
-                    .hours_to_extend_in_rollover_based_on_event(candidate_event_id)
+                    .hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)
                     .unwrap(),
-                (candidate_event_id.timestamp() - current_event_id.timestamp()).whole_hours()
-                    as u64
+                7,
+                "Failed with now {}",
+                now
             );
+        }
+    }
+
+    #[test]
+    fn given_settlement_within_24_hours_when_calculating_hours_to_extend_based_on_event_then_return_expected_hours(
+    ) {
+        for now in common_time_boundaries() {
+            let settlement_interval = SETTLEMENT_INTERVAL.whole_hours();
+
+            let candidate_event_id =
+                BitMexPriceEventId::with_20_digits(now + settlement_interval.hours());
+
+            for hour in 0..settlement_interval {
+                let current_event_id = BitMexPriceEventId::with_20_digits(now + hour.hours());
+
+                let taker = Cfd::dummy_taker_long().dummy_open(current_event_id);
+                let maker = Cfd::dummy_maker_short().dummy_open(current_event_id);
+
+                assert_eq!(
+                    taker
+                        .hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)
+                        .unwrap(),
+                    (candidate_event_id.timestamp() - current_event_id.timestamp()).whole_hours()
+                        as u64,
+                    "Failed with now {}",
+                    now
+                );
+
+                assert_eq!(
+                    maker
+                        .hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)
+                        .unwrap(),
+                    (candidate_event_id.timestamp() - current_event_id.timestamp()).whole_hours()
+                        as u64,
+                    "Failed with now {}",
+                    now
+                );
+            }
         }
     }
 
     #[test]
     fn given_cfd_can_be_settled_when_calculating_hours_to_extend_based_on_event_then_return_settlement_interval(
     ) {
-        let event_id_1_hour_ago =
-            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() - 1.hours());
+        for now in common_time_boundaries() {
+            let event_id_1_hour_ago = BitMexPriceEventId::with_20_digits(now - 1.hours());
 
-        let taker = Cfd::dummy_taker_long().dummy_open(event_id_1_hour_ago);
-        let maker = Cfd::dummy_maker_short().dummy_open(event_id_1_hour_ago);
+            let taker = Cfd::dummy_taker_long().dummy_open(event_id_1_hour_ago);
+            let maker = Cfd::dummy_maker_short().dummy_open(event_id_1_hour_ago);
 
-        let event_id_in_24_hours =
-            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() - 24.hours());
+            let event_id_in_24_hours = BitMexPriceEventId::with_20_digits(now - 24.hours());
 
-        assert_eq!(
-            taker
-                .hours_to_extend_in_rollover_based_on_event(event_id_in_24_hours)
-                .unwrap(),
-            SETTLEMENT_INTERVAL.whole_hours() as u64
-        );
+            assert_eq!(
+                taker
+                    .hours_to_extend_in_rollover_based_on_event(event_id_in_24_hours, now)
+                    .unwrap(),
+                SETTLEMENT_INTERVAL.whole_hours() as u64,
+                "Failed with now {}",
+                now
+            );
 
-        assert_eq!(
-            maker
-                .hours_to_extend_in_rollover_based_on_event(event_id_in_24_hours)
-                .unwrap(),
-            SETTLEMENT_INTERVAL.whole_hours() as u64
-        );
+            assert_eq!(
+                maker
+                    .hours_to_extend_in_rollover_based_on_event(event_id_in_24_hours, now)
+                    .unwrap(),
+                SETTLEMENT_INTERVAL.whole_hours() as u64,
+                "Failed with now {}",
+                now
+            );
+        }
     }
 
     #[test]
     fn given_candidate_settlement_before_current_settlement_then_fails_to_calculate_hours_to_extend_based_on_event(
     ) {
-        let current_event_id =
-            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() + 2.hours());
-        let earlier_event_id =
-            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() + 1.hours());
+        for now in common_time_boundaries() {
+            let current_event_id = BitMexPriceEventId::with_20_digits(now + 2.hours());
+            let earlier_event_id = BitMexPriceEventId::with_20_digits(now + 1.hours());
 
-        let taker = Cfd::dummy_taker_long().dummy_open(current_event_id);
-        let maker = Cfd::dummy_maker_short().dummy_open(current_event_id);
+            let taker = Cfd::dummy_taker_long().dummy_open(current_event_id);
+            let maker = Cfd::dummy_maker_short().dummy_open(current_event_id);
 
-        taker
-            .hours_to_extend_in_rollover_based_on_event(earlier_event_id)
-            .unwrap_err();
-        maker
-            .hours_to_extend_in_rollover_based_on_event(earlier_event_id)
-            .unwrap_err();
+            taker
+                .hours_to_extend_in_rollover_based_on_event(earlier_event_id, now)
+                .unwrap_err();
+            maker
+                .hours_to_extend_in_rollover_based_on_event(earlier_event_id, now)
+                .unwrap_err();
+        }
     }
 
     #[test]
     fn correctly_calculate_hours_to_extend_in_rollover() {
-        let settlement_interval = SETTLEMENT_INTERVAL.whole_hours();
-        for hour in 0..settlement_interval {
-            let event_id_in_x_hours =
-                BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() + hour.hours());
+        for now in common_time_boundaries() {
+            let settlement_interval = SETTLEMENT_INTERVAL.whole_hours();
+            for hour in 0..settlement_interval {
+                let event_id_in_x_hours = BitMexPriceEventId::with_20_digits(now + hour.hours());
 
-            let taker = Cfd::dummy_taker_long().dummy_open(event_id_in_x_hours);
-            let maker = Cfd::dummy_maker_short().dummy_open(event_id_in_x_hours);
+                let taker = Cfd::dummy_taker_long().dummy_open(event_id_in_x_hours);
+                let maker = Cfd::dummy_maker_short().dummy_open(event_id_in_x_hours);
 
-            assert_eq!(
-                taker.hours_to_extend_in_rollover().unwrap(),
-                (settlement_interval - hour) as u64
-            );
+                assert_eq!(
+                    taker.hours_to_extend_in_rollover(now).unwrap(),
+                    (settlement_interval - hour) as u64,
+                    "Failed with now {}",
+                    now
+                );
 
-            assert_eq!(
-                maker.hours_to_extend_in_rollover().unwrap(),
-                (settlement_interval - hour) as u64
-            );
+                assert_eq!(
+                    maker.hours_to_extend_in_rollover(now).unwrap(),
+                    (settlement_interval - hour) as u64,
+                    "Failed with now {}",
+                    now
+                );
+            }
         }
     }
 
     #[test]
     fn rollover_extends_time_to_live_by_settlement_interval_if_cfd_can_be_settled() {
-        let event_id_1_hour_ago =
-            BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc() - 1.hours());
+        for now in common_time_boundaries() {
+            let event_id_1_hour_ago = BitMexPriceEventId::with_20_digits(now - 1.hours());
 
-        let taker = Cfd::dummy_taker_long().dummy_open(event_id_1_hour_ago);
-        let maker = Cfd::dummy_maker_short().dummy_open(event_id_1_hour_ago);
+            let taker = Cfd::dummy_taker_long().dummy_open(event_id_1_hour_ago);
+            let maker = Cfd::dummy_maker_short().dummy_open(event_id_1_hour_ago);
 
-        assert_eq!(
-            taker.hours_to_extend_in_rollover().unwrap(),
-            SETTLEMENT_INTERVAL.whole_hours() as u64
-        );
+            assert_eq!(
+                taker.hours_to_extend_in_rollover(now).unwrap(),
+                SETTLEMENT_INTERVAL.whole_hours() as u64,
+                "Failed with now {}",
+                now
+            );
 
-        assert_eq!(
-            maker.hours_to_extend_in_rollover().unwrap(),
-            SETTLEMENT_INTERVAL.whole_hours() as u64
-        );
+            assert_eq!(
+                maker.hours_to_extend_in_rollover(now).unwrap(),
+                SETTLEMENT_INTERVAL.whole_hours() as u64,
+                "Failed with now {}",
+                now
+            );
+        }
     }
 
     #[test]
     fn cannot_rollover_if_time_to_live_is_longer_than_settlement_interval() {
-        let more_than_settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours() + 2;
-        let event_id_way_in_the_future = BitMexPriceEventId::with_20_digits(
-            OffsetDateTime::now_utc() + more_than_settlement_interval_hours.hours(),
-        );
+        for now in common_time_boundaries() {
+            let more_than_settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours() + 2;
+            let event_id_way_in_the_future = BitMexPriceEventId::with_20_digits(
+                now + more_than_settlement_interval_hours.hours(),
+            );
 
-        let taker = Cfd::dummy_taker_long().dummy_open(event_id_way_in_the_future);
-        let maker = Cfd::dummy_maker_short().dummy_open(event_id_way_in_the_future);
+            let taker = Cfd::dummy_taker_long().dummy_open(event_id_way_in_the_future);
+            let maker = Cfd::dummy_maker_short().dummy_open(event_id_way_in_the_future);
 
-        taker.hours_to_extend_in_rollover().unwrap_err();
-        maker.hours_to_extend_in_rollover().unwrap_err();
+            taker.hours_to_extend_in_rollover(now).unwrap_err();
+            maker.hours_to_extend_in_rollover(now).unwrap_err();
+        }
     }
 
     proptest! {
         #[test]
-        fn rollover_extended_by_one_hour_if_time_to_live_is_within_one_hour_of_settlement_interval(minutes in 0i64..=60) {
-            let close_to_settlement_interval = SETTLEMENT_INTERVAL + minutes.minutes();
-            let event_id_within_the_hour = BitMexPriceEventId::with_20_digits(
-                OffsetDateTime::now_utc() + close_to_settlement_interval,
-            );
+        fn rollover_extended_by_one_hour_if_time_to_live_is_within_one_hour_of_settlement_interval(minutes in 0i64..=59) {
+            for now in common_time_boundaries() {
+                let close_to_settlement_interval = SETTLEMENT_INTERVAL + minutes.minutes();
+                let event_id_within_the_hour = BitMexPriceEventId::with_20_digits(
+                    now + close_to_settlement_interval,
+                );
 
-            let taker = Cfd::dummy_taker_long().dummy_open(event_id_within_the_hour);
-            let maker = Cfd::dummy_maker_short().dummy_open(event_id_within_the_hour);
+                let taker = Cfd::dummy_taker_long().dummy_open(event_id_within_the_hour);
+                let maker = Cfd::dummy_maker_short().dummy_open(event_id_within_the_hour);
 
-            prop_assert_eq!(taker.hours_to_extend_in_rollover().unwrap(), 1);
-            prop_assert_eq!(maker.hours_to_extend_in_rollover().unwrap(), 1);
+                prop_assert_eq!(taker.hours_to_extend_in_rollover(now).unwrap(), 1, "Failed with now {}", now);
+                prop_assert_eq!(maker.hours_to_extend_in_rollover(now).unwrap(), 1, "Failed with now {}", now);
+            }
         }
+    }
+
+    // TODO: Consider implementing Strategy for proptest instead
+    fn common_time_boundaries() -> [OffsetDateTime; 3] {
+        [
+            datetime!(2021-11-19 10:00:00).assume_utc(),
+            datetime!(2021-11-19 10:00:01).assume_utc(),
+            datetime!(2021-11-19 10:59:59).assume_utc(),
+        ]
     }
 
     #[allow(clippy::too_many_arguments)]
