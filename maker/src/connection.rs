@@ -107,7 +107,6 @@ struct Connection {
     write: wire::Write<wire::TakerToMaker, wire::MakerToTaker>,
     wire_version: wire::Version,
     daemon_version: String,
-    address: SocketAddr,
     _tasks: Tasks,
 }
 
@@ -422,13 +421,12 @@ impl Actor {
     ) {
         let this = ctx.address().expect("we are alive");
 
-        if let Some(connection) = self.connections.get(&identity) {
+        if self.connections.contains_key(&identity) {
             tracing::debug!(
                 taker_id = %identity,
-                new_address = %address,
-                old_address = %connection.address,
-                "Received second connection from taker: overwriting existing connection with new!"
+                "Refusing to accept 2nd connection from already connected taker!"
             );
+            return;
         }
 
         let _: Result<(), xtra::Error> = self
@@ -480,7 +478,6 @@ impl Actor {
             identity,
             Connection {
                 taker: identity,
-                address,
                 write,
                 wire_version: wire_version.clone(),
                 daemon_version: daemon_version.clone(),
