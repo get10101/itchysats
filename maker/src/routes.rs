@@ -262,7 +262,7 @@ pub async fn get_cfds<'r>(
 
     match cfds {
         Some(cfds) => Ok(Json(cfds)),
-        None => Err(HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+        None => Err(HttpApiProblem::new(StatusCode::SERVICE_UNAVAILABLE)
             .title("CFDs not yet available")
             .detail("CFDs are still being loaded from the database. Please retry later.")),
     }
