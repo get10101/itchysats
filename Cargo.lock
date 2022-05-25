@@ -2045,6 +2045,7 @@ dependencies = [
  "hex",
  "itertools",
  "libp2p-core",
+ "maia 0.1.0",
  "maia 0.2.0",
  "maia-core",
  "nalgebra 0.31.0",

@@ -1866,7 +1866,10 @@ impl Dlc {
 
             (outpoint, amount)
         };
-        let (tx, sighash) = maia::close_transaction(
+        // In order to preserve backwards compatibility, we are using maia
+        // v0.1.0 always (this code is called from legacy collab settlement protocol)
+        // TODO: Use maia v0.2.0 with libp2p-based collab close
+        let (tx, sighash) = maia_deprecated::close_transaction(
             lock_desc,
             lock_outpoint,
             lock_amount,
