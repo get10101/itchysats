@@ -21,6 +21,6 @@ resolver = "2"
 
 [patch.crates-io]
 xtra = { git = "https://github.com/comit-network/xtra" } # We need to use unreleased patches.
-maia = { git = "https://github.com/comit-network/maia" } # Unreleased
-maia-core = { git = "https://github.com/comit-network/maia" } # Unreleased
+maia = { git = "https://github.com/comit-network/maia", rev = "a963084189e1598ca622abe206a78015ab6b8466" } # Unreleased
+maia-core = { git = "https://github.com/comit-network/maia", rev = "e419cb2cf19bed6ec53eaa3672408a6205a9b705", package = "maia-core" } # Unreleased version, pinned before maia's breaking change
 xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity" } # Unreleased

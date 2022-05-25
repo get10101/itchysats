@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use daemon::command;
 use daemon::db;
 use daemon::process_manager;
-use daemon::setup_contract;
+use daemon::setup_contract_deprecated;
 use daemon::wallet;
 use daemon::wire;
 use futures::channel::mpsc;
@@ -94,7 +94,7 @@ impl Actor {
 
         let taker_id = setup_params.counterparty_identity();
 
-        let contract_future = setup_contract::new(
+        let contract_future = setup_contract_deprecated::new(
             self.taker.sink().with(move |msg| {
                 future::ok(connection::TakerMessage {
                     taker_id,

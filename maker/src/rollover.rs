@@ -5,7 +5,7 @@ use daemon::command;
 use daemon::db;
 use daemon::oracle;
 use daemon::process_manager;
-use daemon::setup_contract;
+use daemon::setup_contract_deprecated;
 use daemon::wire;
 use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
@@ -218,7 +218,7 @@ impl Actor {
 
         let funding_fee = *rollover_params.funding_fee();
 
-        let rollover_fut = setup_contract::roll_over(
+        let rollover_fut = setup_contract_deprecated::roll_over(
             self.send_to_taker_actor.sink().with(move |msg| {
                 future::ok(connection::TakerMessage {
                     taker_id,

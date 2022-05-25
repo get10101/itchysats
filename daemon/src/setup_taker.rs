@@ -2,7 +2,7 @@ use crate::command;
 use crate::connection;
 use crate::db;
 use crate::process_manager;
-use crate::setup_contract;
+use crate::setup_contract_deprecated;
 use crate::wallet;
 use crate::wire;
 use anyhow::anyhow;
@@ -111,7 +111,7 @@ impl Actor {
         // the spawned contract setup task
         self.setup_msg_sender = Some(sender);
 
-        let contract_future = setup_contract::new(
+        let contract_future = setup_contract_deprecated::new(
             xtra::message_channel::MessageChannel::sink(&self.maker)
                 .with(move |msg| future::ok(wire::TakerToMaker::Protocol { order_id, msg })),
             receiver,
