@@ -529,31 +529,45 @@ impl<O, T, W> Actor<O, T, W> {
 
         let order_id = msg.order_id;
 
-        let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
+        // We try to dispatch to libp2p rollover first
+        // Using send here is fine because we dispatch to a task internally
+        match self
+            .libp2p_rollover
+            .send(daemon::rollover::maker::Accept {
+                order_id,
+                tx_fee_rate: current_offers.tx_fee_rate,
+                long_funding_rate: current_offers.funding_rate_long,
+                short_funding_rate: current_offers.funding_rate_short,
+            })
+            .await
+        {
+            // Return early if dispatch to libp2p rollover worked
+            Ok(Ok(())) => return Ok(()),
+            Ok(Err(error)) => {
+                let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
+                if can_use_libp2p(&cfd) {
+                    tracing::error!("Failed to accept rollover for libp2p: {error:#}");
+                    return Err(error);
+                }
 
-        if can_use_libp2p(&cfd) {
-            // Using send here is fine because we dispatch to a task internally
-            match self
-                .libp2p_rollover
-                .send(daemon::rollover::maker::Accept {
-                    order_id,
-                    tx_fee_rate: current_offers.tx_fee_rate,
-                    long_funding_rate: current_offers.funding_rate_long,
-                    short_funding_rate: current_offers.funding_rate_short,
-                })
-                .await
-            {
-                // Return early if dispatch to libp2p rollover worked
-                Ok(Ok(())) => return Ok(()),
-                Ok(Err(error)) => {
-                    tracing::warn!("Try fallback to legacy rollover because unable to dispatch accept to libp2p rollover actor: {error:#}");
+                tracing::debug!("Try fallback to legacy rollover because unable to handle accept via libp2p: {error:#}");
+            }
+            Err(error) => {
+                let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
+                if can_use_libp2p(&cfd) {
+                    tracing::error!(
+                        "Failed to dispatch accept to libp2p rollover actor: {error:#}"
+                    );
+                    return Err(anyhow!(error));
                 }
-                Err(error) => {
-                    tracing::warn!("Try fallback to legacy rollover because unable to handle accept via libp2p: {error:#}");
-                }
+
+                // we should never see this given that the libp2p rollover actor is always running
+                tracing::error!("Try fallback to legacy rollover because unable to dispatch accept to libp2p rollover actor: {error:#}");
             }
         }
 
+        // We fallback to dispatch to legacy rollover in case libp2p rollover failed and we don't
+        // know the peer-id
         match self
             .rollover_actors
             .send_async(
@@ -580,26 +594,41 @@ impl<O, T, W> Actor<O, T, W> {
     async fn handle_reject_rollover(&mut self, msg: RejectRollover) -> Result<()> {
         let order_id = msg.order_id;
 
-        let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
+        // We try to dispatch to libp2p rollover first
+        // Using send here is fine because we dispatch to a task internally
+        match self
+            .libp2p_rollover
+            .send(daemon::rollover::maker::Reject { order_id })
+            .await
+        {
+            // Return early if dispatch to libp2p rollover worked
+            Ok(Ok(())) => return Ok(()),
+            Ok(Err(error)) => {
+                let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
 
-        if can_use_libp2p(&cfd) {
-            // Using send here is fine because we dispatch to a task internally
-            match self
-                .libp2p_rollover
-                .send(daemon::rollover::maker::Reject { order_id })
-                .await
-            {
-                // Return early if dispatch to libp2p rollover worked
-                Ok(Ok(())) => return Ok(()),
-                Ok(Err(error)) => {
-                    tracing::warn!("Try fallback to legacy rollover because unable to dispatch reject to libp2p rollover actor: {error:#}");
+                if can_use_libp2p(&cfd) {
+                    tracing::error!("Failed to reject rollover for libp2p: {error:#}");
+                    return Err(error);
                 }
-                Err(error) => {
-                    tracing::warn!("Try fallback to legacy rollover because unable to handle reject via libp2p: {error:#}");
+
+                tracing::debug!("Try fallback to legacy rollover because unable to handle reject via libp2p: {error:#}");
+            }
+            Err(error) => {
+                let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
+                if can_use_libp2p(&cfd) {
+                    tracing::error!(
+                        "Failed to dispatch reject to libp2p rollover actor: {error:#}"
+                    );
+                    return Err(anyhow!(error));
                 }
+
+                // we should never see this given that the libp2p rollover actor is always running
+                tracing::error!("Try fallback to legacy rollover because unable to dispatch reject to libp2p rollover actor: {error:#}");
             }
         }
 
+        // We fallback to dispatch to legacy rollover in case libp2p rollover failed and we don't
+        // know the peer-id
         match self
             .rollover_actors
             .send_async(&order_id, rollover::RejectRollover)
