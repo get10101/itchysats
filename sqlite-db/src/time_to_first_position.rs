@@ -1,4 +1,4 @@
-use crate::db::Connection;
+use crate::Connection;
 use anyhow::Result;
 use model::Identity;
 use time::OffsetDateTime;
@@ -136,7 +136,7 @@ mod sqlx_test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::memory;
+    use crate::memory;
     use sqlx_test_utils::load_first_position_timestamp;
     use sqlx_test_utils::load_first_seen_timestamp;
 

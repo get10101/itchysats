@@ -16,6 +16,7 @@ status = [
   "clippy (bitmex-stream)",
   "clippy (xtra-libp2p)",
   "clippy (xtra-libp2p-ping)",
+  "clippy (sqlite-db)",
   "lint-commits",
   "frontend (maker)",
   "frontend (taker)",

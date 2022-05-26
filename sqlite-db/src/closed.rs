@@ -7,16 +7,16 @@
 //! to call the `crate::db::load_all_cfds` API, which loads all types
 //! of CFD.
 
-use crate::db::delete_from_cfds_table;
-use crate::db::delete_from_events_table;
-use crate::db::derive_known_peer_id;
-use crate::db::event_log::EventLog;
-use crate::db::event_log::EventLogEntry;
-use crate::db::load_cfd_events;
-use crate::db::load_cfd_row;
-use crate::db::Cfd;
-use crate::db::CfdAggregate;
-use crate::db::Connection;
+use crate::delete_from_cfds_table;
+use crate::delete_from_events_table;
+use crate::derive_known_peer_id;
+use crate::event_log::EventLog;
+use crate::event_log::EventLogEntry;
+use crate::load_cfd_events;
+use crate::load_cfd_row;
+use crate::Cfd;
+use crate::CfdAggregate;
+use crate::Connection;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -156,7 +156,7 @@ impl Connection {
     }
 
     /// Load a closed CFD from the database.
-    pub(super) async fn load_closed_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
+    pub async fn load_closed_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
     where
         C: ClosedCfdAggregate,
     {
@@ -231,7 +231,7 @@ impl Connection {
         Ok(C::new_closed(args, cfd))
     }
 
-    pub(super) async fn load_closed_cfd_ids(&self) -> Result<Vec<OrderId>> {
+    pub(crate) async fn load_closed_cfd_ids(&self) -> Result<Vec<OrderId>> {
         let mut conn = self.inner.acquire().await?;
 
         let ids = sqlx::query!(
@@ -966,7 +966,7 @@ async fn load_creation_timestamp(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::memory;
+    use crate::memory;
     use bdk::bitcoin::SignedAmount;
     use model::libp2p::PeerId;
     use model::Cfd;
@@ -1050,50 +1050,6 @@ mod tests {
         assert!(load_from_open.is_ok());
         assert_eq!(load_from_events.len(), 2);
         assert!(load_from_closed.is_err());
-    }
-
-    #[tokio::test]
-    async fn given_confirmed_settlement_when_move_cfds_to_closed_table_then_projection_aggregate_stays_the_same(
-    ) {
-        let db = memory().await.unwrap();
-
-        let (cfd, contract_setup_completed, collaborative_settlement_completed) =
-            cfd_collaboratively_settled();
-        let order_id = cfd.id();
-
-        db.insert_cfd(&cfd).await.unwrap();
-
-        db.append_event(contract_setup_completed).await.unwrap();
-        db.append_event(collaborative_settlement_completed)
-            .await
-            .unwrap();
-
-        db.append_event(collab_settlement_confirmed(&cfd))
-            .await
-            .unwrap();
-
-        let projection_open = {
-            let projection_open = db
-                .load_open_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_open.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        db.move_to_closed_cfds().await.unwrap();
-
-        let projection_closed = {
-            let projection_closed = db
-                .load_closed_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_closed.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        // this comparison actually omits the `aggregated` field on
-        // `projection::Cfd` because it is not used when aggregating
-        // from a closed CFD
-        assert_eq!(projection_open, projection_closed);
     }
 
     #[tokio::test]
@@ -1394,7 +1350,7 @@ mod tests {
     impl CfdAggregate for DummyAggregate {
         type CtorArgs = ();
 
-        fn new(_: Self::CtorArgs, _: crate::db::Cfd) -> Self {
+        fn new(_: Self::CtorArgs, _: crate::Cfd) -> Self {
             Self {
                 creation_timestamp: None,
             }

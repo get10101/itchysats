@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use daemon::db;
 use model::Identity;
+use sqlite_db;
 use time::OffsetDateTime;
 use xtra_productivity::xtra_productivity;
 
@@ -35,11 +35,11 @@ impl Position {
 }
 
 pub struct Actor {
-    db: db::Connection,
+    db: sqlite_db::Connection,
 }
 
 impl Actor {
-    pub fn new(db: db::Connection) -> Self {
+    pub fn new(db: sqlite_db::Connection) -> Self {
         Self { db }
     }
 }

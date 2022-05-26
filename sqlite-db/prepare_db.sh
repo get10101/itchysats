@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DAEMON_DIR=daemon
+CRATE_DIR=sqlite-db
 TEMPDB=tempdb
 
 # make sure to fail early in case something goes wrong
@@ -15,4 +15,4 @@ trap 'rm -f $TEMPDB' EXIT
 DATABASE_URL=sqlite:$TEMPDB cargo sqlx migrate run
 
 # prepare the sqlx-data.json rust mappings
-DATABASE_URL=sqlite:./$DAEMON_DIR/$TEMPDB SQLX_OFFLINE=true cargo sqlx prepare
+DATABASE_URL=sqlite:./$CRATE_DIR/$TEMPDB SQLX_OFFLINE=true cargo sqlx prepare

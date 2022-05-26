@@ -9,7 +9,6 @@ use daemon::bdk::bitcoin::Address;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
 use daemon::connection::connect;
-use daemon::db;
 use daemon::libp2p_utils::create_connect_tcp_multiaddr;
 use daemon::libp2p_utils::libp2p_socket_from_legacy_networking;
 use daemon::monitor;
@@ -320,7 +319,7 @@ async fn main() -> Result<()> {
         .merge(("port", opts.http_address.port()))
         .merge(("cli_colors", false));
 
-    let db = db::connect(data_dir.join("taker.sqlite")).await?;
+    let db = sqlite_db::connect(data_dir.join("taker.sqlite")).await?;
 
     // Create actors
 

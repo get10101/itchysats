@@ -33,13 +33,14 @@ use std::sync::Arc;
 use time::Duration;
 
 pub use closed::*;
+pub use cull_old_dlcs::*;
 pub use failed::*;
 
-mod closed;
-mod cull_old_dlcs;
-mod event_log;
-mod failed;
-
+pub mod closed;
+pub mod cull_old_dlcs;
+pub mod event_log;
+pub mod failed;
+mod impls;
 pub mod time_to_first_position;
 
 #[derive(Clone)]

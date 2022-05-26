@@ -1,5 +1,5 @@
-use crate::db;
 use async_trait::async_trait;
+use sqlite_db;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
@@ -9,12 +9,12 @@ use xtras::SendInterval;
 const CULL_INTERVAL: Duration = Duration::from_secs(30 * 60);
 
 pub struct Actor {
-    db: db::Connection,
+    db: sqlite_db::Connection,
     tasks: Tasks,
 }
 
 impl Actor {
-    pub fn new(db: db::Connection) -> Self {
+    pub fn new(db: sqlite_db::Connection) -> Self {
         Self {
             db,
             tasks: Tasks::default(),

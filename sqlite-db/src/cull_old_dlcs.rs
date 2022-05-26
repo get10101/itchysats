@@ -1,4 +1,4 @@
-use crate::db::Connection;
+use crate::Connection;
 use anyhow::Result;
 use sqlx::pool::PoolConnection;
 use sqlx::Sqlite;
@@ -97,8 +97,8 @@ impl Connection {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::load_cfd_events;
-    use crate::db::memory;
+    use crate::load_cfd_events;
+    use crate::memory;
     use bdk::bitcoin::Amount;
     use model::libp2p::PeerId;
     use model::Cfd;

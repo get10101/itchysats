@@ -9,7 +9,6 @@ use daemon::archive_closed_cfds;
 use daemon::archive_failed_cfds;
 use daemon::command;
 use daemon::cull_old_dlcs;
-use daemon::db;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::position_metrics;
@@ -68,7 +67,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         wallet_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         oracle_constructor: impl FnOnce(command::Executor) -> O,

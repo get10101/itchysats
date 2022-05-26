@@ -11,16 +11,16 @@
 //! to call the `crate::db::load_all_cfds` API, which loads all types
 //! of CFD.
 
-use crate::db;
-use crate::db::delete_from_cfds_table;
-use crate::db::delete_from_events_table;
-use crate::db::derive_known_peer_id;
-use crate::db::event_log::EventLog;
-use crate::db::event_log::EventLogEntry;
-use crate::db::load_cfd_events;
-use crate::db::load_cfd_row;
-use crate::db::CfdAggregate;
-use crate::db::Connection;
+use crate::delete_from_cfds_table;
+use crate::delete_from_events_table;
+use crate::derive_known_peer_id;
+use crate::event_log::EventLog;
+use crate::event_log::EventLogEntry;
+use crate::load_cfd_events;
+use crate::load_cfd_row;
+use crate::Cfd;
+use crate::CfdAggregate;
+use crate::Connection;
 use anyhow::bail;
 use anyhow::Result;
 use model::impl_sqlx_type_display_from_str;
@@ -141,7 +141,7 @@ impl Connection {
     }
 
     /// Load a failed CFD from the database.
-    pub(super) async fn load_failed_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
+    pub async fn load_failed_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C>
     where
         C: FailedCfdAggregate,
     {
@@ -189,7 +189,7 @@ impl Connection {
         Ok(C::new_failed(args, cfd))
     }
 
-    pub(super) async fn load_failed_cfd_ids(&self) -> Result<Vec<OrderId>> {
+    pub(crate) async fn load_failed_cfd_ids(&self) -> Result<Vec<OrderId>> {
         let mut conn = self.inner.acquire().await?;
 
         let ids = sqlx::query!(
@@ -212,7 +212,7 @@ impl Connection {
 
 async fn insert_failed_cfd(
     conn: &mut Transaction<'_, Sqlite>,
-    cfd: db::Cfd,
+    cfd: Cfd,
     event_log: &EventLog,
 ) -> Result<()> {
     let kind = if event_log.contains(&EventKind::OfferRejected) {
@@ -361,11 +361,11 @@ async fn load_creation_timestamp(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::memory;
-    use crate::db::tests::dummy_cfd;
-    use crate::db::tests::lock_confirmed;
-    use crate::db::tests::order_rejected;
-    use crate::db::tests::setup_failed;
+    use crate::memory;
+    use crate::tests::dummy_cfd;
+    use crate::tests::lock_confirmed;
+    use crate::tests::order_rejected;
+    use crate::tests::setup_failed;
     use model::CfdEvent;
 
     #[tokio::test]
@@ -459,78 +459,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn given_contract_setup_failed_when_move_cfds_to_failed_table_then_projection_aggregate_stays_the_same(
-    ) {
-        let db = memory().await.unwrap();
-
-        let cfd = dummy_cfd();
-        let order_id = cfd.id();
-
-        db.insert_cfd(&cfd).await.unwrap();
-
-        db.append_event(setup_failed(&cfd)).await.unwrap();
-
-        let projection_open = {
-            let projection_open = db
-                .load_open_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_open.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        db.move_to_failed_cfds().await.unwrap();
-
-        let projection_failed = {
-            let projection_failed = db
-                .load_failed_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_failed.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        // this comparison actually omits the `aggregated` field on
-        // `projection::Cfd` because it is not used when aggregating
-        // from a failed CFD
-        assert_eq!(projection_open, projection_failed);
-    }
-
-    #[tokio::test]
-    async fn given_order_rejected_when_move_cfds_to_failed_table_then_projection_aggregate_stays_the_same(
-    ) {
-        let db = memory().await.unwrap();
-
-        let cfd = dummy_cfd();
-        let order_id = cfd.id();
-
-        db.insert_cfd(&cfd).await.unwrap();
-
-        db.append_event(order_rejected(&cfd)).await.unwrap();
-
-        let projection_open = {
-            let projection_open = db
-                .load_open_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_open.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        db.move_to_failed_cfds().await.unwrap();
-
-        let projection_failed = {
-            let projection_failed = db
-                .load_failed_cfd::<crate::projection::Cfd>(order_id, bdk::bitcoin::Network::Testnet)
-                .await
-                .unwrap();
-            projection_failed.with_current_quote(None) // unconditional processing in `projection`
-        };
-
-        // this comparison actually omits the `aggregated` field on
-        // `projection::Cfd` because it is not used when aggregating
-        // from a failed CFD
-        assert_eq!(projection_open, projection_failed);
-    }
-
-    #[tokio::test]
     async fn given_contract_setup_failed_when_move_cfds_to_failed_table_then_creation_timestamp_is_that_of_contract_setup_started_event(
     ) {
         let db = memory().await.unwrap();
@@ -571,7 +499,7 @@ mod tests {
     impl CfdAggregate for DummyAggregate {
         type CtorArgs = ();
 
-        fn new(_: Self::CtorArgs, _: crate::db::Cfd) -> Self {
+        fn new(_: Self::CtorArgs, _: Cfd) -> Self {
             Self
         }
 
