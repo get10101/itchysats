@@ -7,11 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.19] - 2022-05-25
+
+### Added
+
+- A QR code for the ItchySats wallet that can be scanned to retrieve the current address.
+- `ITCHYSATS_ENV` variable that defines different environment of running ItchySats (Umbrel, RaspiBlitz, Docker, Binary)
+
 ### Changed
 
 - The API for retrieving offers now returns `leverage_details` which is a set of leverages including pre-computed values for margin, liquidation price and initial funding fee.
 - Taker can choose a leverage provided the maker offers a selection of leverage.
 - Rollback that a second connection of a taker would steal the old connection
+- The rollover protocol is handled over the libp2p connection. The maker supports both legacy and libp2p requests for rolling over.
+
+### Fixed
+
+- An issue where the maker's libp2p ping actor panicked upon startup.
+- An issue where fees were not handled correctly in `maia` that could result in invalid transactions.
 
 ## [0.4.17] - 2022-05-23
 
@@ -176,7 +189,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.17...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.19...HEAD
+[0.4.19]: https://github.com/itchysats/itchysats/compare/0.4.17...0.4.19
 [0.4.17]: https://github.com/itchysats/itchysats/compare/0.4.16...0.4.17
 [0.4.16]: https://github.com/itchysats/itchysats/compare/0.4.15...0.4.16
 [0.4.15]: https://github.com/itchysats/itchysats/compare/0.4.14...0.4.15
