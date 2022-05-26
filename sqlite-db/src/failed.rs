@@ -11,11 +11,11 @@
 //! to call the `crate::db::load_all_cfds` API, which loads all types
 //! of CFD.
 
-use crate::db::event_log::EventLog;
-use crate::db::event_log::EventLogEntry;
 use crate::delete_from_cfds_table;
 use crate::delete_from_events_table;
 use crate::derive_known_peer_id;
+use crate::event_log::EventLog;
+use crate::event_log::EventLogEntry;
 use crate::load_cfd_events;
 use crate::load_cfd_row;
 use crate::Cfd;
