@@ -10,7 +10,6 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use daemon::command;
-use daemon::db;
 use daemon::libp2p_utils::can_use_libp2p;
 use daemon::oracle;
 use daemon::process_manager;
@@ -38,6 +37,7 @@ use model::SettlementProposal;
 use model::Timestamp;
 use model::TxFeeRate;
 use model::Usd;
+use sqlite_db;
 use std::collections::HashSet;
 use time::Duration;
 use tokio_tasks::Tasks;
@@ -174,7 +174,7 @@ struct RolloverProposal {
 }
 
 pub struct Actor<O, T, W> {
-    db: db::Connection,
+    db: sqlite_db::Connection,
     wallet: xtra::Address<W>,
     settlement_interval: Duration,
     oracle_pk: schnorrsig::PublicKey,
@@ -197,7 +197,7 @@ pub struct Actor<O, T, W> {
 impl<O, T, W> Actor<O, T, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         wallet: xtra::Address<W>,
         settlement_interval: Duration,
         oracle_pk: schnorrsig::PublicKey,

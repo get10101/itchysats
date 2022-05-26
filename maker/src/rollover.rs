@@ -2,7 +2,6 @@ use crate::connection;
 use anyhow::Context as _;
 use anyhow::Result;
 use daemon::command;
-use daemon::db;
 use daemon::oracle;
 use daemon::process_manager;
 use daemon::setup_contract_deprecated;
@@ -79,7 +78,7 @@ impl Actor {
         oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
         register: &(impl MessageChannel<connection::RegisterRollover> + 'static),
-        db: db::Connection,
+        db: sqlite_db::Connection,
         version: RolloverVersion,
     ) -> Self {
         Self {

@@ -1,6 +1,5 @@
 use crate::command;
 use crate::connection;
-use crate::db;
 use crate::process_manager;
 use crate::setup_contract_deprecated;
 use crate::wallet;
@@ -20,6 +19,7 @@ use model::Leverage;
 use model::OrderId;
 use model::Role;
 use model::Usd;
+use sqlite_db;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::message_channel::MessageChannel;
@@ -48,7 +48,7 @@ pub struct Actor {
 impl Actor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         process_manager: xtra::Address<process_manager::Actor>,
         (order_id, quantity, leverage, n_payouts): (OrderId, Usd, Leverage, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),

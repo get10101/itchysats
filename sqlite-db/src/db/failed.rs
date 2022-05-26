@@ -11,16 +11,16 @@
 //! to call the `crate::db::load_all_cfds` API, which loads all types
 //! of CFD.
 
-use crate::db;
-use crate::db::delete_from_cfds_table;
-use crate::db::delete_from_events_table;
-use crate::db::derive_known_peer_id;
 use crate::db::event_log::EventLog;
 use crate::db::event_log::EventLogEntry;
-use crate::db::load_cfd_events;
-use crate::db::load_cfd_row;
-use crate::db::CfdAggregate;
-use crate::db::Connection;
+use crate::delete_from_cfds_table;
+use crate::delete_from_events_table;
+use crate::derive_known_peer_id;
+use crate::load_cfd_events;
+use crate::load_cfd_row;
+use crate::Cfd;
+use crate::CfdAggregate;
+use crate::Connection;
 use anyhow::bail;
 use anyhow::Result;
 use model::impl_sqlx_type_display_from_str;
@@ -189,7 +189,7 @@ impl Connection {
         Ok(C::new_failed(args, cfd))
     }
 
-    pub(super) async fn load_failed_cfd_ids(&self) -> Result<Vec<OrderId>> {
+    pub(crate) async fn load_failed_cfd_ids(&self) -> Result<Vec<OrderId>> {
         let mut conn = self.inner.acquire().await?;
 
         let ids = sqlx::query!(
@@ -212,7 +212,7 @@ impl Connection {
 
 async fn insert_failed_cfd(
     conn: &mut Transaction<'_, Sqlite>,
-    cfd: db::Cfd,
+    cfd: Cfd,
     event_log: &EventLog,
 ) -> Result<()> {
     let kind = if event_log.contains(&EventKind::OfferRejected) {
@@ -361,11 +361,11 @@ async fn load_creation_timestamp(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::memory;
-    use crate::db::tests::dummy_cfd;
-    use crate::db::tests::lock_confirmed;
-    use crate::db::tests::order_rejected;
-    use crate::db::tests::setup_failed;
+    use crate::memory;
+    use crate::tests::dummy_cfd;
+    use crate::tests::lock_confirmed;
+    use crate::tests::order_rejected;
+    use crate::tests::setup_failed;
     use model::CfdEvent;
 
     #[tokio::test]
@@ -499,7 +499,7 @@ mod tests {
     impl CfdAggregate for DummyAggregate {
         type CtorArgs = ();
 
-        fn new(_: Self::CtorArgs, _: crate::db::Cfd) -> Self {
+        fn new(_: Self::CtorArgs, _: Cfd) -> Self {
             Self
         }
 

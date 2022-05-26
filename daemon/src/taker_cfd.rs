@@ -1,6 +1,5 @@
 use crate::collab_settlement_taker;
 use crate::connection;
-use crate::db;
 use crate::oracle;
 use crate::process_manager;
 use crate::projection;
@@ -22,6 +21,7 @@ use model::Origin;
 use model::Price;
 use model::Role;
 use model::Usd;
+use sqlite_db;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;
 use xtra::Actor as _;
@@ -47,7 +47,7 @@ pub struct ProposeSettlement {
 }
 
 pub struct Actor<O, W> {
-    db: db::Connection,
+    db: sqlite_db::Connection,
     wallet: xtra::Address<W>,
     oracle_pk: schnorrsig::PublicKey,
     projection_actor: xtra::Address<projection::Actor>,
@@ -69,7 +69,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         wallet: xtra::Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         projection_actor: xtra::Address<projection::Actor>,

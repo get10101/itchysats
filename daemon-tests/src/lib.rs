@@ -8,7 +8,6 @@ use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
-use daemon::db;
 use daemon::libp2p_utils::create_connect_multiaddr;
 use daemon::projection;
 use daemon::projection::Cfd;
@@ -185,7 +184,7 @@ impl Maker {
 
         let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
 
-        let db = db::memory().await.unwrap();
+        let db = sqlite_db::memory().await.unwrap();
 
         let (wallet, wallet_mock) = WalletActor::new();
         let (price_feed, price_feed_mock) = PriceFeedActor::new();
@@ -333,7 +332,7 @@ impl Taker {
     ) -> Self {
         let identities = config.seed.derive_identities();
 
-        let db = db::memory().await.unwrap();
+        let db = sqlite_db::memory().await.unwrap();
 
         let mut tasks = Tasks::default();
 

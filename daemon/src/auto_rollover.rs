@@ -1,4 +1,3 @@
-use crate::db;
 use crate::rollover;
 use crate::rollover::taker::ProposeRollover;
 use anyhow::Result;
@@ -6,6 +5,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use model::libp2p::PeerId;
 use model::OrderId;
+use sqlite_db;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;
@@ -15,13 +15,16 @@ use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
 pub struct Actor {
-    db: db::Connection,
+    db: sqlite_db::Connection,
     libp2p_rollover: Address<rollover::taker::Actor>,
     tasks: Tasks,
 }
 
 impl Actor {
-    pub fn new(db: db::Connection, libp2p_rollover: Address<rollover::taker::Actor>) -> Self {
+    pub fn new(
+        db: sqlite_db::Connection,
+        libp2p_rollover: Address<rollover::taker::Actor>,
+    ) -> Self {
         Self {
             db,
             libp2p_rollover,

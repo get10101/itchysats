@@ -1,4 +1,3 @@
-use crate::db;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -9,12 +8,13 @@ use model::OrderId;
 use model::Position;
 use model::Usd;
 use rust_decimal::Decimal;
+use sqlite_db;
 use std::collections::HashMap;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
 
 pub struct Actor {
-    db: db::Connection,
+    db: sqlite_db::Connection,
     state: State,
 }
 
@@ -24,7 +24,7 @@ struct State {
 }
 
 impl Actor {
-    pub fn new(db: db::Connection) -> Self {
+    pub fn new(db: sqlite_db::Connection) -> Self {
         Self {
             db,
             state: State::new(),
@@ -89,7 +89,7 @@ impl State {
         Self { cfds: None }
     }
 
-    async fn update_cfd(&mut self, db: db::Connection, id: OrderId) -> Result<()> {
+    async fn update_cfd(&mut self, db: sqlite_db::Connection, id: OrderId) -> Result<()> {
         let cfd = db.load_open_cfd(id, ()).await?;
 
         let cfds = self
@@ -133,10 +133,10 @@ enum AggregatedState {
     Rejected,
 }
 
-impl db::CfdAggregate for Cfd {
+impl sqlite_db::CfdAggregate for Cfd {
     type CtorArgs = ();
 
-    fn new(_: Self::CtorArgs, cfd: db::Cfd) -> Self {
+    fn new(_: Self::CtorArgs, cfd: sqlite_db::Cfd) -> Self {
         Self {
             id: cfd.id,
             position: cfd.position,
@@ -245,9 +245,9 @@ impl Cfd {
     }
 }
 
-impl db::ClosedCfdAggregate for Cfd {
-    fn new_closed(_: Self::CtorArgs, closed_cfd: db::ClosedCfd) -> Self {
-        let db::ClosedCfd {
+impl sqlite_db::ClosedCfdAggregate for Cfd {
+    fn new_closed(_: Self::CtorArgs, closed_cfd: sqlite_db::ClosedCfd) -> Self {
+        let sqlite_db::ClosedCfd {
             id,
             position,
             n_contracts,
@@ -258,10 +258,10 @@ impl db::ClosedCfdAggregate for Cfd {
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         let state = match settlement {
-            db::Settlement::Collaborative { .. } | db::Settlement::Cet { .. } => {
+            sqlite_db::Settlement::Collaborative { .. } | sqlite_db::Settlement::Cet { .. } => {
                 AggregatedState::Closed
             }
-            db::Settlement::Refund { .. } => AggregatedState::Refunded,
+            sqlite_db::Settlement::Refund { .. } => AggregatedState::Refunded,
         };
 
         Self {
@@ -274,9 +274,9 @@ impl db::ClosedCfdAggregate for Cfd {
     }
 }
 
-impl db::FailedCfdAggregate for Cfd {
-    fn new_failed(_: Self::CtorArgs, cfd: db::FailedCfd) -> Self {
-        let db::FailedCfd {
+impl sqlite_db::FailedCfdAggregate for Cfd {
+    fn new_failed(_: Self::CtorArgs, cfd: sqlite_db::FailedCfd) -> Self {
+        let sqlite_db::FailedCfd {
             id,
             position,
             n_contracts,
@@ -287,8 +287,8 @@ impl db::FailedCfdAggregate for Cfd {
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         let state = match kind {
-            db::Kind::OfferRejected => AggregatedState::Rejected,
-            db::Kind::ContractSetupFailed => AggregatedState::Failed,
+            sqlite_db::Kind::OfferRejected => AggregatedState::Rejected,
+            sqlite_db::Kind::ContractSetupFailed => AggregatedState::Failed,
         };
 
         Self {

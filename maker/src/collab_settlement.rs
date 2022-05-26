@@ -4,7 +4,6 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use daemon::command;
-use daemon::db;
 use daemon::process_manager;
 use maia_core::secp256k1_zkp::Signature;
 use model::CollaborativeSettlement;
@@ -33,7 +32,7 @@ pub struct Actor {
     is_initiated: bool,
     n_payouts: usize,
     executor: command::Executor,
-    db: db::Connection,
+    db: sqlite_db::Connection,
     tasks: Tasks,
 }
 
@@ -152,7 +151,7 @@ impl Actor {
         taker_id: Identity,
         connections: &(impl MessageChannel<connection::settlement::Response> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
-        db: db::Connection,
+        db: sqlite_db::Connection,
         n_payouts: usize,
     ) -> Self {
         Self {

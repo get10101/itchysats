@@ -32,15 +32,13 @@ use std::str::FromStr;
 use std::sync::Arc;
 use time::Duration;
 
-pub use closed::*;
-pub use failed::*;
+pub use db::closed::*;
+pub use db::cull_old_dlcs::*;
+pub use db::event_log::*;
+pub use db::failed::*;
 
-mod closed;
-mod cull_old_dlcs;
-mod event_log;
-mod failed;
-
-pub mod time_to_first_position;
+mod db;
+mod impls;
 
 #[derive(Clone)]
 pub struct Connection {

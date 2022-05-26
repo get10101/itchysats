@@ -1,6 +1,5 @@
 use crate::command;
 use crate::connection;
-use crate::db;
 use crate::process_manager;
 use crate::wire;
 use anyhow::anyhow;
@@ -10,6 +9,7 @@ use model::CollaborativeSettlement;
 use model::OrderId;
 use model::Price;
 use model::SettlementProposal;
+use sqlite_db;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::KeepRunning;
@@ -27,7 +27,7 @@ pub struct Actor {
     n_payouts: usize,
     connection: xtra::Address<connection::Actor>,
     executor: command::Executor,
-    db: db::Connection,
+    db: sqlite_db::Connection,
     tasks: Tasks,
     maker_replied: bool,
 }
@@ -39,7 +39,7 @@ impl Actor {
         n_payouts: usize,
         connection: xtra::Address<connection::Actor>,
         process_manager: xtra::Address<process_manager::Actor>,
-        db: db::Connection,
+        db: sqlite_db::Connection,
     ) -> Self {
         Self {
             proposal: None,

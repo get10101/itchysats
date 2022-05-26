@@ -44,7 +44,6 @@ pub mod collab_settlement_taker;
 pub mod command;
 pub mod connection;
 pub mod cull_old_dlcs;
-pub mod db;
 mod future_ext;
 pub mod libp2p_utils;
 pub mod monitor;
@@ -105,7 +104,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
-        db: db::Connection,
+        db: sqlite_db::Connection,
         wallet_actor_addr: Address<W>,
         oracle_pk: schnorrsig::PublicKey,
         identity: Identities,

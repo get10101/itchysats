@@ -7,16 +7,16 @@
 //! to call the `crate::db::load_all_cfds` API, which loads all types
 //! of CFD.
 
-use crate::db::delete_from_cfds_table;
-use crate::db::delete_from_events_table;
-use crate::db::derive_known_peer_id;
 use crate::db::event_log::EventLog;
 use crate::db::event_log::EventLogEntry;
-use crate::db::load_cfd_events;
-use crate::db::load_cfd_row;
-use crate::db::Cfd;
-use crate::db::CfdAggregate;
-use crate::db::Connection;
+use crate::delete_from_cfds_table;
+use crate::delete_from_events_table;
+use crate::derive_known_peer_id;
+use crate::load_cfd_events;
+use crate::load_cfd_row;
+use crate::Cfd;
+use crate::CfdAggregate;
+use crate::Connection;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -231,7 +231,7 @@ impl Connection {
         Ok(C::new_closed(args, cfd))
     }
 
-    pub(super) async fn load_closed_cfd_ids(&self) -> Result<Vec<OrderId>> {
+    pub(crate) async fn load_closed_cfd_ids(&self) -> Result<Vec<OrderId>> {
         let mut conn = self.inner.acquire().await?;
 
         let ids = sqlx::query!(
@@ -966,7 +966,7 @@ async fn load_creation_timestamp(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::memory;
+    use crate::memory;
     use bdk::bitcoin::SignedAmount;
     use model::libp2p::PeerId;
     use model::Cfd;
@@ -1350,7 +1350,7 @@ mod tests {
     impl CfdAggregate for DummyAggregate {
         type CtorArgs = ();
 
-        fn new(_: Self::CtorArgs, _: crate::db::Cfd) -> Self {
+        fn new(_: Self::CtorArgs, _: crate::Cfd) -> Self {
             Self {
                 creation_timestamp: None,
             }
