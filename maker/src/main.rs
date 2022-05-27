@@ -54,7 +54,11 @@ async fn main() -> Result<()> {
 
     let mut tasks = Tasks::default();
 
-    let (wallet, wallet_feed_receiver) = wallet::Actor::new(opts.network.electrum(), ext_priv_key)?;
+    let (wallet, wallet_feed_receiver) = wallet::Actor::new(
+        opts.network.electrum(),
+        ext_priv_key,
+        *opts.network.address_cache_size(),
+    )?;
 
     let wallet = wallet.create(None).spawn(&mut tasks);
 

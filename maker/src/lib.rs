@@ -55,6 +55,10 @@ pub enum Network {
 
         #[clap(subcommand)]
         withdraw: Option<Withdraw>,
+
+        /// The wallet address cache size used for the initial scan.
+        #[clap(long, default_value = "500")]
+        address_cache_size: u32,
     },
     /// Run on testnet.
     Testnet {
@@ -64,6 +68,10 @@ pub enum Network {
 
         #[clap(subcommand)]
         withdraw: Option<Withdraw>,
+
+        /// The wallet address cache size used for the initial scan.
+        #[clap(long, default_value = "500")]
+        address_cache_size: u32,
     },
     /// Run on signet
     Signet {
@@ -73,6 +81,10 @@ pub enum Network {
 
         #[clap(subcommand)]
         withdraw: Option<Withdraw>,
+
+        /// The wallet address cache size used for the initial scan.
+        #[clap(long, default_value = "500")]
+        address_cache_size: u32,
     },
 }
 
@@ -123,6 +135,20 @@ impl Network {
             Network::Mainnet { withdraw, .. } => withdraw,
             Network::Testnet { withdraw, .. } => withdraw,
             Network::Signet { withdraw, .. } => withdraw,
+        }
+    }
+
+    pub fn address_cache_size(&self) -> &u32 {
+        match self {
+            Network::Mainnet {
+                address_cache_size, ..
+            } => address_cache_size,
+            Network::Testnet {
+                address_cache_size, ..
+            } => address_cache_size,
+            Network::Signet {
+                address_cache_size, ..
+            } => address_cache_size,
         }
     }
 }

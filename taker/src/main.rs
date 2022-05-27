@@ -53,6 +53,8 @@ const TESTNET_MAKER: &str = "testnet.itchysats.network:9999";
 const TESTNET_MAKER_ID: &str = "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e";
 const TESTNET_MAKER_PEER_ID: &str = "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1";
 
+const DEFAULT_WALLET_ADDRESS_CACHE_SIZE: &str = "500";
+
 #[derive(Parser)]
 struct Opts {
     /// The IP address or hostname of the other party (i.e. the maker).
@@ -107,6 +109,9 @@ impl Opts {
         self.network.clone().unwrap_or_else(|| Network::Mainnet {
             electrum: MAINNET_ELECTRUM.to_string(),
             withdraw: None,
+            address_cache_size: DEFAULT_WALLET_ADDRESS_CACHE_SIZE
+                .parse()
+                .expect("static value to parse"),
         })
     }
 
@@ -170,6 +175,10 @@ enum Network {
 
         #[clap(subcommand)]
         withdraw: Option<Withdraw>,
+
+        /// The wallet address cache size used for the initial scan.
+        #[clap(long, default_value = DEFAULT_WALLET_ADDRESS_CACHE_SIZE)]
+        address_cache_size: u32,
     },
     /// Run on testnet
     Testnet {
@@ -179,6 +188,10 @@ enum Network {
 
         #[clap(subcommand)]
         withdraw: Option<Withdraw>,
+
+        /// The wallet address cache size used for the initial scan.
+        #[clap(long, default_value = DEFAULT_WALLET_ADDRESS_CACHE_SIZE)]
+        address_cache_size: u32,
     },
     /// Run on signet
     Signet {
@@ -188,6 +201,10 @@ enum Network {
 
         #[clap(subcommand)]
         withdraw: Option<Withdraw>,
+
+        /// The wallet address cache size used for the initial scan.
+        #[clap(long, default_value = DEFAULT_WALLET_ADDRESS_CACHE_SIZE)]
+        address_cache_size: u32,
     },
 }
 
@@ -240,6 +257,20 @@ impl Network {
             Network::Signet { withdraw, .. } => withdraw,
         }
     }
+
+    pub fn address_cache_size(&self) -> &u32 {
+        match self {
+            Network::Mainnet {
+                address_cache_size, ..
+            } => address_cache_size,
+            Network::Testnet {
+                address_cache_size, ..
+            } => address_cache_size,
+            Network::Signet {
+                address_cache_size, ..
+            } => address_cache_size,
+        }
+    }
 }
 
 #[rocket::main]
@@ -290,7 +321,11 @@ async fn main() -> Result<()> {
 
     let mut tasks = Tasks::default();
 
-    let (wallet, wallet_feed_receiver) = wallet::Actor::new(network.electrum(), ext_priv_key)?;
+    let (wallet, wallet_feed_receiver) = wallet::Actor::new(
+        network.electrum(),
+        ext_priv_key,
+        *network.address_cache_size(),
+    )?;
 
     let wallet = wallet.create(None).spawn(&mut tasks);
 

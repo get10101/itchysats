@@ -89,6 +89,7 @@ pub struct Actor<B> {
     used_utxos: LockedUtxos,
     tasks: Tasks,
     sender: watch::Sender<Option<WalletInfo>>,
+    address_cache_size: u32,
 }
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
@@ -99,6 +100,7 @@ impl Actor<ElectrumBlockchain> {
     pub fn new(
         electrum_rpc_url: &str,
         ext_priv_key: ExtendedPrivKey,
+        address_cache_size: u32,
     ) -> Result<(Self, watch::Receiver<Option<WalletInfo>>)> {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
@@ -127,6 +129,7 @@ impl Actor<ElectrumBlockchain> {
             sender,
             used_utxos: LockedUtxos::new(time_to_lock),
             blockchain_client: ElectrumBlockchain::from(client),
+            address_cache_size,
         };
 
         Ok((actor, receiver))
@@ -287,7 +290,7 @@ impl xtra::Actor for Actor<ElectrumBlockchain> {
         // We only cache the addresses at startup
         if let Err(e) = self
             .wallet
-            .ensure_addresses_cached(1000)
+            .ensure_addresses_cached(self.address_cache_size)
             .with_context(|| "Could not cache addresses")
         {
             tracing::warn!("{:#}", e);
@@ -454,6 +457,7 @@ mod tests {
                     time_to_lock,
                 },
                 blockchain_client: (),
+                address_cache_size: 100,
             })
         }
     }
