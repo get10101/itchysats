@@ -396,23 +396,20 @@ impl Endpoint {
         let this = ctx.address().expect("we are alive");
         let listen_address = msg.0.clone();
 
+        // FIXME: This address could be a "catch-all" like "0.0.0.0" which actually results in
+        // listening on multiple interfaces.
+        self.listen_addresses.insert(listen_address.clone());
+
         self.tasks.add_fallible(
             {
                 let transport = self.transport.clone();
                 let this = this.clone();
-                let listen_address = listen_address.clone();
-
                 async move {
                     let mut stream = transport
                         .listen_on(msg.0)
                         .context("cannot establish transport stream")?;
 
                     let mut tasks = Tasks::default();
-
-                    this.send(NewListenAddress {
-                        listen_address: listen_address.clone(),
-                    })
-                    .await?;
 
                     loop {
                         let event = stream.next().await.context("Listener closed")?;
@@ -488,12 +485,6 @@ impl Endpoint {
 
         Ok((protocol, stream))
     }
-
-    async fn handle(&mut self, msg: NewListenAddress) {
-        // FIXME: This address could be a "catch-all" like "0.0.0.0" which actually results in
-        // listening on multiple interfaces.
-        self.listen_addresses.insert(msg.listen_address);
-    }
 }
 
 fn verify_unique_handlers<const N: usize>(
@@ -536,10 +527,6 @@ struct FailedToConnect {
 struct ExistingConnectionFailed {
     peer: PeerId,
     error: anyhow::Error,
-}
-
-struct NewListenAddress {
-    listen_address: Multiaddr,
 }
 
 struct NewConnection {
