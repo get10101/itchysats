@@ -39,6 +39,7 @@ use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
+use xtra_libp2p_ping::pong;
 use xtras::supervisor;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -55,6 +56,7 @@ pub struct ActorSystem<O, W> {
     _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
     _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
+    _pong_actor: Address<pong::Actor>,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -141,16 +143,26 @@ where
         .create(None)
         .spawn(&mut tasks);
 
+        let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
+
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
         let endpoint = Endpoint::new(
             TokioTcpConfig::new(),
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
-            [(
-                daemon::rollover::PROTOCOL,
-                xtra::message_channel::StrongMessageChannel::clone_channel(&libp2p_rollover_addr),
-            )],
+            [
+                (
+                    daemon::rollover::PROTOCOL,
+                    xtra::message_channel::StrongMessageChannel::clone_channel(
+                        &libp2p_rollover_addr,
+                    ),
+                ),
+                (
+                    xtra_libp2p_ping::PROTOCOL_NAME,
+                    xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
+                ),
+            ],
         );
 
         tasks.add(endpoint_context.run(endpoint));
@@ -211,6 +223,7 @@ where
             _ping_supervisor,
             _position_metrics_actor: position_metrics_actor,
             _cull_old_dlcs_actor,
+            _pong_actor: pong_address,
         })
     }
 

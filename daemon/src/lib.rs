@@ -30,6 +30,7 @@ use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use xtra_libp2p::dialer;
 use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
+use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
 use xtras::supervisor;
 
@@ -87,6 +88,7 @@ pub struct TakerActorSystem<O, W, P> {
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
     _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
+    _pong_actor: Address<pong::Actor>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
@@ -224,6 +226,12 @@ where
 
         tasks.add(endpoint_context.run(endpoint));
 
+        let (supervisor, _ping_address) = supervisor::Actor::new({
+            let endpoint_addr = endpoint_addr.clone();
+            move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
+        });
+        let _ping_supervisor = supervisor.create(None).spawn(&mut tasks);
+
         let dialer_constructor =
             { move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone()) };
 
@@ -265,6 +273,7 @@ where
             _cull_old_dlcs_actor,
             _tasks: tasks,
             maker_online_status_feed_receiver,
+            _pong_actor: pong_address,
         })
     }
 
