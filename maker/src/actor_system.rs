@@ -40,6 +40,7 @@ use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
+use xtra_libp2p_ping::pong;
 use xtras::supervisor;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -61,6 +62,7 @@ pub struct ActorSystem<O, W> {
     _maker_offer_supervisor:
         Address<supervisor::Actor<xtra_libp2p_offer::maker::Actor, supervisor::UnitReason>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
+    _pong_actor: Address<pong::Actor>,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -179,6 +181,8 @@ where
             |_: &listener::Error| true, // always restart listener actor
         );
 
+        let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
+
         let endpoint = Endpoint::new(
             TokioTcpConfig::new(),
             identity.libp2p,
@@ -195,6 +199,10 @@ where
                     xtra::message_channel::StrongMessageChannel::clone_channel(
                         &libp2p_collab_settlement_addr,
                     ),
+                ),
+                (
+                    xtra_libp2p_ping::PROTOCOL_NAME,
+                    xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
                 ),
             ],
             endpoint::Subscribers::new(
@@ -258,6 +266,7 @@ where
             _collab_settlement_supervisor: collab_settlement_supervisor,
             _maker_offer_supervisor,
             _position_metrics_actor: position_metrics_actor,
+            _pong_actor: pong_address,
         })
     }
 
