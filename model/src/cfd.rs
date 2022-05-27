@@ -1,5 +1,6 @@
 use crate::contract_setup::SetupParams;
 use crate::hex_transaction;
+use crate::impl_sqlx_type_display_from_str;
 use crate::libp2p::PeerId;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
@@ -26,11 +27,10 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use bdk::bitcoin::secp256k1::SecretKey;
+use bdk::bitcoin;
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
-use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Script;
 use bdk::bitcoin::SignedAmount;
 use bdk::bitcoin::Transaction;
@@ -1833,7 +1833,7 @@ impl Cet {
     /// the TXID with which `Self` was constructed.
     pub fn to_tx(
         &self,
-        (commit_tx, commit_descriptor): (&Transaction, &Descriptor<PublicKey>),
+        (commit_tx, commit_descriptor): (&Transaction, &Descriptor<bitcoin::util::key::PublicKey>),
         maker_address: &Address,
         taker_address: &Address,
     ) -> Result<Transaction> {
@@ -1870,6 +1870,70 @@ impl Cet {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SecretKey(secp256k1_zkp::key::SecretKey);
+
+impl SecretKey {
+    pub fn new(sk: secp256k1_zkp::key::SecretKey) -> Self {
+        Self(sk)
+    }
+}
+
+impl fmt::Display for SecretKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl str::FromStr for SecretKey {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let sk = secp256k1_zkp::key::SecretKey::from_str(s)?;
+        Ok(Self(sk))
+    }
+}
+
+impl From<SecretKey> for secp256k1_zkp::key::SecretKey {
+    fn from(sk: SecretKey) -> Self {
+        sk.0
+    }
+}
+
+impl_sqlx_type_display_from_str!(SecretKey);
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PublicKey(bitcoin::util::key::PublicKey);
+
+impl PublicKey {
+    pub fn new(pk: bitcoin::util::key::PublicKey) -> Self {
+        Self(pk)
+    }
+}
+
+impl fmt::Display for PublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl str::FromStr for PublicKey {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let pk = bitcoin::util::key::PublicKey::from_str(s)?;
+        Ok(Self(pk))
+    }
+}
+
+impl From<PublicKey> for bitcoin::util::key::PublicKey {
+    fn from(pk: PublicKey) -> Self {
+        pk.0
+    }
+}
+
+impl_sqlx_type_display_from_str!(PublicKey);
+
 /// Contains all data we've assembled about the CFD through the setup protocol.
 ///
 /// All contained signatures are the signatures of THE OTHER PARTY.
@@ -1886,8 +1950,12 @@ pub struct Dlc {
     pub taker_address: Address,
 
     /// The fully signed lock transaction ready to be published on chain
-    pub lock: (Transaction, Descriptor<PublicKey>),
-    pub commit: (Transaction, EcdsaAdaptorSignature, Descriptor<PublicKey>),
+    pub lock: (Transaction, Descriptor<bitcoin::util::key::PublicKey>),
+    pub commit: (
+        Transaction,
+        EcdsaAdaptorSignature,
+        Descriptor<bitcoin::util::key::PublicKey>,
+    ),
     pub cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
     pub refund: (Transaction, Signature),
 
@@ -2001,7 +2069,7 @@ impl Dlc {
         )
         .context("Unable to build collaborative close transaction")?;
 
-        let sig = SECP256K1.sign(&sighash, &self.identity);
+        let sig = SECP256K1.sign(&sighash, &self.identity.0);
 
         Ok((tx, sig, lock_amount))
     }
@@ -2062,14 +2130,18 @@ impl Dlc {
     ) -> Result<Transaction> {
         let sighash = spending_tx_sighash(&spend_tx, &self.lock.1, lock_amount);
         SECP256K1
-            .verify(&sighash, &counterparty_sig, &self.identity_counterparty.key)
+            .verify(
+                &sighash,
+                &counterparty_sig,
+                &self.identity_counterparty.0.key,
+            )
             .context("Failed to verify counterparty signature")?;
 
-        let own_pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
+        let own_pk = bitcoin::util::key::PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
             SECP256K1,
-            &self.identity,
+            &self.identity.0,
         ));
-        let counterparty_pk = self.identity_counterparty;
+        let counterparty_pk = self.identity_counterparty.0;
 
         let lock_desc = &self.lock.1;
         let spend_tx = maia::finalize_spend_transaction(
@@ -2095,13 +2167,12 @@ impl Dlc {
             &self.commit.2,
             Amount::from_sat(self.commit.0.output[0].value),
         );
-        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
-        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
-            SECP256K1,
-            &self.identity,
-        ));
+        let our_sig = SECP256K1.sign(&sig_hash, &self.identity.0);
+        let our_pubkey = bitcoin::util::key::PublicKey::new(
+            bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity.0),
+        );
         let counterparty_sig = self.refund.1;
-        let counterparty_pubkey = self.identity_counterparty;
+        let counterparty_pubkey = self.identity_counterparty.0;
         let signed_refund_tx = maia::finalize_spend_transaction(
             self.refund.0.clone(),
             &self.commit.2,
@@ -2118,14 +2189,13 @@ impl Dlc {
             &self.lock.1,
             Amount::from_sat(self.lock.0.output[0].value),
         );
-        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
-        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
-            SECP256K1,
-            &self.identity,
-        ));
+        let our_sig = SECP256K1.sign(&sig_hash, &self.identity.0);
+        let our_pubkey = bitcoin::util::key::PublicKey::new(
+            bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity.0),
+        );
 
-        let counterparty_sig = self.commit.1.decrypt(&self.publish)?;
-        let counterparty_pubkey = self.identity_counterparty;
+        let counterparty_sig = self.commit.1.decrypt(&self.publish.0)?;
+        let counterparty_pubkey = self.identity_counterparty.0;
 
         let signed_commit_tx = maia::finalize_spend_transaction(
             self.commit.0.clone(),
@@ -2175,14 +2245,13 @@ impl Dlc {
             &self.commit.2,
             Amount::from_sat(self.commit.0.output[0].value),
         );
-        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
-        let our_pubkey = PublicKey::new(bdk::bitcoin::secp256k1::PublicKey::from_secret_key(
-            SECP256K1,
-            &self.identity,
-        ));
+        let our_sig = SECP256K1.sign(&sig_hash, &self.identity.0);
+        let our_pubkey = bitcoin::util::key::PublicKey::new(
+            bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity.0),
+        );
 
         let counterparty_sig = encsig.decrypt(&decryption_sk)?;
-        let counterparty_pubkey = self.identity_counterparty;
+        let counterparty_pubkey = self.identity_counterparty.0;
 
         let signed_cet = maia::finalize_spend_transaction(
             cet,
@@ -2871,8 +2940,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = keypair::new(&mut thread_rng());
-        let maker_keys = keypair::new(&mut thread_rng());
+        let taker_keys = new_keypair();
+        let maker_keys = new_keypair();
 
         let maker_cfd = Cfd::dummy_maker_short()
             .with_quantity(quantity)
@@ -2904,8 +2973,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = keypair::new(&mut thread_rng());
-        let maker_keys = keypair::new(&mut thread_rng());
+        let taker_keys = new_keypair();
+        let maker_keys = new_keypair();
 
         let maker_cfd = Cfd::dummy_maker_short()
             .with_quantity(quantity)
@@ -2975,8 +3044,8 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
-        let taker_keys = keypair::new(&mut thread_rng());
-        let maker_keys = keypair::new(&mut thread_rng());
+        let taker_keys = new_keypair();
+        let maker_keys = new_keypair();
 
         let taker_long = Cfd::dummy_taker_long()
             .with_id(order_id)
@@ -3014,8 +3083,8 @@ mod tests {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
 
-        let taker_keys = keypair::new(&mut thread_rng());
-        let maker_keys = keypair::new(&mut thread_rng());
+        let taker_keys = new_keypair();
+        let maker_keys = new_keypair();
 
         let cfd = Cfd::dummy_taker_long()
             .with_quantity(quantity)
@@ -3084,8 +3153,8 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
-        let taker_keys = keypair::new(&mut thread_rng());
-        let maker_keys = keypair::new(&mut thread_rng());
+        let taker_keys = new_keypair();
+        let maker_keys = new_keypair();
 
         let taker_long = Cfd::dummy_taker_long()
             .with_id(order_id)
@@ -3583,8 +3652,8 @@ mod tests {
         )
         .with_id(order_id);
 
-        let taker_keys = keypair::new(&mut thread_rng());
-        let maker_keys = keypair::new(&mut thread_rng());
+        let taker_keys = new_keypair();
+        let maker_keys = new_keypair();
 
         let taker_long = taker_long
             .dummy_open(dummy_event_id())
@@ -4167,9 +4236,9 @@ mod tests {
             identity_sk: SecretKey,
             identity_counterparty_pk: PublicKey,
         ) -> Self {
-            let maker_pk = bitcoin::PublicKey::new(identity_sk.to_public_key());
+            let maker_pk = bitcoin::PublicKey::new(identity_sk.0.to_public_key());
             let taker_pk = identity_counterparty_pk;
-            let descriptor = lock_descriptor(maker_pk, taker_pk);
+            let descriptor = lock_descriptor(maker_pk, taker_pk.0);
 
             self.with_lock(
                 amount_taker,
@@ -4188,8 +4257,8 @@ mod tests {
             identity_counterparty_pk: PublicKey,
         ) -> Self {
             let maker_pk = identity_counterparty_pk;
-            let taker_pk = bitcoin::PublicKey::new(identity_sk.to_public_key());
-            let descriptor = lock_descriptor(maker_pk, taker_pk);
+            let taker_pk = bitcoin::PublicKey::new(identity_sk.0.to_public_key());
+            let descriptor = lock_descriptor(maker_pk.0, taker_pk);
 
             self.with_lock(
                 amount_taker,
@@ -4206,7 +4275,7 @@ mod tests {
             amount_maker: Amount,
             identity_sk: SecretKey,
             identity_counterparty_pk: PublicKey,
-            descriptor: Descriptor<PublicKey>,
+            descriptor: Descriptor<bitcoin::util::key::PublicKey>,
         ) -> Self {
             let lock_tx = Transaction {
                 version: 0,
@@ -4231,12 +4300,15 @@ mod tests {
         }
 
         fn dummy(event_id: Option<BitMexPriceEventId>) -> Self {
-            let dummy_sk = SecretKey::from_slice(&[1; 32]).unwrap();
-            let dummy_pk = PublicKey::from_slice(&[
-                3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51,
-                41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
-            ])
-            .unwrap();
+            let dummy_sk =
+                SecretKey::new(secp256k1_zkp::key::SecretKey::from_slice(&[1; 32]).unwrap());
+            let dummy_pk = PublicKey::new(
+                bitcoin::util::key::PublicKey::from_slice(&[
+                    3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3,
+                    51, 41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
+                ])
+                .unwrap(),
+            );
 
             let dummy_addr = Address::from_str("132F25rTsvBdp9JzLLBHP5mvGY66i1xdiM").unwrap();
 
@@ -4269,11 +4341,11 @@ mod tests {
                 publish_pk_counterparty: dummy_pk,
                 maker_address: dummy_addr.clone(),
                 taker_address: dummy_addr,
-                lock: (dummy_tx.clone(), Descriptor::new_pk(dummy_pk)),
+                lock: (dummy_tx.clone(), Descriptor::new_pk(dummy_pk.0)),
                 commit: (
                     dummy_tx.clone(),
                     dummy_adapter_sig,
-                    Descriptor::new_pk(dummy_pk),
+                    Descriptor::new_pk(dummy_pk.0),
                 ),
                 cets: dummy_cet_with_zero_price_range,
                 refund: (dummy_tx, dummy_sig),
@@ -4370,4 +4442,9 @@ mod tests {
     const TX_FEE_COLLAB_SETTLEMENT: u64 = 85;
 
     const N_PAYOUTS: usize = 200;
+
+    fn new_keypair() -> (SecretKey, PublicKey) {
+        let (sk, pk) = keypair::new(&mut thread_rng());
+        (SecretKey::new(sk), PublicKey::new(pk))
+    }
 }
