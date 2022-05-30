@@ -2023,8 +2023,7 @@ impl Dlc {
             (outpoint, amount)
         };
 
-        // TODO: Use maia instead of maia_deprecated
-        let (tx, sighash) = maia_deprecated::close_transaction(
+        let (tx, sighash) = maia::close_transaction(
             lock_desc,
             lock_outpoint,
             lock_amount,
@@ -3149,39 +3148,6 @@ mod tests {
         assert!(result_maker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
     }
 
-    // This test replicates behaviour of maia_deprecated bug
-    #[test]
-    #[should_panic(expected = "attempt to subtract with overflow")]
-    fn collab_close_with_dummy_price_panics() {
-        let taker_keys = keypair::new(&mut thread_rng());
-        let maker_keys = keypair::new(&mut thread_rng());
-
-        let taker_long = Cfd::dummy_taker_long()
-            .dummy_open(dummy_event_id())
-            .with_lock(taker_keys, maker_keys);
-
-        let price = Price::dummy();
-
-        // Extract unsigned tx to be able to trigger collab settlement in the maker
-        let unsigned_tx = taker_long
-            .clone()
-            .start_close_position_taker(price, N_PAYOUTS)
-            .unwrap()
-            .1
-            .unsigned_transaction();
-
-        let maker_short = Cfd::dummy_maker_short()
-            .dummy_open(dummy_event_id())
-            .with_lock(taker_keys, maker_keys);
-
-        taker_long
-            .start_close_position_taker(price, N_PAYOUTS)
-            .unwrap();
-        maker_short
-            .start_close_position_maker(Price::dummy(), N_PAYOUTS, unsigned_tx)
-            .unwrap();
-    }
-
     #[test]
     fn given_no_rollover_then_no_rollover_fee() {
         let quantity = Usd::new(dec!(10));
@@ -3199,7 +3165,7 @@ mod tests {
         );
 
         // Expected payout at closing-price-interval defined by payout curve
-        let payout_interval_taker_amount = 49668;
+        let payout_interval_taker_amount = 49669;
         let payout_interval_maker_amount = 100332;
         // Expected initial funding fee based on the funding rate and short-margin (because the rate
         // is positive meaning long pays short)
@@ -3232,7 +3198,7 @@ mod tests {
         );
 
         // Expected payout at closing-price-interval defined by payout curve
-        let payout_interval_taker_amount = 49668;
+        let payout_interval_taker_amount = 49669;
         let payout_interval_maker_amount = 100332;
         // Expected initial funding fee based on the funding rate and short-margin (because the rate
         // is positive meaning long pays short)
@@ -3265,7 +3231,7 @@ mod tests {
         );
 
         // Expected payout at closing-price-interval defined by payout curve
-        let payout_interval_taker_amount = 49668;
+        let payout_interval_taker_amount = 49669;
         let payout_interval_maker_amount = 100332;
         // Expected initial funding fee based on the funding rate and short-margin (because the rate
         // is positive meaning long pays short)
@@ -3314,9 +3280,6 @@ mod tests {
 
     #[test]
     fn given_taker_long_maker_short_production_values_then_collab_settlement_is_as_expected() {
-        // The values for this test are from production on 05.02.2022
-        // For testing purpose different values can be plugged in to ensure sanity / debugging
-
         let quantity = Usd::new(dec!(100));
         let opening_price = Price::new(dec!(41015.60)).unwrap();
         let closing_price = Price::new(dec!(40600)).unwrap();
@@ -3331,7 +3294,7 @@ mod tests {
             0,
         );
 
-        assert_eq!(taker_payout, 119239);
+        assert_eq!(taker_payout, 119240);
         assert_eq!(maker_payout, 246306);
     }
 
