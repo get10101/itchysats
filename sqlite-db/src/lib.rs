@@ -38,6 +38,7 @@ pub use failed::*;
 
 mod closed;
 mod cull_old_dlcs;
+mod delete_trivial_cfds;
 mod event_log;
 mod failed;
 mod impls;
