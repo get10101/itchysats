@@ -276,6 +276,14 @@ where
             address: self.wallet.get_address(AddressIndex::New)?.address,
         })
     }
+
+    pub fn handle_get_balance(&mut self, _msg: GetBalance) -> Result<Amount> {
+        let balance = self
+            .wallet
+            .get_balance()
+            .context("Failed to retrieve wallet balance")?;
+        Ok(Amount::from_sat(balance))
+    }
 }
 
 #[async_trait]
@@ -318,6 +326,9 @@ pub struct Withdraw {
     pub fee: Option<FeeRate>,
     pub address: Address,
 }
+
+#[derive(Clone, Copy)]
+pub struct GetBalance;
 
 /// Bitcoin error codes: <https://github.com/bitcoin/bitcoin/blob/97d3500601c1d28642347d014a6de1e38f53ae4e/src/rpc/protocol.h#L23>
 #[derive(Clone, Copy)]
@@ -433,6 +444,7 @@ mod tests {
     use itertools::Itertools;
     use rand::thread_rng;
     use std::collections::HashSet;
+    use xtra::spawn::TokioGlobalSpawnExt;
     use xtra::Actor as _;
 
     impl Actor<()> {
@@ -606,5 +618,52 @@ mod tests {
             .await
             .unwrap()
             .expect("single UTXO to be available after unlocking it");
+    }
+
+    #[tokio::test]
+    async fn given_margin_less_balance_then_insufficient_funds_error_when_building_party_params() {
+        let balance = Amount::from_btc(0.1).unwrap();
+        let margin = Amount::from_btc(0.2).unwrap();
+
+        let actor = Actor::new_offline(balance, 1, Duration::from_secs(120))
+            .unwrap()
+            .create(None)
+            .spawn_global();
+
+        let (_, identity_pk) = keypair::new(&mut thread_rng());
+
+        actor
+            .send(BuildPartyParams {
+                amount: margin,
+                identity_pk,
+                fee_rate: TxFeeRate::default(),
+            })
+            .await
+            .unwrap()
+            .expect_err("insufficient funds");
+    }
+
+    #[tokio::test]
+    async fn given_margin_equals_balance_and_fee_rate_then_insufficient_funds_error_when_building_party_params(
+    ) {
+        let balance = Amount::from_btc(0.1).unwrap();
+        let margin = Amount::from_btc(0.1).unwrap();
+
+        let actor = Actor::new_offline(balance, 1, Duration::from_secs(120))
+            .unwrap()
+            .create(None)
+            .spawn_global();
+
+        let (_, identity_pk) = keypair::new(&mut thread_rng());
+
+        actor
+            .send(BuildPartyParams {
+                amount: margin,
+                identity_pk,
+                fee_rate: TxFeeRate::default(),
+            })
+            .await
+            .unwrap()
+            .expect_err("insufficient funds");
     }
 }

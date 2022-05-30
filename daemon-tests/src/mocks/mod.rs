@@ -3,6 +3,7 @@ use crate::mocks::monitor::MockMonitor;
 use crate::mocks::oracle::MockOracle;
 use crate::mocks::price_feed::MockPriceFeed;
 use crate::mocks::wallet::MockWallet;
+use crate::Amount;
 use model::olivia;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -58,6 +59,17 @@ impl Mocks {
             .await
             .expect_sign()
             .returning(|sign_msg| Ok(sign_msg.psbt));
+    }
+
+    pub async fn mock_balance(&mut self) {
+        self.mock_balance_with(Amount::from_sat(100000000)).await;
+    }
+
+    pub async fn mock_balance_with(&mut self, balance: Amount) {
+        self.wallet()
+            .await
+            .expect_get_balance()
+            .returning(move |_| Ok(balance));
     }
 
     pub async fn mock_oracle_announcement(&mut self) {

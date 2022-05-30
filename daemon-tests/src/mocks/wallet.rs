@@ -54,6 +54,9 @@ impl WalletActor {
     async fn handle(&mut self, msg: wallet::Withdraw) -> Result<Txid> {
         self.mock.lock().await.withdraw(msg)
     }
+    async fn handle(&mut self, msg: wallet::GetBalance) -> Result<Amount> {
+        self.mock.lock().await.get_balance(msg)
+    }
 }
 
 #[automock]
@@ -67,6 +70,10 @@ pub trait Wallet {
     }
 
     fn withdraw(&mut self, _msg: wallet::Withdraw) -> Result<Txid> {
+        unreachable!("mockall will reimplement this method")
+    }
+
+    fn get_balance(&mut self, _msg: wallet::GetBalance) -> Result<Amount> {
         unreachable!("mockall will reimplement this method")
     }
 }
