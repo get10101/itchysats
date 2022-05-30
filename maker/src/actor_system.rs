@@ -88,6 +88,7 @@ where
             + Handler<monitor::MonitorCetFinality>
             + Actor<Stop = ()>,
     {
+        futures::executor::block_on(db.delete_trivial_cfds())?;
         futures::executor::block_on(db.cull_old_dlcs())?;
 
         let (monitor_addr, monitor_ctx) = Context::new(None);
