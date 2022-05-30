@@ -9,6 +9,7 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use daemon::balance_check;
 use daemon::command;
 use daemon::libp2p_utils::can_use_libp2p;
 use daemon::oracle;
@@ -314,7 +315,9 @@ where
     T: xtra::Handler<connection::ConfirmOrder>
         + xtra::Handler<connection::TakerMessage>
         + xtra::Handler<connection::BroadcastOffers>,
-    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
+    W: xtra::Handler<wallet::Sign>
+        + xtra::Handler<wallet::BuildPartyParams>
+        + xtra::Handler<wallet::GetBalance>,
 {
     async fn handle_take_order(
         &mut self,
@@ -366,6 +369,25 @@ where
             Role::Maker,
             leverage,
         );
+
+        if let Err(e) = balance_check(
+            cfd.margin(),
+            order_to_take.tx_fee_rate,
+            &self.wallet,
+            &self.wallet,
+        )
+        .await
+        {
+            tracing::warn!(%order_id, %taker_id, "Rejecting taker's order: {e}");
+
+            self.takers
+                .send(connection::TakerMessage {
+                    taker_id,
+                    msg: wire::MakerToTaker::RejectOrder(order_id),
+                })
+                .await??;
+            return Ok(());
+        }
 
         // 2. Replicate the orders in the offers with new ones to allow other takers to use
         // the same offer
@@ -690,7 +712,9 @@ where
         + xtra::Handler<connection::BroadcastOffers>
         + xtra::Handler<connection::settlement::Response>
         + xtra::Handler<connection::RegisterRollover>,
-    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
+    W: xtra::Handler<wallet::Sign>
+        + xtra::Handler<wallet::BuildPartyParams>
+        + xtra::Handler<wallet::GetBalance>,
 {
     async fn handle_new_order(&mut self, msg: OfferParams) -> Result<()> {
         // 1. Update actor state to current order

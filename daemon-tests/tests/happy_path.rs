@@ -205,6 +205,9 @@ async fn taker_takes_order_and_maker_rejects() {
     taker.mocks.mock_party_params().await;
 
     maker.mocks.mock_oracle_announcement().await;
+    maker.mocks.mock_balance().await;
+    maker.mocks.mock_party_params().await;
+
     taker
         .system
         .take_offer(order_id, Usd::new(dec!(10)), Leverage::TWO)
@@ -240,6 +243,9 @@ async fn another_offer_is_automatically_created_after_taker_takes_order() {
     taker.mocks.mock_party_params().await;
 
     maker.mocks.mock_oracle_announcement().await;
+    maker.mocks.mock_balance().await;
+    maker.mocks.mock_party_params().await;
+
     taker
         .system
         .take_offer(order_id_take, Usd::new(dec!(10)), Leverage::TWO)
@@ -294,6 +300,8 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     taker.mocks.mock_party_params().await;
 
     maker.mocks.mock_oracle_announcement().await;
+    maker.mocks.mock_balance().await;
+    maker.mocks.mock_party_params().await;
 
     taker
         .system
@@ -301,8 +309,6 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
         .await
         .unwrap();
     wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
-
-    maker.mocks.mock_party_params().await;
 
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
@@ -705,6 +711,8 @@ async fn start_from_open_cfd_state(
         .mocks
         .mock_oracle_announcement_with(announcement)
         .await;
+    maker.mocks.mock_balance().await;
+    maker.mocks.mock_party_params().await;
 
     let order_to_take = match position_maker {
         Position::Short => received.short,
@@ -719,8 +727,6 @@ async fn start_from_open_cfd_state(
         .await
         .unwrap();
     wait_next_state!(order_to_take.id, maker, taker, CfdState::PendingSetup);
-
-    maker.mocks.mock_party_params().await;
 
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
