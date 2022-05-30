@@ -13,7 +13,7 @@ conquer-once = "0.3"
 futures = "0.3"
 prometheus = { version = "0.13", default-features = false }
 rand = "0.8"
-tokio-tasks = { path = "../tokio-tasks" }
+tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
 tracing = "0.1"
 xtra = "0.6"
 xtra-libp2p = { path = "../xtra-libp2p" }
