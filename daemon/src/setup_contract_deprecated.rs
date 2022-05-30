@@ -40,6 +40,7 @@ use maia_deprecated::renew_cfd_transactions;
 use maia_deprecated::spending_tx_sighash;
 use model::calculate_payouts;
 use model::olivia;
+use model::AdaptorSignature;
 use model::Cet;
 use model::Dlc;
 use model::FeeFlow;
@@ -307,7 +308,7 @@ pub async fn new(
                         let cet = Cet {
                             maker_amount,
                             taker_amount,
-                            adaptor_sig: *other_encsig,
+                            adaptor_sig: AdaptorSignature::new(*other_encsig),
                             range: digits.range(),
                             n_bits: digits.len(),
                             txid: tx.txid(),
@@ -351,7 +352,8 @@ pub async fn new(
         maker_address: params.maker().address.clone(),
         taker_address: params.taker().address.clone(),
         lock: (signed_lock_tx.extract_tx(), lock_desc),
-        commit: (commit_tx, msg1.commit, commit_desc),
+
+        commit: (commit_tx, AdaptorSignature::new(msg1.commit), commit_desc),
         cets,
         refund: (refund_tx, msg1.refund),
         maker_lock_amount: params.maker().lock_amount,
@@ -592,7 +594,7 @@ pub async fn roll_over(
                     let cet = Cet {
                         maker_amount,
                         taker_amount,
-                        adaptor_sig: *other_encsig,
+                        adaptor_sig: AdaptorSignature::new(*other_encsig),
                         range: digits.range(),
                         n_bits: digits.len(),
                         txid: tx.txid(),
@@ -639,7 +641,7 @@ pub async fn roll_over(
 
     let mut revoked_commit = dlc.revoked_commit;
     revoked_commit.push(RevokedCommit {
-        encsig_ours: own_cfd_txs.commit.1,
+        encsig_ours: AdaptorSignature::new(own_cfd_txs.commit.1),
         revocation_sk_theirs: SecretKey::new(revocation_sk_theirs),
         publication_pk_theirs: dlc.publish_pk_counterparty,
         txid: dlc.commit.0.txid(),
@@ -668,7 +670,7 @@ pub async fn roll_over(
         maker_address: dlc.maker_address,
         taker_address: dlc.taker_address,
         lock: dlc.lock.clone(),
-        commit: (commit_tx, msg1.commit, commit_desc),
+        commit: (commit_tx, AdaptorSignature::new(msg1.commit), commit_desc),
         cets,
         refund: (refund_tx, msg1.refund),
         maker_lock_amount,
