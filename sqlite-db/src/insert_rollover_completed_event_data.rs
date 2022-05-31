@@ -1,3 +1,4 @@
+use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::hashes::hex::ToHex;
 use model::olivia::BitMexPriceEventId;
@@ -25,6 +26,8 @@ pub async fn insert_rollover_completed_event(
             funding_fee,
         } => {
             let mut inner_transaction = connection.begin().await?;
+
+            delete_rollover_completed_event_data(&mut inner_transaction, event.id).await?;
 
             insert_rollover_completed_event_data(
                 &mut inner_transaction,
@@ -57,6 +60,43 @@ pub async fn insert_rollover_completed_event(
             tracing::error!("Invalid event type. Use `append_event` function instead")
         }
     }
+
+    Ok(())
+}
+
+async fn delete_rollover_completed_event_data(
+    inner_transaction: &mut Transaction<'_, Sqlite>,
+    offer_id: OrderId,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
+            delete from rollover_completed_event_data where cfd_id = (select id from cfds where cfds.uuid = $1)
+        "#,
+        offer_id
+    )
+        .execute(&mut *inner_transaction)
+        .await
+        .with_context(|| format!("Failed to delete from rollover_completed_event_data for {offer_id}"))?;
+
+    sqlx::query!(
+        r#"
+            delete from revoked_commit_transactions where cfd_id = (select id from cfds where cfds.uuid = $1)
+        "#,
+        offer_id
+    )
+        .execute(&mut *inner_transaction)
+        .await
+        .with_context(|| format!("Failed to delete from revoked_commit_transactions for {offer_id}"))?;
+
+    sqlx::query!(
+        r#"
+            delete from open_cets where cfd_id = (select id from cfds where cfds.uuid = $1)
+        "#,
+        offer_id
+    )
+    .execute(&mut *inner_transaction)
+    .await
+    .with_context(|| format!("Failed to delete from open_cets for {offer_id}"))?;
 
     Ok(())
 }
@@ -232,7 +272,9 @@ async fn insert_cet(
 mod tests {
     use super::*;
     use crate::memory;
+    use anyhow::bail;
     use bdk::bitcoin::Amount;
+    use model::olivia::BitMexPriceEventId;
     use model::Cfd;
     use model::CfdEvent;
     use model::FundingRate;
@@ -247,7 +289,9 @@ mod tests {
     use model::Usd;
     use rust_decimal_macros::dec;
     use sqlx::pool::PoolConnection;
+    use time::macros::datetime;
     use time::Duration;
+    use time::OffsetDateTime;
 
     pub fn dummy_cfd() -> Cfd {
         Cfd::new(
@@ -294,6 +338,48 @@ mod tests {
         assert_eq!(cets, 2);
     }
 
+    #[tokio::test]
+    async fn repeatedly_insert_rollover_completed_event_data_should_not_error() -> Result<()> {
+        let db = memory().await?;
+
+        let cfd = dummy_cfd();
+        db.insert_cfd(&cfd).await?;
+
+        let timestamp = Timestamp::now();
+
+        let event = std::fs::read_to_string("./src/test_events/rollover_completed.json")?;
+        let event = serde_json::from_str::<EventKind>(&event)?;
+
+        let rollover_completed = CfdEvent {
+            timestamp,
+            id: cfd.id(),
+            event: event.clone(),
+        };
+
+        // insert first rollovercompleted event
+        let mut connection = db.inner.acquire().await?;
+        db.append_event(rollover_completed.clone()).await?;
+        insert_rollover_completed_event(&mut connection, 1, rollover_completed.clone()).await?;
+
+        // insert second rollovercompleted event with different event id
+        let rollover_completed = update_event_id(
+            timestamp,
+            event,
+            datetime!(2021-06-01 10:00:00).assume_utc(),
+            cfd.id(),
+        )?;
+        let mut connection = db.inner.acquire().await?;
+        db.append_event(rollover_completed.clone()).await?;
+        insert_rollover_completed_event(&mut connection, 2, rollover_completed).await?;
+
+        let (rollovers, revokes, cets) = count_table_entries(connection).await;
+        assert_eq!(rollovers, 1);
+        assert_eq!(revokes, 2);
+        assert_eq!(cets, 2);
+
+        Ok(())
+    }
+
     async fn count_table_entries(mut connection: PoolConnection<Sqlite>) -> (i32, i32, i32) {
         let row = sqlx::query!(
             r#"
@@ -316,5 +402,34 @@ mod tests {
             row.revokes.unwrap(),
             row.cets.unwrap(),
         )
+    }
+
+    fn update_event_id(
+        timestamp: Timestamp,
+        event: EventKind,
+        settlement_event_timestamp: OffsetDateTime,
+        id: OrderId,
+    ) -> Result<CfdEvent> {
+        match event {
+            EventKind::RolloverCompleted {
+                dlc: Some(mut dlc),
+                funding_fee,
+            } => {
+                dlc.settlement_event_id =
+                    BitMexPriceEventId::with_20_digits(settlement_event_timestamp);
+
+                Ok(CfdEvent {
+                    timestamp,
+                    id,
+                    event: EventKind::RolloverCompleted {
+                        dlc: Some(dlc),
+                        funding_fee,
+                    },
+                })
+            }
+            _ => {
+                bail!("We should always have a RolloverCompleted event")
+            }
+        }
     }
 }
