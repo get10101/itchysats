@@ -3187,14 +3187,16 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
+        let rollover_fee = 1000;
+        let number_of_rollovers = 1;
 
         let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
             quantity,
             opening_price,
             closing_price,
             positive_funding_rate,
-            1000,
-            1,
+            rollover_fee,
+            number_of_rollovers,
         );
 
         // Expected payout at closing-price-interval defined by payout curve
@@ -3203,14 +3205,19 @@ mod tests {
         // Expected initial funding fee based on the funding rate and short-margin (because the rate
         // is positive meaning long pays short)
         let initial_funding_fee = 10;
+        let rollover_fees = rollover_fee * number_of_rollovers as u64;
 
         assert_eq!(
             long_payout,
-            payout_interval_taker_amount - initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT - 1000
+            payout_interval_taker_amount
+                - initial_funding_fee
+                - TX_FEE_COLLAB_SETTLEMENT
+                - rollover_fees
         );
         assert_eq!(
             short_payout,
-            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT + 1000
+            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT
+                + rollover_fees
         );
     }
 
@@ -3220,14 +3227,16 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
+        let rollover_fee = 1000;
+        let number_of_rollovers = 2;
 
         let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
             quantity,
             opening_price,
             closing_price,
             positive_funding_rate,
-            1000,
-            2,
+            rollover_fee,
+            number_of_rollovers,
         );
 
         // Expected payout at closing-price-interval defined by payout curve
@@ -3236,14 +3245,19 @@ mod tests {
         // Expected initial funding fee based on the funding rate and short-margin (because the rate
         // is positive meaning long pays short)
         let initial_funding_fee = 10;
+        let rollover_fees = rollover_fee * number_of_rollovers as u64;
 
         assert_eq!(
             long_payout,
-            payout_interval_taker_amount - initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT - 2000
+            payout_interval_taker_amount
+                - initial_funding_fee
+                - TX_FEE_COLLAB_SETTLEMENT
+                - rollover_fees
         );
         assert_eq!(
             short_payout,
-            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT + 2000
+            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT
+                + rollover_fees
         );
     }
 
