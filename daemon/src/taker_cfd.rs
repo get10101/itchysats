@@ -1,3 +1,4 @@
+use crate::balance_check;
 use crate::collab_settlement_taker;
 use crate::connection;
 use crate::oracle;
@@ -167,7 +168,9 @@ impl<O, W> Actor<O, W> {
 impl<O, W> Actor<O, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
+    W: xtra::Handler<wallet::BuildPartyParams>
+        + xtra::Handler<wallet::Sign>
+        + xtra::Handler<wallet::GetBalance>,
 {
     async fn handle_take_offer(&mut self, msg: TakeOffer) -> Result<()> {
         let TakeOffer {
@@ -191,6 +194,23 @@ where
 
         let order_to_take = order_to_take.context("Order to take could not be found in current maker offers, you might have an outdated offer")?;
 
+        let cfd = Cfd::from_order(
+            &order_to_take,
+            quantity,
+            self.maker_identity,
+            Some(self.maker_peer_id),
+            Role::Taker,
+            leverage,
+        );
+
+        balance_check(
+            cfd.margin(),
+            order_to_take.tx_fee_rate,
+            &self.wallet,
+            &self.wallet,
+        )
+        .await?;
+
         // The offer we are instructed to take is removed from the
         // set of available offers immediately so that we don't attempt
         // to take it more than once
@@ -207,18 +227,9 @@ where
 
         tracing::info!("Taking current order: {:?}", &order_to_take);
 
-        // We create the cfd here without any events yet, only static data
-        // Once the contract setup completes (rejected / accepted / failed) the first event will be
+        // We insert the cfd here without any events yet, only static data
+        // Once the contract setup with the other party is started the first event will be
         // recorded
-        let cfd = Cfd::from_order(
-            &order_to_take,
-            quantity,
-            self.maker_identity,
-            Some(self.maker_peer_id),
-            Role::Taker,
-            leverage,
-        );
-
         self.db.insert_cfd(&cfd).await?;
         self.projection_actor
             .send(projection::CfdChanged(cfd.id()))

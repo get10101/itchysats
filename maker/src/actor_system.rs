@@ -63,6 +63,7 @@ where
     W: Handler<wallet::BuildPartyParams>
         + Handler<wallet::Sign>
         + Handler<wallet::Withdraw>
+        + Handler<wallet::GetBalance>
         + Actor<Stop = ()>,
 {
     #[allow(clippy::too_many_arguments)]

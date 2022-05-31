@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use crate::bitcoin::Txid;
+use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -18,6 +19,7 @@ use model::Order;
 use model::OrderId;
 use model::Price;
 use model::Role;
+use model::TxFeeRate;
 use model::Usd;
 use parse_display::Display;
 use seed::Identities;
@@ -99,6 +101,7 @@ where
     W: Handler<wallet::BuildPartyParams>
         + Handler<wallet::Sign>
         + Handler<wallet::Withdraw>
+        + Handler<wallet::GetBalance>
         + Actor<Stop = ()>,
     P: Handler<xtra_bitmex_price_feed::LatestQuote> + Actor<Stop = xtra_bitmex_price_feed::Error>,
 {
@@ -360,4 +363,39 @@ impl Environment {
             _ => Environment::Unknown,
         }
     }
+}
+
+pub async fn balance_check(
+    margin: Amount,
+    tx_fee_rate: TxFeeRate,
+    build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
+    get_balance: &(impl MessageChannel<wallet::GetBalance> + 'static),
+) -> Result<()> {
+    let dummy_pk = "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af"
+        .parse()
+        .expect("static pk to parse");
+    let build_params = build_party_params
+        .send(wallet::BuildPartyParams {
+            amount: margin,
+            identity_pk: dummy_pk,
+            fee_rate: tx_fee_rate,
+        })
+        .await
+        .context("Wallet actor unavailable")??;
+
+    let lock_amount = build_params.lock_amount;
+    let balance = get_balance
+        .send(wallet::GetBalance)
+        .await
+        .context("Wallet actor unavailable")??;
+
+    if balance < lock_amount {
+        bail!(
+            "Wallet balance {} insufficient to open cfd with lock amount {}",
+            balance,
+            lock_amount
+        )
+    }
+
+    Ok(())
 }

@@ -743,7 +743,7 @@ impl Cfd {
             .map(|dlc| dlc.settlement_event_id.timestamp())
     }
 
-    fn margin(&self) -> Amount {
+    pub fn margin(&self) -> Amount {
         match self.position {
             Position::Long => {
                 calculate_margin(self.initial_price, self.quantity, self.long_leverage)
