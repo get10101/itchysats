@@ -69,8 +69,15 @@ export default function Footer({ identityInfo }: FooterProps) {
                             <ModalHeader>ItchySats Info</ModalHeader>
                             <ModalCloseButton />
                             <ModalBody>
-                                <Text>Your Taker ID: {identityInfo ? identityInfo.taker_id : "unknown"}</Text>
-                                <Text>Your Peer ID: {identityInfo ? identityInfo.taker_peer_id : "unknown"}</Text>
+                                <Text fontWeight={"bold"}>Your Taker ID:</Text>
+                                <Text>{identityInfo ? identityInfo.taker_id : "unknown"}</Text>
+                                <Divider
+                                    orientation={"horizontal"}
+                                    borderColor={useColorModeValue("black", "white")}
+                                    height={"20px"}
+                                />
+                                <Text fontWeight={"bold"}>Your Peer ID:</Text>
+                                <Text>{identityInfo ? identityInfo.taker_peer_id : "unknown"}</Text>
                             </ModalBody>
                             <ModalFooter>
                                 <Button colorScheme="blue" mr={3} onClick={onClose}>
