@@ -42,6 +42,7 @@ pub mod event_log;
 pub mod failed;
 mod impls;
 mod insert_rollover_completed_event_data;
+mod load_rollover_completed_event_data;
 pub mod time_to_first_position;
 
 #[derive(Clone)]
