@@ -27,6 +27,7 @@ use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use xtra::prelude::*;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
+use xtra_libp2p::connection_monitor;
 use xtra_libp2p::dialer;
 use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
@@ -84,6 +85,8 @@ pub struct TakerActorSystem<O, W, P> {
     /// address.
     _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
     _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
+    _connection_monitor_supervisor:
+        Address<supervisor::Actor<connection_monitor::Actor, connection_monitor::Error>>,
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
     _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
@@ -224,14 +227,35 @@ where
 
         tasks.add(endpoint_context.run(endpoint));
 
-        let dialer_constructor =
-            { move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone()) };
-
-        let (supervisor, _dialer_actor) = supervisor::Actor::with_policy(
+        let dialer_constructor = {
+            let endpoint_addr = endpoint_addr.clone();
+            move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone())
+        };
+        let (supervisor, dialer_actor) = supervisor::Actor::with_policy(
             dialer_constructor,
             |_: &dialer::Error| true, // always restart dialer actor
         );
         let dialer_supervisor = supervisor.create(None).spawn(&mut tasks);
+
+        let connection_monitor_constructor = {
+            move || {
+                connection_monitor::Actor::new(
+                    endpoint_addr.clone(),
+                    vec![xtra::message_channel::MessageChannel::clone_channel(
+                        &dialer_actor,
+                    )],
+                    vec![xtra::message_channel::MessageChannel::clone_channel(
+                        &dialer_actor,
+                    )],
+                )
+            }
+        };
+
+        let (supervisor, _connection) = supervisor::Actor::with_policy(
+            connection_monitor_constructor,
+            |_: &connection_monitor::Error| true, // always restart connection monitor actor
+        );
+        let connection_monitor_supervisor = supervisor.create(None).spawn(&mut tasks);
 
         let (supervisor, price_feed_actor) = supervisor::Actor::with_policy(
             price_feed_constructor,
@@ -260,6 +284,7 @@ where
             executor,
             _price_feed_supervisor: price_feed_supervisor,
             _dialer_supervisor: dialer_supervisor,
+            _connection_monitor_supervisor: connection_monitor_supervisor,
             _close_cfds_actor: close_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             _cull_old_dlcs_actor,
