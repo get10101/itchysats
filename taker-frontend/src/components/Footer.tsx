@@ -30,9 +30,10 @@ function TextDivider() {
 
 interface FooterProps {
     taker_id: string;
+    peer_id: string;
 }
 
-export default function Footer({ taker_id }: FooterProps) {
+export default function Footer({ taker_id, peer_id }: FooterProps) {
     const { isOpen, onOpen, onClose } = useDisclosure();
 
     return (
@@ -69,6 +70,7 @@ export default function Footer({ taker_id }: FooterProps) {
                             <ModalCloseButton />
                             <ModalBody>
                                 <Text>Your Taker ID: {taker_id}</Text>
+                                <Text>Your Peer ID: {peer_id}</Text>
                             </ModalBody>
                             <ModalFooter>
                                 <Button colorScheme="blue" mr={3} onClick={onClose}>
@@ -80,7 +82,7 @@ export default function Footer({ taker_id }: FooterProps) {
                     <TextDivider />
                     <FeedbackFish
                         projectId="c1260a96cdb3d8"
-                        metadata={{ position: "footer", customerId: taker_id }}
+                        metadata={{ position: "footer", customerid: taker_id, peerid: peer_id }}
                     >
                         <Button
                             fontSize={"20"}

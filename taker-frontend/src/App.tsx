@@ -257,7 +257,7 @@ export const App = () => {
                     </Center>
                 </Box>
             </Center>
-            <Footer taker_id={identity.taker_id} />
+            <Footer taker_id={identity.taker_id} peer_id={identity.taker_peer_id} />
         </>
     );
 };
