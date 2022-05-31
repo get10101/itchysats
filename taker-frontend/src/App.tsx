@@ -123,7 +123,6 @@ export const App = () => {
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
-    let identity = identityOrUndefined ? identityOrUndefined! : { taker_id: "unknown", taker_peer_id: "unknown" };
     const connectedToMakerOrUndefined = useLatestEvent<ConnectionStatus>(source, "maker_status");
     const connectedToMaker = connectedToMakerOrUndefined ? connectedToMakerOrUndefined : { online: false };
 
@@ -257,7 +256,7 @@ export const App = () => {
                     </Center>
                 </Box>
             </Center>
-            <Footer taker_id={identity.taker_id} peer_id={identity.taker_peer_id} />
+            <Footer identityInfo={identityOrUndefined} />
         </>
     );
 };
