@@ -3261,36 +3261,33 @@ mod tests {
         );
     }
 
-    // TODO: Payout cove calculation uderflows because long is not capped at zero!
-    // #[test]
-    // fn given_more_rollover_then_long_margin_with_positive_rate_then_long_gets_liquidated() {
-    //     let quantity = Usd::new(dec!(10));
-    //     let opening_price = Price::new(dec!(10000)).unwrap();
-    //     let closing_price = Price::new(dec!(10000)).unwrap();
-    //     let positive_funding_rate = dec!(0.0001);
-    //
-    //     let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
-    //         quantity,
-    //         opening_price,
-    //         closing_price,
-    //         positive_funding_rate,
-    //         1000,
-    //         50,
-    //     );
-    //
-    //     // Expected payout at closing-price-interval defined by payout curve
-    //     let payout_interval_taker_amount = 49668;
-    //     let payout_interval_maker_amount = 100332;
-    //
-    //     assert_eq!(
-    //         long_payout,
-    //         0
-    //     );
-    //     assert_eq!(
-    //         short_payout,
-    //         payout_interval_maker_amount + payout_interval_taker_amount -
-    // TX_FEE_COLLAB_SETTLEMENT     );
-    // }
+    #[test]
+    fn given_more_rollover_then_long_margin_with_positive_rate_then_long_gets_liquidated() {
+        let quantity = Usd::new(dec!(10));
+        let opening_price = Price::new(dec!(10000)).unwrap();
+        let closing_price = Price::new(dec!(10000)).unwrap();
+        let positive_funding_rate = dec!(0.0001);
+
+        let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
+            quantity,
+            opening_price,
+            closing_price,
+            positive_funding_rate,
+            1000,
+            50,
+        );
+
+        // Expected payout at closing-price-interval defined by payout curve
+        let payout_interval_taker_amount = 49668;
+        let payout_interval_maker_amount = 100332;
+
+        assert_eq!(long_payout, 0);
+        assert_eq!(
+            short_payout,
+            payout_interval_maker_amount + payout_interval_taker_amount
+                - (2 * TX_FEE_COLLAB_SETTLEMENT)
+        );
+    }
 
     #[test]
     fn given_taker_long_maker_short_production_values_then_collab_settlement_is_as_expected() {
