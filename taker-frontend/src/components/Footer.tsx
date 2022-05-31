@@ -60,7 +60,8 @@ export default function Footer({ identityInfo }: FooterProps) {
                         aria-label={"itchysats-about"}
                         icon={<FaInfo />}
                         fontSize="20px"
-                        color={"gray.600"}
+                        variant={"ghost"}
+                        color={useColorModeValue("black", "white")}
                         onClick={onOpen}
                     />
                     <Modal isOpen={isOpen} onClose={onClose}>
