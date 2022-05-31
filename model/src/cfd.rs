@@ -1818,7 +1818,7 @@ pub struct Cet {
     pub range: RangeInclusive<u64>,
     pub n_bits: usize,
 
-    pub txid: Txid,
+    pub txid: crate::Txid,
 }
 
 impl Cet {
@@ -1861,7 +1861,7 @@ impl Cet {
             output,
         };
 
-        if tx.txid() != self.txid {
+        if tx.txid() != Txid::from(self.txid) {
             bail!("Reconstructed wrong CET");
         }
 
@@ -2315,7 +2315,7 @@ pub struct RevokedCommit {
     pub revocation_sk_theirs: SecretKey,
     pub publication_pk_theirs: PublicKey,
     // To monitor revoked commit transaction
-    pub txid: Txid,
+    pub txid: crate::Txid,
     pub script_pubkey: Script,
 }
 
@@ -4359,7 +4359,7 @@ mod tests {
                     adaptor_sig: dummy_adapter_sig,
                     range: RangeInclusive::new(0, 1),
                     n_bits: 0,
-                    txid: dummy_tx.txid(),
+                    txid: crate::Txid::new(dummy_tx.txid()),
                 }],
             );
 

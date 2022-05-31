@@ -905,7 +905,7 @@ impl str::FromStr for TxFeeRate {
 
 impl_sqlx_type_display_from_str!(TxFeeRate);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Txid(bdk::bitcoin::Txid);
 
 impl Txid {

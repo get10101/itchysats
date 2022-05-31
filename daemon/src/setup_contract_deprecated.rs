@@ -51,6 +51,7 @@ use model::Role;
 use model::RolloverParams;
 use model::SecretKey;
 use model::SetupParams;
+use model::Txid;
 use model::CET_TIMELOCK;
 use std::collections::HashMap;
 use std::iter::FromIterator;
@@ -311,7 +312,7 @@ pub async fn new(
                             adaptor_sig: AdaptorSignature::new(*other_encsig),
                             range: digits.range(),
                             n_bits: digits.len(),
-                            txid: tx.txid(),
+                            txid: Txid::new(tx.txid()),
                         };
 
                         debug_assert_eq!(
@@ -597,7 +598,7 @@ pub async fn roll_over(
                         adaptor_sig: AdaptorSignature::new(*other_encsig),
                         range: digits.range(),
                         n_bits: digits.len(),
-                        txid: tx.txid(),
+                        txid: Txid::new(tx.txid()),
                     };
 
                     debug_assert_eq!(
@@ -644,7 +645,7 @@ pub async fn roll_over(
         encsig_ours: AdaptorSignature::new(own_cfd_txs.commit.1),
         revocation_sk_theirs: SecretKey::new(revocation_sk_theirs),
         publication_pk_theirs: dlc.publish_pk_counterparty,
-        txid: dlc.commit.0.txid(),
+        txid: Txid::new(dlc.commit.0.txid()),
         script_pubkey: dlc.commit.2.script_pubkey(),
     });
 
