@@ -13,6 +13,7 @@ use xtra::message_channel::StrongMessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra::Address;
+use xtra_libp2p::endpoint::Subscribers;
 use xtra_libp2p::libp2p::identity::Keypair;
 use xtra_libp2p::libp2p::transport::MemoryTransport;
 use xtra_libp2p::libp2p::PeerId;
@@ -240,6 +241,7 @@ fn make_endpoint<const N: usize>(
         id,
         Duration::from_secs(20),
         substream_handlers,
+        Subscribers::default(),
     )
     .create(None)
     .spawn_global();

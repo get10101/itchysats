@@ -13,6 +13,7 @@ use tokio::time::sleep;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra_libp2p::dialer;
+use xtra_libp2p::endpoint::Subscribers;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
 use xtras::supervisor;
@@ -34,9 +35,15 @@ async fn main() -> Result<()> {
 
     let id = Keypair::generate_ed25519();
 
-    let endpoint_addr = Endpoint::new(TokioTcpConfig::new(), id, Duration::from_secs(20), [])
-        .create(None)
-        .spawn_global();
+    let endpoint_addr = Endpoint::new(
+        TokioTcpConfig::new(),
+        id,
+        Duration::from_secs(20),
+        [],
+        Subscribers::default(),
+    )
+    .create(None)
+    .spawn_global();
 
     let dialer_constructor = {
         let connect_addr = opts.multiaddr.clone();

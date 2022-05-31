@@ -19,7 +19,7 @@ use libp2p_core::Negotiated;
 use libp2p_core::PeerId;
 
 pub mod dialer;
-mod endpoint;
+pub mod endpoint;
 pub mod listener;
 pub mod multiaddress_ext;
 mod substream;

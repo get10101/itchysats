@@ -13,6 +13,7 @@ use tokio_tasks::Tasks;
 use tracing::Level;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
+use xtra_libp2p::endpoint::Subscribers;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::NewInboundSubstream;
@@ -58,6 +59,7 @@ async fn main() -> Result<()> {
             "/hello-world/1.0.0",
             xtra::message_channel::StrongMessageChannel::clone_channel(&hello_world_addr),
         )],
+        Subscribers::default(),
     )
     .create(None)
     .spawn_global();

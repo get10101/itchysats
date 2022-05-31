@@ -28,6 +28,7 @@ use tokio_tasks::Tasks;
 use xtra::prelude::*;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use xtra_libp2p::dialer;
+use xtra_libp2p::endpoint;
 use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::pong;
@@ -216,6 +217,13 @@ where
 
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
+        let dialer_constructor =
+            { move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone()) };
+        let (supervisor, dialer_actor) = supervisor::Actor::with_policy(
+            dialer_constructor,
+            |_: &dialer::Error| true, // always restart dialer actor
+        );
+
         let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
         let endpoint = Endpoint::new(
             TokioTcpConfig::new(),
@@ -225,17 +233,19 @@ where
                 xtra_libp2p_ping::PROTOCOL_NAME,
                 xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
             )],
+            endpoint::Subscribers::new(
+                vec![xtra::message_channel::MessageChannel::clone_channel(
+                    &dialer_actor,
+                )],
+                vec![xtra::message_channel::MessageChannel::clone_channel(
+                    &dialer_actor,
+                )],
+                vec![],
+                vec![],
+            ),
         );
 
         tasks.add(endpoint_context.run(endpoint));
-
-        let dialer_constructor =
-            { move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone()) };
-
-        let (supervisor, _dialer_actor) = supervisor::Actor::with_policy(
-            dialer_constructor,
-            |_: &dialer::Error| true, // always restart dialer actor
-        );
         let dialer_supervisor = supervisor.create(None).spawn(&mut tasks);
 
         let (supervisor, price_feed_actor) = supervisor::Actor::with_policy(

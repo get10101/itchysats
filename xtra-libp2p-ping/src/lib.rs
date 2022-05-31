@@ -18,6 +18,7 @@ mod tests {
     use xtra::Actor as _;
     use xtra::Address;
     use xtra::Context;
+    use xtra_libp2p::endpoint::Subscribers;
     use xtra_libp2p::libp2p::identity::Keypair;
     use xtra_libp2p::libp2p::multiaddr::Protocol;
     use xtra_libp2p::libp2p::transport::MemoryTransport;
@@ -79,6 +80,7 @@ mod tests {
         assert!(!bob_to_alice_latency.is_zero());
     }
 
+    #[allow(clippy::type_complexity)]
     fn create_endpoint_with_ping() -> (PeerId, Address<ping::Actor>, Address<Endpoint>) {
         let (endpoint_address, endpoint_context) = Context::new(None);
 
@@ -93,6 +95,16 @@ mod tests {
             id.clone(),
             Duration::from_secs(10),
             [(PROTOCOL_NAME, pong_address.clone_channel())],
+            Subscribers::new(
+                vec![xtra::message_channel::MessageChannel::clone_channel(
+                    &ping_address,
+                )],
+                vec![xtra::message_channel::MessageChannel::clone_channel(
+                    &ping_address,
+                )],
+                vec![],
+                vec![],
+            ),
         );
 
         #[allow(clippy::disallowed_methods)]

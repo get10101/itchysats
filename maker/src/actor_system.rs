@@ -35,6 +35,7 @@ use xtra::Actor;
 use xtra::Address;
 use xtra::Context;
 use xtra::Handler;
+use xtra_libp2p::endpoint;
 use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
@@ -146,6 +147,16 @@ where
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
+        let (ping_supervisor, ping_address) = supervisor::Actor::new({
+            let endpoint_addr = endpoint_addr.clone();
+            move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
+        });
+
+        let (listener_supervisor, listener_actor) = supervisor::Actor::with_policy(
+            move || listener::Actor::new(endpoint_addr.clone(), listen_multiaddr.clone()),
+            |_: &listener::Error| true, // always restart listener actor
+        );
+
         let endpoint = Endpoint::new(
             TokioTcpConfig::new(),
             identity.libp2p,
@@ -164,23 +175,18 @@ where
                     ),
                 ),
             ],
+            endpoint::Subscribers::new(
+                vec![ping_address.clone_channel()],
+                vec![ping_address.clone_channel()],
+                vec![listener_actor.clone_channel()],
+                vec![listener_actor.clone_channel()],
+            ),
         );
 
         tasks.add(endpoint_context.run(endpoint));
 
-        let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
-            {
-                let endpoint_addr = endpoint_addr.clone();
-                move || listener::Actor::new(endpoint_addr.clone(), listen_multiaddr.clone())
-            },
-            |_: &listener::Error| true, // always restart listener actor
-        );
-        let listener_supervisor = supervisor.create(None).spawn(&mut tasks);
-
-        let (supervisor, _ping_address) = supervisor::Actor::new({
-            move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
-        });
-        let _ping_supervisor = supervisor.create(None).spawn(&mut tasks);
+        let listener_supervisor = listener_supervisor.create(None).spawn(&mut tasks);
+        let ping_supervisor = ping_supervisor.create(None).spawn(&mut tasks);
 
         tasks.add(
             inc_conn_ctx
@@ -219,7 +225,7 @@ where
             executor,
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
-            _ping_supervisor,
+            _ping_supervisor: ping_supervisor,
             _position_metrics_actor: position_metrics_actor,
         })
     }
