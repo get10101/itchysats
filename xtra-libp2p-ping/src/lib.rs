@@ -18,7 +18,7 @@ mod tests {
     use xtra::Actor as _;
     use xtra::Address;
     use xtra::Context;
-    use xtra_libp2p::connection_monitor;
+    use xtra_libp2p::endpoint_monitor;
     use xtra_libp2p::libp2p::identity::Keypair;
     use xtra_libp2p::libp2p::multiaddr::Protocol;
     use xtra_libp2p::libp2p::transport::MemoryTransport;
@@ -87,7 +87,7 @@ mod tests {
         PeerId,
         Address<ping::Actor>,
         Address<Endpoint>,
-        Address<supervisor::Actor<connection_monitor::Actor, connection_monitor::Error>>,
+        Address<supervisor::Actor<endpoint_monitor::Actor, endpoint_monitor::Error>>,
     ) {
         let (endpoint_address, endpoint_context) = Context::new(None);
 
@@ -109,18 +109,22 @@ mod tests {
                 let ping_address = ping_address.clone();
                 let endpoint_address = endpoint_address.clone();
                 move || {
-                    connection_monitor::Actor::new(
+                    endpoint_monitor::Actor::new(
                         endpoint_address.clone(),
-                        vec![xtra::message_channel::MessageChannel::clone_channel(
-                            &ping_address,
-                        )],
-                        vec![xtra::message_channel::MessageChannel::clone_channel(
-                            &ping_address,
-                        )],
+                        endpoint_monitor::Subscribers::new(
+                            vec![xtra::message_channel::MessageChannel::clone_channel(
+                                &ping_address,
+                            )],
+                            vec![xtra::message_channel::MessageChannel::clone_channel(
+                                &ping_address,
+                            )],
+                            vec![],
+                            vec![],
+                        ),
                     )
                 }
             },
-            |_: &connection_monitor::Error| true, // always restart connection monitor actor
+            |_: &endpoint_monitor::Error| true, // always restart connection monitor actor
         );
         let connection_monitor_supervisor = supervisor.create(None).spawn_global();
 

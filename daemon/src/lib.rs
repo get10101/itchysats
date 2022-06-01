@@ -27,8 +27,8 @@ use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use xtra::prelude::*;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
-use xtra_libp2p::connection_monitor;
 use xtra_libp2p::dialer;
+use xtra_libp2p::endpoint_monitor;
 use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::pong;
@@ -86,7 +86,7 @@ pub struct TakerActorSystem<O, W, P> {
     _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
     _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
     _connection_monitor_supervisor:
-        Address<supervisor::Actor<connection_monitor::Actor, connection_monitor::Error>>,
+        Address<supervisor::Actor<endpoint_monitor::Actor, endpoint_monitor::Error>>,
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
     _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
@@ -239,21 +239,25 @@ where
 
         let connection_monitor_constructor = {
             move || {
-                connection_monitor::Actor::new(
+                endpoint_monitor::Actor::new(
                     endpoint_addr.clone(),
-                    vec![xtra::message_channel::MessageChannel::clone_channel(
-                        &dialer_actor,
-                    )],
-                    vec![xtra::message_channel::MessageChannel::clone_channel(
-                        &dialer_actor,
-                    )],
+                    endpoint_monitor::Subscribers::new(
+                        vec![xtra::message_channel::MessageChannel::clone_channel(
+                            &dialer_actor,
+                        )],
+                        vec![xtra::message_channel::MessageChannel::clone_channel(
+                            &dialer_actor,
+                        )],
+                        vec![],
+                        vec![],
+                    ),
                 )
             }
         };
 
         let (supervisor, _connection) = supervisor::Actor::with_policy(
             connection_monitor_constructor,
-            |_: &connection_monitor::Error| true, // always restart connection monitor actor
+            |_: &endpoint_monitor::Error| true, // always restart connection monitor actor
         );
         let connection_monitor_supervisor = supervisor.create(None).spawn(&mut tasks);
 

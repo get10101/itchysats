@@ -10,7 +10,7 @@ use tokio_tasks::Tasks;
 use xtra::async_trait;
 use xtra::Address;
 use xtra::Context;
-use xtra_libp2p::connection_monitor;
+use xtra_libp2p::endpoint_monitor;
 use xtra_libp2p::libp2p::PeerId;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
@@ -148,18 +148,20 @@ impl Actor {
 impl Actor {
     async fn handle_connections_established(
         &mut self,
-        msg: connection_monitor::ConnectionsEstablished,
+        msg: endpoint_monitor::ConnectionsEstablished,
     ) {
-        tracing::trace!("Add new connections established to ping: {:?}", msg.peers);
-
-        self.connected_peers.extend(msg.peers)
+        tracing::trace!(
+            "Adding newly established connections to ping: {:?}",
+            msg.established
+        );
+        self.connected_peers.extend(msg.established)
     }
 
-    async fn handle_connections_dropped(&mut self, msg: connection_monitor::ConnectionsDropped) {
-        tracing::trace!("Remove dropped connections from ping: {:?}", msg.peers);
+    async fn handle_connections_dropped(&mut self, msg: endpoint_monitor::ConnectionsDropped) {
+        tracing::trace!("Remove dropped connections from ping: {:?}", msg.dropped);
 
         self.connected_peers
-            .retain(|peer_id| !msg.peers.contains(peer_id))
+            .retain(|peer_id| !msg.dropped.contains(peer_id))
     }
 }
 

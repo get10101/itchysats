@@ -135,7 +135,7 @@ pub struct ListenOn(pub Multiaddr);
 #[derive(Clone, Copy, Debug)]
 pub struct GetConnectionStats;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ConnectionStats {
     pub connected_peers: HashSet<PeerId>,
     pub listen_addresses: HashSet<Multiaddr>,

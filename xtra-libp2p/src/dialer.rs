@@ -1,4 +1,4 @@
-use crate::connection_monitor;
+use crate::endpoint_monitor;
 use crate::multiaddress_ext::MultiaddrExt;
 use crate::Connect;
 use crate::Endpoint;
@@ -11,7 +11,7 @@ use tokio_tasks::Tasks;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
 
-/// If we're not connected by this time, try again.
+/// If we're not connected by this time, stop the actor.
 pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// xtra actor that takes care of dialing (connecting) to an Endpoint.
@@ -75,7 +75,6 @@ impl xtra::Actor for Actor {
         }
 
         let this = ctx.address().expect("self to be alive");
-
         self.tasks.add(async move {
             tokio::time::sleep(CONNECTION_TIMEOUT).await;
             this.send(StopIfNotConnected)
@@ -116,18 +115,18 @@ impl Actor {
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    async fn handle(&mut self, msg: connection_monitor::ConnectionsEstablished) {
-        if msg.peers.contains(&self.peer_id()) {
+    async fn handle(&mut self, msg: endpoint_monitor::ConnectionsEstablished) {
+        if msg.established.contains(&self.peer_id()) {
             self.connected = true;
         }
     }
 
     async fn handle(
         &mut self,
-        msg: connection_monitor::ConnectionsDropped,
+        msg: endpoint_monitor::ConnectionsDropped,
         ctx: &mut xtra::Context<Self>,
     ) {
-        if msg.peers.contains(&self.peer_id()) {
+        if msg.dropped.contains(&self.peer_id()) {
             self.connected = false;
             self.stop_with_error(Error::ConnectionDropped, ctx);
         }

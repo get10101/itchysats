@@ -35,7 +35,7 @@ use xtra::Actor;
 use xtra::Address;
 use xtra::Context;
 use xtra::Handler;
-use xtra_libp2p::connection_monitor;
+use xtra_libp2p::endpoint_monitor;
 use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
@@ -54,7 +54,7 @@ pub struct ActorSystem<O, W> {
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _connection_monitor_supervisor:
-        Address<supervisor::Actor<connection_monitor::Actor, connection_monitor::Error>>,
+        Address<supervisor::Actor<endpoint_monitor::Actor, endpoint_monitor::Error>>,
     _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
     _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
@@ -176,18 +176,22 @@ where
         let (supervisor, _connection) = supervisor::Actor::with_policy(
             {
                 move || {
-                    connection_monitor::Actor::new(
+                    endpoint_monitor::Actor::new(
                         endpoint_addr.clone(),
-                        vec![xtra::message_channel::MessageChannel::clone_channel(
-                            &ping_address,
-                        )],
-                        vec![xtra::message_channel::MessageChannel::clone_channel(
-                            &ping_address,
-                        )],
+                        endpoint_monitor::Subscribers::new(
+                            vec![xtra::message_channel::MessageChannel::clone_channel(
+                                &ping_address,
+                            )],
+                            vec![xtra::message_channel::MessageChannel::clone_channel(
+                                &ping_address,
+                            )],
+                            vec![],
+                            vec![],
+                        ),
                     )
                 }
             },
-            |_: &connection_monitor::Error| true, // always restart connection monitor actor
+            |_: &endpoint_monitor::Error| true, // always restart connection monitor actor
         );
         let connection_monitor_supervisor = supervisor.create(None).spawn(&mut tasks);
 
