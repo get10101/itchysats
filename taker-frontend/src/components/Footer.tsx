@@ -22,6 +22,7 @@ import { FeedbackFish } from "@feedback-fish/react";
 import * as React from "react";
 import { FaInfo, FaRegCommentDots } from "react-icons/all";
 import { FAQ_URL, FOOTER_HEIGHT } from "../App";
+import { IdentityInfo } from "../types";
 import { SocialLinks } from "./SocialLinks";
 
 function TextDivider() {
@@ -29,10 +30,10 @@ function TextDivider() {
 }
 
 interface FooterProps {
-    taker_id: string;
+    identityInfo: IdentityInfo | null;
 }
 
-export default function Footer({ taker_id }: FooterProps) {
+export default function Footer({ identityInfo }: FooterProps) {
     const { isOpen, onOpen, onClose } = useDisclosure();
 
     return (
@@ -59,7 +60,8 @@ export default function Footer({ taker_id }: FooterProps) {
                         aria-label={"itchysats-about"}
                         icon={<FaInfo />}
                         fontSize="20px"
-                        color={"gray.600"}
+                        variant={"ghost"}
+                        color={useColorModeValue("black", "white")}
                         onClick={onOpen}
                     />
                     <Modal isOpen={isOpen} onClose={onClose}>
@@ -68,7 +70,15 @@ export default function Footer({ taker_id }: FooterProps) {
                             <ModalHeader>ItchySats Info</ModalHeader>
                             <ModalCloseButton />
                             <ModalBody>
-                                <Text>Your Taker ID: {taker_id}</Text>
+                                <Text fontWeight={"bold"}>Your Taker ID:</Text>
+                                <Text>{identityInfo ? identityInfo.taker_id : "unknown"}</Text>
+                                <Divider
+                                    orientation={"horizontal"}
+                                    borderColor={useColorModeValue("black", "white")}
+                                    height={"20px"}
+                                />
+                                <Text fontWeight={"bold"}>Your Peer ID:</Text>
+                                <Text>{identityInfo ? identityInfo.taker_peer_id : "unknown"}</Text>
                             </ModalBody>
                             <ModalFooter>
                                 <Button colorScheme="blue" mr={3} onClick={onClose}>
@@ -80,7 +90,11 @@ export default function Footer({ taker_id }: FooterProps) {
                     <TextDivider />
                     <FeedbackFish
                         projectId="c1260a96cdb3d8"
-                        metadata={{ position: "footer", customerId: taker_id }}
+                        metadata={{
+                            position: "footer",
+                            customerid: identityInfo ? identityInfo.taker_id : "unknown",
+                            peerid: identityInfo ? identityInfo.taker_peer_id : "unknown",
+                        }}
                     >
                         <Button
                             fontSize={"20"}
