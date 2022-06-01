@@ -434,6 +434,9 @@ pub enum EventKind {
     RolloverAccepted,
     RolloverRejected,
     RolloverCompleted {
+        /// Skipping serializing but not deserializing allows us to store this variant in the db
+        /// without serializing these fields
+        #[serde(skip_serializing)]
         dlc: Option<Dlc>,
         funding_fee: FundingFee,
     },
