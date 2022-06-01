@@ -269,7 +269,9 @@ impl Connection {
         };
         let cfd_version = cfd.version();
 
-        let events = load_cfd_events(&mut db_tx, id, cfd_version).await?;
+        let events = load_cfd_events(&mut db_tx, id, cfd_version)
+            .await
+            .with_context(|| format!("Could not load events for CFD {id}"))?;
         let num_events = events.len();
 
         tracing::debug!(order_id = %id, %aggregate, %cfd_version, %num_events, "Applying new events to CFD");
@@ -302,7 +304,7 @@ impl Connection {
                         );
                         continue;
                     }
-                    res => res.with_context(|| "Could not load open CFD {id}"),
+                    res => res.with_context(|| format!("Could not load open CFD {id}")),
                 };
 
                 yield res;
@@ -355,7 +357,7 @@ impl Connection {
                         );
                         continue;
                     }
-                    res => res.with_context(|| "Could not load open CFD {id}"),
+                    res => res.with_context(|| format!("Could not load open CFD {id}")),
                 };
 
                 yield res;
