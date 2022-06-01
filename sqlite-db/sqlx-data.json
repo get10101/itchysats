@@ -316,6 +316,16 @@
       ]
     }
   },
+  "a5dd38ead5160c1324ef31a0118cf77987e50fc01e3b9f06ad3df080dcbf48f5": {
+    "query": "\n            DELETE FROM\n                cfds\n            WHERE\n                id\n            NOT IN\n            (\n                SELECT\n                    events.cfd_id\n                FROM\n                    events\n            )\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 0
+      },
+      "nullable": []
+    }
+  },
   "a8124175098e096f61da0874f7cd9f1ebfadde95fd2fc2cc478982be04d1e150": {
     "query": "\n            UPDATE time_to_first_position\n            SET first_position_timestamp = $2\n            WHERE taker_id = $1 and first_position_timestamp is NULL\n            ",
     "describe": {

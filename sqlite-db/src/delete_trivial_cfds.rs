@@ -10,9 +10,7 @@ impl Connection {
     pub async fn delete_trivial_cfds(&self) -> Result<()> {
         let mut conn = self.inner.acquire().await?;
 
-        // FIXME: I cannot run `cargo sqlx prepare` locally :(, so I
-        // can't add/modify any of the `sqlx` macros.
-        let affected_rows = sqlx::query(
+        let affected_rows = sqlx::query!(
             r#"
             DELETE FROM
                 cfds
