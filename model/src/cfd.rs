@@ -108,7 +108,7 @@ impl From<Uuid> for OrderId {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct MakerOffers {
     pub long: Option<Order>,
     pub short: Option<Order>,
