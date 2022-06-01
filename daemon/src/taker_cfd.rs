@@ -101,9 +101,9 @@ where
     }
 }
 
-#[xtra_productivity]
+#[xtra_productivity(message_impl = false)]
 impl<O, W> Actor<O, W> {
-    async fn handle_current_offers(&mut self, msg: CurrentMakerOffers) -> Result<()> {
+    async fn handle_current_offers(&mut self, msg: xtra_libp2p_offer::taker::LatestMakerOffers) {
         let takers_perspective_of_maker_offers = msg.0.map(|mut maker_offers| {
             maker_offers.long = maker_offers.long.map(|mut long| {
                 long.origin = Origin::Theirs;
@@ -120,15 +120,20 @@ impl<O, W> Actor<O, W> {
         self.current_maker_offers = takers_perspective_of_maker_offers.clone();
         tracing::trace!("new maker offers {:?}", takers_perspective_of_maker_offers);
 
-        self.projection_actor
+        if let Err(e) = self
+            .projection_actor
             .send(projection::Update(
                 takers_perspective_of_maker_offers.clone(),
             ))
-            .await?;
-
-        Ok(())
+            .await
+        {
+            tracing::warn!("Failed to send current offers to projection actor: {e:#}");
+        };
     }
+}
 
+#[xtra_productivity]
+impl<O, W> Actor<O, W> {
     async fn handle_propose_settlement(&mut self, msg: ProposeSettlement) -> Result<()> {
         let ProposeSettlement {
             order_id,

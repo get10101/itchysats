@@ -193,6 +193,7 @@ pub struct Actor<O, T, W> {
     tasks: Tasks,
     libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
     libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
+    libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
 }
 
 impl<O, T, W> Actor<O, T, W> {
@@ -210,6 +211,7 @@ impl<O, T, W> Actor<O, T, W> {
         n_payouts: usize,
         libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
         libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
+        libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
     ) -> Self {
         Self {
             db: db.clone(),
@@ -231,6 +233,7 @@ impl<O, T, W> Actor<O, T, W> {
             tasks: Tasks::default(),
             libp2p_rollover,
             libp2p_collab_settlement,
+            libp2p_offer,
         }
     }
 
@@ -378,6 +381,12 @@ where
 
         self.takers
             .send_async_safe(connection::BroadcastOffers(self.current_offers.clone()))
+            .await?;
+
+        self.libp2p_offer
+            .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(
+                self.current_offers.clone(),
+            ))
             .await?;
 
         self.projection
@@ -742,6 +751,12 @@ where
         // 3. Inform connected takers
         self.takers
             .send_async_safe(connection::BroadcastOffers(self.current_offers.clone()))
+            .await?;
+
+        self.libp2p_offer
+            .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(
+                self.current_offers.clone(),
+            ))
             .await?;
 
         Ok(())
