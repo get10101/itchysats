@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Migrate away from JSON blobs in the DB to a more normalized database for RolloverCompleted events
+
 ## [0.4.20] - 2022-05-26
 
 ## [0.4.19] - 2022-05-25

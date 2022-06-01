@@ -35,6 +35,7 @@ use time::Duration;
 pub use closed::*;
 pub use cull_old_dlcs::*;
 pub use failed::*;
+use model::EventKind::RolloverCompleted;
 
 pub mod closed;
 pub mod cull_old_dlcs;
@@ -225,8 +226,19 @@ impl Connection {
         if query_result.rows_affected() != 1 {
             anyhow::bail!("failed to insert event");
         }
+        let event_id = event.id;
 
-        tracing::info!(event = %event_name, order_id = %event.id, "Appended event to database");
+        // if we have a rollover completed event we store it additionally in its own table
+        if let RolloverCompleted { .. } = event.event {
+            insert_rollover_completed_event_data::insert_rollover_completed_event(
+                &mut conn,
+                query_result.last_insert_rowid(),
+                event,
+            )
+            .await?;
+        }
+
+        tracing::info!(event = %event_name, order_id = %event_id, "Appended event to database");
 
         Ok(())
     }
@@ -591,6 +603,7 @@ async fn load_cfd_events(
         r#"
 
         select
+            events.id,
             name,
             data,
             created_at as "created_at: model::Timestamp"
@@ -609,13 +622,37 @@ async fn load_cfd_events(
     .await?
     .into_par_iter()
     .map(|row| {
-        Ok(CfdEvent {
-            timestamp: row.created_at,
-            id,
-            event: EventKind::from_json(row.name, row.data)?,
-        })
+        Ok((
+            row.id,
+            CfdEvent {
+                timestamp: row.created_at,
+                id,
+                event: EventKind::from_json(row.name, row.data)?,
+            },
+        ))
     })
-    .collect::<Result<Vec<_>>>()?;
+    .collect::<Result<Vec<(i64, CfdEvent)>>>()?;
+
+    for (row_id, event) in events.iter_mut() {
+        if let RolloverCompleted { .. } = event.event {
+            if let Some((dlc, funding_fee)) =
+                load_rollover_completed_event_data::load_rollover_completed_event_data(
+                    conn, event.id, *row_id,
+                )
+                .await?
+            {
+                event.event = RolloverCompleted {
+                    dlc: Some(dlc),
+                    funding_fee,
+                }
+            }
+        }
+    }
+
+    let mut events = events
+        .into_iter()
+        .map(|(_, event)| event)
+        .collect::<Vec<CfdEvent>>();
 
     events.sort_unstable_by(CfdEvent::chronologically);
 
