@@ -18,6 +18,7 @@ mod tests {
     use xtra::Actor as _;
     use xtra::Address;
     use xtra::Context;
+    use xtra_libp2p::connection_monitor;
     use xtra_libp2p::libp2p::identity::Keypair;
     use xtra_libp2p::libp2p::multiaddr::Protocol;
     use xtra_libp2p::libp2p::transport::MemoryTransport;
@@ -26,6 +27,7 @@ mod tests {
     use xtra_libp2p::Connect;
     use xtra_libp2p::Endpoint;
     use xtra_libp2p::ListenOn;
+    use xtras::supervisor;
 
     #[tokio::test]
     async fn latency_to_peer_is_recorded() {
@@ -34,8 +36,9 @@ mod tests {
             .with_test_writer()
             .init();
 
-        let (alice_peer_id, alice_ping_actor, alice_endpoint) = create_endpoint_with_ping();
-        let (bob_peer_id, bob_ping_actor, bob_endpoint) = create_endpoint_with_ping();
+        let (alice_peer_id, alice_ping_actor, alice_endpoint, _supervisor) =
+            create_endpoint_with_ping();
+        let (bob_peer_id, bob_ping_actor, bob_endpoint, _supervisor) = create_endpoint_with_ping();
 
         alice_endpoint
             .send(ListenOn(Multiaddr::empty().with(Protocol::Memory(1000))))
@@ -79,7 +82,13 @@ mod tests {
         assert!(!bob_to_alice_latency.is_zero());
     }
 
-    fn create_endpoint_with_ping() -> (PeerId, Address<ping::Actor>, Address<Endpoint>) {
+    #[allow(clippy::type_complexity)]
+    fn create_endpoint_with_ping() -> (
+        PeerId,
+        Address<ping::Actor>,
+        Address<Endpoint>,
+        Address<supervisor::Actor<connection_monitor::Actor, connection_monitor::Error>>,
+    ) {
         let (endpoint_address, endpoint_context) = Context::new(None);
 
         let id = Keypair::generate_ed25519();
@@ -95,10 +104,35 @@ mod tests {
             [(PROTOCOL_NAME, pong_address.clone_channel())],
         );
 
+        let (supervisor, _connection) = supervisor::Actor::with_policy(
+            {
+                let ping_address = ping_address.clone();
+                let endpoint_address = endpoint_address.clone();
+                move || {
+                    connection_monitor::Actor::new(
+                        endpoint_address.clone(),
+                        vec![xtra::message_channel::MessageChannel::clone_channel(
+                            &ping_address,
+                        )],
+                        vec![xtra::message_channel::MessageChannel::clone_channel(
+                            &ping_address,
+                        )],
+                    )
+                }
+            },
+            |_: &connection_monitor::Error| true, // always restart connection monitor actor
+        );
+        let connection_monitor_supervisor = supervisor.create(None).spawn_global();
+
         #[allow(clippy::disallowed_methods)]
         tokio::spawn(endpoint_context.run(endpoint));
 
-        (id.public().to_peer_id(), ping_address, endpoint_address)
+        (
+            id.public().to_peer_id(),
+            ping_address,
+            endpoint_address,
+            connection_monitor_supervisor,
+        )
     }
 
     async fn retry_until_some<F, FUT, T>(mut fut: F) -> T

@@ -35,6 +35,7 @@ use xtra::Actor;
 use xtra::Address;
 use xtra::Context;
 use xtra::Handler;
+use xtra_libp2p::connection_monitor;
 use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
@@ -52,6 +53,8 @@ pub struct ActorSystem<O, W> {
     executor: command::Executor,
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
+    _connection_monitor_supervisor:
+        Address<supervisor::Actor<connection_monitor::Actor, connection_monitor::Error>>,
     _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
     _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
@@ -164,10 +167,29 @@ where
         );
         let listener_supervisor = supervisor.create(None).spawn(&mut tasks);
 
-        let (supervisor, _ping_address) = supervisor::Actor::new({
+        let (supervisor, ping_address) = supervisor::Actor::new({
+            let endpoint_addr = endpoint_addr.clone();
             move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
         });
-        let _ping_supervisor = supervisor.create(None).spawn(&mut tasks);
+        let ping_supervisor = supervisor.create(None).spawn(&mut tasks);
+
+        let (supervisor, _connection) = supervisor::Actor::with_policy(
+            {
+                move || {
+                    connection_monitor::Actor::new(
+                        endpoint_addr.clone(),
+                        vec![xtra::message_channel::MessageChannel::clone_channel(
+                            &ping_address,
+                        )],
+                        vec![xtra::message_channel::MessageChannel::clone_channel(
+                            &ping_address,
+                        )],
+                    )
+                }
+            },
+            |_: &connection_monitor::Error| true, // always restart connection monitor actor
+        );
+        let connection_monitor_supervisor = supervisor.create(None).spawn(&mut tasks);
 
         tasks.add(
             inc_conn_ctx
@@ -208,7 +230,8 @@ where
             executor,
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
-            _ping_supervisor,
+            _connection_monitor_supervisor: connection_monitor_supervisor,
+            _ping_supervisor: ping_supervisor,
             _position_metrics_actor: position_metrics_actor,
             _cull_old_dlcs_actor,
         })

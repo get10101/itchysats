@@ -10,17 +10,15 @@ use tokio_tasks::Tasks;
 use xtra::async_trait;
 use xtra::Address;
 use xtra::Context;
+use xtra_libp2p::connection_monitor;
 use xtra_libp2p::libp2p::PeerId;
 use xtra_libp2p::Endpoint;
-use xtra_libp2p::GetConnectionStats;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
 use xtras::spawner;
 use xtras::spawner::SpawnFallible;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
-
-const UPDATE_CONNECTED_PEERS_INTERVAL: Duration = Duration::from_secs(5);
 
 /// An actor implementing the official ipfs/libp2p ping protocol.
 ///
@@ -69,9 +67,7 @@ impl xtra::Actor for Actor {
         self.spawner = Some(spawner::Actor::new().create(None).spawn(&mut self.tasks));
 
         self.tasks
-            .add(this.clone().send_interval(self.ping_interval, || Ping));
-        self.tasks
-            .add(this.send_interval(UPDATE_CONNECTED_PEERS_INTERVAL, || UpdateConnectedPeers));
+            .add(this.send_interval(self.ping_interval, || Ping));
     }
 
     async fn stopped(self) -> Self::Stop {}
@@ -90,10 +86,6 @@ struct RecordLatency {
 ///
 /// Primarily used for testing. May be exposed publicly at some point.
 pub(crate) struct GetLatency(pub PeerId);
-
-/// Private message to update the internal view of the connected
-/// peers.
-struct UpdateConnectedPeers;
 
 #[xtra_productivity]
 impl Actor {
@@ -150,15 +142,24 @@ impl Actor {
     async fn handle(&mut self, GetLatency(peer): GetLatency) -> Option<Duration> {
         return self.latencies.get(&peer).copied();
     }
+}
 
-    async fn handle(&mut self, _: UpdateConnectedPeers) {
-        self.connected_peers = match self.endpoint.send(GetConnectionStats).await {
-            Ok(connection_stats) => connection_stats.connected_peers,
-            Err(e) => {
-                tracing::warn!("Cannot ping peers: {e}");
-                return;
-            }
-        };
+#[xtra_productivity(message_impl = false)]
+impl Actor {
+    async fn handle_connections_established(
+        &mut self,
+        msg: connection_monitor::ConnectionsEstablished,
+    ) {
+        tracing::trace!("Add new connections established to ping: {:?}", msg.peers);
+
+        self.connected_peers.extend(msg.peers)
+    }
+
+    async fn handle_connections_dropped(&mut self, msg: connection_monitor::ConnectionsDropped) {
+        tracing::trace!("Remove dropped connections from ping: {:?}", msg.peers);
+
+        self.connected_peers
+            .retain(|peer_id| !msg.peers.contains(peer_id))
     }
 }
 
