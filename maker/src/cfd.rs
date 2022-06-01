@@ -729,7 +729,7 @@ where
         + xtra::Handler<connection::RegisterRollover>,
     W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
 {
-    async fn handle_new_order(&mut self, msg: OfferParams) -> Result<()> {
+    async fn handle_offer_params(&mut self, msg: OfferParams) -> Result<()> {
         // 1. Update actor state to current order
         self.current_offers
             .replace(create_maker_offers(msg, self.settlement_interval));
