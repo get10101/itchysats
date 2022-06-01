@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use libp2p_core::Multiaddr;
 use libp2p_core::PeerId;
 use std::time::Duration;
+use tokio_tasks::Tasks;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
 
@@ -18,6 +19,7 @@ pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 /// Periodically polls Endpoint to check whether connection is still active.
 /// Should be used in conjunction with supervisor maintaining resilient connection.
 pub struct Actor {
+    tasks: Tasks,
     endpoint: Address<Endpoint>,
     connect_address: Multiaddr,
     connected: bool,
@@ -28,6 +30,7 @@ pub struct Actor {
 impl Actor {
     pub fn new(endpoint: Address<Endpoint>, connect_address: Multiaddr) -> Self {
         Self {
+            tasks: Tasks::default(),
             endpoint,
             connect_address,
             connected: false,
@@ -71,17 +74,14 @@ impl xtra::Actor for Actor {
             self.stop_with_error(e, ctx);
         }
 
-        // TODO: add connection logic
-        // tokio::time::sleep(CONNECTION_TIMEOUT).await;
-        //
-        // if !self.connected {
-        //     self.stop_with_error(
-        //         Error::Failed {
-        //             source: anyhow!("Connection timeout lapsed"),
-        //         },
-        //         ctx,
-        //     );
-        // }
+        let this = ctx.address().expect("self to be alive");
+
+        self.tasks.add(async move {
+            tokio::time::sleep(CONNECTION_TIMEOUT).await;
+            this.send(StopIfNotConnected)
+                .await
+                .expect("to deliver stop message");
+        })
     }
 
     async fn stopped(self) -> Self::Stop {
@@ -98,6 +98,17 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
+    async fn handle(&mut self, _msg: StopIfNotConnected, ctx: &mut xtra::Context<Self>) {
+        if !self.connected {
+            self.stop_with_error(
+                Error::Failed {
+                    source: anyhow!("Did not connect in time"),
+                },
+                ctx,
+            )
+        }
+    }
+
     async fn handle(&mut self, msg: Error, ctx: &mut xtra::Context<Self>) {
         self.stop_with_error(msg, ctx);
     }
@@ -136,3 +147,5 @@ pub enum Error {
     #[error("Stop reason was not specified")]
     Unspecified,
 }
+
+struct StopIfNotConnected;
