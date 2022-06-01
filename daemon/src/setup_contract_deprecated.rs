@@ -352,11 +352,17 @@ pub async fn new(
         publish_pk_counterparty: PublicKey::new(other_punish.publish_pk),
         maker_address: params.maker().address.clone(),
         taker_address: params.taker().address.clone(),
-        lock: (signed_lock_tx.extract_tx(), lock_desc),
-
-        commit: (commit_tx, AdaptorSignature::new(msg1.commit), commit_desc),
+        lock: (
+            model::Transaction::new(signed_lock_tx.extract_tx()),
+            lock_desc,
+        ),
+        commit: (
+            model::Transaction::new(commit_tx),
+            AdaptorSignature::new(msg1.commit),
+            commit_desc,
+        ),
         cets,
-        refund: (refund_tx, msg1.refund),
+        refund: (model::Transaction::new(refund_tx), msg1.refund),
         maker_lock_amount: params.maker().lock_amount,
         taker_lock_amount: params.taker().lock_amount,
         revoked_commit: Vec::new(),
@@ -424,7 +430,7 @@ pub async fn roll_over(
     )]);
 
     // unsign lock tx because PartiallySignedTransaction needs an unsigned tx
-    let mut unsigned_lock_tx = dlc.lock.0.clone();
+    let mut unsigned_lock_tx = Transaction::from(dlc.lock.0.clone());
     unsigned_lock_tx
         .input
         .iter_mut()
@@ -641,11 +647,12 @@ pub async fn roll_over(
     }
 
     let mut revoked_commit = dlc.revoked_commit;
+    let transaction = bdk::bitcoin::Transaction::from(dlc.commit.0);
     revoked_commit.push(RevokedCommit {
         encsig_ours: AdaptorSignature::new(own_cfd_txs.commit.1),
         revocation_sk_theirs: SecretKey::new(revocation_sk_theirs),
         publication_pk_theirs: dlc.publish_pk_counterparty,
-        txid: Txid::new(dlc.commit.0.txid()),
+        txid: Txid::new(transaction.txid()),
         script_pubkey: dlc.commit.2.script_pubkey(),
     });
 
@@ -671,9 +678,13 @@ pub async fn roll_over(
         maker_address: dlc.maker_address,
         taker_address: dlc.taker_address,
         lock: dlc.lock.clone(),
-        commit: (commit_tx, AdaptorSignature::new(msg1.commit), commit_desc),
+        commit: (
+            model::Transaction::new(commit_tx),
+            AdaptorSignature::new(msg1.commit),
+            commit_desc,
+        ),
         cets,
-        refund: (refund_tx, msg1.refund),
+        refund: (model::Transaction::new(refund_tx), msg1.refund),
         maker_lock_amount,
         taker_lock_amount,
         revoked_commit,
