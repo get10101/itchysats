@@ -16,7 +16,7 @@ maia-core = "0.1.0"
 model = { path = "../model" }
 rayon = "1.5"
 rust_decimal = "1.24"
-rust_decimal_macros = "1.23"
+rust_decimal_macros = "1.24"
 serde_json = "1"
 sqlx = { version = "0.5.13", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
 thiserror = "1"
