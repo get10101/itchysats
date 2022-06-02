@@ -1,4 +1,3 @@
-use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::hashes::hex::ToHex;
 use model::olivia::BitMexPriceEventId;
@@ -14,7 +13,7 @@ use sqlx::Connection as SqlxConnection;
 use sqlx::Sqlite;
 use sqlx::Transaction;
 
-pub async fn insert_rollover_completed_event(
+pub async fn insert(
     connection: &mut PoolConnection<Sqlite>,
     event_id: i64,
     event: CfdEvent,
@@ -27,7 +26,7 @@ pub async fn insert_rollover_completed_event(
         } => {
             let mut inner_transaction = connection.begin().await?;
 
-            delete_rollover_completed_event_data(&mut inner_transaction, event.id).await?;
+            crate::rollover::delete::delete(&mut inner_transaction, event.id).await?;
 
             insert_rollover_completed_event_data(
                 &mut inner_transaction,
@@ -60,43 +59,6 @@ pub async fn insert_rollover_completed_event(
             tracing::error!("Invalid event type. Use `append_event` function instead")
         }
     }
-
-    Ok(())
-}
-
-async fn delete_rollover_completed_event_data(
-    inner_transaction: &mut Transaction<'_, Sqlite>,
-    offer_id: OrderId,
-) -> Result<()> {
-    sqlx::query!(
-        r#"
-            delete from rollover_completed_event_data where cfd_id = (select id from cfds where cfds.uuid = $1)
-        "#,
-        offer_id
-    )
-        .execute(&mut *inner_transaction)
-        .await
-        .with_context(|| format!("Failed to delete from rollover_completed_event_data for {offer_id}"))?;
-
-    sqlx::query!(
-        r#"
-            delete from revoked_commit_transactions where cfd_id = (select id from cfds where cfds.uuid = $1)
-        "#,
-        offer_id
-    )
-        .execute(&mut *inner_transaction)
-        .await
-        .with_context(|| format!("Failed to delete from revoked_commit_transactions for {offer_id}"))?;
-
-    sqlx::query!(
-        r#"
-            delete from open_cets where cfd_id = (select id from cfds where cfds.uuid = $1)
-        "#,
-        offer_id
-    )
-    .execute(&mut *inner_transaction)
-    .await
-    .with_context(|| format!("Failed to delete from open_cets for {offer_id}"))?;
 
     Ok(())
 }
@@ -328,7 +290,7 @@ mod tests {
 
         let mut connection = db.inner.acquire().await.unwrap();
         db.append_event(rollover_completed.clone()).await.unwrap();
-        insert_rollover_completed_event(&mut connection, 1, rollover_completed.clone())
+        insert(&mut connection, 1, rollover_completed.clone())
             .await
             .unwrap();
 
@@ -359,7 +321,7 @@ mod tests {
         // insert first rollovercompleted event
         let mut connection = db.inner.acquire().await?;
         db.append_event(rollover_completed.clone()).await?;
-        insert_rollover_completed_event(&mut connection, 1, rollover_completed.clone()).await?;
+        insert(&mut connection, 1, rollover_completed.clone()).await?;
 
         // insert second rollovercompleted event with different event id
         let rollover_completed = update_event_id(
@@ -370,7 +332,7 @@ mod tests {
         )?;
         let mut connection = db.inner.acquire().await?;
         db.append_event(rollover_completed.clone()).await?;
-        insert_rollover_completed_event(&mut connection, 2, rollover_completed).await?;
+        insert(&mut connection, 2, rollover_completed).await?;
 
         let (rollovers, revokes, cets) = count_table_entries(connection).await;
         assert_eq!(rollovers, 1);

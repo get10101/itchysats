@@ -1,5 +1,15 @@
 {
   "db": "SQLite",
+  "060f5ccae5e675d3118ae357eb225c7fa37d54802a24e328db1dc84e547d4d9d": {
+    "query": "\n            delete from open_cets where cfd_id = (select id from cfds where cfds.uuid = $1)\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": []
+    }
+  },
   "12a758d80dca77c52d5a17c9c2b286bdc537dee587289bf6eba94bf0fb16fc83": {
     "query": "\n        SELECT\n            event_log.created_at\n        FROM\n            event_log\n        JOIN\n            closed_cfds on closed_cfds.id = event_log.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ORDER BY event_log.created_at ASC\n        LIMIT 1\n        ",
     "describe": {
@@ -310,6 +320,16 @@
         false,
         false
       ]
+    }
+  },
+  "450bfcea8dcac5288b69187eb4ae5aec72012d7320e1d4d2602c448671512295": {
+    "query": "\n            delete from rollover_completed_event_data where cfd_id = (select id from cfds where cfds.uuid = $1)\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": []
     }
   },
   "4702350f513e58d50a0ecaf8063f941f9e1f5d5e8af66c18fb0f542e47933d0a": {
@@ -634,6 +654,16 @@
       "nullable": []
     }
   },
+  "917676bc8f8daffc784657cd8a1f8552273fa63be601a0a9782b4073359abfff": {
+    "query": "\n            delete from revoked_commit_transactions where cfd_id = (select id from cfds where cfds.uuid = $1)\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": []
+    }
+  },
   "9ee7e0229619689eed2c5f2e834d9449a732824bbeffed628d01abc1d1839319": {
     "query": "\n            SELECT\n                first_position_timestamp\n            FROM\n                time_to_first_position\n            WHERE\n                taker_id = $1\n            ",
     "describe": {
@@ -660,36 +690,6 @@
         "Right": 2
       },
       "nullable": []
-    }
-  },
-  "ad1226a1cd097ba070294b41e818228e4a9ed07ce8b69bd1583eb854c4c84f0e": {
-    "query": "\n\n        select\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        limit $2,-1\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "name",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "data",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "created_at: model::Timestamp",
-          "ordinal": 2,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 2
-      },
-      "nullable": [
-        false,
-        false,
-        false
-      ]
     }
   },
   "adcc764462a8cd428c52595130b9e5c7c3cf9438b97e90efa0f0da3446d12eb4": {
@@ -726,16 +726,6 @@
         false,
         false
       ]
-    }
-  },
-  "b48bdec5e2f996ff75fc8e04e6759b45e0f41d10a9421a756bd734fe539f96d0": {
-    "query": "\n            update EVENTS\n                set\n                    data = (\n                        select json_set(events.data, '$.dlc', null)\n                        from events as inner_events\n                        where inner_events.id = EVENTS.id \n                    )\n                where name = $1\n                  and json_extract(EVENTS.data, '$.dlc') is not null\n                  and id not in (\n                    select max(id) from EVENTS as inner_events\n                    where inner_events.cfd_id = EVENTS.cfd_id\n                      and inner_events.name = EVENTS.name\n                );\n            ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": []
     }
   },
   "ca417fd622b4d8b143fabda9d6d0ecd1a76619123ec1202fd66455f4d05454a1": {
@@ -788,6 +778,42 @@
         "Right": 10
       },
       "nullable": []
+    }
+  },
+  "d5513680f4dac0197543942a21e735204bcc3c92fd02f3fc9fab69b6c64913f4": {
+    "query": "\n\n        select\n            events.id,\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        limit $2,-1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "data",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "created_at: model::Timestamp",
+          "ordinal": 3,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ]
     }
   },
   "d87c695f2f1f67e9acbc2ed4dac9a083738e82c52e419f5f025f8c4e327b4858": {
@@ -880,16 +906,6 @@
         false,
         false
       ]
-    }
-  },
-  "ea5ee54109864160866708b764282b9d8d20cbf5f3b0164bafe3c60b4e58f9fa": {
-    "query": "\n            update EVENTS\n                set\n                    data = (\n                        select json_set(events.data, '$.dlc', null)\n                        from events as inner_events\n                        where EVENTS.id = inner_events.id\n                    )\n                where name = $1\n                  and json_extract(EVENTS.data, '$.dlc') is not null\n                  and cfd_id in (\n                    select distinct cfd_id from EVENTS as inner_events\n                        where inner_events.cfd_id = EVENTS.cfd_id\n                        and inner_events.name = $2\n                    );\n            ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Right": 2
-      },
-      "nullable": []
     }
   },
   "eaa1ac5e11d036f67d5a6fd1b7c150dba3f59021faee1e89abb0f2cda4ca6af9": {

@@ -40,8 +40,7 @@ pub mod closed;
 pub mod event_log;
 pub mod failed;
 mod impls;
-mod insert_rollover_completed_event_data;
-mod load_rollover_completed_event_data;
+mod rollover;
 pub mod time_to_first_position;
 
 #[derive(Clone)]
@@ -228,12 +227,7 @@ impl Connection {
 
         // if we have a rollover completed event we store it additionally in its own table
         if let RolloverCompleted { .. } = event.event {
-            insert_rollover_completed_event_data::insert_rollover_completed_event(
-                &mut conn,
-                query_result.last_insert_rowid(),
-                event,
-            )
-            .await?;
+            rollover::insert(&mut conn, query_result.last_insert_rowid(), event).await?;
         }
 
         tracing::info!(event = %event_name, order_id = %event_id, "Appended event to database");
@@ -635,12 +629,7 @@ async fn load_cfd_events(
 
     for (row_id, event) in events.iter_mut() {
         if let RolloverCompleted { .. } = event.event {
-            if let Some((dlc, funding_fee)) =
-                load_rollover_completed_event_data::load_rollover_completed_event_data(
-                    conn, event.id, *row_id,
-                )
-                .await?
-            {
+            if let Some((dlc, funding_fee)) = rollover::load(conn, event.id, *row_id).await? {
                 event.event = RolloverCompleted {
                     dlc: Some(dlc),
                     funding_fee,

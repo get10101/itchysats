@@ -21,7 +21,7 @@ use std::str::FromStr;
 ///
 /// Returns Ok(Some(..)) if one was found or Ok(None) if none was found.
 /// In error case, it returns Err(..)
-pub async fn load_rollover_completed_event_data(
+pub async fn load(
     transaction: &mut Transaction<'_, Sqlite>,
     offer_id: OrderId,
     event_row_id: i64,
@@ -199,9 +199,9 @@ async fn load_cets(
 
 #[cfg(test)]
 mod tests {
-    use crate::insert_rollover_completed_event_data::insert_rollover_completed_event;
-    use crate::load_rollover_completed_event_data::load_rollover_completed_event_data;
     use crate::memory;
+    use crate::rollover::insert::insert;
+    use crate::rollover::load::load;
     use anyhow::bail;
     use anyhow::Context;
     use anyhow::Result;
@@ -264,14 +264,13 @@ mod tests {
 
         db.append_event(rollover_completed.clone()).await?;
         let mut connection = db.inner.acquire().await?;
-        insert_rollover_completed_event(&mut connection, 1, rollover_completed.clone()).await?;
+        insert(&mut connection, 1, rollover_completed.clone()).await?;
 
         let mut transaction = connection.begin().await?;
 
-        let (loaded_dlc, loaded_funding_fee) =
-            load_rollover_completed_event_data(&mut transaction, cfd.id(), 1)
-                .await?
-                .context("Expect to find data")?;
+        let (loaded_dlc, loaded_funding_fee) = load(&mut transaction, cfd.id(), 1)
+            .await?
+            .context("Expect to find data")?;
 
         match rollover_completed.event {
             EventKind::RolloverCompleted {
@@ -308,7 +307,7 @@ mod tests {
         // insert first RolloverCompleted event data
         let mut connection = db.inner.acquire().await?;
         db.append_event(rollover_completed.clone()).await?;
-        insert_rollover_completed_event(&mut connection, 1, rollover_completed.clone()).await?;
+        insert(&mut connection, 1, rollover_completed.clone()).await?;
 
         // insert second RolloverCompleted event data
         let second_rollover_completed_event = update_event_id(
@@ -321,19 +320,14 @@ mod tests {
         db.append_event(second_rollover_completed_event.clone())
             .await
             .unwrap();
-        insert_rollover_completed_event(
-            &mut connection,
-            2,
-            second_rollover_completed_event.clone(),
-        )
-        .await
-        .unwrap();
+        insert(&mut connection, 2, second_rollover_completed_event.clone())
+            .await
+            .unwrap();
 
         let mut transaction = connection.begin().await?;
-        let (loaded_dlc, loaded_funding_fee) =
-            load_rollover_completed_event_data(&mut transaction, cfd.id(), 2)
-                .await?
-                .context("Expect to find data")?;
+        let (loaded_dlc, loaded_funding_fee) = load(&mut transaction, cfd.id(), 2)
+            .await?
+            .context("Expect to find data")?;
 
         match second_rollover_completed_event.event {
             EventKind::RolloverCompleted {
