@@ -1426,6 +1426,23 @@ impl Cfd {
 
         Ok((tx, sig, script_pk))
     }
+    
+    /// Check whether PeerId matches the one the CFD got created with
+    pub fn verify_counterparty_peer_id(&self, peer_id: &PeerId) -> Result<()> {
+        match self.counterparty_peer_id() {
+            None => {
+                tracing::debug!("Peer ID {peer_id} invoking a protocol on CFD that got created without counterparty peer ID");
+            }
+            Some(counterparty_peer_id) => {
+                anyhow::ensure!(
+                    counterparty_peer_id == *peer_id,
+                    "Peer ID mismatch. CFD was created with {counterparty_peer_id}, but
+                protocol got invoked by {peer_id}"
+                );
+            }
+        };
+        Ok(())
+    }
 
     /// Number of hours that the time-to-live of the contract will be
     /// extended by with the next rollover.
