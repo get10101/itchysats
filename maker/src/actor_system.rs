@@ -53,7 +53,7 @@ pub struct ActorSystem<O, W> {
     executor: command::Executor,
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
-    _connection_monitor_supervisor:
+    _endpoint_monitor_supervisor:
         Address<supervisor::Actor<endpoint_monitor::Actor, endpoint_monitor::Error>>,
     _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
@@ -193,7 +193,7 @@ where
             },
             |_: &endpoint_monitor::Error| true, // always restart connection monitor actor
         );
-        let connection_monitor_supervisor = supervisor.create(None).spawn(&mut tasks);
+        let endpoint_monitor_supervisor = supervisor.create(None).spawn(&mut tasks);
 
         tasks.add(
             inc_conn_ctx
@@ -234,7 +234,7 @@ where
             executor,
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
-            _connection_monitor_supervisor: connection_monitor_supervisor,
+            _endpoint_monitor_supervisor: endpoint_monitor_supervisor,
             _ping_supervisor: ping_supervisor,
             _position_metrics_actor: position_metrics_actor,
             _cull_old_dlcs_actor,

@@ -85,7 +85,7 @@ pub struct TakerActorSystem<O, W, P> {
     /// address.
     _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
     _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
-    _connection_monitor_supervisor:
+    _endpoint_monitor_supervisor:
         Address<supervisor::Actor<endpoint_monitor::Actor, endpoint_monitor::Error>>,
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
@@ -237,7 +237,7 @@ where
         );
         let dialer_supervisor = supervisor.create(None).spawn(&mut tasks);
 
-        let connection_monitor_constructor = {
+        let endpoint_monitor_constructor = {
             move || {
                 endpoint_monitor::Actor::new(
                     endpoint_addr.clone(),
@@ -256,10 +256,10 @@ where
         };
 
         let (supervisor, _connection) = supervisor::Actor::with_policy(
-            connection_monitor_constructor,
+            endpoint_monitor_constructor,
             |_: &endpoint_monitor::Error| true, // always restart connection monitor actor
         );
-        let connection_monitor_supervisor = supervisor.create(None).spawn(&mut tasks);
+        let endpoint_monitor_supervisor = supervisor.create(None).spawn(&mut tasks);
 
         let (supervisor, price_feed_actor) = supervisor::Actor::with_policy(
             price_feed_constructor,
@@ -288,7 +288,7 @@ where
             executor,
             _price_feed_supervisor: price_feed_supervisor,
             _dialer_supervisor: dialer_supervisor,
-            _connection_monitor_supervisor: connection_monitor_supervisor,
+            _endpoint_monitor_supervisor: endpoint_monitor_supervisor,
             _close_cfds_actor: close_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             _cull_old_dlcs_actor,

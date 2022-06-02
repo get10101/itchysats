@@ -126,7 +126,7 @@ mod tests {
             },
             |_: &endpoint_monitor::Error| true, // always restart connection monitor actor
         );
-        let connection_monitor_supervisor = supervisor.create(None).spawn_global();
+        let endpoint_monitor_supervisor = supervisor.create(None).spawn_global();
 
         #[allow(clippy::disallowed_methods)]
         tokio::spawn(endpoint_context.run(endpoint));
@@ -135,7 +135,7 @@ mod tests {
             id.public().to_peer_id(),
             ping_address,
             endpoint_address,
-            connection_monitor_supervisor,
+            endpoint_monitor_supervisor,
         )
     }
 
