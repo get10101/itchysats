@@ -158,7 +158,7 @@ where
 
         tasks.add(endpoint_context.run(endpoint));
 
-        let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
+        let (supervisor, listener_actor) = supervisor::Actor::with_policy(
             {
                 let endpoint_addr = endpoint_addr.clone();
                 move || listener::Actor::new(endpoint_addr.clone(), listen_multiaddr.clone())
@@ -179,14 +179,10 @@ where
                     endpoint_monitor::Actor::new(
                         endpoint_addr.clone(),
                         endpoint_monitor::Subscribers::new(
-                            vec![xtra::message_channel::MessageChannel::clone_channel(
-                                &ping_address,
-                            )],
-                            vec![xtra::message_channel::MessageChannel::clone_channel(
-                                &ping_address,
-                            )],
-                            vec![],
-                            vec![],
+                            vec![ping_address.clone_channel()],
+                            vec![ping_address.clone_channel()],
+                            vec![listener_actor.clone_channel()],
+                            vec![listener_actor.clone_channel()],
                         ),
                     )
                 }
