@@ -7,7 +7,7 @@ use bdk::bitcoin::Amount;
 use bdk::bitcoin::Txid;
 use daemon::archive_closed_cfds;
 use daemon::archive_failed_cfds;
-use daemon::close_position;
+use daemon::collab_settlement;
 use daemon::command;
 use daemon::cull_old_dlcs;
 use daemon::monitor;
@@ -118,7 +118,7 @@ where
         )));
 
         let libp2p_collab_settlement_addr =
-            close_position::maker::Actor::new(executor.clone(), n_payouts)
+            collab_settlement::maker::Actor::new(executor.clone(), n_payouts)
                 .create(None)
                 .spawn(&mut tasks);
 
@@ -162,7 +162,7 @@ where
                     ),
                 ),
                 (
-                    daemon::close_position::PROTOCOL,
+                    daemon::collab_settlement::PROTOCOL,
                     xtra::message_channel::StrongMessageChannel::clone_channel(
                         &libp2p_collab_settlement_addr,
                     ),

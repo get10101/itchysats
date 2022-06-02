@@ -1,6 +1,6 @@
 use crate::bitcoin::secp256k1::Signature;
 use crate::bitcoin::Transaction;
-use crate::close_position::PROTOCOL;
+use crate::collab_settlement::PROTOCOL;
 use crate::command;
 use anyhow::anyhow;
 use anyhow::Context;
@@ -9,10 +9,10 @@ use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
 use model::hex_transaction;
-use model::ClosePositionTransaction;
 use model::CollaborativeSettlement;
 use model::OrderId;
 use model::Price;
+use model::SettlementTransaction;
 use serde::Deserialize;
 use serde::Serialize;
 use xtra::Address;
@@ -23,7 +23,7 @@ pub async fn dialer(
     endpoint: Address<Endpoint>,
     order_id: OrderId,
     counterparty: PeerId,
-    close_position_tx: ClosePositionTransaction,
+    collab_settlement_tx: SettlementTransaction,
 ) -> Result<CollaborativeSettlement, DialerFailed> {
     let substream = endpoint
         .send(OpenSubstream::single_protocol(counterparty, PROTOCOL))
@@ -35,12 +35,12 @@ pub async fn dialer(
         asynchronous_codec::JsonCodec::<DialerMessage, ListenerMessage>::new(),
     );
 
-    let unsigned_tx = close_position_tx.unsigned_transaction().clone();
+    let unsigned_tx = collab_settlement_tx.unsigned_transaction().clone();
 
     framed
         .send(DialerMessage::Propose(Propose {
             id: order_id,
-            price: close_position_tx.price(),
+            price: collab_settlement_tx.price(),
             unsigned_tx: unsigned_tx.clone(),
         }))
         .await
@@ -60,7 +60,7 @@ pub async fn dialer(
 
     framed
         .send(DialerMessage::Msg2(Msg2 {
-            dialer_signature: close_position_tx.own_signature(),
+            dialer_signature: collab_settlement_tx.own_signature(),
         }))
         .await
         .context("Failed to send Msg2")?;
@@ -75,9 +75,9 @@ pub async fn dialer(
         }
     };
 
-    let close_position_tx =
-        match close_position_tx.recv_counterparty_signature(msg3.listener_signature) {
-            Ok(close_position_tx) => close_position_tx,
+    let collab_settlement_tx =
+        match collab_settlement_tx.recv_counterparty_signature(msg3.listener_signature) {
+            Ok(collab_settlement_tx) => collab_settlement_tx,
             Err(error) => {
                 return Err(DialerFailed::AfterSendingSignature {
                     unsigned_tx: unsigned_tx.clone(),
@@ -87,7 +87,7 @@ pub async fn dialer(
         };
 
     let settlement =
-        close_position_tx
+        collab_settlement_tx
             .finalize()
             .map_err(|e| DialerFailed::AfterSendingSignature {
                 unsigned_tx: unsigned_tx.clone(),
@@ -166,7 +166,7 @@ pub struct Propose {
     /// The transaction that is being proposed to close the protocol.
     ///
     /// Sending the full transaction allows the listening side to verify, how exactly the dialing
-    /// side wants to close the position.
+    /// side wants to perform collaborative settlement.
     #[serde(with = "hex_transaction")]
     pub unsigned_tx: Transaction,
 }

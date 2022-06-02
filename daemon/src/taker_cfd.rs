@@ -1,5 +1,5 @@
-use crate::close_position;
-use crate::close_position::taker::ClosePosition;
+use crate::collab_settlement;
+use crate::collab_settlement::taker::Settle;
 use crate::connection;
 use crate::oracle;
 use crate::process_manager;
@@ -55,7 +55,7 @@ pub struct Actor<O, W> {
     process_manager_actor: xtra::Address<process_manager::Actor>,
     conn_actor: xtra::Address<connection::Actor>,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
-    libp2p_collab_settlement_actor: xtra::Address<close_position::taker::Actor>,
+    libp2p_collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
     oracle_actor: xtra::Address<O>,
     n_payouts: usize,
     tasks: Tasks,
@@ -77,7 +77,7 @@ where
         process_manager_actor: xtra::Address<process_manager::Actor>,
         conn_actor: xtra::Address<connection::Actor>,
         oracle_actor: xtra::Address<O>,
-        libp2p_collab_settlement_actor: xtra::Address<close_position::taker::Actor>,
+        libp2p_collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
         n_payouts: usize,
         maker_identity: Identity,
         maker_peer_id: PeerId,
@@ -145,7 +145,7 @@ impl<O, W> Actor<O, W> {
 
         // Wait for the response to check for invariants (ie. whether it is possible to settle)
         self.libp2p_collab_settlement_actor
-            .send(ClosePosition {
+            .send(Settle {
                 order_id,
                 price: proposal_closing_price,
                 maker_peer_id: cfd

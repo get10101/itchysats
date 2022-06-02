@@ -1,4 +1,4 @@
-use crate::close_position::protocol::*;
+use crate::collab_settlement::protocol::*;
 use crate::command;
 use anyhow::Context;
 use anyhow::Result;
@@ -37,7 +37,7 @@ impl xtra::Actor for Actor {
 }
 
 #[derive(Clone, Copy)]
-pub struct ClosePosition {
+pub struct Settle {
     pub order_id: OrderId,
     pub price: Price,
     pub maker_peer_id: PeerId,
@@ -45,17 +45,17 @@ pub struct ClosePosition {
 
 #[xtra_productivity]
 impl Actor {
-    pub async fn handle(&mut self, msg: ClosePosition) -> Result<()> {
-        let ClosePosition {
+    pub async fn handle(&mut self, msg: Settle) -> Result<()> {
+        let Settle {
             order_id,
             price,
             maker_peer_id,
         } = msg;
 
-        let (close_position_tx, _) = self
+        let (collab_settlement_tx, _) = self
             .executor
             .execute(order_id, |cfd| {
-                cfd.start_close_position_taker(price, self.n_payouts)
+                cfd.start_collab_settlement_taker(price, self.n_payouts)
             })
             .await
             .context("could not start closing position")?;
@@ -69,7 +69,7 @@ impl Actor {
                         endpoint,
                         order_id,
                         maker_peer_id.inner(),
-                        close_position_tx.clone(),
+                        collab_settlement_tx.clone(),
                     )
                     .await?;
 

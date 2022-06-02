@@ -192,7 +192,7 @@ pub struct Actor<O, T, W> {
     n_payouts: usize,
     tasks: Tasks,
     libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
-    libp2p_collab_settlement: xtra::Address<daemon::close_position::maker::Actor>,
+    libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
 }
 
 impl<O, T, W> Actor<O, T, W> {
@@ -209,7 +209,7 @@ impl<O, T, W> Actor<O, T, W> {
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
         n_payouts: usize,
         libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
-        libp2p_collab_settlement: xtra::Address<daemon::close_position::maker::Actor>,
+        libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
     ) -> Self {
         Self {
             db: db.clone(),
@@ -489,7 +489,7 @@ impl<O, T, W> Actor<O, T, W> {
         let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
         if can_use_libp2p(&cfd) {
             self.libp2p_collab_settlement
-                .send(daemon::close_position::maker::Accept { order_id })
+                .send(daemon::collab_settlement::maker::Accept { order_id })
                 .await
                 .map_err(|e| anyhow!(e))?
         } else {
@@ -519,7 +519,7 @@ impl<O, T, W> Actor<O, T, W> {
         let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
         if can_use_libp2p(&cfd) {
             self.libp2p_collab_settlement
-                .send(daemon::close_position::maker::Reject { order_id })
+                .send(daemon::collab_settlement::maker::Reject { order_id })
                 .await
                 .map_err(|e| anyhow!(e))?
         } else {

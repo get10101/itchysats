@@ -1,4 +1,4 @@
-use crate::close_position::protocol::*;
+use crate::collab_settlement::protocol::*;
 use crate::command;
 use anyhow::anyhow;
 use anyhow::Context;
@@ -10,10 +10,10 @@ use asynchronous_codec::JsonCodec;
 use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
-use model::ClosePositionTransaction;
 use model::CollaborativeSettlement;
 use model::OrderId;
 use model::SettlementProposal;
+use model::SettlementTransaction;
 use std::collections::HashMap;
 use tokio_tasks::Tasks;
 use xtra_libp2p::NewInboundSubstream;
@@ -22,12 +22,12 @@ use xtra_productivity::xtra_productivity;
 
 type ListenerConnection = (
     Framed<Substream, JsonCodec<ListenerMessage, DialerMessage>>,
-    ClosePositionTransaction,
+    SettlementTransaction,
     SettlementProposal,
     PeerId,
 );
 
-/// Permanent actor to handle incoming substreams for the `/itchysats/close-position/1.0.0`
+/// Permanent actor to handle incoming substreams for the `/itchysats/collab-settlement/1.0.0`
 /// protocol.
 ///
 /// There is only one instance of this actor for all connections, meaning we must always spawn a
@@ -87,7 +87,7 @@ impl Actor {
 
                 anyhow::Ok(())
             },
-            |e| async move { tracing::warn!("Failed to handle incoming close position: {e:#}") },
+            |e| async move { tracing::warn!("Failed to handle incoming collab settlement: {e:#}") },
         );
     }
 }
@@ -106,15 +106,19 @@ impl Actor {
             .executor
             .execute(order_id, |cfd| {
                 cfd.verify_counterparty_peer_id(&peer.into())?;
-                cfd.start_close_position_maker(propose.price, self.n_payouts, &propose.unsigned_tx)
+                cfd.start_collab_settlement_maker(
+                    propose.price,
+                    self.n_payouts,
+                    &propose.unsigned_tx,
+                )
             })
             .await
-            .context("Failed to start close position protocol");
+            .context("Failed to start collab settlement protocol");
 
         let (transaction, proposal) = match result {
             Ok((transaction, proposal)) => (transaction, proposal),
             Err(e) => {
-                tracing::debug!(%order_id, %peer, "Failed to start close position protocol: {e:#}");
+                tracing::debug!(%order_id, %peer, "Failed to start collab settlement protocol: {e:#}");
                 emit_failed(order_id, e, &self.executor).await;
                 return;
             }
@@ -191,6 +195,10 @@ impl Actor {
                         }
                         Failed::AfterReceiving { source, settlement } => {
                             // TODO: proceed with the transaction when taker will be able to handle
+                            tracing::trace!(
+                        ?settlement,
+                        "Failed after receiving. Ideally, we should be able to act upon this settlement"
+                    );
                             // that case.
                             emit_failed(order_id, source, &executor).await;
                         }

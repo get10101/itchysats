@@ -1023,11 +1023,11 @@ impl Cfd {
         Ok(settlement)
     }
 
-    pub fn start_close_position_taker(
+    pub fn start_collab_settlement_taker(
         self,
         current_price: Price,
         n_payouts: usize,
-    ) -> Result<(CfdEvent, ClosePositionTransaction, SettlementProposal)> {
+    ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
         anyhow::ensure!(
             !self.is_in_collaborative_settlement()
                 && self.role == Role::Taker
@@ -1035,25 +1035,25 @@ impl Cfd {
             "Failed to propose collaborative settlement"
         );
 
-        let (close_position_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
+        let (collab_settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
         Ok((
             CfdEvent::new(
                 proposal.order_id,
                 EventKind::CollaborativeSettlementStarted { proposal },
             ),
-            close_position_tx,
+            collab_settlement_tx,
             proposal,
         ))
     }
 
     /// Use this function after receiving settlement proposal
-    pub fn start_close_position_maker(
+    pub fn start_collab_settlement_maker(
         self,
         current_price: Price,
         n_payouts: usize,
         proposed_settlement_transaction: &Transaction,
-    ) -> Result<(CfdEvent, ClosePositionTransaction, SettlementProposal)> {
+    ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
         anyhow::ensure!(
             !self.is_in_collaborative_settlement()
                 && self.role == Role::Maker
@@ -1084,7 +1084,7 @@ impl Cfd {
         self,
         current_price: Price,
         n_payouts: usize,
-    ) -> Result<(ClosePositionTransaction, SettlementProposal)> {
+    ) -> Result<(SettlementTransaction, SettlementProposal)> {
         let payout_curve = calculate_payouts(
             self.position,
             self.role,
@@ -1109,7 +1109,7 @@ impl Cfd {
             .as_ref()
             .context("Collaborative close without DLC")?;
 
-        let close_position_tx = dlc.close_position_transaction(
+        let collab_settlement_tx = dlc.collab_settlement_transaction(
             *payout.maker_amount(),
             *payout.taker_amount(),
             current_price,
@@ -1124,7 +1124,7 @@ impl Cfd {
             price: current_price,
         };
 
-        Ok((close_position_tx, proposal))
+        Ok((collab_settlement_tx, proposal))
     }
 
     pub fn receive_collaborative_settlement_proposal(
@@ -1907,7 +1907,7 @@ pub struct Dlc {
 }
 
 #[derive(Clone, Debug)]
-pub struct ClosePositionTransaction {
+pub struct SettlementTransaction {
     lock_desc: Descriptor<PublicKey>,
     lock_amount: Amount,
 
@@ -1923,7 +1923,7 @@ pub struct ClosePositionTransaction {
     counterparty_signature: Option<Signature>,
 }
 
-impl ClosePositionTransaction {
+impl SettlementTransaction {
     pub fn unsigned_transaction(&self) -> &Transaction {
         &self.unsigned_transaction
     }
@@ -2006,13 +2006,13 @@ impl Dlc {
         Ok((tx, sig, lock_amount))
     }
 
-    pub fn close_position_transaction(
+    pub fn collab_settlement_transaction(
         &self,
         payout_maker: Amount,
         payout_taker: Amount,
         current_price: Price,
         role: Role,
-    ) -> Result<ClosePositionTransaction> {
+    ) -> Result<SettlementTransaction> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {
             let outpoint = lock_tx
@@ -2040,7 +2040,7 @@ impl Dlc {
             &self.identity,
         ));
 
-        Ok(ClosePositionTransaction {
+        Ok(SettlementTransaction {
             lock_desc: lock_desc.clone(),
             lock_amount,
             price: current_price,
@@ -3127,7 +3127,7 @@ mod tests {
         // Extract unsigned tx to be able to trigger collab settlement in the maker
         let unsigned_tx = taker_long
             .clone()
-            .start_close_position_taker(price, N_PAYOUTS)
+            .start_collab_settlement_taker(price, N_PAYOUTS)
             .unwrap()
             .1
             .unsigned_transaction()
@@ -3140,9 +3140,9 @@ mod tests {
             .with_lock(taker_keys, maker_keys)
             .dummy_commit();
 
-        let result_taker = taker_long.start_close_position_taker(price, N_PAYOUTS);
+        let result_taker = taker_long.start_collab_settlement_taker(price, N_PAYOUTS);
         let result_maker =
-            maker_short.start_close_position_maker(Price::dummy(), N_PAYOUTS, &unsigned_tx);
+            maker_short.start_collab_settlement_maker(Price::dummy(), N_PAYOUTS, &unsigned_tx);
 
         assert!(result_taker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
         assert!(result_maker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
@@ -3985,19 +3985,19 @@ mod tests {
         ) -> (
             Self,
             SettlementProposal,
-            ClosePositionTransaction,
+            SettlementTransaction,
             CollaborativeSettlement,
         ) {
             let mut events = Vec::new();
 
             let (propose, settlement_transaction, settlement_proposal) = self
                 .clone()
-                .start_close_position_taker(price, N_PAYOUTS)
+                .start_collab_settlement_taker(price, N_PAYOUTS)
                 .unwrap();
             events.push(propose);
 
             let (_, maker_transaction, _) = maker_cfd
-                .start_close_position_maker(
+                .start_collab_settlement_maker(
                     price,
                     N_PAYOUTS,
                     settlement_transaction.unsigned_transaction(),
@@ -4023,18 +4023,18 @@ mod tests {
         fn dummy_collab_settlement_maker(
             self,
             proposal: SettlementProposal,
-            taker_close_position_transaction: ClosePositionTransaction,
+            taker_collab_settlement_transaction: SettlementTransaction,
         ) -> (Self, Script) {
             // handle receiving
             let mut events = Vec::new();
 
-            let taker_unsigned_tx = taker_close_position_transaction.unsigned_transaction();
-            let taker_signature = taker_close_position_transaction.own_signature();
-            let price = taker_close_position_transaction.price();
+            let taker_unsigned_tx = taker_collab_settlement_transaction.unsigned_transaction();
+            let taker_signature = taker_collab_settlement_transaction.own_signature();
+            let price = taker_collab_settlement_transaction.price();
 
             let (incoming_settlement, transaction, _) = self
                 .clone()
-                .start_close_position_maker(price, N_PAYOUTS, taker_unsigned_tx)
+                .start_collab_settlement_maker(price, N_PAYOUTS, taker_unsigned_tx)
                 .unwrap();
             events.push(incoming_settlement);
 
