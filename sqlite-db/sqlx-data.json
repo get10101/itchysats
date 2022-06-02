@@ -18,16 +18,6 @@
       ]
     }
   },
-  "16d1dd8c374c41c479594214f1bc927759195f743d17f489d328040bb2a66b5f": {
-    "query": "\n        INSERT INTO commit_txs\n        (\n            cfd_id,\n            txid\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2\n        )\n        ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Right": 2
-      },
-      "nullable": []
-    }
-  },
   "19d85c62be9e2deb6b03bfbb157643c91a194fb5f9254e2dbee097fd2bcd0b64": {
     "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                failed_cfds\n            ",
     "describe": {
@@ -154,6 +144,36 @@
       ]
     }
   },
+  "375bcb24b5a899520f76cd2f07ed5f14d4e862ef76a680de4d43350866260baa": {
+    "query": "\n            SELECT \n                COUNT(DISTINCT rollover_completed_event_data.id) as rollovers, \n                COUNT(DISTINCT revoked_commit_transactions.id) as revokes, \n                COUNT(DISTINCT open_cets.id) as cets\n            FROM \n                rollover_completed_event_data, \n                revoked_commit_transactions, \n                open_cets;\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "rollovers",
+          "ordinal": 0,
+          "type_info": "Int"
+        },
+        {
+          "name": "revokes",
+          "ordinal": 1,
+          "type_info": "Int"
+        },
+        {
+          "name": "cets",
+          "ordinal": 2,
+          "type_info": "Int"
+        }
+      ],
+      "parameters": {
+        "Right": 0
+      },
+      "nullable": [
+        false,
+        null,
+        null
+      ]
+    }
+  },
   "4af3815bcce18c34ea78e3389ede21b193a0e493f98642d6a2a4636561667b66": {
     "query": "\n            SELECT\n                uuid as \"uuid: model::OrderId\"\n            FROM\n                cfds\n            ",
     "describe": {
@@ -214,6 +234,26 @@
       ]
     }
   },
+  "58e3d05c44b0ddc2d4713e292fffef23b078e042810a411ea22fcf7bfe6c84fd": {
+    "query": "\n                insert into open_cets (\n                    cfd_id,\n                    oracle_event_id,\n                    adaptor_sig,\n                    maker_amount,\n                    taker_amount,\n                    n_bits,\n                    range_start,\n                    range_end,\n                    txid\n                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6, $7, $8, $9 )\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 9
+      },
+      "nullable": []
+    }
+  },
+  "58f901862d163e620ae414a67b3dc0d26014993568727ae974b937cf82f42c84": {
+    "query": "\n        INSERT INTO closed_commit_txs\n        (\n            cfd_id,\n            txid\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2\n        )\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": []
+    }
+  },
   "590c2da6afd09d64c50900c1cf684052f9e94ba6e62bdf4564c358bbbdf1a7e4": {
     "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: model::OrderId\"\n            from\n                cfds\n            where exists (\n                select id from EVENTS as events\n                where events.cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2\n                )\n            )\n            ",
     "describe": {
@@ -238,6 +278,52 @@
       ]
     }
   },
+  "5aced71d79c0741c91a6a00d40732e1718b030f1cb0f55b7ea40c04b5a938d8c": {
+    "query": "\n        SELECT\n            closed_commit_txs.txid as \"commit_txid: model::Txid\",\n            closed_refund_txs.txid as \"txid: model::Txid\",\n            closed_refund_txs.vout as \"vout: model::Vout\",\n            closed_refund_txs.payout as \"payout: model::Payout\"\n        FROM\n            closed_refund_txs\n        JOIN\n            closed_commit_txs on closed_commit_txs.cfd_id = closed_refund_txs.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_refund_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "commit_txid: model::Txid",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "txid: model::Txid",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "vout: model::Vout",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "payout: model::Payout",
+          "ordinal": 3,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "63c18f39f0262c9178094ef11bb29bf64559611425ef5dca51ecc925cd1ce596": {
+    "query": "\n            insert into rollover_completed_event_data (\n                cfd_id,\n                event_id,\n                settlement_event_id,\n                refund_timelock,\n                funding_fee,\n                rate,\n                identity,\n                identity_counterparty,\n                maker_address,\n                taker_address,\n                maker_lock_amount,\n                taker_lock_amount,\n                publish_sk,\n                publish_pk_counterparty,\n                revocation_secret,\n                revocation_pk_counterparty,\n                lock_tx,\n                lock_tx_descriptor,\n                commit_tx,\n                commit_adaptor_signature,\n                commit_descriptor,\n                refund_tx,\n                refund_signature\n            ) values ( \n            (select id from cfds where cfds.uuid = $1),\n            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23\n            )\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 23
+      },
+      "nullable": []
+    }
+  },
   "6705894784db563cfc16ca0ac9c2a4eb152fe6f9111c068c4c077e7de930e0a0": {
     "query": "\n        DELETE FROM\n            cfds\n        WHERE\n            cfds.uuid = $1\n        ",
     "describe": {
@@ -248,22 +334,22 @@
       "nullable": []
     }
   },
-  "6eb26ec9a02d29ae5e2d8335cc8a12bfef55fa1adb19d8089f5fbe307ffc8ba2": {
-    "query": "\n        INSERT INTO refund_txs\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4\n        )\n        ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Right": 4
-      },
-      "nullable": []
-    }
-  },
   "7a7a9cc00acb13e8aab74b57a9ced6e6ef490780956e659e090a15833ceee571": {
     "query": "\n            INSERT INTO event_log_failed (\n                cfd_id,\n                name,\n                created_at\n            )\n            VALUES\n            (\n                (SELECT id FROM failed_cfds WHERE failed_cfds.uuid = $1),\n                $2, $3\n            )\n            ",
     "describe": {
       "columns": [],
       "parameters": {
         "Right": 3
+      },
+      "nullable": []
+    }
+  },
+  "7b72ad9417037bdb34fdd53091329bd85718d79a640eabc533652379fb548512": {
+    "query": "\n        INSERT INTO closed_refund_txs\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4\n        )\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 4
       },
       "nullable": []
     }
@@ -412,8 +498,8 @@
       "nullable": []
     }
   },
-  "bc98d0f36ccaf348217bc8d29f847efec331739e5af92251b271ab43f1ef8958": {
-    "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            closed_cets.txid as \"txid: model::Txid\",\n            closed_cets.vout as \"vout: model::Vout\",\n            closed_cets.payout as \"payout: model::Payout\",\n            closed_cets.price as \"price: model::Price\"\n        FROM\n            closed_cets\n        JOIN\n            commit_txs on commit_txs.cfd_id = closed_cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
+  "ca417fd622b4d8b143fabda9d6d0ecd1a76619123ec1202fd66455f4d05454a1": {
+    "query": "\n        SELECT\n            closed_commit_txs.txid as \"commit_txid: model::Txid\",\n            closed_cets.txid as \"txid: model::Txid\",\n            closed_cets.vout as \"vout: model::Vout\",\n            closed_cets.payout as \"payout: model::Payout\",\n            closed_cets.price as \"price: model::Price\"\n        FROM\n            closed_cets\n        JOIN\n            closed_commit_txs on closed_commit_txs.cfd_id = closed_cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
     "describe": {
       "columns": [
         {
@@ -470,6 +556,16 @@
       "columns": [],
       "parameters": {
         "Right": 2
+      },
+      "nullable": []
+    }
+  },
+  "d8d9d380f3847552a7060c0cdde8f1ade3ed0d4a260bc07137a6c274d556a927": {
+    "query": "\n                insert into revoked_commit_transactions (\n                    cfd_id,\n                    encsig_ours,\n                    publication_pk_theirs,\n                    revocation_sk_theirs,\n                    script_pubkey,\n                    txid\n                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6 )\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 6
       },
       "nullable": []
     }
@@ -539,42 +635,6 @@
         false,
         false,
         false,
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
-  "e3bddc86b453b35f2c4232bca0bb17caf42b763c6f30a585a5ee2ce78081b63a": {
-    "query": "\n        SELECT\n            commit_txs.txid as \"commit_txid: model::Txid\",\n            refund_txs.txid as \"txid: model::Txid\",\n            refund_txs.vout as \"vout: model::Vout\",\n            refund_txs.payout as \"payout: model::Payout\"\n        FROM\n            refund_txs\n        JOIN\n            commit_txs on commit_txs.cfd_id = refund_txs.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = refund_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
-    "describe": {
-      "columns": [
-        {
-          "name": "commit_txid: model::Txid",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "txid: model::Txid",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "vout: model::Vout",
-          "ordinal": 2,
-          "type_info": "Int64"
-        },
-        {
-          "name": "payout: model::Payout",
-          "ordinal": 3,
-          "type_info": "Int64"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
         false,
         false,
         false,

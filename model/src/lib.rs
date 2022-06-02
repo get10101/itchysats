@@ -683,8 +683,8 @@ impl Default for OpeningFee {
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct FundingFee {
     #[serde(with = "bdk::bitcoin::util::amount::serde::as_sat")]
-    fee: Amount,
-    rate: FundingRate,
+    pub fee: Amount,
+    pub rate: FundingRate,
 }
 
 impl FundingFee {

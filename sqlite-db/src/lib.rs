@@ -41,6 +41,7 @@ pub mod cull_old_dlcs;
 pub mod event_log;
 pub mod failed;
 mod impls;
+mod insert_rollover_completed_event_data;
 pub mod time_to_first_position;
 
 #[derive(Clone)]
