@@ -346,7 +346,6 @@ impl Order {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct SettlementProposal {
     pub order_id: OrderId,
-    pub timestamp: Timestamp,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub taker: Amount,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
@@ -1115,7 +1114,6 @@ impl Cfd {
 
         let proposal = SettlementProposal {
             order_id: self.id,
-            timestamp: Timestamp::now(),
             taker: *payout.taker_amount(),
             maker: *payout.maker_amount(),
             price: current_price,
@@ -3917,7 +3915,6 @@ mod tests {
                 event: EventKind::CollaborativeSettlementStarted {
                     proposal: SettlementProposal {
                         order_id,
-                        timestamp: Timestamp::now(),
                         taker: Default::default(),
                         maker: Default::default(),
                         price: Price::new(dec!(10000)).unwrap(),

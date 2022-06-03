@@ -776,7 +776,7 @@ where
                 order_id,
                 msg:
                     wire::taker_to_maker::Settlement::Propose {
-                        timestamp,
+                        timestamp: _,
                         taker,
                         maker,
                         price,
@@ -787,7 +787,6 @@ where
                         taker_id,
                         SettlementProposal {
                             order_id,
-                            timestamp,
                             taker,
                             maker,
                             price,
