@@ -1165,10 +1165,15 @@ impl Cfd {
 
     pub fn accept_collaborative_settlement_proposal(
         self,
-        proposal: &SettlementProposal,
+        theirs: &SettlementProposal,
     ) -> Result<CfdEvent> {
         anyhow::ensure!(self.role == Role::Maker);
-        anyhow::ensure!(self.settlement_proposal.as_ref() == Some(proposal));
+
+        let ours = self.settlement_proposal;
+        anyhow::ensure!(
+            self.settlement_proposal.as_ref() == Some(theirs),
+            "Settlement proposal mismatch: calculated {ours:?}, got {theirs:?}",
+        );
 
         Ok(CfdEvent::new(
             self.id,
