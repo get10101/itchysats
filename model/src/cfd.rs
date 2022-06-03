@@ -1192,10 +1192,10 @@ impl Cfd {
     }
 
     pub fn reject_contract_setup(self, reason: anyhow::Error) -> Result<CfdEvent> {
+        let version = self.version;
         anyhow::ensure!(
-            self.version <= 1,
-            "Rejecting contract setup not allowed because cfd in version {}",
-            self.version
+            version <= 1,
+            "Rejecting contract setup not allowed because cfd in version {version}",
         );
 
         tracing::info!(order_id = %self.id, "Contract setup was rejected: {reason:#}");
