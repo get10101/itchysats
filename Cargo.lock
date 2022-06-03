@@ -1064,8 +1064,7 @@ dependencies = [
 [[package]]
 name = "electrum-client"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edd12f125852d77980725243b2a8b3bea73cd4c7a22c33bc52b08b664c561dc7"
+source = "git+https://github.com/da-kami/rust-electrum-client/?branch=fix/ignore-empty-lines#44096f360192a2d2ecb6fff7cce0a07e24eb058c"
 dependencies = [
  "bitcoin",
  "log",
