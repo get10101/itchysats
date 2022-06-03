@@ -15,4 +15,4 @@ trap 'rm -f $TEMPDB' EXIT
 DATABASE_URL=sqlite:$TEMPDB cargo sqlx migrate run
 
 # prepare the sqlx-data.json rust mappings
-DATABASE_URL=sqlite:./$CRATE_DIR/$TEMPDB SQLX_OFFLINE=true cargo sqlx prepare
+DATABASE_URL=sqlite:./$CRATE_DIR/$TEMPDB SQLX_OFFLINE=true cargo sqlx prepare -- --tests

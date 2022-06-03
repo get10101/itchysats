@@ -15,6 +15,17 @@
             },
             "taker_amount": 0,
             "txid": "0bacec34cf1771c438a05fe61ae92e931dcf70bb8a839a52cee09214d137fb7c"
+          },
+          {
+            "adaptor_sig": "02db8839040f146e150634dfe06ca08c6fc29dd9d49b8f5223fd147b7e7e699260021cde22941794417f194f1b704b569db98274a3f575ce13d9a710232954c8a8ffaf808f7db02c1cb32908cb850ff087252715029f9f45fec637552cf3c209ed6418ae26eed0b9cfff70661af695d4687c36a533e2713e000f526e07939fd29551caba00747d74e1942d9b4cd195c7529c00994e307069bc26e08c40a6cda0de65",
+            "maker_amount": 0,
+            "n_bits": 6,
+            "range": {
+              "end": 26383,
+              "start": 16383
+            },
+            "taker_amount": 358727,
+            "txid": "0bacec34cf1771c438a05fe61ae92e931dcf70bb8a839a52cee09214d137fb7c"
           }
         ]
       },
@@ -560,7 +571,22 @@
       "refund_timelock": 216,
       "revocation": "24cc7745fa3ca9c9c4d55434d4d9f8d7f3ad35b33c39d11f69e38ed52b26f864",
       "revocation_pk_counterparty": "0334dc73133e6f107a5efb8bdbbfe18b4febaf7ecdd0d76e067c0927ea13d22993",
-      "revoked_commit": [],
+      "revoked_commit": [
+        {
+          "encsig_ours": "03bf15f2b1d183b5c079e4edcaafc85264f0da07b119c131801a1c8341f65a87a90398f30d63c0c4fe9a2d516d3f1bbc9881dc3e07976888c5bcaa62529b7ff0340a9b344292606362288bbe1ed6db2ae6c277b643a0611cc8a027578d4ec5ef65caaa688f3defcf0bee6f928e505a8a1a04887343af7d9b84873e44689841fc8e3a461becd81ebe7d438475e0a3c1b84e64261d00b3bafa3286d6d7e788df97b359",
+          "publication_pk_theirs": "03d6af43c949225a7f43037048a0ecceeefd7bf43d6ff4d7a1dd973f7db362df3e",
+          "revocation_sk_theirs": "8484e28a3e313f96dde50c281e9ae1d5d1c03be308e0ebb1b944176ebd5a762f",
+          "script_pubkey": "002064974408d8d0debbd478cb6a5456adfbb04b4fb8815af4a35ee244951fa9293c",
+          "txid": "9f06a89b2d0905499fbb2d1c71fcf4f15794f5eb9dd015e59ea7e5764aba2231"
+        },
+        {
+          "encsig_ours": "0388836a6f06075446ba82c382a0099a9c4142ecc2b6e2cd99b3578539ce36cd8a022e8f3d385b574511480b9a88dd53fed58299faf175b767e9e3373ffb62bc0d6ce9062e8889938661b1526c112e53279639f815787d408dd90fbc2ad9506b8a4d0bf9d6ec5c2e71e17c8653017f7883a36a47b568232973e53fecb4e2ab1305ad34a50371e67f73159cc83411ece957766a235cb4184eca04e65ea82ec52c51d9",
+          "publication_pk_theirs": "0365b5818a889a2d6756db89c723631b9add9ea1911d1ad7c7184477fe41f46424",
+          "revocation_sk_theirs": "e4f2652ba41bedf0271e85ccd2ffb6f972bb4b67591dda43979c638b1187fba6",
+          "script_pubkey": "0020de27d4eeaa1bcec849f007bb55ccb1adc638484caf1e67f503dfbdda751edd10",
+          "txid": "53f58ce696b0f732ae5a637741b0bd23d69e313848183fd4b32d1a98a9143299"
+        }
+      ],
       "settlement_event_id": "/x/BitMEX/BXBT/2022-04-15T01:00:00.price?n=20",
       "taker_address": "tb1q7ysq6mc5qavt5ppps0mkcqwf6fm4zamc7zhpqn",
       "taker_lock_amount": 119695

@@ -412,11 +412,10 @@ impl ClosedCfdInputAggregate {
     }
 
     fn lock(&self) -> Result<Lock> {
-        let script_pubkey = self.latest_dlc()?.lock.1.script_pubkey();
-        let OutPoint { txid, vout } = self
-            .latest_dlc()?
-            .lock
-            .0
+        let latest_dlc = self.latest_dlc()?;
+        let (lock_transaction, script) = latest_dlc.lock.clone();
+        let script_pubkey = script.script_pubkey();
+        let OutPoint { txid, vout } = bdk::bitcoin::Transaction::from(lock_transaction)
             .outpoint(&script_pubkey)
             .context("Missing DLC in lock TX")?;
 
@@ -456,7 +455,8 @@ impl ClosedCfdInputAggregate {
     fn cet(&self) -> Result<Settlement> {
         let (cet, price) = self.cet.as_ref().context("Cet not set")?;
 
-        let commit_txid = Txid::new(self.latest_dlc()?.commit.0.txid());
+        let transaction = bdk::bitcoin::Transaction::from(self.latest_dlc()?.commit.0.clone());
+        let commit_txid = Txid::new(transaction.txid());
 
         let own_script_pubkey = self.latest_dlc()?.script_pubkey_for(self.role);
 
@@ -486,7 +486,7 @@ impl ClosedCfdInputAggregate {
         let dlc = self.latest_dlc()?;
 
         let own_script_pubkey = dlc.script_pubkey_for(self.role);
-        let refund_tx = &dlc.refund.0;
+        let refund_tx = bdk::bitcoin::Transaction::from(dlc.refund.0.clone());
 
         let OutPoint { txid, vout } = refund_tx
             .outpoint(&own_script_pubkey)
@@ -498,7 +498,8 @@ impl ClosedCfdInputAggregate {
             .with_context(|| format!("No output at vout {vout}"))?;
         let payout = Payout::new(Amount::from_sat(payout.value));
 
-        let commit_txid = Txid::new(dlc.commit.0.txid());
+        let transaction = bdk::bitcoin::Transaction::from(dlc.commit.0.clone());
+        let commit_txid = Txid::new(transaction.txid());
         let txid = Txid::new(txid);
         let vout = Vout::new(vout);
 
@@ -712,7 +713,7 @@ async fn insert_cet_settlement(
 
     let query_result = sqlx::query!(
         r#"
-        INSERT INTO cets
+        INSERT INTO closed_cets
         (
             cfd_id,
             txid,
@@ -736,7 +737,7 @@ async fn insert_cet_settlement(
     .await?;
 
     if query_result.rows_affected() != 1 {
-        anyhow::bail!("failed to insert into cets");
+        anyhow::bail!("failed to insert into closed_cets");
     }
 
     Ok(())
@@ -754,7 +755,7 @@ async fn insert_refund_settlement(
 
     let query_result = sqlx::query!(
         r#"
-        INSERT INTO refund_txs
+        INSERT INTO closed_refund_txs
         (
             cfd_id,
             txid,
@@ -776,7 +777,7 @@ async fn insert_refund_settlement(
     .await?;
 
     if query_result.rows_affected() != 1 {
-        anyhow::bail!("failed to insert into refund_txs");
+        anyhow::bail!("failed to insert into closed_refund_txs");
     }
 
     Ok(())
@@ -789,7 +790,7 @@ async fn insert_commit_tx(
 ) -> Result<()> {
     let query_result = sqlx::query!(
         r#"
-        INSERT INTO commit_txs
+        INSERT INTO closed_commit_txs
         (
             cfd_id,
             txid
@@ -807,7 +808,7 @@ async fn insert_commit_tx(
     .await?;
 
     if query_result.rows_affected() != 1 {
-        anyhow::bail!("failed to insert into commit_txs");
+        anyhow::bail!("failed to insert into closed_commit_txs");
     }
 
     Ok(())
@@ -848,17 +849,17 @@ async fn load_cet_settlement(
         Settlement::Cet,
         r#"
         SELECT
-            commit_txs.txid as "commit_txid: model::Txid",
-            cets.txid as "txid: model::Txid",
-            cets.vout as "vout: model::Vout",
-            cets.payout as "payout: model::Payout",
-            cets.price as "price: model::Price"
+            closed_commit_txs.txid as "commit_txid: model::Txid",
+            closed_cets.txid as "txid: model::Txid",
+            closed_cets.vout as "vout: model::Vout",
+            closed_cets.payout as "payout: model::Payout",
+            closed_cets.price as "price: model::Price"
         FROM
-            cets
+            closed_cets
         JOIN
-            commit_txs on commit_txs.cfd_id = cets.cfd_id
+            closed_commit_txs on closed_commit_txs.cfd_id = closed_cets.cfd_id
         JOIN
-            closed_cfds on closed_cfds.id = cets.cfd_id
+            closed_cfds on closed_cfds.id = closed_cets.cfd_id
         WHERE
             closed_cfds.uuid = $1
         "#,
@@ -878,16 +879,16 @@ async fn load_refund_settlement(
         Settlement::Refund,
         r#"
         SELECT
-            commit_txs.txid as "commit_txid: model::Txid",
-            refund_txs.txid as "txid: model::Txid",
-            refund_txs.vout as "vout: model::Vout",
-            refund_txs.payout as "payout: model::Payout"
+            closed_commit_txs.txid as "commit_txid: model::Txid",
+            closed_refund_txs.txid as "txid: model::Txid",
+            closed_refund_txs.vout as "vout: model::Vout",
+            closed_refund_txs.payout as "payout: model::Payout"
         FROM
-            refund_txs
+            closed_refund_txs
         JOIN
-            commit_txs on commit_txs.cfd_id = refund_txs.cfd_id
+            closed_commit_txs on closed_commit_txs.cfd_id = closed_refund_txs.cfd_id
         JOIN
-            closed_cfds on closed_cfds.id = refund_txs.cfd_id
+            closed_cfds on closed_cfds.id = closed_refund_txs.cfd_id
         WHERE
             closed_cfds.uuid = $1
         "#,

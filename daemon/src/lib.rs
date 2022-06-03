@@ -43,7 +43,6 @@ pub mod auto_rollover;
 pub mod collab_settlement;
 pub mod command;
 pub mod connection;
-pub mod cull_old_dlcs;
 mod future_ext;
 pub mod libp2p_utils;
 pub mod monitor;
@@ -86,7 +85,6 @@ pub struct TakerActorSystem<O, W, P> {
     _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
-    _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
@@ -127,8 +125,6 @@ where
             + Handler<monitor::TryBroadcastTransaction>
             + Actor<Stop = ()>,
     {
-        futures::executor::block_on(db.cull_old_dlcs())?;
-
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
             watch::channel(ConnectionStatus::Offline { reason: None });
 
@@ -252,11 +248,9 @@ where
         let close_cfds_actor = archive_closed_cfds::Actor::new(db.clone())
             .create(None)
             .spawn(&mut tasks);
-        let archive_failed_cfds_actor = archive_failed_cfds::Actor::new(db.clone())
+        let archive_failed_cfds_actor = archive_failed_cfds::Actor::new(db)
             .create(None)
             .spawn(&mut tasks);
-
-        let _cull_old_dlcs_actor = cull_old_dlcs::Actor::new(db).create(None).spawn(&mut tasks);
 
         tracing::debug!("Taker actor system ready");
 
@@ -271,7 +265,6 @@ where
             _dialer_supervisor: dialer_supervisor,
             _close_cfds_actor: close_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
-            _cull_old_dlcs_actor,
             _tasks: tasks,
             maker_online_status_feed_receiver,
         })

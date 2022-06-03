@@ -33,14 +33,14 @@ use std::sync::Arc;
 use time::Duration;
 
 pub use closed::*;
-pub use cull_old_dlcs::*;
 pub use failed::*;
+use model::EventKind::RolloverCompleted;
 
 pub mod closed;
-pub mod cull_old_dlcs;
 pub mod event_log;
 pub mod failed;
 mod impls;
+mod rollover;
 pub mod time_to_first_position;
 
 #[derive(Clone)]
@@ -223,8 +223,14 @@ impl Connection {
         if query_result.rows_affected() != 1 {
             anyhow::bail!("failed to insert event");
         }
+        let event_id = event.id;
 
-        tracing::info!(event = %event_name, order_id = %event.id, "Appended event to database");
+        // if we have a rollover completed event we store it additionally in its own table
+        if let RolloverCompleted { .. } = event.event {
+            rollover::insert(&mut conn, query_result.last_insert_rowid(), event).await?;
+        }
+
+        tracing::info!(event = %event_name, order_id = %event_id, "Appended event to database");
 
         Ok(())
     }
@@ -257,7 +263,9 @@ impl Connection {
         };
         let cfd_version = cfd.version();
 
-        let events = load_cfd_events(&mut db_tx, id, cfd_version).await?;
+        let events = load_cfd_events(&mut db_tx, id, cfd_version)
+            .await
+            .with_context(|| format!("Could not load events for CFD {id}"))?;
         let num_events = events.len();
 
         tracing::debug!(order_id = %id, %aggregate, %cfd_version, %num_events, "Applying new events to CFD");
@@ -290,7 +298,7 @@ impl Connection {
                         );
                         continue;
                     }
-                    res => res.with_context(|| "Could not load open CFD {id}"),
+                    res => res.with_context(|| format!("Could not load open CFD {id}")),
                 };
 
                 yield res;
@@ -343,7 +351,7 @@ impl Connection {
                         );
                         continue;
                     }
-                    res => res.with_context(|| "Could not load open CFD {id}"),
+                    res => res.with_context(|| format!("Could not load open CFD {id}")),
                 };
 
                 yield res;
@@ -589,6 +597,7 @@ async fn load_cfd_events(
         r#"
 
         select
+            events.id,
             name,
             data,
             created_at as "created_at: model::Timestamp"
@@ -607,13 +616,32 @@ async fn load_cfd_events(
     .await?
     .into_par_iter()
     .map(|row| {
-        Ok(CfdEvent {
-            timestamp: row.created_at,
-            id,
-            event: EventKind::from_json(row.name, row.data)?,
-        })
+        Ok((
+            row.id,
+            CfdEvent {
+                timestamp: row.created_at,
+                id,
+                event: EventKind::from_json(row.name, row.data)?,
+            },
+        ))
     })
-    .collect::<Result<Vec<_>>>()?;
+    .collect::<Result<Vec<(i64, CfdEvent)>>>()?;
+
+    for (row_id, event) in events.iter_mut() {
+        if let RolloverCompleted { .. } = event.event {
+            if let Some((dlc, funding_fee)) = rollover::load(conn, event.id, *row_id).await? {
+                event.event = RolloverCompleted {
+                    dlc: Some(dlc),
+                    funding_fee,
+                }
+            }
+        }
+    }
+
+    let mut events = events
+        .into_iter()
+        .map(|(_, event)| event)
+        .collect::<Vec<CfdEvent>>();
 
     events.sort_unstable_by(CfdEvent::chronologically);
 

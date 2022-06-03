@@ -9,7 +9,6 @@ use daemon::archive_closed_cfds;
 use daemon::archive_failed_cfds;
 use daemon::collab_settlement;
 use daemon::command;
-use daemon::cull_old_dlcs;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::position_metrics;
@@ -55,7 +54,6 @@ pub struct ActorSystem<O, W> {
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
-    _cull_old_dlcs_actor: Address<cull_old_dlcs::Actor>,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -89,8 +87,6 @@ where
             + Handler<monitor::MonitorCetFinality>
             + Actor<Stop = ()>,
     {
-        futures::executor::block_on(db.cull_old_dlcs())?;
-
         let (monitor_addr, monitor_ctx) = Context::new(None);
         let (oracle_addr, oracle_ctx) = Context::new(None);
         let (inc_conn_addr, inc_conn_ctx) = Context::new(None);
@@ -211,9 +207,7 @@ where
             .create(None)
             .spawn(&mut tasks);
 
-        tasks.add(time_to_first_position_ctx.run(time_to_first_position::Actor::new(db.clone())));
-
-        let _cull_old_dlcs_actor = cull_old_dlcs::Actor::new(db).create(None).spawn(&mut tasks);
+        tasks.add(time_to_first_position_ctx.run(time_to_first_position::Actor::new(db)));
 
         tracing::debug!("Maker actor system ready");
 
@@ -227,7 +221,6 @@ where
             _listener_supervisor: listener_supervisor,
             _ping_supervisor,
             _position_metrics_actor: position_metrics_actor,
-            _cull_old_dlcs_actor,
         })
     }
 
