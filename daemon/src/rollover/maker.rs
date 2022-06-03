@@ -120,7 +120,7 @@ impl Actor {
         if let Err(e) = self
             .executor
             .execute(order_id, |cfd| {
-                // TODO: Validate that the correct peer is invoking this?
+                cfd.verify_counterparty_peer_id(&peer.into())?;
                 cfd.start_rollover()
             })
             .await

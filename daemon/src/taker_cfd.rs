@@ -1,4 +1,5 @@
-use crate::collab_settlement_taker;
+use crate::collab_settlement;
+use crate::collab_settlement::taker::Settle;
 use crate::connection;
 use crate::oracle;
 use crate::process_manager;
@@ -54,7 +55,7 @@ pub struct Actor<O, W> {
     process_manager_actor: xtra::Address<process_manager::Actor>,
     conn_actor: xtra::Address<connection::Actor>,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
-    collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
+    libp2p_collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
     oracle_actor: xtra::Address<O>,
     n_payouts: usize,
     tasks: Tasks,
@@ -76,6 +77,7 @@ where
         process_manager_actor: xtra::Address<process_manager::Actor>,
         conn_actor: xtra::Address<connection::Actor>,
         oracle_actor: xtra::Address<O>,
+        libp2p_collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
         n_payouts: usize,
         maker_identity: Identity,
         maker_peer_id: PeerId,
@@ -88,9 +90,9 @@ where
             process_manager_actor,
             conn_actor,
             oracle_actor,
+            libp2p_collab_settlement_actor,
             n_payouts,
             setup_actors: AddressMap::default(),
-            collab_settlement_actors: AddressMap::default(),
             tasks: Tasks::default(),
             current_maker_offers: None,
             maker_identity,
@@ -139,25 +141,18 @@ impl<O, W> Actor<O, W> {
 
         let proposal_closing_price = market_closing_price(bid, ask, Role::Taker, cfd.position());
 
-        let disconnected = self
-            .collab_settlement_actors
-            .get_disconnected(order_id)
-            .with_context(|| format!("Settlement for order {order_id} is already in progress"))?;
-
         tracing::debug!(%order_id, %proposal_closing_price, %bid, %ask, %quote_timestamp, "Proposing settlement of contract");
 
-        let addr = collab_settlement_taker::Actor::new(
-            order_id,
-            proposal_closing_price,
-            self.n_payouts,
-            self.conn_actor.clone(),
-            self.process_manager_actor.clone(),
-            self.db.clone(),
-        )
-        .create(None)
-        .spawn(&mut self.tasks);
-
-        disconnected.insert(addr);
+        // Wait for the response to check for invariants (ie. whether it is possible to settle)
+        self.libp2p_collab_settlement_actor
+            .send(Settle {
+                order_id,
+                price: proposal_closing_price,
+                maker_peer_id: cfd
+                    .counterparty_peer_id()
+                    .context("No counterparty peer id found")?,
+            })
+            .await??;
 
         Ok(())
     }

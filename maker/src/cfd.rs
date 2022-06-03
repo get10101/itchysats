@@ -192,6 +192,7 @@ pub struct Actor<O, T, W> {
     n_payouts: usize,
     tasks: Tasks,
     libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
+    libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
 }
 
 impl<O, T, W> Actor<O, T, W> {
@@ -208,6 +209,7 @@ impl<O, T, W> Actor<O, T, W> {
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
         n_payouts: usize,
         libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
+        libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
     ) -> Self {
         Self {
             db: db.clone(),
@@ -228,6 +230,7 @@ impl<O, T, W> Actor<O, T, W> {
             settlement_actors: AddressMap::default(),
             tasks: Tasks::default(),
             libp2p_rollover,
+            libp2p_collab_settlement,
         }
     }
 
@@ -482,20 +485,29 @@ impl<O, T, W> Actor<O, T, W> {
     async fn handle_accept_settlement(&mut self, msg: AcceptSettlement) -> Result<()> {
         let AcceptSettlement { order_id } = msg;
 
-        match self
-            .settlement_actors
-            .send_async(&order_id, collab_settlement::Accepted)
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(NotConnected(e)) => {
-                self.executor
-                    .execute(order_id, |cfd| {
-                        Ok(cfd.fail_collaborative_settlement(anyhow!(e)))
-                    })
-                    .await?;
+        // TODO: Handle case when taker upgraded after opening and *can* use libp2p
+        let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
+        if can_use_libp2p(&cfd) {
+            self.libp2p_collab_settlement
+                .send(daemon::collab_settlement::maker::Accept { order_id })
+                .await
+                .map_err(|e| anyhow!(e))?
+        } else {
+            match self
+                .settlement_actors
+                .send_async(&order_id, collab_settlement::Accepted)
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(NotConnected(e)) => {
+                    self.executor
+                        .execute(order_id, |cfd| {
+                            Ok(cfd.fail_collaborative_settlement(anyhow!(e)))
+                        })
+                        .await?;
 
-                bail!("Accept failed: No settlement in progress for order {order_id}")
+                    bail!("Accept failed: No settlement in progress for order {order_id}")
+                }
             }
         }
     }
@@ -503,20 +515,29 @@ impl<O, T, W> Actor<O, T, W> {
     async fn handle_reject_settlement(&mut self, msg: RejectSettlement) -> Result<()> {
         let RejectSettlement { order_id } = msg;
 
-        match self
-            .settlement_actors
-            .send_async(&order_id, collab_settlement::Rejected)
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(NotConnected(e)) => {
-                self.executor
-                    .execute(order_id, |cfd| {
-                        Ok(cfd.fail_collaborative_settlement(anyhow!(e)))
-                    })
-                    .await?;
+        // TODO: Handle case when taker upgraded after opening and *can* use libp2p
+        let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
+        if can_use_libp2p(&cfd) {
+            self.libp2p_collab_settlement
+                .send(daemon::collab_settlement::maker::Reject { order_id })
+                .await
+                .map_err(|e| anyhow!(e))?
+        } else {
+            match self
+                .settlement_actors
+                .send_async(&order_id, collab_settlement::Rejected)
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(NotConnected(e)) => {
+                    self.executor
+                        .execute(order_id, |cfd| {
+                            Ok(cfd.fail_collaborative_settlement(anyhow!(e)))
+                        })
+                        .await?;
 
-                bail!("Reject failed: No settlement in progress for order {order_id}")
+                    bail!("Reject failed: No settlement in progress for order {order_id}")
+                }
             }
         }
     }

@@ -1011,6 +1011,7 @@ impl Cfd {
             .as_ref()
             .context("Collaborative close without DLC")?;
 
+        #[allow(deprecated)]
         let (tx, sig_maker, lock_amount) = dlc.close_transaction(&proposal)?;
 
         let spend_tx = dlc
@@ -1022,11 +1023,11 @@ impl Cfd {
         Ok(settlement)
     }
 
-    pub fn propose_collaborative_settlement(
-        &self,
+    pub fn start_collab_settlement_taker(
+        self,
         current_price: Price,
         n_payouts: usize,
-    ) -> Result<(CfdEvent, SettlementProposal)> {
+    ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
         anyhow::ensure!(
             !self.is_in_collaborative_settlement()
                 && self.role == Role::Taker
@@ -1034,6 +1035,56 @@ impl Cfd {
             "Failed to propose collaborative settlement"
         );
 
+        let (collab_settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
+
+        Ok((
+            CfdEvent::new(
+                proposal.order_id,
+                EventKind::CollaborativeSettlementStarted { proposal },
+            ),
+            collab_settlement_tx,
+            proposal,
+        ))
+    }
+
+    /// Use this function after receiving settlement proposal
+    pub fn start_collab_settlement_maker(
+        self,
+        current_price: Price,
+        n_payouts: usize,
+        proposed_settlement_transaction: &Transaction,
+    ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
+        anyhow::ensure!(
+            !self.is_in_collaborative_settlement()
+                && self.role == Role::Maker
+                && self.can_settle_collaboratively(),
+            "Failed to start collaborative settlement"
+        );
+
+        let (settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
+
+        let local_settlement_transaction = settlement_tx.unsigned_transaction();
+
+        anyhow::ensure!(
+            *local_settlement_transaction == *proposed_settlement_transaction,
+            "Proposed collab settlement does not equal locally created one. Local: {local_settlement_transaction:?}, proposed: {proposed_settlement_transaction:?}"
+        );
+
+        Ok((
+            CfdEvent::new(
+                proposal.order_id,
+                EventKind::CollaborativeSettlementStarted { proposal },
+            ),
+            settlement_tx,
+            proposal,
+        ))
+    }
+
+    fn make_proposal(
+        self,
+        current_price: Price,
+        n_payouts: usize,
+    ) -> Result<(SettlementTransaction, SettlementProposal)> {
         let payout_curve = calculate_payouts(
             self.position,
             self.role,
@@ -1053,6 +1104,18 @@ impl Cfd {
                 .context("find current price on the payout curve")?
         };
 
+        let dlc = self
+            .dlc
+            .as_ref()
+            .context("Collaborative close without DLC")?;
+
+        let collab_settlement_tx = dlc.collab_settlement_transaction(
+            *payout.maker_amount(),
+            *payout.taker_amount(),
+            current_price,
+            self.role,
+        )?;
+
         let proposal = SettlementProposal {
             order_id: self.id,
             timestamp: Timestamp::now(),
@@ -1061,13 +1124,7 @@ impl Cfd {
             price: current_price,
         };
 
-        Ok((
-            CfdEvent::new(
-                self.id,
-                EventKind::CollaborativeSettlementStarted { proposal },
-            ),
-            proposal,
-        ))
+        Ok((collab_settlement_tx, proposal))
     }
 
     pub fn receive_collaborative_settlement_proposal(
@@ -1406,27 +1463,22 @@ impl Cfd {
         self.opening_fee
     }
 
-    pub fn sign_collaborative_settlement_taker(
-        &self,
-        proposal: &SettlementProposal,
-    ) -> Result<(Transaction, Signature, Script)> {
-        debug_assert_eq!(
-            self.role,
-            Role::Taker,
-            "Only the taker can start collaborative settlement signing"
-        );
-
-        let dlc = self
-            .dlc
-            .as_ref()
-            .context("Collaborative close without DLC")?;
-
-        let (tx, sig, _) = dlc.close_transaction(proposal)?;
-        let script_pk = dlc.script_pubkey_for(Role::Taker);
-
-        Ok((tx, sig, script_pk))
+    /// Check whether PeerId matches the one the CFD got created with
+    pub fn verify_counterparty_peer_id(&self, peer_id: &PeerId) -> Result<()> {
+        match self.counterparty_peer_id() {
+            None => {
+                tracing::debug!("Peer ID {peer_id} invoking a protocol on CFD that got created without counterparty peer ID");
+            }
+            Some(counterparty_peer_id) => {
+                anyhow::ensure!(
+                    counterparty_peer_id == *peer_id,
+                    "Peer ID mismatch. CFD was created with {counterparty_peer_id}, but
+                protocol got invoked by {peer_id}"
+                );
+            }
+        };
+        Ok(())
     }
-
     /// Number of hours that the time-to-live of the contract will be
     /// extended by with the next rollover.
     ///
@@ -1854,8 +1906,75 @@ pub struct Dlc {
     pub refund_timelock: u32,
 }
 
+#[derive(Clone, Debug)]
+pub struct SettlementTransaction {
+    lock_desc: Descriptor<PublicKey>,
+    lock_amount: Amount,
+
+    price: Price,
+
+    unsigned_transaction: Transaction,
+
+    own_pk: PublicKey,
+    own_script_pk: Script,
+    own_signature: Signature,
+
+    counterparty_pk: PublicKey,
+    counterparty_signature: Option<Signature>,
+}
+
+impl SettlementTransaction {
+    pub fn unsigned_transaction(&self) -> &Transaction {
+        &self.unsigned_transaction
+    }
+
+    pub fn own_signature(&self) -> Signature {
+        self.own_signature
+    }
+
+    pub fn price(&self) -> Price {
+        self.price
+    }
+
+    /// Validate and store counterparty signature
+    pub fn recv_counterparty_signature(self, counterparty_signature: Signature) -> Result<Self> {
+        let sighash = spending_tx_sighash(
+            &self.unsigned_transaction,
+            &self.lock_desc,
+            self.lock_amount,
+        );
+        SECP256K1
+            .verify(&sighash, &counterparty_signature, &self.counterparty_pk.key)
+            .context("Failed to verify counterparty signature")?;
+
+        Ok(Self {
+            counterparty_signature: Some(counterparty_signature),
+            ..self
+        })
+    }
+
+    pub fn finalize(self) -> Result<CollaborativeSettlement> {
+        let counterparty_signature = self
+            .counterparty_signature
+            .context("Missing counterparty_signature`")?;
+
+        let own_script_pubkey = self.own_script_pk;
+        let price = self.price;
+
+        let spend_tx = maia::finalize_spend_transaction(
+            self.unsigned_transaction,
+            &self.lock_desc,
+            (self.own_pk, self.own_signature),
+            (self.counterparty_pk, counterparty_signature),
+        )?;
+
+        CollaborativeSettlement::new(spend_tx, own_script_pubkey, price)
+    }
+}
+
 impl Dlc {
     /// Create a close transaction based on the current contract and a settlement proposals
+    #[deprecated]
     pub fn close_transaction(
         &self,
         proposal: &SettlementProposal,
@@ -1885,6 +2004,53 @@ impl Dlc {
         let sig = SECP256K1.sign(&sighash, &self.identity);
 
         Ok((tx, sig, lock_amount))
+    }
+
+    pub fn collab_settlement_transaction(
+        &self,
+        payout_maker: Amount,
+        payout_taker: Amount,
+        current_price: Price,
+        role: Role,
+    ) -> Result<SettlementTransaction> {
+        let (lock_tx, lock_desc) = &self.lock;
+        let (lock_outpoint, lock_amount) = {
+            let outpoint = lock_tx
+                .outpoint(&lock_desc.script_pubkey())
+                .expect("lock script to be in lock tx");
+            let amount = Amount::from_sat(lock_tx.output[outpoint.vout as usize].value);
+
+            (outpoint, amount)
+        };
+
+        let (tx, sighash) = maia::close_transaction(
+            lock_desc,
+            lock_outpoint,
+            lock_amount,
+            (&self.maker_address, payout_maker),
+            (&self.taker_address, payout_taker),
+            1,
+        )
+        .context("Unable to build collaborative close transaction")?;
+
+        let own_signature = SECP256K1.sign(&sighash, &self.identity);
+
+        let own_pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
+            SECP256K1,
+            &self.identity,
+        ));
+
+        Ok(SettlementTransaction {
+            lock_desc: lock_desc.clone(),
+            lock_amount,
+            price: current_price,
+            unsigned_transaction: tx,
+            own_pk,
+            own_script_pk: self.script_pubkey_for(role),
+            own_signature,
+            counterparty_pk: self.identity_counterparty,
+            counterparty_signature: None,
+        })
     }
 
     pub fn finalize_spend_transaction(
@@ -2055,7 +2221,7 @@ pub struct RevokedCommit {
 
 /// Used when transactions (e.g. collaborative close) are recorded as a part of
 /// CfdState in the cases when we can't solely rely on state transition
-/// timestamp as it could have occured for different reasons (like a new
+/// timestamp as it could have occurred for different reasons (like a new
 /// attestation in Open state)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CollaborativeSettlement {
@@ -2064,7 +2230,7 @@ pub struct CollaborativeSettlement {
     pub timestamp: Timestamp,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     payout: Amount,
-    price: Price,
+    pub price: Price,
 }
 
 impl CollaborativeSettlement {
@@ -2708,12 +2874,18 @@ mod tests {
         let taker_keys = keypair::new(&mut thread_rng());
         let maker_keys = keypair::new(&mut thread_rng());
 
-        let (cfd, _, _, _) = Cfd::dummy_taker_long()
+        let maker_cfd = Cfd::dummy_maker_short()
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys);
+
+        let (cfd, ..) = Cfd::dummy_taker_long()
             .with_quantity(quantity)
             .with_opening_price(opening_price)
             .dummy_open(dummy_event_id())
             .with_lock(taker_keys, maker_keys)
-            .dummy_collab_settlement_taker(opening_price);
+            .dummy_collab_settlement_taker(opening_price, maker_cfd);
 
         let result = cfd.start_rollover();
 
@@ -2735,12 +2907,18 @@ mod tests {
         let taker_keys = keypair::new(&mut thread_rng());
         let maker_keys = keypair::new(&mut thread_rng());
 
-        let (cfd, _, _, _) = Cfd::dummy_taker_long()
+        let maker_cfd = Cfd::dummy_maker_short()
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys);
+
+        let (cfd, ..) = Cfd::dummy_taker_long()
             .with_quantity(quantity)
             .with_opening_price(opening_price)
             .dummy_open(dummy_event_id())
             .with_lock(taker_keys, maker_keys)
-            .dummy_collab_settlement_taker(opening_price);
+            .dummy_collab_settlement_taker(opening_price, maker_cfd);
 
         let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
 
@@ -2817,7 +2995,7 @@ mod tests {
             .dummy_start_rollover();
 
         let (taker_long, proposal, taker_sig, _) =
-            taker_long.dummy_collab_settlement_taker(opening_price);
+            taker_long.dummy_collab_settlement_taker(opening_price, maker_short.clone());
 
         let (maker_short, _) = maker_short.dummy_collab_settlement_maker(proposal, taker_sig);
 
@@ -2845,7 +3023,13 @@ mod tests {
             .dummy_open(dummy_event_id())
             .with_lock(taker_keys, maker_keys);
 
-        let (cfd, _, _, _) = cfd.dummy_collab_settlement_taker(opening_price);
+        let maker_cfd = Cfd::dummy_maker_short()
+            .with_quantity(quantity)
+            .with_opening_price(opening_price)
+            .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys);
+
+        let (cfd, _, _, _) = cfd.dummy_collab_settlement_taker(opening_price, maker_cfd);
 
         // TODO: Assert on the error string
         assert!(
@@ -2918,7 +3102,7 @@ mod tests {
             .with_lock(taker_keys, maker_keys);
 
         let (taker_long, proposal, taker_sig, _) =
-            taker_long.dummy_collab_settlement_taker(opening_price);
+            taker_long.dummy_collab_settlement_taker(opening_price, maker_short.clone());
         let (maker_short, _) = maker_short.dummy_collab_settlement_maker(proposal, taker_sig);
 
         let taker_event = taker_long.handle_lock_confirmed();
@@ -2930,17 +3114,35 @@ mod tests {
 
     #[test]
     fn given_commit_then_cannot_collab_close() {
+        let taker_keys = keypair::new(&mut thread_rng());
+        let maker_keys = keypair::new(&mut thread_rng());
+
         let taker_long = Cfd::dummy_taker_long()
             .dummy_open(dummy_event_id())
-            .dummy_commit();
+            .with_lock(taker_keys, maker_keys);
+
+        // Cannot be dummy_price() as it would trigger a bug in maia_deprecated
+        let price = Price::new(dec!(1000)).unwrap();
+
+        // Extract unsigned tx to be able to trigger collab settlement in the maker
+        let unsigned_tx = taker_long
+            .clone()
+            .start_collab_settlement_taker(price, N_PAYOUTS)
+            .unwrap()
+            .1
+            .unsigned_transaction()
+            .clone();
+
+        let taker_long = taker_long.dummy_commit();
 
         let maker_short = Cfd::dummy_maker_short()
             .dummy_open(dummy_event_id())
+            .with_lock(taker_keys, maker_keys)
             .dummy_commit();
 
-        let result_taker = taker_long.propose_collaborative_settlement(Price::dummy(), N_PAYOUTS);
-        let result_maker = maker_short
-            .receive_collaborative_settlement_proposal(SettlementProposal::dummy(), N_PAYOUTS);
+        let result_taker = taker_long.start_collab_settlement_taker(price, N_PAYOUTS);
+        let result_maker =
+            maker_short.start_collab_settlement_maker(Price::dummy(), N_PAYOUTS, &unsigned_tx);
 
         assert!(result_taker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
         assert!(result_maker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
@@ -2963,7 +3165,7 @@ mod tests {
         );
 
         // Expected payout at closing-price-interval defined by payout curve
-        let payout_interval_taker_amount = 49668;
+        let payout_interval_taker_amount = 49669;
         let payout_interval_maker_amount = 100332;
         // Expected initial funding fee based on the funding rate and short-margin (because the rate
         // is positive meaning long pays short)
@@ -2985,35 +3187,82 @@ mod tests {
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
+        let rollover_fee = 1000;
+        let number_of_rollovers = 1;
 
         let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
             quantity,
             opening_price,
             closing_price,
             positive_funding_rate,
-            1000,
-            1,
+            rollover_fee,
+            number_of_rollovers,
         );
 
         // Expected payout at closing-price-interval defined by payout curve
-        let payout_interval_taker_amount = 49668;
+        let payout_interval_taker_amount = 49669;
         let payout_interval_maker_amount = 100332;
         // Expected initial funding fee based on the funding rate and short-margin (because the rate
         // is positive meaning long pays short)
         let initial_funding_fee = 10;
+        let rollover_fees = rollover_fee * number_of_rollovers as u64;
 
         assert_eq!(
             long_payout,
-            payout_interval_taker_amount - initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT - 1000
+            payout_interval_taker_amount
+                - initial_funding_fee
+                - TX_FEE_COLLAB_SETTLEMENT
+                - rollover_fees
         );
         assert_eq!(
             short_payout,
-            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT + 1000
+            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT
+                + rollover_fees
         );
     }
 
     #[test]
     fn given_two_rollover_with_positive_rate_then_long_pays_two_rollover_fees() {
+        let quantity = Usd::new(dec!(10));
+        let opening_price = Price::new(dec!(10000)).unwrap();
+        let closing_price = Price::new(dec!(10000)).unwrap();
+        let positive_funding_rate = dec!(0.0001);
+        let rollover_fee = 1000;
+        let number_of_rollovers = 2;
+
+        let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
+            quantity,
+            opening_price,
+            closing_price,
+            positive_funding_rate,
+            rollover_fee,
+            number_of_rollovers,
+        );
+
+        // Expected payout at closing-price-interval defined by payout curve
+        let payout_interval_taker_amount = 49669;
+        let payout_interval_maker_amount = 100332;
+        // Expected initial funding fee based on the funding rate and short-margin (because the rate
+        // is positive meaning long pays short)
+        let initial_funding_fee = 10;
+        let rollover_fees = rollover_fee * number_of_rollovers as u64;
+
+        assert_eq!(
+            long_payout,
+            payout_interval_taker_amount
+                - initial_funding_fee
+                - TX_FEE_COLLAB_SETTLEMENT
+                - rollover_fees
+        );
+        assert_eq!(
+            short_payout,
+            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT
+                + rollover_fees
+        );
+    }
+
+    #[test]
+    fn given_more_rollover_then_long_margin_with_positive_rate_then_long_gets_liquidated() {
         let quantity = Usd::new(dec!(10));
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
@@ -3025,62 +3274,23 @@ mod tests {
             closing_price,
             positive_funding_rate,
             1000,
-            2,
+            50,
         );
 
         // Expected payout at closing-price-interval defined by payout curve
         let payout_interval_taker_amount = 49668;
         let payout_interval_maker_amount = 100332;
-        // Expected initial funding fee based on the funding rate and short-margin (because the rate
-        // is positive meaning long pays short)
-        let initial_funding_fee = 10;
 
-        assert_eq!(
-            long_payout,
-            payout_interval_taker_amount - initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT - 2000
-        );
+        assert_eq!(long_payout, 0);
         assert_eq!(
             short_payout,
-            payout_interval_maker_amount + initial_funding_fee - TX_FEE_COLLAB_SETTLEMENT + 2000
+            payout_interval_maker_amount + payout_interval_taker_amount
+                - (2 * TX_FEE_COLLAB_SETTLEMENT)
         );
     }
 
-    // TODO: Payout cove calculation uderflows because long is not capped at zero!
-    // #[test]
-    // fn given_more_rollover_then_long_margin_with_positive_rate_then_long_gets_liquidated() {
-    //     let quantity = Usd::new(dec!(10));
-    //     let opening_price = Price::new(dec!(10000)).unwrap();
-    //     let closing_price = Price::new(dec!(10000)).unwrap();
-    //     let positive_funding_rate = dec!(0.0001);
-    //
-    //     let (long_payout, short_payout) = collab_settlement_taker_long_maker_short(
-    //         quantity,
-    //         opening_price,
-    //         closing_price,
-    //         positive_funding_rate,
-    //         1000,
-    //         50,
-    //     );
-    //
-    //     // Expected payout at closing-price-interval defined by payout curve
-    //     let payout_interval_taker_amount = 49668;
-    //     let payout_interval_maker_amount = 100332;
-    //
-    //     assert_eq!(
-    //         long_payout,
-    //         0
-    //     );
-    //     assert_eq!(
-    //         short_payout,
-    //         payout_interval_maker_amount + payout_interval_taker_amount -
-    // TX_FEE_COLLAB_SETTLEMENT     );
-    // }
-
     #[test]
     fn given_taker_long_maker_short_production_values_then_collab_settlement_is_as_expected() {
-        // The values for this test are from production on 05.02.2022
-        // For testing purpose different values can be plugged in to ensure sanity / debugging
-
         let quantity = Usd::new(dec!(100));
         let opening_price = Price::new(dec!(41015.60)).unwrap();
         let closing_price = Price::new(dec!(40600)).unwrap();
@@ -3095,7 +3305,7 @@ mod tests {
             0,
         );
 
-        assert_eq!(taker_payout, 119239);
+        assert_eq!(taker_payout, 119240);
         assert_eq!(maker_payout, 246306);
     }
 
@@ -3376,19 +3586,22 @@ mod tests {
         let taker_keys = keypair::new(&mut thread_rng());
         let maker_keys = keypair::new(&mut thread_rng());
 
-        let (taker_long, proposal, taker_sig, taker_script) = taker_long
+        let taker_long = taker_long
             .dummy_open(dummy_event_id())
             .dummy_rollovers(funding_fee_sat_per_rollover, funding_rate, nr_of_rollovers)
-            .with_lock(taker_keys, maker_keys)
-            .dummy_collab_settlement_taker(closing_price);
-
-        let (maker_short, maker_script) = maker_short
+            .with_lock(taker_keys, maker_keys);
+        let maker_short = maker_short
             .dummy_open(dummy_event_id())
             .dummy_rollovers(funding_fee_sat_per_rollover, funding_rate, nr_of_rollovers)
-            .with_lock(taker_keys, maker_keys)
-            .dummy_collab_settlement_maker(proposal, taker_sig);
+            .with_lock(taker_keys, maker_keys);
 
-        let taker_payout = taker_long.collab_settlement_payout(taker_script);
+        let (_taker_long, proposal, taker_settlement_transaction, settlement) =
+            taker_long.dummy_collab_settlement_taker(closing_price, maker_short.clone());
+
+        let (maker_short, maker_script) =
+            maker_short.dummy_collab_settlement_maker(proposal, taker_settlement_transaction);
+
+        let taker_payout = settlement.payout;
         let maker_payout = maker_short.collab_settlement_payout(maker_script);
 
         (taker_payout.as_sat(), maker_payout.as_sat())
@@ -3768,39 +3981,60 @@ mod tests {
         fn dummy_collab_settlement_taker(
             self,
             price: Price,
-        ) -> (Self, SettlementProposal, Signature, Script) {
+            maker_cfd: Cfd,
+        ) -> (
+            Self,
+            SettlementProposal,
+            SettlementTransaction,
+            CollaborativeSettlement,
+        ) {
             let mut events = Vec::new();
 
-            let (propose, settlement_proposal, ..) = self
-                .propose_collaborative_settlement(price, N_PAYOUTS)
+            let (propose, settlement_transaction, settlement_proposal) = self
+                .clone()
+                .start_collab_settlement_taker(price, N_PAYOUTS)
                 .unwrap();
             events.push(propose);
 
-            let (spend_tx, taker_signature, taker_script) = self
-                .sign_collaborative_settlement_taker(&settlement_proposal)
+            let (_, maker_transaction, _) = maker_cfd
+                .start_collab_settlement_maker(
+                    price,
+                    N_PAYOUTS,
+                    settlement_transaction.unsigned_transaction(),
+                )
                 .unwrap();
 
-            let settlement =
-                CollaborativeSettlement::new(spend_tx, taker_script.clone(), price).unwrap();
+            let settlement_transaction = settlement_transaction
+                .recv_counterparty_signature(maker_transaction.own_signature())
+                .unwrap();
 
-            let settle = self.clone().complete_collaborative_settlement(settlement);
+            let settlement = settlement_transaction.clone().finalize().unwrap();
+
+            let settle = self
+                .clone()
+                .complete_collaborative_settlement(settlement.clone());
             events.push(settle);
 
             let cfd = events.into_iter().fold(self, Cfd::apply);
 
-            (cfd, settlement_proposal, taker_signature, taker_script)
+            (cfd, settlement_proposal, settlement_transaction, settlement)
         }
 
         fn dummy_collab_settlement_maker(
             self,
             proposal: SettlementProposal,
-            taker_signature: Signature,
+            taker_collab_settlement_transaction: SettlementTransaction,
         ) -> (Self, Script) {
             // handle receiving
             let mut events = Vec::new();
-            let incoming_settlement = self
+
+            let taker_unsigned_tx = taker_collab_settlement_transaction.unsigned_transaction();
+            let taker_signature = taker_collab_settlement_transaction.own_signature();
+            let price = taker_collab_settlement_transaction.price();
+
+            let (incoming_settlement, transaction, _) = self
                 .clone()
-                .receive_collaborative_settlement_proposal(proposal, N_PAYOUTS)
+                .start_collab_settlement_maker(price, N_PAYOUTS, taker_unsigned_tx)
                 .unwrap();
             events.push(incoming_settlement);
 
@@ -3815,8 +4049,10 @@ mod tests {
                 .unwrap();
             events.push(accept);
 
-            let settlement = cfd
-                .sign_collaborative_settlement_maker(proposal, taker_signature)
+            let settlement = transaction
+                .recv_counterparty_signature(taker_signature)
+                .unwrap()
+                .finalize()
                 .unwrap();
             let script_pubkey = settlement.script_pubkey.clone();
 
@@ -4117,18 +4353,6 @@ mod tests {
                 Amount::default(),
                 FundingRate::new(Decimal::default()).unwrap(),
             )
-        }
-    }
-
-    impl SettlementProposal {
-        fn dummy() -> Self {
-            SettlementProposal {
-                order_id: Default::default(),
-                timestamp: Timestamp::now(),
-                taker: Default::default(),
-                maker: Default::default(),
-                price: Price::new(Decimal::ONE).unwrap(),
-            }
         }
     }
 

@@ -1,4 +1,3 @@
-use crate::collab_settlement_taker;
 use crate::future_ext::FutureExt;
 use crate::noise;
 use crate::setup_taker;
@@ -12,7 +11,6 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use bdk::bitcoin::Amount;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryStreamExt;
@@ -20,8 +18,6 @@ use model::libp2p::PeerId;
 use model::Identity;
 use model::Leverage;
 use model::OrderId;
-use model::Price;
-use model::Timestamp;
 use model::Usd;
 use rand::thread_rng;
 use rand::Rng;
@@ -166,7 +162,6 @@ pub struct Actor {
     connect_timeout: Duration,
     state: State,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
-    collab_settlement_actors: AddressMap<OrderId, collab_settlement_taker::Actor>,
     environment: Environment,
 }
 
@@ -213,15 +208,6 @@ pub struct TakeOrder {
     pub address: xtra::Address<setup_taker::Actor>,
 }
 
-pub struct ProposeSettlement {
-    pub order_id: OrderId,
-    pub timestamp: Timestamp,
-    pub taker: Amount,
-    pub maker: Amount,
-    pub price: Price,
-    pub address: xtra::Address<collab_settlement_taker::Actor>,
-}
-
 impl Actor {
     pub fn new(
         status_sender: watch::Sender<ConnectionStatus>,
@@ -244,7 +230,6 @@ impl Actor {
             state: State::Disconnected,
             setup_actors: AddressMap::default(),
             connect_timeout,
-            collab_settlement_actors: AddressMap::default(),
             peer_id,
             environment,
         }
@@ -269,33 +254,6 @@ impl Actor {
             .await?;
 
         self.setup_actors.insert(msg.order_id, msg.address);
-
-        Ok(())
-    }
-
-    async fn handle_propose_settlement(&mut self, msg: ProposeSettlement) -> Result<()> {
-        let ProposeSettlement {
-            order_id,
-            timestamp,
-            taker,
-            maker,
-            price,
-            address,
-        } = msg;
-
-        self.state
-            .send(wire::TakerToMaker::Settlement {
-                order_id,
-                msg: wire::taker_to_maker::Settlement::Propose {
-                    timestamp,
-                    taker,
-                    maker,
-                    price,
-                },
-            })
-            .await?;
-
-        self.collab_settlement_actors.insert(order_id, address);
 
         Ok(())
     }
@@ -460,14 +418,8 @@ impl Actor {
                     tracing::warn!(%order_id, "No active setup actor");
                 }
             }
-            wire::MakerToTaker::Settlement { order_id, msg } => {
-                if let Err(NotConnected(_)) = self
-                    .collab_settlement_actors
-                    .send_async(&order_id, msg)
-                    .await
-                {
-                    tracing::warn!(%order_id, "No active collaborative settlement")
-                }
+            wire::MakerToTaker::Settlement { .. } => {
+                tracing::error!("legacy handler - use libp2p instead");
             }
             wire::MakerToTaker::ConfirmRollover { .. } => {
                 tracing::error!("legacy handler - use libp2p rollover instead")
