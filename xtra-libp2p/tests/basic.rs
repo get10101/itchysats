@@ -13,6 +13,7 @@ use xtra::message_channel::StrongMessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra::Address;
+use xtra_libp2p::endpoint;
 use xtra_libp2p::endpoint::Subscribers;
 use xtra_libp2p::libp2p::identity::Keypair;
 use xtra_libp2p::libp2p::transport::MemoryTransport;
@@ -29,18 +30,19 @@ use xtra_productivity::xtra_productivity;
 #[tokio::test]
 async fn hello_world() {
     let alice_hello_world_handler = HelloWorld::default().create(None).spawn_global();
-    let (alice_peer_id, _, _alice, bob, _) = alice_and_bob(
+    let (alice, bob, _) = alice_and_bob(
         [(
             "/hello-world/1.0.0",
-            alice_hello_world_handler.clone_channel(),
+            xtra::message_channel::StrongMessageChannel::clone_channel(&alice_hello_world_handler),
         )],
         [],
     )
     .await;
 
     let bob_to_alice = bob
+        .endpoint
         .send(OpenSubstream::single_protocol(
-            alice_peer_id,
+            alice.peer_id,
             "/hello-world/1.0.0",
         ))
         .await
@@ -54,33 +56,141 @@ async fn hello_world() {
 
 #[tokio::test]
 async fn after_connect_see_each_other_as_connected() {
-    let (alice_peer_id, bob_peer_id, alice, bob, _) = alice_and_bob([], []).await;
+    let (alice, bob, _) = alice_and_bob([], []).await;
 
-    let alice_stats = alice.send(GetConnectionStats).await.unwrap();
-    let bob_stats = bob.send(GetConnectionStats).await.unwrap();
+    let alice_stats = alice.endpoint.send(GetConnectionStats).await.unwrap();
+    let bob_stats = bob.endpoint.send(GetConnectionStats).await.unwrap();
 
-    assert_eq!(alice_stats.connected_peers, HashSet::from([bob_peer_id]));
-    assert_eq!(bob_stats.connected_peers, HashSet::from([alice_peer_id]));
+    assert_eq!(alice_stats.connected_peers, HashSet::from([bob.peer_id]));
+    assert_eq!(bob_stats.connected_peers, HashSet::from([alice.peer_id]));
 }
 
 #[tokio::test]
 async fn disconnect_is_reflected_in_stats() {
-    let (_, bob_peer_id, alice, bob, _) = alice_and_bob([], []).await;
+    let (alice, bob, _) = alice_and_bob([], []).await;
 
-    alice.send(Disconnect(bob_peer_id)).await.unwrap();
+    alice.endpoint.send(Disconnect(bob.peer_id)).await.unwrap();
 
-    let alice_stats = alice.send(GetConnectionStats).await.unwrap();
-    let bob_stats = bob.send(GetConnectionStats).await.unwrap();
+    let alice_stats = alice.endpoint.send(GetConnectionStats).await.unwrap();
+    let bob_stats = bob.endpoint.send(GetConnectionStats).await.unwrap();
 
     assert_eq!(alice_stats.connected_peers, HashSet::from([]));
     assert_eq!(bob_stats.connected_peers, HashSet::from([]));
 }
 
 #[tokio::test]
-async fn listen_address_is_reflected_in_stats() {
-    let (_, _, alice, _, listen_address) = alice_and_bob([], []).await;
+async fn subscriber_stats_track_listen_addresses_properly() {
+    let alice = make_node([]);
 
-    let alice_stats = alice.send(GetConnectionStats).await.unwrap();
+    let port = rand::random::<u16>();
+    let alice_listen = format!("/memory/{port}").parse::<Multiaddr>().unwrap();
+
+    let alice_listen_addresses = alice
+        .subscriber_stats
+        .send(GetListenAddresses)
+        .await
+        .unwrap();
+
+    assert!(
+        alice_listen_addresses.is_empty(),
+        "Endpoint was not configured to listen yet"
+    );
+
+    alice
+        .endpoint
+        .send(ListenOn(alice_listen.clone()))
+        .await
+        .unwrap();
+
+    let alice_listen_addresses = alice
+        .subscriber_stats
+        .send(GetListenAddresses)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        alice_listen_addresses,
+        HashSet::from([alice_listen]),
+        "Alice endpoint is configured for a single address",
+    );
+}
+
+#[tokio::test]
+async fn subscriber_stats_track_connected_peers_properly() {
+    let alice = make_node([]);
+    let bob = make_node([]);
+
+    let port = rand::random::<u16>();
+    let alice_listen = format!("/memory/{port}").parse::<Multiaddr>().unwrap();
+
+    alice
+        .endpoint
+        .send(ListenOn(alice_listen.clone()))
+        .await
+        .unwrap();
+
+    let alice_peer_id = &alice.peer_id;
+
+    let alice_connected_peers = alice
+        .subscriber_stats
+        .send(GetConnectedPeers)
+        .await
+        .unwrap();
+    assert!(alice_connected_peers.is_empty());
+
+    let bob_connected_peers = alice
+        .subscriber_stats
+        .send(GetConnectedPeers)
+        .await
+        .unwrap();
+    assert!(bob_connected_peers.is_empty());
+
+    bob.endpoint
+        .send(Connect(
+            format!("/memory/{port}/p2p/{alice_peer_id}")
+                .parse()
+                .unwrap(),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Peers should be connected to each other now
+
+    let alice_connected_peers = alice
+        .subscriber_stats
+        .send(GetConnectedPeers)
+        .await
+        .unwrap();
+    assert_eq!(alice_connected_peers, HashSet::from([bob.peer_id]),);
+
+    let bob_connected_peers = bob.subscriber_stats.send(GetConnectedPeers).await.unwrap();
+    assert_eq!(bob_connected_peers, HashSet::from([alice.peer_id]),);
+
+    bob.endpoint.send(Disconnect(*alice_peer_id)).await.unwrap();
+
+    let alice_connected_peers = alice
+        .subscriber_stats
+        .send(GetConnectedPeers)
+        .await
+        .unwrap();
+    assert!(alice_connected_peers.is_empty());
+
+    let bob_connected_peers = alice
+        .subscriber_stats
+        .send(GetConnectedPeers)
+        .await
+        .unwrap();
+    assert!(bob_connected_peers.is_empty());
+
+    // Peers should be disconnected now
+}
+
+#[tokio::test]
+async fn listen_address_is_reflected_in_stats() {
+    let (alice, _, listen_address) = alice_and_bob([], []).await;
+
+    let alice_stats = alice.endpoint.send(GetConnectionStats).await.unwrap();
 
     assert_eq!(
         alice_stats.listen_addresses,
@@ -90,11 +200,12 @@ async fn listen_address_is_reflected_in_stats() {
 
 #[tokio::test]
 async fn cannot_open_substream_for_unhandled_protocol() {
-    let (_, bob_peer_id, alice, _bob, _) = alice_and_bob([], []).await;
+    let (alice, bob, _) = alice_and_bob([], []).await;
 
     let error = alice
+        .endpoint
         .send(OpenSubstream::single_protocol(
-            bob_peer_id,
+            bob.peer_id,
             "/foo/bar/1.0.0",
         ))
         .await
@@ -109,11 +220,12 @@ async fn cannot_open_substream_for_unhandled_protocol() {
 
 #[tokio::test]
 async fn cannot_connect_twice() {
-    let (alice_peer_id, _bob_peer_id, _alice, bob, alice_listen) = alice_and_bob([], []).await;
+    let (alice, bob, alice_listen) = alice_and_bob([], []).await;
 
     let error = bob
+        .endpoint
         .send(Connect(
-            alice_listen.with(Protocol::P2p(alice_peer_id.into())),
+            alice_listen.with(Protocol::P2p(alice.peer_id.into())),
         ))
         .await
         .unwrap()
@@ -121,25 +233,26 @@ async fn cannot_connect_twice() {
 
     assert!(matches!(
         error,
-        xtra_libp2p::Error::AlreadyConnected(twin) if twin == alice_peer_id
+        xtra_libp2p::Error::AlreadyConnected(twin) if twin == alice.peer_id
     ))
 }
 
 #[tokio::test]
 async fn chooses_first_protocol_in_list_of_multiple() {
     let alice_hello_world_handler = HelloWorld::default().create(None).spawn_global();
-    let (alice_peer_id, _, _alice, bob, _) = alice_and_bob(
+    let (alice, bob, _) = alice_and_bob(
         [(
             "/hello-world/1.0.0",
-            alice_hello_world_handler.clone_channel(),
+            xtra::message_channel::StrongMessageChannel::clone_channel(&alice_hello_world_handler),
         )],
         [],
     )
     .await;
 
     let (actual_protocol, _) = bob
+        .endpoint
         .send(OpenSubstream::multiple_protocols(
-            alice_peer_id,
+            alice.peer_id,
             vec![
                 "/hello-world/1.0.0",
                 "/foo-bar/1.0.0", // This is unsupported by Alice.
@@ -157,27 +270,34 @@ async fn chooses_first_protocol_in_list_of_multiple() {
 async fn disallow_duplicate_handlers() {
     let hello_world_handler = HelloWorld::default().create(None).spawn_global();
 
-    make_endpoint([
-        ("/hello-world/1.0.0", hello_world_handler.clone_channel()),
-        ("/hello-world/1.0.0", hello_world_handler.clone_channel()),
+    make_node([
+        (
+            "/hello-world/1.0.0",
+            xtra::message_channel::StrongMessageChannel::clone_channel(&hello_world_handler),
+        ),
+        (
+            "/hello-world/1.0.0",
+            xtra::message_channel::StrongMessageChannel::clone_channel(&hello_world_handler),
+        ),
     ]);
 }
 
 #[tokio::test]
 async fn falls_back_to_next_protocol_if_unsupported() {
     let alice_hello_world_handler = HelloWorld::default().create(None).spawn_global();
-    let (alice_peer_id, _, _alice, bob, _) = alice_and_bob(
+    let (alice, bob, _) = alice_and_bob(
         [(
             "/hello-world/1.0.0",
-            alice_hello_world_handler.clone_channel(),
+            xtra::message_channel::StrongMessageChannel::clone_channel(&alice_hello_world_handler),
         )],
         [],
     )
     .await;
 
     let (actual_protocol, _) = bob
+        .endpoint
         .send(OpenSubstream::multiple_protocols(
-            alice_peer_id,
+            alice.peer_id,
             vec![
                 "/foo-bar/1.0.0", // This is unsupported by Alice.
                 "/hello-world/1.0.0",
@@ -199,55 +319,134 @@ async fn alice_and_bob<const AN: usize, const BN: usize>(
         &'static str,
         Box<dyn StrongMessageChannel<NewInboundSubstream>>,
     ); BN],
-) -> (
-    PeerId,
-    PeerId,
-    Address<Endpoint>,
-    Address<Endpoint>,
-    Multiaddr,
-) {
+) -> (Node, Node, Multiaddr) {
     let port = rand::random::<u16>();
 
-    let (alice_peer_id, alice) = make_endpoint(alice_inbound_substream_handlers);
-    let (bob_peer_id, bob) = make_endpoint(bob_inbound_substream_handlers);
+    let alice = make_node(alice_inbound_substream_handlers);
+    let bob = make_node(bob_inbound_substream_handlers);
 
     let alice_listen = format!("/memory/{port}").parse::<Multiaddr>().unwrap();
 
-    alice.send(ListenOn(alice_listen.clone())).await.unwrap();
+    alice
+        .endpoint
+        .send(ListenOn(alice_listen.clone()))
+        .await
+        .unwrap();
 
-    bob.send(Connect(
-        format!("/memory/{port}/p2p/{alice_peer_id}")
-            .parse()
-            .unwrap(),
-    ))
-    .await
-    .unwrap()
-    .unwrap();
+    let alice_peer_id = &alice.peer_id;
+    bob.endpoint
+        .send(Connect(
+            format!("/memory/{port}/p2p/{alice_peer_id}")
+                .parse()
+                .unwrap(),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
 
-    (alice_peer_id, bob_peer_id, alice, bob, alice_listen)
+    (alice, bob, alice_listen)
 }
 
-fn make_endpoint<const N: usize>(
+/// Small aggregate dedicated to keep everything that's related to one party
+/// (e.g. alice or bob) in one place
+struct Node {
+    pub peer_id: PeerId,
+    pub endpoint: Address<Endpoint>,
+    pub subscriber_stats: Address<EndpointSubscriberStats>,
+}
+
+fn make_node<const N: usize>(
     substream_handlers: [(
         &'static str,
         Box<dyn StrongMessageChannel<NewInboundSubstream>>,
     ); N],
-) -> (PeerId, Address<Endpoint>) {
+) -> Node {
     let id = Keypair::generate_ed25519();
     let peer_id = id.public().to_peer_id();
+
+    let subscriber_stats = EndpointSubscriberStats::default()
+        .create(None)
+        .spawn_global();
 
     let endpoint = Endpoint::new(
         MemoryTransport::default(),
         id,
         Duration::from_secs(20),
         substream_handlers,
-        Subscribers::default(),
+        Subscribers::new(
+            vec![xtra::message_channel::MessageChannel::clone_channel(
+                &subscriber_stats,
+            )],
+            vec![xtra::message_channel::MessageChannel::clone_channel(
+                &subscriber_stats,
+            )],
+            vec![xtra::message_channel::MessageChannel::clone_channel(
+                &subscriber_stats,
+            )],
+            vec![xtra::message_channel::MessageChannel::clone_channel(
+                &subscriber_stats,
+            )],
+        ),
     )
     .create(None)
     .spawn_global();
 
-    (peer_id, endpoint)
+    Node {
+        peer_id,
+        endpoint,
+        subscriber_stats,
+    }
 }
+
+/// A test actor subscribing to all the notifications
+#[derive(Default)]
+struct EndpointSubscriberStats {
+    connected_peers: HashSet<PeerId>,
+    listen_addresses: HashSet<Multiaddr>,
+}
+
+#[async_trait]
+impl Actor for EndpointSubscriberStats {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
+
+#[xtra_productivity(message_impl = false)]
+impl EndpointSubscriberStats {
+    async fn handle(&mut self, msg: endpoint::ConnectionEstablished) {
+        self.connected_peers.insert(msg.peer);
+    }
+
+    async fn handle(&mut self, msg: endpoint::ConnectionDropped) {
+        self.connected_peers.remove(&msg.peer);
+    }
+
+    async fn handle(&mut self, msg: endpoint::ListenAddressAdded) {
+        self.listen_addresses.insert(msg.address);
+    }
+
+    async fn handle(&mut self, msg: endpoint::ListenAddressRemoved) {
+        self.listen_addresses.remove(&msg.address);
+    }
+}
+
+#[xtra_productivity]
+impl EndpointSubscriberStats {
+    async fn handle(&mut self, _msg: GetConnectedPeers) -> HashSet<PeerId> {
+        self.connected_peers.clone()
+    }
+
+    async fn handle(&mut self, _msg: GetListenAddresses) -> HashSet<Multiaddr> {
+        self.listen_addresses.clone()
+    }
+}
+
+/// Returns connected peers
+struct GetConnectedPeers;
+
+/// Returns current listen addressess
+struct GetListenAddresses;
 
 #[derive(Default)]
 struct HelloWorld {
