@@ -1031,12 +1031,9 @@ impl Cfd {
         current_price: Price,
         n_payouts: usize,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
-        anyhow::ensure!(
-            !self.is_in_collaborative_settlement()
-                && self.role == Role::Taker
-                && self.can_settle_collaboratively(),
-            "Failed to propose collaborative settlement"
-        );
+        anyhow::ensure!(!self.is_in_collaborative_settlement());
+        anyhow::ensure!(self.role == Role::Taker);
+        anyhow::ensure!(self.can_settle_collaboratively());
 
         let (collab_settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
@@ -1057,12 +1054,9 @@ impl Cfd {
         n_payouts: usize,
         proposed_settlement_transaction: &bitcoin::Transaction,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
-        anyhow::ensure!(
-            !self.is_in_collaborative_settlement()
-                && self.role == Role::Maker
-                && self.can_settle_collaboratively(),
-            "Failed to start collaborative settlement"
-        );
+        anyhow::ensure!(!self.is_in_collaborative_settlement());
+        anyhow::ensure!(self.role == Role::Maker);
+        anyhow::ensure!(self.can_settle_collaboratively());
 
         let (settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
@@ -1135,13 +1129,10 @@ impl Cfd {
         proposal: SettlementProposal,
         n_payouts: usize,
     ) -> Result<CfdEvent> {
-        anyhow::ensure!(
-            !self.is_in_collaborative_settlement()
-                && self.role == Role::Maker
-                && self.can_settle_collaboratively()
-                && proposal.order_id == self.id,
-            "Failed to start collaborative settlement"
-        );
+        anyhow::ensure!(!self.is_in_collaborative_settlement());
+        anyhow::ensure!(self.role == Role::Maker);
+        anyhow::ensure!(self.can_settle_collaboratively());
+        anyhow::ensure!(proposal.order_id == self.id);
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
@@ -1178,9 +1169,8 @@ impl Cfd {
         self,
         proposal: &SettlementProposal,
     ) -> Result<CfdEvent> {
-        anyhow::ensure!(
-            self.role == Role::Maker && self.settlement_proposal.as_ref() == Some(proposal)
-        );
+        anyhow::ensure!(self.role == Role::Maker);
+        anyhow::ensure!(self.settlement_proposal.as_ref() == Some(proposal));
 
         Ok(CfdEvent::new(
             self.id,
