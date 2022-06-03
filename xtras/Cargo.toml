@@ -6,7 +6,7 @@ description = "Extension trait for the xtra actor framework"
 
 [dependencies]
 anyhow = "1"
-async-trait = "0.1.53"
+async-trait = "0.1.56"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
