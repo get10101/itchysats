@@ -1,3 +1,5 @@
+extern crate core;
+
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use clap::Parser;
 use clap::Subcommand;
