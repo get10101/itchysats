@@ -148,18 +148,18 @@ impl Actor {
                         .await?;
 
                     framed
-                        .send(ListenerMessage::Msg1(Decision::Accept))
+                        .send(ListenerMessage::Decision(Decision::Accept))
                         .await
-                        .context("Failed to send Msg1::Accept")?;
+                        .context("Failed to send Decision::Accept")?;
 
                     // TODO: We will need to apply a timeout to these. Perhaps we can put a timeout
                     // generally into "reading from the substream"?
-                    let Msg2 { dialer_signature } = framed
+                    let DialerSignature { dialer_signature } = framed
                         .next()
                         .await
-                        .context("End of stream while receiving Msg2")?
-                        .context("Failed to decode Msg2")?
-                        .into_msg2()?;
+                        .context("End of stream while receiving DialerSignature")?
+                        .context("Failed to decode DialerSignature")?
+                        .into_dialer_signature()?;
 
                     let listener_signature = transaction.own_signature();
 
@@ -175,7 +175,7 @@ impl Actor {
                     );
 
                     framed
-                        .send(ListenerMessage::Msg3(Msg3 { listener_signature }))
+                        .send(ListenerMessage::ListenerSignature(ListenerSignature { listener_signature }))
                         .await
                         .map_err(|source| Failed::AfterReceiving {
                             source: anyhow!(source),
@@ -222,7 +222,11 @@ impl Actor {
 
         let mut tasks = Tasks::default();
         tasks.add_fallible(
-            async move { framed.send(ListenerMessage::Msg1(Decision::Reject)).await },
+            async move {
+                framed
+                    .send(ListenerMessage::Decision(Decision::Reject))
+                    .await
+            },
             move |e| async move {
                 tracing::debug!(%order_id, "Failed to reject collaborative settlement: {e:#}")
             },

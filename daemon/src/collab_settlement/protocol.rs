@@ -44,47 +44,48 @@ pub async fn dialer(
             unsigned_tx: unsigned_tx.clone(),
         }))
         .await
-        .context("Failed to send Msg0")?;
+        .context("Failed to send Propose")?;
 
     // TODO: We will need to apply a timeout to these. Perhaps we can put a timeout generally into
     // "reading from the substream"?
     if let Decision::Reject = framed
         .next()
         .await
-        .context("End of stream while receiving Msg1")?
-        .context("Failed to decode Msg1")?
-        .into_msg1()?
+        .context("End of stream while receiving Decision")?
+        .context("Failed to decode Decision")?
+        .into_decision()?
     {
         return Err(DialerFailed::Rejected);
     }
 
     framed
-        .send(DialerMessage::Msg2(Msg2 {
+        .send(DialerMessage::DialerSignature(DialerSignature {
             dialer_signature: collab_settlement_tx.own_signature(),
         }))
         .await
-        .context("Failed to send Msg2")?;
+        .context("Failed to send DialerSignature")?;
 
-    let msg3 = match framed.next().await {
-        Some(Ok(msg)) => msg.into_msg3()?,
+    let listener_signature = match framed.next().await {
+        Some(Ok(msg)) => msg.into_listener_signature()?,
         Some(Err(_)) | None => {
             return Err(DialerFailed::AfterSendingSignature {
                 unsigned_tx: unsigned_tx.clone(),
-                error: anyhow!("failed to received msg3"),
+                error: anyhow!("failed to receive ListenerSignature"),
             });
         }
     };
 
-    let collab_settlement_tx =
-        match collab_settlement_tx.recv_counterparty_signature(msg3.listener_signature) {
-            Ok(collab_settlement_tx) => collab_settlement_tx,
-            Err(error) => {
-                return Err(DialerFailed::AfterSendingSignature {
-                    unsigned_tx: unsigned_tx.clone(),
-                    error,
-                });
-            }
-        };
+    let collab_settlement_tx = match collab_settlement_tx
+        .recv_counterparty_signature(listener_signature.listener_signature)
+    {
+        Ok(collab_settlement_tx) => collab_settlement_tx,
+        Err(error) => {
+            return Err(DialerFailed::AfterSendingSignature {
+                unsigned_tx: unsigned_tx.clone(),
+                error,
+            });
+        }
+    };
 
     let settlement =
         collab_settlement_tx
@@ -118,43 +119,49 @@ impl From<anyhow::Error> for DialerFailed {
 #[derive(Serialize, Deserialize)]
 pub enum DialerMessage {
     Propose(Propose),
-    Msg2(Msg2),
+    DialerSignature(DialerSignature),
 }
 
 impl DialerMessage {
     pub fn into_propose(self) -> Result<Propose> {
         match self {
-            DialerMessage::Propose(msg0) => Ok(msg0),
-            DialerMessage::Msg2(_) => Err(anyhow!("Expected Msg0 but got Msg2")),
+            DialerMessage::Propose(propose) => Ok(propose),
+            DialerMessage::DialerSignature(_) => {
+                Err(anyhow!("Expected Propose but got DialerSignature"))
+            }
         }
     }
 
-    pub fn into_msg2(self) -> Result<Msg2> {
+    pub fn into_dialer_signature(self) -> Result<DialerSignature> {
         match self {
-            DialerMessage::Msg2(msg2) => Ok(msg2),
-            DialerMessage::Propose(_) => Err(anyhow!("Expected Msg2 but got Msg0")),
+            DialerMessage::DialerSignature(dialer_signature) => Ok(dialer_signature),
+            DialerMessage::Propose(_) => Err(anyhow!("Expected DialerSignature but got Propose")),
         }
     }
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum ListenerMessage {
-    Msg1(Decision),
-    Msg3(Msg3),
+    Decision(Decision),
+    ListenerSignature(ListenerSignature),
 }
 
 impl ListenerMessage {
-    pub fn into_msg1(self) -> Result<Decision> {
+    pub fn into_decision(self) -> Result<Decision> {
         match self {
-            ListenerMessage::Msg1(msg1) => Ok(msg1),
-            ListenerMessage::Msg3(_) => Err(anyhow!("Expected Msg1 but got Msg3")),
+            ListenerMessage::Decision(decision) => Ok(decision),
+            ListenerMessage::ListenerSignature(_) => {
+                Err(anyhow!("Expected Decision but got ListenerSignature"))
+            }
         }
     }
 
-    pub fn into_msg3(self) -> Result<Msg3> {
+    pub fn into_listener_signature(self) -> Result<ListenerSignature> {
         match self {
-            ListenerMessage::Msg3(msg3) => Ok(msg3),
-            ListenerMessage::Msg1(_) => Err(anyhow!("Expected Msg3 but got Msg1")),
+            ListenerMessage::ListenerSignature(listener_signature) => Ok(listener_signature),
+            ListenerMessage::Decision(_) => {
+                Err(anyhow!("Expected ListenerSignature but got Decision"))
+            }
         }
     }
 }
@@ -178,12 +185,12 @@ pub enum Decision {
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
-pub struct Msg2 {
+pub struct DialerSignature {
     pub dialer_signature: Signature,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
-pub struct Msg3 {
+pub struct ListenerSignature {
     pub listener_signature: Signature,
 }
 
