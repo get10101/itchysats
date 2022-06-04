@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 anyhow = "1"
 async-stream = "0.3"
-async-trait = "0.1.53"
+async-trait = "0.1.56"
 asynchronous-codec = { version = "0.6.0", features = ["json"] }
 bdk = { version = "0.18", default-features = false, features = ["electrum"] }
 bdk-ext = { path = "../bdk-ext" }
