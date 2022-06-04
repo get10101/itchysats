@@ -346,7 +346,6 @@ impl Order {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct SettlementProposal {
     pub order_id: OrderId,
-    pub timestamp: Timestamp,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub taker: Amount,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
@@ -1031,12 +1030,9 @@ impl Cfd {
         current_price: Price,
         n_payouts: usize,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
-        anyhow::ensure!(
-            !self.is_in_collaborative_settlement()
-                && self.role == Role::Taker
-                && self.can_settle_collaboratively(),
-            "Failed to propose collaborative settlement"
-        );
+        anyhow::ensure!(!self.is_in_collaborative_settlement());
+        anyhow::ensure!(self.role == Role::Taker);
+        anyhow::ensure!(self.can_settle_collaboratively());
 
         let (collab_settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
@@ -1057,12 +1053,9 @@ impl Cfd {
         n_payouts: usize,
         proposed_settlement_transaction: &bitcoin::Transaction,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
-        anyhow::ensure!(
-            !self.is_in_collaborative_settlement()
-                && self.role == Role::Maker
-                && self.can_settle_collaboratively(),
-            "Failed to start collaborative settlement"
-        );
+        anyhow::ensure!(!self.is_in_collaborative_settlement());
+        anyhow::ensure!(self.role == Role::Maker);
+        anyhow::ensure!(self.can_settle_collaboratively());
 
         let (settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
@@ -1121,7 +1114,6 @@ impl Cfd {
 
         let proposal = SettlementProposal {
             order_id: self.id,
-            timestamp: Timestamp::now(),
             taker: *payout.taker_amount(),
             maker: *payout.maker_amount(),
             price: current_price,
@@ -1135,13 +1127,10 @@ impl Cfd {
         proposal: SettlementProposal,
         n_payouts: usize,
     ) -> Result<CfdEvent> {
-        anyhow::ensure!(
-            !self.is_in_collaborative_settlement()
-                && self.role == Role::Maker
-                && self.can_settle_collaboratively()
-                && proposal.order_id == self.id,
-            "Failed to start collaborative settlement"
-        );
+        anyhow::ensure!(!self.is_in_collaborative_settlement());
+        anyhow::ensure!(self.role == Role::Maker);
+        anyhow::ensure!(self.can_settle_collaboratively());
+        anyhow::ensure!(proposal.order_id == self.id);
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
@@ -1176,10 +1165,14 @@ impl Cfd {
 
     pub fn accept_collaborative_settlement_proposal(
         self,
-        proposal: &SettlementProposal,
+        theirs: &SettlementProposal,
     ) -> Result<CfdEvent> {
+        anyhow::ensure!(self.role == Role::Maker);
+
+        let ours = self.settlement_proposal;
         anyhow::ensure!(
-            self.role == Role::Maker && self.settlement_proposal.as_ref() == Some(proposal)
+            self.settlement_proposal.as_ref() == Some(theirs),
+            "Settlement proposal mismatch: calculated {ours:?}, got {theirs:?}",
         );
 
         Ok(CfdEvent::new(
@@ -1202,10 +1195,10 @@ impl Cfd {
     }
 
     pub fn reject_contract_setup(self, reason: anyhow::Error) -> Result<CfdEvent> {
+        let version = self.version;
         anyhow::ensure!(
-            self.version <= 1,
-            "Rejecting contract setup not allowed because cfd in version {}",
-            self.version
+            version <= 1,
+            "Rejecting contract setup not allowed because cfd in version {version}",
         );
 
         tracing::info!(order_id = %self.id, "Contract setup was rejected: {reason:#}");
@@ -3927,7 +3920,6 @@ mod tests {
                 event: EventKind::CollaborativeSettlementStarted {
                     proposal: SettlementProposal {
                         order_id,
-                        timestamp: Timestamp::now(),
                         taker: Default::default(),
                         maker: Default::default(),
                         price: Price::new(dec!(10000)).unwrap(),
