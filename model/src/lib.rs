@@ -1016,6 +1016,12 @@ impl From<&Contracts> for i64 {
     }
 }
 
+impl fmt::Display for Contracts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl_sqlx_type_integer!(Contracts);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
