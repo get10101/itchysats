@@ -985,7 +985,7 @@ impl From<&Fees> for i64 {
 impl_sqlx_type_integer!(Fees);
 
 /// The number of contracts per position.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Contracts(u64);
 
 impl Contracts {
