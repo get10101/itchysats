@@ -294,15 +294,6 @@ impl xtra::Actor for Actor<ElectrumBlockchain> {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
 
-        // We only cache the addresses at startup
-        if let Err(e) = self
-            .wallet
-            .ensure_addresses_cached(1000)
-            .with_context(|| "Could not cache addresses")
-        {
-            tracing::warn!("{:#}", e);
-        }
-
         self.tasks.add(this.send_interval(SYNC_INTERVAL, || Sync));
     }
 
