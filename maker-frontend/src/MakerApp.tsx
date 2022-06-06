@@ -31,7 +31,7 @@ import useLatestEvent from "./components/Hooks";
 import OrderTile from "./components/OrderTile";
 import { Cfd, intoCfd, MakerOffer, PriceInfo, StateGroupKey, WalletInfo } from "./components/Types";
 import Wallet from "./components/Wallet";
-import { CfdNewOfferParamsPayload, putCfdNewOfferParamsRequest } from "./MakerClient";
+import { CfdNewOfferParamsPayload, putCfdNewOfferParamsRequest, triggerWalletSync } from "./MakerClient";
 
 const SPREAD_ASK = 1.01;
 const SPREAD_BID = 0.99;
@@ -82,6 +82,15 @@ export default function App() {
             }
         },
     });
+    let { run: syncWallet, isLoading: isSyncingWallet } = useAsync({
+        deferFn: async () => {
+            try {
+                await triggerWalletSync();
+            } catch (e) {
+                createErrorToast(toast, e);
+            }
+        },
+    });
 
     const pendingOrders = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_ORDER);
     const pendingSettlements = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_SETTLEMENT);
@@ -94,7 +103,13 @@ export default function App() {
         <Container maxWidth="120ch" marginTop="1rem">
             <HStack spacing={5}>
                 <VStack>
-                    <Wallet walletInfo={walletInfo} />
+                    <Wallet
+                        walletInfo={walletInfo}
+                        syncWallet={() => {
+                            syncWallet();
+                        }}
+                        isSyncingWallet={isSyncingWallet}
+                    />
 
                     <Grid
                         gridTemplateColumns="max-content auto"

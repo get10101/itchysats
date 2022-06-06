@@ -290,6 +290,20 @@ pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProb
     Ok(metrics)
 }
 
+#[rocket::put("/sync")]
+pub async fn put_sync_wallet(
+    taker: &State<Taker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    taker.sync_wallet().await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Could not sync wallet")
+            .detail(format!("{e:#}"))
+    })?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

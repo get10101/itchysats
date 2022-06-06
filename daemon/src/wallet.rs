@@ -308,8 +308,9 @@ pub struct BuildPartyParams {
     pub fee_rate: TxFeeRate,
 }
 
-/// Private message to trigger a sync.
-struct Sync;
+/// Message to trigger a sync.
+#[derive(Clone, Copy)]
+pub struct Sync;
 
 pub struct Sign {
     pub psbt: PartiallySignedTransaction,

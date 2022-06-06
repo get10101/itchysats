@@ -1,7 +1,5 @@
 use crate::actor_system::ActorSystem;
 use anyhow::Result;
-use daemon::bdk;
-use daemon::bdk::bitcoin::Network;
 use daemon::bdk::blockchain::ElectrumBlockchain;
 use daemon::oracle;
 use daemon::projection::Cfd;
@@ -208,6 +206,20 @@ pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'stat
 pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
     Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
+}
+
+#[rocket::put("/sync")]
+pub async fn put_sync_wallet(
+    maker: &State<Maker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    maker.sync_wallet().await.map_err(|e| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Could not sync wallet")
+            .detail(format!("{e:#}"))
+    })?;
+
+    Ok(())
 }
 
 #[rocket::get("/cfds")]

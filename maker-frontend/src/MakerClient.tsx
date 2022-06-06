@@ -28,3 +28,16 @@ export async function putCfdNewOfferParamsRequest(payload: CfdNewOfferParamsPayl
         throw new HttpError(resp);
     }
 }
+
+export async function triggerWalletSync() {
+    let res = await fetch(`/api/sync`, {
+        method: "PUT",
+        credentials: "include",
+    });
+
+    if (!res.status.toString().startsWith("2")) {
+        console.log("Status: " + res.status + ", " + res.statusText);
+        const resp = await res.json();
+        throw new HttpError(resp);
+    }
+}
