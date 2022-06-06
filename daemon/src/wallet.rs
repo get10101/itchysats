@@ -12,6 +12,7 @@ use bdk::bitcoin::Txid;
 use bdk::blockchain::Blockchain;
 use bdk::blockchain::ElectrumBlockchain;
 use bdk::database::BatchDatabase;
+use bdk::sled;
 use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
@@ -25,6 +26,7 @@ use model::TxFeeRate;
 use model::WalletInfo;
 use statrs::statistics::*;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::sync::watch;
@@ -33,6 +35,8 @@ use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
 const SYNC_INTERVAL: Duration = Duration::from_secs(3 * 60);
+pub const MAKER_WALLET_ID: &str = "maker-wallet";
+pub const TAKER_WALLET_ID: &str = "taker-wallet";
 
 static BALANCE_GAUGE: conquer_once::Lazy<prometheus::Gauge> = conquer_once::Lazy::new(|| {
     prometheus::register_gauge!(
@@ -84,7 +88,7 @@ static STD_DEV_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
     });
 
 pub struct Actor<B> {
-    wallet: bdk::Wallet<bdk::database::MemoryDatabase>,
+    wallet: bdk::Wallet<sled::Tree>,
     blockchain_client: B,
     used_utxos: LockedUtxos,
     tasks: Tasks,
@@ -99,11 +103,15 @@ impl Actor<ElectrumBlockchain> {
     pub fn new(
         electrum_rpc_url: &str,
         ext_priv_key: ExtendedPrivKey,
+        db_path: PathBuf,
+        wallet_name: String,
     ) -> Result<(Self, watch::Receiver<Option<WalletInfo>>)> {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
-        let db = bdk::database::MemoryDatabase::new();
+        // Create a database (using default sled type) to store wallet data
+        let db = sled::open(db_path)?;
+        let db = db.open_tree(wallet_name)?;
 
         let wallet = bdk::Wallet::new(
             bdk::template::Bip84(ext_priv_key, KeychainKind::External),
