@@ -35,6 +35,8 @@ use xtras::AddressMap;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
+const TCP_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[derive(Clone)]
 pub struct BroadcastOffers(pub Option<MakerOffers>);
 
@@ -177,9 +179,9 @@ impl Connection {
 
         self.write
             .send(msg)
+            .timeout(TCP_TIMEOUT)
             .await
-            .with_context(|| format!("Failed to send msg {msg_str} to taker {taker_id}"))?;
-
+            .with_context(|| format!("Failed to send msg {msg_str} to taker {taker_id}"))??;
         Ok(())
     }
 }
