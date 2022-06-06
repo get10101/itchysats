@@ -485,29 +485,37 @@ impl<O, T, W> Actor<O, T, W> {
     async fn handle_accept_settlement(&mut self, msg: AcceptSettlement) -> Result<()> {
         let AcceptSettlement { order_id } = msg;
 
-        // TODO: Handle case when taker upgraded after opening and *can* use libp2p
-        let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
-        if can_use_libp2p(&cfd) {
-            self.libp2p_collab_settlement
-                .send(daemon::collab_settlement::maker::Accept { order_id })
-                .await
-                .map_err(|e| anyhow!(e))?
-        } else {
-            match self
-                .settlement_actors
-                .send_async(&order_id, collab_settlement::Accepted)
-                .await
-            {
-                Ok(_) => Ok(()),
-                Err(NotConnected(e)) => {
-                    self.executor
-                        .execute(order_id, |cfd| {
-                            Ok(cfd.fail_collaborative_settlement(anyhow!(e)))
-                        })
-                        .await?;
+        match self
+            .libp2p_collab_settlement
+            .send(daemon::collab_settlement::maker::Accept { order_id })
+            .await
+        {
+            // Return early if dispatch to libp2p settlement worked
+            Ok(Ok(())) => return Ok(()),
+            Ok(Err(error)) => {
+                tracing::debug!("Try fallback to legacy collab settlement because unable to handle accept via libp2p: {error:#}");
+            }
+            Err(error) => {
+                // we should never see this given that the libp2p actor is always running
+                tracing::error!("Try fallback to legacy collab settlement because unable to dispatch accept to libp2p actor: {error:#}");
+            }
+        }
 
-                    bail!("Accept failed: No settlement in progress for order {order_id}")
-                }
+        // We fallback to dispatch to legacy collab settlement in case libp2p settlement failed
+        match self
+            .settlement_actors
+            .send_async(&order_id, collab_settlement::Accepted)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(NotConnected(e)) => {
+                self.executor
+                    .execute(order_id, |cfd| {
+                        Ok(cfd.fail_collaborative_settlement(anyhow!(e)))
+                    })
+                    .await?;
+
+                bail!("Accept failed: No settlement in progress for order {order_id}")
             }
         }
     }
@@ -515,29 +523,37 @@ impl<O, T, W> Actor<O, T, W> {
     async fn handle_reject_settlement(&mut self, msg: RejectSettlement) -> Result<()> {
         let RejectSettlement { order_id } = msg;
 
-        // TODO: Handle case when taker upgraded after opening and *can* use libp2p
-        let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
-        if can_use_libp2p(&cfd) {
-            self.libp2p_collab_settlement
-                .send(daemon::collab_settlement::maker::Reject { order_id })
-                .await
-                .map_err(|e| anyhow!(e))?
-        } else {
-            match self
-                .settlement_actors
-                .send_async(&order_id, collab_settlement::Rejected)
-                .await
-            {
-                Ok(_) => Ok(()),
-                Err(NotConnected(e)) => {
-                    self.executor
-                        .execute(order_id, |cfd| {
-                            Ok(cfd.fail_collaborative_settlement(anyhow!(e)))
-                        })
-                        .await?;
+        match self
+            .libp2p_collab_settlement
+            .send(daemon::collab_settlement::maker::Reject { order_id })
+            .await
+        {
+            // Return early if dispatch to libp2p settlement worked
+            Ok(Ok(())) => return Ok(()),
+            Ok(Err(error)) => {
+                tracing::debug!("Try fallback to legacy collab settlement because unable to handle reject via libp2p: {error:#}");
+            }
+            Err(error) => {
+                // we should never see this given that the libp2p actor is always running
+                tracing::error!("Try fallback to legacy collab settlement because unable to dispatch reject to libp2p actor: {error:#}");
+            }
+        }
 
-                    bail!("Reject failed: No settlement in progress for order {order_id}")
-                }
+        // We fallback to dispatch to legacy collab settlement in case libp2p settlement failed
+        match self
+            .settlement_actors
+            .send_async(&order_id, collab_settlement::Rejected)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(NotConnected(e)) => {
+                self.executor
+                    .execute(order_id, |cfd| {
+                        Ok(cfd.fail_collaborative_settlement(anyhow!(e)))
+                    })
+                    .await?;
+
+                bail!("Reject failed: No settlement in progress for order {order_id}")
             }
         }
     }
