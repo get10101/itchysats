@@ -210,47 +210,6 @@ pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 's
     Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct WithdrawRequest {
-    address: bdk::bitcoin::Address,
-    #[serde(with = "bdk::bitcoin::util::amount::serde::as_btc")]
-    amount: bdk::bitcoin::Amount,
-    fee: f32,
-}
-
-#[rocket::post("/withdraw", data = "<withdraw_request>")]
-pub async fn post_withdraw_request(
-    withdraw_request: Json<WithdrawRequest>,
-    maker: &State<Maker>,
-    network: &State<Network>,
-    _auth: Authenticated,
-) -> Result<String, HttpApiProblem> {
-    let amount =
-        (withdraw_request.amount != bdk::bitcoin::Amount::ZERO).then(|| withdraw_request.amount);
-
-    let txid = maker
-        .withdraw(
-            amount,
-            withdraw_request.address.clone(),
-            withdraw_request.fee,
-        )
-        .await
-        .map_err(|e| {
-            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .title("Could not proceed with withdraw request")
-                .detail(format!("{e:#}"))
-        })?;
-
-    let url = match network.inner() {
-        Network::Bitcoin => format!("https://mempool.space/tx/{txid}"),
-        Network::Testnet => format!("https://mempool.space/testnet/tx/{txid}"),
-        Network::Signet => format!("https://mempool.space/signet/tx/{txid}"),
-        Network::Regtest => txid.to_string(),
-    };
-
-    Ok(url)
-}
-
 #[rocket::get("/cfds")]
 pub async fn get_cfds<'r>(
     rx: &State<Feeds>,
