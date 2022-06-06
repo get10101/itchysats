@@ -32,7 +32,7 @@ use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
-const SYNC_INTERVAL: Duration = Duration::from_secs(60);
+const SYNC_INTERVAL: Duration = Duration::from_secs(3 * 60);
 
 static BALANCE_GAUGE: conquer_once::Lazy<prometheus::Gauge> = conquer_once::Lazy::new(|| {
     prometheus::register_gauge!(
