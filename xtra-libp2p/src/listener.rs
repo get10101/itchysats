@@ -1,6 +1,5 @@
-use crate::ConnectionStats;
+use crate::endpoint;
 use crate::Endpoint;
-use crate::GetConnectionStats;
 use crate::ListenOn;
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -9,10 +8,9 @@ use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
-use xtras::SendInterval;
 
-/// How often we check whether we are still connected
-pub const CHECK_INTERVAL: Duration = Duration::from_secs(5);
+/// If we're not connected by this time, stop the actor.
+pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// xtra actor that taker care of listening for incoming connections to the Endpoint.
 ///
@@ -22,6 +20,7 @@ pub struct Actor {
     tasks: Tasks,
     endpoint: Address<Endpoint>,
     listen_address: Multiaddr,
+    is_listening: bool,
     /// Contains the reason we are stopping.
     stop_reason: Option<Error>,
 }
@@ -32,25 +31,14 @@ impl Actor {
             tasks: Tasks::default(),
             endpoint,
             listen_address,
+            is_listening: false,
             stop_reason: None,
         }
     }
 
-    /// Returns error if we cannot access Endpoint or the listener address is not
-    /// present inside Endpoint.
-    async fn check_connection_active_in_endpoint(&self) -> Result<(), Error> {
-        let ConnectionStats {
-            listen_addresses, ..
-        } = self
-            .endpoint
-            .send(GetConnectionStats)
-            .await
-            .map_err(|_| Error::NoEndpoint)?;
-
-        listen_addresses
-            .contains(&self.listen_address)
-            .then(|| ())
-            .ok_or(Error::ConnectionDropped)
+    fn stop_with_error(&mut self, e: Error, ctx: &mut xtra::Context<Self>) {
+        self.stop_reason = Some(e);
+        ctx.stop();
     }
 }
 
@@ -59,21 +47,20 @@ impl xtra::Actor for Actor {
     type Stop = Error;
 
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
-        let this = ctx.address().expect("we are alive");
-
         let endpoint = self.endpoint.clone();
         let listen_address = self.listen_address.clone();
 
         if let Err(e) = endpoint.send(ListenOn(listen_address)).await {
-            self.stop_reason = Some(Error::Failed { source: anyhow!(e) });
-            ctx.stop()
+            self.stop_with_error(Error::Failed { source: anyhow!(e) }, ctx);
         };
 
-        // Only start checking the connection after it had enough time to be registered
-        tokio::time::sleep(CHECK_INTERVAL).await;
-
-        self.tasks
-            .add(this.send_interval(CHECK_INTERVAL, || CheckConnection));
+        let this = ctx.address().expect("self to be alive");
+        self.tasks.add(async move {
+            tokio::time::sleep(CONNECTION_TIMEOUT).await;
+            this.send(StopIfNotListening)
+                .await
+                .expect("to deliver stop message");
+        })
     }
 
     async fn stopped(self) -> Self::Stop {
@@ -84,14 +71,33 @@ impl xtra::Actor for Actor {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: Error, ctx: &mut xtra::Context<Self>) {
-        self.stop_reason = Some(msg);
-        ctx.stop();
+        self.stop_with_error(msg, ctx);
     }
 
-    async fn handle(&mut self, _msg: CheckConnection, ctx: &mut xtra::Context<Self>) {
-        if let Err(e) = self.check_connection_active_in_endpoint().await {
-            self.stop_reason = Some(e);
-            ctx.stop();
+    async fn handle(&mut self, _msg: StopIfNotListening, ctx: &mut xtra::Context<Self>) {
+        if !self.is_listening {
+            self.stop_with_error(
+                Error::Failed {
+                    source: anyhow!("Did not connect in time"),
+                },
+                ctx,
+            )
+        }
+    }
+}
+
+#[xtra_productivity(message_impl = false)]
+impl Actor {
+    async fn handle(&mut self, msg: endpoint::ListenAddressAdded) {
+        if msg.address == self.listen_address {
+            self.is_listening = true;
+        }
+    }
+
+    async fn handle(&mut self, msg: endpoint::ListenAddressRemoved, ctx: &mut xtra::Context<Self>) {
+        if msg.address == self.listen_address {
+            self.is_listening = false;
+            self.stop_with_error(Error::ConnectionDropped, ctx);
         }
     }
 }
@@ -108,5 +114,4 @@ pub enum Error {
     Unspecified,
 }
 
-#[derive(Clone, Copy)]
-struct CheckConnection;
+struct StopIfNotListening;

@@ -27,6 +27,7 @@ use std::marker::PhantomData;
 use std::time::Duration;
 use thiserror::Error;
 use tokio_tasks::Tasks;
+use xtra::message_channel::MessageChannel;
 use xtra::message_channel::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -57,6 +58,7 @@ pub struct Endpoint {
     listen_addresses: HashSet<Multiaddr>,
     inflight_connections: HashSet<PeerId>,
     connection_timeout: Duration,
+    subscribers: Subscribers,
 }
 
 /// Open a substream to the provided peer.
@@ -135,7 +137,7 @@ pub struct ListenOn(pub Multiaddr);
 #[derive(Clone, Copy, Debug)]
 pub struct GetConnectionStats;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ConnectionStats {
     pub connected_peers: HashSet<PeerId>,
     pub listen_addresses: HashSet<Multiaddr>,
@@ -164,6 +166,34 @@ pub enum Error {
     AlreadyConnected(PeerId),
 }
 
+/// Subscribers that get notified on connection changes
+///
+/// This allows other actors to get notified on connection changes such as a new connection being
+/// established or dropped as well as listening addresses being added or removed.
+#[derive(Default)]
+pub struct Subscribers {
+    connection_established: Vec<Box<dyn MessageChannel<ConnectionEstablished>>>,
+    connection_dropped: Vec<Box<dyn MessageChannel<ConnectionDropped>>>,
+    listen_address_added: Vec<Box<dyn MessageChannel<ListenAddressAdded>>>,
+    listen_address_removed: Vec<Box<dyn MessageChannel<ListenAddressRemoved>>>,
+}
+
+impl Subscribers {
+    pub fn new(
+        connection_established: Vec<Box<dyn MessageChannel<ConnectionEstablished>>>,
+        connection_dropped: Vec<Box<dyn MessageChannel<ConnectionDropped>>>,
+        listen_address_added: Vec<Box<dyn MessageChannel<ListenAddressAdded>>>,
+        listen_address_removed: Vec<Box<dyn MessageChannel<ListenAddressRemoved>>>,
+    ) -> Self {
+        Self {
+            connection_established,
+            connection_dropped,
+            listen_address_added,
+            listen_address_removed,
+        }
+    }
+}
+
 impl Endpoint {
     /// Construct a new [`Endpoint`] from the provided transport.
     ///
@@ -183,6 +213,7 @@ impl Endpoint {
             &'static str,
             Box<dyn StrongMessageChannel<NewInboundSubstream>>,
         ); N],
+        subscribers: Subscribers,
     ) -> Self
     where
         T: Transport + Clone + Send + Sync + 'static,
@@ -210,10 +241,11 @@ impl Endpoint {
             listen_addresses: HashSet::default(),
             inflight_connections: HashSet::default(),
             connection_timeout,
+            subscribers,
         }
     }
 
-    fn drop_connection(&mut self, peer: &PeerId) {
+    async fn drop_connection(&mut self, peer: &PeerId) {
         let (mut control, tasks) = match self.controls.remove(peer) {
             None => return,
             Some(control) => control,
@@ -224,6 +256,7 @@ impl Endpoint {
             let _ = control.close().await;
             drop(tasks);
         });
+        self.notify_connection_dropped(*peer).await;
     }
 
     async fn open_substream(
@@ -315,12 +348,14 @@ impl Endpoint {
             },
         );
         self.controls.insert(peer, (control, tasks));
+        self.notify_connection_established(peer).await;
     }
 
     async fn handle(&mut self, msg: ListenerFailed) {
         tracing::debug!("Listener failed: {:#}", msg.error);
 
         self.listen_addresses.remove(&msg.address);
+        self.notify_listen_address_removed(msg.address).await;
     }
 
     async fn handle(&mut self, msg: FailedToConnect) {
@@ -328,14 +363,14 @@ impl Endpoint {
         let peer = msg.peer;
 
         self.inflight_connections.remove(&peer);
-        self.drop_connection(&peer);
+        self.drop_connection(&peer).await;
     }
 
     async fn handle(&mut self, msg: ExistingConnectionFailed) {
         tracing::debug!("Connection failed: {:#}", msg.error);
         let peer = msg.peer;
 
-        self.drop_connection(&peer);
+        self.drop_connection(&peer).await;
     }
 
     async fn handle(&mut self, _: GetConnectionStats) -> ConnectionStats {
@@ -389,7 +424,7 @@ impl Endpoint {
     }
 
     async fn handle(&mut self, msg: Disconnect) {
-        self.drop_connection(&msg.0);
+        self.drop_connection(&msg.0).await;
     }
 
     async fn handle(&mut self, msg: ListenOn, ctx: &mut xtra::Context<Self>) {
@@ -492,7 +527,55 @@ impl Endpoint {
     async fn handle(&mut self, msg: NewListenAddress) {
         // FIXME: This address could be a "catch-all" like "0.0.0.0" which actually results in
         // listening on multiple interfaces.
-        self.listen_addresses.insert(msg.listen_address);
+        self.listen_addresses.insert(msg.listen_address.clone());
+        self.notify_listen_address_added(msg.listen_address).await;
+    }
+}
+
+impl Endpoint {
+    async fn notify_connection_established(&mut self, peer: PeerId) {
+        for subscriber in &self.subscribers.connection_established {
+            if let Err(e) = subscriber
+                .send_async_safe(ConnectionEstablished { peer })
+                .await
+            {
+                tracing::warn!("Unable to reach subscriber: {e:#}");
+            }
+        }
+    }
+
+    async fn notify_connection_dropped(&mut self, peer: PeerId) {
+        for subscriber in &self.subscribers.connection_dropped {
+            if let Err(e) = subscriber.send_async_safe(ConnectionDropped { peer }).await {
+                tracing::warn!("Unable to reach subscriber: {e:#}");
+            }
+        }
+    }
+
+    async fn notify_listen_address_added(&mut self, added: Multiaddr) {
+        for subscriber in &self.subscribers.listen_address_added {
+            if let Err(e) = subscriber
+                .send_async_safe(ListenAddressAdded {
+                    address: added.clone(),
+                })
+                .await
+            {
+                tracing::warn!("Unable to reach subscriber: {e:#}");
+            }
+        }
+    }
+
+    async fn notify_listen_address_removed(&mut self, removed: Multiaddr) {
+        for subscriber in &self.subscribers.listen_address_removed {
+            if let Err(e) = subscriber
+                .send_async_safe(ListenAddressRemoved {
+                    address: removed.clone(),
+                })
+                .await
+            {
+                tracing::warn!("Unable to reach subscriber: {e:#}");
+            }
+        }
     }
 }
 
@@ -557,5 +640,39 @@ struct NewConnection {
 }
 
 impl xtra::Message for NewInboundSubstream {
+    type Result = ();
+}
+
+#[derive(Clone, Copy)]
+pub struct ConnectionEstablished {
+    pub peer: PeerId,
+}
+
+impl xtra::Message for ConnectionEstablished {
+    type Result = ();
+}
+
+#[derive(Clone, Copy)]
+pub struct ConnectionDropped {
+    pub peer: PeerId,
+}
+
+impl xtra::Message for ConnectionDropped {
+    type Result = ();
+}
+
+pub struct ListenAddressAdded {
+    pub address: Multiaddr,
+}
+
+impl xtra::Message for ListenAddressAdded {
+    type Result = ();
+}
+
+pub struct ListenAddressRemoved {
+    pub address: Multiaddr,
+}
+
+impl xtra::Message for ListenAddressRemoved {
     type Result = ();
 }
