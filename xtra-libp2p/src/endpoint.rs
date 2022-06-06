@@ -347,6 +347,7 @@ impl Endpoint {
                 let _ = this.send(ExistingConnectionFailed { peer, error }).await;
             },
         );
+
         self.controls.insert(peer, (control, tasks));
         self.notify_connection_established(peer).await;
     }
@@ -534,6 +535,8 @@ impl Endpoint {
 
 impl Endpoint {
     async fn notify_connection_established(&mut self, peer: PeerId) {
+        tracing::info!(%peer, "Connection established");
+
         for subscriber in &self.subscribers.connection_established {
             if let Err(e) = subscriber
                 .send_async_safe(ConnectionEstablished { peer })
@@ -545,6 +548,8 @@ impl Endpoint {
     }
 
     async fn notify_connection_dropped(&mut self, peer: PeerId) {
+        tracing::info!(%peer, "Connection dropped");
+
         for subscriber in &self.subscribers.connection_dropped {
             if let Err(e) = subscriber.send_async_safe(ConnectionDropped { peer }).await {
                 tracing::warn!("Unable to reach subscriber: {e:#}");
@@ -553,6 +558,8 @@ impl Endpoint {
     }
 
     async fn notify_listen_address_added(&mut self, added: Multiaddr) {
+        tracing::info!(address=%added, "Listen address added");
+
         for subscriber in &self.subscribers.listen_address_added {
             if let Err(e) = subscriber
                 .send_async_safe(ListenAddressAdded {
@@ -566,6 +573,8 @@ impl Endpoint {
     }
 
     async fn notify_listen_address_removed(&mut self, removed: Multiaddr) {
+        tracing::info!(address=%removed, "Listen address removed");
+
         for subscriber in &self.subscribers.listen_address_removed {
             if let Err(e) = subscriber
                 .send_async_safe(ListenAddressRemoved {

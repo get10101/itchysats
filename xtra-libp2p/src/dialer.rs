@@ -71,6 +71,8 @@ impl xtra::Actor for Actor {
         }
 
         if let Err(e) = self.connect().await {
+            tracing::warn!("Failed to connect to maker: {e:#}");
+
             self.stop_with_error(e, ctx);
         }
 
