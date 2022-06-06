@@ -1,3 +1,4 @@
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use clap::StructOpt;
@@ -50,7 +51,17 @@ async fn main() -> Result<()> {
     let seed = RandomSeed::initialize(&data_dir.join("maker_seed")).await?;
 
     let bitcoin_network = opts.network.bitcoin_network();
-    let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
+
+    let ext_priv_key = match opts.wallet_xprv {
+        Some(wallet_xprv) => {
+            if wallet_xprv.network != bitcoin_network {
+                let network = wallet_xprv.network;
+                bail!("Invalid private key provided. Was '{network}' but should have been '{bitcoin_network}'");
+            }
+            wallet_xprv
+        }
+        None => seed.derive_extended_priv_key(bitcoin_network)?,
+    };
 
     let mut tasks = Tasks::default();
 

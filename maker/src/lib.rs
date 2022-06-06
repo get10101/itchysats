@@ -1,3 +1,4 @@
+use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use clap::Parser;
 use clap::Subcommand;
 use daemon::bdk;
@@ -36,6 +37,11 @@ pub struct Opts {
     /// If enabled logs will be in json format
     #[clap(short, long)]
     pub json: bool,
+
+    /// If provided will be used for internal wallet instead of a random key. The keys will be
+    /// derived according to Bip84
+    #[clap(short, long)]
+    pub wallet_xprv: Option<ExtendedPrivKey>,
 
     /// Configure the log level, e.g.: one of Error, Warn, Info, Debug, Trace
     #[clap(short, long, default_value = "Debug")]
