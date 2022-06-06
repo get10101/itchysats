@@ -18,6 +18,7 @@ import {
     NumberInputField,
     NumberInputStepper,
     Skeleton,
+    Spacer,
     Text,
     useClipboard,
     useColorModeValue,
@@ -96,6 +97,7 @@ export default function Wallet(
                             </Skeleton>
                         </HStack>
                     </Box>
+                    <Spacer />
                     <Box>
                         <QRCodeCanvas value={`bitcoin:${address!}`} />
                     </Box>
