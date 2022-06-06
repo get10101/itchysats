@@ -37,8 +37,6 @@ where
         }
         let type_name = std::any::type_name::<M>();
 
-        tracing::warn!(
-            "Task for periodically sending message {type_name} stopped because actor shut down"
-        );
+        panic!("Task for periodically sending message {type_name} stopped because actor shut down");
     }
 }
