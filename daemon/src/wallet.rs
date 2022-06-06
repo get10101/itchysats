@@ -136,6 +136,8 @@ impl Actor<ElectrumBlockchain> {
 impl Actor<ElectrumBlockchain> {
     fn sync_internal(&mut self) -> Result<WalletInfo> {
         let now = Instant::now();
+        tracing::trace!(target : "wallet", "Wallet sync started");
+
         self.wallet
             .sync(&self.blockchain_client, SyncOptions::default())
             .context("Failed to sync wallet")?;
