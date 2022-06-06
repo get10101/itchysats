@@ -200,8 +200,9 @@ impl Endpoint {
     /// An [`Endpoint`]s identity ([`PeerId`]) will be computed from the given [`Keypair`].
     ///
     /// The `connection_timeout` is applied to:
-    /// 1. Connection upgrades (i.e. noise handshake, yamux upgrade, etc)
-    /// 2. Protocol negotiations
+    /// 1. Dialing
+    /// 2. Connection upgrades (i.e. noise handshake, yamux upgrade, etc)
+    /// 3. Protocol negotiations
     ///
     /// The provided substream handlers are actors that will be given the fully-negotiated
     /// substreams whenever a peer opens a new substream for the provided protocol.
@@ -399,10 +400,13 @@ impl Endpoint {
             {
                 let transport = self.transport.clone();
                 let this = this.clone();
+                let connection_timeout = self.connection_timeout;
 
                 async move {
                     let (peer, control, incoming_substreams, worker) =
-                        transport.clone().dial(msg.0)?.await?;
+                        tokio::time::timeout(connection_timeout, transport.clone().dial(msg.0)?)
+                            .await
+                            .context("Dialing timed out")??;
 
                     let _ = this
                         .send_async_safe(NewConnection {
