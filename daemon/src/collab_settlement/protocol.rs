@@ -224,7 +224,7 @@ pub(crate) async fn emit_completed(
         tracing::error!(%order_id, "Failed to execute `complete_collaborative_settlement` command: {e:#}");
     }
 
-    tracing::info!(%order_id, "Rollover completed");
+    tracing::info!(%order_id, "Collaborative settlement completed");
 }
 
 pub(crate) async fn emit_rejected(order_id: OrderId, executor: &command::Executor) {
@@ -237,11 +237,11 @@ pub(crate) async fn emit_rejected(order_id: OrderId, executor: &command::Executo
         tracing::error!(%order_id, "Failed to execute `reject_collaborative_settlement` command: {e:#}")
     }
 
-    tracing::info!(%order_id, "Rollover rejected");
+    tracing::info!(%order_id, "Collaborative settlement rejected");
 }
 
 pub(crate) async fn emit_failed(order_id: OrderId, e: anyhow::Error, executor: &command::Executor) {
-    tracing::error!(%order_id, "Rollover failed: {e:#}");
+    tracing::error!(%order_id, "Collaborative settlement failed: {e:#}");
 
     if let Err(e) = executor
         .execute(order_id, |cfd| Ok(cfd.fail_collaborative_settlement(e)))
