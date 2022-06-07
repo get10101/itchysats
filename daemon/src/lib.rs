@@ -83,6 +83,10 @@ pub struct TakerActorSystem<O, W, P> {
     /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
     /// address.
     _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
+    _collab_settlement_supervisor:
+        Address<supervisor::Actor<collab_settlement::taker::Actor, supervisor::UnitReason>>,
+    _rollover_supervisor:
+        Address<supervisor::Actor<rollover::taker::Actor, supervisor::UnitReason>>,
     _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
@@ -156,13 +160,20 @@ where
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
-        let libp2p_collab_settlement_addr = collab_settlement::taker::Actor::new(
-            endpoint_addr.clone(),
-            executor.clone(),
-            n_payouts,
-        )
-        .create(None)
-        .spawn(&mut tasks);
+        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) =
+            supervisor::Actor::new({
+                let endpoint_addr = endpoint_addr.clone();
+                let executor = executor.clone();
+                move || {
+                    collab_settlement::taker::Actor::new(
+                        endpoint_addr.clone(),
+                        executor.clone(),
+                        n_payouts,
+                    )
+                }
+            });
+        let collab_settlement_supervisor =
+            collab_settlement_supervisor.create(None).spawn(&mut tasks);
 
         let (connection_actor_addr, connection_actor_ctx) = Context::new(None);
         let cfd_actor_addr = taker_cfd::Actor::new(
@@ -186,15 +197,20 @@ where
         .create(None)
         .spawn(&mut tasks);
 
-        let libp2p_rollover_addr = rollover::taker::Actor::new(
-            endpoint_addr.clone(),
-            executor.clone(),
-            oracle_pk,
-            xtra::message_channel::MessageChannel::clone_channel(&oracle_addr),
-            n_payouts,
-        )
-        .create(None)
-        .spawn(&mut tasks);
+        let (rollover_supervisor, libp2p_rollover_addr) = supervisor::Actor::new({
+            let endpoint_addr = endpoint_addr.clone();
+            let executor = executor.clone();
+            move || {
+                rollover::taker::Actor::new(
+                    endpoint_addr.clone(),
+                    executor.clone(),
+                    oracle_pk,
+                    xtra::message_channel::MessageChannel::clone_channel(&oracle_addr),
+                    n_payouts,
+                )
+            }
+        });
+        let rollover_supervisor = rollover_supervisor.create(None).spawn(&mut tasks);
 
         let auto_rollover_addr = auto_rollover::Actor::new(db.clone(), libp2p_rollover_addr)
             .create(None)
@@ -273,6 +289,8 @@ where
             price_feed_actor,
             executor,
             _price_feed_supervisor: price_feed_supervisor,
+            _rollover_supervisor: rollover_supervisor,
+            _collab_settlement_supervisor: collab_settlement_supervisor,
             _dialer_supervisor: dialer_supervisor,
             _close_cfds_actor: close_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
