@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use crate::bitcoin::secp256k1::Signature;
 use crate::bitcoin::Transaction;
 use crate::collab_settlement::PROTOCOL;
 use crate::command;
+use crate::future_ext::FutureExt;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -18,6 +21,14 @@ use serde::Serialize;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
+
+/// The duration that the taker waits until a decision (accept/reject) is expected from the maker
+///
+/// If the maker does not respond within `DECISION_TIMEOUT` seconds then the taker will fail the
+/// collab settlement.
+const DECISION_TIMEOUT: Duration = Duration::from_secs(30);
+
+pub const SETTLEMENT_MSG_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub async fn dialer(
     endpoint: Address<Endpoint>,
@@ -46,11 +57,16 @@ pub async fn dialer(
         .await
         .context("Failed to send Propose")?;
 
-    // TODO: We will need to apply a timeout to these. Perhaps we can put a timeout generally into
-    // "reading from the substream"?
     if let Decision::Reject = framed
         .next()
+        .timeout(DECISION_TIMEOUT)
         .await
+        .with_context(|| {
+            format!(
+                "Maker did not accept/reject within {} seconds.",
+                DECISION_TIMEOUT.as_secs()
+            )
+        })?
         .context("End of stream while receiving Decision")?
         .context("Failed to decode Decision")?
         .into_decision()?
