@@ -510,6 +510,9 @@ pub fn init_tracing() -> DefaultGuard {
         .add_directive("taker=debug".parse().unwrap())
         .add_directive("maker=debug".parse().unwrap())
         .add_directive("daemon=debug".parse().unwrap())
+        .add_directive("xtra_libp2p=debug".parse().unwrap())
+        .add_directive("xtra_libp2p_offer=debug".parse().unwrap())
+        .add_directive("xtra_libp2p_ping=debug".parse().unwrap())
         .add_directive("rocket=warn".parse().unwrap());
 
     tracing_subscriber::fmt()
