@@ -310,6 +310,91 @@ async fn falls_back_to_next_protocol_if_unsupported() {
     assert_eq!(actual_protocol, "/hello-world/1.0.0");
 }
 
+#[tokio::test]
+async fn disconnect_after_too_many_open_substream_failures() {
+    let (alice, bob, _) = alice_and_bob([], []).await;
+
+    let alice_connected_peers = alice
+        .subscriber_stats
+        .send(GetConnectedPeers)
+        .await
+        .unwrap();
+    assert_eq!(
+        alice_connected_peers,
+        HashSet::from([bob.peer_id]),
+        "Alice should be connected to Bob after connecting"
+    );
+
+    let bob_connected_peers = bob.subscriber_stats.send(GetConnectedPeers).await.unwrap();
+    assert_eq!(
+        bob_connected_peers,
+        HashSet::from([alice.peer_id]),
+        "Bob should be connected to Alice after connecting"
+    );
+
+    for _ in 0..endpoint::FAILURE_LIMIT {
+        let _ = alice
+            .endpoint
+            .send(OpenSubstream::single_protocol(
+                bob.peer_id,
+                "/foo/bar/1.0.0",
+            ))
+            .await
+            .unwrap()
+            .unwrap_err();
+    }
+
+    // Peers should still be connected if we are right at the limit
+    let alice_connected_peers = alice
+        .subscriber_stats
+        .send(GetConnectedPeers)
+        .await
+        .unwrap();
+    assert_eq!(
+        alice_connected_peers,
+        HashSet::from([bob.peer_id]),
+        "Alice should be connected to Bob if we have not reached the limit"
+    );
+
+    let bob_connected_peers = bob.subscriber_stats.send(GetConnectedPeers).await.unwrap();
+    assert_eq!(
+        bob_connected_peers,
+        HashSet::from([alice.peer_id]),
+        "Bob should be connected to Alice if we have not reached the limit"
+    );
+
+    // Record one more failure (over the limit)
+    let _ = alice
+        .endpoint
+        .send(OpenSubstream::single_protocol(
+            bob.peer_id,
+            "/foo/bar/1.0.0",
+        ))
+        .await
+        .unwrap()
+        .unwrap_err();
+
+    // Peers should not be connected once over limit
+
+    let alice_connected_peers = alice
+        .subscriber_stats
+        .send(GetConnectedPeers)
+        .await
+        .unwrap();
+    assert_eq!(
+        alice_connected_peers,
+        HashSet::from([]),
+        "Alice should not be connected to Bob anymore after too many failures"
+    );
+
+    let bob_connected_peers = bob.subscriber_stats.send(GetConnectedPeers).await.unwrap();
+    assert_eq!(
+        bob_connected_peers,
+        HashSet::from([]),
+        " Bob should not be connected to Alice anymore if Alice dropped the connection"
+    );
+}
+
 async fn alice_and_bob<const AN: usize, const BN: usize>(
     alice_inbound_substream_handlers: [(
         &'static str,
