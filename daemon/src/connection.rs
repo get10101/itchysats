@@ -425,7 +425,10 @@ impl Actor {
                 tracing::error!("legacy handler - use libp2p rollover instead")
             }
             wire::MakerToTaker::CurrentOffers(_) => {
-                tracing::error!("legacy handler - use `/itchysats/offer` libp2p protocol instead")
+                // The maker is still sending this because there is not decision logic to stop it
+                tracing::trace!(
+                    "ignoring legacy offers - using `/itchysats/offer` libp2p protocol instead"
+                )
             }
             wire::MakerToTaker::CurrentOrder(_) => {
                 // no-op, we support `CurrentOffers` message and can ignore this one.
