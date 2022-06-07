@@ -165,10 +165,10 @@ async fn main() -> Result<()> {
                 routes::put_offer_params,
                 routes::post_cfd_action,
                 routes::get_health_check,
-                routes::post_withdraw_request,
                 routes::get_cfds,
                 routes::get_takers,
                 routes::get_metrics,
+                routes::put_sync_wallet,
             ],
         )
         .register("/api", default_catchers())

@@ -1,16 +1,20 @@
-import { CheckIcon, CopyIcon } from "@chakra-ui/icons";
-import { Box, Center, Divider, HStack, IconButton, Skeleton, Text, useClipboard } from "@chakra-ui/react";
+import { CheckIcon, CopyIcon, RepeatIcon } from "@chakra-ui/icons";
+import { Box, Center, Divider, HStack, IconButton, Skeleton, Spacer, Text, useClipboard } from "@chakra-ui/react";
 import React from "react";
 import Timestamp from "./Timestamp";
 import { WalletInfo } from "./Types";
 
 interface WalletProps {
     walletInfo: WalletInfo | null;
+    syncWallet: () => void;
+    isSyncingWallet: boolean;
 }
 
 export default function Wallet(
     {
         walletInfo,
+        syncWallet,
+        isSyncingWallet,
     }: WalletProps,
 ) {
     const { hasCopied, onCopy } = useClipboard(walletInfo ? walletInfo.address : "");
@@ -26,6 +30,14 @@ export default function Wallet(
                 <Skeleton isLoaded={balance != null}>
                     <Text>{balance} BTC</Text>
                 </Skeleton>
+                <Spacer />
+                <IconButton
+                    aria-label="Sync Wallet"
+                    disabled={balance == null}
+                    isLoading={isSyncingWallet}
+                    icon={<RepeatIcon />}
+                    onClick={syncWallet}
+                />
             </HStack>
             <Divider marginTop={2} marginBottom={2} />
             <Skeleton isLoaded={address != null}>

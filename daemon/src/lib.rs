@@ -98,6 +98,7 @@ where
     W: Handler<wallet::BuildPartyParams>
         + Handler<wallet::Sign>
         + Handler<wallet::Withdraw>
+        + Handler<wallet::Sync>
         + Actor<Stop = ()>,
     P: Handler<xtra_bitmex_price_feed::LatestQuote> + Actor<Stop = xtra_bitmex_price_feed::Error>,
 {
@@ -349,6 +350,11 @@ where
                 fee: Some(fee_rate),
             })
             .await?
+    }
+
+    pub async fn sync_wallet(&self) -> Result<()> {
+        self.wallet_actor.send(wallet::Sync).await?;
+        Ok(())
     }
 }
 

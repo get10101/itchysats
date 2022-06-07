@@ -63,6 +63,7 @@ where
     W: Handler<wallet::BuildPartyParams>
         + Handler<wallet::Sign>
         + Handler<wallet::Withdraw>
+        + Handler<wallet::Sync>
         + Actor<Stop = ()>,
 {
     #[allow(clippy::too_many_arguments)]
@@ -322,5 +323,10 @@ where
                 fee: Some(bdk::FeeRate::from_sat_per_vb(fee)),
             })
             .await?
+    }
+
+    pub async fn sync_wallet(&self) -> Result<()> {
+        self.wallet_actor.send(wallet::Sync).await?;
+        Ok(())
     }
 }

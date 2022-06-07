@@ -1,4 +1,4 @@
-import { CheckIcon, CopyIcon } from "@chakra-ui/icons";
+import { CheckIcon, CopyIcon, RepeatIcon } from "@chakra-ui/icons";
 import {
     Box,
     Button,
@@ -18,6 +18,7 @@ import {
     NumberInputField,
     NumberInputStepper,
     Skeleton,
+    Spacer,
     Text,
     useClipboard,
     useColorModeValue,
@@ -27,6 +28,7 @@ import {
 import { QRCodeCanvas } from "qrcode.react";
 import * as React from "react";
 import { useState } from "react";
+import { useAsync } from "react-async";
 import { WalletInfo, WithdrawRequest } from "../types";
 import usePostRequest from "../usePostRequest";
 import Timestamp from "./Timestamp";
@@ -62,6 +64,37 @@ export default function Wallet(
         });
     });
 
+    let { run: syncWallet, isLoading: isSyncingWallet } = useAsync({
+        deferFn: async () => {
+            try {
+                let res = await fetch(`/api/sync`, {
+                    method: "PUT",
+                    credentials: "include",
+                });
+
+                if (!res.status.toString().startsWith("2")) {
+                    console.log("Status: " + res.status + ", " + res.statusText);
+                    const resp = await res.json();
+                    toast({
+                        title: "Error: Syncing Wallet",
+                        description: resp.description,
+                        status: "error",
+                        duration: 10000,
+                        isClosable: true,
+                    });
+                }
+            } catch (e: any) {
+                toast({
+                    title: "Error: Syncing Wallet",
+                    description: e.detail,
+                    status: "error",
+                    duration: 10000,
+                    isClosable: true,
+                });
+            }
+        },
+    });
+
     return (
         <Center>
             <Box shadow={"lg"} rounded={"md"} marginBottom={5} padding={5} bg={useColorModeValue("white", "gray.700")}>
@@ -75,6 +108,15 @@ export default function Wallet(
                             <Skeleton isLoaded={balance != null}>
                                 <Text>{balance} BTC</Text>
                             </Skeleton>
+                            <Spacer />
+                            <IconButton
+                                aria-label="Sync Wallet"
+                                variant={"outline"}
+                                disabled={balance == null}
+                                isLoading={isSyncingWallet}
+                                icon={<RepeatIcon />}
+                                onClick={syncWallet}
+                            />
                         </HStack>
                         <Divider marginTop={2} marginBottom={2} />
                         <Skeleton isLoaded={address != null}>
@@ -96,6 +138,7 @@ export default function Wallet(
                             </Skeleton>
                         </HStack>
                     </Box>
+                    <Spacer />
                     <Box>
                         <QRCodeCanvas value={`bitcoin:${address!}`} />
                     </Box>

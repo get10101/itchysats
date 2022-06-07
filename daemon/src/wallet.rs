@@ -32,7 +32,7 @@ use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
-const SYNC_INTERVAL: Duration = Duration::from_secs(60);
+const SYNC_INTERVAL: Duration = Duration::from_secs(3 * 60);
 
 static BALANCE_GAUGE: conquer_once::Lazy<prometheus::Gauge> = conquer_once::Lazy::new(|| {
     prometheus::register_gauge!(
@@ -136,6 +136,8 @@ impl Actor<ElectrumBlockchain> {
 impl Actor<ElectrumBlockchain> {
     fn sync_internal(&mut self) -> Result<WalletInfo> {
         let now = Instant::now();
+        tracing::trace!(target : "wallet", "Wallet sync started");
+
         self.wallet
             .sync(&self.blockchain_client, SyncOptions::default())
             .context("Failed to sync wallet")?;
@@ -306,8 +308,9 @@ pub struct BuildPartyParams {
     pub fee_rate: TxFeeRate,
 }
 
-/// Private message to trigger a sync.
-struct Sync;
+/// Message to trigger a sync.
+#[derive(Clone, Copy)]
+pub struct Sync;
 
 pub struct Sign {
     pub psbt: PartiallySignedTransaction,
