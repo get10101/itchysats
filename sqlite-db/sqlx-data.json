@@ -184,8 +184,60 @@
       ]
     }
   },
-  "3f3acd7ed8d2907387851eb07cf48555a3218a5ae162f122868fe2928805efbd": {
-    "query": "\n            SELECT\n                settlement_event_id as \"settlement_event_id: model::olivia::BitMexPriceEventId\",\n                refund_timelock as \"refund_timelock: i64\",\n                funding_fee as \"funding_fee: i64\",\n                rate as \"rate: model::FundingRate\",\n                identity as \"identity: model::SecretKey\",\n                identity_counterparty as \"identity_counterparty: model::PublicKey\",\n                maker_address,\n                taker_address,\n                maker_lock_amount as \"maker_lock_amount: i64\",\n                taker_lock_amount as \"taker_lock_amount: i64\",\n                publish_sk as \"publish_sk: model::SecretKey\",\n                publish_pk_counterparty as \"publish_pk_counterparty: model::PublicKey\",\n                revocation_secret as \"revocation_secret: model::SecretKey\",\n                revocation_pk_counterparty as \"revocation_pk_counterparty: model::PublicKey\",\n                lock_tx as \"lock_tx: model::Transaction\",\n                lock_tx_descriptor,\n                commit_tx as \"commit_tx: model::Transaction\",\n                commit_adaptor_signature as \"commit_adaptor_signature: model::AdaptorSignature\",\n                commit_descriptor,\n                refund_tx as \"refund_tx: model::Transaction\",\n                refund_signature\n            FROM\n                rollover_completed_event_data\n            WHERE \n                cfd_id = (select id from cfds where uuid = $1) and \n                event_id = $2\n            ",
+  "380b23023db2d7b48a272695880691429a653ffb783f31702533e762f99fcac2": {
+    "query": "\n            SELECT\n                encsig_ours as \"encsig_ours: model::AdaptorSignature\",\n                publication_pk_theirs as \"publication_pk_theirs: model::PublicKey\",\n                revocation_sk_theirs as \"revocation_sk_theirs: model::SecretKey\",\n                script_pubkey,\n                txid as \"txid: model::Txid\"\n            FROM\n                revoked_commit_transactions\n            WHERE\n                cfd_id = $1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "encsig_ours: model::AdaptorSignature",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "publication_pk_theirs: model::PublicKey",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "revocation_sk_theirs: model::SecretKey",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "script_pubkey",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "txid: model::Txid",
+          "ordinal": 4,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "450bfcea8dcac5288b69187eb4ae5aec72012d7320e1d4d2602c448671512295": {
+    "query": "\n            delete from rollover_completed_event_data where cfd_id = (select id from cfds where cfds.uuid = $1)\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": []
+    }
+  },
+  "4ab4be8d2627a24fff7c846ebe37c65a841197f6171d593dbe31660a5fc370d3": {
+    "query": "\n            SELECT\n                settlement_event_id as \"settlement_event_id: model::olivia::BitMexPriceEventId\",\n                refund_timelock as \"refund_timelock: i64\",\n                funding_fee as \"funding_fee: i64\",\n                rate as \"rate: model::FundingRate\",\n                identity as \"identity: model::SecretKey\",\n                identity_counterparty as \"identity_counterparty: model::PublicKey\",\n                maker_address,\n                taker_address,\n                maker_lock_amount as \"maker_lock_amount: i64\",\n                taker_lock_amount as \"taker_lock_amount: i64\",\n                publish_sk as \"publish_sk: model::SecretKey\",\n                publish_pk_counterparty as \"publish_pk_counterparty: model::PublicKey\",\n                revocation_secret as \"revocation_secret: model::SecretKey\",\n                revocation_pk_counterparty as \"revocation_pk_counterparty: model::PublicKey\",\n                lock_tx as \"lock_tx: model::Transaction\",\n                lock_tx_descriptor,\n                commit_tx as \"commit_tx: model::Transaction\",\n                commit_adaptor_signature as \"commit_adaptor_signature: model::AdaptorSignature\",\n                commit_descriptor,\n                refund_tx as \"refund_tx: model::Transaction\",\n                refund_signature\n            FROM\n                rollover_completed_event_data\n            WHERE \n                cfd_id = $1 and \n                event_id = $2\n            ",
     "describe": {
       "columns": [
         {
@@ -311,76 +363,6 @@
         false,
         false,
         false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
-  "450bfcea8dcac5288b69187eb4ae5aec72012d7320e1d4d2602c448671512295": {
-    "query": "\n            delete from rollover_completed_event_data where cfd_id = (select id from cfds where cfds.uuid = $1)\n        ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": []
-    }
-  },
-  "4702350f513e58d50a0ecaf8063f941f9e1f5d5e8af66c18fb0f542e47933d0a": {
-    "query": "\n            SELECT\n                oracle_event_id as \"oracle_event_id: model::olivia::BitMexPriceEventId\",\n                adaptor_sig as \"adaptor_sig: model::AdaptorSignature\",\n                maker_amount as \"maker_amount: i64\",\n                taker_amount as \"taker_amount: i64\",\n                n_bits as \"n_bits: i64\",\n                range_end as \"range_end: i64\",\n                range_start as \"range_start: i64\",\n                txid as \"txid: model::Txid\"\n            FROM\n                open_cets\n            WHERE\n                cfd_id = (select id from cfds where uuid = $1)\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "oracle_event_id: model::olivia::BitMexPriceEventId",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "adaptor_sig: model::AdaptorSignature",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "maker_amount: i64",
-          "ordinal": 2,
-          "type_info": "Int64"
-        },
-        {
-          "name": "taker_amount: i64",
-          "ordinal": 3,
-          "type_info": "Int64"
-        },
-        {
-          "name": "n_bits: i64",
-          "ordinal": 4,
-          "type_info": "Text"
-        },
-        {
-          "name": "range_end: i64",
-          "ordinal": 5,
-          "type_info": "Int64"
-        },
-        {
-          "name": "range_start: i64",
-          "ordinal": 6,
-          "type_info": "Int64"
-        },
-        {
-          "name": "txid: model::Txid",
-          "ordinal": 7,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
         false,
         false,
         false,
@@ -552,45 +534,21 @@
       "nullable": []
     }
   },
-  "737f3ad323fc6286f05381e57367362168e102fac7ad476f208af424f3908fff": {
-    "query": "\n            SELECT\n                encsig_ours as \"encsig_ours: model::AdaptorSignature\",\n                publication_pk_theirs as \"publication_pk_theirs: model::PublicKey\",\n                revocation_sk_theirs as \"revocation_sk_theirs: model::SecretKey\",\n                script_pubkey,\n                txid as \"txid: model::Txid\"\n            FROM\n                revoked_commit_transactions\n            WHERE\n                cfd_id = (select id from cfds where uuid = $1)\n            ",
+  "7a2f760e4af1661f6df85ba6ce17ea746723f6b2d28f933aa8692c63e9c904be": {
+    "query": "select id from cfds where uuid = $1",
     "describe": {
       "columns": [
         {
-          "name": "encsig_ours: model::AdaptorSignature",
+          "name": "id",
           "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "publication_pk_theirs: model::PublicKey",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "revocation_sk_theirs: model::SecretKey",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "script_pubkey",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "txid: model::Txid",
-          "ordinal": 4,
-          "type_info": "Text"
+          "type_info": "Int64"
         }
       ],
       "parameters": {
         "Right": 1
       },
       "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false
+        true
       ]
     }
   },
@@ -728,6 +686,66 @@
       ]
     }
   },
+  "c15170780e43f2d823622771551b911ee5561ef2b1f514910952ebc728b9e417": {
+    "query": "\n            SELECT\n                oracle_event_id as \"oracle_event_id: model::olivia::BitMexPriceEventId\",\n                adaptor_sig as \"adaptor_sig: model::AdaptorSignature\",\n                maker_amount as \"maker_amount: i64\",\n                taker_amount as \"taker_amount: i64\",\n                n_bits as \"n_bits: i64\",\n                range_end as \"range_end: i64\",\n                range_start as \"range_start: i64\",\n                txid as \"txid: model::Txid\"\n            FROM\n                open_cets\n            WHERE\n                cfd_id = $1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "oracle_event_id: model::olivia::BitMexPriceEventId",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "adaptor_sig: model::AdaptorSignature",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "maker_amount: i64",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "taker_amount: i64",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "n_bits: i64",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "range_end: i64",
+          "ordinal": 5,
+          "type_info": "Int64"
+        },
+        {
+          "name": "range_start: i64",
+          "ordinal": 6,
+          "type_info": "Int64"
+        },
+        {
+          "name": "txid: model::Txid",
+          "ordinal": 7,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "ca417fd622b4d8b143fabda9d6d0ecd1a76619123ec1202fd66455f4d05454a1": {
     "query": "\n        SELECT\n            closed_commit_txs.txid as \"commit_txid: model::Txid\",\n            closed_cets.txid as \"txid: model::Txid\",\n            closed_cets.vout as \"vout: model::Vout\",\n            closed_cets.payout as \"payout: model::Payout\",\n            closed_cets.price as \"price: model::Price\"\n        FROM\n            closed_cets\n        JOIN\n            closed_commit_txs on closed_commit_txs.cfd_id = closed_cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
     "describe": {
@@ -780,42 +798,6 @@
       "nullable": []
     }
   },
-  "d5513680f4dac0197543942a21e735204bcc3c92fd02f3fc9fab69b6c64913f4": {
-    "query": "\n\n        select\n            events.id,\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        limit $2,-1\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "name",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "data",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "created_at: model::Timestamp",
-          "ordinal": 3,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 2
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
   "d87c695f2f1f67e9acbc2ed4dac9a083738e82c52e419f5f025f8c4e327b4858": {
     "query": "\n            INSERT OR IGNORE INTO time_to_first_position\n            (\n                taker_id,\n                first_seen_timestamp\n            )\n            VALUES ($1, $2)\n            ",
     "describe": {
@@ -834,6 +816,48 @@
         "Right": 6
       },
       "nullable": []
+    }
+  },
+  "dd918dd4fb2c9a97081e32310af67ba5e9b08f4da1b867a6121f0025eca87226": {
+    "query": "\n\n        select\n            c.id as cfd_row_id,\n            events.id as event_row_id,\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        limit $2,-1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_row_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "event_row_id",
+          "ordinal": 1,
+          "type_info": "Int64"
+        },
+        {
+          "name": "name",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "data",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "created_at: model::Timestamp",
+          "ordinal": 4,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": [
+        true,
+        false,
+        false,
+        false,
+        false
+      ]
     }
   },
   "e35110fab2bfa16dde537505e1a674b7283d307c650c6f5bfe82e085f4795a01": {
