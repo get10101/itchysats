@@ -177,7 +177,7 @@ impl Actor<ElectrumBlockchain> {
         let wallet_info_update = match self.sync_internal() {
             Ok(wallet_info) => Some(wallet_info),
             Err(e) => {
-                tracing::debug!("{:#}", e);
+                tracing::warn!("Syncing failed: {:#}", e);
                 None
             }
         };
