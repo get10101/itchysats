@@ -28,6 +28,8 @@ use xtra_libp2p::OpenSubstream;
 /// collab settlement.
 const DECISION_TIMEOUT: Duration = Duration::from_secs(30);
 
+pub const SETTLEMENT_MSG_TIMEOUT: Duration = Duration::from_secs(120);
+
 pub async fn dialer(
     endpoint: Address<Endpoint>,
     order_id: OrderId,

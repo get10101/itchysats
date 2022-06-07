@@ -1,5 +1,6 @@
 use crate::collab_settlement::protocol::*;
 use crate::command;
+use crate::future_ext::FutureExt;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Error;
@@ -152,11 +153,16 @@ impl Actor {
                         .await
                         .context("Failed to send Decision::Accept")?;
 
-                    // TODO: We will need to apply a timeout to these. Perhaps we can put a timeout
-                    // generally into "reading from the substream"?
                     let DialerSignature { dialer_signature } = framed
                         .next()
+                        .timeout(SETTLEMENT_MSG_TIMEOUT)
                         .await
+                        .with_context(|| {
+                            format!(
+                                "Taker did not send his signature within {} seconds.",
+                                SETTLEMENT_MSG_TIMEOUT.as_secs()
+                            )
+                        })?
                         .context("End of stream while receiving DialerSignature")?
                         .context("Failed to decode DialerSignature")?
                         .into_dialer_signature()?;
@@ -194,12 +200,11 @@ impl Actor {
                             emit_failed(order_id, source, &executor).await;
                         }
                         Failed::AfterReceiving { source, settlement } => {
-                            // TODO: proceed with the transaction when taker will be able to handle
+                            // TODO: proceed with the transaction when taker will be able to handle that case.
                             tracing::trace!(
                         ?settlement,
                         "Failed after receiving. Ideally, we should be able to act upon this settlement"
                     );
-                            // that case.
                             emit_failed(order_id, source, &executor).await;
                         }
                     }
