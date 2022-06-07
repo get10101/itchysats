@@ -24,7 +24,6 @@ use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
-use xtras::LogFailure;
 use xtras::SendAsyncSafe;
 
 pub struct Actor {
@@ -224,7 +223,6 @@ impl Actor {
                 taker_id: self.taker_id,
                 msg: wire::MakerToTaker::RejectOrder(self.order.id),
             })
-            .log_failure("Failed to reject order to taker")
             .await;
 
         self.emit_reject(anyhow::format_err!("unknown"), ctx).await

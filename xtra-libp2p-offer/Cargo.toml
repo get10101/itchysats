@@ -1,0 +1,27 @@
+[package]
+name = "xtra-libp2p-offer"
+version = "0.1.0"
+edition = "2021"
+description = "Implementation of the `/itchysats/offer` protocol using xtra-libp2p."
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1.53"
+asynchronous-codec = { version = "0.6.0", features = ["json"] }
+futures = { version = "0.3", default-features = false }
+model = { path = "../model" }
+thiserror = "1"
+tokio-tasks = { path = "../tokio-tasks" }
+tracing = "0.1"
+xtra = { version = "0.6", features = ["metrics", "timeout", "tracing"] }
+xtra-libp2p = { path = "../xtra-libp2p" }
+xtra_productivity = "0.1"
+xtras = { path = "../xtras" }
+
+[dev-dependencies]
+rust_decimal = "1.23"
+rust_decimal_macros = "1.23"
+sluice = "0.5"
+time = { version = "0.3", features = ["macros"] }
+tokio = { version = "1", features = ["macros"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

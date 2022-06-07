@@ -37,6 +37,7 @@ x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6", features = ["metrics", "timeout", "tracing"] }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtra-libp2p = { path = "../xtra-libp2p" }
+xtra-libp2p-offer = { path = "../xtra-libp2p-offer" }
 xtra-libp2p-ping = { path = "../xtra-libp2p-ping" }
 xtra_productivity = { version = "0.1.0" }
 xtras = { path = "../xtras" }
