@@ -53,7 +53,6 @@ use rust_decimal_macros::dec;
 use serde::de::Error as _;
 use serde::Deserialize;
 use serde::Serialize;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::RangeInclusive;
@@ -384,32 +383,6 @@ impl CfdEvent {
             id,
             event,
         }
-    }
-
-    /// Comparison function to order two events chronologically.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use model::{CfdEvent, Timestamp, EventKind, OrderId};
-    ///
-    /// # let id = OrderId::default();
-    /// # let make_event_at = move |seconds| CfdEvent {
-    /// #    timestamp: Timestamp::new(seconds),
-    /// #    id,
-    /// #    event: EventKind::LockConfirmed,
-    /// # };
-    /// #
-    /// let first = make_event_at(2000);
-    /// let second = make_event_at(3000);
-    ///
-    /// let mut events = vec![second.clone(), first.clone()];
-    /// events.sort_unstable_by(CfdEvent::chronologically);
-    ///
-    /// assert_eq!(events, vec![first, second])
-    /// ```
-    pub fn chronologically(left: &CfdEvent, right: &CfdEvent) -> Ordering {
-        left.timestamp.cmp(&right.timestamp)
     }
 }
 

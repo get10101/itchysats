@@ -607,6 +607,7 @@ async fn load_cfd_events(
             cfds c on c.id = events.cfd_id
         where
             uuid = $1
+        order by events.id asc
         limit $2,-1
             "#,
         id,
@@ -638,12 +639,10 @@ async fn load_cfd_events(
         }
     }
 
-    let mut events = events
+    let events = events
         .into_iter()
         .map(|(_, event)| event)
         .collect::<Vec<CfdEvent>>();
-
-    events.sort_unstable_by(CfdEvent::chronologically);
 
     Ok(events)
 }

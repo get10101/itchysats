@@ -780,42 +780,6 @@
       "nullable": []
     }
   },
-  "d5513680f4dac0197543942a21e735204bcc3c92fd02f3fc9fab69b6c64913f4": {
-    "query": "\n\n        select\n            events.id,\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        limit $2,-1\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "name",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "data",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "created_at: model::Timestamp",
-          "ordinal": 3,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 2
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
   "d87c695f2f1f67e9acbc2ed4dac9a083738e82c52e419f5f025f8c4e327b4858": {
     "query": "\n            INSERT OR IGNORE INTO time_to_first_position\n            (\n                taker_id,\n                first_seen_timestamp\n            )\n            VALUES ($1, $2)\n            ",
     "describe": {
@@ -901,6 +865,42 @@
         false,
         false,
         false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "e7069da5f66aeb5554bf7ec7cb70faeb28ae799253012cd4b1ab2093cf3ab651": {
+    "query": "\n\n        select\n            events.id,\n            name,\n            data,\n            created_at as \"created_at: model::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        order by events.id asc\n        limit $2,-1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "data",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "created_at: model::Timestamp",
+          "ordinal": 3,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": [
         false,
         false,
         false,
