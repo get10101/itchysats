@@ -597,7 +597,8 @@ async fn load_cfd_events(
         r#"
 
         select
-            events.id,
+            c.id as cfd_row_id,
+            events.id as event_row_id,
             name,
             data,
             created_at as "created_at: model::Timestamp"
@@ -617,7 +618,8 @@ async fn load_cfd_events(
     .into_par_iter()
     .map(|row| {
         Ok((
-            row.id,
+            row.cfd_row_id.context("CFD with id not found {id}")?,
+            row.event_row_id,
             CfdEvent {
                 timestamp: row.created_at,
                 id,
@@ -625,11 +627,13 @@ async fn load_cfd_events(
             },
         ))
     })
-    .collect::<Result<Vec<(i64, CfdEvent)>>>()?;
+    .collect::<Result<Vec<(i64, i64, CfdEvent)>>>()?;
 
-    for (row_id, event) in events.iter_mut() {
+    for (cfd_row_id, event_row_id, event) in events.iter_mut() {
         if let RolloverCompleted { .. } = event.event {
-            if let Some((dlc, funding_fee)) = rollover::load(conn, event.id, *row_id).await? {
+            if let Some((dlc, funding_fee)) =
+                rollover::load(conn, *cfd_row_id, *event_row_id).await?
+            {
                 event.event = RolloverCompleted {
                     dlc: Some(dlc),
                     funding_fee,
@@ -640,7 +644,7 @@ async fn load_cfd_events(
 
     let mut events = events
         .into_iter()
-        .map(|(_, event)| event)
+        .map(|(_, _, event)| event)
         .collect::<Vec<CfdEvent>>();
 
     events.sort_unstable_by(CfdEvent::chronologically);

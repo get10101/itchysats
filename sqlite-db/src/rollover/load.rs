@@ -10,7 +10,6 @@ use model::olivia::BitMexPriceEventId;
 use model::Cet;
 use model::Dlc;
 use model::FundingFee;
-use model::OrderId;
 use model::RevokedCommit;
 use sqlx::Transaction;
 use std::collections::HashMap;
@@ -23,11 +22,11 @@ use std::str::FromStr;
 /// In error case, it returns Err(..)
 pub async fn load(
     transaction: &mut Transaction<'_, Sqlite>,
-    offer_id: OrderId,
+    cfd_row_id: i64,
     event_row_id: i64,
 ) -> Result<Option<(Dlc, FundingFee)>> {
-    let revoked_commit = load_revoked_commit_transactions(transaction, offer_id).await?;
-    let cets = load_cets(transaction, offer_id).await?;
+    let revoked_commit = load_revoked_commit_transactions(transaction, cfd_row_id).await?;
+    let cets = load_cets(transaction, cfd_row_id).await?;
 
     let row = sqlx::query!(
         r#"
@@ -56,10 +55,10 @@ pub async fn load(
             FROM
                 rollover_completed_event_data
             WHERE 
-                cfd_id = (select id from cfds where uuid = $1) and 
+                cfd_id = $1 and 
                 event_id = $2
             "#,
-        offer_id,
+        cfd_row_id,
         event_row_id,
     )
     .fetch_optional(transaction)
@@ -109,7 +108,8 @@ pub async fn load(
 
 async fn load_revoked_commit_transactions(
     db_transaction: &mut Transaction<'_, Sqlite>,
-    offer_id: OrderId,
+
+    cfd_row_id: i64,
 ) -> Result<Vec<RevokedCommit>> {
     let revoked_commit = sqlx::query!(
         r#"
@@ -122,9 +122,9 @@ async fn load_revoked_commit_transactions(
             FROM
                 revoked_commit_transactions
             WHERE
-                cfd_id = (select id from cfds where uuid = $1)
+                cfd_id = $1
             "#,
-        offer_id,
+        cfd_row_id,
     )
     .fetch_all(db_transaction)
     .await?
@@ -144,7 +144,7 @@ async fn load_revoked_commit_transactions(
 
 async fn load_cets(
     db_transaction: &mut Transaction<'_, Sqlite>,
-    offer_id: OrderId,
+    cfd_row_id: i64,
 ) -> Result<HashMap<BitMexPriceEventId, Vec<Cet>>> {
     let revoked_commit_per_event: Vec<(BitMexPriceEventId, Cet)> = sqlx::query!(
         r#"
@@ -160,9 +160,9 @@ async fn load_cets(
             FROM
                 open_cets
             WHERE
-                cfd_id = (select id from cfds where uuid = $1)
+                cfd_id = $1
             "#,
-        offer_id,
+        cfd_row_id,
     )
     .fetch_all(db_transaction)
     .await?

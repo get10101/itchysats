@@ -143,9 +143,16 @@ mod tests {
         let mut connection = db.inner.acquire().await?;
         insert(&mut connection, 1, rollover_completed.clone()).await?;
 
+        let order_id = cfd.id();
+        let cfd_row_id = sqlx::query!(r#"select id from cfds where uuid = $1"#, order_id)
+            .fetch_one(&mut connection)
+            .await?
+            .id
+            .unwrap();
+
         let mut transaction = connection.begin().await?;
 
-        let (loaded_dlc, loaded_funding_fee) = load(&mut transaction, cfd.id(), 1)
+        let (loaded_dlc, loaded_funding_fee) = load(&mut transaction, cfd_row_id, 1)
             .await?
             .context("Expect to find data")?;
 
@@ -201,8 +208,15 @@ mod tests {
             .await
             .unwrap();
 
+        let offer_id = cfd.id();
+        let cfd_row_id = sqlx::query!(r#"select id from cfds where uuid = $1"#, offer_id)
+            .fetch_one(&mut connection)
+            .await?
+            .id
+            .unwrap();
+
         let mut transaction = connection.begin().await?;
-        let (loaded_dlc, loaded_funding_fee) = load(&mut transaction, cfd.id(), 2)
+        let (loaded_dlc, loaded_funding_fee) = load(&mut transaction, cfd_row_id, 2)
             .await?
             .context("Expect to find data")?;
 

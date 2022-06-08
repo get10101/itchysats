@@ -108,15 +108,18 @@ jobs:
         run: rustup show
       - uses: Swatinem/rust-cache@v1.4.0
       - run: cargo build --bin maker --bin taker
-      - name: Smoke test ${{ matrix.os }} binary
+      - name: Smoke testing maker for ${{ matrix.os }} binary
         shell: bash
         run: |
           cargo dev-maker &
+          sleep 10s # Wait for binaries to start
+          curl --fail http://localhost:8001/api/alive
+      - name: Smoke testing taker for ${{ matrix.os }} binary
+        shell: bash
+        run: |
           cargo dev-taker &
           sleep 10s # Wait for binaries to start
-
           curl --fail http://localhost:8000/api/alive
-          curl --fail http://localhost:8001/api/alive
 
   daemons_arm_build:
     runs-on: ubuntu-latest
