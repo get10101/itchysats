@@ -88,6 +88,8 @@ pub struct TakerActorSystem<O, W, P> {
     _rollover_supervisor:
         Address<supervisor::Actor<rollover::taker::Actor, supervisor::UnitReason>>,
     _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
+    _offers_supervisor:
+        Address<supervisor::Actor<xtra_libp2p_offer::taker::Actor, supervisor::UnitReason>>,
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
 
@@ -221,7 +223,6 @@ where
                 .with_handler_timeout(Duration::from_secs(120))
                 .run(connection::Actor::new(
                     maker_online_status_feed_sender,
-                    &cfd_actor_addr,
                     identity.identity_sk.clone(),
                     identity.peer_id(),
                     maker_heartbeat_interval,
@@ -231,25 +232,35 @@ where
         );
 
         tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
-
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
         let dialer_constructor =
             { move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone()) };
-        let (supervisor, dialer_actor) = supervisor::Actor::with_policy(
+        let (dialer_supervisor, dialer_actor) = supervisor::Actor::with_policy(
             dialer_constructor,
             |_: &dialer::Error| true, // always restart dialer actor
         );
+
+        let (offers_supervisor, libp2p_offer_addr) = supervisor::Actor::new({
+            let cfd_actor_addr = cfd_actor_addr.clone();
+            move || xtra_libp2p_offer::taker::Actor::new(&cfd_actor_addr)
+        });
 
         let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
         let endpoint = Endpoint::new(
             TokioTcpConfig::new(),
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
-            [(
-                xtra_libp2p_ping::PROTOCOL_NAME,
-                xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
-            )],
+            [
+                (
+                    xtra_libp2p_ping::PROTOCOL_NAME,
+                    xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
+                ),
+                (
+                    xtra_libp2p_offer::PROTOCOL_NAME,
+                    xtra::message_channel::StrongMessageChannel::clone_channel(&libp2p_offer_addr),
+                ),
+            ],
             endpoint::Subscribers::new(
                 vec![xtra::message_channel::MessageChannel::clone_channel(
                     &dialer_actor,
@@ -263,7 +274,9 @@ where
         );
 
         tasks.add(endpoint_context.run(endpoint));
-        let dialer_supervisor = supervisor.create(None).spawn(&mut tasks);
+
+        let dialer_supervisor = dialer_supervisor.create(None).spawn(&mut tasks);
+        let offers_supervisor = offers_supervisor.create(None).spawn(&mut tasks);
 
         let (supervisor, price_feed_actor) = supervisor::Actor::with_policy(
             price_feed_constructor,
@@ -292,6 +305,7 @@ where
             _rollover_supervisor: rollover_supervisor,
             _collab_settlement_supervisor: collab_settlement_supervisor,
             _dialer_supervisor: dialer_supervisor,
+            _offers_supervisor: offers_supervisor,
             _close_cfds_actor: close_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             _tasks: tasks,

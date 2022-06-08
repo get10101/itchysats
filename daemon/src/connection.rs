@@ -1,7 +1,6 @@
 use crate::future_ext::FutureExt;
 use crate::noise;
 use crate::setup_taker;
-use crate::taker_cfd::CurrentMakerOffers;
 use crate::version;
 use crate::wire;
 use crate::wire::EncryptedJsonCodec;
@@ -29,12 +28,10 @@ use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use tokio_util::codec::Framed;
-use xtra::prelude::MessageChannel;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
 use xtras::AddressMap;
-use xtras::LogFailure;
 use xtras::SendInterval;
 
 /// Time between reconnection attempts
@@ -150,7 +147,6 @@ pub struct Actor {
     status_sender: watch::Sender<ConnectionStatus>,
     identity_sk: x25519_dalek::StaticSecret,
     peer_id: PeerId,
-    current_order: Box<dyn MessageChannel<CurrentMakerOffers>>,
     /// How often we check ("measure pulse") for heartbeat
     /// It should not be greater than maker's `heartbeat interval`
     heartbeat_measuring_rate: Duration,
@@ -211,7 +207,6 @@ pub struct TakeOrder {
 impl Actor {
     pub fn new(
         status_sender: watch::Sender<ConnectionStatus>,
-        current_order: &(impl MessageChannel<CurrentMakerOffers> + 'static),
         identity_sk: x25519_dalek::StaticSecret,
         peer_id: PeerId,
         maker_heartbeat_interval: Duration,
@@ -221,7 +216,6 @@ impl Actor {
         Self {
             status_sender,
             identity_sk,
-            current_order: current_order.clone_channel(),
             heartbeat_measuring_rate: maker_heartbeat_interval.checked_div(2).expect("to divide"),
             maker_heartbeat_interval,
             heartbeat_timeout: maker_heartbeat_interval
@@ -430,12 +424,11 @@ impl Actor {
             wire::MakerToTaker::RolloverProtocol { .. } => {
                 tracing::error!("legacy handler - use libp2p rollover instead")
             }
-            wire::MakerToTaker::CurrentOffers(maker_offers) => {
-                let _ = self
-                    .current_order
-                    .send(CurrentMakerOffers(maker_offers))
-                    .log_failure("Failed to forward current order from maker")
-                    .await;
+            wire::MakerToTaker::CurrentOffers(_) => {
+                // The maker is still sending this because there is not decision logic to stop it
+                tracing::trace!(
+                    "ignoring legacy offers - using `/itchysats/offer` libp2p protocol instead"
+                )
             }
             wire::MakerToTaker::CurrentOrder(_) => {
                 // no-op, we support `CurrentOffers` message and can ignore this one.

@@ -474,6 +474,12 @@ impl Cfd {
                 self.aggregated.state = CfdState::OpenCommitted;
             }
             CetConfirmed => {
+                // Needed for cases where CET gets priority over refund in case the refund timelock
+                // is already expired. If the CET is confirmed we have to ensure the
+                // refund-tx is not set, otherwise the UI will show the refund-tx.
+                self.aggregated.refund_tx = None;
+                self.aggregated.refund_published = false;
+
                 self.aggregated.state = CfdState::Closed;
             }
             RefundConfirmed => {

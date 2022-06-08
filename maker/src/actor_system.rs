@@ -58,6 +58,8 @@ pub struct ActorSystem<O, W> {
         Address<supervisor::Actor<collab_settlement::maker::Actor, supervisor::UnitReason>>,
     _rollover_supervisor:
         Address<supervisor::Actor<rollover::maker::Actor, supervisor::UnitReason>>,
+    _maker_offer_supervisor:
+        Address<supervisor::Actor<xtra_libp2p_offer::maker::Actor, supervisor::UnitReason>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
 }
 
@@ -141,6 +143,14 @@ where
         });
         let rollover_supervisor = rollover_supervisor.create(None).spawn(&mut tasks);
 
+        let (endpoint_addr, endpoint_context) = Context::new(None);
+
+        let (supervisor, maker_offer_address) = supervisor::Actor::new({
+            let endpoint_addr = endpoint_addr.clone();
+            move || xtra_libp2p_offer::maker::Actor::new(endpoint_addr.clone())
+        });
+        let _maker_offer_supervisor = supervisor.create(None).spawn(&mut tasks);
+
         let cfd_actor_addr = cfd::Actor::new(
             db.clone(),
             wallet_addr.clone(),
@@ -154,11 +164,10 @@ where
             n_payouts,
             libp2p_rollover_addr.clone(),
             libp2p_collab_settlement_addr.clone(),
+            maker_offer_address.clone(),
         )
         .create(None)
         .spawn(&mut tasks);
-
-        let (endpoint_addr, endpoint_context) = Context::new(None);
 
         let (ping_supervisor, ping_address) = supervisor::Actor::new({
             let endpoint_addr = endpoint_addr.clone();
@@ -189,8 +198,14 @@ where
                 ),
             ],
             endpoint::Subscribers::new(
-                vec![ping_address.clone_channel()],
-                vec![ping_address.clone_channel()],
+                vec![
+                    ping_address.clone_channel(),
+                    maker_offer_address.clone_channel(),
+                ],
+                vec![
+                    ping_address.clone_channel(),
+                    maker_offer_address.clone_channel(),
+                ],
                 vec![listener_actor.clone_channel()],
                 vec![listener_actor.clone_channel()],
             ),
@@ -241,6 +256,7 @@ where
             _ping_supervisor: ping_supervisor,
             _rollover_supervisor: rollover_supervisor,
             _collab_settlement_supervisor: collab_settlement_supervisor,
+            _maker_offer_supervisor,
             _position_metrics_actor: position_metrics_actor,
         })
     }

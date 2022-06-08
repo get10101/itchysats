@@ -109,6 +109,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e22d1f4b888c298a027c99dc9048015fac177587de20fc30232a057dfbe24a21"
 
 [[package]]
+name = "async-channel"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2114d64672151c0c5eaa5e131ec84a74f06e1e559830dabba01ca30605d66319"
+dependencies = [
+ "concurrent-queue",
+ "event-listener",
+ "futures-core",
+]
+
+[[package]]
 name = "async-lock"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -862,6 +873,7 @@ dependencies = [
  "xtra",
  "xtra-bitmex-price-feed",
  "xtra-libp2p",
+ "xtra-libp2p-offer",
  "xtra-libp2p-ping",
  "xtra_productivity",
  "xtras",
@@ -1949,6 +1961,7 @@ dependencies = [
  "xtra",
  "xtra-bitmex-price-feed",
  "xtra-libp2p",
+ "xtra-libp2p-offer",
  "xtra-libp2p-ping",
  "xtra_productivity",
  "xtras",
@@ -3921,6 +3934,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sluice"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d7400c0eff44aa2fcb5e31a5f24ba9716ed90138769e4977a2ba6014ae63eb5"
+dependencies = [
+ "async-channel",
+ "futures-core",
+ "futures-io",
+]
+
+[[package]]
 name = "smallvec"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5289,6 +5313,30 @@ dependencies = [
  "xtra_productivity",
  "xtras",
  "yamux",
+]
+
+[[package]]
+name = "xtra-libp2p-offer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "asynchronous-codec",
+ "futures",
+ "model",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "sluice",
+ "thiserror",
+ "time 0.3.9",
+ "tokio",
+ "tokio-tasks",
+ "tracing",
+ "tracing-subscriber",
+ "xtra",
+ "xtra-libp2p",
+ "xtra_productivity",
+ "xtras",
 ]
 
 [[package]]

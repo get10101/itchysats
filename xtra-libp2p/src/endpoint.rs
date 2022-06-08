@@ -32,6 +32,11 @@ use xtra::message_channel::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
 
+/// Failure counter limit
+///
+/// If we record `FAILURE_LIMIT` errors then the connection will be dropped.
+pub const FAILURE_LIMIT: u32 = 5;
+
 /// An actor for managing multiplexed connections over a given transport thus representing an
 /// _endpoint_.
 ///
@@ -59,6 +64,36 @@ pub struct Endpoint {
     inflight_connections: HashSet<PeerId>,
     connection_timeout: Duration,
     subscribers: Subscribers,
+    open_substream_failure_counter: FailureCounter,
+}
+
+#[derive(Debug, Clone)]
+struct FailureCounter {
+    limit: u32,
+    counter: u32,
+}
+
+impl FailureCounter {
+    pub fn new(limit: u32) -> Self {
+        Self { limit, counter: 0 }
+    }
+
+    pub fn increment(&mut self) {
+        self.counter += 1;
+    }
+
+    /// Defines if the limit of ignored failures is exhausted
+    ///
+    /// If set to `0` then it will return true with the first failure.
+    /// If set to `1` then the second failure recorde will be over the limit.
+    /// (...)
+    pub fn is_over_limit(&self) -> bool {
+        self.counter > self.limit
+    }
+
+    pub fn reset(&mut self) {
+        self.counter = 0;
+    }
 }
 
 /// Open a substream to the provided peer.
@@ -243,6 +278,7 @@ impl Endpoint {
             inflight_connections: HashSet::default(),
             connection_timeout,
             subscribers,
+            open_substream_failure_counter: FailureCounter::new(FAILURE_LIMIT),
         }
     }
 
@@ -265,6 +301,31 @@ impl Endpoint {
         peer: PeerId,
         protocols: Vec<&'static str>,
     ) -> Result<(&'static str, Substream), Error> {
+        let substream = match self.open_substream_impl(peer, protocols.clone()).await {
+            Ok(substream) => substream,
+            Err(e) => {
+                tracing::debug!(%peer, "Failed to open substream for protocols {protocols:?}: {e:#}");
+
+                self.open_substream_failure_counter.increment();
+
+                if self.open_substream_failure_counter.is_over_limit() {
+                    tracing::warn!(%peer, "Too many failures when open substream, dropping connection");
+                    self.open_substream_failure_counter.reset();
+                    self.drop_connection(&peer).await;
+                }
+
+                return Err(e);
+            }
+        };
+
+        Ok(substream)
+    }
+
+    async fn open_substream_impl(
+        &mut self,
+        peer: PeerId,
+        protocols: Vec<&'static str>,
+    ) -> Result<(&'static str, Substream), Error> {
         let (control, _) = self
             .controls
             .get_mut(&peer)
@@ -274,7 +335,7 @@ impl Endpoint {
 
         let (protocol, stream) = tokio::time::timeout(
             self.connection_timeout,
-            multistream_select::dialer_select_proto(stream, protocols, Version::V1),
+            multistream_select::dialer_select_proto(stream, protocols.clone(), Version::V1),
         )
         .await
         .map_err(|_timeout| Error::NegotiationTimeoutReached)?
@@ -688,4 +749,61 @@ pub struct ListenAddressRemoved {
 
 impl xtra::Message for ListenAddressRemoved {
     type Result = ();
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::endpoint::FailureCounter;
+
+    #[test]
+    fn given_no_limit_and_no_error_then_no_limit_reached() {
+        let failure_counter = FailureCounter::new(0);
+        assert!(
+            !failure_counter.is_over_limit(),
+            "Limit reached even though we should not"
+        )
+    }
+
+    #[test]
+    fn given_zero_limit_then_first_error_is_limit_reached() {
+        let mut failure_counter = FailureCounter::new(0);
+        failure_counter.increment();
+        assert!(
+            failure_counter.is_over_limit(),
+            "No limit reached even though we should"
+        )
+    }
+
+    #[test]
+    fn given_failure_counter_below_limit_then_no_limit_reached() {
+        let mut failure_counter = FailureCounter::new(1);
+        failure_counter.increment();
+        assert!(
+            !failure_counter.is_over_limit(),
+            "Limit reached even though we should not"
+        )
+    }
+
+    #[test]
+    fn given_failure_counter_reached_limit_then_limit_reached() {
+        let mut failure_counter = FailureCounter::new(1);
+        failure_counter.increment();
+        failure_counter.increment();
+        assert!(
+            failure_counter.is_over_limit(),
+            "No limit reached even though we should"
+        )
+    }
+
+    #[test]
+    fn given_failure_counter_reset_after_reached_limit_then_no_limit_reached() {
+        let mut failure_counter = FailureCounter::new(1);
+        failure_counter.increment();
+        failure_counter.increment();
+        failure_counter.reset();
+        assert!(
+            !failure_counter.is_over_limit(),
+            "Limit reached even though we should not"
+        )
+    }
 }
