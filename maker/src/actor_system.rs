@@ -54,6 +54,10 @@ pub struct ActorSystem<O, W> {
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
+    _collab_settlement_supervisor:
+        Address<supervisor::Actor<collab_settlement::maker::Actor, supervisor::UnitReason>>,
+    _rollover_supervisor:
+        Address<supervisor::Actor<rollover::maker::Actor, supervisor::UnitReason>>,
     _maker_offer_supervisor:
         Address<supervisor::Actor<xtra_libp2p_offer::maker::Actor, supervisor::UnitReason>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
@@ -117,19 +121,27 @@ where
             &oracle_addr,
         )));
 
-        let libp2p_collab_settlement_addr =
-            collab_settlement::maker::Actor::new(executor.clone(), n_payouts)
-                .create(None)
-                .spawn(&mut tasks);
+        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) =
+            supervisor::Actor::new({
+                let executor = executor.clone();
+                move || collab_settlement::maker::Actor::new(executor.clone(), n_payouts)
+            });
+        let collab_settlement_supervisor =
+            collab_settlement_supervisor.create(None).spawn(&mut tasks);
 
-        let libp2p_rollover_addr = rollover::maker::Actor::new(
-            executor.clone(),
-            oracle_pk,
-            oracle_addr.clone_channel(),
-            n_payouts,
-        )
-        .create(None)
-        .spawn(&mut tasks);
+        let (rollover_supervisor, libp2p_rollover_addr) = supervisor::Actor::new({
+            let executor = executor.clone();
+            let oracle_addr = oracle_addr.clone();
+            move || {
+                rollover::maker::Actor::new(
+                    executor.clone(),
+                    oracle_pk,
+                    xtra::message_channel::MessageChannel::clone_channel(&oracle_addr),
+                    n_payouts,
+                )
+            }
+        });
+        let rollover_supervisor = rollover_supervisor.create(None).spawn(&mut tasks);
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
@@ -242,6 +254,8 @@ where
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
             _ping_supervisor: ping_supervisor,
+            _rollover_supervisor: rollover_supervisor,
+            _collab_settlement_supervisor: collab_settlement_supervisor,
             _maker_offer_supervisor,
             _position_metrics_actor: position_metrics_actor,
         })
