@@ -57,14 +57,13 @@ pub const FAILURE_LIMIT: u32 = 5;
 pub struct Endpoint {
     transport: Boxed<Connection>,
     tasks: Tasks,
-    controls: HashMap<PeerId, (yamux::Control, Tasks)>,
+    controls: HashMap<PeerId, (yamux::Control, Tasks, FailureCounter)>,
     inbound_substream_channels:
         HashMap<&'static str, Box<dyn StrongMessageChannel<NewInboundSubstream>>>,
     listen_addresses: HashSet<Multiaddr>,
     inflight_connections: HashSet<PeerId>,
     connection_timeout: Duration,
     subscribers: Subscribers,
-    open_substream_failure_counter: FailureCounter,
 }
 
 #[derive(Debug, Clone)]
@@ -89,10 +88,6 @@ impl FailureCounter {
     /// (...)
     pub fn is_over_limit(&self) -> bool {
         self.counter > self.limit
-    }
-
-    pub fn reset(&mut self) {
-        self.counter = 0;
     }
 }
 
@@ -278,12 +273,11 @@ impl Endpoint {
             inflight_connections: HashSet::default(),
             connection_timeout,
             subscribers,
-            open_substream_failure_counter: FailureCounter::new(FAILURE_LIMIT),
         }
     }
 
     async fn drop_connection(&mut self, peer: &PeerId) {
-        let (mut control, tasks) = match self.controls.remove(peer) {
+        let (mut control, tasks, _) = match self.controls.remove(peer) {
             None => return,
             Some(control) => control,
         };
@@ -304,13 +298,22 @@ impl Endpoint {
         let substream = match self.open_substream_impl(peer, protocols.clone()).await {
             Ok(substream) => substream,
             Err(e) => {
-                tracing::debug!(%peer, "Failed to open substream for protocols {protocols:?}: {e:#}");
+                let failure_counter = match self.controls.get_mut(&peer) {
+                    None => {
+                        tracing::error!(
+                            "Cannot record failure because we don't have a connection: {e:#}"
+                        );
+                        return Err(e);
+                    }
+                    Some((_, _, failure_counter)) => failure_counter,
+                };
 
-                self.open_substream_failure_counter.increment();
+                tracing::info!(%peer, "Failed to open substream for protocols {protocols:?}: {e:#}");
 
-                if self.open_substream_failure_counter.is_over_limit() {
-                    tracing::warn!(%peer, "Too many failures when open substream, dropping connection");
-                    self.open_substream_failure_counter.reset();
+                failure_counter.increment();
+
+                if failure_counter.is_over_limit() {
+                    tracing::warn!(%peer, "Dropping connection because too many failures when open substream for protocols {protocols:?}: {e:#}");
                     self.drop_connection(&peer).await;
                 }
 
@@ -326,7 +329,7 @@ impl Endpoint {
         peer: PeerId,
         protocols: Vec<&'static str>,
     ) -> Result<(&'static str, Substream), Error> {
-        let (control, _) = self
+        let (control, _, _) = self
             .controls
             .get_mut(&peer)
             .ok_or(Error::NoConnection(peer))?;
@@ -410,7 +413,8 @@ impl Endpoint {
             },
         );
 
-        self.controls.insert(peer, (control, tasks));
+        self.controls
+            .insert(peer, (control, tasks, FailureCounter::new(FAILURE_LIMIT)));
         self.notify_connection_established(peer).await;
     }
 
@@ -792,18 +796,6 @@ mod tests {
         assert!(
             failure_counter.is_over_limit(),
             "No limit reached even though we should"
-        )
-    }
-
-    #[test]
-    fn given_failure_counter_reset_after_reached_limit_then_no_limit_reached() {
-        let mut failure_counter = FailureCounter::new(1);
-        failure_counter.increment();
-        failure_counter.increment();
-        failure_counter.reset();
-        assert!(
-            !failure_counter.is_over_limit(),
-            "Limit reached even though we should not"
         )
     }
 }
