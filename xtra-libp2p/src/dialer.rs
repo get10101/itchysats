@@ -122,10 +122,6 @@ impl Actor {
             self.stop_with_error(Error::Failed { source: e }, ctx);
         }
     }
-
-    async fn handle(&mut self, msg: Error, ctx: &mut xtra::Context<Self>) {
-        self.stop_with_error(msg, ctx);
-    }
 }
 
 #[xtra_productivity(message_impl = false)]

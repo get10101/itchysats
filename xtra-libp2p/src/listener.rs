@@ -85,10 +85,6 @@ impl xtra::Actor for Actor {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle(&mut self, msg: Error, ctx: &mut xtra::Context<Self>) {
-        self.stop_with_error(msg, ctx);
-    }
-
     async fn handle(&mut self, _msg: Listen, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self.listen().await {
             self.stop_with_error(Error::Failed { source: e }, ctx);
