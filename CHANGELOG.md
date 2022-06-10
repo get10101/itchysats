@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An issue where maker wire connection could become stuck due to a lack of timeout on TCP write.
+
 ## [0.4.19] - 2022-05-25
 
 ### Added
