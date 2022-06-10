@@ -137,7 +137,10 @@ impl Actor {
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Dialer failed")]
-    Failed { source: anyhow::Error },
+    Failed {
+        #[from]
+        source: anyhow::Error,
+    },
     #[error("Endpoint actor is disconnected")]
     NoEndpoint,
     #[error("Connection dropped from endpoint")]
