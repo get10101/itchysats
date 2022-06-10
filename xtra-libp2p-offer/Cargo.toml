@@ -11,6 +11,7 @@ asynchronous-codec = { version = "0.6.0", features = ["json"] }
 futures = { version = "0.3", default-features = false }
 model = { path = "../model" }
 thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tasks = { path = "../tokio-tasks" }
 tracing = "0.1"
 xtra = { version = "0.6", features = ["metrics", "timeout", "tracing"] }
