@@ -120,12 +120,14 @@ impl Actor {
 impl Actor {
     async fn handle(&mut self, msg: endpoint::ConnectionEstablished) {
         if msg.peer == self.peer_id() {
+            tracing::debug!("Dialer connected successfully");
             self.connected = true;
         }
     }
 
     async fn handle(&mut self, msg: endpoint::ConnectionDropped, ctx: &mut xtra::Context<Self>) {
         if msg.peer == self.peer_id() {
+            tracing::debug!("Dialer noticed connection got dropped");
             self.connected = false;
             self.stop_with_error(Error::ConnectionDropped, ctx);
         }
