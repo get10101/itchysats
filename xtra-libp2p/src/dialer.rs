@@ -18,7 +18,8 @@ pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// xtra actor that takes care of dialing (connecting) to an Endpoint.
 ///
-/// Periodically polls Endpoint to check whether connection is still active.
+/// Polls Endpoint at startup to check whether connection got established correctly, and
+/// then listens for ConnectionDropped message to stop itself.
 /// Should be used in conjunction with supervisor maintaining resilient connection.
 pub struct Actor {
     endpoint: Address<Endpoint>,

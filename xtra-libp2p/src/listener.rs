@@ -15,7 +15,8 @@ pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// xtra actor that taker care of listening for incoming connections to the Endpoint.
 ///
-/// Periodically polls Endpoint to check whether connection is still active.
+/// Polls Endpoint at startup to check whether listening got started correctly, and
+/// then listens for ListenerRemoved message to stop itself.
 /// Should be used in conjunction with supervisor for continuous and resilient listening.
 pub struct Actor {
     endpoint: Address<Endpoint>,
