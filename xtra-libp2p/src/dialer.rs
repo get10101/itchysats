@@ -58,6 +58,7 @@ impl xtra::Actor for Actor {
     type Stop = Error;
 
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        tracing::debug!("Starting dialer actor");
         match self
             .connect_address
             .clone()
@@ -71,9 +72,9 @@ impl xtra::Actor for Actor {
         }
 
         if let Err(e) = self.connect().await {
-            tracing::warn!("Failed to connect to maker: {e:#}");
-
-            self.stop_with_error(e, ctx);
+            tracing::warn!("Failed to request connection from endpoint: {e:#}");
+        } else {
+            tracing::debug!("Endpoint took the connection request");
         }
 
         let this = ctx.address().expect("self to be alive");
@@ -119,12 +120,14 @@ impl Actor {
 impl Actor {
     async fn handle(&mut self, msg: endpoint::ConnectionEstablished) {
         if msg.peer == self.peer_id() {
+            tracing::debug!("Dialer connected successfully");
             self.connected = true;
         }
     }
 
     async fn handle(&mut self, msg: endpoint::ConnectionDropped, ctx: &mut xtra::Context<Self>) {
         if msg.peer == self.peer_id() {
+            tracing::debug!("Dialer noticed connection got dropped");
             self.connected = false;
             self.stop_with_error(Error::ConnectionDropped, ctx);
         }
@@ -134,7 +137,10 @@ impl Actor {
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Dialer failed")]
-    Failed { source: anyhow::Error },
+    Failed {
+        #[from]
+        source: anyhow::Error,
+    },
     #[error("Endpoint actor is disconnected")]
     NoEndpoint,
     #[error("Connection dropped from endpoint")]

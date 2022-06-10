@@ -31,6 +31,7 @@ use xtra_libp2p::dialer;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
+use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
 use xtras::supervisor;
 
@@ -90,8 +91,10 @@ pub struct TakerActorSystem<O, W, P> {
     _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
     _offers_supervisor:
         Address<supervisor::Actor<xtra_libp2p_offer::taker::Actor, supervisor::UnitReason>>,
+    _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
+    _pong_actor: Address<pong::Actor>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
@@ -234,8 +237,10 @@ where
         tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
 
-        let dialer_constructor =
-            { move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone()) };
+        let dialer_constructor = {
+            let endpoint_addr = endpoint_addr.clone();
+            move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone())
+        };
         let (dialer_supervisor, dialer_actor) = supervisor::Actor::with_policy(
             dialer_constructor,
             |_: &dialer::Error| true, // always restart dialer actor
@@ -275,6 +280,11 @@ where
 
         tasks.add(endpoint_context.run(endpoint));
 
+        let (supervisor, _ping_address) = supervisor::Actor::new({
+            move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
+        });
+        let ping_supervisor = supervisor.create(None).spawn(&mut tasks);
+
         let dialer_supervisor = dialer_supervisor.create(None).spawn(&mut tasks);
         let offers_supervisor = offers_supervisor.create(None).spawn(&mut tasks);
 
@@ -306,10 +316,12 @@ where
             _collab_settlement_supervisor: collab_settlement_supervisor,
             _dialer_supervisor: dialer_supervisor,
             _offers_supervisor: offers_supervisor,
+            _ping_supervisor: ping_supervisor,
             _close_cfds_actor: close_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             _tasks: tasks,
             maker_online_status_feed_receiver,
+            _pong_actor: pong_address,
         })
     }
 
