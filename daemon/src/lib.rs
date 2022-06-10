@@ -267,9 +267,7 @@ where
                 ),
             ],
             endpoint::Subscribers::new(
-                vec![xtra::message_channel::MessageChannel::clone_channel(
-                    &dialer_actor,
-                )],
+                vec![],
                 vec![xtra::message_channel::MessageChannel::clone_channel(
                     &dialer_actor,
                 )],

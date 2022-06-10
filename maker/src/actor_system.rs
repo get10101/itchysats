@@ -214,7 +214,7 @@ where
                     ping_address.clone_channel(),
                     maker_offer_address.clone_channel(),
                 ],
-                vec![listener_actor.clone_channel()],
+                vec![],
                 vec![listener_actor.clone_channel()],
             ),
         );
