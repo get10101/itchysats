@@ -58,6 +58,7 @@ impl xtra::Actor for Actor {
     type Stop = Error;
 
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        tracing::debug!("Starting dialer actor");
         match self
             .connect_address
             .clone()
@@ -71,9 +72,9 @@ impl xtra::Actor for Actor {
         }
 
         if let Err(e) = self.connect().await {
-            tracing::warn!("Failed to connect to maker: {e:#}");
-
-            self.stop_with_error(e, ctx);
+            tracing::warn!("Failed to request connection from endpoint: {e:#}");
+        } else {
+            tracing::debug!("Endpoint took the connection request");
         }
 
         let this = ctx.address().expect("self to be alive");
