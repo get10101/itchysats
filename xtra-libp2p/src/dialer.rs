@@ -2,14 +2,16 @@ use crate::endpoint;
 use crate::multiaddress_ext::MultiaddrExt;
 use crate::Connect;
 use crate::Endpoint;
+use crate::GetConnectionStats;
 use anyhow::anyhow;
+use anyhow::Result;
 use async_trait::async_trait;
 use libp2p_core::Multiaddr;
 use libp2p_core::PeerId;
 use std::time::Duration;
-use tokio_tasks::Tasks;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
+use xtras::SendAsyncSafe;
 
 /// If we're not connected by this time, stop the actor.
 pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -19,10 +21,8 @@ pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 /// Periodically polls Endpoint to check whether connection is still active.
 /// Should be used in conjunction with supervisor maintaining resilient connection.
 pub struct Actor {
-    tasks: Tasks,
     endpoint: Address<Endpoint>,
     connect_address: Multiaddr,
-    connected: bool,
     listener_peer_id: Option<PeerId>,
     stop_reason: Option<Error>,
 }
@@ -30,10 +30,8 @@ pub struct Actor {
 impl Actor {
     pub fn new(endpoint: Address<Endpoint>, connect_address: Multiaddr) -> Self {
         Self {
-            tasks: Tasks::default(),
             endpoint,
             connect_address,
-            connected: false,
             listener_peer_id: None,
             stop_reason: None,
         }
@@ -71,19 +69,8 @@ impl xtra::Actor for Actor {
             }
         }
 
-        if let Err(e) = self.connect().await {
-            tracing::warn!("Failed to request connection from endpoint: {e:#}");
-        } else {
-            tracing::debug!("Endpoint took the connection request");
-        }
-
         let this = ctx.address().expect("self to be alive");
-        self.tasks.add(async move {
-            tokio::time::sleep(CONNECTION_TIMEOUT).await;
-            this.send(StopIfNotConnected)
-                .await
-                .expect("to deliver stop message");
-        })
+        this.send_async_safe(Dial).await.expect("self to be alive");
     }
 
     async fn stopped(self) -> Self::Stop {
@@ -96,18 +83,42 @@ impl Actor {
         self.listener_peer_id
             .expect("to always have peer id if successfully started")
     }
+
+    async fn is_connection_established(&self) -> Result<bool> {
+        Ok(self
+            .endpoint
+            .send(GetConnectionStats)
+            .await?
+            .connected_peers
+            .contains(&self.peer_id()))
+    }
+
+    async fn dial(&self) -> Result<()> {
+        anyhow::ensure!(
+            !self.is_connection_established().await?,
+            "Connection should not be active when dialing"
+        );
+
+        if let Err(e) = self.connect().await {
+            tracing::warn!("Failed to request connection from endpoint: {e:#}");
+        }
+
+        // Only check the connection again after it had enough time to be established
+        tokio::time::sleep(CONNECTION_TIMEOUT).await;
+
+        anyhow::ensure!(
+            self.is_connection_established().await?,
+            "No connection after dialing attempt",
+        );
+        Ok(())
+    }
 }
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle(&mut self, _msg: StopIfNotConnected, ctx: &mut xtra::Context<Self>) {
-        if !self.connected {
-            self.stop_with_error(
-                Error::Failed {
-                    source: anyhow!("Did not connect in time"),
-                },
-                ctx,
-            )
+    async fn handle(&mut self, _msg: Dial, ctx: &mut xtra::Context<Self>) {
+        if let Err(e) = self.dial().await {
+            self.stop_with_error(Error::Failed { source: e }, ctx);
         }
     }
 
@@ -118,17 +129,9 @@ impl Actor {
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    async fn handle(&mut self, msg: endpoint::ConnectionEstablished) {
-        if msg.peer == self.peer_id() {
-            tracing::debug!("Dialer connected successfully");
-            self.connected = true;
-        }
-    }
-
     async fn handle(&mut self, msg: endpoint::ConnectionDropped, ctx: &mut xtra::Context<Self>) {
         if msg.peer == self.peer_id() {
             tracing::debug!("Dialer noticed connection got dropped");
-            self.connected = false;
             self.stop_with_error(Error::ConnectionDropped, ctx);
         }
     }
@@ -151,4 +154,4 @@ pub enum Error {
     Unspecified,
 }
 
-struct StopIfNotConnected;
+struct Dial;
