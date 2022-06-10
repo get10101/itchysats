@@ -13,6 +13,7 @@ use xtra::Context;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::libp2p::PeerId;
 use xtra_libp2p::Endpoint;
+use xtra_libp2p::GetConnectionStats;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
 use xtras::spawner;
@@ -65,6 +66,22 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("we just started");
 
         self.spawner = Some(spawner::Actor::new().create(None).spawn(&mut self.tasks));
+
+        match self.endpoint.send(GetConnectionStats).await {
+            Ok(connection_stats) => self
+                .connected_peers
+                .extend(connection_stats.connected_peers),
+            Err(e) => {
+                tracing::error!(
+                    "Unable to receive connection stats from the endpoint upon startup: {e:#}"
+                );
+                // This code path should not be hit, but in case we run into an error this sleep
+                // prevents a continuous endless loup of restarts.
+                tokio::time::sleep(Duration::from_secs(2)).await;
+
+                ctx.stop();
+            }
+        }
 
         self.tasks
             .add(this.send_interval(self.ping_interval, || Ping));
