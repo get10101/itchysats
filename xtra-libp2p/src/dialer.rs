@@ -47,6 +47,7 @@ impl Actor {
     }
 
     fn stop_with_error(&mut self, e: Error, ctx: &mut xtra::Context<Self>) {
+        tracing::debug!("Stopping dialer with an error: {e:#}");
         self.stop_reason = Some(e);
         ctx.stop();
     }
