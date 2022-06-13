@@ -1256,7 +1256,7 @@ impl Cfd {
     }
 
     pub fn reject_collaborative_settlement(self, reason: anyhow::Error) -> CfdEvent {
-        tracing::info!(order_id=%self.id(), "Collaborative settlement rejected: {reason:#}");
+        tracing::warn!(order_id=%self.id(), "Collaborative settlement rejected: {reason:#}");
 
         self.event(EventKind::CollaborativeSettlementRejected)
     }
