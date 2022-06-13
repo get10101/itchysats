@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 bdk = { version = "0.18", default-features = false }
-cached = { version = "0.34.0", default-features = false, features = ["proc_macro"] }
 conquer-once = "0.3"
 hex = "0.4"
 itertools = "0.10"
