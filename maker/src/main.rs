@@ -137,13 +137,15 @@ async fn main() -> Result<()> {
         endpoint_listen,
     )?;
 
-    let (supervisor, price_feed) =
-        supervisor::Actor::with_policy(xtra_bitmex_price_feed::Actor::default, |e| match e {
+    let (supervisor, price_feed) = supervisor::Actor::with_policy(
+        move || xtra_bitmex_price_feed::Actor::new(opts.network.price_feed_network()),
+        |e| match e {
             xtra_bitmex_price_feed::Error::FailedToParseQuote { .. }
             | xtra_bitmex_price_feed::Error::Failed { .. }
             | xtra_bitmex_price_feed::Error::Unspecified
             | xtra_bitmex_price_feed::Error::StreamEnded => true, // always restart price feed actor
-        });
+        },
+    );
 
     let _supervisor_address = supervisor.create(None).spawn(&mut tasks);
 
