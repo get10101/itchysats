@@ -1,5 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
+pub use bitmex_stream::Network;
 use futures::TryStreamExt;
 use rust_decimal::Decimal;
 use std::fmt;
@@ -9,13 +10,24 @@ use xtra_productivity::xtra_productivity;
 
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
 
-#[derive(Default)]
 pub struct Actor {
     tasks: Tasks,
     latest_quote: Option<Quote>,
 
     /// Contains the reason we are stopping.
     stop_reason: Option<Error>,
+    network: Network,
+}
+
+impl Actor {
+    pub fn new(network: Network) -> Self {
+        Self {
+            tasks: Default::default(),
+            latest_quote: None,
+            stop_reason: None,
+            network,
+        }
+    }
 }
 
 #[async_trait]
@@ -28,11 +40,12 @@ impl xtra::Actor for Actor {
         self.tasks.add_fallible(
             {
                 let this = this.clone();
+                let network = self.network;
 
                 async move {
                     let mut stream = bitmex_stream::subscribe([format!(
                         "quoteBin{QUOTE_INTERVAL_MINUTES}m:XBTUSD"
-                    )]);
+                    )], network);
 
                     while let Some(text) = stream
                         .try_next()

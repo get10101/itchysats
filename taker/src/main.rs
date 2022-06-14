@@ -225,6 +225,15 @@ impl Network {
         }
     }
 
+    fn price_feed_network(&self) -> xtra_bitmex_price_feed::Network {
+        match self {
+            Network::Mainnet { .. } => xtra_bitmex_price_feed::Network::Mainnet,
+            Network::Testnet { .. } | Network::Signet { .. } => {
+                xtra_bitmex_price_feed::Network::Testnet
+            }
+        }
+    }
+
     fn data_dir(&self, base: PathBuf) -> PathBuf {
         match self {
             Network::Mainnet { .. } => base.join("mainnet"),
@@ -346,6 +355,7 @@ async fn main() -> Result<()> {
         Err(_) => Environment::Binary,
     };
 
+    let price_feed_network = network.price_feed_network();
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
@@ -358,7 +368,7 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(db.clone(), electrum, executor)
             }
         },
-        xtra_bitmex_price_feed::Actor::default,
+        move || xtra_bitmex_price_feed::Actor::new(price_feed_network),
         N_PAYOUTS,
         HEARTBEAT_INTERVAL,
         Duration::from_secs(10),

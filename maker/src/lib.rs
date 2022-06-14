@@ -116,6 +116,15 @@ impl Network {
         }
     }
 
+    pub fn price_feed_network(&self) -> xtra_bitmex_price_feed::Network {
+        match self {
+            Network::Mainnet { .. } => xtra_bitmex_price_feed::Network::Mainnet,
+            Network::Testnet { .. } | Network::Signet { .. } => {
+                xtra_bitmex_price_feed::Network::Testnet
+            }
+        }
+    }
+
     pub fn data_dir(&self, base: PathBuf) -> PathBuf {
         match self {
             Network::Mainnet { .. } => base.join("mainnet"),

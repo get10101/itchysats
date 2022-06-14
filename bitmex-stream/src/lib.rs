@@ -14,12 +14,14 @@ pub use tokio_tungstenite::tungstenite::Error;
 /// message was received in-between. This is according to BitMex's API documentation: https://www.bitmex.com/app/wsAPI#Heartbeats
 pub fn subscribe<const N: usize>(
     topics: [String; N],
+    network: Network,
 ) -> impl Stream<Item = Result<String, Error>> + Unpin {
     let stream = stream! {
         tracing::debug!("Connecting to BitMex realtime API");
 
         let subscription = topics.join(",");
-        let (mut connection, _) = tokio_tungstenite::connect_async(format!("wss://www.bitmex.com/realtime?subscribe={subscription}")).await?;
+        let url = network.to_url();
+        let (mut connection, _) = tokio_tungstenite::connect_async(format!("wss://{url}/realtime?subscribe={subscription}")).await?;
 
         tracing::info!("Connected to BitMex realtime API");
 
@@ -62,4 +64,19 @@ pub fn subscribe<const N: usize>(
     };
 
     stream.boxed()
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum Network {
+    Mainnet,
+    Testnet,
+}
+
+impl Network {
+    pub fn to_url(&self) -> String {
+        match self {
+            Network::Mainnet => "www.bitmex.com".to_string(),
+            Network::Testnet => "testnet.bitmex.com".to_string(),
+        }
+    }
 }
