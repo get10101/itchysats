@@ -233,7 +233,7 @@ async fn cannot_connect_twice() {
 
     assert!(matches!(
         error,
-        xtra_libp2p::Error::AlreadyConnected(twin) if twin == alice.peer_id
+        xtra_libp2p::Error::AlreadyTryingToConnected(twin) if twin == alice.peer_id
     ))
 }
 

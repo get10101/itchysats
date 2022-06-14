@@ -162,8 +162,8 @@ pub enum Error {
     BadConnection(#[from] yamux::ConnectionError), // TODO(public-api): Consider removing this.
     #[error("Address {0} does not end with a peer ID")]
     NoPeerIdInAddress(Multiaddr),
-    #[error("Either currently connecting or already connected to peer {0}")]
-    AlreadyConnected(PeerId),
+    #[error("Already trying to connect to peer {0}")]
+    AlreadyTryingToConnected(PeerId),
 }
 
 /// Subscribers that get notified on connection changes
@@ -392,7 +392,7 @@ impl Endpoint {
             .ok_or_else(|| Error::NoPeerIdInAddress(msg.0.clone()))?;
 
         if self.inflight_connections.contains(&peer) || self.controls.contains_key(&peer) {
-            return Err(Error::AlreadyConnected(peer));
+            return Err(Error::AlreadyTryingToConnected(peer));
         }
 
         self.inflight_connections.insert(peer);
