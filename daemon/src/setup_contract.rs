@@ -22,9 +22,9 @@ use bdk::bitcoin::Transaction;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use bdk_ext::keypair;
-use futures::stream::FusedStream;
 use futures::Sink;
 use futures::SinkExt;
+use futures::Stream;
 use futures::StreamExt;
 use maia::commit_descriptor;
 use maia::compute_adaptor_pk;
@@ -77,7 +77,7 @@ const ROLLOVER_MSG_TIMEOUT: Duration = Duration::from_secs(60);
 #[allow(clippy::too_many_arguments)]
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
-    mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
+    mut stream: impl Stream<Item = SetupMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     setup_params: SetupParams,
     build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
@@ -109,10 +109,11 @@ pub async fn new(
         .await
         .context("Failed to send Msg0")?;
     let msg0 = stream
-        .select_next_some()
+        .next()
         .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg0", CONTRACT_SETUP_MSG_TIMEOUT))?
+        .context("Empty stream instead of Msg0")?
         .try_into_msg0()?;
 
     tracing::info!("Exchanged setup parameters");
@@ -173,10 +174,11 @@ pub async fn new(
         .context("Failed to send Msg1")?;
 
     let msg1 = stream
-        .select_next_some()
+        .next()
         .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg1", CONTRACT_SETUP_MSG_TIMEOUT))?
+        .context("Empty stream instead of Msg1")?
         .try_into_msg1()?;
 
     tracing::info!("Exchanged CFD transactions");
@@ -257,10 +259,11 @@ pub async fn new(
     .await
     .context("Failed to send Msg2")?;
     let msg2 = stream
-        .select_next_some()
+        .next()
         .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg2", CONTRACT_SETUP_MSG_TIMEOUT))?
+        .context("Empty stream instead of Msg2")?
         .try_into_msg2()?;
     signed_lock_tx
         .merge(msg2.signed_lock)
@@ -337,10 +340,11 @@ pub async fn new(
         .await
         .context("Failed to send Msg3")?;
     let _ = stream
-        .select_next_some()
+        .next()
         .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg3", CONTRACT_SETUP_MSG_TIMEOUT))?
+        .context("Empty stream instead of Msg3")?
         .try_into_msg3()?;
 
     Ok(Dlc {
@@ -374,7 +378,7 @@ pub async fn new(
 #[allow(clippy::too_many_arguments)]
 pub async fn roll_over(
     mut sink: impl Sink<RolloverMsg, Error = anyhow::Error> + Unpin,
-    mut stream: impl FusedStream<Item = RolloverMsg> + Unpin,
+    mut stream: impl Stream<Item = RolloverMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     rollover_params: RolloverParams,
     our_role: Role,
@@ -404,10 +408,11 @@ pub async fn roll_over(
     .await
     .context("Failed to send Msg0")?;
     let msg0 = stream
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
+        .context("Empty stream instead of Msg0")?
         .try_into_msg0()?;
 
     let maker_lock_amount = dlc.maker_lock_amount;
@@ -488,10 +493,11 @@ pub async fn roll_over(
         .context("Failed to send Msg1")?;
 
     let msg1 = stream
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
+        .context("Empty stream instead of Msg1")?
         .try_into_msg1()?;
 
     let lock_amount = taker_lock_amount + maker_lock_amount;
@@ -629,10 +635,11 @@ pub async fn roll_over(
     .context("Failed to send Msg2")?;
 
     let msg2 = stream
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
+        .context("Empty stream instead of Msg2")?
         .try_into_msg2()?;
     let revocation_sk_theirs = msg2.revocation_sk;
 
@@ -662,10 +669,11 @@ pub async fn roll_over(
         .await
         .context("Failed to send Msg3")?;
     let _ = stream
-        .select_next_some()
+        .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
         .await
         .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
+        .context("Empty stream instead of Msg3")?
         .try_into_msg3()?;
 
     Ok(Dlc {
