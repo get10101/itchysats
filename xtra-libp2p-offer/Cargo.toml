@@ -19,7 +19,7 @@ xtra_productivity = "0.1"
 xtras = { path = "../xtras" }
 
 [dev-dependencies]
-rust_decimal = "1.23"
+rust_decimal = "1.25"
 rust_decimal_macros = "1.23"
 sluice = "0.5"
 time = { version = "0.3", features = ["macros"] }
