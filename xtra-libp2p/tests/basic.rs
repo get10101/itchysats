@@ -369,7 +369,7 @@ fn make_node<const N: usize>(
         .spawn_global();
 
     let endpoint = Endpoint::new(
-        MemoryTransport::default(),
+        Box::new(MemoryTransport::default),
         id,
         Duration::from_secs(20),
         substream_handlers,

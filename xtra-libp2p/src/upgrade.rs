@@ -33,7 +33,7 @@ pub fn transport<T>(
     connection_timeout: Duration,
 ) -> Boxed<Connection>
 where
-    T: Transport + Clone + Send + Sync + 'static,
+    T: Transport + Send + Sync + 'static,
     T::Output: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     T::Error: Send + Sync,
     T::Listener: Send + 'static,

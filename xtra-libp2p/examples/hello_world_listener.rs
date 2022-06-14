@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
     let hello_world_addr = HelloWorld::default().create(None).spawn_global();
 
     let endpoint_addr = Endpoint::new(
-        TokioTcpConfig::new(),
+        Box::new(TokioTcpConfig::new),
         id,
         Duration::from_secs(30),
         [(

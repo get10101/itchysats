@@ -53,7 +53,7 @@ where
     type ListenerUpgrade = BoxFuture<'static, Result<Self::Output, Self::Error>>;
     type Dial = BoxFuture<'static, Result<Self::Output, Self::Error>>;
 
-    fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>>
+    fn listen_on(&mut self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>>
     where
         Self: Sized,
     {
@@ -71,7 +71,7 @@ where
         Ok(listener)
     }
 
-    fn dial(self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>>
+    fn dial(&mut self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>>
     where
         Self: Sized,
     {
@@ -85,7 +85,10 @@ where
         Ok(dial_and_verify_peer_id::<TInner, C>(dial, expected_peer_id).boxed())
     }
 
-    fn dial_as_listener(self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>>
+    fn dial_as_listener(
+        &mut self,
+        addr: Multiaddr,
+    ) -> Result<Self::Dial, TransportError<Self::Error>>
     where
         Self: Sized,
     {
@@ -166,7 +169,8 @@ mod tests {
 
     #[test]
     fn rejects_address_without_peer_id() {
-        let transport = VerifyPeerId::new(MemoryTransport::default().map(simulate_auth_upgrade));
+        let mut transport =
+            VerifyPeerId::new(MemoryTransport::default().map(simulate_auth_upgrade));
 
         let result = transport.dial("/memory/10000".parse().unwrap());
 
@@ -182,7 +186,7 @@ mod tests {
             .map(simulate_auth_upgrade)
             .listen_on("/memory/10000".parse().unwrap())
             .unwrap();
-        let bob = VerifyPeerId::new(MemoryTransport::default().map(simulate_auth_upgrade));
+        let mut bob = VerifyPeerId::new(MemoryTransport::default().map(simulate_auth_upgrade));
 
         let result = bob
             .dial(
