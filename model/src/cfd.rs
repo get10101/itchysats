@@ -30,6 +30,7 @@ use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::hashes::hex::ToHex;
+use bdk::bitcoin::secp256k1::SecretKey;
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
@@ -1875,38 +1876,6 @@ impl Cet {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SecretKey(secp256k1_zkp::key::SecretKey);
-
-impl SecretKey {
-    pub fn new(sk: secp256k1_zkp::key::SecretKey) -> Self {
-        Self(sk)
-    }
-}
-
-impl fmt::Display for SecretKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl str::FromStr for SecretKey {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let sk = secp256k1_zkp::key::SecretKey::from_str(s)?;
-        Ok(Self(sk))
-    }
-}
-
-impl From<SecretKey> for secp256k1_zkp::key::SecretKey {
-    fn from(sk: SecretKey) -> Self {
-        sk.0
-    }
-}
-
-impl_sqlx_type_display_from_str!(SecretKey);
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PublicKey(bitcoin::util::key::PublicKey);
 
 impl PublicKey {
@@ -2148,7 +2117,7 @@ impl Dlc {
         )
         .context("Unable to build collaborative close transaction")?;
 
-        let sig = SECP256K1.sign(&sighash, &self.identity.0);
+        let sig = SECP256K1.sign(&sighash, &self.identity);
 
         Ok((tx, sig, lock_amount))
     }
@@ -2181,11 +2150,11 @@ impl Dlc {
         )
         .context("Unable to build collaborative close transaction")?;
 
-        let own_signature = SECP256K1.sign(&sighash, &self.identity.0);
+        let own_signature = SECP256K1.sign(&sighash, &self.identity);
 
         let own_pk = bitcoin::PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
             SECP256K1,
-            &self.identity.0,
+            &self.identity,
         ));
 
         Ok(SettlementTransaction {
@@ -2219,7 +2188,7 @@ impl Dlc {
 
         let own_pk = bitcoin::util::key::PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
             SECP256K1,
-            &self.identity.0,
+            &self.identity,
         ));
         let counterparty_pk = self.identity_counterparty.0;
 
@@ -2247,9 +2216,9 @@ impl Dlc {
             &self.commit.2,
             Amount::from_sat(self.commit.0 .0.output[0].value),
         );
-        let our_sig = SECP256K1.sign(&sig_hash, &self.identity.0);
+        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
         let our_pubkey = bitcoin::util::key::PublicKey::new(
-            bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity.0),
+            bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity),
         );
         let counterparty_sig = self.refund.1;
         let counterparty_pubkey = self.identity_counterparty.0;
@@ -2269,12 +2238,12 @@ impl Dlc {
             &self.lock.1,
             Amount::from_sat(self.lock.0 .0.output[0].value),
         );
-        let our_sig = SECP256K1.sign(&sig_hash, &self.identity.0);
+        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
         let our_pubkey = bitcoin::util::key::PublicKey::new(
-            bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity.0),
+            bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity),
         );
 
-        let counterparty_sig = self.commit.1 .0.decrypt(&self.publish.0)?;
+        let counterparty_sig = self.commit.1 .0.decrypt(&self.publish)?;
         let counterparty_pubkey = self.identity_counterparty.0;
 
         let signed_commit_tx = maia::finalize_spend_transaction(
@@ -2325,9 +2294,9 @@ impl Dlc {
             &self.commit.2,
             Amount::from_sat(self.commit.0 .0.output[0].value),
         );
-        let our_sig = SECP256K1.sign(&sig_hash, &self.identity.0);
+        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
         let our_pubkey = bitcoin::util::key::PublicKey::new(
-            bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity.0),
+            bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity),
         );
 
         let counterparty_sig = encsig.decrypt(&decryption_sk)?;
@@ -2453,6 +2422,7 @@ pub fn calculate_payouts(
 mod tests {
     use super::*;
     use bdk::bitcoin;
+    use bdk::bitcoin::secp256k1::SecretKey;
     use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
     use bdk_ext::keypair;
@@ -4315,7 +4285,7 @@ mod tests {
             identity_sk: SecretKey,
             identity_counterparty_pk: PublicKey,
         ) -> Self {
-            let maker_pk = bitcoin::PublicKey::new(identity_sk.0.to_public_key());
+            let maker_pk = bitcoin::PublicKey::new(identity_sk.to_public_key());
             let taker_pk = identity_counterparty_pk;
             let descriptor = lock_descriptor(maker_pk, taker_pk.0);
 
@@ -4336,7 +4306,7 @@ mod tests {
             identity_counterparty_pk: PublicKey,
         ) -> Self {
             let maker_pk = identity_counterparty_pk;
-            let taker_pk = bitcoin::PublicKey::new(identity_sk.0.to_public_key());
+            let taker_pk = bitcoin::PublicKey::new(identity_sk.to_public_key());
             let descriptor = lock_descriptor(maker_pk.0, taker_pk);
 
             self.with_lock(
@@ -4379,8 +4349,7 @@ mod tests {
         }
 
         fn dummy(event_id: Option<BitMexPriceEventId>) -> Self {
-            let dummy_sk =
-                SecretKey::new(secp256k1_zkp::key::SecretKey::from_slice(&[1; 32]).unwrap());
+            let dummy_sk = SecretKey::from_slice(&[1; 32]).unwrap();
             let dummy_pk = PublicKey::new(
                 bitcoin::util::key::PublicKey::from_slice(&[
                     3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3,
@@ -4527,6 +4496,6 @@ mod tests {
 
     fn new_keypair() -> (SecretKey, PublicKey) {
         let (sk, pk) = keypair::new(&mut thread_rng());
-        (SecretKey::new(sk), PublicKey::new(pk))
+        (sk, PublicKey::new(pk))
     }
 }

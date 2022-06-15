@@ -1,3 +1,5 @@
+use maia_core::secp256k1_zkp;
+use model::impl_sqlx_type_display_from_str;
 use serde::de::Error;
 use serde::Deserialize;
 use serde::Serialize;
@@ -56,3 +58,35 @@ impl From<OrderId> for model::OrderId {
         model::OrderId::from(id)
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SecretKey(secp256k1_zkp::key::SecretKey);
+
+impl fmt::Display for SecretKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for SecretKey {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let sk = secp256k1_zkp::key::SecretKey::from_str(s)?;
+        Ok(Self(sk))
+    }
+}
+
+impl From<SecretKey> for secp256k1_zkp::key::SecretKey {
+    fn from(sk: SecretKey) -> Self {
+        sk.0
+    }
+}
+
+impl From<secp256k1_zkp::key::SecretKey> for SecretKey {
+    fn from(key: secp256k1_zkp::key::SecretKey) -> Self {
+        Self(key)
+    }
+}
+
+impl_sqlx_type_display_from_str!(SecretKey);

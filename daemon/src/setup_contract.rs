@@ -49,7 +49,6 @@ use model::PublicKey;
 use model::RevokedCommit;
 use model::Role;
 use model::RolloverParams;
-use model::SecretKey;
 use model::SetupParams;
 use model::Txid;
 use model::CET_TIMELOCK;
@@ -348,11 +347,11 @@ pub async fn new(
         .try_into_msg3()?;
 
     Ok(Dlc {
-        identity: SecretKey::new(sk),
+        identity: sk,
         identity_counterparty: PublicKey::new(params.other.identity_pk),
-        revocation: SecretKey::new(rev_sk),
+        revocation: rev_sk,
         revocation_pk_counterparty: PublicKey::new(other_punish.revocation_pk),
-        publish: SecretKey::new(publish_sk),
+        publish: publish_sk,
         publish_pk_counterparty: PublicKey::new(other_punish.publish_pk),
         maker_address: params.maker().address.clone(),
         taker_address: params.taker().address.clone(),
@@ -388,10 +387,8 @@ pub async fn roll_over(
     complete_fee: FeeFlow,
 ) -> Result<Dlc> {
     let sk = dlc.identity;
-    let pk = bdk::bitcoin::PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
-        SECP256K1,
-        &sk.into(),
-    ));
+    let pk =
+        bdk::bitcoin::PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk));
 
     let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
     let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
@@ -480,7 +477,7 @@ pub async fn roll_over(
                 oracle_pk,
                 (CET_TIMELOCK, rollover_params.refund_timelock),
                 payouts,
-                sk.into(),
+                sk,
                 rollover_params.fee_rate.to_u32(),
             )
         }
@@ -629,7 +626,7 @@ pub async fn roll_over(
 
     // reveal revocation secrets to the other party
     sink.send(RolloverMsg::Msg2(RolloverMsg2 {
-        revocation_sk: dlc.revocation.into(),
+        revocation_sk: dlc.revocation,
     }))
     .await
     .context("Failed to send Msg2")?;
@@ -657,7 +654,7 @@ pub async fn roll_over(
     let transaction = bdk::bitcoin::Transaction::from(dlc.commit.0);
     revoked_commit.push(RevokedCommit {
         encsig_ours: AdaptorSignature::new(own_cfd_txs.commit.1),
-        revocation_sk_theirs: SecretKey::new(revocation_sk_theirs),
+        revocation_sk_theirs,
         publication_pk_theirs: dlc.publish_pk_counterparty,
         txid: Txid::new(transaction.txid()),
         script_pubkey: dlc.commit.2.script_pubkey(),
@@ -698,9 +695,9 @@ pub async fn roll_over(
     Ok(Dlc {
         identity: sk,
         identity_counterparty: dlc.identity_counterparty,
-        revocation: SecretKey::new(rev_sk),
+        revocation: rev_sk,
         revocation_pk_counterparty: PublicKey::new(other_punish_params.revocation_pk),
-        publish: SecretKey::new(publish_sk),
+        publish: publish_sk,
         publish_pk_counterparty: PublicKey::new(other_punish_params.publish_pk),
         maker_address: dlc.maker_address,
         taker_address: dlc.taker_address,

@@ -1,3 +1,4 @@
+use crate::models;
 use crate::Sqlite;
 use anyhow::Result;
 use bdk::bitcoin::hashes::hex::FromHex;
@@ -35,15 +36,15 @@ pub async fn load(
                 refund_timelock as "refund_timelock: i64",
                 funding_fee as "funding_fee: i64",
                 rate as "rate: model::FundingRate",
-                identity as "identity: model::SecretKey",
+                identity as "identity: models::SecretKey",
                 identity_counterparty as "identity_counterparty: model::PublicKey",
                 maker_address,
                 taker_address,
                 maker_lock_amount as "maker_lock_amount: i64",
                 taker_lock_amount as "taker_lock_amount: i64",
-                publish_sk as "publish_sk: model::SecretKey",
+                publish_sk as "publish_sk: models::SecretKey",
                 publish_pk_counterparty as "publish_pk_counterparty: model::PublicKey",
-                revocation_secret as "revocation_secret: model::SecretKey",
+                revocation_secret as "revocation_secret: models::SecretKey",
                 revocation_pk_counterparty as "revocation_pk_counterparty: model::PublicKey",
                 lock_tx as "lock_tx: model::Transaction",
                 lock_tx_descriptor,
@@ -70,11 +71,11 @@ pub async fn load(
     };
 
     let dlc = Dlc {
-        identity: row.identity,
+        identity: row.identity.into(),
         identity_counterparty: row.identity_counterparty,
-        revocation: row.revocation_secret,
+        revocation: row.revocation_secret.into(),
         revocation_pk_counterparty: row.revocation_pk_counterparty,
-        publish: row.publish_sk,
+        publish: row.publish_sk.into(),
         publish_pk_counterparty: row.publish_pk_counterparty,
         maker_address: Address::from_str(row.maker_address.as_str())?,
         taker_address: Address::from_str(row.taker_address.as_str())?,
@@ -115,7 +116,7 @@ async fn load_revoked_commit_transactions(
             SELECT
                 encsig_ours as "encsig_ours: model::AdaptorSignature",
                 publication_pk_theirs as "publication_pk_theirs: model::PublicKey",
-                revocation_sk_theirs as "revocation_sk_theirs: model::SecretKey",
+                revocation_sk_theirs as "revocation_sk_theirs: models::SecretKey",
                 script_pubkey,
                 txid as "txid: model::Txid"
             FROM
@@ -131,7 +132,7 @@ async fn load_revoked_commit_transactions(
     .map(|row| {
         Ok(RevokedCommit {
             encsig_ours: row.encsig_ours,
-            revocation_sk_theirs: row.revocation_sk_theirs,
+            revocation_sk_theirs: row.revocation_sk_theirs.into(),
             publication_pk_theirs: row.publication_pk_theirs,
             script_pubkey: Script::from_hex(row.script_pubkey.as_str())?,
             txid: row.txid,
