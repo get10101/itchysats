@@ -648,8 +648,6 @@ impl str::FromStr for OpeningFee {
     }
 }
 
-impl_sqlx_type_display_from_str!(OpeningFee);
-
 impl Default for OpeningFee {
     fn default() -> Self {
         Self { fee: Amount::ZERO }

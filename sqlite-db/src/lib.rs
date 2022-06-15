@@ -153,6 +153,7 @@ impl Connection {
         let counterparty_network_identity =
             models::Identity::from(cfd.counterparty_network_identity());
         let initial_funding_rate = models::FundingRate::from(cfd.initial_funding_rate());
+        let opening_fee = models::OpeningFee::from(cfd.opening_fee());
 
         let query_result = sqlx::query(
             r#"
@@ -187,7 +188,7 @@ impl Connection {
             PeerId::placeholder()
         }))
         .bind(&role)
-        .bind(&cfd.opening_fee())
+        .bind(&opening_fee)
         .bind(&initial_funding_rate)
         .bind(&cfd.initial_tx_fee_rate())
         .execute(&mut conn)
@@ -533,7 +534,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
                 counterparty_network_identity as "counterparty_network_identity: models::Identity",
                 counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
                 role as "role: models::Role",
-                opening_fee as "opening_fee: model::OpeningFee",
+                opening_fee as "opening_fee: models::OpeningFee",
                 initial_funding_rate as "initial_funding_rate: models::FundingRate",
                 initial_tx_fee_rate as "initial_tx_fee_rate: model::TxFeeRate"
             from
@@ -565,7 +566,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
         counterparty_network_identity,
         counterparty_peer_id,
         role,
-        opening_fee: cfd_row.opening_fee,
+        opening_fee: cfd_row.opening_fee.into(),
         initial_funding_rate: cfd_row.initial_funding_rate.into(),
         initial_tx_fee_rate: cfd_row.initial_tx_fee_rate,
     })

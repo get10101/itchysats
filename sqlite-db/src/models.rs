@@ -2,6 +2,7 @@ use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::hashes::hex::ToHex;
+use bdk::bitcoin::Amount;
 use maia_core::secp256k1_zkp;
 use model::impl_sqlx_type_display_from_str;
 use rust_decimal::Decimal;
@@ -391,7 +392,6 @@ impl From<model::Timestamp> for Timestamp {
     }
 }
 
-/// Funding rate per SETTLEMENT_INTERVAL
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct FundingRate(Decimal);
 
@@ -424,3 +424,35 @@ impl From<model::FundingRate> for FundingRate {
 }
 
 impl_sqlx_type_display_from_str!(FundingRate);
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct OpeningFee(Amount);
+
+impl fmt::Display for OpeningFee {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.as_sat().fmt(f)
+    }
+}
+
+impl FromStr for OpeningFee {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let amount_sat: u64 = s.parse()?;
+        Ok(OpeningFee(Amount::from_sat(amount_sat)))
+    }
+}
+
+impl From<OpeningFee> for model::OpeningFee {
+    fn from(f: OpeningFee) -> Self {
+        model::OpeningFee::new(f.0)
+    }
+}
+
+impl From<model::OpeningFee> for OpeningFee {
+    fn from(f: model::OpeningFee) -> Self {
+        Self(f.to_inner())
+    }
+}
+
+impl_sqlx_type_display_from_str!(OpeningFee);
