@@ -90,3 +90,28 @@ impl From<secp256k1_zkp::key::SecretKey> for SecretKey {
 }
 
 impl_sqlx_type_display_from_str!(SecretKey);
+
+/// Role in the Cfd
+#[derive(Debug, Copy, Clone, PartialEq, sqlx::Type)]
+pub enum Role {
+    Maker,
+    Taker,
+}
+
+impl From<model::Role> for Role {
+    fn from(role: model::Role) -> Self {
+        match role {
+            model::Role::Maker => Role::Maker,
+            model::Role::Taker => Role::Taker,
+        }
+    }
+}
+
+impl From<Role> for model::Role {
+    fn from(role: Role) -> Self {
+        match role {
+            Role::Maker => model::Role::Maker,
+            Role::Taker => model::Role::Taker,
+        }
+    }
+}

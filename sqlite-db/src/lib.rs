@@ -144,6 +144,7 @@ impl Connection {
 
         let id = models::OrderId::from(cfd.id());
 
+        let role = models::Role::from(cfd.role());
         let query_result = sqlx::query(
             r#"
         insert into cfds (
@@ -176,7 +177,7 @@ impl Connection {
             );
             PeerId::placeholder()
         }))
-        .bind(&cfd.role())
+        .bind(&role)
         .bind(&cfd.opening_fee())
         .bind(&cfd.initial_funding_rate())
         .bind(&cfd.initial_tx_fee_rate())
@@ -521,7 +522,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
                 quantity_usd as "quantity_usd: model::Usd",
                 counterparty_network_identity as "counterparty_network_identity: model::Identity",
                 counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
-                role as "role: model::Role",
+                role as "role: models::Role",
                 opening_fee as "opening_fee: model::OpeningFee",
                 initial_funding_rate as "initial_funding_rate: model::FundingRate",
                 initial_tx_fee_rate as "initial_tx_fee_rate: model::TxFeeRate"
@@ -536,7 +537,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
     .await?
     .ok_or(Error::OpenCfdNotFound)?;
 
-    let role = cfd_row.role;
+    let role = cfd_row.role.into();
     let counterparty_network_identity = cfd_row.counterparty_network_identity;
     let counterparty_peer_id = if cfd_row.counterparty_peer_id == PeerId::placeholder() {
         derive_known_peer_id(counterparty_network_identity, role)

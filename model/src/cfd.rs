@@ -187,14 +187,14 @@ impl MakerOffers {
 }
 
 /// Origin of the order
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Origin {
     Ours,
     Theirs,
 }
 
 /// Role in the Cfd
-#[derive(Debug, Copy, Clone, PartialEq, sqlx::Type, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Role {
     Maker,
     Taker,

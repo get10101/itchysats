@@ -174,7 +174,7 @@ impl Connection {
                 n_contracts as "n_contracts: model::Contracts",
                 counterparty_network_identity as "counterparty_network_identity: model::Identity",
                 counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
-                role as "role: model::Role",
+                role as "role: models::Role",
                 fees as "fees: model::Fees",
                 expiry_timestamp,
                 lock_txid as "lock_txid: model::Txid",
@@ -219,7 +219,7 @@ impl Connection {
             n_contracts: cfd.n_contracts,
             counterparty_network_identity: cfd.counterparty_network_identity,
             counterparty_peer_id: cfd.counterparty_peer_id,
-            role: cfd.role,
+            role: cfd.role.into(),
             fees: cfd.fees,
             expiry_timestamp,
             lock: Lock {
@@ -590,6 +590,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         Some(peer_id) => peer_id,
     };
     let id = models::OrderId::from(cfd.id);
+    let role = models::Role::from(cfd.role);
 
     let query_result = sqlx::query!(
         r#"
@@ -617,7 +618,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         cfd.n_contracts,
         cfd.counterparty_network_identity,
         counterparty_peer_id,
-        cfd.role,
+        role,
         cfd.fees,
         expiry_timestamp,
         cfd.lock.txid,
