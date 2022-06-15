@@ -154,6 +154,144 @@
       ]
     }
   },
+  "3020bc3f55fa769324825e76bfcdbce3c6bf93951bd3142b8b33d3ef357b2851": {
+    "query": "\n            SELECT\n                settlement_event_id as \"settlement_event_id: model::olivia::BitMexPriceEventId\",\n                refund_timelock as \"refund_timelock: i64\",\n                funding_fee as \"funding_fee: i64\",\n                rate as \"rate: model::FundingRate\",\n                identity as \"identity: models::SecretKey\",\n                identity_counterparty as \"identity_counterparty: models::PublicKey\",\n                maker_address,\n                taker_address,\n                maker_lock_amount as \"maker_lock_amount: i64\",\n                taker_lock_amount as \"taker_lock_amount: i64\",\n                publish_sk as \"publish_sk: models::SecretKey\",\n                publish_pk_counterparty as \"publish_pk_counterparty: models::PublicKey\",\n                revocation_secret as \"revocation_secret: models::SecretKey\",\n                revocation_pk_counterparty as \"revocation_pk_counterparty: models::PublicKey\",\n                lock_tx as \"lock_tx: models::Transaction\",\n                lock_tx_descriptor,\n                commit_tx as \"commit_tx: models::Transaction\",\n                commit_adaptor_signature as \"commit_adaptor_signature: models::AdaptorSignature\",\n                commit_descriptor,\n                refund_tx as \"refund_tx: models::Transaction\",\n                refund_signature\n            FROM\n                rollover_completed_event_data\n            WHERE \n                cfd_id = $1 and \n                event_id = $2\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "settlement_event_id: model::olivia::BitMexPriceEventId",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "refund_timelock: i64",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "funding_fee: i64",
+          "ordinal": 2,
+          "type_info": "Null"
+        },
+        {
+          "name": "rate: model::FundingRate",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "identity: models::SecretKey",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "identity_counterparty: models::PublicKey",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "maker_address",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "taker_address",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "maker_lock_amount: i64",
+          "ordinal": 8,
+          "type_info": "Null"
+        },
+        {
+          "name": "taker_lock_amount: i64",
+          "ordinal": 9,
+          "type_info": "Null"
+        },
+        {
+          "name": "publish_sk: models::SecretKey",
+          "ordinal": 10,
+          "type_info": "Text"
+        },
+        {
+          "name": "publish_pk_counterparty: models::PublicKey",
+          "ordinal": 11,
+          "type_info": "Text"
+        },
+        {
+          "name": "revocation_secret: models::SecretKey",
+          "ordinal": 12,
+          "type_info": "Text"
+        },
+        {
+          "name": "revocation_pk_counterparty: models::PublicKey",
+          "ordinal": 13,
+          "type_info": "Text"
+        },
+        {
+          "name": "lock_tx: models::Transaction",
+          "ordinal": 14,
+          "type_info": "Text"
+        },
+        {
+          "name": "lock_tx_descriptor",
+          "ordinal": 15,
+          "type_info": "Text"
+        },
+        {
+          "name": "commit_tx: models::Transaction",
+          "ordinal": 16,
+          "type_info": "Text"
+        },
+        {
+          "name": "commit_adaptor_signature: models::AdaptorSignature",
+          "ordinal": 17,
+          "type_info": "Text"
+        },
+        {
+          "name": "commit_descriptor",
+          "ordinal": 18,
+          "type_info": "Text"
+        },
+        {
+          "name": "refund_tx: models::Transaction",
+          "ordinal": 19,
+          "type_info": "Text"
+        },
+        {
+          "name": "refund_signature",
+          "ordinal": 20,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "375bcb24b5a899520f76cd2f07ed5f14d4e862ef76a680de4d43350866260baa": {
     "query": "\n            SELECT \n                COUNT(DISTINCT rollover_completed_event_data.id) as rollovers, \n                COUNT(DISTINCT revoked_commit_transactions.id) as revokes, \n                COUNT(DISTINCT open_cets.id) as cets\n            FROM \n                rollover_completed_event_data, \n                revoked_commit_transactions, \n                open_cets;\n            ",
     "describe": {
@@ -787,144 +925,6 @@
       },
       "nullable": [
         true,
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
-  "e6c9abdfc5962f5ff1891dda74caee3cae7db67738b8ed0f581d5592a6f5fda3": {
-    "query": "\n            SELECT\n                settlement_event_id as \"settlement_event_id: model::olivia::BitMexPriceEventId\",\n                refund_timelock as \"refund_timelock: i64\",\n                funding_fee as \"funding_fee: i64\",\n                rate as \"rate: model::FundingRate\",\n                identity as \"identity: models::SecretKey\",\n                identity_counterparty as \"identity_counterparty: models::PublicKey\",\n                maker_address,\n                taker_address,\n                maker_lock_amount as \"maker_lock_amount: i64\",\n                taker_lock_amount as \"taker_lock_amount: i64\",\n                publish_sk as \"publish_sk: models::SecretKey\",\n                publish_pk_counterparty as \"publish_pk_counterparty: models::PublicKey\",\n                revocation_secret as \"revocation_secret: models::SecretKey\",\n                revocation_pk_counterparty as \"revocation_pk_counterparty: models::PublicKey\",\n                lock_tx as \"lock_tx: model::Transaction\",\n                lock_tx_descriptor,\n                commit_tx as \"commit_tx: model::Transaction\",\n                commit_adaptor_signature as \"commit_adaptor_signature: models::AdaptorSignature\",\n                commit_descriptor,\n                refund_tx as \"refund_tx: model::Transaction\",\n                refund_signature\n            FROM\n                rollover_completed_event_data\n            WHERE \n                cfd_id = $1 and \n                event_id = $2\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "settlement_event_id: model::olivia::BitMexPriceEventId",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "refund_timelock: i64",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "funding_fee: i64",
-          "ordinal": 2,
-          "type_info": "Null"
-        },
-        {
-          "name": "rate: model::FundingRate",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "identity: models::SecretKey",
-          "ordinal": 4,
-          "type_info": "Text"
-        },
-        {
-          "name": "identity_counterparty: models::PublicKey",
-          "ordinal": 5,
-          "type_info": "Text"
-        },
-        {
-          "name": "maker_address",
-          "ordinal": 6,
-          "type_info": "Text"
-        },
-        {
-          "name": "taker_address",
-          "ordinal": 7,
-          "type_info": "Text"
-        },
-        {
-          "name": "maker_lock_amount: i64",
-          "ordinal": 8,
-          "type_info": "Null"
-        },
-        {
-          "name": "taker_lock_amount: i64",
-          "ordinal": 9,
-          "type_info": "Null"
-        },
-        {
-          "name": "publish_sk: models::SecretKey",
-          "ordinal": 10,
-          "type_info": "Text"
-        },
-        {
-          "name": "publish_pk_counterparty: models::PublicKey",
-          "ordinal": 11,
-          "type_info": "Text"
-        },
-        {
-          "name": "revocation_secret: models::SecretKey",
-          "ordinal": 12,
-          "type_info": "Text"
-        },
-        {
-          "name": "revocation_pk_counterparty: models::PublicKey",
-          "ordinal": 13,
-          "type_info": "Text"
-        },
-        {
-          "name": "lock_tx: model::Transaction",
-          "ordinal": 14,
-          "type_info": "Text"
-        },
-        {
-          "name": "lock_tx_descriptor",
-          "ordinal": 15,
-          "type_info": "Text"
-        },
-        {
-          "name": "commit_tx: model::Transaction",
-          "ordinal": 16,
-          "type_info": "Text"
-        },
-        {
-          "name": "commit_adaptor_signature: models::AdaptorSignature",
-          "ordinal": 17,
-          "type_info": "Text"
-        },
-        {
-          "name": "commit_descriptor",
-          "ordinal": 18,
-          "type_info": "Text"
-        },
-        {
-          "name": "refund_tx: model::Transaction",
-          "ordinal": 19,
-          "type_info": "Text"
-        },
-        {
-          "name": "refund_signature",
-          "ordinal": 20,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 2
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
         false,
         false,
         false,

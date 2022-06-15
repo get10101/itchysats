@@ -694,7 +694,7 @@ impl Cfd {
     fn lock_tx_url(&self, network: Network) -> Option<TxUrl> {
         let dlc = self.aggregated.latest_dlc.as_ref()?;
         let url = TxUrl::from_transaction(
-            &dlc.lock.0.clone().into(),
+            &dlc.lock.0.clone(),
             &dlc.lock.1.script_pubkey(),
             network,
             TxLabel::Lock,
@@ -709,7 +709,7 @@ impl Cfd {
         }
 
         let dlc = self.aggregated.latest_dlc.as_ref()?;
-        let url = TxUrl::new(dlc.commit.0.txid().into(), network, TxLabel::Commit);
+        let url = TxUrl::new(dlc.commit.0.txid(), network, TxLabel::Commit);
 
         Some(url)
     }
@@ -729,7 +729,7 @@ impl Cfd {
         let dlc = self.aggregated.latest_dlc.as_ref()?;
 
         let url = TxUrl::from_transaction(
-            &dlc.refund.0.clone().into(),
+            &dlc.refund.0.clone(),
             &dlc.script_pubkey_for(self.role),
             network,
             TxLabel::Refund,

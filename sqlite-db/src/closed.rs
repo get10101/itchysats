@@ -417,7 +417,7 @@ impl ClosedCfdInputAggregate {
         let latest_dlc = self.latest_dlc()?;
         let (lock_transaction, script) = latest_dlc.lock.clone();
         let script_pubkey = script.script_pubkey();
-        let OutPoint { txid, vout } = bdk::bitcoin::Transaction::from(lock_transaction)
+        let OutPoint { txid, vout } = lock_transaction
             .outpoint(&script_pubkey)
             .context("Missing DLC in lock TX")?;
 
@@ -457,7 +457,7 @@ impl ClosedCfdInputAggregate {
     fn cet(&self) -> Result<Settlement> {
         let (cet, price) = self.cet.as_ref().context("Cet not set")?;
 
-        let transaction = bdk::bitcoin::Transaction::from(self.latest_dlc()?.commit.0.clone());
+        let transaction = self.latest_dlc()?.commit.0.clone();
         let commit_txid = Txid::new(transaction.txid());
 
         let own_script_pubkey = self.latest_dlc()?.script_pubkey_for(self.role);
@@ -488,7 +488,7 @@ impl ClosedCfdInputAggregate {
         let dlc = self.latest_dlc()?;
 
         let own_script_pubkey = dlc.script_pubkey_for(self.role);
-        let refund_tx = bdk::bitcoin::Transaction::from(dlc.refund.0.clone());
+        let refund_tx = dlc.refund.0.clone();
 
         let OutPoint { txid, vout } = refund_tx
             .outpoint(&own_script_pubkey)
@@ -500,7 +500,7 @@ impl ClosedCfdInputAggregate {
             .with_context(|| format!("No output at vout {vout}"))?;
         let payout = Payout::new(Amount::from_sat(payout.value));
 
-        let transaction = bdk::bitcoin::Transaction::from(dlc.commit.0.clone());
+        let transaction = dlc.commit.0.clone();
         let commit_txid = Txid::new(transaction.txid());
         let txid = Txid::new(txid);
         let vout = Vout::new(vout);

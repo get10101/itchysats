@@ -349,13 +349,10 @@ pub async fn new(
         publish_pk_counterparty: other_punish.publish_pk,
         maker_address: params.maker().address.clone(),
         taker_address: params.taker().address.clone(),
-        lock: (
-            model::Transaction::new(signed_lock_tx.extract_tx()),
-            lock_desc,
-        ),
-        commit: (model::Transaction::new(commit_tx), msg1.commit, commit_desc),
+        lock: (signed_lock_tx.extract_tx(), lock_desc),
+        commit: (commit_tx, msg1.commit, commit_desc),
         cets,
-        refund: (model::Transaction::new(refund_tx), msg1.refund),
+        refund: (refund_tx, msg1.refund),
         maker_lock_amount: params.maker().lock_amount,
         taker_lock_amount: params.taker().lock_amount,
         revoked_commit: Vec::new(),
@@ -421,7 +418,7 @@ pub async fn roll_over(
     )]);
 
     // unsign lock tx because PartiallySignedTransaction needs an unsigned tx
-    let mut unsigned_lock_tx = Transaction::from(dlc.lock.0.clone());
+    let mut unsigned_lock_tx = dlc.lock.0.clone();
     unsigned_lock_tx
         .input
         .iter_mut()
@@ -638,7 +635,7 @@ pub async fn roll_over(
     }
 
     let mut revoked_commit = dlc.revoked_commit;
-    let transaction = bdk::bitcoin::Transaction::from(dlc.commit.0);
+    let transaction = dlc.commit.0;
     revoked_commit.push(RevokedCommit {
         encsig_ours: own_cfd_txs.commit.1,
         revocation_sk_theirs,
@@ -669,9 +666,9 @@ pub async fn roll_over(
         maker_address: dlc.maker_address,
         taker_address: dlc.taker_address,
         lock: dlc.lock.clone(),
-        commit: (model::Transaction::new(commit_tx), msg1.commit, commit_desc),
+        commit: (commit_tx, msg1.commit, commit_desc),
         cets,
-        refund: (model::Transaction::new(refund_tx), msg1.refund),
+        refund: (refund_tx, msg1.refund),
         maker_lock_amount,
         taker_lock_amount,
         revoked_commit,

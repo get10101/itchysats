@@ -1,6 +1,5 @@
 use crate::contract_setup::SetupParams;
 use crate::hex_transaction;
-use crate::impl_sqlx_type_display_from_str;
 use crate::libp2p::PeerId;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
@@ -28,8 +27,6 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
-use bdk::bitcoin::hashes::hex::FromHex;
-use bdk::bitcoin::hashes::hex::ToHex;
 use bdk::bitcoin::secp256k1::SecretKey;
 use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::key::PublicKey;
@@ -37,6 +34,7 @@ use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Script;
 use bdk::bitcoin::SignedAmount;
+use bdk::bitcoin::Transaction;
 use bdk::bitcoin::TxIn;
 use bdk::bitcoin::TxOut;
 use bdk::bitcoin::Txid;
@@ -454,7 +452,7 @@ pub enum EventKind {
     CollaborativeSettlementProposalAccepted,
     CollaborativeSettlementCompleted {
         #[serde(with = "hex_transaction")]
-        spend_tx: bitcoin::Transaction,
+        spend_tx: Transaction,
         script: Script,
         price: Price,
     },
@@ -480,33 +478,33 @@ pub enum EventKind {
     CetTimelockExpiredPriorOracleAttestation,
     CetTimelockExpiredPostOracleAttestation {
         #[serde(with = "hex_transaction")]
-        cet: bitcoin::Transaction,
+        cet: Transaction,
     },
 
     RefundTimelockExpired {
         #[serde(with = "hex_transaction")]
-        refund_tx: bitcoin::Transaction,
+        refund_tx: Transaction,
     },
 
     OracleAttestedPriorCetTimelock {
         #[serde(with = "hex_transaction")]
-        timelocked_cet: bitcoin::Transaction,
+        timelocked_cet: Transaction,
         /// The commit transaction for the DLC of this CFD.
         ///
         /// If this is set to `Some`, we haven't previously attempted broadcast `commit_tx` and
         /// need to broadcast it as a result of this event.
         #[serde(with = "hex_transaction::opt")]
-        commit_tx: Option<bitcoin::Transaction>,
+        commit_tx: Option<Transaction>,
         price: Price,
     },
     OracleAttestedPostCetTimelock {
         #[serde(with = "hex_transaction")]
-        cet: bitcoin::Transaction,
+        cet: Transaction,
         price: Price,
     },
     ManualCommit {
         #[serde(with = "hex_transaction")]
-        tx: bitcoin::Transaction,
+        tx: Transaction,
     },
 }
 
@@ -622,17 +620,17 @@ pub struct Cfd {
     ///
     /// There is not guarantee that the transaction is confirmed if this is set to `Some`.
     /// However, if this is set to `Some`, there is no need to re-emit it as part of another event.
-    cet: Option<bitcoin::Transaction>,
+    cet: Option<Transaction>,
 
     /// Holds the decrypted commit transaction if we have previously emitted it as part of an
     /// event.
     ///
     /// There is not guarantee that the transaction is confirmed if this is set to `Some`.
     /// However, if this is set to `Some`, there is no need to re-emit it as part of another event.
-    commit_tx: Option<bitcoin::Transaction>,
+    commit_tx: Option<Transaction>,
 
     collaborative_settlement_spend_tx: Option<Transaction>,
-    refund_tx: Option<bitcoin::Transaction>,
+    refund_tx: Option<Transaction>,
 
     lock_finality: bool,
 
@@ -1058,7 +1056,7 @@ impl Cfd {
         self,
         current_price: Price,
         n_payouts: usize,
-        proposed_settlement_transaction: &bitcoin::Transaction,
+        proposed_settlement_transaction: &Transaction,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
         anyhow::ensure!(!self.is_in_collaborative_settlement());
         anyhow::ensure!(self.role == Role::Maker);
@@ -1606,7 +1604,7 @@ impl Cfd {
             CollaborativeSettlementProposalAccepted { .. } => {}
             CollaborativeSettlementCompleted { spend_tx, .. } => {
                 self.settlement_proposal = None;
-                self.collaborative_settlement_spend_tx = Some(Transaction::new(spend_tx));
+                self.collaborative_settlement_spend_tx = Some(spend_tx);
             }
             CollaborativeSettlementRejected | CollaborativeSettlementFailed => {
                 self.settlement_proposal = None;
@@ -1837,10 +1835,10 @@ impl Cet {
     /// the TXID with which `Self` was constructed.
     pub fn to_tx(
         &self,
-        (commit_tx, commit_descriptor): (&bitcoin::Transaction, &Descriptor<PublicKey>),
+        (commit_tx, commit_descriptor): (&Transaction, &Descriptor<PublicKey>),
         maker_address: &Address,
         taker_address: &Address,
-    ) -> Result<bitcoin::Transaction> {
+    ) -> Result<Transaction> {
         let output = vec![
             (self.maker_amount, maker_address),
             (self.taker_amount, taker_address),
@@ -1855,7 +1853,7 @@ impl Cet {
         })
         .collect();
 
-        let tx = bitcoin::Transaction {
+        let tx = Transaction {
             version: 2,
             input: vec![TxIn {
                 previous_output: commit_tx.outpoint(&commit_descriptor.script_pubkey())?,
@@ -1873,44 +1871,6 @@ impl Cet {
         Ok(tx)
     }
 }
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Transaction(bitcoin::Transaction);
-
-impl Transaction {
-    pub fn new(tx: bitcoin::Transaction) -> Self {
-        Self(tx)
-    }
-
-    pub fn txid(&self) -> crate::Txid {
-        crate::Txid::new(self.0.txid())
-    }
-}
-
-impl fmt::Display for Transaction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let consensus_encoded = bitcoin::consensus::encode::serialize(&self.0);
-        consensus_encoded.to_hex().fmt(f)
-    }
-}
-
-impl str::FromStr for Transaction {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let hex = Vec::from_hex(s)?;
-        let tx = bitcoin::consensus::encode::deserialize(hex.as_slice())?;
-        Ok(Self(tx))
-    }
-}
-
-impl From<Transaction> for bitcoin::Transaction {
-    fn from(tx: Transaction) -> Self {
-        tx.0
-    }
-}
-
-impl_sqlx_type_display_from_str!(Transaction);
 
 /// Contains all data we've assembled about the CFD through the setup protocol.
 ///
@@ -1955,7 +1915,7 @@ pub struct SettlementTransaction {
 
     price: Price,
 
-    unsigned_transaction: bitcoin::Transaction,
+    unsigned_transaction: Transaction,
 
     own_pk: PublicKey,
     own_script_pk: Script,
@@ -1966,7 +1926,7 @@ pub struct SettlementTransaction {
 }
 
 impl SettlementTransaction {
-    pub fn unsigned_transaction(&self) -> &bitcoin::Transaction {
+    pub fn unsigned_transaction(&self) -> &Transaction {
         &self.unsigned_transaction
     }
 
@@ -2020,10 +1980,9 @@ impl Dlc {
     pub fn close_transaction(
         &self,
         proposal: &SettlementProposal,
-    ) -> Result<(bitcoin::Transaction, Signature, Amount)> {
+    ) -> Result<(Transaction, Signature, Amount)> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {
-            let lock_tx = bitcoin::Transaction::from(lock_tx.clone());
             let outpoint = lock_tx
                 .outpoint(&lock_desc.script_pubkey())
                 .expect("lock script to be in lock tx");
@@ -2058,7 +2017,6 @@ impl Dlc {
     ) -> Result<SettlementTransaction> {
         let (lock_tx, lock_desc) = &self.lock;
         let (lock_outpoint, lock_amount) = {
-            let lock_tx = bitcoin::Transaction::from(lock_tx.clone());
             let outpoint = lock_tx
                 .outpoint(&lock_desc.script_pubkey())
                 .expect("lock script to be in lock tx");
@@ -2099,11 +2057,11 @@ impl Dlc {
 
     pub fn finalize_spend_transaction(
         &self,
-        spend_tx: bitcoin::Transaction,
+        spend_tx: Transaction,
         own_sig: Signature,
         counterparty_sig: Signature,
         lock_amount: Amount,
-    ) -> Result<bitcoin::Transaction> {
+    ) -> Result<Transaction> {
         let sighash = spending_tx_sighash(&spend_tx, &self.lock.1, lock_amount);
         SECP256K1
             .verify(&sighash, &counterparty_sig, &self.identity_counterparty.key)
@@ -2133,11 +2091,11 @@ impl Dlc {
         }
     }
 
-    pub fn signed_refund_tx(&self) -> Result<bitcoin::Transaction> {
+    pub fn signed_refund_tx(&self) -> Result<Transaction> {
         let sig_hash = spending_tx_sighash(
-            &self.refund.0 .0,
+            &self.refund.0,
             &self.commit.2,
-            Amount::from_sat(self.commit.0 .0.output[0].value),
+            Amount::from_sat(self.commit.0.output[0].value),
         );
         let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
         let our_pubkey = bitcoin::util::key::PublicKey::new(
@@ -2146,7 +2104,7 @@ impl Dlc {
         let counterparty_sig = self.refund.1;
         let counterparty_pubkey = self.identity_counterparty;
         let signed_refund_tx = maia::finalize_spend_transaction(
-            self.refund.0 .0.clone(),
+            self.refund.0.clone(),
             &self.commit.2,
             (our_pubkey, our_sig),
             (counterparty_pubkey, counterparty_sig),
@@ -2155,11 +2113,11 @@ impl Dlc {
         Ok(signed_refund_tx)
     }
 
-    pub fn signed_commit_tx(&self) -> Result<bitcoin::Transaction> {
+    pub fn signed_commit_tx(&self) -> Result<Transaction> {
         let sig_hash = spending_tx_sighash(
-            &self.commit.0 .0,
+            &self.commit.0,
             &self.lock.1,
-            Amount::from_sat(self.lock.0 .0.output[0].value),
+            Amount::from_sat(self.lock.0.output[0].value),
         );
         let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
         let our_pubkey = bitcoin::util::key::PublicKey::new(
@@ -2170,7 +2128,7 @@ impl Dlc {
         let counterparty_pubkey = self.identity_counterparty;
 
         let signed_commit_tx = maia::finalize_spend_transaction(
-            self.commit.0 .0.clone(),
+            self.commit.0.clone(),
             &self.lock.1,
             (our_pubkey, our_sig),
             (counterparty_pubkey, counterparty_sig),
@@ -2182,13 +2140,13 @@ impl Dlc {
     pub fn signed_cet(
         &self,
         attestation: &olivia::Attestation,
-    ) -> Result<Result<bitcoin::Transaction, IrrelevantAttestation>> {
+    ) -> Result<Result<Transaction, IrrelevantAttestation>> {
         let cets = match self.cets.get(&attestation.id) {
             Some(cets) => cets,
             None => {
                 return Ok(Err(IrrelevantAttestation {
                     id: attestation.id,
-                    tx_id: self.lock.0 .0.txid(),
+                    tx_id: self.lock.0.txid(),
                 }))
             }
         };
@@ -2206,7 +2164,7 @@ impl Dlc {
 
         let cet = cet
             .to_tx(
-                (&self.commit.0 .0, &self.commit.2),
+                (&self.commit.0, &self.commit.2),
                 &self.maker_address,
                 &self.taker_address,
             )
@@ -2215,7 +2173,7 @@ impl Dlc {
         let sig_hash = spending_tx_sighash(
             &cet,
             &self.commit.2,
-            Amount::from_sat(self.commit.0 .0.output[0].value),
+            Amount::from_sat(self.commit.0.output[0].value),
         );
         let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
         let our_pubkey = bitcoin::util::key::PublicKey::new(
@@ -2266,7 +2224,7 @@ pub struct RevokedCommit {
 /// attestation in Open state)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CollaborativeSettlement {
-    pub tx: bitcoin::Transaction,
+    pub tx: Transaction,
     pub script_pubkey: Script,
     pub timestamp: Timestamp,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
@@ -2275,7 +2233,7 @@ pub struct CollaborativeSettlement {
 }
 
 impl CollaborativeSettlement {
-    pub fn new(tx: bitcoin::Transaction, own_script_pubkey: Script, price: Price) -> Result<Self> {
+    pub fn new(tx: Transaction, own_script_pubkey: Script, price: Price) -> Result<Self> {
         // Falls back to Amount::ZERO in case we don't find an output that matches out script pubkey
         // The assumption is, that this can happen for cases where we were liquidated
         let payout = match tx
@@ -4158,7 +4116,7 @@ mod tests {
 
         fn collab_settlement_payout(self, script: Script) -> Amount {
             let tx = self.collaborative_settlement_spend_tx.unwrap();
-            extract_payout_amount(tx.into(), script)
+            extract_payout_amount(tx, script)
         }
     }
 
@@ -4249,7 +4207,7 @@ mod tests {
             identity_counterparty_pk: PublicKey,
             descriptor: Descriptor<PublicKey>,
         ) -> Self {
-            let lock_tx = bitcoin::Transaction {
+            let lock_tx = Transaction {
                 version: 0,
                 lock_time: 0,
                 input: vec![],
@@ -4259,7 +4217,7 @@ mod tests {
                 }],
             };
 
-            self.lock = (Transaction::new(lock_tx), descriptor);
+            self.lock = (lock_tx, descriptor);
             self.taker_lock_amount = amount_taker;
             self.maker_lock_amount = amount_maker;
             self.identity = identity_sk;
@@ -4310,17 +4268,14 @@ mod tests {
                 publish_pk_counterparty: dummy_pk,
                 maker_address: dummy_addr.clone(),
                 taker_address: dummy_addr,
-                lock: (
-                    Transaction::new(dummy_tx.clone()),
-                    Descriptor::new_pk(dummy_pk),
-                ),
+                lock: (dummy_tx.clone(), Descriptor::new_pk(dummy_pk)),
                 commit: (
-                    Transaction::new(dummy_tx.clone()),
+                    dummy_tx.clone(),
                     dummy_adapter_sig,
                     Descriptor::new_pk(dummy_pk),
                 ),
                 cets: dummy_cet_with_zero_price_range,
-                refund: (Transaction::new(dummy_tx), dummy_sig),
+                refund: (dummy_tx, dummy_sig),
                 maker_lock_amount: Default::default(),
                 taker_lock_amount: Default::default(),
                 revoked_commit: vec![],
@@ -4333,7 +4288,7 @@ mod tests {
         }
     }
 
-    pub fn dummy_transaction() -> bitcoin::Transaction {
+    pub fn dummy_transaction() -> Transaction {
         dummy_partially_signed_transaction().extract_tx()
     }
 
@@ -4343,7 +4298,7 @@ mod tests {
 
         PartiallySignedTransaction {
             global: Global {
-                unsigned_tx: bitcoin::Transaction {
+                unsigned_tx: Transaction {
                     version: 2,
                     lock_time: 0,
                     input: vec![],
@@ -4373,7 +4328,7 @@ mod tests {
         BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc())
     }
 
-    fn extract_payout_amount(tx: bitcoin::Transaction, script: Script) -> Amount {
+    fn extract_payout_amount(tx: Transaction, script: Script) -> Amount {
         tx.output
             .into_iter()
             .find(|tx_out| tx_out.script_pubkey == script)

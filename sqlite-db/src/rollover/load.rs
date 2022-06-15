@@ -46,12 +46,12 @@ pub async fn load(
                 publish_pk_counterparty as "publish_pk_counterparty: models::PublicKey",
                 revocation_secret as "revocation_secret: models::SecretKey",
                 revocation_pk_counterparty as "revocation_pk_counterparty: models::PublicKey",
-                lock_tx as "lock_tx: model::Transaction",
+                lock_tx as "lock_tx: models::Transaction",
                 lock_tx_descriptor,
-                commit_tx as "commit_tx: model::Transaction",
+                commit_tx as "commit_tx: models::Transaction",
                 commit_adaptor_signature as "commit_adaptor_signature: models::AdaptorSignature",
                 commit_descriptor,
-                refund_tx as "refund_tx: model::Transaction",
+                refund_tx as "refund_tx: models::Transaction",
                 refund_signature
             FROM
                 rollover_completed_event_data
@@ -80,16 +80,16 @@ pub async fn load(
         maker_address: Address::from_str(row.maker_address.as_str())?,
         taker_address: Address::from_str(row.taker_address.as_str())?,
         lock: (
-            row.lock_tx,
+            row.lock_tx.into(),
             Descriptor::from_str(row.lock_tx_descriptor.as_str())?,
         ),
         commit: (
-            row.commit_tx,
+            row.commit_tx.into(),
             row.commit_adaptor_signature.into(),
             Descriptor::from_str(row.commit_descriptor.as_str())?,
         ),
         refund: (
-            row.refund_tx,
+            row.refund_tx.into(),
             secp256k1::Signature::from_str(row.refund_signature.as_str())?,
         ),
         cets,

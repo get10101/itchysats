@@ -1,4 +1,6 @@
 use bdk::bitcoin;
+use bdk::bitcoin::hashes::hex::FromHex;
+use bdk::bitcoin::hashes::hex::ToHex;
 use maia_core::secp256k1_zkp;
 use model::impl_sqlx_type_display_from_str;
 use serde::de::Error;
@@ -179,3 +181,37 @@ impl From<secp256k1_zkp::EcdsaAdaptorSignature> for AdaptorSignature {
 }
 
 impl_sqlx_type_display_from_str!(AdaptorSignature);
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Transaction(bitcoin::Transaction);
+
+impl fmt::Display for Transaction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let consensus_encoded = bitcoin::consensus::encode::serialize(&self.0);
+        consensus_encoded.to_hex().fmt(f)
+    }
+}
+
+impl FromStr for Transaction {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let hex = Vec::from_hex(s)?;
+        let tx = bitcoin::consensus::encode::deserialize(hex.as_slice())?;
+        Ok(Self(tx))
+    }
+}
+
+impl From<Transaction> for bitcoin::Transaction {
+    fn from(tx: Transaction) -> Self {
+        tx.0
+    }
+}
+
+impl From<bitcoin::Transaction> for Transaction {
+    fn from(tx: bitcoin::Transaction) -> Self {
+        Self(tx)
+    }
+}
+
+impl_sqlx_type_display_from_str!(Transaction);

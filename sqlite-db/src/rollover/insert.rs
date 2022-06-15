@@ -75,6 +75,10 @@ async fn insert_rollover_completed_event_data(
     let (commit_tx, commit_adaptor_signature, commit_descriptor) = dlc.commit.clone();
     let (refund_tx, refund_signature) = dlc.refund.clone();
 
+    let lock_tx = models::Transaction::from(lock_tx);
+    let commit_tx = models::Transaction::from(commit_tx);
+    let refund_tx = models::Transaction::from(refund_tx);
+
     let commit_adaptor_signature = models::AdaptorSignature::from(commit_adaptor_signature);
 
     // casting because u64 is not implemented for sqlx: https://github.com/launchbadge/sqlx/pull/919#discussion_r557256333

@@ -80,7 +80,7 @@ impl Actor {
                 let lock_tx = dlc.lock.0.clone();
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
-                        tx: lock_tx.into(),
+                        tx: lock_tx,
                         kind: TransactionKind::Lock,
                     })
                     .await?;

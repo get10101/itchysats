@@ -198,7 +198,7 @@ impl Cfd {
                 monitor_refund_finality: true,
                 monitor_revoked_commit_transactions: false,
                 monitor_collaborative_settlement_finality: None,
-                lock_tx: dlc.map(|dlc| dlc.lock.0.into()),
+                lock_tx: dlc.map(|dlc| dlc.lock.0),
                 cet: None,
                 commit_tx: None,
                 ..self
@@ -532,15 +532,11 @@ impl MonitorParams {
         // that both addresses will be present since both parties
         // should have put up coins
         let script_pubkey = dlc.maker_address.script_pubkey();
-        let lock_tx = Transaction::from(dlc.lock.0);
+        let lock_tx = dlc.lock.0;
         MonitorParams {
             lock: (lock_tx.txid(), dlc.lock.1),
-            commit: (dlc.commit.0.txid().into(), dlc.commit.2),
-            refund: (
-                dlc.refund.0.txid().into(),
-                script_pubkey,
-                dlc.refund_timelock,
-            ),
+            commit: (dlc.commit.0.txid(), dlc.commit.2),
+            refund: (dlc.refund.0.txid(), script_pubkey, dlc.refund_timelock),
             revoked_commits: dlc
                 .revoked_commit
                 .iter()
