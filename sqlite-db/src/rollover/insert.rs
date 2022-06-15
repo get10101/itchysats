@@ -75,6 +75,8 @@ async fn insert_rollover_completed_event_data(
     let (commit_tx, commit_adaptor_signature, commit_descriptor) = dlc.commit.clone();
     let (refund_tx, refund_signature) = dlc.refund.clone();
 
+    let commit_adaptor_signature = models::AdaptorSignature::from(commit_adaptor_signature);
+
     // casting because u64 is not implemented for sqlx: https://github.com/launchbadge/sqlx/pull/919#discussion_r557256333
     let funding_fee_as_sat = funding_fee.fee.as_sat() as i64;
     // TODO: these seem to be redundant and should be in `cfds` table only
@@ -167,6 +169,7 @@ async fn insert_revoked_commit_transaction(
     let revoked_tx_script_pubkey = revoked.script_pubkey.to_hex();
     let revocation_secret = models::SecretKey::from(revoked.revocation_sk_theirs);
     let publication_pk_theirs = models::PublicKey::from(revoked.publication_pk_theirs);
+    let encsig_ours = models::AdaptorSignature::from(revoked.encsig_ours);
     let query_result = sqlx::query!(
         r#"
                 insert into revoked_commit_transactions (
@@ -179,7 +182,7 @@ async fn insert_revoked_commit_transaction(
                 ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6 )
             "#,
         offer_id,
-        revoked.encsig_ours,
+        encsig_ours,
         publication_pk_theirs,
         revocation_secret,
         revoked_tx_script_pubkey,
@@ -205,6 +208,7 @@ async fn insert_cet(
     let n_bits = cet.n_bits as i64;
     let range_start = *cet.range.start() as i64;
     let range_end = *cet.range.end() as i64;
+    let adaptor_sig = models::AdaptorSignature::from(cet.adaptor_sig);
 
     let txid = cet.txid.to_string();
     let query_result = sqlx::query!(
@@ -223,7 +227,7 @@ async fn insert_cet(
             "#,
         offer_id,
         event_id,
-        cet.adaptor_sig,
+        adaptor_sig,
         maker_amount,
         taker_amount,
         n_bits,

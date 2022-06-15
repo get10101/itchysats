@@ -148,3 +148,34 @@ impl From<bitcoin::util::key::PublicKey> for PublicKey {
 }
 
 impl_sqlx_type_display_from_str!(PublicKey);
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AdaptorSignature(secp256k1_zkp::EcdsaAdaptorSignature);
+
+impl fmt::Display for AdaptorSignature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for AdaptorSignature {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let sk = secp256k1_zkp::EcdsaAdaptorSignature::from_str(s)?;
+        Ok(Self(sk))
+    }
+}
+
+impl From<AdaptorSignature> for secp256k1_zkp::EcdsaAdaptorSignature {
+    fn from(sk: AdaptorSignature) -> Self {
+        sk.0
+    }
+}
+impl From<secp256k1_zkp::EcdsaAdaptorSignature> for AdaptorSignature {
+    fn from(sk: secp256k1_zkp::EcdsaAdaptorSignature) -> Self {
+        Self(sk)
+    }
+}
+
+impl_sqlx_type_display_from_str!(AdaptorSignature);

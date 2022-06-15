@@ -46,6 +46,7 @@ use itertools::Itertools;
 use maia::spending_tx_sighash;
 use maia_core::generate_payouts;
 use maia_core::secp256k1_zkp;
+use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia_core::secp256k1_zkp::SECP256K1;
 use maia_core::Payout;
 use maia_core::TransactionExt;
@@ -1815,7 +1816,7 @@ pub struct Cet {
     pub maker_amount: Amount,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     pub taker_amount: Amount,
-    pub adaptor_sig: AdaptorSignature,
+    pub adaptor_sig: EcdsaAdaptorSignature,
 
     // TODO: Range + number of digits (usize) could be represented as Digits similar to what we do
     // in the protocol lib
@@ -1873,38 +1874,6 @@ impl Cet {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct AdaptorSignature(secp256k1_zkp::EcdsaAdaptorSignature);
-
-impl AdaptorSignature {
-    pub fn new(sig: secp256k1_zkp::EcdsaAdaptorSignature) -> Self {
-        Self(sig)
-    }
-}
-
-impl fmt::Display for AdaptorSignature {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl str::FromStr for AdaptorSignature {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let sk = secp256k1_zkp::EcdsaAdaptorSignature::from_str(s)?;
-        Ok(Self(sk))
-    }
-}
-
-impl From<AdaptorSignature> for secp256k1_zkp::EcdsaAdaptorSignature {
-    fn from(sk: AdaptorSignature) -> Self {
-        sk.0
-    }
-}
-
-impl_sqlx_type_display_from_str!(AdaptorSignature);
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Transaction(bitcoin::Transaction);
 
@@ -1960,7 +1929,7 @@ pub struct Dlc {
 
     /// The fully signed lock transaction ready to be published on chain
     pub lock: (Transaction, Descriptor<PublicKey>),
-    pub commit: (Transaction, AdaptorSignature, Descriptor<PublicKey>),
+    pub commit: (Transaction, EcdsaAdaptorSignature, Descriptor<PublicKey>),
     pub cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
     pub refund: (Transaction, Signature),
 
@@ -2197,7 +2166,7 @@ impl Dlc {
             bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity),
         );
 
-        let counterparty_sig = self.commit.1 .0.decrypt(&self.publish)?;
+        let counterparty_sig = self.commit.1.decrypt(&self.publish)?;
         let counterparty_pubkey = self.identity_counterparty;
 
         let signed_commit_tx = maia::finalize_spend_transaction(
@@ -2228,7 +2197,7 @@ impl Dlc {
             .iter()
             .find(|Cet { range, .. }| range.contains(&attestation.price))
             .context("Price out of range of cets")?;
-        let encsig = cet.adaptor_sig.0;
+        let encsig = cet.adaptor_sig;
 
         let mut decryption_sk = attestation.scalars[0];
         for oracle_attestation in attestation.scalars[1..cet.n_bits].iter() {
@@ -2283,7 +2252,7 @@ pub struct IrrelevantAttestation {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RevokedCommit {
     // To build punish transaction
-    pub encsig_ours: AdaptorSignature,
+    pub encsig_ours: EcdsaAdaptorSignature,
     pub revocation_sk_theirs: SecretKey,
     pub publication_pk_theirs: PublicKey,
     // To monitor revoked commit transaction

@@ -232,6 +232,48 @@
       "nullable": []
     }
   },
+  "59e7860705cd6db5f9a829bb7663ffcae7f0af1a55d06e5d21fa1f77f70ec847": {
+    "query": "\n            SELECT\n                encsig_ours as \"encsig_ours: models::AdaptorSignature\",\n                publication_pk_theirs as \"publication_pk_theirs: models::PublicKey\",\n                revocation_sk_theirs as \"revocation_sk_theirs: models::SecretKey\",\n                script_pubkey,\n                txid as \"txid: model::Txid\"\n            FROM\n                revoked_commit_transactions\n            WHERE\n                cfd_id = $1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "encsig_ours: models::AdaptorSignature",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "publication_pk_theirs: models::PublicKey",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "revocation_sk_theirs: models::SecretKey",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "script_pubkey",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "txid: model::Txid",
+          "ordinal": 4,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "5aced71d79c0741c91a6a00d40732e1718b030f1cb0f55b7ea40c04b5a938d8c": {
     "query": "\n        SELECT\n            closed_commit_txs.txid as \"commit_txid: model::Txid\",\n            closed_refund_txs.txid as \"txid: model::Txid\",\n            closed_refund_txs.vout as \"vout: model::Vout\",\n            closed_refund_txs.payout as \"payout: model::Payout\"\n        FROM\n            closed_refund_txs\n        JOIN\n            closed_commit_txs on closed_commit_txs.cfd_id = closed_refund_txs.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_refund_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
     "describe": {
@@ -288,33 +330,48 @@
       "nullable": []
     }
   },
-  "6c46894d4617500c4d0dd7df951470796a78a7d8bb440d3874a8c28bdc818425": {
-    "query": "\n            SELECT\n                encsig_ours as \"encsig_ours: model::AdaptorSignature\",\n                publication_pk_theirs as \"publication_pk_theirs: models::PublicKey\",\n                revocation_sk_theirs as \"revocation_sk_theirs: models::SecretKey\",\n                script_pubkey,\n                txid as \"txid: model::Txid\"\n            FROM\n                revoked_commit_transactions\n            WHERE\n                cfd_id = $1\n            ",
+  "727e6779c82933f360a8fc29e3be61e3f46263426f3ee216dc1a91f00e7e90fe": {
+    "query": "\n            SELECT\n                oracle_event_id as \"oracle_event_id: model::olivia::BitMexPriceEventId\",\n                adaptor_sig as \"adaptor_sig: models::AdaptorSignature\",\n                maker_amount as \"maker_amount: i64\",\n                taker_amount as \"taker_amount: i64\",\n                n_bits as \"n_bits: i64\",\n                range_end as \"range_end: i64\",\n                range_start as \"range_start: i64\",\n                txid as \"txid: model::Txid\"\n            FROM\n                open_cets\n            WHERE\n                cfd_id = $1\n            ",
     "describe": {
       "columns": [
         {
-          "name": "encsig_ours: model::AdaptorSignature",
+          "name": "oracle_event_id: model::olivia::BitMexPriceEventId",
           "ordinal": 0,
           "type_info": "Text"
         },
         {
-          "name": "publication_pk_theirs: models::PublicKey",
+          "name": "adaptor_sig: models::AdaptorSignature",
           "ordinal": 1,
           "type_info": "Text"
         },
         {
-          "name": "revocation_sk_theirs: models::SecretKey",
+          "name": "maker_amount: i64",
           "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "taker_amount: i64",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "n_bits: i64",
+          "ordinal": 4,
           "type_info": "Text"
         },
         {
-          "name": "script_pubkey",
-          "ordinal": 3,
-          "type_info": "Text"
+          "name": "range_end: i64",
+          "ordinal": 5,
+          "type_info": "Int64"
+        },
+        {
+          "name": "range_start: i64",
+          "ordinal": 6,
+          "type_info": "Int64"
         },
         {
           "name": "txid: model::Txid",
-          "ordinal": 4,
+          "ordinal": 7,
           "type_info": "Text"
         }
       ],
@@ -322,6 +379,9 @@
         "Right": 1
       },
       "nullable": [
+        false,
+        false,
+        false,
         false,
         false,
         false,
@@ -386,144 +446,6 @@
         "Right": 3
       },
       "nullable": []
-    }
-  },
-  "8198474a87020b311ecdb427b9594a8b5d855e63150d03d5cc560978900c7bfc": {
-    "query": "\n            SELECT\n                settlement_event_id as \"settlement_event_id: model::olivia::BitMexPriceEventId\",\n                refund_timelock as \"refund_timelock: i64\",\n                funding_fee as \"funding_fee: i64\",\n                rate as \"rate: model::FundingRate\",\n                identity as \"identity: models::SecretKey\",\n                identity_counterparty as \"identity_counterparty: models::PublicKey\",\n                maker_address,\n                taker_address,\n                maker_lock_amount as \"maker_lock_amount: i64\",\n                taker_lock_amount as \"taker_lock_amount: i64\",\n                publish_sk as \"publish_sk: models::SecretKey\",\n                publish_pk_counterparty as \"publish_pk_counterparty: models::PublicKey\",\n                revocation_secret as \"revocation_secret: models::SecretKey\",\n                revocation_pk_counterparty as \"revocation_pk_counterparty: models::PublicKey\",\n                lock_tx as \"lock_tx: model::Transaction\",\n                lock_tx_descriptor,\n                commit_tx as \"commit_tx: model::Transaction\",\n                commit_adaptor_signature as \"commit_adaptor_signature: model::AdaptorSignature\",\n                commit_descriptor,\n                refund_tx as \"refund_tx: model::Transaction\",\n                refund_signature\n            FROM\n                rollover_completed_event_data\n            WHERE \n                cfd_id = $1 and \n                event_id = $2\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "settlement_event_id: model::olivia::BitMexPriceEventId",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "refund_timelock: i64",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "funding_fee: i64",
-          "ordinal": 2,
-          "type_info": "Null"
-        },
-        {
-          "name": "rate: model::FundingRate",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "identity: models::SecretKey",
-          "ordinal": 4,
-          "type_info": "Text"
-        },
-        {
-          "name": "identity_counterparty: models::PublicKey",
-          "ordinal": 5,
-          "type_info": "Text"
-        },
-        {
-          "name": "maker_address",
-          "ordinal": 6,
-          "type_info": "Text"
-        },
-        {
-          "name": "taker_address",
-          "ordinal": 7,
-          "type_info": "Text"
-        },
-        {
-          "name": "maker_lock_amount: i64",
-          "ordinal": 8,
-          "type_info": "Null"
-        },
-        {
-          "name": "taker_lock_amount: i64",
-          "ordinal": 9,
-          "type_info": "Null"
-        },
-        {
-          "name": "publish_sk: models::SecretKey",
-          "ordinal": 10,
-          "type_info": "Text"
-        },
-        {
-          "name": "publish_pk_counterparty: models::PublicKey",
-          "ordinal": 11,
-          "type_info": "Text"
-        },
-        {
-          "name": "revocation_secret: models::SecretKey",
-          "ordinal": 12,
-          "type_info": "Text"
-        },
-        {
-          "name": "revocation_pk_counterparty: models::PublicKey",
-          "ordinal": 13,
-          "type_info": "Text"
-        },
-        {
-          "name": "lock_tx: model::Transaction",
-          "ordinal": 14,
-          "type_info": "Text"
-        },
-        {
-          "name": "lock_tx_descriptor",
-          "ordinal": 15,
-          "type_info": "Text"
-        },
-        {
-          "name": "commit_tx: model::Transaction",
-          "ordinal": 16,
-          "type_info": "Text"
-        },
-        {
-          "name": "commit_adaptor_signature: model::AdaptorSignature",
-          "ordinal": 17,
-          "type_info": "Text"
-        },
-        {
-          "name": "commit_descriptor",
-          "ordinal": 18,
-          "type_info": "Text"
-        },
-        {
-          "name": "refund_tx: model::Transaction",
-          "ordinal": 19,
-          "type_info": "Text"
-        },
-        {
-          "name": "refund_signature",
-          "ordinal": 20,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 2
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ]
     }
   },
   "8556fa5ffa07322e35a16add4e40fa35bd543f7a1cb6d81b046ded4ec7bbb0be": {
@@ -758,66 +680,6 @@
       ]
     }
   },
-  "c15170780e43f2d823622771551b911ee5561ef2b1f514910952ebc728b9e417": {
-    "query": "\n            SELECT\n                oracle_event_id as \"oracle_event_id: model::olivia::BitMexPriceEventId\",\n                adaptor_sig as \"adaptor_sig: model::AdaptorSignature\",\n                maker_amount as \"maker_amount: i64\",\n                taker_amount as \"taker_amount: i64\",\n                n_bits as \"n_bits: i64\",\n                range_end as \"range_end: i64\",\n                range_start as \"range_start: i64\",\n                txid as \"txid: model::Txid\"\n            FROM\n                open_cets\n            WHERE\n                cfd_id = $1\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "oracle_event_id: model::olivia::BitMexPriceEventId",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "adaptor_sig: model::AdaptorSignature",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "maker_amount: i64",
-          "ordinal": 2,
-          "type_info": "Int64"
-        },
-        {
-          "name": "taker_amount: i64",
-          "ordinal": 3,
-          "type_info": "Int64"
-        },
-        {
-          "name": "n_bits: i64",
-          "ordinal": 4,
-          "type_info": "Text"
-        },
-        {
-          "name": "range_end: i64",
-          "ordinal": 5,
-          "type_info": "Int64"
-        },
-        {
-          "name": "range_start: i64",
-          "ordinal": 6,
-          "type_info": "Int64"
-        },
-        {
-          "name": "txid: model::Txid",
-          "ordinal": 7,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
   "ca417fd622b4d8b143fabda9d6d0ecd1a76619123ec1202fd66455f4d05454a1": {
     "query": "\n        SELECT\n            closed_commit_txs.txid as \"commit_txid: model::Txid\",\n            closed_cets.txid as \"txid: model::Txid\",\n            closed_cets.vout as \"vout: model::Vout\",\n            closed_cets.payout as \"payout: model::Payout\",\n            closed_cets.price as \"price: model::Price\"\n        FROM\n            closed_cets\n        JOIN\n            closed_commit_txs on closed_commit_txs.cfd_id = closed_cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
     "describe": {
@@ -925,6 +787,144 @@
       },
       "nullable": [
         true,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "e6c9abdfc5962f5ff1891dda74caee3cae7db67738b8ed0f581d5592a6f5fda3": {
+    "query": "\n            SELECT\n                settlement_event_id as \"settlement_event_id: model::olivia::BitMexPriceEventId\",\n                refund_timelock as \"refund_timelock: i64\",\n                funding_fee as \"funding_fee: i64\",\n                rate as \"rate: model::FundingRate\",\n                identity as \"identity: models::SecretKey\",\n                identity_counterparty as \"identity_counterparty: models::PublicKey\",\n                maker_address,\n                taker_address,\n                maker_lock_amount as \"maker_lock_amount: i64\",\n                taker_lock_amount as \"taker_lock_amount: i64\",\n                publish_sk as \"publish_sk: models::SecretKey\",\n                publish_pk_counterparty as \"publish_pk_counterparty: models::PublicKey\",\n                revocation_secret as \"revocation_secret: models::SecretKey\",\n                revocation_pk_counterparty as \"revocation_pk_counterparty: models::PublicKey\",\n                lock_tx as \"lock_tx: model::Transaction\",\n                lock_tx_descriptor,\n                commit_tx as \"commit_tx: model::Transaction\",\n                commit_adaptor_signature as \"commit_adaptor_signature: models::AdaptorSignature\",\n                commit_descriptor,\n                refund_tx as \"refund_tx: model::Transaction\",\n                refund_signature\n            FROM\n                rollover_completed_event_data\n            WHERE \n                cfd_id = $1 and \n                event_id = $2\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "settlement_event_id: model::olivia::BitMexPriceEventId",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "refund_timelock: i64",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "funding_fee: i64",
+          "ordinal": 2,
+          "type_info": "Null"
+        },
+        {
+          "name": "rate: model::FundingRate",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "identity: models::SecretKey",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "identity_counterparty: models::PublicKey",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "maker_address",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "taker_address",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "maker_lock_amount: i64",
+          "ordinal": 8,
+          "type_info": "Null"
+        },
+        {
+          "name": "taker_lock_amount: i64",
+          "ordinal": 9,
+          "type_info": "Null"
+        },
+        {
+          "name": "publish_sk: models::SecretKey",
+          "ordinal": 10,
+          "type_info": "Text"
+        },
+        {
+          "name": "publish_pk_counterparty: models::PublicKey",
+          "ordinal": 11,
+          "type_info": "Text"
+        },
+        {
+          "name": "revocation_secret: models::SecretKey",
+          "ordinal": 12,
+          "type_info": "Text"
+        },
+        {
+          "name": "revocation_pk_counterparty: models::PublicKey",
+          "ordinal": 13,
+          "type_info": "Text"
+        },
+        {
+          "name": "lock_tx: model::Transaction",
+          "ordinal": 14,
+          "type_info": "Text"
+        },
+        {
+          "name": "lock_tx_descriptor",
+          "ordinal": 15,
+          "type_info": "Text"
+        },
+        {
+          "name": "commit_tx: model::Transaction",
+          "ordinal": 16,
+          "type_info": "Text"
+        },
+        {
+          "name": "commit_adaptor_signature: models::AdaptorSignature",
+          "ordinal": 17,
+          "type_info": "Text"
+        },
+        {
+          "name": "commit_descriptor",
+          "ordinal": 18,
+          "type_info": "Text"
+        },
+        {
+          "name": "refund_tx: model::Transaction",
+          "ordinal": 19,
+          "type_info": "Text"
+        },
+        {
+          "name": "refund_signature",
+          "ordinal": 20,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
         false,
         false,
         false,

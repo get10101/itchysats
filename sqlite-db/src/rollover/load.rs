@@ -49,7 +49,7 @@ pub async fn load(
                 lock_tx as "lock_tx: model::Transaction",
                 lock_tx_descriptor,
                 commit_tx as "commit_tx: model::Transaction",
-                commit_adaptor_signature as "commit_adaptor_signature: model::AdaptorSignature",
+                commit_adaptor_signature as "commit_adaptor_signature: models::AdaptorSignature",
                 commit_descriptor,
                 refund_tx as "refund_tx: model::Transaction",
                 refund_signature
@@ -85,7 +85,7 @@ pub async fn load(
         ),
         commit: (
             row.commit_tx,
-            row.commit_adaptor_signature,
+            row.commit_adaptor_signature.into(),
             Descriptor::from_str(row.commit_descriptor.as_str())?,
         ),
         refund: (
@@ -114,7 +114,7 @@ async fn load_revoked_commit_transactions(
     let revoked_commit = sqlx::query!(
         r#"
             SELECT
-                encsig_ours as "encsig_ours: model::AdaptorSignature",
+                encsig_ours as "encsig_ours: models::AdaptorSignature",
                 publication_pk_theirs as "publication_pk_theirs: models::PublicKey",
                 revocation_sk_theirs as "revocation_sk_theirs: models::SecretKey",
                 script_pubkey,
@@ -131,7 +131,7 @@ async fn load_revoked_commit_transactions(
     .into_iter()
     .map(|row| {
         Ok(RevokedCommit {
-            encsig_ours: row.encsig_ours,
+            encsig_ours: row.encsig_ours.into(),
             revocation_sk_theirs: row.revocation_sk_theirs.into(),
             publication_pk_theirs: row.publication_pk_theirs.into(),
             script_pubkey: Script::from_hex(row.script_pubkey.as_str())?,
@@ -150,7 +150,7 @@ async fn load_cets(
         r#"
             SELECT
                 oracle_event_id as "oracle_event_id: model::olivia::BitMexPriceEventId",
-                adaptor_sig as "adaptor_sig: model::AdaptorSignature",
+                adaptor_sig as "adaptor_sig: models::AdaptorSignature",
                 maker_amount as "maker_amount: i64",
                 taker_amount as "taker_amount: i64",
                 n_bits as "n_bits: i64",
@@ -173,7 +173,7 @@ async fn load_cets(
             Cet {
                 maker_amount: Amount::from_sat(row.maker_amount as u64),
                 taker_amount: Amount::from_sat(row.taker_amount as u64),
-                adaptor_sig: row.adaptor_sig,
+                adaptor_sig: row.adaptor_sig.into(),
                 range: RangeInclusive::new(row.range_start as u64, row.range_end as u64),
                 n_bits: row.n_bits as usize,
                 txid: row.txid,
