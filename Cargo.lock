@@ -3995,6 +3995,7 @@ dependencies = [
  "bdk",
  "chashmap-async",
  "futures",
+ "hex",
  "maia 0.2.0",
  "maia-core",
  "model",

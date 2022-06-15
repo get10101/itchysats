@@ -523,8 +523,6 @@ impl str::FromStr for Identity {
     }
 }
 
-impl_sqlx_type_display_from_str!(Identity);
-
 #[derive(Debug, Clone)]
 pub struct WalletInfo {
     pub balance: Amount,

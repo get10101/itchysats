@@ -338,3 +338,39 @@ impl From<Position> for model::Position {
         }
     }
 }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Identity(x25519_dalek::PublicKey);
+
+impl fmt::Display for Identity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let hex = hex::encode(self.0.as_bytes());
+
+        write!(f, "{hex}")
+    }
+}
+
+impl FromStr for Identity {
+    type Err = hex::FromHexError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut key = [0u8; 32];
+
+        hex::decode_to_slice(s, &mut key)?;
+
+        Ok(Self(key.into()))
+    }
+}
+
+impl_sqlx_type_display_from_str!(Identity);
+
+impl From<Identity> for model::Identity {
+    fn from(model: Identity) -> Self {
+        model::Identity::new(model.0)
+    }
+}
+impl From<model::Identity> for Identity {
+    fn from(model: model::Identity) -> Self {
+        Self(model.pk())
+    }
+}

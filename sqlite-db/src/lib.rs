@@ -150,6 +150,8 @@ impl Connection {
         let leverage = models::Leverage::from(cfd.taker_leverage());
 
         let position = models::Position::from(cfd.position());
+        let counterparty_network_identity =
+            models::Identity::from(cfd.counterparty_network_identity());
         let query_result = sqlx::query(
             r#"
         insert into cfds (
@@ -173,7 +175,7 @@ impl Connection {
         .bind(&leverage)
         .bind(&cfd.settlement_time_interval_hours().whole_hours())
         .bind(&quantity)
-        .bind(&cfd.counterparty_network_identity())
+        .bind(&counterparty_network_identity)
         .bind(&cfd.counterparty_peer_id().unwrap_or_else(|| {
             tracing::debug!(
                 order_id=%cfd.id(),
@@ -525,7 +527,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
                 leverage as "leverage: models::Leverage",
                 settlement_time_interval_hours,
                 quantity_usd as "quantity_usd: models::Usd",
-                counterparty_network_identity as "counterparty_network_identity: model::Identity",
+                counterparty_network_identity as "counterparty_network_identity: models::Identity",
                 counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
                 role as "role: models::Role",
                 opening_fee as "opening_fee: model::OpeningFee",
@@ -543,7 +545,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
     .ok_or(Error::OpenCfdNotFound)?;
 
     let role = cfd_row.role.into();
-    let counterparty_network_identity = cfd_row.counterparty_network_identity;
+    let counterparty_network_identity = cfd_row.counterparty_network_identity.into();
     let counterparty_peer_id = if cfd_row.counterparty_peer_id == PeerId::placeholder() {
         derive_known_peer_id(counterparty_network_identity, role)
     } else {
