@@ -35,7 +35,7 @@ pub async fn load(
                 settlement_event_id as "settlement_event_id: model::olivia::BitMexPriceEventId",
                 refund_timelock as "refund_timelock: i64",
                 funding_fee as "funding_fee: i64",
-                rate as "rate: model::FundingRate",
+                rate as "rate: models::FundingRate",
                 identity as "identity: models::SecretKey",
                 identity_counterparty as "identity_counterparty: models::PublicKey",
                 maker_address,
@@ -101,7 +101,7 @@ pub async fn load(
     };
     let funding_fee = FundingFee {
         fee: Amount::from_sat(row.funding_fee as u64),
-        rate: row.rate,
+        rate: row.rate.into(),
     };
 
     Ok(Some((dlc, funding_fee)))

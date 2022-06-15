@@ -390,3 +390,37 @@ impl From<model::Timestamp> for Timestamp {
         Self(t.seconds())
     }
 }
+
+/// Funding rate per SETTLEMENT_INTERVAL
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct FundingRate(Decimal);
+
+impl fmt::Display for FundingRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for FundingRate {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let dec = Decimal::from_str(s)?;
+        Ok(FundingRate(dec))
+    }
+}
+
+impl From<FundingRate> for model::FundingRate {
+    fn from(f: FundingRate) -> Self {
+        model::FundingRate::new(f.0)
+            .expect("Self conversion from one funding rate to the other should work")
+    }
+}
+
+impl From<model::FundingRate> for FundingRate {
+    fn from(f: model::FundingRate) -> Self {
+        Self(f.to_decimal())
+    }
+}
+
+impl_sqlx_type_display_from_str!(FundingRate);

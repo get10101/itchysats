@@ -100,6 +100,7 @@ async fn insert_rollover_completed_event_data(
     let identity_counterparty = models::PublicKey::from(dlc.identity_counterparty);
     let publish_pk_counterparty = models::PublicKey::from(dlc.publish_pk_counterparty);
     let revocation_pk_counterparty = models::PublicKey::from(dlc.revocation_pk_counterparty);
+    let rate = models::FundingRate::from(funding_fee.rate);
 
     let query_result = sqlx::query!(
         r#"
@@ -137,7 +138,7 @@ async fn insert_rollover_completed_event_data(
         dlc.settlement_event_id,
         dlc.refund_timelock,
         funding_fee_as_sat,
-        funding_fee.rate,
+        rate,
         identity,
         identity_counterparty,
         maker_address,

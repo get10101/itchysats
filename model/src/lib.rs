@@ -588,8 +588,6 @@ impl Default for FundingRate {
     }
 }
 
-impl_sqlx_type_display_from_str!(FundingRate);
-
 impl fmt::Display for FundingRate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
