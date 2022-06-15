@@ -1,8 +1,10 @@
+use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::hashes::hex::ToHex;
 use maia_core::secp256k1_zkp;
 use model::impl_sqlx_type_display_from_str;
+use rust_decimal::Decimal;
 use serde::de::Error;
 use serde::Deserialize;
 use serde::Serialize;
@@ -215,3 +217,36 @@ impl From<bitcoin::Transaction> for Transaction {
 }
 
 impl_sqlx_type_display_from_str!(Transaction);
+
+/// Represents "quantity" or "contract size" in Cfd terms
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub struct Usd(Decimal);
+
+impl fmt::Display for Usd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.round_dp(2).fmt(f)
+    }
+}
+
+impl FromStr for Usd {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let dec = Decimal::from_str(s)?;
+        Ok(Usd(dec))
+    }
+}
+
+impl From<model::Usd> for Usd {
+    fn from(usd: model::Usd) -> Self {
+        Self(usd.into_decimal())
+    }
+}
+
+impl From<Usd> for model::Usd {
+    fn from(usd: Usd) -> Self {
+        model::Usd::new(usd.0)
+    }
+}
+
+impl_sqlx_type_display_from_str!(Usd);

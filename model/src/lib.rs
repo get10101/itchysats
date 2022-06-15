@@ -88,8 +88,6 @@ impl str::FromStr for Usd {
     }
 }
 
-impl_sqlx_type_display_from_str!(Usd);
-
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Price(Decimal);
 
