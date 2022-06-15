@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Migrate away from JSON blobs in the DB to a more normalized database for RolloverCompleted events
+- Use sled database for wallet. The wallet file is stored in your data-dir as either `maker-wallet` for the maker and `taker-wallet` for the taker respectively
 
 ## [0.4.20] - 2022-05-26
 

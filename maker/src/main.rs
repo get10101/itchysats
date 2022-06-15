@@ -9,6 +9,7 @@ use daemon::projection;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::wallet;
+use daemon::wallet::MAKER_WALLET_ID;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use maker::routes;
@@ -65,7 +66,15 @@ async fn main() -> Result<()> {
 
     let mut tasks = Tasks::default();
 
-    let (wallet, wallet_feed_receiver) = wallet::Actor::new(opts.network.electrum(), ext_priv_key)?;
+    let mut wallet_dir = data_dir.clone();
+
+    wallet_dir.push(MAKER_WALLET_ID);
+    let (wallet, wallet_feed_receiver) = wallet::Actor::new(
+        opts.network.electrum(),
+        ext_priv_key,
+        wallet_dir,
+        MAKER_WALLET_ID.to_string(),
+    )?;
 
     let wallet = wallet.create(None).spawn(&mut tasks);
 

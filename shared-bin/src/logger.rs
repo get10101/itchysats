@@ -34,7 +34,8 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
         .add_directive("bdk::wallet=off".parse()?) // bdk logs derivation of addresses on INFO
         .add_directive("_=off".parse()?) // rocket logs headers on INFO and uses `_` as the log target for it?
         .add_directive("rocket=off".parse()?) // disable rocket logs: we have our own
-        .add_directive("xtra=warn".parse()?);
+        .add_directive("xtra=warn".parse()?)
+        .add_directive("sled=warn".parse()?); // downgrade sled log level: it is spamming too much on DEBUG
 
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)

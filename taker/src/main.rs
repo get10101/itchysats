@@ -18,6 +18,7 @@ use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::seed::UmbrelSeed;
 use daemon::wallet;
+use daemon::wallet::TAKER_WALLET_ID;
 use daemon::Environment;
 use daemon::TakerActorSystem;
 use daemon::HEARTBEAT_INTERVAL;
@@ -299,7 +300,14 @@ async fn main() -> Result<()> {
 
     let mut tasks = Tasks::default();
 
-    let (wallet, wallet_feed_receiver) = wallet::Actor::new(network.electrum(), ext_priv_key)?;
+    let mut wallet_dir = data_dir.clone();
+    wallet_dir.push(TAKER_WALLET_ID);
+    let (wallet, wallet_feed_receiver) = wallet::Actor::new(
+        network.electrum(),
+        ext_priv_key,
+        wallet_dir,
+        TAKER_WALLET_ID.to_string(),
+    )?;
 
     let wallet = wallet.create(None).spawn(&mut tasks);
 

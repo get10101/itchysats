@@ -12,6 +12,7 @@ use bdk::bitcoin::Txid;
 use bdk::blockchain::Blockchain;
 use bdk::blockchain::ElectrumBlockchain;
 use bdk::database::BatchDatabase;
+use bdk::sled;
 use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
@@ -25,6 +26,7 @@ use model::TxFeeRate;
 use model::WalletInfo;
 use statrs::statistics::*;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::sync::watch;
@@ -33,6 +35,8 @@ use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
 const SYNC_INTERVAL: Duration = Duration::from_secs(3 * 60);
+pub const MAKER_WALLET_ID: &str = "maker-wallet";
+pub const TAKER_WALLET_ID: &str = "taker-wallet";
 
 static BALANCE_GAUGE: conquer_once::Lazy<prometheus::Gauge> = conquer_once::Lazy::new(|| {
     prometheus::register_gauge!(
@@ -83,8 +87,8 @@ static STD_DEV_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
         .unwrap()
     });
 
-pub struct Actor<B> {
-    wallet: bdk::Wallet<bdk::database::MemoryDatabase>,
+pub struct Actor<B, DB> {
+    wallet: bdk::Wallet<DB>,
     blockchain_client: B,
     used_utxos: LockedUtxos,
     tasks: Tasks,
@@ -95,15 +99,19 @@ pub struct Actor<B> {
 #[error("The transaction is already in the blockchain")]
 pub struct TransactionAlreadyInBlockchain;
 
-impl Actor<ElectrumBlockchain> {
+impl Actor<ElectrumBlockchain, sled::Tree> {
     pub fn new(
         electrum_rpc_url: &str,
         ext_priv_key: ExtendedPrivKey,
+        db_path: PathBuf,
+        wallet_name: String,
     ) -> Result<(Self, watch::Receiver<Option<WalletInfo>>)> {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
-        let db = bdk::database::MemoryDatabase::new();
+        // Create a database (using default sled type) to store wallet data
+        let db = sled::open(db_path)?;
+        let db = db.open_tree(wallet_name)?;
 
         let wallet = bdk::Wallet::new(
             bdk::template::Bip84(ext_priv_key, KeychainKind::External),
@@ -133,7 +141,10 @@ impl Actor<ElectrumBlockchain> {
     }
 }
 
-impl Actor<ElectrumBlockchain> {
+impl<DB> Actor<ElectrumBlockchain, DB>
+where
+    DB: BatchDatabase,
+{
     fn sync_internal(&mut self) -> Result<WalletInfo> {
         let now = Instant::now();
         tracing::trace!(target : "wallet", "Wallet sync started");
@@ -174,7 +185,10 @@ impl Actor<ElectrumBlockchain> {
 }
 
 #[xtra_productivity]
-impl Actor<ElectrumBlockchain> {
+impl<DB> Actor<ElectrumBlockchain, DB>
+where
+    DB: BatchDatabase,
+{
     pub fn handle_sync(&mut self, _msg: Sync) {
         let wallet_info_update = match self.sync_internal() {
             Ok(wallet_info) => Some(wallet_info),
@@ -239,9 +253,10 @@ impl Actor<ElectrumBlockchain> {
 }
 
 #[xtra_productivity]
-impl<B> Actor<B>
+impl<B, DB> Actor<B, DB>
 where
     Self: xtra::Actor,
+    DB: BatchDatabase,
 {
     pub fn handle_sign(&mut self, msg: Sign) -> Result<PartiallySignedTransaction> {
         let mut psbt = msg.psbt;
@@ -281,19 +296,13 @@ where
 }
 
 #[async_trait]
-impl xtra::Actor for Actor<ElectrumBlockchain> {
+impl<DB: 'static> xtra::Actor for Actor<ElectrumBlockchain, DB>
+where
+    DB: BatchDatabase + Send,
+{
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
-
-        // We only cache the addresses at startup
-        if let Err(e) = self
-            .wallet
-            .ensure_addresses_cached(1000)
-            .with_context(|| "Could not cache addresses")
-        {
-            tracing::warn!("{:#}", e);
-        }
 
         self.tasks.add(this.send_interval(SYNC_INTERVAL, || Sync));
     }
@@ -438,7 +447,7 @@ mod tests {
     use std::collections::HashSet;
     use xtra::Actor as _;
 
-    impl Actor<()> {
+    impl Actor<(), bdk::database::MemoryDatabase> {
         pub fn new_offline(
             utxo_amount: Amount,
             num_utxos: u8,
@@ -462,7 +471,10 @@ mod tests {
     }
 
     #[async_trait]
-    impl xtra::Actor for Actor<()> {
+    impl<DB: 'static> xtra::Actor for Actor<(), DB>
+    where
+        DB: Send,
+    {
         type Stop = ();
 
         async fn stopped(self) -> Self::Stop {}

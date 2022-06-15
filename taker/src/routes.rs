@@ -2,6 +2,7 @@ use daemon::bdk;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
 use daemon::bdk::blockchain::ElectrumBlockchain;
+use daemon::bdk::sled;
 use daemon::connection::ConnectionStatus;
 use daemon::oracle;
 use daemon::projection;
@@ -38,7 +39,7 @@ use uuid::Uuid;
 
 type Taker = TakerActorSystem<
     oracle::Actor,
-    wallet::Actor<ElectrumBlockchain>,
+    wallet::Actor<ElectrumBlockchain, sled::Tree>,
     xtra_bitmex_price_feed::Actor,
 >;
 
