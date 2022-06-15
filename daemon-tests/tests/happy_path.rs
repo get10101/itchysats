@@ -395,16 +395,24 @@ async fn force_close_open_cfd(maker_position: Position) {
 #[tokio::test]
 async fn rollover_an_open_cfd_maker_going_short() {
     let _guard = init_tracing();
-    rollover_an_open_cfd(Position::Short).await;
+    rollover_an_open_cfd(Position::Short, 1).await;
 }
 
 #[tokio::test]
 async fn rollover_an_open_cfd_maker_going_long() {
     let _guard = init_tracing();
-    rollover_an_open_cfd(Position::Long).await;
+    rollover_an_open_cfd(Position::Long, 1).await;
 }
 
-async fn rollover_an_open_cfd(maker_position: Position) {
+#[tokio::test]
+async fn double_rollover_an_open_cfd() {
+    // double rollover ensures that both parties properly succeeded and can do another rollover
+
+    let _guard = init_tracing();
+    rollover_an_open_cfd(Position::Short, 2).await;
+}
+
+async fn rollover_an_open_cfd(maker_position: Position, nr_rollovers: u8) {
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id) =
         start_from_open_cfd_state(oracle_data.announcement(), maker_position).await;
