@@ -250,3 +250,42 @@ impl From<Usd> for model::Usd {
 }
 
 impl_sqlx_type_display_from_str!(Usd);
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct Price(Decimal);
+
+impl From<model::Price> for Price {
+    fn from(price: model::Price) -> Self {
+        Self(price.into_decimal())
+    }
+}
+
+impl From<Price> for model::Price {
+    fn from(price: Price) -> Self {
+        model::Price::new(price.0).expect("Self conversion from one Price to another should work")
+    }
+}
+
+#[cfg(test)]
+impl From<Decimal> for Price {
+    fn from(price: Decimal) -> Self {
+        Self(price)
+    }
+}
+
+impl fmt::Display for Price {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for Price {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let dec = Decimal::from_str(s)?;
+        Ok(Price(dec))
+    }
+}
+
+impl_sqlx_type_display_from_str!(Price);

@@ -94,14 +94,14 @@ pub enum Settlement {
         txid: Txid,
         vout: Vout,
         payout: Payout,
-        price: Price,
+        price: models::Price,
     },
     Cet {
         commit_txid: Txid,
         txid: Txid,
         vout: Vout,
         payout: Payout,
-        price: Price,
+        price: models::Price,
     },
     Refund {
         commit_txid: Txid,
@@ -170,7 +170,7 @@ impl Connection {
             SELECT
                 uuid as "uuid: models::OrderId",
                 position as "position: model::Position",
-                initial_price as "initial_price: model::Price",
+                initial_price as "initial_price: models::Price",
                 taker_leverage as "taker_leverage: model::Leverage",
                 n_contracts as "n_contracts: model::Contracts",
                 counterparty_network_identity as "counterparty_network_identity: model::Identity",
@@ -215,7 +215,7 @@ impl Connection {
         let cfd = ClosedCfd {
             id,
             position: cfd.position,
-            initial_price: cfd.initial_price,
+            initial_price: cfd.initial_price.into(),
             taker_leverage: cfd.taker_leverage,
             n_contracts: cfd.n_contracts,
             counterparty_network_identity: cfd.counterparty_network_identity,
@@ -451,7 +451,7 @@ impl ClosedCfdInputAggregate {
             txid,
             vout,
             payout,
-            price: *price,
+            price: models::Price::from(*price),
         })
     }
 
@@ -481,7 +481,7 @@ impl ClosedCfdInputAggregate {
             txid,
             vout,
             payout,
-            price: *price,
+            price: models::Price::from(*price),
         })
     }
 
@@ -550,7 +550,7 @@ impl ClosedCfdInputAggregate {
         Ok(ClosedCfdInput {
             id,
             position,
-            initial_price,
+            initial_price: models::Price::from(initial_price),
             taker_leverage,
             n_contracts,
             counterparty_network_identity,
@@ -570,7 +570,7 @@ impl ClosedCfdInputAggregate {
 struct ClosedCfdInput {
     id: OrderId,
     position: Position,
-    initial_price: Price,
+    initial_price: models::Price,
     taker_leverage: Leverage,
     n_contracts: Contracts,
     counterparty_network_identity: Identity,
@@ -671,7 +671,7 @@ async fn insert_collaborative_settlement(
     txid: Txid,
     vout: Vout,
     payout: Payout,
-    price: Price,
+    price: models::Price,
 ) -> Result<()> {
     let id = models::OrderId::from(id);
 
@@ -714,7 +714,7 @@ async fn insert_cet_settlement(
     txid: Txid,
     vout: Vout,
     payout: Payout,
-    price: Price,
+    price: models::Price,
 ) -> Result<()> {
     insert_commit_tx(conn, id, commit_txid).await?;
 
@@ -840,7 +840,7 @@ async fn load_collaborative_settlement(
             collaborative_settlement_txs.txid as "txid: model::Txid",
             collaborative_settlement_txs.vout as "vout: model::Vout",
             collaborative_settlement_txs.payout as "payout: model::Payout",
-            collaborative_settlement_txs.price as "price: model::Price"
+            collaborative_settlement_txs.price as "price: models::Price"
         FROM
             collaborative_settlement_txs
         JOIN
@@ -870,7 +870,7 @@ async fn load_cet_settlement(
             closed_cets.txid as "txid: model::Txid",
             closed_cets.vout as "vout: model::Vout",
             closed_cets.payout as "payout: model::Payout",
-            closed_cets.price as "price: model::Price"
+            closed_cets.price as "price: models::Price"
         FROM
             closed_cets
         JOIN
@@ -1092,7 +1092,7 @@ mod tests {
             txid: Txid::new(bdk::bitcoin::Txid::default()),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: Price::new(dec!(40_000)).unwrap(),
+            price: models::Price::from(dec!(40_000)),
         };
 
         insert_settlement(&mut db_tx, id, inserted).await.unwrap();
@@ -1127,14 +1127,14 @@ mod tests {
             txid: Txid::new(bdk::bitcoin::Txid::default()),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: Price::new(dec!(40_000)).unwrap(),
+            price: models::Price::from(dec!(40_000)),
         };
 
         let inserted_collab_settlement = Settlement::Collaborative {
             txid: Txid::new(bdk::bitcoin::Txid::default()),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: Price::new(Decimal::ONE_HUNDRED).unwrap(),
+            price: models::Price::from(Decimal::ONE_HUNDRED),
         };
 
         let inserted_refund_settlement = Settlement::Refund {
@@ -1202,7 +1202,7 @@ mod tests {
             txid: Txid::new(bdk::bitcoin::Txid::default()),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: Price::new(dec!(40_000)).unwrap(),
+            price: models::Price::from(dec!(40_000)),
         };
 
         insert_settlement(&mut db_tx, id, inserted).await.unwrap();
@@ -1284,7 +1284,7 @@ mod tests {
         let cfd = ClosedCfdInput {
             id,
             position: Position::Long,
-            initial_price: Price::new(Decimal::ONE).unwrap(),
+            initial_price: models::Price::from(Decimal::ONE),
             taker_leverage: Leverage::TWO,
             n_contracts: Contracts::new(100),
             counterparty_network_identity: dummy_identity(),
@@ -1300,7 +1300,7 @@ mod tests {
                 txid: Txid::new(bdk::bitcoin::Txid::default()),
                 vout: Vout::new(0),
                 payout: Payout::new(Amount::ONE_BTC),
-                price: Price::new(Decimal::ONE_HUNDRED).unwrap(),
+                price: models::Price::from(Decimal::ONE_HUNDRED),
             },
         };
 

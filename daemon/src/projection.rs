@@ -896,7 +896,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
                         TxUrl::new(txid.into(), network, TxLabel::Collaborative)
                             .with_output_index(vout.into()),
                     );
-                    (Some(price), payout, CfdState::Closed)
+                    (Some(price.into()), payout, CfdState::Closed)
                 }
                 Settlement::Cet {
                     commit_txid,
@@ -914,7 +914,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
                         TxUrl::new(txid.into(), network, TxLabel::Cet)
                             .with_output_index(vout.into()),
                     );
-                    (Some(price), payout, CfdState::Closed)
+                    (Some(price.into()), payout, CfdState::Closed)
                 }
                 Settlement::Refund {
                     commit_txid,

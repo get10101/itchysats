@@ -154,7 +154,7 @@ impl Connection {
             SELECT
                 uuid as "id: models::OrderId",
                 position as "position: model::Position",
-                initial_price as "initial_price: model::Price",
+                initial_price as "initial_price: models::Price",
                 taker_leverage as "taker_leverage: model::Leverage",
                 n_contracts as "n_contracts: model::Contracts",
                 counterparty_network_identity as "counterparty_network_identity: model::Identity",
@@ -177,7 +177,7 @@ impl Connection {
         let cfd = FailedCfd {
             id,
             position: cfd.position,
-            initial_price: cfd.initial_price,
+            initial_price: cfd.initial_price.into(),
             taker_leverage: cfd.taker_leverage,
             n_contracts: cfd.n_contracts,
             counterparty_network_identity: cfd.counterparty_network_identity,
@@ -260,6 +260,7 @@ async fn insert_failed_cfd(
 
     let id = models::OrderId::from(cfd.id);
     let role = models::Role::from(cfd.role);
+    let initial_price = models::Price::from(cfd.initial_price);
 
     let query_result = sqlx::query!(
         r#"
@@ -280,7 +281,7 @@ async fn insert_failed_cfd(
         "#,
         id,
         cfd.position,
-        cfd.initial_price,
+        initial_price,
         cfd.taker_leverage,
         n_contracts,
         cfd.counterparty_network_identity,

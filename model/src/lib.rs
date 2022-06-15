@@ -91,8 +91,6 @@ impl str::FromStr for Usd {
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Price(Decimal);
 
-impl_sqlx_type_display_from_str!(Price);
-
 impl Price {
     const INFINITE: Price = Price(rust_decimal_macros::dec!(21_000_000));
 
