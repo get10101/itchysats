@@ -108,7 +108,6 @@ pub async fn load(
 
 async fn load_revoked_commit_transactions(
     db_transaction: &mut Transaction<'_, Sqlite>,
-
     cfd_row_id: i64,
 ) -> Result<Vec<RevokedCommit>> {
     let revoked_commit = sqlx::query!(

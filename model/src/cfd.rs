@@ -60,14 +60,12 @@ use std::ops::RangeInclusive;
 use std::str;
 use time::Duration;
 use time::OffsetDateTime;
-use uuid::adapter::Hyphenated;
 use uuid::Uuid;
 
 pub const CET_TIMELOCK: u32 = 12;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
-#[sqlx(transparent)]
-pub struct OrderId(Hyphenated);
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct OrderId(Uuid);
 
 impl Serialize for OrderId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -86,25 +84,31 @@ impl<'de> Deserialize<'de> for OrderId {
         let uuid = String::deserialize(deserializer)?;
         let uuid = uuid.parse::<Uuid>().map_err(D::Error::custom)?;
 
-        Ok(Self(uuid.to_hyphenated()))
+        Ok(Self(uuid))
     }
 }
 
 impl Default for OrderId {
     fn default() -> Self {
-        Self(Uuid::new_v4().to_hyphenated())
+        Self(Uuid::new_v4())
     }
 }
 
 impl fmt::Display for OrderId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        self.0.to_hyphenated().fmt(f)
     }
 }
 
 impl From<Uuid> for OrderId {
     fn from(id: Uuid) -> Self {
-        OrderId(id.to_hyphenated())
+        OrderId(id)
+    }
+}
+
+impl From<OrderId> for Uuid {
+    fn from(id: OrderId) -> Self {
+        id.0
     }
 }
 

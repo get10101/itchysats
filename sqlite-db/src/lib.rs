@@ -40,6 +40,7 @@ pub mod closed;
 pub mod event_log;
 pub mod failed;
 mod impls;
+pub mod models;
 mod rollover;
 pub mod time_to_first_position;
 
@@ -141,6 +142,8 @@ impl Connection {
     pub async fn insert_cfd(&self, cfd: &model::Cfd) -> Result<()> {
         let mut conn = self.inner.acquire().await?;
 
+        let id = models::OrderId::from(cfd.id());
+
         let query_result = sqlx::query(
             r#"
         insert into cfds (
@@ -158,7 +161,7 @@ impl Connection {
             initial_tx_fee_rate
         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
-        .bind(&cfd.id())
+        .bind(&id)
         .bind(&cfd.position())
         .bind(&cfd.initial_price())
         .bind(&cfd.taker_leverage())
@@ -201,6 +204,7 @@ impl Connection {
 
         let (event_name, event_data) = event.event.to_json();
 
+        let order_id = models::OrderId::from(event.id);
         let query_result = sqlx::query(
             r##"
         insert into events (
@@ -213,7 +217,7 @@ impl Connection {
             $2, $3, $4
         )"##,
         )
-        .bind(&event.id)
+        .bind(&order_id)
         .bind(&event_name)
         .bind(&event_data)
         .bind(&event.timestamp)
@@ -223,14 +227,13 @@ impl Connection {
         if query_result.rows_affected() != 1 {
             anyhow::bail!("failed to insert event");
         }
-        let event_id = event.id;
 
         // if we have a rollover completed event we store it additionally in its own table
         if let RolloverCompleted { .. } = event.event {
             rollover::insert(&mut conn, query_result.last_insert_rowid(), event).await?;
         }
 
-        tracing::info!(event = %event_name, order_id = %event_id, "Appended event to database");
+        tracing::info!(event = %event_name, %order_id, "Appended event to database");
 
         Ok(())
     }
@@ -371,7 +374,7 @@ impl Connection {
         let ids = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: model::OrderId"
+                uuid as "uuid: models::OrderId"
             FROM
                 cfds
             "#
@@ -379,7 +382,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid)
+        .map(|r| r.uuid.into())
         .collect();
 
         Ok(ids)
@@ -392,7 +395,7 @@ impl Connection {
             r#"
             select
                 id as cfd_id,
-                uuid as "uuid: model::OrderId"
+                uuid as "uuid: models::OrderId"
             from
                 cfds
             where exists (
@@ -412,7 +415,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid)
+        .map(|r| r.uuid.into())
         .collect();
 
         Ok(ids)
@@ -425,7 +428,7 @@ impl Connection {
             r#"
             select
                 id as cfd_id,
-                uuid as "uuid: model::OrderId"
+                uuid as "uuid: models::OrderId"
             from
                 cfds
             where exists (
@@ -443,7 +446,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid)
+        .map(|r| r.uuid.into())
         .collect();
 
         Ok(ids)
@@ -504,11 +507,13 @@ pub trait CfdAggregate: Clone + Send + Sync + 'static {
 }
 
 async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<Cfd, Error> {
+    let id = models::OrderId::from(id);
+
     let cfd_row = sqlx::query!(
         r#"
             select
                 id as cfd_id,
-                uuid as "uuid: model::OrderId",
+                uuid as "uuid: models::OrderId",
                 position as "position: model::Position",
                 initial_price as "initial_price: model::Price",
                 leverage as "leverage: model::Leverage",
@@ -540,7 +545,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
     };
 
     Ok(Cfd {
-        id: cfd_row.uuid,
+        id: cfd_row.uuid.into(),
         position: cfd_row.position,
         initial_price: cfd_row.initial_price,
         taker_leverage: cfd_row.leverage,
@@ -593,6 +598,8 @@ async fn load_cfd_events(
     id: OrderId,
     from_version: u32,
 ) -> Result<Vec<CfdEvent>> {
+    let id = models::OrderId::from(id);
+
     let mut events = sqlx::query!(
         r#"
 
@@ -622,7 +629,7 @@ async fn load_cfd_events(
             row.event_row_id,
             CfdEvent {
                 timestamp: row.created_at,
-                id,
+                id: id.into(),
                 event: EventKind::from_json(row.name, row.data)?,
             },
         ))
@@ -653,6 +660,7 @@ async fn load_cfd_events(
 }
 
 async fn delete_from_cfds_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<()> {
+    let id = models::OrderId::from(id);
     let query_result = sqlx::query!(
         r#"
         DELETE FROM
@@ -673,6 +681,8 @@ async fn delete_from_cfds_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId)
 }
 
 async fn delete_from_events_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<()> {
+    let id = models::OrderId::from(id);
+
     let query_result = sqlx::query!(
         r#"
         DELETE FROM

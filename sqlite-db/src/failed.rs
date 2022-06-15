@@ -18,6 +18,7 @@ use crate::event_log::EventLog;
 use crate::event_log::EventLogEntry;
 use crate::load_cfd_events;
 use crate::load_cfd_row;
+use crate::models;
 use crate::Cfd;
 use crate::CfdAggregate;
 use crate::Connection;
@@ -147,10 +148,11 @@ impl Connection {
     {
         let mut conn = self.inner.acquire().await?;
 
+        let inner_id = models::OrderId::from(id);
         let cfd = sqlx::query!(
             r#"
             SELECT
-                uuid as "id: model::OrderId",
+                uuid as "id: models::OrderId",
                 position as "position: model::Position",
                 initial_price as "initial_price: model::Price",
                 taker_leverage as "taker_leverage: model::Leverage",
@@ -165,7 +167,7 @@ impl Connection {
             WHERE
                 failed_cfds.uuid = $1
             "#,
-            id
+            inner_id
         )
         .fetch_one(&mut conn)
         .await?;
@@ -195,7 +197,7 @@ impl Connection {
         let ids = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: model::OrderId"
+                uuid as "uuid: models::OrderId"
             FROM
                 failed_cfds
             "#
@@ -203,7 +205,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid)
+        .map(|r| r.uuid.into())
         .collect();
 
         Ok(ids)
@@ -256,6 +258,8 @@ async fn insert_failed_cfd(
         Some(peer_id) => peer_id,
     };
 
+    let id = models::OrderId::from(cfd.id);
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO failed_cfds
@@ -273,7 +277,7 @@ async fn insert_failed_cfd(
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
-        cfd.id,
+        id,
         cfd.position,
         cfd.initial_price,
         cfd.taker_leverage,
@@ -299,6 +303,8 @@ async fn insert_event_log(
     id: OrderId,
     event_log: EventLog,
 ) -> Result<()> {
+    let id = models::OrderId::from(id);
+
     for EventLogEntry { name, created_at } in event_log.0.iter() {
         let query_result = sqlx::query!(
             r#"
@@ -337,6 +343,8 @@ async fn load_creation_timestamp(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
 ) -> Result<Timestamp> {
+    let id = models::OrderId::from(id);
+
     let row = sqlx::query!(
         r#"
         SELECT

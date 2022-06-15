@@ -1,3 +1,4 @@
+use crate::models;
 use anyhow::Result;
 use bdk::bitcoin::hashes::hex::ToHex;
 use model::olivia::BitMexPriceEventId;
@@ -6,7 +7,6 @@ use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
 use model::FundingFee;
-use model::OrderId;
 use model::RevokedCommit;
 use sqlx::pool::PoolConnection;
 use sqlx::Connection as SqlxConnection;
@@ -26,25 +26,25 @@ pub async fn insert(
         } => {
             let mut inner_transaction = connection.begin().await?;
 
-            crate::rollover::delete::delete(&mut inner_transaction, event.id).await?;
+            crate::rollover::delete::delete(&mut inner_transaction, event.id.into()).await?;
 
             insert_rollover_completed_event_data(
                 &mut inner_transaction,
                 event_id,
                 &dlc,
                 funding_fee,
-                event.id,
+                event.id.into(),
             )
             .await?;
 
             for revoked in dlc.revoked_commit {
-                insert_revoked_commit_transaction(&mut inner_transaction, event.id, revoked)
+                insert_revoked_commit_transaction(&mut inner_transaction, event.id.into(), revoked)
                     .await?;
             }
 
             for (event_id, cets) in dlc.cets {
                 for cet in cets {
-                    insert_cet(&mut inner_transaction, event_id, event.id, cet).await?;
+                    insert_cet(&mut inner_transaction, event_id, event.id.into(), cet).await?;
                 }
             }
 
@@ -69,7 +69,7 @@ async fn insert_rollover_completed_event_data(
     event_id: i64,
     dlc: &Dlc,
     funding_fee: FundingFee,
-    offer_id: OrderId,
+    offer_id: models::OrderId,
 ) -> Result<()> {
     let (lock_tx, lock_tx_descriptor) = dlc.lock.clone();
     let (commit_tx, commit_adaptor_signature, commit_descriptor) = dlc.commit.clone();
@@ -153,7 +153,7 @@ async fn insert_rollover_completed_event_data(
 
 async fn insert_revoked_commit_transaction(
     inner_transaction: &mut Transaction<'_, Sqlite>,
-    offer_id: OrderId,
+    offer_id: models::OrderId,
     revoked: RevokedCommit,
 ) -> Result<()> {
     let revoked_tx_script_pubkey = revoked.script_pubkey.to_hex();
@@ -187,7 +187,7 @@ async fn insert_revoked_commit_transaction(
 async fn insert_cet(
     db_transaction: &mut Transaction<'_, Sqlite>,
     event_id: BitMexPriceEventId,
-    offer_id: OrderId,
+    offer_id: models::OrderId,
     cet: Cet,
 ) -> Result<()> {
     let maker_amount = cet.maker_amount.as_sat() as i64;

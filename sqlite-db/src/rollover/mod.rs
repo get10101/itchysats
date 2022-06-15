@@ -9,6 +9,7 @@ pub use load::load;
 mod tests {
     use super::*;
     use crate::memory;
+    use crate::models;
     use anyhow::bail;
     use anyhow::Context;
     use anyhow::Result;
@@ -143,7 +144,8 @@ mod tests {
         let mut connection = db.inner.acquire().await?;
         insert(&mut connection, 1, rollover_completed.clone()).await?;
 
-        let order_id = cfd.id();
+        let order_id = models::OrderId::from(cfd.id());
+
         let cfd_row_id = sqlx::query!(r#"select id from cfds where uuid = $1"#, order_id)
             .fetch_one(&mut connection)
             .await?
@@ -208,7 +210,8 @@ mod tests {
             .await
             .unwrap();
 
-        let offer_id = cfd.id();
+        let offer_id = models::OrderId::from(cfd.id());
+
         let cfd_row_id = sqlx::query!(r#"select id from cfds where uuid = $1"#, offer_id)
             .fetch_one(&mut connection)
             .await?

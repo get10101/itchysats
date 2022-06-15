@@ -14,6 +14,7 @@ use crate::event_log::EventLog;
 use crate::event_log::EventLogEntry;
 use crate::load_cfd_events;
 use crate::load_cfd_row;
+use crate::models;
 use crate::Cfd;
 use crate::CfdAggregate;
 use crate::Connection;
@@ -162,10 +163,11 @@ impl Connection {
     {
         let mut conn = self.inner.acquire().await?;
 
+        let inner_id = models::OrderId::from(id);
         let cfd = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: model::OrderId",
+                uuid as "uuid: models::OrderId",
                 position as "position: model::Position",
                 initial_price as "initial_price: model::Price",
                 taker_leverage as "taker_leverage: model::Leverage",
@@ -182,7 +184,7 @@ impl Connection {
             WHERE
                 closed_cfds.uuid = $1
             "#,
-            id
+            inner_id
         )
         .fetch_one(&mut conn)
         .await?;
@@ -237,7 +239,7 @@ impl Connection {
         let ids = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: model::OrderId"
+                uuid as "uuid: models::OrderId"
             FROM
                 closed_cfds
             "#
@@ -245,7 +247,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid)
+        .map(|r| r.uuid.into())
         .collect();
 
         Ok(ids)
@@ -587,6 +589,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
             .unwrap_or_else(PeerId::placeholder),
         Some(peer_id) => peer_id,
     };
+    let id = models::OrderId::from(cfd.id);
 
     let query_result = sqlx::query!(
         r#"
@@ -607,7 +610,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
-        cfd.id,
+        id,
         cfd.position,
         cfd.initial_price,
         cfd.taker_leverage,
@@ -668,6 +671,8 @@ async fn insert_collaborative_settlement(
     payout: Payout,
     price: Price,
 ) -> Result<()> {
+    let id = models::OrderId::from(id);
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO collaborative_settlement_txs
@@ -711,6 +716,8 @@ async fn insert_cet_settlement(
 ) -> Result<()> {
     insert_commit_tx(conn, id, commit_txid).await?;
 
+    let id = models::OrderId::from(id);
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO closed_cets
@@ -753,6 +760,8 @@ async fn insert_refund_settlement(
 ) -> Result<()> {
     insert_commit_tx(conn, id, commit_txid).await?;
 
+    let id = models::OrderId::from(id);
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO closed_refund_txs
@@ -788,6 +797,8 @@ async fn insert_commit_tx(
     id: OrderId,
     txid: Txid,
 ) -> Result<()> {
+    let id = models::OrderId::from(id);
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO closed_commit_txs
@@ -818,6 +829,8 @@ async fn load_collaborative_settlement(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
 ) -> Result<Option<Settlement>> {
+    let id = models::OrderId::from(id);
+
     let row = sqlx::query_as!(
         Settlement::Collaborative,
         r#"
@@ -845,6 +858,8 @@ async fn load_cet_settlement(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
 ) -> Result<Option<Settlement>> {
+    let id = models::OrderId::from(id);
+
     let row = sqlx::query_as!(
         Settlement::Cet,
         r#"
@@ -875,6 +890,8 @@ async fn load_refund_settlement(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
 ) -> Result<Option<Settlement>> {
+    let id = models::OrderId::from(id);
+
     let row = sqlx::query_as!(
         Settlement::Refund,
         r#"
@@ -905,6 +922,8 @@ async fn insert_event_log(
     id: OrderId,
     event_log: EventLog,
 ) -> Result<()> {
+    let id = models::OrderId::from(id);
+
     for EventLogEntry { name, created_at } in event_log.0.iter() {
         let query_result = sqlx::query!(
             r#"
@@ -943,6 +962,8 @@ async fn load_creation_timestamp(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
 ) -> Result<Timestamp> {
+    let id = models::OrderId::from(id);
+
     let row = sqlx::query!(
         r#"
         SELECT

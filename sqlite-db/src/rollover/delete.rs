@@ -1,6 +1,6 @@
+use crate::models::OrderId;
 use anyhow::Context;
 use anyhow::Result;
-use model::OrderId;
 use sqlx::Sqlite;
 use sqlx::Transaction;
 
