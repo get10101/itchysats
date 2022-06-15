@@ -149,6 +149,7 @@ impl Connection {
         let initial_price = models::Price::from(cfd.initial_price());
         let leverage = models::Leverage::from(cfd.taker_leverage());
 
+        let position = models::Position::from(cfd.position());
         let query_result = sqlx::query(
             r#"
         insert into cfds (
@@ -167,7 +168,7 @@ impl Connection {
         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
         .bind(&id)
-        .bind(&cfd.position())
+        .bind(&position)
         .bind(&initial_price)
         .bind(&leverage)
         .bind(&cfd.settlement_time_interval_hours().whole_hours())
@@ -519,7 +520,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
             select
                 id as cfd_id,
                 uuid as "uuid: models::OrderId",
-                position as "position: model::Position",
+                position as "position: models::Position",
                 initial_price as "initial_price: models::Price",
                 leverage as "leverage: models::Leverage",
                 settlement_time_interval_hours,
@@ -551,7 +552,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
 
     Ok(Cfd {
         id: cfd_row.uuid.into(),
-        position: cfd_row.position,
+        position: cfd_row.position.into(),
         initial_price: cfd_row.initial_price.into(),
         taker_leverage: cfd_row.leverage.into(),
         settlement_interval: Duration::hours(cfd_row.settlement_time_interval_hours),

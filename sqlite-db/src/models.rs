@@ -314,3 +314,27 @@ impl From<Leverage> for model::Leverage {
             .expect("Self conversion from one leverage to the other should work")
     }
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type)]
+pub enum Position {
+    Long,
+    Short,
+}
+
+impl From<model::Position> for Position {
+    fn from(position: model::Position) -> Self {
+        match position {
+            model::Position::Long => Position::Long,
+            model::Position::Short => Position::Short,
+        }
+    }
+}
+
+impl From<Position> for model::Position {
+    fn from(position: Position) -> Self {
+        match position {
+            Position::Long => model::Position::Long,
+            Position::Short => model::Position::Short,
+        }
+    }
+}
