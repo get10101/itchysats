@@ -88,6 +88,7 @@ pub struct Lock {
 /// fields so that only sane combinations of transactions can be
 /// loaded from the database.
 #[derive(Debug, Clone, Copy, PartialEq)]
+// TODO: this type should not live here
 pub enum Settlement {
     Collaborative {
         txid: Txid,
