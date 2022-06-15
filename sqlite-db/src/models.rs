@@ -1,3 +1,4 @@
+use bdk::bitcoin;
 use maia_core::secp256k1_zkp;
 use model::impl_sqlx_type_display_from_str;
 use serde::de::Error;
@@ -115,3 +116,35 @@ impl From<Role> for model::Role {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PublicKey(bitcoin::util::key::PublicKey);
+
+impl fmt::Display for PublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for PublicKey {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let pk = bitcoin::util::key::PublicKey::from_str(s)?;
+        Ok(Self(pk))
+    }
+}
+
+impl From<PublicKey> for bitcoin::util::key::PublicKey {
+    fn from(pk: PublicKey) -> Self {
+        pk.0
+    }
+}
+
+impl From<bitcoin::util::key::PublicKey> for PublicKey {
+    fn from(pk: bitcoin::util::key::PublicKey) -> Self {
+        Self(pk)
+    }
+}
+
+impl_sqlx_type_display_from_str!(PublicKey);

@@ -32,6 +32,7 @@ use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::hashes::hex::ToHex;
 use bdk::bitcoin::secp256k1::SecretKey;
 use bdk::bitcoin::secp256k1::Signature;
+use bdk::bitcoin::util::key::PublicKey;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Script;
@@ -1835,10 +1836,7 @@ impl Cet {
     /// the TXID with which `Self` was constructed.
     pub fn to_tx(
         &self,
-        (commit_tx, commit_descriptor): (
-            &bitcoin::Transaction,
-            &Descriptor<bitcoin::util::key::PublicKey>,
-        ),
+        (commit_tx, commit_descriptor): (&bitcoin::Transaction, &Descriptor<PublicKey>),
         maker_address: &Address,
         taker_address: &Address,
     ) -> Result<bitcoin::Transaction> {
@@ -1874,38 +1872,6 @@ impl Cet {
         Ok(tx)
     }
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PublicKey(bitcoin::util::key::PublicKey);
-
-impl PublicKey {
-    pub fn new(pk: bitcoin::util::key::PublicKey) -> Self {
-        Self(pk)
-    }
-}
-
-impl fmt::Display for PublicKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl str::FromStr for PublicKey {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let pk = bitcoin::util::key::PublicKey::from_str(s)?;
-        Ok(Self(pk))
-    }
-}
-
-impl From<PublicKey> for bitcoin::util::key::PublicKey {
-    fn from(pk: PublicKey) -> Self {
-        pk.0
-    }
-}
-
-impl_sqlx_type_display_from_str!(PublicKey);
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AdaptorSignature(secp256k1_zkp::EcdsaAdaptorSignature);
@@ -1993,12 +1959,8 @@ pub struct Dlc {
     pub taker_address: Address,
 
     /// The fully signed lock transaction ready to be published on chain
-    pub lock: (Transaction, Descriptor<bitcoin::util::key::PublicKey>),
-    pub commit: (
-        Transaction,
-        AdaptorSignature,
-        Descriptor<bitcoin::util::key::PublicKey>,
-    ),
+    pub lock: (Transaction, Descriptor<PublicKey>),
+    pub commit: (Transaction, AdaptorSignature, Descriptor<PublicKey>),
     pub cets: HashMap<BitMexPriceEventId, Vec<Cet>>,
     pub refund: (Transaction, Signature),
 
@@ -2019,7 +1981,7 @@ pub struct Dlc {
 
 #[derive(Clone, Debug)]
 pub struct SettlementTransaction {
-    lock_desc: Descriptor<bitcoin::PublicKey>,
+    lock_desc: Descriptor<PublicKey>,
     lock_amount: Amount,
 
     price: Price,
@@ -2055,11 +2017,7 @@ impl SettlementTransaction {
             self.lock_amount,
         );
         SECP256K1
-            .verify(
-                &sighash,
-                &counterparty_signature,
-                &self.counterparty_pk.0.key,
-            )
+            .verify(&sighash, &counterparty_signature, &self.counterparty_pk.key)
             .context("Failed to verify counterparty signature")?;
 
         Ok(Self {
@@ -2079,8 +2037,8 @@ impl SettlementTransaction {
         let spend_tx = maia::finalize_spend_transaction(
             self.unsigned_transaction,
             &self.lock_desc,
-            (self.own_pk.0, self.own_signature),
-            (self.counterparty_pk.0, counterparty_signature),
+            (self.own_pk, self.own_signature),
+            (self.counterparty_pk, counterparty_signature),
         )?;
 
         CollaborativeSettlement::new(spend_tx, own_script_pubkey, price)
@@ -2162,7 +2120,7 @@ impl Dlc {
             lock_amount,
             price: current_price,
             unsigned_transaction: tx,
-            own_pk: PublicKey::new(own_pk),
+            own_pk,
             own_script_pk: self.script_pubkey_for(role),
             own_signature,
             counterparty_pk: self.identity_counterparty,
@@ -2179,18 +2137,14 @@ impl Dlc {
     ) -> Result<bitcoin::Transaction> {
         let sighash = spending_tx_sighash(&spend_tx, &self.lock.1, lock_amount);
         SECP256K1
-            .verify(
-                &sighash,
-                &counterparty_sig,
-                &self.identity_counterparty.0.key,
-            )
+            .verify(&sighash, &counterparty_sig, &self.identity_counterparty.key)
             .context("Failed to verify counterparty signature")?;
 
         let own_pk = bitcoin::util::key::PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
             SECP256K1,
             &self.identity,
         ));
-        let counterparty_pk = self.identity_counterparty.0;
+        let counterparty_pk = self.identity_counterparty;
 
         let lock_desc = &self.lock.1;
         let spend_tx = maia::finalize_spend_transaction(
@@ -2221,7 +2175,7 @@ impl Dlc {
             bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity),
         );
         let counterparty_sig = self.refund.1;
-        let counterparty_pubkey = self.identity_counterparty.0;
+        let counterparty_pubkey = self.identity_counterparty;
         let signed_refund_tx = maia::finalize_spend_transaction(
             self.refund.0 .0.clone(),
             &self.commit.2,
@@ -2244,7 +2198,7 @@ impl Dlc {
         );
 
         let counterparty_sig = self.commit.1 .0.decrypt(&self.publish)?;
-        let counterparty_pubkey = self.identity_counterparty.0;
+        let counterparty_pubkey = self.identity_counterparty;
 
         let signed_commit_tx = maia::finalize_spend_transaction(
             self.commit.0 .0.clone(),
@@ -2300,7 +2254,7 @@ impl Dlc {
         );
 
         let counterparty_sig = encsig.decrypt(&decryption_sk)?;
-        let counterparty_pubkey = self.identity_counterparty.0;
+        let counterparty_pubkey = self.identity_counterparty;
 
         let signed_cet = maia::finalize_spend_transaction(
             cet,
@@ -4287,7 +4241,7 @@ mod tests {
         ) -> Self {
             let maker_pk = bitcoin::PublicKey::new(identity_sk.to_public_key());
             let taker_pk = identity_counterparty_pk;
-            let descriptor = lock_descriptor(maker_pk, taker_pk.0);
+            let descriptor = lock_descriptor(maker_pk, taker_pk);
 
             self.with_lock(
                 amount_taker,
@@ -4307,7 +4261,7 @@ mod tests {
         ) -> Self {
             let maker_pk = identity_counterparty_pk;
             let taker_pk = bitcoin::PublicKey::new(identity_sk.to_public_key());
-            let descriptor = lock_descriptor(maker_pk.0, taker_pk);
+            let descriptor = lock_descriptor(maker_pk, taker_pk);
 
             self.with_lock(
                 amount_taker,
@@ -4324,7 +4278,7 @@ mod tests {
             amount_maker: Amount,
             identity_sk: SecretKey,
             identity_counterparty_pk: PublicKey,
-            descriptor: Descriptor<bitcoin::util::key::PublicKey>,
+            descriptor: Descriptor<PublicKey>,
         ) -> Self {
             let lock_tx = bitcoin::Transaction {
                 version: 0,
@@ -4350,13 +4304,11 @@ mod tests {
 
         fn dummy(event_id: Option<BitMexPriceEventId>) -> Self {
             let dummy_sk = SecretKey::from_slice(&[1; 32]).unwrap();
-            let dummy_pk = PublicKey::new(
-                bitcoin::util::key::PublicKey::from_slice(&[
-                    3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3,
-                    51, 41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
-                ])
-                .unwrap(),
-            );
+            let dummy_pk = PublicKey::from_slice(&[
+                3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51,
+                41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
+            ])
+            .unwrap();
 
             let dummy_addr = Address::from_str("132F25rTsvBdp9JzLLBHP5mvGY66i1xdiM").unwrap();
 
@@ -4391,12 +4343,12 @@ mod tests {
                 taker_address: dummy_addr,
                 lock: (
                     Transaction::new(dummy_tx.clone()),
-                    Descriptor::new_pk(dummy_pk.0),
+                    Descriptor::new_pk(dummy_pk),
                 ),
                 commit: (
                     Transaction::new(dummy_tx.clone()),
                     dummy_adapter_sig,
-                    Descriptor::new_pk(dummy_pk.0),
+                    Descriptor::new_pk(dummy_pk),
                 ),
                 cets: dummy_cet_with_zero_price_range,
                 refund: (Transaction::new(dummy_tx), dummy_sig),
@@ -4496,6 +4448,6 @@ mod tests {
 
     fn new_keypair() -> (SecretKey, PublicKey) {
         let (sk, pk) = keypair::new(&mut thread_rng());
-        (sk, PublicKey::new(pk))
+        (sk, pk)
     }
 }

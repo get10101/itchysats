@@ -91,6 +91,10 @@ async fn insert_rollover_completed_event_data(
     let identity = models::SecretKey::from(dlc.identity);
     let publish_sk = models::SecretKey::from(dlc.publish);
     let revocation_secret = models::SecretKey::from(dlc.revocation);
+    let identity_counterparty = models::PublicKey::from(dlc.identity_counterparty);
+    let publish_pk_counterparty = models::PublicKey::from(dlc.publish_pk_counterparty);
+    let revocation_pk_counterparty = models::PublicKey::from(dlc.revocation_pk_counterparty);
+
     let query_result = sqlx::query!(
         r#"
             insert into rollover_completed_event_data (
@@ -129,15 +133,15 @@ async fn insert_rollover_completed_event_data(
         funding_fee_as_sat,
         funding_fee.rate,
         identity,
-        dlc.identity_counterparty,
+        identity_counterparty,
         maker_address,
         taker_address,
         maker_lock_amount,
         taker_lock_amount,
         publish_sk,
-        dlc.publish_pk_counterparty,
+        publish_pk_counterparty,
         revocation_secret,
-        dlc.revocation_pk_counterparty,
+        revocation_pk_counterparty,
         lock_tx,
         lock_tx_descriptor,
         commit_tx,
@@ -162,6 +166,7 @@ async fn insert_revoked_commit_transaction(
 ) -> Result<()> {
     let revoked_tx_script_pubkey = revoked.script_pubkey.to_hex();
     let revocation_secret = models::SecretKey::from(revoked.revocation_sk_theirs);
+    let publication_pk_theirs = models::PublicKey::from(revoked.publication_pk_theirs);
     let query_result = sqlx::query!(
         r#"
                 insert into revoked_commit_transactions (
@@ -175,7 +180,7 @@ async fn insert_revoked_commit_transaction(
             "#,
         offer_id,
         revoked.encsig_ours,
-        revoked.publication_pk_theirs,
+        publication_pk_theirs,
         revocation_secret,
         revoked_tx_script_pubkey,
         revoked.txid

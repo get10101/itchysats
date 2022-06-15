@@ -45,7 +45,6 @@ use model::Cet;
 use model::Dlc;
 use model::FeeFlow;
 use model::Position;
-use model::PublicKey;
 use model::RevokedCommit;
 use model::Role;
 use model::RolloverParams;
@@ -344,11 +343,11 @@ pub async fn new(
 
     Ok(Dlc {
         identity: sk,
-        identity_counterparty: PublicKey::new(params.other.identity_pk),
+        identity_counterparty: params.other.identity_pk,
         revocation: rev_sk,
-        revocation_pk_counterparty: PublicKey::new(other_punish.revocation_pk),
+        revocation_pk_counterparty: other_punish.revocation_pk,
         publish: publish_sk,
-        publish_pk_counterparty: PublicKey::new(other_punish.publish_pk),
+        publish_pk_counterparty: other_punish.publish_pk,
         maker_address: params.maker().address.clone(),
         taker_address: params.taker().address.clone(),
         lock: (
@@ -441,12 +440,12 @@ pub async fn roll_over(
     let ((maker_identity, maker_punish_params), (taker_identity, taker_punish_params)) =
         match our_role {
             Role::Maker => (
-                (PublicKey::new(pk), own_punish),
+                (pk, own_punish),
                 (dlc.identity_counterparty, other_punish_params),
             ),
             Role::Taker => (
                 (dlc.identity_counterparty, other_punish_params),
-                (PublicKey::new(pk), own_punish),
+                (pk, own_punish),
             ),
         };
     let own_cfd_txs = tokio::task::spawn_blocking({
@@ -458,13 +457,13 @@ pub async fn roll_over(
             renew_cfd_transactions(
                 lock_tx,
                 (
-                    maker_identity.into(),
+                    maker_identity,
                     maker_lock_amount,
                     maker_address,
                     maker_punish_params,
                 ),
                 (
-                    taker_identity.into(),
+                    taker_identity,
                     taker_lock_amount,
                     taker_address,
                     taker_punish_params,
@@ -495,12 +494,12 @@ pub async fn roll_over(
 
     let commit_desc = commit_descriptor(
         (
-            maker_identity.into(),
+            maker_identity,
             maker_punish_params.revocation_pk,
             maker_punish_params.publish_pk,
         ),
         (
-            taker_identity.into(),
+            taker_identity,
             taker_punish_params.revocation_pk,
             taker_punish_params.publish_pk,
         ),
@@ -517,7 +516,7 @@ pub async fn roll_over(
         lock_amount,
         &msg1.commit,
         &publish_pk,
-        &dlc.identity_counterparty.into(),
+        &dlc.identity_counterparty,
     )
     .context("Commit adaptor signature does not verify")?;
 
@@ -537,7 +536,7 @@ pub async fn roll_over(
             (oracle_pk, announcement.nonce_pks.clone()),
             PartyParams {
                 lock_psbt: lock_tx.clone(),
-                identity_pk: dlc.identity_counterparty.into(),
+                identity_pk: dlc.identity_counterparty,
                 lock_amount,
                 address: other_address.clone(),
             },
@@ -557,7 +556,7 @@ pub async fn roll_over(
         &commit_desc,
         commit_amount,
         &msg1.refund,
-        &dlc.identity_counterparty.into(),
+        &dlc.identity_counterparty,
     )
     .context("Refund signature does not verify")?;
 
@@ -638,7 +637,7 @@ pub async fn roll_over(
             secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &revocation_sk_theirs),
         );
 
-        if derived_rev_pk != dlc.revocation_pk_counterparty.into() {
+        if derived_rev_pk != dlc.revocation_pk_counterparty {
             anyhow::bail!("Counterparty sent invalid revocation sk");
         }
     }
@@ -669,9 +668,9 @@ pub async fn roll_over(
         identity: sk,
         identity_counterparty: dlc.identity_counterparty,
         revocation: rev_sk,
-        revocation_pk_counterparty: PublicKey::new(other_punish_params.revocation_pk),
+        revocation_pk_counterparty: other_punish_params.revocation_pk,
         publish: publish_sk,
-        publish_pk_counterparty: PublicKey::new(other_punish_params.publish_pk),
+        publish_pk_counterparty: other_punish_params.publish_pk,
         maker_address: dlc.maker_address,
         taker_address: dlc.taker_address,
         lock: dlc.lock.clone(),
