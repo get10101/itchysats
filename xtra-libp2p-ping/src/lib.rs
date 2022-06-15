@@ -91,7 +91,7 @@ mod tests {
         let pong_address = pong::Actor::default().create(None).spawn_global();
 
         let endpoint = Endpoint::new(
-            MemoryTransport::default(),
+            Box::new(MemoryTransport::default),
             id.clone(),
             Duration::from_secs(10),
             [(PROTOCOL_NAME, pong_address.clone_channel())],

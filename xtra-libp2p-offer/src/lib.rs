@@ -112,7 +112,7 @@ mod tests {
             .spawn_global();
 
         let endpoint = Endpoint::new(
-            MemoryTransport::default(),
+            Box::new(MemoryTransport::default),
             id.clone(),
             Duration::from_secs(10),
             [],
@@ -142,7 +142,7 @@ mod tests {
             .spawn_global();
 
         let endpoint_addr = Endpoint::new(
-            MemoryTransport::default(),
+            Box::new(MemoryTransport::default),
             Keypair::generate_ed25519(),
             Duration::from_secs(10),
             [(PROTOCOL_NAME, offer_taker_addr.clone_channel())],

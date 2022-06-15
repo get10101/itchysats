@@ -50,7 +50,7 @@ use xtras::SendAsyncSafe;
 /// trigger a [`NewInboundSubstream`] message to the actor provided in the constructor.
 /// Opening a new substream can be achieved by sending the [`OpenSubstream`] message.
 pub struct Endpoint {
-    transport: Boxed<Connection>,
+    transport_fn: Box<dyn Fn() -> Boxed<Connection> + Send + 'static>,
     tasks: Tasks,
     controls: HashMap<PeerId, (yamux::Control, Tasks)>,
     inbound_substream_channels:
@@ -207,7 +207,7 @@ impl Endpoint {
     /// The provided substream handlers are actors that will be given the fully-negotiated
     /// substreams whenever a peer opens a new substream for the provided protocol.
     pub fn new<T, const N: usize>(
-        transport: T,
+        transport: Box<dyn Fn() -> T + Send + 'static>,
         identity: Keypair,
         connection_timeout: Duration,
         inbound_substream_handlers: [(
@@ -217,25 +217,33 @@ impl Endpoint {
         subscribers: Subscribers,
     ) -> Self
     where
-        T: Transport + Clone + Send + Sync + 'static,
+        T: Transport + Send + Sync + 'static,
         T::Output: AsyncRead + AsyncWrite + Unpin + Send + 'static,
         T::Error: Send + Sync,
         T::Listener: Send + 'static,
         T::Dial: Send + 'static,
         T::ListenerUpgrade: Send + 'static,
     {
-        let transport = upgrade::transport(
-            transport,
-            &identity,
-            inbound_substream_handlers
+        let transport_fn = Box::new({
+            let transport = Box::new(transport);
+            let identity = identity;
+            let handlers: Vec<&'static str> = inbound_substream_handlers
                 .iter()
                 .map(|(proto, _)| *proto)
-                .collect(),
-            connection_timeout,
-        );
+                .collect();
+
+            move || {
+                upgrade::transport(
+                    (transport)(),
+                    &identity,
+                    handlers.clone(),
+                    connection_timeout,
+                )
+            }
+        });
 
         Self {
-            transport,
+            transport_fn,
             tasks: Tasks::default(),
             inbound_substream_channels: verify_unique_handlers(inbound_substream_handlers),
             controls: HashMap::default(),
@@ -395,16 +403,17 @@ impl Endpoint {
             return Err(Error::AlreadyTryingToConnected(peer));
         }
 
+        let mut transport = (self.transport_fn)();
+
         self.inflight_connections.insert(peer);
         self.tasks.add_fallible(
             {
-                let transport = self.transport.clone();
                 let this = this.clone();
                 let connection_timeout = self.connection_timeout;
 
                 async move {
                     let (peer, control, incoming_substreams, worker) =
-                        tokio::time::timeout(connection_timeout, transport.clone().dial(msg.0)?)
+                        tokio::time::timeout(connection_timeout, transport.dial(msg.0)?)
                             .await
                             .context("Dialing timed out")??;
 
@@ -436,9 +445,10 @@ impl Endpoint {
         let this = ctx.address().expect("we are alive");
         let listen_address = msg.0.clone();
 
+        let mut transport = (self.transport_fn)();
+
         self.tasks.add_fallible(
             {
-                let transport = self.transport.clone();
                 let this = this.clone();
                 let listen_address = listen_address.clone();
 

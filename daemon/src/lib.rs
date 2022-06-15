@@ -253,7 +253,7 @@ where
 
         let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
         let endpoint = Endpoint::new(
-            TokioTcpConfig::new(),
+            Box::new(TokioTcpConfig::new),
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
             [
